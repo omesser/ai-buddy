@@ -69,18 +69,18 @@ attached, the Functional Layer does not save it.
 | 2 | Meaning of "interact with screen" | Spatial first (geometry, Perches); functional second (Summoned) |
 | 3 | Platforms | Cross-platform architecture, macOS first, Windows stubbed |
 | 4 | Harness | BYO via MCP — see #17 |
-| 5 | Runtime | Tauri (Rust + webview) — [ADR-0001](./adr/0001-greenfield-tauri.md) |
-| 6 | Model's role in idle | Director proposes Behaviors occasionally — [ADR-0002](./adr/0002-director-outside-frame-loop.md) |
+| 5 | Runtime | Tauri (Rust + webview) — [ADR-0001](./adr/0001-greenfield-tauri-not-fork-windowpet.md) |
+| 6 | Model's role in idle | Director proposes Behaviors occasionally — [ADR-0004](./adr/0004-director-outside-frame-loop.md) |
 | 7 | Character | First-class package format, with pre-built characters shipped |
 | 8 | macOS window awareness | `CGWindowListCopyWindowInfo` polling @10Hz, no permissions |
-| 9 / 14 | Behavior ownership | Engine-owned Primitives, character-declared Behaviors — [ADR-0003](./adr/0003-engine-primitives-character-behaviors.md) |
+| 9 / 14 | Behavior ownership | Engine-owned Primitives, character-declared Behaviors — [ADR-0002](./adr/0002-engine-owns-primitives-characters-declare-behaviors.md) |
 | 10 | Physics & verbs | Gravity + Throw; Perch = window top edges only; five verbs, capped |
 | 11 | Z-order | Always-on-top, non-activating, `canJoinAllSpaces`; aggressive auto-hide |
 | 12 / 16 | Sensing | Ambient titles + configurable periodic capture + On-Demand — [ADR-0005](./adr/0005-sensing-posture.md) |
-| 13 | Codebase origin | Greenfield; WindowPet (MIT) as reference — [ADR-0001](./adr/0001-greenfield-tauri.md) |
+| 13 | Codebase origin | Greenfield; WindowPet (MIT) as reference — [ADR-0001](./adr/0001-greenfield-tauri-not-fork-windowpet.md) |
 | 15 | Voice | Hotkey PTT + click-to-chat; wake word opt-in, on-device detection only |
 | 15b | Transcription | Trait: Apple `SpeechAnalyzer` on macOS 26+, `whisper.cpp` elsewhere |
-| 17 / 22 | Computer use | MCP server + MCP host; no first-party Executor — [ADR-0004](./adr/0004-no-first-party-executor.md) |
+| 17 / 22 | Computer use | MCP server + MCP host; no first-party Executor — [ADR-0003](./adr/0003-no-executor-harness-owns-desktop-control.md) |
 | 18 | Capture processing | Mandatory Local Gate; only changed/interesting frames escalate |
 | 19 | Permissions we own | Sensing only. Never duplicate the Harness's action prompts |
 | 20 | Memory | Light, local, plaintext, per-Character. Chat history session-scoped |
@@ -179,7 +179,7 @@ so the out-of-box path isn't "install a harness first."
 
 **We ship no Executor.** Clicking and typing come from the Harness's native
 computer use or from a user-configured desktop-control MCP server. See
-[ADR-0004](./adr/0004-no-first-party-executor.md).
+[ADR-0003](./adr/0003-no-executor-harness-owns-desktop-control.md).
 
 **The sprite is not a puppet.** The Director already samples windows and
 screen state, so ai-buddy *observes* the agent working rather than waiting to be
