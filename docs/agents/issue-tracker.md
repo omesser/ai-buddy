@@ -13,12 +13,6 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
-## Existing markdown issues
-
-`docs/issues/` holds 18 pre-existing v1 work items as markdown files with a README
-index table. They are **not** the issue tracker — GitHub Issues is. Treat them as a
-backlog to migrate or as reference specs, not as live tickets.
-
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
