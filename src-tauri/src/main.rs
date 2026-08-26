@@ -208,7 +208,11 @@ fn main() {
                 height: art_height * SPRITE_SCALE,
             };
             app.manage(Overlay {
-                sprite: SpriteRect { x, y, scale: SPRITE_SCALE },
+                sprite: SpriteRect {
+                    x,
+                    y,
+                    scale: SPRITE_SCALE,
+                },
                 placement,
                 mask,
             });

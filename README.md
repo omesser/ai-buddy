@@ -27,6 +27,22 @@ cargo run
 No Node toolchain and no bundler: the front end is static files under `src/`,
 which Tauri embeds at build time.
 
+## Development
+
+Install the hooks once after cloning:
+
+```sh
+pre-commit install
+```
+
+They cover whitespace and line endings, YAML/JSON/TOML validity, spelling, shell
+formatting and shellcheck, plus `cargo fmt --check` and `cargo clippy -D
+warnings`. The toolchain is pinned in `rust-toolchain.toml` so local runs and CI
+agree on what rustfmt and clippy consider correct.
+
+CI runs the same hooks. The Rust ones run on a macOS runner rather than Linux,
+because building this crate needs the macOS windowing stack.
+
 ## Verifying the overlay
 
 Most of what this feature does is invisible. Nothing on screen says whether the

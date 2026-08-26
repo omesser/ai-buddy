@@ -59,7 +59,11 @@ impl AlphaMask {
             .flat_map(|r| r.chars().map(|c| c == '#'))
             .collect();
 
-        Self { width, height, opaque }
+        Self {
+            width,
+            height,
+            opaque,
+        }
     }
 
     /// The art's own dimensions, before any scaling.
@@ -135,23 +139,37 @@ mod tests {
     #[test]
     fn cursor_over_transparent_pixel_is_not_a_hit() {
         let mask = AlphaMask::from_rows(&["..##..", ".####."]);
-        let sprite = SpriteRect { x: 100, y: 200, scale: 4 };
+        let sprite = SpriteRect {
+            x: 100,
+            y: 200,
+            scale: 4,
+        };
 
-        assert!(!mask.hit(&sprite, 100, 200), "top-left corner is transparent");
+        assert!(
+            !mask.hit(&sprite, 100, 200),
+            "top-left corner is transparent"
+        );
         assert!(mask.hit(&sprite, 108, 200), "third column is opaque");
     }
 
     #[test]
     fn cursor_outside_the_sprite_is_not_a_hit() {
         let mask = AlphaMask::from_rows(&["####", "####"]);
-        let sprite = SpriteRect { x: 100, y: 200, scale: 4 };
+        let sprite = SpriteRect {
+            x: 100,
+            y: 200,
+            scale: 4,
+        };
 
         // The sprite covers 100..116 horizontally, 200..208 vertically.
         assert!(mask.hit(&sprite, 100, 200), "top-left corner is inside");
         assert!(mask.hit(&sprite, 115, 207), "bottom-right corner is inside");
 
         assert!(!mask.hit(&sprite, 99, 204), "one point left of the sprite");
-        assert!(!mask.hit(&sprite, 116, 204), "one point right of the sprite");
+        assert!(
+            !mask.hit(&sprite, 116, 204),
+            "one point right of the sprite"
+        );
         assert!(!mask.hit(&sprite, 108, 199), "one point above the sprite");
         assert!(!mask.hit(&sprite, 108, 208), "one point below the sprite");
     }
@@ -162,7 +180,11 @@ mod tests {
     fn png_alpha_above_the_threshold_is_opaque() {
         let mask = AlphaMask::from_png(include_bytes!("../tests/fixtures/alpha-2x2.png"), 128)
             .expect("fixture decodes");
-        let sprite = SpriteRect { x: 0, y: 0, scale: 1 };
+        let sprite = SpriteRect {
+            x: 0,
+            y: 0,
+            scale: 1,
+        };
 
         assert!(!mask.hit(&sprite, 0, 0), "alpha 0 is clear");
         assert!(mask.hit(&sprite, 1, 0), "alpha 255 is opaque");
@@ -172,14 +194,17 @@ mod tests {
 
     #[test]
     fn a_png_without_an_alpha_channel_is_rejected_by_name() {
-        let err = AlphaMask::from_png(
-            include_bytes!("../tests/fixtures/greyscale-2x2.png"),
-            128,
-        )
-        .expect_err("greyscale has no alpha to hit-test against");
+        let err = AlphaMask::from_png(include_bytes!("../tests/fixtures/greyscale-2x2.png"), 128)
+            .expect_err("greyscale has no alpha to hit-test against");
 
-        assert!(err.contains("8-bit RGBA"), "error states the requirement: {err}");
-        assert!(err.contains("Grayscale"), "error names what was found: {err}");
+        assert!(
+            err.contains("8-bit RGBA"),
+            "error states the requirement: {err}"
+        );
+        assert!(
+            err.contains("Grayscale"),
+            "error names what was found: {err}"
+        );
     }
 
     /// Mixed-DPI is the case that matters: a 1x primary display beside a 2x

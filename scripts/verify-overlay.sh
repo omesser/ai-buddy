@@ -15,7 +15,7 @@
 #   --keep   leave the app running afterwards, with hit-test tracing on
 
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
@@ -26,33 +26,41 @@ mkdir -p "$OUT"
 
 echo "Building..."
 if ! cargo build --manifest-path src-tauri/Cargo.toml 2>&1 | tail -3; then
-  echo "FAIL: build"; exit 1
+  echo "FAIL: build"
+  exit 1
 fi
 
-pkill -f 'target/debug/ai-buddy' 2>/dev/null
+pkill -f 'target/debug/ai-buddy' 2> /dev/null
 AI_BUDDY_TRACE_HITTEST=1 ./src-tauri/target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
 APP_PID=$!
 
 # Wait for the startup line rather than sleeping a guessed interval.
 for _ in $(seq 1 60); do
-  grep -q '^overlay:' "$OUT/app.log" 2>/dev/null && break
-  kill -0 "$APP_PID" 2>/dev/null || { echo "FAIL: app exited"; cat "$OUT/app.log"; exit 1; }
+  grep -q '^overlay:' "$OUT/app.log" 2> /dev/null && break
+  kill -0 "$APP_PID" 2> /dev/null || {
+    echo "FAIL: app exited"
+    cat "$OUT/app.log"
+    exit 1
+  }
   perl -e 'select(undef,undef,undef,0.25)'
 done
 
-swift scripts/inspect-window.swift > "$OUT/window.json" 2>"$OUT/window.err" \
-  || { echo "FAIL: inspector"; cat "$OUT/window.err"; }
+swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
+  {
+    echo "FAIL: inspector"
+    cat "$OUT/window.err"
+  }
 
-lsappinfo list 2>/dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
+lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
 
 echo "Capturing screenshots..."
-DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2>/dev/null || echo 1)
+DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
 for i in $(seq 1 "$DISPLAY_COUNT"); do
-  screencapture -x -D "$i" "$OUT/display$i.png" 2>/dev/null \
-    || echo "  (display $i capture failed - is Screen Recording granted to your terminal?)"
+  screencapture -x -D "$i" "$OUT/display$i.png" 2> /dev/null ||
+    echo "  (display $i capture failed - is Screen Recording granted to your terminal?)"
 done
 
-python3 - "$OUT" <<'PY'
+python3 - "$OUT" << 'PY'
 import json, os, re, struct, subprocess, sys
 
 out = sys.argv[1]
@@ -136,19 +144,19 @@ echo "Hit-test pipeline:"
 CURSOR_BEFORE=$(swift scripts/cursor-position.swift)
 CX=$(echo "$CURSOR_BEFORE" | cut -d' ' -f1)
 CY=$(echo "$CURSOR_BEFORE" | cut -d' ' -f2)
-WIN_Y=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['y']))" 2>/dev/null || echo 0)
-WIN_X=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['x']))" 2>/dev/null || echo 0)
+WIN_Y=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['y']))" 2> /dev/null || echo 0)
+WIN_X=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['x']))" 2> /dev/null || echo 0)
 
 # Cursor in window-local points, which is where the sprite is placed.
 LOCAL_X=$((CX - WIN_X))
 LOCAL_Y=$((CY - WIN_Y))
 
-probe () {  # $1=sprite pos  $2=label  $3=expected HIT|miss
-  pkill -f 'target/debug/ai-buddy' 2>/dev/null
-  AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_SPRITE_POS="$1"     ./src-tauri/target/debug/ai-buddy > "$OUT/probe-$3.log" 2>&1 &
+probe() { # $1=sprite pos  $2=label  $3=expected HIT|miss
+  pkill -f 'target/debug/ai-buddy' 2> /dev/null
+  AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_SPRITE_POS="$1" ./src-tauri/target/debug/ai-buddy > "$OUT/probe-$3.log" 2>&1 &
   local pid=$!
   for _ in $(seq 1 40); do
-    grep -q 'hit-test:' "$OUT/probe-$3.log" 2>/dev/null && break
+    grep -q 'hit-test:' "$OUT/probe-$3.log" 2> /dev/null && break
     perl -e 'select(undef,undef,undef,0.25)'
   done
   # The first trace line fires before the window frame settles: applying the
@@ -158,7 +166,7 @@ probe () {  # $1=sprite pos  $2=label  $3=expected HIT|miss
   perl -e 'select(undef,undef,undef,2.5)'
   local line
   line=$(grep 'hit-test:' "$OUT/probe-$3.log" | tail -1)
-  kill "$pid" 2>/dev/null
+  kill "$pid" 2> /dev/null
   if echo "$line" | grep -q "$3 "; then
     echo "  PASS  $2"
   else
@@ -186,9 +194,10 @@ echo "  that the window server honours the flag - a click really lands underneat
 echo "  and typing elsewhere really survives a click on the sprite."
 
 if [ "$KEEP" = "1" ]; then
-  echo "\nApp left running (pid $APP_PID) with tracing on. Move the cursor over the"
+  printf '\n'
+  echo "App left running (pid $APP_PID) with tracing on. Move the cursor over the"
   echo "sprite, then: tail -f $OUT/app.log"
 else
-  kill "$APP_PID" 2>/dev/null
+  kill "$APP_PID" 2> /dev/null
 fi
 exit $STATUS

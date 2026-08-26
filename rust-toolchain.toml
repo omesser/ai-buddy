@@ -1,0 +1,7 @@
+# Pin the toolchain so local runs, pre-commit and CI all agree. Without this,
+# rustfmt and clippy drift between machines and the same code lints clean on one
+# and fails on another.
+
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
