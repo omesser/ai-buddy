@@ -20,6 +20,11 @@ cd "$(dirname "$0")/.." || exit 1
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
 
+# An orphaned overlay is always-on-top and has no window controls, so an
+# interrupted run would otherwise leave something on screen that is awkward to
+# get rid of. --keep opts out, since leaving it running is the whole point.
+trap '[ "$KEEP" = "1" ] || pkill -f "target/debug/ai-buddy" 2> /dev/null' EXIT INT TERM
+
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT=".verify/$STAMP"
 mkdir -p "$OUT"
@@ -201,10 +206,13 @@ echo "  that the window server honours the flag - a click really lands underneat
 echo "  and typing elsewhere really survives a click on the sprite."
 
 if [ "$KEEP" = "1" ]; then
+  # The probes stopped the app launched at the top of this script, so start a
+  # fresh one rather than reporting a pid that is already gone.
+  pkill -f 'target/debug/ai-buddy' 2> /dev/null
+  AI_BUDDY_TRACE_HITTEST=1 ./src-tauri/target/debug/ai-buddy > "$OUT/keep.log" 2>&1 &
   printf '\n'
-  echo "App left running (pid $APP_PID) with tracing on. Move the cursor over the"
-  echo "sprite, then: tail -f $OUT/app.log"
-else
-  kill "$APP_PID" 2> /dev/null
+  echo "App running (pid $!) for the manual checks, with hit-test tracing on."
+  echo "Watch the decisions:  tail -f $OUT/keep.log"
+  echo "Stop it:              pkill -f target/debug/ai-buddy"
 fi
 exit $STATUS
