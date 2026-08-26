@@ -27,32 +27,58 @@ cargo run
 No Node toolchain and no bundler: the front end is static files under `src/`,
 which Tauri embeds at build time.
 
-## Verifying the overlay by hand
+## Verifying the overlay
 
-Click-through, panel level, and Spaces membership are thin, platform-specific,
-and expensive to fake convincingly, so they are checked by hand rather than in
-tests. The hit-test arithmetic underneath them is unit tested.
+Most of what this feature does is invisible. Nothing on screen says whether the
+overlay is currently swallowing clicks or passing them on, so verification is
+split in three.
 
-Run the app, then confirm each of these:
+**Unit tests** cover the arithmetic — the alpha lookup and the coordinate
+conversions. Fast, pure, no windowing system:
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+**`scripts/verify-overlay.sh`** covers everything else a machine can reach. It
+is deliberately not a `cargo test`: it needs a real desktop, a real window
+server and a running app, so it is slow, macOS-only, and cannot run in CI. Run
+it when the overlay or the platform layer changes.
+
+```sh
+scripts/verify-overlay.sh          # or --keep to leave the app running
+```
+
+It checks that exactly one overlay window exists at floating level, that its
+bounds match the union of the displays, that the app is an accessory with no
+Dock tile or switcher entry, and that the hit-test pipeline actually fires: it
+places the sprite over wherever your cursor already is and asserts a hit on
+drawn pixels and a miss on transparent ones at the same cursor position. It also
+saves screenshots of each display plus a tight crop of the sprite under
+`.verify/`, so the art and its transparency can be eyeballed.
+
+Keep the mouse still while it runs; it tells you if the cursor moved.
+
+For a live view of the decision, set `AI_BUDDY_TRACE_HITTEST=1` and move the
+cursor across the sprite. The first line or two are emitted before the window
+frame settles and report a stale origin — read the later ones.
+
+**A human** is still needed for the last step, because only the window server
+can answer it. Run the app, then confirm:
 
 1. **Clicks pass through empty space.** Click the desktop or a window anywhere
-   the sprite is not. The click lands underneath, and the sprite is unaffected.
+   the sprite is not. The click lands underneath.
 2. **Clicks on the sprite do not pass through.** Click the sprite's body. The
-   window underneath does not receive the click. Try the transparent corners of
-   the sprite's bounding box too — those must pass through, which is the whole
-   point of hit-testing alpha rather than the rectangle.
+   window underneath does not receive the click.
 3. **Typing is never interrupted.** Put the cursor in another application and
    type. Click the sprite mid-sentence and keep typing. Every keystroke reaches
    the other application and focus never moves.
-4. **Absent from the application switcher.** Hold Cmd-Tab. ai-buddy is not
-   listed, and there is no Dock tile.
-5. **Follows you across Spaces.** Switch Spaces. The sprite is present on the new
-   one, in the same screen position.
-6. **Works on more than one display.** With two displays attached, repeat checks
-   1–3 against overlapping windows on each. To place the sprite on the second
-   display, relaunch with `AI_BUDDY_SPRITE_POS=x,y` in logical points from the
-   top-left of the display union — the app logs the union's size at startup.
-   That variable exists only until Grab lands and the sprite can be dragged.
+4. **Follows you across Spaces.** Switch Spaces. The sprite is present on the
+   new one, in the same screen position.
+
+To place the sprite somewhere specific — the second display, say — relaunch with
+`AI_BUDDY_SPRITE_POS=x,y` in logical points from the top-left of the display
+union. That variable exists only until Grab lands and the sprite can be dragged.
 
 ## The placeholder Character
 
