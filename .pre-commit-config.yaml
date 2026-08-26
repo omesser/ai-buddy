@@ -59,6 +59,17 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
+    # Swift (macOS only; skipped on Linux CI)
+  - repo: local
+    hooks:
+      - id: swiftc-typecheck
+        name: swiftc typecheck
+        # One file at a time: top-level code is only legal in a single-file
+        # compilation, and these are scripts, not a module.
+        entry: bash -c 'for f in "$@"; do swiftc -typecheck "$f" || exit 1; done' --
+        language: system
+        types: [swift]
+
     # Rust
   - repo: local
     hooks:

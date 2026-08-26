@@ -1,5 +1,18 @@
 // Reports the overlay's on-screen geometry as JSON.
 //
+// Why Swift and not shell: no stock command-line tool reports a window's bounds
+// or level. lsappinfo knows only about applications, and osascript needs an
+// Accessibility grant — broader than anything this project asks for — then still
+// cannot see a non-activating panel that is excluded from the switcher, nor
+// report a window level at all.
+//
+// Why Swift and not Rust, in a Rust repository: CGWindowList lives in
+// CoreGraphics, which would mean adding a dependency purely for a dev tool.
+// Xcode is already required to build a Tauri app on macOS, so `swift` is
+// already installed and costs nothing. It also keeps the observer independent
+// of the app it observes, which is the point — the display-union bug was caught
+// precisely because this asks the window server, not the app.
+//
 // Uses CGWindowListCopyWindowInfo, which returns window bounds, owner and layer
 // with no permission prompt — the same call docs/SPEC.md specifies for
 // WindowSource. Screen Recording is needed only for the screenshots that
