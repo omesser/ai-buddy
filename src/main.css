@@ -1,0 +1,27 @@
+/* The overlay must never paint a backdrop. Anything opaque here is a grey sheet
+   over the user's desktop, which is the most obvious way this window can look
+   broken. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#sprite {
+  position: absolute;
+  /* ADR-0006: true pixel art, nearest-neighbour, integer scale factors only. */
+  image-rendering: pixelated;
+  -webkit-user-drag: none;
+  /* Hidden until the Rust side says where the Character goes. The webview holds
+     no authoritative state. */
+  visibility: hidden;
+}

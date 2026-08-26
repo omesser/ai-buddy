@@ -1,0 +1,8 @@
+# Rust build output
+/src-tauri/target/
+
+# Tauri code generation
+/src-tauri/gen/
+
+# macOS
+.DS_Store
