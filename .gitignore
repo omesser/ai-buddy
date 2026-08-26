@@ -1,0 +1,36 @@
+# Rust
+/src-tauri/target/
+
+# Tauri code generation
+/src-tauri/gen/
+
+# Manual verification artifacts (screenshots, window dumps, app logs)
+/.verify/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors / IDEs
+.idea/
+*.swp
+*.swo
+*~
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Logs & temp
+*.log
+*.tmp
+tmp/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local Claude/agent state (keep shared config, ignore local-only)
+.claude/settings.local.json

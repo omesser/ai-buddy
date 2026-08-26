@@ -1,0 +1,32 @@
+[package]
+name = "ai-buddy"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "A desktop companion that lives on your screen"
+license = "MIT"
+
+[lib]
+name = "ai_buddy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ai-buddy"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = {version = "2", features = []}
+
+[dependencies]
+tauri = {version = "2", features = ["macos-private-api"]}
+png = "0.18"
+serde = {version = "1", features = ["derive"]}
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = {version = "0.3", features = [
+  "NSWindow",
+  "NSPanel",
+  "NSResponder",
+  "NSApplication"
+]}

@@ -1,0 +1,89 @@
+name: PR Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install shfmt
+        # Pinned, like rust-toolchain.toml: a formatter that updates itself can
+        # reformat the whole repo and fail an unrelated pull request. Keep this
+        # in step with what contributors run locally.
+        #
+        # Resolved by direct URL rather than by grepping the releases API. The
+        # obvious one-liner uses `grep -E "https://.+?linux_amd64"`, but ERE has
+        # no lazy quantifier, so `.+?` is greedy and swallows enough JSON to
+        # hand curl a URL containing braces.
+        env:
+          SHFMT_VERSION: v3.13.1
+        run: |
+          curl -fsSL -o shfmt \
+            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
+          chmod +x shfmt && sudo mv shfmt /usr/bin/
+          shfmt --version
+
+      - name: Install shellcheck
+        run: sudo apt update && sudo apt install -y shellcheck
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Run pre-commit
+        # The Rust hooks are skipped here and run in the `rust` job instead:
+        # building this crate needs the macOS windowing stack, so a Linux runner
+        # cannot compile it.
+        env:
+          SKIP: cargo-fmt,cargo-clippy,swiftc-typecheck
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
+
+  rust:
+    timeout-minutes: 30
+    # macOS because the app is macOS-only for now: the platform layer is AppKit
+    # and Tauri needs a system webview. See docs/SPEC.md on Windows being
+    # stubbed for v1.
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Type-check the Swift helper scripts
+        run: |
+          for f in scripts/*.swift; do swiftc -typecheck "$f"; done
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+      # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
+      # and a logged-in desktop session, which a runner does not have.
