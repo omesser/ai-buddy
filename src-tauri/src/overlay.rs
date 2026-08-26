@@ -51,6 +51,10 @@ pub struct AlphaMask {
 
 impl AlphaMask {
     /// Build a mask from an ASCII picture: `#` is drawn, anything else is not.
+    ///
+    /// Tests only. It trusts every row to be the width of the first, which is
+    /// fine for a literal in a test and wrong for anything else.
+    #[cfg(test)]
     pub fn from_rows(rows: &[&str]) -> Self {
         let height = rows.len() as i32;
         let width = rows.first().map_or(0, |r| r.chars().count()) as i32;

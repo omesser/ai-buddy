@@ -25,7 +25,6 @@ dependencies = [
  "objc2-app-kit",
  "png 0.18.1",
  "serde",
- "serde_json",
  "tauri",
  "tauri-build",
 ]

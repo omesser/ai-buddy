@@ -141,51 +141,58 @@ STATUS=$?
 echo ""
 echo "Hit-test pipeline:"
 
-CURSOR_BEFORE=$(swift scripts/cursor-position.swift)
-CX=$(echo "$CURSOR_BEFORE" | cut -d' ' -f1)
-CY=$(echo "$CURSOR_BEFORE" | cut -d' ' -f2)
-WIN_Y=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['y']))" 2> /dev/null || echo 0)
 WIN_X=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['x']))" 2> /dev/null || echo 0)
+WIN_Y=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['y']))" 2> /dev/null || echo 0)
 
-# Cursor in window-local points, which is where the sprite is placed.
-LOCAL_X=$((CX - WIN_X))
-LOCAL_Y=$((CY - WIN_Y))
+# Position the sprite relative to wherever the cursor is, run the app, and read
+# back the decision. The cursor must hold still for the few seconds this takes,
+# so each attempt re-reads it afterwards and discards the result if it moved.
+# A moving cursor makes the test invalid, not failed - reporting it as a failure
+# would teach the reader to ignore failures.
+probe() { # $1=offset from cursor to sprite origin  $2=label  $3=expected HIT|miss
+  local line before after sx sy
+  for _attempt in 1 2 3; do
+    before=$(swift scripts/cursor-position.swift)
+    sx=$(($(echo "$before" | cut -d' ' -f1) - WIN_X - $1))
+    sy=$(($(echo "$before" | cut -d' ' -f2) - WIN_Y - $1))
 
-probe() { # $1=sprite pos  $2=label  $3=expected HIT|miss
-  pkill -f 'target/debug/ai-buddy' 2> /dev/null
-  AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_SPRITE_POS="$1" ./src-tauri/target/debug/ai-buddy > "$OUT/probe-$3.log" 2>&1 &
-  local pid=$!
-  for _ in $(seq 1 40); do
-    grep -q 'hit-test:' "$OUT/probe-$3.log" 2> /dev/null && break
-    perl -e 'select(undef,undef,undef,0.25)'
+    pkill -f 'target/debug/ai-buddy' 2> /dev/null
+    AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_SPRITE_POS="$sx,$sy" \
+      ./src-tauri/target/debug/ai-buddy > "$OUT/probe-$3.log" 2>&1 &
+    local pid=$!
+    for _ in $(seq 1 40); do
+      grep -q 'hit-test:' "$OUT/probe-$3.log" 2> /dev/null && break
+      perl -e 'select(undef,undef,undef,0.25)'
+    done
+    # The first trace line fires before the window frame settles: applying the
+    # non-activating style mask resizes it, and until that lands the window
+    # reports a different scale factor and origin. Sample after it settles.
+    perl -e 'select(undef,undef,undef,2.5)'
+    line=$(grep 'hit-test:' "$OUT/probe-$3.log" | tail -1)
+    kill "$pid" 2> /dev/null
+    after=$(swift scripts/cursor-position.swift)
+
+    if [ "$before" != "$after" ]; then
+      continue # cursor moved; this attempt proves nothing
+    fi
+    if echo "$line" | grep -q "$3 "; then
+      echo "  PASS  $2"
+    else
+      echo "  FAIL  $2 (expected $3)"
+      echo "        $line"
+      HIT_FAILED=1
+    fi
+    return
   done
-  # The first trace line fires before the window frame settles: applying the
-  # non-activating style mask resizes it, and until that lands the window
-  # reports a different scale factor and origin. Sample after it settles, not
-  # at first sight of output.
-  perl -e 'select(undef,undef,undef,2.5)'
-  local line
-  line=$(grep 'hit-test:' "$OUT/probe-$3.log" | tail -1)
-  kill "$pid" 2> /dev/null
-  if echo "$line" | grep -q "$3 "; then
-    echo "  PASS  $2"
-  else
-    echo "  FAIL  $2 (expected $3)"
-    echo "        $line"
-    HIT_FAILED=1
-  fi
+  echo "  SKIP  $2 - cursor kept moving; rerun without touching the mouse"
 }
 
 HIT_FAILED=0
-# 32x32 art at scale 4 is 128 points; half of that centres it on the cursor.
-probe "$((LOCAL_X - 64)),$((LOCAL_Y - 64))" "cursor over drawn pixels swallows clicks" "HIT"
-probe "$LOCAL_X,$LOCAL_Y" "cursor over transparent pixels passes clicks through" "miss"
+# 32x32 art at scale 4 is 128 points. Offset 64 puts the cursor at the sprite's
+# centre, which is drawn; offset 0 puts it on the top-left corner, which is not.
+probe 64 "cursor over drawn pixels swallows clicks" "HIT"
+probe 0 "cursor over transparent pixels passes clicks through" "miss"
 
-CURSOR_AFTER=$(swift scripts/cursor-position.swift)
-if [ "$CURSOR_BEFORE" != "$CURSOR_AFTER" ]; then
-  echo "  NOTE  cursor moved during the probes ($CURSOR_BEFORE -> $CURSOR_AFTER);"
-  echo "        rerun without touching the mouse if either case failed."
-fi
 [ "$HIT_FAILED" = "1" ] && STATUS=1
 
 echo ""

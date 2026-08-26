@@ -7,8 +7,6 @@
 //! makes the overlay feel like a sprite on the desktop instead of a sheet of
 //! glass over it.
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 mod platform;
 
 use std::thread;
@@ -240,10 +238,6 @@ fn main() {
             // wrong default swallows a click; this one loses nothing.
             window.set_ignore_cursor_events(true)?;
 
-            let (position, size) = display_union(&window)?;
-            window.set_position(position)?;
-            window.set_size(size)?;
-
             // ponytail: on a mixed-height desktop the window lands a few points
             // above the union's top, because tao maps a logical top-left through
             // the primary display's height rather than the union's. Harmless
@@ -251,6 +245,10 @@ fn main() {
             // real position — but it leaves a thin strip of the taller display
             // uncovered. #4 owns clamping physics to the union and should fix
             // the origin properly.
+            let (position, size) = display_union(&window)?;
+            window.set_position(position)?;
+            window.set_size(size)?;
+
             eprintln!(
                 "overlay: union {:.0}x{:.0} at ({:.0},{:.0}); sprite {}x{} at ({},{})",
                 size.width,
