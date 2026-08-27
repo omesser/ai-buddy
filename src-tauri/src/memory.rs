@@ -19,6 +19,7 @@
 //! drive. Add the watcher when something has to *react* to an edit rather than
 //! merely see it.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -51,9 +52,14 @@ impl MemoryStore {
     /// to keep it one line — and the user is owed what actually landed in their
     /// file rather than what the Harness asked for. Returning it is what lets
     /// the write be shown instead of accumulating silently.
+    ///
+    /// Both arguments come from a Harness, so both are checked here: a fact with
+    /// nothing in it is a dud tool call, and writing it would leave a bare
+    /// bullet in a file the user is invited to read.
     pub fn remember(&self, heading: &str, fact: &str) -> io::Result<String> {
-        let recorded = bullet(fact);
-        self.write(with_fact(&self.recall()?, heading, &recorded))?;
+        let heading = non_empty("heading", heading)?;
+        let recorded = format!("- {}", non_empty("fact", fact)?);
+        self.write(with_fact(&self.recall()?, &heading, &recorded))?;
         Ok(recorded)
     }
 
@@ -69,22 +75,56 @@ impl MemoryStore {
             return Ok(None);
         }
 
-        let backup = backup_path(&self.path, epoch_seconds());
+        let backup = backup_path(&self.path);
         fs::write(&backup, &memory)?;
         self.write(String::new())?;
         Ok(Some(backup))
     }
 
     /// Replace Memory's contents, creating its directory on first use.
+    ///
+    /// Written beside Memory and renamed over it, which is atomic within a
+    /// filesystem: Memory is the old file or the new one, never a half-written
+    /// one. It is a file the user is invited to keep open in an editor, and
+    /// backups exist only on wipe, so there is nothing to recover a truncated
+    /// one from.
     fn write(&self, contents: String) -> io::Result<()> {
         if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&self.path, contents)
+        let mut name = self
+            .path
+            .file_name()
+            .unwrap_or(OsStr::new("memory"))
+            .to_os_string();
+        name.push(format!(".{}.tmp", std::process::id()));
+        let scratch = self.path.with_file_name(name);
+
+        if let Err(e) = fs::write(&scratch, contents)
+            .and_then(|()| keep_permissions_of(&self.path, &scratch))
+            .and_then(|()| fs::rename(&scratch, &self.path))
+        {
+            let _ = fs::remove_file(&scratch);
+            return Err(e);
+        }
+        Ok(())
     }
 }
 
-/// Where the backup of `path` taken at `stamp` lives.
+/// Give `scratch` the permissions `path` has, if `path` is there at all.
+///
+/// The replacement is a new file and would otherwise arrive with whatever the
+/// umask says. Memory holds what the buddies know about the user, so narrowing
+/// who can read it has to survive a write.
+fn keep_permissions_of(path: &Path, scratch: &Path) -> io::Result<()> {
+    match fs::metadata(path) {
+        Ok(existing) => fs::set_permissions(scratch, existing.permissions()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Where the backup of `path` lives.
 ///
 /// Beside Memory and with Memory's own extension, so the user finds it in the
 /// same folder and it still opens as Markdown.
@@ -93,11 +133,12 @@ impl MemoryStore {
 /// correctly and costs no date library; swap it for an ISO stamp if one ever
 /// arrives for another reason. Two wipes in the same second share a name, and
 /// the later one wins.
-fn backup_path(path: &Path, stamp: u64) -> PathBuf {
-    let stem = path.file_stem().map_or_else(
-        || "memory".to_string(),
-        |s| s.to_string_lossy().into_owned(),
-    );
+fn backup_path(path: &Path) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .unwrap_or(OsStr::new("memory"))
+        .to_string_lossy();
+    let stamp = epoch_seconds();
     let name = match path.extension() {
         Some(ext) => format!("{stem}-backup-{stamp}.{}", ext.to_string_lossy()),
         None => format!("{stem}-backup-{stamp}"),
@@ -160,20 +201,29 @@ fn is_heading(line: &str) -> bool {
 
 /// Whether `line` is the heading called `heading`.
 ///
-/// The level is ignored and the case is not compared: this only decides where to
-/// append, and treating a hand-typed `# facts` as a different section from
-/// `## Facts` would quietly split the user's Memory in two.
+/// Both sides are normalized the way a heading is written, so a section is
+/// always found under the name it was written under. The level is ignored, the
+/// case is not compared, and inner spacing is collapsed: treating a hand-typed
+/// `# facts`, or a `Daily  Facts` a Harness spaced its own way, as a different
+/// section from `## Daily Facts` would quietly split the user's Memory in two.
 fn names(line: &str, heading: &str) -> bool {
     is_heading(line)
-        && line
-            .trim_start_matches('#')
-            .trim()
-            .eq_ignore_ascii_case(heading.trim())
+        && one_line(line.trim_start_matches('#')).eq_ignore_ascii_case(&one_line(heading))
 }
 
-/// The Markdown line that records `fact`.
-fn bullet(fact: &str) -> String {
-    format!("- {}", one_line(fact))
+/// `text` collapsed onto one line, or `InvalidInput` if there is nothing in it.
+///
+/// A Harness supplies both a heading and a fact, and an empty one is a dud tool
+/// call rather than something to record: a bare `- ` is litter in a file the
+/// user is meant to read, and a bare `## ` is a section nothing can name.
+fn non_empty(label: &str, text: &str) -> io::Result<String> {
+    match one_line(text) {
+        text if text.is_empty() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("a {label} with nothing in it cannot be remembered"),
+        )),
+        text => Ok(text),
+    }
 }
 
 /// Collapse `text` onto one line.
@@ -437,6 +487,170 @@ Some notes I typed at the top, under no heading at all.
             memory.lines().filter(|line| line.starts_with('#')).count(),
             1,
             "and Memory still has only the heading ai-buddy wrote: {memory}"
+        );
+    }
+
+    /// A heading is a free-form argument a Harness supplies, so it arrives with
+    /// whatever spacing the model felt like. Writing it normalized while looking
+    /// it up raw would split the user's Memory into a fresh duplicate section on
+    /// every write.
+    #[test]
+    fn a_heading_that_needs_normalizing_still_finds_its_own_section() {
+        let dir = TempDir::new("repeat-heading");
+        let store = MemoryStore::new(dir.join("memory.md"));
+
+        store
+            .remember("Daily  Facts", "Oded's cat is called Simba")
+            .expect("remembering writes");
+        store
+            .remember("Daily  Facts", "Simba is ginger")
+            .expect("remembering writes again");
+
+        assert_eq!(
+            store.recall().expect("recall reads back"),
+            "\
+## Daily Facts
+
+- Oded's cat is called Simba
+- Simba is ginger
+",
+            "the second write joins the first section rather than opening a new one"
+        );
+    }
+
+    /// The user is invited to read this file. A dud tool call must not leave a
+    /// bullet with nothing after it in front of them.
+    #[test]
+    fn a_fact_or_heading_with_nothing_in_it_is_refused() {
+        let dir = TempDir::new("empty-fact");
+        let path = dir.join("memory.md");
+        let store = MemoryStore::new(&path);
+
+        let refused = store
+            .remember("Facts", "   \n\t ")
+            .expect_err("an empty fact is refused");
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
+
+        let refused = store
+            .remember("  ", "Oded's cat is called Simba")
+            .expect_err("an empty heading is refused");
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
+
+        assert!(
+            !path.exists(),
+            "and a refused write leaves the user's file alone"
+        );
+    }
+
+    /// Memory is a file the user is invited to keep open in an editor, and a
+    /// crash mid-write must not truncate it. Replacing the file by rename rather
+    /// than writing over it in place is what makes that impossible; a second
+    /// name for the old file is how a test can tell which one happened.
+    #[test]
+    fn a_write_replaces_memory_rather_than_writing_over_it_in_place() {
+        let dir = TempDir::new("atomic-write");
+        let path = dir.join("memory.md");
+        let store = MemoryStore::new(&path);
+        store
+            .remember("Facts", "Oded's cat is called Simba")
+            .expect("remembering writes");
+        let before = store.recall().expect("recall reads back");
+
+        let same_file = dir.join("still-the-old-one.md");
+        fs::hard_link(&path, &same_file).expect("a second name for the same file");
+        store
+            .remember("Facts", "Simba is ginger")
+            .expect("remembering writes again");
+
+        assert_eq!(
+            fs::read_to_string(&same_file).expect("the old file is readable"),
+            before,
+            "the file that was there is left whole, never truncated and rewritten"
+        );
+        assert!(
+            store
+                .recall()
+                .expect("recall reads back")
+                .contains("Simba is ginger"),
+            "while Memory itself has the new fact"
+        );
+
+        let mut left_behind: Vec<String> =
+            fs::read_dir(path.parent().expect("Memory has a folder"))
+                .expect("the folder is readable")
+                .map(|entry| {
+                    entry
+                        .expect("a directory entry")
+                        .file_name()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+        left_behind.sort();
+        assert_eq!(
+            left_behind,
+            ["memory.md", "still-the-old-one.md"],
+            "and no scratch file is left in the folder the user reads"
+        );
+    }
+
+    /// Memory is the user's file and holds what the buddies know about them. If
+    /// they have narrowed who can read it, replacing the file must not hand that
+    /// back — a new file starts from the umask, not from what stood there.
+    #[test]
+    fn a_write_keeps_the_permissions_the_user_set() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("permissions");
+        let path = dir.join("memory.md");
+        let store = MemoryStore::new(&path);
+        store
+            .remember("Facts", "Oded's cat is called Simba")
+            .expect("remembering writes");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .expect("the user narrows who can read Memory");
+
+        store
+            .remember("Facts", "Simba is ginger")
+            .expect("remembering writes again");
+
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("Memory is there")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600,
+            "Memory is still readable only by the user who narrowed it"
+        );
+    }
+
+    /// The user picks the path, so Memory need not be called memory.md or carry
+    /// an extension at all. The backup still has to be findable beside it.
+    #[test]
+    fn a_backup_is_named_after_memory_even_without_an_extension() {
+        let dir = TempDir::new("backup-name");
+        let store = MemoryStore::new(dir.join("notes"));
+        store
+            .remember("Facts", "Oded's cat is called Simba")
+            .expect("remembering writes");
+
+        let backup = store
+            .wipe()
+            .expect("wipe succeeds")
+            .expect("there was something to back up");
+        let name = backup
+            .file_name()
+            .expect("the backup has a name")
+            .to_string_lossy()
+            .into_owned();
+
+        let stamp = name
+            .strip_prefix("notes-backup-")
+            .unwrap_or_else(|| panic!("named after Memory: {name}"));
+        assert!(
+            !stamp.is_empty() && stamp.chars().all(|c| c.is_ascii_digit()),
+            "and stamped with when it was taken: {name}"
         );
     }
 }
