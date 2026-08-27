@@ -6,12 +6,18 @@
 // cannot see a non-activating panel that is excluded from the switcher, nor
 // report a window level at all.
 //
-// Why Swift and not Rust, in a Rust repository: CGWindowList lives in
-// CoreGraphics, which would mean adding a dependency purely for a dev tool.
-// Xcode is already required to build a Tauri app on macOS, so `swift` is
-// already installed and costs nothing. It also keeps the observer independent
-// of the app it observes, which is the point — the display-union bug was caught
-// precisely because this asks the window server, not the app.
+// Why Swift and not Rust, in a Rust repository: the crate's own WindowSource
+// now reads these same CoreGraphics calls, so the bindings are no longer the
+// obstacle. It cannot stand in for this, though — WindowSource is deliberately
+// blind to our own process, because the overlay spans every display and a
+// Character able to see it would find a Perch across the whole desktop and
+// never fall again. This script exists to observe precisely that window, so the
+// two want opposite things.
+//
+// Xcode is already required to build a Tauri app on macOS, so `swift` costs
+// nothing to run. Keeping the observer outside the app's own toolchain is worth
+// something on its own: the display-union bug was caught because this asks the
+// window server rather than asking the app what it believes.
 //
 // Uses CGWindowListCopyWindowInfo, which returns window bounds, owner and layer
 // with no permission prompt — the same call docs/SPEC.md specifies for
