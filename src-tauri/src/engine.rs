@@ -49,7 +49,8 @@ pub enum Verb {
     /// Present on every tick the sprite is held, not just on the press.
     Grab,
     /// A Grab released while moving. The Shell measures the cursor's velocity;
-    /// the Engine only flies it.
+    /// the Engine only flies it. Nothing else is a Throw, so one that arrives
+    /// while the sprite is not being held is ignored.
     Throw { velocity: Point },
     /// A click on the sprite.
     Poke,
@@ -169,11 +170,9 @@ impl Engine {
             self.state = State::Dragged;
             self.position = snapshot.cursor;
             self.velocity = Point::default();
-        } else if let Some(velocity) = thrown_velocity(snapshot) {
-            self.velocity = velocity;
-            self.state = State::Falling;
         } else if self.state == State::Dragged {
-            // Let go without velocity: it simply drops.
+            // Let go. With velocity that is a Throw; without, it simply drops.
+            self.velocity = thrown_velocity(snapshot).unwrap_or_default();
             self.state = State::Falling;
         }
 
@@ -325,7 +324,10 @@ fn displays_spanning<'a>(
         .filter(move |display| display.spans_x(x))
 }
 
-/// The screen edge the sprite has just arrived at while moving into it.
+/// The screen edge the sprite has just arrived at while moving into it, or the
+/// nearest one when it is already outside every display. A sprite out there has
+/// no floor under it and would otherwise fall for ever, so grabbing an edge is
+/// how it gets back over a display at all.
 ///
 /// ponytail: the outermost edges of all displays, not the true union of their
 /// frames. Gaps between non-aligned displays are #4's problem, and this is the
@@ -342,10 +344,12 @@ fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64
         .map(|display| display.x + display.width)
         .max_by(f64::total_cmp)?;
 
-    match velocity_x {
-        v if v > 0.0 && x >= right => Some(right),
-        v if v < 0.0 && x <= left => Some(left),
-        _ => None,
+    if x > right || (velocity_x > 0.0 && x >= right) {
+        Some(right)
+    } else if x < left || (velocity_x < 0.0 && x <= left) {
+        Some(left)
+    } else {
+        None
     }
 }
 
@@ -379,8 +383,8 @@ mod tests {
 
     /// A day in the life, as snapshots: the sprite falls onto a window, the
     /// window closes, it lands on the floor, dozes off, is poked awake, is
-    /// picked up and carried, is dropped, then is flung at the screen edge and
-    /// climbs it.
+    /// picked up and carried, is dropped, then is picked up again and flung at
+    /// the screen edge, which it climbs.
     fn a_day_in_the_life() -> Vec<WorldSnapshot> {
         let on_a_window = WorldSnapshot {
             windows: vec![Rect {
@@ -405,6 +409,11 @@ mod tests {
             ..snapshot(100)
         }));
         script.extend((0..10).map(|_| snapshot(100)));
+        script.push(WorldSnapshot {
+            cursor: Point { x: 500.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
         script.push(WorldSnapshot {
             verbs: vec![Verb::Throw {
                 velocity: Point {
@@ -501,6 +510,11 @@ mod tests {
     fn a_sprite_thrown_at_the_screen_edge_climbs_it_and_lets_go_at_the_top() {
         let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
 
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
         let grabbed_wall = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
                 velocity: Point { x: 2000.0, y: 0.0 },
@@ -654,5 +668,88 @@ mod tests {
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0, "the display's bottom edge");
         assert_eq!(landed.velocity, Point::default(), "at rest");
+    }
+
+    #[test]
+    fn a_window_is_passed_through_from_below_and_landed_on_from_above() {
+        let window = WorldSnapshot {
+            windows: vec![Rect {
+                x: 50.0,
+                y: 400.0,
+                width: 300.0,
+                height: 200.0,
+            }],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 550.0 });
+
+        // Held inside the window, below its top edge, and flung straight up.
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 100.0, y: 550.0 },
+            verbs: vec![Verb::Grab],
+            ..window.clone()
+        });
+        let thrown = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 0.0, y: -1000.0 },
+            }],
+            ..window.clone()
+        });
+        assert_eq!(
+            thrown.state,
+            State::Falling,
+            "the edge above it is not a surface from underneath: {thrown:?}"
+        );
+
+        let risen = (0..2).map(|_| engine.tick(&window)).last().unwrap();
+        assert!(
+            risen.position.y < 400.0,
+            "it rises through the top edge: {risen:?}"
+        );
+        assert_eq!(risen.state, State::Falling);
+
+        // The same edge, approached from above, catches it.
+        let perched = settle(&mut engine, &window);
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0, "the window's top edge");
+    }
+
+    #[test]
+    fn a_sprite_over_no_display_is_recovered_onto_the_nearest_one() {
+        // A display was unplugged out from under it: nothing spans its x, so
+        // there is no floor beneath it and nothing to fall towards.
+        let mut engine = Engine::new(Point { x: 2000.0, y: 0.0 });
+
+        let caught = engine.tick(&snapshot(100));
+        assert_eq!(caught.position.x, 1000.0, "hauled back to the nearest edge");
+
+        let landed = settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            landed.state,
+            State::Grounded,
+            "it stops falling: {landed:?}"
+        );
+        assert_eq!(landed.position.y, 800.0, "the display's bottom edge");
+    }
+
+    #[test]
+    fn a_throw_is_the_release_of_a_grab_so_a_resting_sprite_ignores_one() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let resting = settle(&mut engine, &snapshot(100));
+        assert_eq!(resting.state, State::Grounded);
+
+        // A Throw with nothing holding the sprite is not a Throw at all.
+        let unmoved = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: 2000.0,
+                    y: -400.0,
+                },
+            }],
+            ..snapshot(100)
+        });
+        assert_eq!(unmoved.state, State::Grounded, "not flung: {unmoved:?}");
+        assert_eq!(unmoved.position, resting.position);
+        assert_eq!(unmoved.velocity, Point::default());
     }
 }
