@@ -17,8 +17,10 @@ use objc2_foundation::{ns_string, NSArray, NSDictionary, NSNumber, NSString};
 
 use super::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 
-/// Enough for any desk. `CGGetActiveDisplayList` truncates rather than failing,
-/// so the seventeenth display would simply be missing from the physics.
+/// ponytail: a fixed sixteen displays, because `CGGetActiveDisplayList`
+/// truncates rather than failing and the seventeenth display would silently go
+/// missing from the physics. Call it twice — once with a null buffer for the
+/// count — if anyone ever plugs in more.
 const MAX_DISPLAYS: u32 = 16;
 
 /// The macOS window server's view of the desktop.
