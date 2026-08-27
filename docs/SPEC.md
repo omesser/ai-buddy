@@ -236,6 +236,19 @@ Three concentric parts:
   `Director`, `MemoryManifest`, `Clock`, renderer.
 - **Shell** — the Tauri app, tray, windows, settings, MCP server, Harness attachment.
 
+These are enforced by the crate layout, not only by convention. The workspace has
+a **core crate** carrying the Engine, the overlay hit-testing arithmetic, and
+Memory, which depends on neither `tauri` nor any platform binding; and a **shell
+crate** depending on core, which holds `main.rs`, the Tauri setup, the AppKit
+panel work, and `WindowSource`. Memory performs file I/O and belongs in core
+regardless: the rule is no platform or toolkit dependency, not no I/O.
+
+The purpose is to make the Engine's purity a build property rather than a
+property of the source that the next change can quietly remove. It also lets the
+core crate's tests and lints run on a Linux runner, where the shell cannot be
+compiled at all. Tracked as issue #23; the layout is single-crate until that
+lands.
+
 ### The Engine seam
 
 The Engine is the single seam for the entire Spatial Layer and the Director's observable
