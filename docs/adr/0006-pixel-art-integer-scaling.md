@@ -2,9 +2,10 @@
 
 Characters are authored as true low-resolution pixel art on a fixed grid and
 rendered with nearest-neighbour filtering at integer scale factors only
-(`image-rendering: pixelated`). Assets are PNG sprite strips plus a JSON manifest
-declaring frame size, count, fps, and loop mode per Animation — the format
-Aseprite exports natively and every 2D engine understands.
+(`image-rendering: pixelated`). Assets are PNG sprite strips plus a JSON
+Character Manifest declaring frame size, count, fps, and loop mode per
+Animation — the format Aseprite exports natively and every 2D engine
+understands.
 
 A future reader on a Retina display will see a deliberately blocky sprite and
 wonder why it was not drawn at native resolution. This is the reason.
@@ -16,8 +17,8 @@ wonder why it was not drawn at native resolution. This is the reason.
   author, and the pixel grid — which is what made these characters readable at
   32px in the first place — is gone.
 - **Per-Character render mode.** Each package declares whether it wants pixelated
-  or smooth rendering. Kept possible via a `render_mode` field in the manifest,
-  but not implemented now.
+  or smooth rendering. Kept possible via a `render_mode` field in the Character
+  Manifest, but not implemented now.
 
 ## Consequences
 

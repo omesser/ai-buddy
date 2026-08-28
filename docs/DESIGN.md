@@ -142,7 +142,7 @@ mochi/
 ├── behaviors.json        # named Behaviors: Primitive sequences, weights, triggers
 ├── personality.md        # Personality Prompt — demeanour only, never capability
 └── sprites/
-    ├── idle.png          # PNG strips; frame size + count declared in manifest
+    ├── idle.png          # PNG strips; sizes in the Character Manifest
     ├── walk.png
     └── ...
 ```

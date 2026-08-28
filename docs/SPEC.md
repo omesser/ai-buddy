@@ -152,7 +152,7 @@ that adding a character is drawing, not programming.
 ### Character packages
 
 42. As a character author, I want to create a character by supplying artwork and a
-    manifest, so that making one is drawing rather than programming.
+    Character Manifest, so that making one is drawing rather than programming.
 43. As a character author, I want a small required animation set, so that I can ship a
     working character in an evening.
 44. As a character author, I want to supply extra animations beyond the required set and
@@ -301,8 +301,8 @@ Disturb, and a global hotkey.
 
 ### Character Package
 
-A directory or archive containing a manifest, animation frames, a Personality Prompt, and
-Behavior declarations.
+A directory or archive containing a Character Manifest, animation frames, a
+Personality Prompt, and Behavior declarations.
 
 The engine owns **Primitives**. A Character composes them and cannot define new ones. A
 **Behavior** is a named sequence of Primitives with weights and trigger conditions,
@@ -337,7 +337,7 @@ v1 context is the free sensing tier only — frontmost application name, idle du
 of day, recent Behavior identifiers, and the active Character's Personality Prompt. No
 window titles, no screen capture, no clipboard, no input contents.
 
-The exact payload is inspectable in settings.
+The exact payload is the Character Prompt, inspectable in settings.
 
 Two implementations ship:
 
@@ -385,7 +385,7 @@ A Harness is attached by user configuration. One first-party adapter ships so th
 out-of-box path is not "install a harness first." Any MCP-capable harness can attach
 directly. No provider abstraction layer is built; MCP is that layer.
 
-Actions taken by the Harness are surfaced in an action log. ai-buddy adds no confirmation
+Actions taken by the Harness are surfaced in the Action Log. ai-buddy adds no confirmation
 of its own for acting, and owns consent only for sensing. A denylist is ai-buddy's
 regardless of Harness permissions: password fields and user-excluded applications never
 enter any sensing tool result.
