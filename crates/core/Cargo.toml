@@ -1,0 +1,10 @@
+[package]
+name = "ai-buddy-core"
+description = "ai-buddy's pure core: engine, character packages, memory, and the adapter traits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+png = "0.18"

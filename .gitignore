@@ -1,4 +1,6 @@
-# Rust
+# Rust — the workspace target, plus the pre-workspace one that old checkouts
+# may still carry
+/target/
 /src-tauri/target/
 
 # Tauri code generation

@@ -9,12 +9,6 @@
 
 use std::time::{Duration, SystemTime};
 
-#[cfg(target_os = "macos")]
-mod macos;
-
-#[cfg(target_os = "macos")]
-pub use macos::MacosActivitySource;
-
 /// What the operating system will report about the person using it without
 /// asking them for anything.
 pub trait ActivitySource {

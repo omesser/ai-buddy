@@ -20,7 +20,7 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: check-toml
-        exclude: ^src-tauri/Cargo\.lock$
+        exclude: ^Cargo\.lock$
       - id: check-executables-have-shebangs
 
     # Cross platform
@@ -40,14 +40,14 @@ repos:
         additional_dependencies: ["tomli"]
         # "crate" is Rust vocabulary, not a misspelling of "create".
         args: ["--ignore-words-list=crate,crates"]
-        exclude: ^(src-tauri/Cargo\.lock|.*\.png)$
+        exclude: ^(Cargo\.lock|.*\.png)$
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
     hooks:
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
-        exclude: ^src-tauri/Cargo\.lock$
+        exclude: ^Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
 
@@ -63,10 +63,13 @@ repos:
   - repo: local
     hooks:
       - id: swiftc-typecheck
-        name: swiftc typecheck
+        name: swiftc typecheck (macOS only)
         # One file at a time: top-level code is only legal in a single-file
         # compilation, and these are scripts, not a module.
-        entry: bash -c 'for f in "$@"; do swiftc -typecheck "$f" || exit 1; done' --
+        #
+        # swiftc ships with Xcode, so this genuinely cannot run elsewhere —
+        # unlike the clippy split above, no restructuring makes it portable.
+        entry: bash -c 'if [ "$(uname -s)" != Darwin ]; then echo "skipped - swiftc ships with Xcode"; exit 0; fi; for f in "$@"; do swiftc -typecheck "$f" || exit 1; done' --
         language: system
         types: [swift]
 
@@ -75,16 +78,30 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        entry: cargo fmt --manifest-path src-tauri/Cargo.toml --all --
+        entry: cargo fmt --all --
         args: [--check]
         language: system
         types: [rust]
         pass_filenames: false
 
-      - id: cargo-clippy
-        name: cargo clippy
-        entry: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --
+      # Split by portability, not by taste. The core crate depends on no
+      # platform binding, so it lints anywhere — including a Linux contributor's
+      # laptop and the Linux CI job.
+      - id: cargo-clippy-core
+        name: cargo clippy (core)
+        entry: cargo clippy -p ai-buddy-core --all-targets --
         args: [-D, warnings]
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # The shell is AppKit and Tauri, so it only compiles on macOS. The hook
+      # says so itself rather than leaving CI to remember: pre-commit has no
+      # platform key, and a SKIP list in a workflow puts that knowledge in the
+      # wrong file.
+      - id: cargo-clippy-shell
+        name: cargo clippy (shell, macOS only)
+        entry: bash -c 'if [ "$(uname -s)" != Darwin ]; then echo "skipped - the shell needs macOS"; exit 0; fi; exec cargo clippy -p ai-buddy --all-targets -- -D warnings' --
         language: system
         types: [rust]
         pass_filenames: false

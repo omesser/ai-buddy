@@ -1,14 +1,10 @@
 [package]
 name = "ai-buddy"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.77"
 description = "A desktop companion that lives on your screen"
-license = "MIT"
-
-[lib]
-name = "ai_buddy"
-path = "src/lib.rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "ai-buddy"
@@ -19,7 +15,7 @@ tauri-build = {version = "2", features = []}
 
 [dependencies]
 tauri = {version = "2", features = ["macos-private-api"]}
-png = "0.18"
+ai-buddy-core = {path = "../crates/core"}
 serde = {version = "1", features = ["derive"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]

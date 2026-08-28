@@ -1,0 +1,12 @@
+# The split docs/SPEC.md describes: a core crate that depends on no platform
+# binding, and a shell that does. `cargo tree -p ai-buddy-core` is the check.
+
+[workspace]
+resolver = "2"
+members = ["crates/core", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"

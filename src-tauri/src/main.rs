@@ -18,12 +18,12 @@ mod platform;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy::engine::Engine;
-use ai_buddy::overlay::{
+use ai_buddy_core::engine::Engine;
+use ai_buddy_core::overlay::{
     cursor_in_window, display_union as overlay_union, place_sprite, AlphaMask, DisplayReport,
 };
-use ai_buddy::snapshot::{starting_position, SnapshotAssembler};
-use ai_buddy::window_source::WindowSource;
+use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
+use ai_buddy_core::window_source::WindowSource;
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -98,21 +98,6 @@ fn display_union(
     ))
 }
 
-/// The platform's view of the desktop.
-///
-/// Windows is stubbed deliberately; see `docs/SPEC.md`. The stub declares no
-/// capabilities, so the sprite falls to the screen edges and finds no Perches,
-/// which is a supported degraded mode rather than an error.
-#[cfg(target_os = "macos")]
-fn window_source() -> impl WindowSource {
-    ai_buddy::window_source::MacosWindowSource::new()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn window_source() -> impl WindowSource {
-    ai_buddy::window_source::StubWindowSource
-}
-
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -124,7 +109,7 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
         let (art_width, art_height) = mask.size();
         let (width, height) = (art_width * SPRITE_SCALE, art_height * SPRITE_SCALE);
 
-        let source = window_source();
+        let source = platform::window_source();
         let mut engine = Engine::new(starting_position(&source.snapshot()));
         let mut assembler = SnapshotAssembler::new(source);
 
@@ -183,7 +168,7 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                 elapsed_ms,
                 // The Engine works in points across every display, which is the
                 // space the cursor reading becomes once its own scale is undone.
-                ai_buddy::engine::Point {
+                ai_buddy_core::engine::Point {
                     x: cursor.x / cursor_scale,
                     y: cursor.y / cursor_scale,
                 },
