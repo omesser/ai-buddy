@@ -11,11 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Split by capability, not by language: `checks` runs everything that works
-  # without a macOS toolchain, `macos` runs the rest.
+  # One job, both platforms. The differences between them are tool installation
+  # and two hooks that guard themselves on uname — not what gets checked, so
+  # they do not warrant separate job definitions.
+  #
+  # The whole workspace is built and tested on Linux as well as macOS. The shell
+  # is a Tauri app, so on Linux it needs GTK and WebKit development headers, but
+  # nothing in this repository is macOS-only at the source level: platform.rs
+  # carries a non-macOS arm for every decision. A review of this branch found
+  # that arm had silently rotted, and nothing caught it because the shell was
+  # built on one platform only. This is that gap closed.
   checks:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
+    strategy:
+      # One platform failing should still report the other, since the whole
+      # point is telling them apart.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - name: Check out the repository
@@ -23,10 +37,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: ${{ matrix.os }}
+
       - name: Install shfmt
         # Pinned, like rust-toolchain.toml: a formatter that updates itself can
-        # reformat the whole repo and fail an unrelated pull request. Keep this
-        # in step with what contributors run locally.
+        # reformat the whole repo and fail an unrelated pull request.
         #
         # Resolved by direct URL rather than by grepping the releases API. The
         # obvious one-liner uses `grep -E "https://.+?linux_amd64"`, but ERE has
@@ -35,99 +62,60 @@ jobs:
         env:
           SHFMT_VERSION: v3.13.1
         run: |
+          case "${{ runner.os }}" in
+            Linux) asset=linux_amd64 ;;
+            macOS) asset=darwin_arm64 ;;
+          esac
           curl -fsSL -o shfmt \
-            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
-          chmod +x shfmt && sudo mv shfmt /usr/bin/
+            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_${asset}"
+          chmod +x shfmt && sudo mv shfmt /usr/local/bin/
           shfmt --version
 
       - name: Install shellcheck
-        run: sudo apt update && sudo apt install -y shellcheck
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          else
+            brew install shellcheck
+          fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      - name: Install Rust
-        # Before pre-commit, which runs cargo fmt and lints the core crate.
-        run: rustup toolchain install stable --profile minimal --component clippy
+      - name: Install the Tauri system libraries
+        # Only Linux needs these: macOS has WebKit in the system already. Without
+        # them the shell crate cannot link, which is why it used to be built on
+        # macOS alone.
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev
 
       - name: Run pre-commit
-        # No SKIP list. The two hooks that need macOS say so themselves and exit
-        # cleanly here, printing why — pre-commit has no platform key, and a SKIP
-        # list in this file would put that knowledge somewhere a contributor
-        # running the hooks locally never sees.
+        # No SKIP list. The hooks that need macOS test uname themselves and exit
+        # cleanly elsewhere, printing why — pre-commit has no platform key, and a
+        # SKIP list here would hide that from anyone running the hooks locally.
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
 
       - name: Core crate reaches no platform binding
-        # The point of the split, checked rather than trusted: if a platform
-        # dependency reaches the core, this fails on the one runner that could
-        # never compile it.
+        # The property the crate split exists to guarantee.
+        #
+        # --target all, not the host: a dependency behind
+        # [target.'cfg(target_os = "macos")'.dependencies] is invisible to a
+        # host-only tree, which is exactly how it would come back.
         run: |
-          # --target all, not the host: a dependency behind
-          # [target.'cfg(target_os = "macos")'.dependencies] is invisible to a
-          # host-only tree on Linux, which is exactly how it would come back.
           tree=$(cargo tree -p ai-buddy-core --target all)
           if echo "$tree" | grep -qE '\b(tauri|objc2)'; then
             echo "core reaches a platform binding:"; echo "$tree"; exit 1
           fi
 
-      - name: Core tests, on Linux and x86_64
-        # Not redundant with the macOS job. The core is float-heavy coordinate
-        # arithmetic, and this is the only place it runs on x86_64 — the macOS
-        # runner is arm64.
-        #
+      - name: Tests
         # --doc as well as --all-targets: --all-targets excludes doctests, so a
         # `///` example would otherwise never run anywhere.
-        run: |
-          cargo test -p ai-buddy-core --all-targets
-          cargo test -p ai-buddy-core --doc
-
-  macos:
-    timeout-minutes: 30
-    # What the `checks` job could not do. The shell is AppKit and Tauri needs a
-    # system webview, so the whole workspace only compiles here; see docs/SPEC.md
-    # on Windows being stubbed for v1.
-    runs-on: macos-latest
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7
-
-      - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: .
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-
-      # Only the hooks the `checks` job could not run, by id. Running them all
-      # here instead would mean installing shfmt and shellcheck on this runner
-      # to redo work Linux already did — the first attempt at that failed
-      # exactly there.
-      #
-      # These are the hooks whose names end in "(macOS only)". They still carry
-      # their own uname guard, so running one on Linux reports why rather than
-      # failing; the guard is for contributors, this list is for cost.
-      - name: Hooks that need macOS
-        run: |
-          pip install pre-commit
-          pre-commit run cargo-clippy-shell --all-files --show-diff-on-failure
-          pre-commit run swiftc-typecheck --all-files --show-diff-on-failure
-
-      # Not a hook: the suite is too slow to sit in front of every commit.
-      #
-      # The whole workspace, so this is the only place the shell's own tests run
-      # at all — Linux covers the core, on a different architecture.
-      - name: Tests, whole workspace
         run: |
           cargo test --all-targets
           cargo test --doc
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
-      # and a logged-in desktop session, which a runner does not have.
+      # and a logged-in desktop session, which no runner has.
