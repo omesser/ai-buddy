@@ -1,7 +1,10 @@
 version: 2
 
 updates:
-  - directory: "/src-tauri"
+  # The workspace root, not src-tauri. The crate split moved Cargo.lock here and
+  # left src-tauri without one, which Dependabot reports as an error rather than
+  # as nothing to do.
+  - directory: "/"
     package-ecosystem: "cargo"
     schedule:
       interval: "weekly"
