@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "Tauri denies the webview every core command unless a capability grants it, and with no capability at all the overlay could not hear the Frame the Shell pushes it each tick - it drew nothing, silently. Listening for events is the only thing it needs: it holds no state, reads no files, and calls no command of its own.",
+  "windows": [
+    "overlay"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

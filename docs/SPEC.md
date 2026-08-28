@@ -254,7 +254,7 @@ lands.
 The Engine is the single seam for the entire Spatial Layer and the Director's observable
 effect. Its contract:
 
-- Input: a `WorldSnapshot` carrying display frames, visible window rectangles in
+- Input: a `WorldSnapshot` carrying display frames, Perch-eligible window rectangles in
   descending z-order, cursor position, pending interaction verbs, elapsed time since the
   previous tick, and any Behavior proposal delivered since the last tick.
 - Output: a `Frame` carrying sprite position and velocity, current State, current
@@ -271,6 +271,13 @@ model, and no waiting.
 polls `CGWindowListCopyWindowInfo` at approximately 10Hz, which returns window bounds,
 owning application name, and layer with no permission prompt. Window titles require
 Screen Recording consent and are not used in v1.
+
+Window level is a platform concept and stays in the Shell. The Shell drops every window
+above or below the ordinary application level while assembling the snapshot, so the menu
+bar, the Dock and other system overlays are never Perches, and the Engine is handed a
+world in which every rectangle is one. Elapsed time is clamped to one poll interval on
+the same seam: after a sleep or a suspend the world is stale anyway, and integrating
+minutes of gravity against it would fling the sprite off the desktop.
 
 Smoothness is the renderer's responsibility. The Engine interpolates between polls rather
 than depending on event fidelity.

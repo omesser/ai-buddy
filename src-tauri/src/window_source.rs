@@ -54,7 +54,10 @@ pub struct WindowRect {
     /// The owning application's name, as the window server reports it.
     pub owner: String,
     /// The window server's level: 0 for ordinary application windows, higher
-    /// for menus, docks and other overlays. The Engine decides what is a Perch.
+    /// for menus, docks and other overlays, lower for the desktop picture and
+    /// its notifications. Reported rather than acted on here: the Shell reads
+    /// it when it assembles a `WorldSnapshot` and keeps only the levels a
+    /// sprite may stand on, so the Engine never sees a level at all.
     pub layer: i32,
 }
 
