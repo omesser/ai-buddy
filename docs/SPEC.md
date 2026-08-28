@@ -486,6 +486,29 @@ platform-specific, and expensive to fake convincingly. Click-through in particul
 listed as a known risk and is checked manually against overlapping windows on multiple
 displays.
 
+This list exempts **behavior that needs a window server**, not code that happens to sit
+beside it. Arithmetic is never exempt, wherever it lives. A coordinate conversion in
+`main.rs` is as testable as one in the Engine, and the file it occupies says nothing
+about whether it can fail quietly.
+
+### A bug in pure logic earns a test before the fix ships
+
+Whichever file it was found in, and whether or not the seam was agreed in advance.
+
+This rule is written from four of them, every one pure arithmetic, every one found by
+measuring a running program rather than by review:
+
+- The display union computed in physical pixels, producing a 7296x2234 overlay on a
+  3648x1117 desktop.
+- The cursor converted with one scale factor across two different physical spaces.
+- The window level discarded, so the Dock and the menu bar became Perches.
+- The one-way platform rule, which could be inverted with every test still passing.
+
+Each was understood and written up when it was fixed. Two got a test at the time and two
+did not, and the two that did not were rediscovered later by mutating the code to see
+whether anything noticed. A commit message explaining why a bug happened warns a reader
+who may never arrive; a test warns the next change.
+
 ## Out of Scope
 
 Deferred to a later version, decided but not built:
