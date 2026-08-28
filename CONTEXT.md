@@ -21,7 +21,7 @@ _Avoid_: Skin, theme, mod, plugin
 **Character Manifest**:
 The declaration at the root of a Character Package: frame size, count, fps and
 loop mode per Animation, plus the Behaviors the Character declares.
-_Avoid_: Manifest on its own — Memory has one too, so always say which
+_Avoid_: Manifest on its own — a Memory Manifest is one too
 
 **Personality Prompt**:
 The natural-language description of who a Character is, carried in its package
@@ -46,6 +46,11 @@ The single durable record of what the buddies know about the user. Shared by
 every Character Instance, and owned by the user: readable, editable in any text
 editor, and wipeable.
 _Avoid_: History, context, knowledge base, store, profile
+
+**Memory Manifest**:
+The on-disk form of Memory: one Markdown file of facts under stable headings,
+which the user may read and edit by hand.
+_Avoid_: Manifest on its own — a Character Package has one too
 
 ### Life on screen
 
