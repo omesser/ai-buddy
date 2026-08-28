@@ -51,11 +51,18 @@ impl ActivitySource for MacosActivitySource {
             CGEventSourceStateID::HIDSystemState,
             ANY_INPUT_EVENT,
         );
-        // Negative, infinite and NaN all mean the window server told us
-        // something we cannot use. Zero is the safe reading: it says the user is
-        // here, which at worst keeps the Character awake.
-        Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)
+        idle_from_seconds(seconds)
     }
+}
+
+/// Turn the window server's reading into a duration.
+///
+/// Negative, infinite and NaN all mean it told us something we cannot use. Zero
+/// is the safe reading: it says the user is here, which at worst keeps the
+/// Character awake, where a wrong large value would put it to sleep on a machine
+/// somebody is working at.
+fn idle_from_seconds(seconds: f64) -> Duration {
+    Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)
 }
 
 #[cfg(test)]
@@ -107,5 +114,23 @@ mod tests {
 
             std::thread::sleep(Duration::from_secs(1));
         }
+    }
+
+    /// The window server can report a reading that is not a duration. Each of
+    /// these is a real possibility from a C API returning a bare double, and
+    /// `Duration::try_from_secs_f64` rejects all three.
+    #[test]
+    fn an_unusable_idle_reading_is_treated_as_the_user_being_here() {
+        assert_eq!(idle_from_seconds(-1.0), Duration::ZERO, "negative");
+        assert_eq!(idle_from_seconds(f64::NAN), Duration::ZERO, "not a number");
+        assert_eq!(idle_from_seconds(f64::INFINITY), Duration::ZERO, "infinite");
+    }
+
+    /// Zero is also the safe reading, so a usable value has to be carried
+    /// through rather than flattened with the rest.
+    #[test]
+    fn a_usable_idle_reading_is_carried_through() {
+        assert_eq!(idle_from_seconds(0.0), Duration::ZERO);
+        assert_eq!(idle_from_seconds(90.5), Duration::from_millis(90_500));
     }
 }
