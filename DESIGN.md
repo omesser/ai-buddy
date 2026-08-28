@@ -249,7 +249,7 @@ capture cadence. It owns **no** consent for acting, and does not duplicate the
 Harness's confirmation prompts. Two dialogs for one click teaches users to click
 through both.
 
-Harness activity is surfaced in a visible action log. One denylist stays
+Harness activity is surfaced in a visible Action Log. One denylist stays
 ai-buddy's regardless of what the Harness permits: password fields and
 explicitly excluded applications never enter a Capture.
 

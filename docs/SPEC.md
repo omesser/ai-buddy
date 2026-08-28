@@ -324,7 +324,7 @@ v1 context is the free sensing tier only — frontmost application name, idle du
 of day, recent Behavior identifiers, and the active Character's Personality Prompt. No
 window titles, no screen capture, no clipboard, no input contents.
 
-The exact payload is inspectable in settings.
+The exact payload is the Character Prompt, inspectable in settings.
 
 Two implementations ship:
 
@@ -372,7 +372,7 @@ A Harness is attached by user configuration. One first-party adapter ships so th
 out-of-box path is not "install a harness first." Any MCP-capable harness can attach
 directly. No provider abstraction layer is built; MCP is that layer.
 
-Actions taken by the Harness are surfaced in an action log. ai-buddy adds no confirmation
+Actions taken by the Harness are surfaced in the Action Log. ai-buddy adds no confirmation
 of its own for acting, and owns consent only for sensing. A denylist is ai-buddy's
 regardless of Harness permissions: password fields and user-excluded applications never
 enter any sensing tool result.

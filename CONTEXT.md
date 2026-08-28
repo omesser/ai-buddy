@@ -26,7 +26,13 @@ _Avoid_: Manifest on its own — a Memory Manifest is one too
 **Personality Prompt**:
 The natural-language description of who a Character is, carried in its package
 and supplied to the Director. Governs demeanour only, never capability.
-_Avoid_: System prompt, persona file
+_Avoid_: System prompt — that is the Character Prompt, which carries this and more
+
+**Character Prompt**:
+The whole payload the Director sends to the model on one wake: the Character's
+Personality Prompt, the current sensing context, and recent Behavior identifiers.
+Assembled per wake and inspectable in settings, never authored by hand.
+_Avoid_: Persona, preamble, prompt template
 
 **Animation**:
 A named frame sequence belonging to a Character. Pure art with no logic.
@@ -100,6 +106,12 @@ _Avoid_: Backend, provider, model
 Whatever posts synthetic mouse and keyboard events to the operating system.
 Owned by the Harness or a desktop-control MCP server, not by ai-buddy.
 _Avoid_: Driver, automation layer, robot
+
+**Action Log**:
+The readable record of what the Functional Layer did and why: the Character
+Prompts sent, the answers returned, and the actions the Harness took. Points at
+the Harness's own session dump rather than copying it.
+_Avoid_: Memory log, transcript, audit trail
 
 ### Sensing
 
