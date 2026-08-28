@@ -30,3 +30,31 @@ objc2-app-kit = {version = "0.3", features = [
   "NSResponder",
   "NSApplication"
 ]}
+# The window list and the display list. Both crates are already compiled as
+# dependencies of objc2-app-kit; naming them here declares what we call
+# directly rather than pulling anything new in. The alternative is hand-written
+# `extern "C"` declarations of the same CoreGraphics symbols.
+#
+# `default-features = false` throughout: these crates default to binding whole
+# frameworks, which drags in Metal for a window list.
+objc2-core-foundation = {version = "0.3", default-features = false, features = [
+  "std",
+  "CFCGTypes",
+  "CFDictionary"
+]}
+objc2-core-graphics = {version = "0.3", default-features = false, features = [
+  "std",
+  "objc2",
+  "CGDirectDisplay",
+  "CGError",
+  "CGGeometry",
+  "CGWindow"
+]}
+objc2-foundation = {version = "0.3", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSDictionary",
+  "NSEnumerator",
+  "NSString",
+  "NSValue"
+]}
