@@ -48,22 +48,18 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Rust
+        # Before pre-commit, which runs cargo fmt and lints the core crate.
+        run: rustup toolchain install stable --profile minimal --component clippy
+
       - name: Run pre-commit
-        env:
-          # Two hooks cannot run here, and the `macos` job runs exactly these
-          # two. Keep the lists in step.
-          #   cargo-clippy      compiles the whole workspace, and the shell half
-          #                     needs the macOS windowing stack
-          #   swiftc-typecheck  swiftc ships with Xcode
-          # Everything else, cargo fmt included, is platform-independent and
-          # runs here once.
-          SKIP: cargo-clippy,swiftc-typecheck
+        # No SKIP list. The two hooks that need macOS say so themselves and exit
+        # cleanly here, printing why — pre-commit has no platform key, and a SKIP
+        # list in this file would put that knowledge somewhere a contributor
+        # running the hooks locally never sees.
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
-
-      - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --component clippy
 
       - name: Core crate builds and passes with no platform binding
         # The point of the split, checked rather than trusted: if a platform
@@ -77,7 +73,6 @@ jobs:
           if echo "$tree" | grep -qE '\b(tauri|objc2)'; then
             echo "core reaches a platform binding:"; echo "$tree"; exit 1
           fi
-          cargo clippy -p ai-buddy-core --all-targets -- -D warnings
           cargo test -p ai-buddy-core
 
   macos:
@@ -101,15 +96,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      # The two hooks the `checks` job skips, run from the same
-      # .pre-commit-config.yaml rather than restated here. Repeating the commands
-      # in this file would let CI and the hook config drift apart silently, and
-      # the hook config is what contributors run locally.
-      - name: Hooks that need macOS
+      # The same command the `checks` job runs. Here the macOS-only hooks
+      # actually execute instead of reporting why they cannot, so neither job
+      # needs to know which hooks those are.
+      - name: Run pre-commit
         run: |
           pip install pre-commit
-          pre-commit run cargo-clippy --all-files --show-diff-on-failure
-          pre-commit run swiftc-typecheck --all-files --show-diff-on-failure
+          pre-commit run --all-files --show-diff-on-failure
 
       # Not a hook: the suite is too slow to sit in front of every commit.
       - name: Tests
