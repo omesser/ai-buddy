@@ -96,13 +96,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      # The same command the `checks` job runs. Here the macOS-only hooks
-      # actually execute instead of reporting why they cannot, so neither job
-      # needs to know which hooks those are.
-      - name: Run pre-commit
+      # Only the hooks the `checks` job could not run, by id. Running them all
+      # here instead would mean installing shfmt and shellcheck on this runner
+      # to redo work Linux already did — the first attempt at that failed
+      # exactly there.
+      #
+      # These are the hooks whose names end in "(macOS only)". They still carry
+      # their own uname guard, so running one on Linux reports why rather than
+      # failing; the guard is for contributors, this list is for cost.
+      - name: Hooks that need macOS
         run: |
           pip install pre-commit
-          pre-commit run --all-files --show-diff-on-failure
+          pre-commit run cargo-clippy-shell --all-files --show-diff-on-failure
+          pre-commit run swiftc-typecheck --all-files --show-diff-on-failure
 
       # Not a hook: the suite is too slow to sit in front of every commit.
       - name: Tests
