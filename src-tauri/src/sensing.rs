@@ -1,0 +1,247 @@
+//! The Free sensing tier: what the machine will say for free.
+//!
+//! `docs/SPEC.md` gives the Director exactly this much context in v1 — the
+//! frontmost application's name, how long the user has been idle, and the time
+//! of day. ADR-0005 calls that the Free tier because none of it costs a
+//! permission prompt. Window titles, screen content, the clipboard and input
+//! contents are the Ambient and On-Demand tiers, and are absent here by
+//! construction rather than by policy.
+
+use std::time::{Duration, SystemTime};
+
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "macos")]
+pub use macos::MacosActivitySource;
+
+/// What the operating system will report about the person using it without
+/// asking them for anything.
+pub trait ActivitySource {
+    /// The frontmost application's name, or `None` when nothing is frontmost or
+    /// the platform will not say.
+    fn frontmost_application(&self) -> Option<String>;
+
+    /// How long since the last keyboard, mouse or trackpad input anywhere on the
+    /// machine. Zero while the user is typing.
+    fn idle(&self) -> Duration;
+}
+
+/// Wall-clock time, behind a trait so that nothing else reads it directly.
+///
+/// The Director's context carries the time of day, and tests must never depend
+/// on what time it happens to be when they run.
+pub trait Clock {
+    fn now(&self) -> SystemTime;
+}
+
+/// The system clock. The only implementation that reads the real one.
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
+    }
+}
+
+/// One read of the Free tier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Activity {
+    pub frontmost_application: Option<String>,
+    /// Whether the frontmost application differs from the previous read.
+    ///
+    /// This is the change signal: a caller learns that the user switched
+    /// application from the read itself, instead of having to remember the
+    /// previous name and compare. The first read of a run counts as a change, so
+    /// a Director woken at startup has something to react to.
+    pub switched: bool,
+    pub idle: Duration,
+    /// When this read was taken, from the `Clock`.
+    pub at: SystemTime,
+}
+
+/// Reads the Free tier, and remembers just enough of the previous read to tell a
+/// caller that the frontmost application changed.
+#[derive(Default)]
+pub struct FreeTier {
+    previous: Option<String>,
+}
+
+impl FreeTier {
+    /// Read the source and the clock once.
+    ///
+    /// Idle duration and the time come straight from the adapters, because both
+    /// are already the whole answer. The frontmost application is the only thing
+    /// that needs a memory: without one, a caller could only ever see a name and
+    /// not the moment it changed.
+    pub fn read(&mut self, source: &dyn ActivitySource, clock: &dyn Clock) -> Activity {
+        let frontmost_application = source.frontmost_application();
+        let switched = frontmost_application != self.previous;
+        self.previous = frontmost_application.clone();
+
+        Activity {
+            frontmost_application,
+            switched,
+            idle: source.idle(),
+            at: clock.now(),
+        }
+    }
+}
+
+/// Every other platform for now. Windows is stubbed deliberately: `docs/SPEC.md`
+/// puts it out of scope for v1, and the interface exists so that the Director
+/// meets a platform that reports nothing, rather than a platform that is
+/// missing.
+#[cfg(not(target_os = "macos"))]
+pub struct StubActivitySource;
+
+#[cfg(not(target_os = "macos"))]
+impl ActivitySource for StubActivitySource {
+    fn frontmost_application(&self) -> Option<String> {
+        None
+    }
+
+    fn idle(&self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+/// Hand-written fake: it reports exactly what it was set to, so a test can
+/// describe a desktop as a literal and change it between reads.
+#[cfg(test)]
+#[derive(Default)]
+pub struct FakeActivitySource {
+    pub frontmost_application: Option<String>,
+    pub idle: Duration,
+}
+
+#[cfg(test)]
+impl ActivitySource for FakeActivitySource {
+    fn frontmost_application(&self) -> Option<String> {
+        self.frontmost_application.clone()
+    }
+
+    fn idle(&self) -> Duration {
+        self.idle
+    }
+}
+
+/// Hand-written fake: the time is whatever the test says it is.
+#[cfg(test)]
+pub struct FakeClock {
+    pub now: SystemTime,
+}
+
+#[cfg(test)]
+impl Clock for FakeClock {
+    fn now(&self) -> SystemTime {
+        self.now
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::UNIX_EPOCH;
+
+    fn source(frontmost: &str) -> FakeActivitySource {
+        FakeActivitySource {
+            frontmost_application: Some(frontmost.to_string()),
+            idle: Duration::ZERO,
+        }
+    }
+
+    fn stopped_clock() -> FakeClock {
+        FakeClock { now: UNIX_EPOCH }
+    }
+
+    #[test]
+    fn switching_application_signals_a_change_on_that_read_and_not_the_next() {
+        let mut source = source("Terminal");
+        let mut tier = FreeTier::default();
+
+        let first = tier.read(&source, &stopped_clock());
+        assert_eq!(first.frontmost_application.as_deref(), Some("Terminal"));
+        assert!(first.switched, "the first sight of an application is news");
+
+        let again = tier.read(&source, &stopped_clock());
+        assert_eq!(again.frontmost_application.as_deref(), Some("Terminal"));
+        assert!(!again.switched, "the same application is not a switch");
+
+        source.frontmost_application = Some("Safari".to_string());
+        let switched = tier.read(&source, &stopped_clock());
+        assert_eq!(switched.frontmost_application.as_deref(), Some("Safari"));
+        assert!(switched.switched, "Terminal to Safari is a switch");
+
+        let settled = tier.read(&source, &stopped_clock());
+        assert!(!settled.switched, "a switch is signalled once, not held");
+    }
+
+    /// The empty desktop, and the platform that will not say. Losing the
+    /// frontmost application is as much a change as gaining one, and getting it
+    /// back afterwards must not be silent.
+    #[test]
+    fn nothing_frontmost_is_a_change_from_something_and_back_again() {
+        let mut source = source("Terminal");
+        let mut tier = FreeTier::default();
+        tier.read(&source, &stopped_clock());
+
+        source.frontmost_application = None;
+        let lost = tier.read(&source, &stopped_clock());
+        assert_eq!(lost.frontmost_application, None);
+        assert!(
+            lost.switched,
+            "losing the frontmost application is a change"
+        );
+
+        let still_nothing = tier.read(&source, &stopped_clock());
+        assert!(!still_nothing.switched, "nothing, twice, is not a change");
+
+        source.frontmost_application = Some("Terminal".to_string());
+        let regained = tier.read(&source, &stopped_clock());
+        assert!(regained.switched, "coming back is a change");
+    }
+
+    #[test]
+    fn idle_grows_while_input_stops_and_returns_to_zero_on_the_next_input() {
+        let mut source = source("Terminal");
+        let mut tier = FreeTier::default();
+
+        assert_eq!(tier.read(&source, &stopped_clock()).idle, Duration::ZERO);
+
+        source.idle = Duration::from_secs(30);
+        assert_eq!(
+            tier.read(&source, &stopped_clock()).idle,
+            Duration::from_secs(30)
+        );
+
+        source.idle = Duration::from_secs(15 * 60);
+        assert_eq!(
+            tier.read(&source, &stopped_clock()).idle,
+            Duration::from_secs(900)
+        );
+
+        // The user touches the keyboard.
+        source.idle = Duration::ZERO;
+        assert_eq!(
+            tier.read(&source, &stopped_clock()).idle,
+            Duration::ZERO,
+            "the next input ends the idle spell"
+        );
+    }
+
+    /// A read is stamped from the `Clock` it was given, never from the real one,
+    /// which is what lets a test about the time of day be a test about a
+    /// literal.
+    #[test]
+    fn a_read_is_stamped_by_the_clock_it_was_given() {
+        // 2023-11-14T22:13:20Z, chosen for being nothing like now.
+        let clock = FakeClock {
+            now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+        };
+
+        let read = FreeTier::default().read(&source("Terminal"), &clock);
+
+        assert_eq!(read.at, UNIX_EPOCH + Duration::from_secs(1_700_000_000));
+    }
+}

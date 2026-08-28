@@ -28,7 +28,11 @@ objc2-app-kit = {version = "0.3", features = [
   "NSWindow",
   "NSPanel",
   "NSResponder",
-  "NSApplication"
+  "NSApplication",
+  # Which application the user is in. Reports the application only — no window,
+  # no title — so nothing here is gated by Screen Recording.
+  "NSWorkspace",
+  "NSRunningApplication"
 ]}
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call
@@ -48,7 +52,11 @@ objc2-core-graphics = {version = "0.3", default-features = false, features = [
   "CGDirectDisplay",
   "CGError",
   "CGGeometry",
-  "CGWindow"
+  "CGWindow",
+  # How long since the last input event. A count of seconds, not the events:
+  # reading input needs an event tap, and an event tap needs Accessibility.
+  "CGEventSource",
+  "CGEventTypes"
 ]}
 objc2-foundation = {version = "0.3", default-features = false, features = [
   "std",
