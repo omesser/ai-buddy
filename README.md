@@ -42,8 +42,8 @@ formatting and shellcheck, plus `cargo fmt --check` and `cargo clippy -D
 warnings`. The toolchain is pinned in `rust-toolchain.toml` so local runs and CI
 agree on what rustfmt and clippy consider correct.
 
-CI runs the same hooks. The Rust ones run on a macOS runner rather than Linux,
-because building this crate needs the macOS windowing stack.
+CI runs the same hooks on both a Linux and a macOS runner, because the shell
+carries a non-macOS code path that only a Linux build exercises.
 
 ## Verifying the overlay
 

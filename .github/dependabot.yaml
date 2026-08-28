@@ -10,6 +10,29 @@ updates:
       interval: "weekly"
     labels:
       - "maintenance"
+    ignore:
+      # RUSTSEC: unsoundness in glib's VariantStrIter iterators, fixed in 0.20.
+      # We resolve 0.18.5 and cannot move: glib arrives through
+      # tauri -> gtk 0.18 -> atk, and 0.20 is a semver-incompatible bump for the
+      # gtk 0.18 line, so `cargo update -p glib` locks nothing until Tauri's
+      # Linux stack adopts a newer gtk-rs.
+      #
+      # CI does compile it. The matrix builds the whole workspace on Linux
+      # (#23), which is what catches the non-macOS build regressions a
+      # macOS-only pipeline cannot see, so this is not a crate we merely
+      # resolve. What we do not do is ship it: ai-buddy ships macOS only, and
+      # we call no glib API — VariantStrIter is not something the shell touches.
+      #
+      # This block stops Dependabot from opening PRs for glib, and that is all
+      # it does. The advisory stays open in the Security tab until someone
+      # dismisses it there as tolerable risk, which is a manual step the repo
+      # owner still has to take. See omesser/ai-buddy#37.
+      #
+      # The bound is the revisit trigger, not decoration: only versions below
+      # 0.20 are ignored, so the suppression lifts once 0.20 is reachable and
+      # cannot silently outlive the advisory.
+      - dependency-name: "glib"
+        versions: ["< 0.20"]
 
   - directory: "/"
     package-ecosystem: "github-actions"
