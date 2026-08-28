@@ -72,6 +72,16 @@ pub const PERSONALITY_LIMIT: usize = 2000;
 /// package that declares no fps looks exactly as it did before fps existed.
 pub const DEFAULT_FPS: u32 = 8;
 
+/// The largest either side of a frame may be, in pixels.
+///
+/// A bound rather than a preference, and the same kind of bound as `MAX_FPS`:
+/// a PNG header costs the same few dozen bytes whatever size it claims, so a
+/// package can declare a 100000x100000 frame for nothing and leave the
+/// renderer to allocate forty gigabytes for one sprite. A
+/// desktop mascot is a couple of hundred pixels tall, so 1024 is generous even
+/// for art drawn at twice the size of a Retina display.
+pub const MAX_FRAME_SIDE: u32 = 1024;
+
 /// The fastest an Animation may declare. Past display refresh the extra frames
 /// are never seen, and a four-figure fps is either a mistake or an attempt to
 /// make the renderer thrash.
@@ -103,8 +113,8 @@ const PRIMITIVES: [(&str, Primitive); 6] = [
     ("talk", Primitive::Talk),
 ];
 
-/// The word that chains one Behavior to the next, and so the one word a step
-/// may not be.
+/// The word that chains one Behavior to the next, and so the one word a
+/// Primitive may not be.
 const THEN: &str = "then";
 
 /// A named frame sequence and how it plays.
@@ -125,7 +135,7 @@ pub struct Animation {
 /// A named sequence of Primitives, declared as data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Behavior {
-    pub steps: Vec<Primitive>,
+    pub primitives: Vec<Primitive>,
     /// A Behavior that follows this one, by name. Chains are validated to
     /// terminate, so no Character can put the sprite in a loop it never leaves.
     pub then: Option<String>,
@@ -148,7 +158,7 @@ pub struct Character {
 /// A bound on the error rather than on the package: an author wants to see
 /// where their loop closes, and a package built to be awkward can chain twenty
 /// thousand Behaviors into one.
-const SHOWN_LOOP_STEPS: usize = 8;
+const SHOWN_LOOP_BEHAVIORS: usize = 8;
 
 /// Validate a Character Package.
 ///
@@ -235,7 +245,7 @@ struct DeclaredAnimation {
 
 struct DeclaredBehavior {
     line: usize,
-    steps: Vec<Primitive>,
+    primitives: Vec<Primitive>,
     then: Option<String>,
 }
 
@@ -411,7 +421,7 @@ fn one_name<'a>(
 /// One Behavior's value: its Primitives in order, optionally ending in
 /// `then <behavior>`.
 ///
-/// A step that is not a Primitive is reported and dropped rather than
+/// A word that is not a Primitive is reported and dropped rather than
 /// abandoning the declaration, so the rest of the Character Manifest is still
 /// checked and the author sees every mistake at once.
 fn parse_behavior(
@@ -420,7 +430,7 @@ fn parse_behavior(
     line: usize,
     errors: &mut Vec<String>,
 ) -> DeclaredBehavior {
-    let mut steps = Vec::new();
+    let mut primitives = Vec::new();
     let mut then = None;
     let mut words = value.split_whitespace();
 
@@ -443,10 +453,10 @@ fn parse_behavior(
             .iter()
             .find_map(|(name, primitive)| (*name == word).then_some(*primitive))
         {
-            Some(primitive) => steps.push(primitive),
+            Some(primitive) => primitives.push(primitive),
             None => errors.push(format!(
-                "line {line}: behavior {behavior:?} step {word:?} is not a Primitive; \
-                 the Primitives are {}",
+                "line {line}: behavior {behavior:?} declares {word:?}, \
+                 which is not a Primitive; the Primitives are {}",
                 PRIMITIVES
                     .iter()
                     .map(|(name, _)| *name)
@@ -456,12 +466,18 @@ fn parse_behavior(
         }
     }
 
-    DeclaredBehavior { line, steps, then }
+    DeclaredBehavior {
+        line,
+        primitives,
+        then,
+    }
 }
 
 /// Check every declared Animation against the art the package actually
-/// carries. Art the loader cannot open, or that changes size mid-sequence, is
-/// a rejection: both draw a broken sprite rather than a Character.
+/// carries. Art the loader cannot open, that changes size mid-sequence, or
+/// that is too large to be a sprite, is a rejection: the first two draw a
+/// broken sprite rather than a Character, and the third asks the renderer for
+/// memory no Character needs.
 fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
@@ -472,39 +488,40 @@ fn resolve_animations(
     for (name, declaration) in declared {
         let line = declaration.line;
         let mut frame_size = None;
-        let mut usable = true;
 
         for frame in &declaration.frames {
             let Some(bytes) = package.get(frame) else {
                 errors.push(format!(
                     "line {line}: animation {name:?} frame {frame:?} is not in the package"
                 ));
-                usable = false;
                 continue;
             };
             match art_size(bytes) {
-                Err(why) => {
+                Err(why) => errors.push(format!(
+                    "line {line}: animation {name:?} frame {frame:?} is not readable art: {why}"
+                )),
+                Ok(size) if size.0 > MAX_FRAME_SIDE || size.1 > MAX_FRAME_SIDE => {
                     errors.push(format!(
-                        "line {line}: animation {name:?} frame {frame:?} is not readable art: {why}"
+                        "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
+                         and no side of a frame may be over {MAX_FRAME_SIDE} pixels",
+                        size.0, size.1
                     ));
-                    usable = false;
                 }
                 Ok(size) => match frame_size {
                     None => frame_size = Some(size),
-                    Some(first) if first != size => {
-                        errors.push(format!(
-                            "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
-                             and its first frame is {}x{}; every frame is one size",
-                            size.0, size.1, first.0, first.1
-                        ));
-                        usable = false;
-                    }
+                    Some(first) if first != size => errors.push(format!(
+                        "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
+                         and its first frame is {}x{}; every frame is one size",
+                        size.0, size.1, first.0, first.1
+                    )),
                     Some(_) => {}
                 },
             }
         }
 
-        if let (true, Some(frame_size)) = (usable, frame_size) {
+        // A half-checked Animation is never handed out: any error at all makes
+        // `load` return the errors instead of a Character.
+        if let Some(frame_size) = frame_size {
             animations.insert(
                 name,
                 Animation {
@@ -595,7 +612,7 @@ fn resolve_behaviors(
             (
                 name,
                 Behavior {
-                    steps: declaration.steps,
+                    primitives: declaration.primitives,
                     then: declaration.then,
                 },
             )
@@ -605,21 +622,21 @@ fn resolve_behaviors(
 
 /// The loop a chain closes, from where it closes, for the author to read.
 fn loop_path(path: &[&str], closes_at: &str) -> String {
-    let from = path.iter().position(|step| *step == closes_at).unwrap_or(0);
-    let steps: Vec<String> = path[from..]
+    let from = path.iter().position(|name| *name == closes_at).unwrap_or(0);
+    let chain: Vec<String> = path[from..]
         .iter()
         .chain([&closes_at])
-        .map(|step| format!("{step:?}"))
+        .map(|name| format!("{name:?}"))
         .collect();
 
-    if steps.len() > SHOWN_LOOP_STEPS {
+    if chain.len() > SHOWN_LOOP_BEHAVIORS {
         format!(
             "{} and {} more",
-            steps[..SHOWN_LOOP_STEPS].join(" -> "),
-            steps.len() - SHOWN_LOOP_STEPS
+            chain[..SHOWN_LOOP_BEHAVIORS].join(" -> "),
+            chain.len() - SHOWN_LOOP_BEHAVIORS
         )
     } else {
-        steps.join(" -> ")
+        chain.join(" -> ")
     }
 }
 
@@ -696,7 +713,11 @@ mod tests {
         let idle = &character.animations["idle"];
         assert_eq!(idle.frames, vec!["idle-0.png"]);
         assert_eq!(idle.frame_size, (2, 2), "read from the art");
-        assert_eq!(idle.fps, DEFAULT_FPS);
+        assert_eq!(
+            idle.fps, 8,
+            "eight frames a second is the cadence a Character looks right at, \
+             and what a package that declares no fps gets"
+        );
         assert!(
             idle.looping,
             "an Animation repeats unless it says otherwise"
@@ -741,7 +762,7 @@ mod tests {
 
         assert_eq!(character.animations["walk"].fps, 12);
         assert!(character.animations["walk"].looping, "walk did not say");
-        assert_eq!(character.animations["land"].fps, DEFAULT_FPS);
+        assert_eq!(character.animations["land"].fps, 8, "land did not say");
         assert!(!character.animations["land"].looping, "land plays once");
     }
 
@@ -756,7 +777,7 @@ mod tests {
         assert_eq!(
             character.behaviors["greet"],
             Behavior {
-                steps: vec![Primitive::React, Primitive::Talk],
+                primitives: vec![Primitive::React, Primitive::Talk],
                 then: Some("settle".to_string()),
             }
         );
@@ -774,11 +795,11 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 10: behavior \"greet\" step \"jump\" is not a Primitive; the Primitives \
-                 are idle, walk, sit, sleep, react, talk"
+                "line 10: behavior \"greet\" declares \"jump\", which is not a Primitive; \
+                 the Primitives are idle, walk, sit, sleep, react, talk"
                     .to_string()
             ],
-            "the author is told the offending step and what they may write instead"
+            "the author is told the offending word and what they may write instead"
         );
     }
 
@@ -825,8 +846,8 @@ mod tests {
     #[test]
     fn a_very_deep_chain_ending_in_a_loop_is_rejected_rather_than_crashing() {
         let mut manifest = declaring(&REQUIRED_ANIMATIONS);
-        for step in 0..20_000 {
-            manifest.push_str(&format!("behavior b{step} = walk then b{}\n", step + 1));
+        for link in 0..20_000 {
+            manifest.push_str(&format!("behavior b{link} = walk then b{}\n", link + 1));
         }
         manifest.push_str("behavior b20000 = walk then b0\n");
 
@@ -837,7 +858,11 @@ mod tests {
     #[test]
     fn a_package_with_no_character_manifest_is_rejected() {
         let errors = errors(load(&art()));
-        assert_names(&errors, CHARACTER_MANIFEST_FILE);
+        assert_eq!(
+            errors,
+            vec!["the package contains no character.manifest".to_string()],
+            "the author is told what the package is missing"
+        );
     }
 
     #[test]
@@ -849,7 +874,11 @@ mod tests {
         );
 
         let errors = errors(load(&package));
-        assert_names(&errors, CHARACTER_MANIFEST_FILE);
+        assert_eq!(
+            errors,
+            vec!["character.manifest is not UTF-8 text".to_string()],
+            "the author is told the file is not text, not merely that it is at fault"
+        );
     }
 
     #[test]
@@ -884,8 +913,13 @@ mod tests {
         let manifest = declaring(&REQUIRED_ANIMATIONS).replace("sit-0.png", "sit-99.png");
         let errors = errors(load_manifest(&manifest));
 
-        assert_names(&errors, "sit-99.png");
-        assert_names(&errors, "sit");
+        assert_eq!(
+            errors,
+            vec![
+                "line 6: animation \"sit\" frame \"sit-99.png\" is not in the package".to_string()
+            ],
+            "the author is told which frame of which Animation is absent"
+        );
     }
 
     #[test]
@@ -899,6 +933,7 @@ mod tests {
 
         let errors = errors(load(&package));
         assert_names(&errors, "sit-0.png");
+        assert_names(&errors, "is not readable art");
     }
 
     #[test]
@@ -916,7 +951,39 @@ mod tests {
         );
 
         let errors = errors(load(&package));
-        assert_names(&errors, "walk-1.png");
+        assert_eq!(
+            errors,
+            vec![
+                "line 3: animation \"walk\" frame \"walk-1.png\" is 3x3, and its first frame \
+                 is 2x2; every frame is one size"
+                    .to_string()
+            ],
+            "the author is told both sizes and which frame disagrees"
+        );
+    }
+
+    /// Hostile input: a header claiming a frame no screen could hold. Nothing
+    /// decompresses it here, but a renderer that trusts the declared size
+    /// allocates it (user story 48).
+    #[test]
+    fn a_frame_too_large_to_be_a_sprite_is_rejected_by_name() {
+        let mut package = art();
+        package.insert("sit-0.png".to_string(), png_bytes(100_000, 1));
+        package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            declaring(&REQUIRED_ANIMATIONS).into_bytes(),
+        );
+
+        let errors = errors(load(&package));
+        assert_eq!(
+            errors,
+            vec![
+                "line 6: animation \"sit\" frame \"sit-0.png\" is 100000x1, and no side of a \
+                 frame may be over 1024 pixels"
+                    .to_string()
+            ],
+            "the author is told which frame is implausible and how big a frame may be"
+        );
     }
 
     #[test]
@@ -926,6 +993,7 @@ mod tests {
             declaring(&REQUIRED_ANIMATIONS)
         )));
         assert_names(&empty, "wave");
+        assert_names(&empty, "declares no frames");
 
         let twice = errors(load_manifest(&format!(
             "{}animation idle = idle-0.png\n",
@@ -987,18 +1055,25 @@ mod tests {
 
     #[test]
     fn an_unplayable_fps_or_loop_mode_is_rejected_by_name() {
-        for (declaration, offender) in [
-            ("fps idle = 0", "fps"),
-            ("fps idle = soon", "soon"),
-            ("fps idle = 240", "240"),
-            ("loop idle = maybe", "maybe"),
-            ("fps wave = 12", "wave"),
+        // Each case asks for the Animation at fault and what is wrong with
+        // it, so a message that says only "fps" cannot pass.
+        for (declaration, wanted) in [
+            (
+                "fps idle = 0",
+                &["animation \"idle\"", "is 0", "must be 1 to 60"][..],
+            ),
+            ("fps idle = soon", &["animation \"idle\"", "\"soon\""]),
+            ("fps idle = 240", &["animation \"idle\"", "is 240"]),
+            ("loop idle = maybe", &["animation \"idle\"", "\"maybe\""]),
+            ("fps wave = 12", &["animation \"wave\"", "does not declare"]),
         ] {
             let errors = errors(load_manifest(&format!(
                 "{}{declaration}\n",
                 declaring(&REQUIRED_ANIMATIONS)
             )));
-            assert_names(&errors, offender);
+            for offender in wanted {
+                assert_names(&errors, offender);
+            }
         }
     }
 
@@ -1068,15 +1143,20 @@ mod tests {
         );
         package.insert(
             PERSONALITY_FILE.to_string(),
-            "shy ".repeat(PERSONALITY_LIMIT).into_bytes(),
+            "shy ".repeat(600).into_bytes(),
         );
 
         let errors = errors(load(&package));
-        assert_names(&errors, PERSONALITY_FILE);
+        assert_eq!(
+            errors,
+            vec!["personality.txt is 2400 characters, over the 2000-character limit".to_string()],
+            "the author is told how long their prompt is and how long it may be"
+        );
     }
 
-    /// A valid PNG of the given size, for the one test that needs art of a
-    /// second size. The encoder is already a dependency of the renderer.
+    /// A valid PNG of the given size, for the tests that need art of a size
+    /// the fixture does not have. The encoder is already a dependency of the
+    /// renderer.
     fn png_bytes(width: u32, height: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
         let mut encoder = png::Encoder::new(&mut bytes, width, height);
