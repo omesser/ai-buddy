@@ -586,8 +586,11 @@ fn resolve_behaviors(
                 break;
             }
             if !seen.insert(current) {
+                // `current` is always a key of `declared`: it starts as one and
+                // only advances to a `then` that `declared` contains.
                 errors.push(format!(
-                    "behavior {current:?} cannot terminate: {}",
+                    "line {}: behavior {current:?} cannot terminate: {}",
+                    declared[current].line,
                     loop_path(&path, current)
                 ));
                 break;
@@ -734,7 +737,13 @@ mod tests {
             1,
             "one missing animation, one error: {errors:#?}"
         );
-        assert_names(&errors, "land");
+        assert_eq!(
+            errors,
+            vec!["the package declares no \"land\" animation, \
+                 which every Character must supply"
+                .to_string()],
+            "the author is told which animation is missing and that it is required"
+        );
     }
 
     #[test]
@@ -811,10 +820,13 @@ mod tests {
         );
         let errors = errors(load_manifest(&manifest));
 
-        assert_eq!(errors.len(), 1, "one loop, one error: {errors:#?}");
-        assert_names(&errors, "cannot terminate");
-        assert_names(&errors, "pace");
-        assert_names(&errors, "turn");
+        assert_eq!(
+            errors,
+            vec!["line 10: behavior \"pace\" cannot terminate: \
+                 \"pace\" -> \"turn\" -> \"pace\""
+                .to_string()],
+            "the author is given the whole cycle and the line it starts on"
+        );
     }
 
     #[test]
@@ -837,7 +849,13 @@ mod tests {
         );
         let errors = errors(load_manifest(&manifest));
 
-        assert_names(&errors, "nap");
+        assert_eq!(
+            errors,
+            vec!["line 10: behavior \"greet\" follows \"nap\", \
+                 which the package does not declare"
+                .to_string()],
+            "the author is told which behavior points at what, and where"
+        );
     }
 
     /// Hostile input: a chain far deeper than any author would write, ending in
@@ -905,7 +923,13 @@ mod tests {
         let manifest = format!("{}animation idle\n", declaring(&REQUIRED_ANIMATIONS));
         let errors = errors(load_manifest(&manifest));
 
-        assert_names(&errors, "line 10");
+        assert_eq!(
+            errors,
+            vec!["line 10: \"animation idle\" is not a declaration; \
+                 every line reads \"key = value\""
+                .to_string()],
+            "the author is told the shape a line must take, not just its number"
+        );
     }
 
     #[test]
@@ -1082,7 +1106,11 @@ mod tests {
         let manifest = declaring(&REQUIRED_ANIMATIONS).replace("name = Blip\n", "");
         let errors = errors(load_manifest(&manifest));
 
-        assert_names(&errors, "name");
+        assert_eq!(
+            errors,
+            vec!["the package declares no name".to_string()],
+            "the author is told what is absent, not merely the word \"name\""
+        );
     }
 
     #[test]
