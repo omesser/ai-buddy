@@ -19,7 +19,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy::engine::Engine;
-use ai_buddy::overlay::{cursor_in_window, AlphaMask, SpriteRect};
+use ai_buddy::overlay::{cursor_in_window, place_sprite, AlphaMask};
 use ai_buddy::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy::window_source::WindowSource;
 use serde::Serialize;
@@ -199,14 +199,13 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                 },
             ));
 
-            // The Frame's position is the sprite's contact point in the global
-            // space; the webview draws in points from the overlay's top-left,
-            // and the art hangs above its feet, centred on them.
-            let sprite = SpriteRect {
-                x: (frame.position.x - origin.x as f64 / scale).round() as i32 - width / 2,
-                y: (frame.position.y - origin.y as f64 / scale).round() as i32 - height,
-                scale: SPRITE_SCALE,
-            };
+            let sprite = place_sprite(
+                (frame.position.x, frame.position.y),
+                (origin.x as f64, origin.y as f64),
+                scale,
+                (width, height),
+                SPRITE_SCALE,
+            );
 
             let _ = window.emit(
                 FRAME_EVENT,

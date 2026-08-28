@@ -31,6 +31,34 @@ pub fn cursor_in_window(
     )
 }
 
+/// Where to draw the art, given where the Character's feet are.
+///
+/// A `Frame` reports the contact point: the Character's feet, in the point space
+/// every display shares. The webview draws in points from the overlay's
+/// top-left, and the art hangs above the feet and is centred on them, so the
+/// drawn rectangle sits half a width to the left and a whole height above.
+///
+/// The window origin arrives in physical pixels against the window's own scale
+/// factor, exactly as it does for `cursor_in_window`, and has to be returned to
+/// points before it can be subtracted from a position that is already in them.
+pub fn place_sprite(
+    contact: (f64, f64),
+    window_origin_physical: (f64, f64),
+    window_scale: f64,
+    art_size: (i32, i32),
+    scale: i32,
+) -> SpriteRect {
+    let origin_x = window_origin_physical.0 / window_scale;
+    let origin_y = window_origin_physical.1 / window_scale;
+    let (width, height) = art_size;
+
+    SpriteRect {
+        x: (contact.0 - origin_x).round() as i32 - width / 2,
+        y: (contact.1 - origin_y).round() as i32 - height,
+        scale,
+    }
+}
+
 /// Where the sprite sits in the overlay window, and how far its art is blown up.
 ///
 /// `x` and `y` are the sprite's top-left corner in window coordinates. `scale` is
@@ -230,5 +258,33 @@ mod tests {
         let (x, y) = cursor_in_window((800.0, 600.0), 2.0, (200.0, 100.0), 2.0);
 
         assert_eq!((x, y), (300, 250), "400-100 across, 300-50 down, in points");
+    }
+
+    /// The art hangs above the feet and is centred on them, so a Character
+    /// standing at a point is drawn above and to the left of it.
+    #[test]
+    fn the_art_hangs_above_the_contact_point_and_is_centred_on_it() {
+        let sprite = place_sprite((500.0, 300.0), (0.0, 0.0), 1.0, (128, 128), 4);
+
+        assert_eq!(
+            (sprite.x, sprite.y),
+            (436, 172),
+            "half a width left, a whole height up"
+        );
+    }
+
+    /// The same trap as `cursor_in_window`: the window origin arrives in
+    /// physical pixels against the window's own scale factor, and the Frame
+    /// arrives in points. Subtracting them raw puts the art nowhere near the
+    /// Character on any display that is not 1x.
+    #[test]
+    fn the_window_origin_is_undone_with_the_windows_own_scale() {
+        let sprite = place_sprite((500.0, 300.0), (200.0, 100.0), 2.0, (128, 128), 4);
+
+        assert_eq!(
+            (sprite.x, sprite.y),
+            (336, 122),
+            "origin is 100,50 in points"
+        );
     }
 }
