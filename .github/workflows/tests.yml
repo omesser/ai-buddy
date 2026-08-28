@@ -52,22 +52,25 @@ jobs:
           key: ${{ matrix.os }}
 
       - name: Install shfmt
-        # Pinned, like rust-toolchain.toml: a formatter that updates itself can
-        # reformat the whole repo and fail an unrelated pull request.
+        # Resolve the asset with jq rather than a regex over the JSON. POSIX ERE
+        # leaves stacked quantifiers undefined, so `.+?` is not lazy: it reads as
+        # a greedy `.+` followed by an optional `?` and matches from the first
+        # "https://" in the payload to the last "linux_amd64", about 7KB of JSON.
         #
-        # Resolved by direct URL rather than by grepping the releases API. The
-        # obvious one-liner uses `grep -E "https://.+?linux_amd64"`, but ERE has
-        # no lazy quantifier, so `.+?` is greedy and swallows enough JSON to
-        # hand curl a URL containing braces.
-        env:
-          SHFMT_VERSION: v3.13.1
+        # The asset comes from uname rather than a hardcoded pair, so a runner
+        # changing architecture picks the right binary instead of the wrong one.
         run: |
-          case "${{ runner.os }}" in
-            Linux) asset=linux_amd64 ;;
-            macOS) asset=darwin_arm64 ;;
+          case "$(uname -s)_$(uname -m)" in
+            Linux_x86_64)  asset=_linux_amd64 ;;
+            Linux_aarch64) asset=_linux_arm64 ;;
+            Darwin_arm64)  asset=_darwin_arm64 ;;
+            Darwin_x86_64) asset=_darwin_amd64 ;;
+            *) echo "no shfmt asset known for $(uname -s) $(uname -m)"; exit 1 ;;
           esac
-          curl -fsSL -o shfmt \
-            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_${asset}"
+          url=$(curl -fsSL https://api.github.com/repos/mvdan/sh/releases/latest \
+            | jq -r --arg asset "$asset" \
+              '.assets[] | select(.name | endswith($asset)) | .browser_download_url')
+          curl -fsSL -o shfmt "$url"
           chmod +x shfmt && sudo mv shfmt /usr/local/bin/
           shfmt --version
 
