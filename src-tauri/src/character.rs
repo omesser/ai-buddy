@@ -1064,17 +1064,27 @@ mod tests {
         );
 
         let errors = errors(load_manifest(&manifest));
+
+        // The whole set, not a count and a prefix: eleven messages reading only
+        // "line N:" would satisfy a structural check while telling the author
+        // nothing about what to change.
         assert_eq!(
-            errors.len(),
-            nonsense.len(),
-            "one rejection per nonsense line: {errors:#?}"
+            errors,
+            vec![
+                "line 10: a declaration with no name".to_string(),
+                "line 11: \"name\" is not a declaration; every line reads \"key = value\"".to_string(),
+                "line 12: \"animation\" must name exactly one Animation, and names 0".to_string(),
+                "line 13: \"animation\" must name exactly one Animation, and names 2".to_string(),
+                "line 14: \"fps\" must name exactly one Animation, and names 0".to_string(),
+                "line 15: \"loop\" must name exactly one Animation, and names 0".to_string(),
+                "line 16: \"behavior\" must name exactly one Behavior, and names 0".to_string(),
+                "line 17: behavior \"chase\" ends with \"then\" and no Behavior to follow it".to_string(),
+                "line 18: behavior \"pounce\" follows \"then\" with more than one Behavior".to_string(),
+                "line 19: unknown declaration \"фпс\"; a Character Manifest declares name, animation, fps, loop and behavior".to_string(),
+                "line 20: unknown declaration \"\\0name\"; a Character Manifest declares name, animation, fps, loop and behavior".to_string()
+            ],
+            "each nonsense line is rejected on its own line, saying what is wrong"
         );
-        for error in &errors {
-            assert!(
-                error.starts_with("line "),
-                "every rejection points at a line: {error:?}"
-            );
-        }
     }
 
     #[test]
