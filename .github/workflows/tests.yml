@@ -61,10 +61,10 @@ jobs:
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
 
-      - name: Core crate builds and passes with no platform binding
+      - name: Core crate reaches no platform binding
         # The point of the split, checked rather than trusted: if a platform
-        # dependency reaches the core, this job fails on Linux where it cannot
-        # possibly compile.
+        # dependency reaches the core, this fails on the one runner that could
+        # never compile it.
         run: |
           # --target all, not the host: a dependency behind
           # [target.'cfg(target_os = "macos")'.dependencies] is invisible to a
@@ -73,7 +73,17 @@ jobs:
           if echo "$tree" | grep -qE '\b(tauri|objc2)'; then
             echo "core reaches a platform binding:"; echo "$tree"; exit 1
           fi
-          cargo test -p ai-buddy-core
+
+      - name: Core tests, on Linux and x86_64
+        # Not redundant with the macOS job. The core is float-heavy coordinate
+        # arithmetic, and this is the only place it runs on x86_64 — the macOS
+        # runner is arm64.
+        #
+        # --doc as well as --all-targets: --all-targets excludes doctests, so a
+        # `///` example would otherwise never run anywhere.
+        run: |
+          cargo test -p ai-buddy-core --all-targets
+          cargo test -p ai-buddy-core --doc
 
   macos:
     timeout-minutes: 30
@@ -111,8 +121,13 @@ jobs:
           pre-commit run swiftc-typecheck --all-files --show-diff-on-failure
 
       # Not a hook: the suite is too slow to sit in front of every commit.
-      - name: Tests
-        run: cargo test --all-targets
+      #
+      # The whole workspace, so this is the only place the shell's own tests run
+      # at all — Linux covers the core, on a different architecture.
+      - name: Tests, whole workspace
+        run: |
+          cargo test --all-targets
+          cargo test --doc
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which a runner does not have.
