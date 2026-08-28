@@ -55,7 +55,7 @@ split in three.
 conversions. Fast, pure, no windowing system:
 
 ```sh
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test
 ```
 
 **`scripts/verify-overlay.sh`** covers everything else a machine can reach. It

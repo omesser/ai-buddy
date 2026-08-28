@@ -20,7 +20,7 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: check-toml
-        exclude: ^src-tauri/Cargo\.lock$
+        exclude: ^Cargo\.lock$
       - id: check-executables-have-shebangs
 
     # Cross platform
@@ -40,14 +40,14 @@ repos:
         additional_dependencies: ["tomli"]
         # "crate" is Rust vocabulary, not a misspelling of "create".
         args: ["--ignore-words-list=crate,crates"]
-        exclude: ^(src-tauri/Cargo\.lock|.*\.png)$
+        exclude: ^(Cargo\.lock|.*\.png)$
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
     hooks:
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
-        exclude: ^src-tauri/Cargo\.lock$
+        exclude: ^Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
 
@@ -75,7 +75,7 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        entry: cargo fmt --manifest-path src-tauri/Cargo.toml --all --
+        entry: cargo fmt --all --
         args: [--check]
         language: system
         types: [rust]
@@ -83,7 +83,7 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --
+        entry: cargo clippy --all-targets --
         args: [-D, warnings]
         language: system
         types: [rust]

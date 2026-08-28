@@ -47,14 +47,28 @@ jobs:
           python-version: '3.12'
 
       - name: Run pre-commit
-        # The Rust hooks are skipped here and run in the `rust` job instead:
-        # building this crate needs the macOS windowing stack, so a Linux runner
-        # cannot compile it.
+        # The Rust hooks still skip here: `cargo fmt --all` and
+        # `cargo clippy --all-targets` cover the whole workspace, and the shell
+        # half of it needs the macOS windowing stack. The core crate is checked
+        # on its own in the next step, which is what the split bought.
         env:
           SKIP: cargo-fmt,cargo-clippy,swiftc-typecheck
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Core crate builds and passes with no platform binding
+        # The point of the split, checked rather than trusted: if a platform
+        # dependency reaches the core, this job fails on Linux where it cannot
+        # possibly compile.
+        run: |
+          cargo tree -p ai-buddy-core | grep -E '\b(tauri|objc2)' \
+            && { echo "core reaches a platform binding"; exit 1; } || true
+          cargo clippy -p ai-buddy-core --all-targets -- -D warnings
+          cargo test -p ai-buddy-core
 
   rust:
     timeout-minutes: 30
@@ -70,20 +84,20 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: .
 
       - name: Type-check the Swift helper scripts
         run: |
           for f in scripts/*.swift; do swiftc -typecheck "$f"; done
 
       - name: Check formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+        run: cargo test --all-targets
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which a runner does not have.

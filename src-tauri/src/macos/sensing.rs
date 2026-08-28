@@ -19,7 +19,7 @@ use std::time::Duration;
 use objc2_app_kit::NSWorkspace;
 use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGEventType};
 
-use super::ActivitySource;
+use ai_buddy_core::sensing::ActivitySource;
 
 /// `kCGAnyInputEventType`, which the header defines as exactly this and no
 /// binding exposes as a constant. Any input at all counts: a key, the mouse, the
@@ -68,7 +68,7 @@ fn idle_from_seconds(seconds: f64) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sensing::{FreeTier, SystemClock};
+    use ai_buddy_core::sensing::{FreeTier, SystemClock};
 
     /// Hand verification, deliberately not part of the suite: it needs a real
     /// window server, it reads the real clock and it sleeps, all of which

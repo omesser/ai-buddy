@@ -15,7 +15,7 @@ use objc2_core_graphics::{
 };
 use objc2_foundation::{ns_string, NSArray, NSDictionary, NSNumber, NSString};
 
-use super::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 
 /// ponytail: a fixed sixteen displays, because `CGGetActiveDisplayList`
 /// truncates rather than failing and the seventeenth display would silently go
@@ -218,7 +218,7 @@ mod tests {
                 previous = Some(geometry);
             }
 
-            std::thread::sleep(crate::window_source::POLL_INTERVAL);
+            std::thread::sleep(ai_buddy_core::window_source::POLL_INTERVAL);
         }
 
         // Wall time, most of it spent blocked on the window server rather than

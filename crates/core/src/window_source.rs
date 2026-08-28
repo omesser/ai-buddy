@@ -7,12 +7,6 @@
 
 use std::time::Duration;
 
-#[cfg(target_os = "macos")]
-mod macos;
-
-#[cfg(target_os = "macos")]
-pub use macos::MacosWindowSource;
-
 /// How often the Shell should read the source: approximately 10Hz.
 ///
 /// Windows move at human speed, and the Engine interpolates between reads, so

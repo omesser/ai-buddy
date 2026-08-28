@@ -13,17 +13,17 @@
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
 
-mod platform;
+mod macos;
 
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy::engine::Engine;
-use ai_buddy::overlay::{
+use ai_buddy_core::engine::Engine;
+use ai_buddy_core::overlay::{
     cursor_in_window, display_union as overlay_union, place_sprite, AlphaMask, DisplayReport,
 };
-use ai_buddy::snapshot::{starting_position, SnapshotAssembler};
-use ai_buddy::window_source::WindowSource;
+use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
+use ai_buddy_core::window_source::WindowSource;
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -105,12 +105,12 @@ fn display_union(
 /// which is a supported degraded mode rather than an error.
 #[cfg(target_os = "macos")]
 fn window_source() -> impl WindowSource {
-    ai_buddy::window_source::MacosWindowSource::new()
+    macos::MacosWindowSource::new()
 }
 
 #[cfg(not(target_os = "macos"))]
 fn window_source() -> impl WindowSource {
-    ai_buddy::window_source::StubWindowSource
+    ai_buddy_core::window_source::StubWindowSource
 }
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
@@ -183,7 +183,7 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                 elapsed_ms,
                 // The Engine works in points across every display, which is the
                 // space the cursor reading becomes once its own scale is undone.
-                ai_buddy::engine::Point {
+                ai_buddy_core::engine::Point {
                     x: cursor.x / cursor_scale,
                     y: cursor.y / cursor_scale,
                 },
@@ -320,7 +320,7 @@ fn main() {
                 art_height * SPRITE_SCALE,
             );
 
-            platform::configure_overlay(&window)?;
+            macos::configure_overlay(&window)?;
             window.show()?;
 
             run_frame_loop(app.handle().clone(), mask);

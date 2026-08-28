@@ -44,7 +44,7 @@ await() { # $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
 }
 
 echo "Building..."
-if ! cargo build --manifest-path src-tauri/Cargo.toml 2>&1 | tail -3; then
+if ! cargo build 2>&1 | tail -3; then
   echo "FAIL: build"
   exit 1
 fi
@@ -109,7 +109,7 @@ await "$OUT/perch.log" '^\{' 40 || {
 
 pkill -f 'target/debug/ai-buddy' 2> /dev/null
 AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_TRACE_FRAMES=1 \
-  ./src-tauri/target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
+  ./target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
 APP_PID=$!
 
 # Wait for the startup line rather than sleeping a guessed interval.
