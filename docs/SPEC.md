@@ -233,7 +233,8 @@ Three concentric parts:
 - **Engine** — pure, synchronous, no I/O. Owns physics, State, Perch collision,
   Behavior selection and playback, and Character validation.
 - **Adapters** — trait implementations that reach the outside world: `WindowSource`,
-  `Director`, `MemoryManifest`, `Clock`, renderer.
+  `Director`, `Clock`, renderer. Memory is not one of them: it is a concrete type
+  that reads and writes the Memory Manifest directly.
 - **Shell** — the Tauri app, tray, windows, settings, MCP server, Harness attachment.
 
 These are enforced by the crate layout, not only by convention. The workspace has
@@ -476,8 +477,10 @@ ai-buddy loads correctly.
 
 ### Fakes, not mocks
 
-`WindowSource`, `Director`, `MemoryManifest`, and `Clock` get hand-written fakes with
-straightforward behavior. Assertions are on Engine output, not on fake interactions.
+`WindowSource`, `Director`, and `Clock` get hand-written fakes with straightforward
+behavior. Assertions are on Engine output, not on fake interactions. Memory is
+exercised as itself against a temporary file, because a single-implementation trait
+faked in place of a file buys nothing the file does not already give.
 
 ### Not unit tested
 
