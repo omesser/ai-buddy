@@ -19,7 +19,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy::engine::Engine;
-use ai_buddy::overlay::{cursor_in_window, place_sprite, AlphaMask};
+use ai_buddy::overlay::{
+    cursor_in_window, display_union as overlay_union, place_sprite, AlphaMask, DisplayReport,
+};
 use ai_buddy::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy::window_source::WindowSource;
 use serde::Serialize;
@@ -71,12 +73,8 @@ struct Placement {
 /// The overlay spans all displays so the Character can cross between them
 /// without the window moving.
 ///
-/// Logical points, not physical pixels, because each monitor reports its
-/// physical geometry against its own scale factor. On a mixed-DPI desktop a
-/// 2x built-in display reports an origin already multiplied by 2 while a 1x
-/// external display does not, so the two "physical" rectangles share no origin
-/// and their union is nonsense. Points are the space macOS composites in and
-/// the space the webview draws in, so they are the space to reason in.
+/// The arithmetic lives in `overlay::display_union`, where it is tested; this
+/// only asks the windowing layer what displays exist and hands the answer over.
 fn display_union(
     window: &tauri::WebviewWindow,
 ) -> Result<(LogicalPosition<f64>, LogicalSize<f64>), String> {
@@ -84,27 +82,19 @@ fn display_union(
         .available_monitors()
         .map_err(|e| format!("cannot enumerate displays: {e}"))?;
 
-    let mut bounds: Option<(f64, f64, f64, f64)> = None;
-    for monitor in &monitors {
-        let scale = monitor.scale_factor();
-        let position = monitor.position();
-        let size = monitor.size();
+    let reports: Vec<DisplayReport> = monitors
+        .iter()
+        .map(|monitor| DisplayReport {
+            position_physical: (monitor.position().x as f64, monitor.position().y as f64),
+            size_physical: (monitor.size().width as f64, monitor.size().height as f64),
+            scale: monitor.scale_factor(),
+        })
+        .collect();
 
-        let left = position.x as f64 / scale;
-        let top = position.y as f64 / scale;
-        let right = left + size.width as f64 / scale;
-        let bottom = top + size.height as f64 / scale;
-
-        bounds = Some(match bounds {
-            None => (left, top, right, bottom),
-            Some((l, t, r, b)) => (l.min(left), t.min(top), r.max(right), b.max(bottom)),
-        });
-    }
-
-    let (left, top, right, bottom) = bounds.ok_or("no displays reported")?;
+    let (left, top, width, height) = overlay_union(&reports).ok_or("no displays reported")?;
     Ok((
         LogicalPosition::new(left, top),
-        LogicalSize::new(right - left, bottom - top),
+        LogicalSize::new(width, height),
     ))
 }
 

@@ -31,6 +31,45 @@ pub fn cursor_in_window(
     )
 }
 
+/// One display, exactly as the windowing layer reports it.
+///
+/// Position and size arrive in physical pixels measured against *this* display's
+/// own scale factor, which is why the scale travels with them.
+pub struct DisplayReport {
+    pub position_physical: (f64, f64),
+    pub size_physical: (f64, f64),
+    pub scale: f64,
+}
+
+/// The union of every display, in logical points: `(left, top, width, height)`.
+///
+/// Points, not physical pixels, because each display reports its geometry
+/// against its own scale factor. On a mixed-DPI desktop a 2x display reports an
+/// origin already multiplied by two while a 1x display does not, so the two
+/// "physical" rectangles share no origin and their union is meaningless. Points
+/// are the space the window server composites in and the space the webview draws
+/// in, so they are the space to reason in.
+///
+/// `None` when no display was reported, which is a machine with no screen rather
+/// than a union of nothing.
+pub fn display_union(displays: &[DisplayReport]) -> Option<(f64, f64, f64, f64)> {
+    let mut bounds: Option<(f64, f64, f64, f64)> = None;
+
+    for display in displays {
+        let left = display.position_physical.0 / display.scale;
+        let top = display.position_physical.1 / display.scale;
+        let right = left + display.size_physical.0 / display.scale;
+        let bottom = top + display.size_physical.1 / display.scale;
+
+        bounds = Some(match bounds {
+            None => (left, top, right, bottom),
+            Some((l, t, r, b)) => (l.min(left), t.min(top), r.max(right), b.max(bottom)),
+        });
+    }
+
+    bounds.map(|(left, top, right, bottom)| (left, top, right - left, bottom - top))
+}
+
 /// Where to draw the art, given where the Character's feet are.
 ///
 /// A `Frame` reports the contact point: the Character's feet, in the point space
@@ -286,5 +325,59 @@ mod tests {
             (336, 122),
             "origin is 100,50 in points"
         );
+    }
+
+    /// The arrangement this bug actually shipped on: a 1x external display beside
+    /// a 2x built-in. Each monitor reports its geometry against its own scale, so
+    /// the built-in's origin arrives already doubled. Unioning the raw rectangles
+    /// produced a 7296x2234 window on a 3648x1117 desktop, twice the width and
+    /// hanging off the top of the screen.
+    ///
+    /// The expected values are what CoreGraphics independently reports for the
+    /// same desktop: displays at (0,0,1920,1080) and (1920,0,1728,1117).
+    #[test]
+    fn a_mixed_dpi_desktop_unions_in_points_not_pixels() {
+        let displays = [
+            DisplayReport {
+                position_physical: (0.0, 0.0),
+                size_physical: (1920.0, 1080.0),
+                scale: 1.0,
+            },
+            DisplayReport {
+                position_physical: (3840.0, 0.0),
+                size_physical: (3456.0, 2234.0),
+                scale: 2.0,
+            },
+        ];
+
+        assert_eq!(display_union(&displays), Some((0.0, 0.0, 3648.0, 1117.0)));
+    }
+
+    /// Displays need not start at the origin, and one may sit above another.
+    #[test]
+    fn a_display_above_and_left_of_the_others_moves_the_union_origin() {
+        let displays = [
+            DisplayReport {
+                position_physical: (0.0, 0.0),
+                size_physical: (1920.0, 1080.0),
+                scale: 1.0,
+            },
+            DisplayReport {
+                position_physical: (-1280.0, -400.0),
+                size_physical: (1280.0, 800.0),
+                scale: 1.0,
+            },
+        ];
+
+        assert_eq!(
+            display_union(&displays),
+            Some((-1280.0, -400.0, 3200.0, 1480.0)),
+            "the union spans from the topmost-leftmost edge to the far corner"
+        );
+    }
+
+    #[test]
+    fn no_displays_is_no_union() {
+        assert_eq!(display_union(&[]), None);
     }
 }
