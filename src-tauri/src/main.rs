@@ -180,8 +180,12 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                 .flatten()
                 .map_or(scale, |monitor| monitor.scale_factor());
 
-            // Measured after the reads above, so a tick that could not read the
-            // platform costs the Engine no time rather than a jump.
+            // Wall time since the last tick that reached the Engine, not since
+            // the last turn of this loop: a tick that could not read the
+            // platform skips without advancing anything, and the time it spent
+            // still passed for the sprite. `SnapshotAssembler` caps what it
+            // hands the Engine, so a long gap — a skipped read, a suspended
+            // process, a slept machine — is absorbed rather than slingshot.
             let elapsed_ms = u32::try_from(last_tick.elapsed().as_millis()).unwrap_or(u32::MAX);
             last_tick = Instant::now();
 

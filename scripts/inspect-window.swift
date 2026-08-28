@@ -41,23 +41,33 @@ for id in ids {
 }
 
 var windows: [[String: Any]] = []
+// Everything the window server stacks above or below the ordinary application
+// level: the menu bar, the Dock, the status items, Notification Centre. None of
+// them is a Perch, and the frame loop is checked against these rectangles to
+// prove the sprite never stands on one.
+var elevated: [[String: Any]] = []
 let opts = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
 if let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] {
     for w in list {
         let owner = w[kCGWindowOwnerName as String] as? String ?? ""
-        guard owner.lowercased().contains("ai-buddy") else { continue }
+        let layer = w[kCGWindowLayer as String] as? Int ?? -999
         let b = w[kCGWindowBounds as String] as? [String: Any] ?? [:]
-        windows.append([
+        let entry: [String: Any] = [
             "owner": owner,
-            "layer": w[kCGWindowLayer as String] as? Int ?? -999,
+            "layer": layer,
             "alpha": w[kCGWindowAlpha as String] as? Double ?? -1,
             "onscreen": w[kCGWindowIsOnscreen as String] as? Bool ?? false,
             "x": b["X"] as? Double ?? 0, "y": b["Y"] as? Double ?? 0,
             "w": b["Width"] as? Double ?? 0, "h": b["Height"] as? Double ?? 0,
-        ])
+        ]
+        if owner.lowercased().contains("ai-buddy") {
+            windows.append(entry)
+        } else if layer != 0 {
+            elevated.append(entry)
+        }
     }
 }
 
-let out = ["displays": displays, "windows": windows]
+let out = ["displays": displays, "windows": windows, "elevated": elevated]
 let data = try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted])
 print(String(data: data, encoding: .utf8)!)

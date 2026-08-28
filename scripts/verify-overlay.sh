@@ -63,19 +63,44 @@ swift scripts/inspect-window.swift > "$OUT/desktop.json" 2> "$OUT/desktop.err" |
   exit 1
 }
 
-PERCH_RECT=$(
+RECTS=$(
   python3 - "$OUT/desktop.json" << 'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))["displays"][0]
-# 200 points below where the sprite starts, and 400 wide around it, so the
-# sprite is over the window and has somewhere to fall from.
+# The Perch: 200 points below where the sprite starts, and 400 wide around it,
+# so the sprite is over the window and has somewhere to fall from.
 print(int(d["x"] + d["w"] / 2 - 200), int(d["y"] + d["h"] / 2 + 200), 400, 240)
+# The furniture: between the sprite's start and that Perch, so the sprite falls
+# through it on the way down and the trace says whether it stopped.
+print(int(d["x"] + d["w"] / 2 - 200), int(d["y"] + d["h"] / 2 + 60), 400, 120)
 PY
 )
+PERCH_RECT=$(echo "$RECTS" | sed -n 1p)
+OVER_RECT=$(echo "$RECTS" | sed -n 2p)
+
+# ---------------------------------------------------------------------------
+# A window the sprite must NOT land on.
+#
+# The Dock and the menu bar are not Perches, and the sprite has to fall past
+# them. Neither can be used to check that: the real furniture all has its top
+# edge at the top of the screen, where a falling sprite never meets it. A prop
+# opened at the Dock's own window level, in the sprite's way, does meet it.
+# ---------------------------------------------------------------------------
+DOCK_LEVEL=20
+echo "Opening a prop at window level $DOCK_LEVEL at $OVER_RECT to fall through..."
+# shellcheck disable=SC2086  # four separate arguments, deliberately
+swift scripts/perch-window.swift $OVER_RECT $DOCK_LEVEL > "$OUT/over.log" 2>&1 &
+OVER_PID=$!
+await "$OUT/over.log" '^\{' 40 || {
+  echo "FAIL: elevated prop window never reported its bounds"
+  cat "$OUT/over.log"
+  exit 1
+}
 
 echo "Opening a prop window at $PERCH_RECT to perch on..."
 # shellcheck disable=SC2086  # four separate arguments, deliberately
 swift scripts/perch-window.swift $PERCH_RECT > "$OUT/perch.log" 2>&1 &
+PERCH_PID=$!
 await "$OUT/perch.log" '^\{' 40 || {
   echo "FAIL: prop window never reported its bounds"
   cat "$OUT/perch.log"
@@ -102,6 +127,10 @@ done
 # never races the app's startup.
 await "$OUT/app.log" '^frame: [0-9]+ Perched' 60 ||
   echo "  (the sprite never perched - the checks below will say so)"
+
+# It has done its job by now: the sprite has fallen past it, and it is drawn
+# above the overlay, so leaving it up would put it over the screenshot below.
+kill "$OVER_PID" 2> /dev/null
 
 swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
   {
@@ -141,7 +170,7 @@ perl -e 'select(undef,undef,undef,1.5)' # long enough to fall the step and settl
 
 echo "Closing the prop window..."
 CLOSED_MS=$(now_ms)
-pkill -f 'perch-window.swift' 2> /dev/null
+kill "$PERCH_PID" 2> /dev/null
 perl -e 'select(undef,undef,undef,2.5)' # long enough to notice, fall and settle
 
 echo ""
@@ -226,6 +255,33 @@ floors = [d["y"] + d["h"] for d in displays if d["x"] <= tail[-1][2] <= d["x"] +
 check(any(tail[-1][3] <= floor + 1 for floor in floors),
       "never below the bottom of the display it is over",
       "floors " + ", ".join(f"{floor:.0f}" for floor in floors))
+
+# The Dock and the menu bar are not Perches. The prop at the Dock's own window
+# level stood in the sprite's way on the first fall: it had to pass through.
+over = next((json.loads(line) for line in open(f"{out}/over.log")
+             if line.startswith("{")), None)
+if over is None or over.get("layer", 0) == 0:
+    check(False, "the elevated prop reported an elevated window level",
+          f"layer={over.get('layer') if over else 'nothing reported'}")
+else:
+    check(first(lambda f: f[1] == "Perched" and abs(f[3] - over["y"]) <= 1) is None,
+          "a window above the application level is not a Perch",
+          f"layer {over['layer']:.0f} top y={over['y']:.0f}")
+    check(first(lambda f: f[1] == "Falling" and f[3] > over["y"] + 1) is not None,
+          "the sprite falls straight through it",
+          "it was still falling below that edge")
+
+# And the real furniture, whatever this desktop happens to have running: the
+# menu bar, the Dock, the status items, Notification Centre.
+furniture = json.load(open(f"{out}/desktop.json"))["elevated"]
+stood_on = [w for w in furniture
+            for f in frames
+            if f[1] in ("Perched", "Grounded") and abs(f[3] - w["y"]) <= 1
+            and w["x"] <= f[2] <= w["x"] + w["w"]]
+check(not stood_on,
+      "the desktop's own furniture is never stood on",
+      f"{len(furniture)} elevated windows"
+      if not stood_on else f"stood on {stood_on[0]['owner']}")
 
 print(f"\n{'FAILED: ' + ', '.join(fails) if fails else 'Frame loop checks passed.'}")
 sys.exit(1 if fails else 0)

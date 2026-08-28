@@ -19,7 +19,13 @@
 // It terminates on its own, so an interrupted run cannot leave a stray window
 // on the user's screen.
 //
-// Usage: swift scripts/perch-window.swift x y width height
+// An optional window level makes the same prop into desktop furniture: the Dock
+// sits at 20 and the menu bar at 24, and neither is a Perch. A prop opened up
+// there is the only way to check that from a script, because the real furniture
+// all has its top edge at the top of the screen, where a falling sprite never
+// meets it.
+//
+// Usage: swift scripts/perch-window.swift x y width height [level]
 
 import AppKit
 
@@ -36,13 +42,14 @@ let steps = 3
 let quitAfter = 45.0
 
 let args = CommandLine.arguments
-guard args.count == 5, let x = Double(args[1]), let y = Double(args[2]),
+guard args.count == 5 || args.count == 6, let x = Double(args[1]), let y = Double(args[2]),
     let width = Double(args[3]), let height = Double(args[4])
 else {
     FileHandle.standardError.write(
-        Data("usage: perch-window.swift x y width height\n".utf8))
+        Data("usage: perch-window.swift x y width height [level]\n".utf8))
     exit(2)
 }
+let level = args.count == 6 ? Int(args[5]) ?? 0 : 0
 
 let app = NSApplication.shared
 // No Dock tile, no switcher entry, no stolen focus: this is a prop, not an app.
@@ -63,6 +70,7 @@ window.title = "ai-buddy perch"
 // plus a title bar and every step below sets the frame. Setting it both ways
 // would make the first rectangle the odd one out.
 window.setFrame(appKitRect(top: y), display: true)
+window.level = NSWindow.Level(rawValue: level)
 window.orderFrontRegardless()
 
 /// One line per event: when it happened, and what the window server says the
@@ -79,6 +87,14 @@ func report(at: Date) {
         line["y"] = bounds["Y"] as? Double ?? 0
         line["w"] = bounds["Width"] as? Double ?? 0
         line["h"] = bounds["Height"] as? Double ?? 0
+    }
+    // The level the window server settled on, not the one that was asked for:
+    // what makes a prop furniture is where the server put it.
+    if let list = CGWindowListCopyWindowInfo(
+        .optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]],
+        let layer = list.first?[kCGWindowLayer as String] as? Int
+    {
+        line["layer"] = Double(layer)
     }
     let data = try! JSONSerialization.data(withJSONObject: line)
     print(String(data: data, encoding: .utf8)!)
