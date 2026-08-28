@@ -10,9 +10,11 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 
 ## State
 
-Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues);
-issue #1 (the transparent overlay) is the only one built. There is no physics, no
-Character Package, no Director, and no Functional Layer yet.
+Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
+on the top edge of whatever window is under it, and drops when that window moves
+or closes. There is no Character Package, no Director, and no Functional Layer
+yet, and the sprite cannot be grabbed.
 
 ## Running it
 
@@ -59,25 +61,37 @@ cargo test --manifest-path src-tauri/Cargo.toml
 **`scripts/verify-overlay.sh`** covers everything else a machine can reach. It
 is deliberately not a `cargo test`: it needs a real desktop, a real window
 server and a running app, so it is slow, macOS-only, and cannot run in CI. Run
-it when the overlay or the platform layer changes.
+it when the overlay, the platform layer or the frame loop changes.
 
 ```sh
 scripts/verify-overlay.sh          # or --keep to leave the app running
 ```
 
 It checks that exactly one overlay window exists at floating level, that its
-bounds match the union of the displays, that the app is an accessory with no
-Dock tile or switcher entry, and that the hit-test pipeline actually fires: it
-places the sprite over wherever your cursor already is and asserts a hit on
-drawn pixels and a miss on transparent ones at the same cursor position. It also
-saves screenshots of each display plus a tight crop of the sprite under
+bounds match the union of the displays, and that the app is an accessory with no
+Dock tile or switcher entry.
+
+Then it checks the frame loop against a real desktop. It opens a plain window of
+its own below where the sprite starts, so the sprite has a Perch to aim at, and
+steps that window down the screen before closing it. Reading the app's own frame
+trace against the bounds the window server reports, it asserts that the sprite
+falls under gravity, comes to rest on that window's top edge, follows the edge
+when the window moves, drops when the window closes — each within about one poll
+interval — and comes to rest again on the display below.
+
+Last it checks the hit-test pipeline: it puts the cursor on the sprite's centre
+and then on its transparent top-left corner, and asserts a hit on the first and
+a miss on the second. The cursor goes back where you left it. It also saves
+screenshots of each display plus a tight crop of the perched sprite under
 `.verify/`, so the art and its transparency can be eyeballed.
 
-Keep the mouse still while it runs; it tells you if the cursor moved.
+Keep hands off the mouse while it runs.
 
-For a live view of the decision, set `AI_BUDDY_TRACE_HITTEST=1` and move the
-cursor across the sprite. The first line or two are emitted before the window
-frame settles and report a stale origin — read the later ones.
+For a live view of what the app is deciding, set `AI_BUDDY_TRACE_HITTEST=1` for
+the click-through decision and `AI_BUDDY_TRACE_FRAMES=1` for the Engine's
+frames — state, position and animation, once per tick. The first line or two of
+the hit-test trace are emitted before the window frame settles and report a
+stale origin; read the later ones.
 
 **A human** is still needed for the last step, because only the window server
 can answer it. Run the app, then confirm:
@@ -92,9 +106,10 @@ can answer it. Run the app, then confirm:
 4. **Follows you across Spaces.** Switch Spaces. The sprite is present on the
    new one, in the same screen position.
 
-To place the sprite somewhere specific — the second display, say — relaunch with
-`AI_BUDDY_SPRITE_POS=x,y` in logical points from the top-left of the display
-union. That variable exists only until Grab lands and the sprite can be dragged.
+The sprite starts in the middle of the first display and goes wherever gravity
+and your windows take it from there — its position is the Engine's, and until
+Grab lands there is no way to place it by hand. To watch it react, move or close
+the window it is sitting on.
 
 ## The placeholder Character
 

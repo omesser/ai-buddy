@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# Machine-checkable verification for the overlay window.
+# Machine-checkable verification for the overlay window and the frame loop.
 #
 # Deliberately not a cargo test: every check here needs a real desktop, a real
 # window server and a running app, so it is slow, it is macOS-only, and it
-# cannot run in CI. Run it by hand when the overlay or the platform layer
-# changes. `cargo test` stays fast and pure.
+# cannot run in CI. Run it by hand when the overlay, the platform layer or the
+# frame loop changes. `cargo test` stays fast and pure.
 #
 # What this cannot check: whether a click actually passes through to the window
 # underneath, and whether typing elsewhere survives a click on the sprite. Those
 # need a human. See the checklist in README.md.
 #
 # Usage: scripts/verify-overlay.sh [--keep]
-#   --keep   leave the app running afterwards, with hit-test tracing on
+#   --keep   leave the app running afterwards, with tracing on
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -22,12 +22,26 @@ KEEP=0
 
 # An orphaned overlay is always-on-top and has no window controls, so an
 # interrupted run would otherwise leave something on screen that is awkward to
-# get rid of. --keep opts out, since leaving it running is the whole point.
-trap '[ "$KEEP" = "1" ] || pkill -f "target/debug/ai-buddy" 2> /dev/null' EXIT INT TERM
+# get rid of. --keep opts out for the app, never for the prop window: that one
+# is scaffolding and nobody wants it left behind.
+trap 'pkill -f perch-window.swift 2> /dev/null;
+      [ "$KEEP" = "1" ] || pkill -f "target/debug/ai-buddy" 2> /dev/null' EXIT INT TERM
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT=".verify/$STAMP"
 mkdir -p "$OUT"
+
+now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
+
+# Waits for a log to say something, rather than sleeping a guessed interval:
+# every timing here belongs to the app or the window server, not to us.
+await() { # $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
+  for _ in $(seq 1 "$3"); do
+    grep -qE "$2" "$1" 2> /dev/null && return 0
+    perl -e 'select(undef,undef,undef,0.25)'
+  done
+  return 1
+}
 
 echo "Building..."
 if ! cargo build --manifest-path src-tauri/Cargo.toml 2>&1 | tail -3; then
@@ -35,8 +49,42 @@ if ! cargo build --manifest-path src-tauri/Cargo.toml 2>&1 | tail -3; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# A Perch to aim the sprite at.
+#
+# The sprite starts in the middle of the first display and falls, so a window
+# whose top edge is below that point is something it can land on. It has to
+# exist before the app does: the fall takes under a second, and a window that
+# arrives afterwards is above the sprite, which is not a surface from below.
+# ---------------------------------------------------------------------------
+swift scripts/inspect-window.swift > "$OUT/desktop.json" 2> "$OUT/desktop.err" || {
+  echo "FAIL: inspector"
+  cat "$OUT/desktop.err"
+  exit 1
+}
+
+PERCH_RECT=$(
+  python3 - "$OUT/desktop.json" << 'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))["displays"][0]
+# 200 points below where the sprite starts, and 400 wide around it, so the
+# sprite is over the window and has somewhere to fall from.
+print(int(d["x"] + d["w"] / 2 - 200), int(d["y"] + d["h"] / 2 + 200), 400, 240)
+PY
+)
+
+echo "Opening a prop window at $PERCH_RECT to perch on..."
+# shellcheck disable=SC2086  # four separate arguments, deliberately
+swift scripts/perch-window.swift $PERCH_RECT > "$OUT/perch.log" 2>&1 &
+await "$OUT/perch.log" '^\{' 40 || {
+  echo "FAIL: prop window never reported its bounds"
+  cat "$OUT/perch.log"
+  exit 1
+}
+
 pkill -f 'target/debug/ai-buddy' 2> /dev/null
-AI_BUDDY_TRACE_HITTEST=1 ./src-tauri/target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
+AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_TRACE_FRAMES=1 \
+  ./src-tauri/target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
 APP_PID=$!
 
 # Wait for the startup line rather than sleeping a guessed interval.
@@ -50,11 +98,139 @@ for _ in $(seq 1 60); do
   perl -e 'select(undef,undef,undef,0.25)'
 done
 
+# Land on the prop, then wait for a step it takes *after* landing, so the check
+# never races the app's startup.
+await "$OUT/app.log" '^frame: [0-9]+ Perched' 60 ||
+  echo "  (the sprite never perched - the checks below will say so)"
+
 swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
   {
     echo "FAIL: inspector"
     cat "$OUT/window.err"
   }
+
+# A tight crop around the sprite, with padding, so the edges of the art can be
+# eyeballed against whatever is behind them. A full-desktop grab is too big to
+# judge transparency from. Taken now, while the sprite is perched in the open:
+# where it ends up at rest is the bottom of the screen, and the Dock sits at a
+# higher window level than the overlay and covers it there.
+python3 - "$OUT" << 'PY'
+import json, re, subprocess, sys
+
+out = sys.argv[1]
+log = open(f"{out}/app.log").read()
+windows = json.load(open(f"{out}/window.json"))["windows"]
+size = re.search(r"sprite (\d+)x(\d+)", log)
+at = re.findall(r"^frame: \S+ Perched \S+ sprite\((-?\d+),(-?\d+)\)", log, re.M)
+
+if windows and size and at:
+    width, height = (int(g) for g in size.groups())
+    x, y = (int(g) for g in at[-1])
+    pad = 40
+    region = (f"{windows[0]['x'] + x - pad},{windows[0]['y'] + y - pad},"
+              f"{width + pad * 2},{height + pad * 2}")
+    subprocess.run(["screencapture", "-x", "-R", region, f"{out}/sprite.png"], check=False)
+PY
+
+PERCH_LINES=$(grep -c '^{' "$OUT/perch.log")
+for _ in $(seq 1 40); do
+  [ "$(grep -c '^{' "$OUT/perch.log")" -gt "$PERCH_LINES" ] && break
+  perl -e 'select(undef,undef,undef,0.25)'
+done
+perl -e 'select(undef,undef,undef,1.5)' # long enough to fall the step and settle
+
+echo "Closing the prop window..."
+CLOSED_MS=$(now_ms)
+pkill -f 'perch-window.swift' 2> /dev/null
+perl -e 'select(undef,undef,undef,2.5)' # long enough to notice, fall and settle
+
+echo ""
+echo "Frame loop:"
+python3 - "$OUT" "$CLOSED_MS" << 'PY'
+import json, re, sys
+
+out, closed_ms = sys.argv[1], int(sys.argv[2])
+
+# docs/SPEC.md: WindowSource is read at approximately 10Hz. The slack covers one
+# engine tick plus however long pkill and this script's own timestamp take.
+POLL_MS, SLACK_MS = 100, 150
+
+frames = [
+    (int(m[1]), m[2], float(m[3]), float(m[4]))
+    for m in (
+        re.match(r"frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\)", line)
+        for line in open(f"{out}/app.log")
+    )
+    if m
+]
+steps = [json.loads(line) for line in open(f"{out}/perch.log") if line.startswith("{")]
+displays = json.load(open(f"{out}/desktop.json"))["displays"]
+
+fails = []
+
+def check(ok, label, detail=""):
+    print(f"  {'PASS' if ok else 'FAIL'}  {label}{'  ' + detail if detail else ''}")
+    if not ok:
+        fails.append(label)
+
+def first(predicate, of=frames):
+    return next((f for f in of if predicate(f)), None)
+
+if not frames or not steps:
+    print("  FAIL  the app traced no frames" if not frames
+          else "  FAIL  the prop window reported nothing")
+    sys.exit(1)
+
+descent = [f for f in frames if f[1] == "Falling"][:10]
+check(len(descent) >= 5 and descent[-1][3] > descent[0][3] + 10,
+      "the sprite falls under gravity",
+      f"{descent[0][3]:.0f} -> {descent[-1][3]:.0f} over {len(descent)} frames")
+check(all(b[3] > a[3] for a, b in zip(descent, descent[1:])),
+      "every frame of a fall is lower than the last")
+
+# The prop's own reported top edge, from the window server rather than from what
+# it was asked for: a titled window's frame is taller than its content rect.
+landed = first(lambda f: f[1] == "Perched" and abs(f[3] - steps[0]["y"]) <= 1)
+check(landed is not None,
+      "it comes to rest on a real window's top edge",
+      f"window top y={steps[0]['y']:.0f}")
+
+# The first step the prop took once the sprite was already perched on it.
+step = first(lambda s: landed and s["at_ms"] > landed[0], steps[1:])
+if step is None:
+    check(False, "the prop window stepped down while the sprite was perched")
+else:
+    noticed = first(lambda f: f[0] >= step["at_ms"] and f[1] == "Falling")
+    check(noticed is not None and noticed[0] - step["at_ms"] <= POLL_MS + SLACK_MS,
+          "a window that moves is noticed within about one poll interval",
+          f"{noticed[0] - step['at_ms']:.0f}ms" if noticed else "never noticed")
+    check(first(lambda f: f[0] > step["at_ms"] and f[1] == "Perched"
+                and abs(f[3] - step["y"]) <= 1) is not None,
+          "the sprite follows the window to its new top edge",
+          f"new top y={step['y']:.0f}")
+
+dropped = first(lambda f: f[0] >= closed_ms and f[1] == "Falling")
+check(dropped is not None and dropped[0] - closed_ms <= POLL_MS + SLACK_MS,
+      "a window that closes drops the sprite within about one poll interval",
+      f"{dropped[0] - closed_ms:.0f}ms" if dropped else "never dropped")
+
+# At rest means not moving: the same position, frame after frame.
+tail = frames[-10:]
+check(all(f[2:] == tail[0][2:] for f in tail) and tail[-1][1] in ("Grounded", "Perched"),
+      "and comes to rest again",
+      f"{tail[-1][1]} at ({tail[-1][2]:.0f},{tail[-1][3]:.0f})")
+check(tail[-1][3] > steps[0]["y"],
+      "lower than the window it had been perched on")
+
+floors = [d["y"] + d["h"] for d in displays if d["x"] <= tail[-1][2] <= d["x"] + d["w"]]
+check(any(tail[-1][3] <= floor + 1 for floor in floors),
+      "never below the bottom of the display it is over",
+      "floors " + ", ".join(f"{floor:.0f}" for floor in floors))
+
+print(f"\n{'FAILED: ' + ', '.join(fails) if fails else 'Frame loop checks passed.'}")
+sys.exit(1 if fails else 0)
+PY
+STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
 
@@ -66,7 +242,7 @@ for i in $(seq 1 "$DISPLAY_COUNT"); do
 done
 
 python3 - "$OUT" << 'PY'
-import json, os, re, struct, subprocess, sys
+import json, os, re, struct, sys
 
 out = sys.argv[1]
 data = json.load(open(f"{out}/window.json"))
@@ -111,16 +287,7 @@ check('type="UIElement"' in ls, "accessory app: no Dock tile or switcher entry")
 log = open(f"{out}/app.log").read()
 check(log.startswith("overlay:"), "app reported its geometry on startup")
 check("hit-test:" in log, "hit-test trace is running")
-
-# A tight crop around the sprite, with padding, so the edges of the art can be
-# eyeballed against whatever is behind them. A full-desktop grab is too big to
-# judge transparency from.
-m = re.search(r"sprite (\d+)x(\d+) at \((-?\d+),(-?\d+)\)", log)
-if m and windows:
-    sw, sh, sx, sy = (int(g) for g in m.groups())
-    pad = 40
-    region = f"{w['x'] + sx - pad},{w['y'] + sy - pad},{sw + pad * 2},{sh + pad * 2}"
-    subprocess.run(["screencapture", "-x", "-R", region, f"{out}/sprite.png"], check=False)
+check("frame:" in log, "frame trace is running")
 
 shots = [f for f in sorted(os.listdir(out)) if f.endswith(".png")]
 for s in shots:
@@ -133,70 +300,72 @@ print(f"\n{'FAILED: ' + ', '.join(fails) if fails else 'All machine checks passe
 print(f"Artifacts: {out}")
 sys.exit(1 if fails else 0)
 PY
-STATUS=$?
+OVERLAY_STATUS=$?
+[ "$OVERLAY_STATUS" -ne 0 ] && STATUS=1
 
 # ---------------------------------------------------------------------------
 # Hit-test pipeline, end to end, against the real art.
 #
-# The sprite is moved onto wherever the cursor already is, rather than moving
-# the cursor, which would need Accessibility and synthetic events. Two cases at
-# the *same* cursor position isolate the alpha lookup: the sprite's centre is
-# drawn, its top-left corner is not.
+# The cursor is moved onto the resting sprite and off it again, which is the
+# only end left to move now that the sprite's position belongs to the Engine.
+# Two cases against the *same* sprite isolate the alpha lookup: its centre is
+# drawn, its top-left corner is not. The cursor is put back where it was.
 # ---------------------------------------------------------------------------
 echo ""
 echo "Hit-test pipeline:"
 
-WIN_X=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['x']))" 2> /dev/null || echo 0)
-WIN_Y=$(python3 -c "import json;print(int(json.load(open('$OUT/window.json'))['windows'][0]['y']))" 2> /dev/null || echo 0)
+BEFORE=$(swift scripts/cursor-position.swift)
+SPRITE_AT=$(
+  python3 - "$OUT" << 'PY'
+import json, re, sys
+out = sys.argv[1]
+log = open(f"{out}/app.log").read()
+w = json.load(open(f"{out}/window.json"))["windows"][0]
+size = re.search(r"sprite (\d+)x(\d+)", log)
+at = re.findall(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", log, re.M)
+if not (size and at):
+    sys.exit(1)
+# Where the art's top-left corner is on screen, and how big it is.
+print(int(w["x"]) + int(at[-1][0]), int(w["y"]) + int(at[-1][1]), *size.groups())
+PY
+) || SPRITE_AT=""
 
-# Position the sprite relative to wherever the cursor is, run the app, and read
-# back the decision. The cursor must hold still for the few seconds this takes,
-# so each attempt re-reads it afterwards and discards the result if it moved.
-# A moving cursor makes the test invalid, not failed - reporting it as a failure
-# would teach the reader to ignore failures.
-probe() { # $1=offset from cursor to sprite origin  $2=label  $3=expected HIT|miss
-  local line before after sx sy
-  for _attempt in 1 2 3; do
-    before=$(swift scripts/cursor-position.swift)
-    sx=$(($(echo "$before" | cut -d' ' -f1) - WIN_X - $1))
-    sy=$(($(echo "$before" | cut -d' ' -f2) - WIN_Y - $1))
+probe() { # $1=offset into the art  $2=label  $3=expected HIT|miss
+  local x y line landed
+  x=$(($(echo "$SPRITE_AT" | cut -d' ' -f1) + $1))
+  y=$(($(echo "$SPRITE_AT" | cut -d' ' -f2) + $1))
 
-    pkill -f 'target/debug/ai-buddy' 2> /dev/null
-    AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_SPRITE_POS="$sx,$sy" \
-      ./src-tauri/target/debug/ai-buddy > "$OUT/probe-$3.log" 2>&1 &
-    local pid=$!
-    for _ in $(seq 1 40); do
-      grep -q 'hit-test:' "$OUT/probe-$3.log" 2> /dev/null && break
-      perl -e 'select(undef,undef,undef,0.25)'
-    done
-    # The first trace line fires before the window frame settles: applying the
-    # non-activating style mask resizes it, and until that lands the window
-    # reports a different scale factor and origin. Sample after it settles.
-    perl -e 'select(undef,undef,undef,2.5)'
-    line=$(grep 'hit-test:' "$OUT/probe-$3.log" | tail -1)
-    kill "$pid" 2> /dev/null
-    after=$(swift scripts/cursor-position.swift)
-
-    if [ "$before" != "$after" ]; then
-      continue # cursor moved; this attempt proves nothing
-    fi
-    if echo "$line" | grep -q "$3 "; then
-      echo "  PASS  $2"
-    else
-      echo "  FAIL  $2 (expected $3)"
-      echo "        $line"
-      HIT_FAILED=1
-    fi
+  landed=$(swift scripts/warp-cursor.swift "$x" "$y")
+  if [ "$landed" != "$x $y" ]; then
+    echo "  SKIP  $2 - the cursor could not be placed at $x $y (landed at $landed)"
     return
-  done
-  echo "  SKIP  $2 - cursor kept moving; rerun without touching the mouse"
+  fi
+  # The decision is made on the next tick, not on the warp.
+  perl -e 'select(undef,undef,undef,0.5)'
+
+  line=$(grep 'hit-test:' "$OUT/app.log" | tail -1)
+  if echo "$line" | grep -q "$3 "; then
+    echo "  PASS  $2"
+  else
+    echo "  FAIL  $2 (expected $3)"
+    echo "        $line"
+    HIT_FAILED=1
+  fi
 }
 
 HIT_FAILED=0
-# 32x32 art at scale 4 is 128 points. Offset 64 puts the cursor at the sprite's
-# centre, which is drawn; offset 0 puts it on the top-left corner, which is not.
-probe 64 "cursor over drawn pixels swallows clicks" "HIT"
-probe 0 "cursor over transparent pixels passes clicks through" "miss"
+if [ -z "$SPRITE_AT" ]; then
+  echo "  SKIP  the app never reported where the sprite is"
+else
+  # 32x32 art at scale 4 is 128 points. Half of that puts the cursor at the
+  # sprite's centre, which is drawn; offset 0 is its top-left corner, which is
+  # not.
+  probe $(($(echo "$SPRITE_AT" | cut -d' ' -f3) / 2)) "cursor over drawn pixels swallows clicks" "HIT"
+  probe 0 "cursor over transparent pixels passes clicks through" "miss"
+  # Put the cursor back where the human left it.
+  # shellcheck disable=SC2086  # an x and a y, deliberately split
+  swift scripts/warp-cursor.swift $BEFORE > /dev/null
+fi
 
 [ "$HIT_FAILED" = "1" ] && STATUS=1
 
@@ -206,13 +375,9 @@ echo "  that the window server honours the flag - a click really lands underneat
 echo "  and typing elsewhere really survives a click on the sprite."
 
 if [ "$KEEP" = "1" ]; then
-  # The probes stopped the app launched at the top of this script, so start a
-  # fresh one rather than reporting a pid that is already gone.
-  pkill -f 'target/debug/ai-buddy' 2> /dev/null
-  AI_BUDDY_TRACE_HITTEST=1 ./src-tauri/target/debug/ai-buddy > "$OUT/keep.log" 2>&1 &
   printf '\n'
-  echo "App running (pid $!) for the manual checks, with hit-test tracing on."
-  echo "Watch the decisions:  tail -f $OUT/keep.log"
+  echo "App still running (pid $APP_PID) for the manual checks, with tracing on."
+  echo "Watch the decisions:  tail -f $OUT/app.log"
   echo "Stop it:              pkill -f target/debug/ai-buddy"
 fi
 exit $STATUS
