@@ -233,7 +233,7 @@ Three concentric parts:
 - **Engine** — pure, synchronous, no I/O. Owns physics, State, Perch collision,
   Behavior selection and playback, and Character validation.
 - **Adapters** — trait implementations that reach the outside world: `WindowSource`,
-  `Director`, `MemoryStore`, `Clock`, renderer.
+  `Director`, `MemoryManifest`, `Clock`, renderer.
 - **Shell** — the Tauri app, tray, windows, settings, MCP server, Harness attachment.
 
 ### The Engine seam
@@ -455,7 +455,7 @@ ai-buddy loads correctly.
 
 ### Fakes, not mocks
 
-`WindowSource`, `Director`, `MemoryStore`, and `Clock` get hand-written fakes with
+`WindowSource`, `Director`, `MemoryManifest`, and `Clock` get hand-written fakes with
 straightforward behavior. Assertions are on Engine output, not on fake interactions.
 
 ### Not unit tested
