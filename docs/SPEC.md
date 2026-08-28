@@ -152,7 +152,7 @@ that adding a character is drawing, not programming.
 ### Character packages
 
 42. As a character author, I want to create a character by supplying artwork and a
-    manifest, so that making one is drawing rather than programming.
+    Character Manifest, so that making one is drawing rather than programming.
 43. As a character author, I want a small required animation set, so that I can ship a
     working character in an evening.
 44. As a character author, I want to supply extra animations beyond the required set and
@@ -288,8 +288,8 @@ Disturb, and a global hotkey.
 
 ### Character Package
 
-A directory or archive containing a manifest, animation frames, a Personality Prompt, and
-Behavior declarations.
+A directory or archive containing a Character Manifest, animation frames, a
+Personality Prompt, and Behavior declarations.
 
 The engine owns **Primitives**. A Character composes them and cannot define new ones. A
 **Behavior** is a named sequence of Primitives with weights and trigger conditions,

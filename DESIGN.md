@@ -103,7 +103,7 @@ Layer is thinking, which is exactly where a naive design looks broken.
 
 ### 6. Characters are packages; the engine owns the vocabulary
 
-A Character Package contains animations, a manifest, a Personality Prompt, and
+A Character Package contains animations, a Character Manifest, a Personality Prompt, and
 Behavior declarations. The format is first-class from day one, with two shipped
 Characters, and it stays internal and undocumented until v2.
 

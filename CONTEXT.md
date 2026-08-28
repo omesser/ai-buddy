@@ -15,8 +15,13 @@ _Avoid_: Pet, mascot, avatar, buddy (the app is the buddy, not the character)
 
 **Character Package**:
 The on-disk form of a Character: a directory or archive containing its
-animations, manifest, personality prompt, and behavior tuning.
+animations, Character Manifest, personality prompt, and behavior tuning.
 _Avoid_: Skin, theme, mod, plugin
+
+**Character Manifest**:
+The declaration at the root of a Character Package: frame size, count, fps and
+loop mode per Animation, plus the Behaviors the Character declares.
+_Avoid_: Manifest on its own — Memory has one too, so always say which
 
 **Personality Prompt**:
 The natural-language description of who a Character is, carried in its package
