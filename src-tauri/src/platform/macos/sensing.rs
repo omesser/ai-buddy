@@ -78,7 +78,7 @@ mod tests {
     /// Run it with:
     ///
     /// ```text
-    /// cargo test --manifest-path src-tauri/Cargo.toml \
+    /// cargo test \
     ///     sensing -- --ignored --nocapture
     /// ```
     ///

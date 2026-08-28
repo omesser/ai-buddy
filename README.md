@@ -52,10 +52,12 @@ overlay is currently swallowing clicks or passing them on, so verification is
 split in three.
 
 **Unit tests** cover the arithmetic — the alpha lookup and the coordinate
-conversions. Fast, pure, no windowing system:
+conversions. Fast, pure, no windowing system, because the core crate depends on
+no platform binding at all:
 
 ```sh
-cargo test
+cargo test -p ai-buddy-core     # the pure core, builds anywhere
+cargo test                      # everything, including the macOS shell
 ```
 
 **`scripts/verify-overlay.sh`** covers everything else a machine can reach. It

@@ -246,8 +246,9 @@ regardless: the rule is no platform or toolkit dependency, not no I/O.
 The purpose is to make the Engine's purity a build property rather than a
 property of the source that the next change can quietly remove. It also lets the
 core crate's tests and lints run on a Linux runner, where the shell cannot be
-compiled at all. Tracked as issue #23; the layout is single-crate until that
-lands.
+compiled at all. `cargo tree` on the core crate is the check, run in CI against
+every target rather than the host alone: a platform dependency hidden behind a
+`cfg` would be invisible to a host-only tree.
 
 ### The Engine seam
 

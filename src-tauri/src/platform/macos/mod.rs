@@ -1,9 +1,8 @@
 //! Every AppKit and CoreGraphics implementation the Shell provides.
 //!
-//! `ai-buddy-core` declares what the app needs from a platform — a
-//! `WindowSource`, an `ActivitySource`, and a window that refuses keyboard
-//! focus. This module is where macOS answers. Keeping it in the Shell is what
-//! lets the core crate build and be tested with no platform binding at all.
+//! macOS's answer to what `platform` asks for. Keeping every AppKit and
+//! CoreGraphics call in the Shell is what lets the core crate build and be
+//! tested with no platform binding at all.
 
 #![cfg(target_os = "macos")]
 

@@ -1,10 +1,10 @@
 [package]
 name = "ai-buddy"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.77"
 description = "A desktop companion that lives on your screen"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "ai-buddy"

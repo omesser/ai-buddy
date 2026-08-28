@@ -52,7 +52,9 @@ jobs:
         # half of it needs the macOS windowing stack. The core crate is checked
         # on its own in the next step, which is what the split bought.
         env:
-          SKIP: cargo-fmt,cargo-clippy,swiftc-typecheck
+          # cargo fmt compiles nothing and runs fine here; only clippy needs
+          # the shell's macOS toolchain, and swiftc is macOS-only.
+          SKIP: cargo-clippy,swiftc-typecheck
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
@@ -65,8 +67,13 @@ jobs:
         # dependency reaches the core, this job fails on Linux where it cannot
         # possibly compile.
         run: |
-          cargo tree -p ai-buddy-core | grep -E '\b(tauri|objc2)' \
-            && { echo "core reaches a platform binding"; exit 1; } || true
+          # --target all, not the host: a dependency behind
+          # [target.'cfg(target_os = "macos")'.dependencies] is invisible to a
+          # host-only tree on Linux, which is exactly how it would come back.
+          tree=$(cargo tree -p ai-buddy-core --target all)
+          if echo "$tree" | grep -qE '\b(tauri|objc2)'; then
+            echo "core reaches a platform binding:"; echo "$tree"; exit 1
+          fi
           cargo clippy -p ai-buddy-core --all-targets -- -D warnings
           cargo test -p ai-buddy-core
 

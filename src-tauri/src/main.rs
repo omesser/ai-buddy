@@ -13,7 +13,7 @@
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
 
-mod macos;
+mod platform;
 
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -98,21 +98,6 @@ fn display_union(
     ))
 }
 
-/// The platform's view of the desktop.
-///
-/// Windows is stubbed deliberately; see `docs/SPEC.md`. The stub declares no
-/// capabilities, so the sprite falls to the screen edges and finds no Perches,
-/// which is a supported degraded mode rather than an error.
-#[cfg(target_os = "macos")]
-fn window_source() -> impl WindowSource {
-    macos::MacosWindowSource::new()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn window_source() -> impl WindowSource {
-    ai_buddy_core::window_source::StubWindowSource
-}
-
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -124,7 +109,7 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
         let (art_width, art_height) = mask.size();
         let (width, height) = (art_width * SPRITE_SCALE, art_height * SPRITE_SCALE);
 
-        let source = window_source();
+        let source = platform::window_source();
         let mut engine = Engine::new(starting_position(&source.snapshot()));
         let mut assembler = SnapshotAssembler::new(source);
 
@@ -320,7 +305,7 @@ fn main() {
                 art_height * SPRITE_SCALE,
             );
 
-            macos::configure_overlay(&window)?;
+            platform::configure_overlay(&window)?;
             window.show()?;
 
             run_frame_loop(app.handle().clone(), mask);

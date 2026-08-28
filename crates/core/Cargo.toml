@@ -1,10 +1,10 @@
 [package]
 name = "ai-buddy-core"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.77"
 description = "ai-buddy's pure core: engine, character packages, memory, and the adapter traits"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 
 [dependencies]
 png = "0.18"
