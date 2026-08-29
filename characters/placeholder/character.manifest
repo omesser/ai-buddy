@@ -33,3 +33,7 @@ loop react = once
 
 behavior greet = react talk then settle
 behavior settle = sit sleep
+
+# The one Behavior the Engine can already play, so a Director has something to
+# propose that visibly moves the sprite before #8 gives the rest playback.
+behavior walk = walk

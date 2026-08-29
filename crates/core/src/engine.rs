@@ -58,9 +58,10 @@ pub enum Verb {
 
 /// What the Director proposed since the previous tick.
 ///
-/// The Engine only speaks the line for now. Playing the named Behavior needs
-/// the Primitives and the Character's declarations, which arrive with #8; until
-/// then an unknown name costs nothing, because nothing acts on it.
+/// The Engine speaks the line, and acts on the one Behavior name it already
+/// knows how to play (`WALK`). Playing any other needs the Primitives and the
+/// Character's declarations, which arrive with #8; until then an unrecognised
+/// name costs nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BehaviorProposal {
     pub behavior: String,
@@ -136,7 +137,9 @@ const WALK_SPEED: f64 = 120.0;
 
 /// The one Behavior name the Engine acts on, until #8 gives it the Primitives a
 /// Behavior is made of. The Director decides that the sprite walks; the Engine
-/// only knows how.
+/// only knows how — so a Character that declares no Behavior by this name is
+/// one a Director can never set walking, which is why the placeholder declares
+/// one.
 const WALK: &str = "walk";
 
 /// Points per second squared. A tuning knob: the number that makes a fall read
@@ -147,7 +150,7 @@ pub struct Engine {
     position: Point,
     velocity: Point,
     state: State,
-    /// Milliseconds the sprite has rested untouched.
+    /// Milliseconds the sprite has spent on its feet, untouched.
     idle_ms: u32,
     animation: &'static str,
     /// Milliseconds since the current Animation started.
@@ -293,7 +296,10 @@ impl Engine {
                         self.state = footing.state;
                     }
                     Some(footing) if footing.y == self.position.y => {
-                        if self.idle_ms >= SLEEP_AFTER_MS {
+                        // Still moving is still awake. A walk proposed just
+                        // before the timer comes due would otherwise leave the
+                        // sprite gliding along the edge playing `sleep`.
+                        if self.idle_ms >= SLEEP_AFTER_MS && self.velocity.x == 0.0 {
                             self.state = State::Asleep;
                         }
                     }
@@ -403,7 +409,17 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 /// Its top edge is the surface instead, which is also why two overlapping
 /// windows settle on one Perch: the topmost edge wins, and it wins again next
 /// tick.
+///
+/// A sprite on the floor is exempt. The floor is under every window and the
+/// sprite is drawn in front of them all, so standing on the ground in front of
+/// a window is not the trapped-inside case DESIGN.md decision 7 is about — and
+/// every window hanging below the usable floor, as anything behind the Dock
+/// does, contains the ground the sprite stands on.
 fn footing(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
+    if floor_under(position.x, snapshot) == Some(position.y) {
+        return support_below(position, snapshot);
+    }
+
     snapshot
         .windows
         .iter()
@@ -1043,6 +1059,107 @@ mod tests {
             .map(|_| engine.tick(&a_long_perch()))
             .last()
             .expect("two hundred ticks produce two hundred frames")
+    }
+
+    /// #5: a walk under way keeps the sprite awake. Nodding off is for a sprite
+    /// that has been left alone, and a Director prodding an idle sprite into a
+    /// walk is exactly when the sleep timer is about to come due.
+    #[test]
+    fn a_walking_sprite_does_not_nod_off_mid_stride() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        // Poked, then left alone until it is one tick short of nodding off.
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        });
+        let nearly_asleep = engine.tick(&WorldSnapshot {
+            elapsed_ms: SLEEP_AFTER_MS - 100,
+            ..a_long_perch()
+        });
+        assert_eq!(nearly_asleep.state, State::Perched, "not asleep yet");
+
+        // The tick the timer comes due is the tick it sets off walking.
+        let setting_off = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let strolling: Vec<Frame> = (0..20).map(|_| engine.tick(&a_long_perch())).collect();
+
+        assert_eq!(setting_off.animation, "walk", "{setting_off:?}");
+        assert!(
+            strolling
+                .iter()
+                .all(|frame| frame.state == State::Perched && frame.animation == "walk"),
+            "it walks the edge awake rather than sleeping its way along it: {strolling:?}"
+        );
+    }
+
+    /// #5, and DESIGN.md decision 7: the bad case is a sprite trapped inside an
+    /// occluded window, not a sprite standing on the ground in front of one.
+    /// Windows routinely hang below the usable floor — anything behind the Dock
+    /// does — and the floor is under everything, so being within one is the
+    /// normal state of a sprite standing on the ground.
+    #[test]
+    fn a_window_over_the_floor_leaves_the_sprite_standing_on_it() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+        let grounded = settle(&mut engine, &snapshot(100));
+        assert_eq!(grounded.state, State::Grounded);
+        assert_eq!(grounded.position.y, 800.0, "the usable floor");
+
+        // A window is dragged over it, hanging below the usable floor.
+        let covered = WorldSnapshot {
+            windows: vec![Rect {
+                x: 0.0,
+                y: 100.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            ..snapshot(100)
+        };
+        let frames: Vec<Frame> = (0..10).map(|_| engine.tick(&covered)).collect();
+        assert!(
+            frames
+                .iter()
+                .all(|frame| frame.position == grounded.position && frame.state == State::Grounded),
+            "it stays on the ground rather than flying up to the title bar: {frames:?}"
+        );
+    }
+
+    /// The other half of what makes a window the sprite's footing: it has to
+    /// have come to contain it. A window floating clear above the Perch is not
+    /// something the sprite is inside, so it is not something to be lifted onto.
+    #[test]
+    fn a_window_floating_above_the_perch_is_not_footing() {
+        let world = || WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 0.0,
+                    y: 100.0,
+                    width: 1000.0,
+                    height: 150.0,
+                },
+                Rect {
+                    x: 0.0,
+                    y: 400.0,
+                    width: 1000.0,
+                    height: 200.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 300.0 });
+
+        let perched = settle(&mut engine, &world());
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0, "the edge below it");
+
+        let frames: Vec<Frame> = (0..10).map(|_| engine.tick(&world())).collect();
+        assert!(
+            frames.iter().all(|frame| frame.position.y == 400.0),
+            "and it stays there rather than being hoisted to the one above: {frames:?}"
+        );
     }
 
     #[test]
