@@ -774,8 +774,11 @@ mod tests {
         seen
     }
 
-    /// #9's first criterion. The same `read` a user's own package goes
-    /// through, told nothing about which Character it is opening.
+    /// #9's first criterion, and its fourth. A Primitive is the Engine's and
+    /// plays one of the eight Animations every Character must supply, so
+    /// "neither package needs a Primitive the other cannot use" is the same
+    /// claim as "both draw all eight" — which is what fails here if a shipped
+    /// package loses a frame or names one it does not carry.
     #[test]
     fn both_shipped_characters_load_through_the_same_loader() {
         for (directory, name) in [("win95", "Chip"), ("modern", "Nim")] {
@@ -798,32 +801,15 @@ mod tests {
         }
     }
 
-    /// #9's fourth criterion. Primitives are the Engine's and the eight
-    /// Animations are required, so this can only fail by one Character
-    /// reaching for something the other has not got — which is the whole
-    /// reason the required set is required.
-    #[test]
-    fn neither_shipped_character_needs_a_primitive_the_other_cannot_use() {
-        let chip = shipped_character("win95");
-        let nim = shipped_character("modern");
-
-        for (theirs, mine) in [(&chip, &nim), (&nim, &chip)] {
-            for behavior in mine.behaviors.keys() {
-                for animation in played(mine, behavior) {
-                    assert!(
-                        theirs.animations.contains_key(animation),
-                        "{:?} plays {animation:?} in {behavior:?}, which {:?} cannot draw",
-                        mine.name,
-                        theirs.name
-                    );
-                }
-            }
-        }
-    }
-
-    /// #9's third criterion, which is about the Behaviors and not the drawing:
-    /// Chip is never off its feet and Nim always ends up on its side, so a
-    /// Director choosing among what each declares gives two different lives.
+    /// #9's third criterion, which is about the Behaviors and not the drawing.
+    ///
+    /// Nothing a Character declares decides when it sits: `animation_for`
+    /// perches it on a window and puts it to sleep after a minute whoever it
+    /// is. What a Character declares is what a Director may set it doing, and
+    /// there the two disagree — no Behavior of Chip's ever settles, and every
+    /// Behavior of Nim's but the walk does. Two different lives from the same
+    /// Director, and not before one exists: nothing proposes a Behavior until
+    /// #11.
     #[test]
     fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
         let chip = shipped_character("win95");
