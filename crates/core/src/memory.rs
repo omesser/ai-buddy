@@ -23,6 +23,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Memory on disk, at a path the user owns.
@@ -88,13 +89,7 @@ impl MemoryManifest {
         if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(parent)?;
         }
-        let mut name = self
-            .path
-            .file_name()
-            .unwrap_or(OsStr::new("memory"))
-            .to_os_string();
-        name.push(format!(".{}.tmp", std::process::id()));
-        let scratch = self.path.with_file_name(name);
+        let scratch = scratch_path(&self.path);
 
         if let Err(e) = fs::write(&scratch, contents)
             .and_then(|()| keep_permissions_of(&self.path, &scratch))
@@ -105,6 +100,28 @@ impl MemoryManifest {
         }
         Ok(())
     }
+}
+
+/// Where one write's scratch file lives.
+///
+/// Beside Memory, so the rename that publishes it stays within one filesystem,
+/// and named for the write rather than only for the process. Memory is shared
+/// by every Character Instance and they write it from one process: on a name
+/// they all share, a second writer truncates the scratch file a first writer is
+/// still filling, and the first writer's rename then publishes those partial
+/// bytes as Memory.
+fn scratch_path(path: &Path) -> PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let mut name = path
+        .file_name()
+        .unwrap_or(OsStr::new("memory"))
+        .to_os_string();
+    name.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    path.with_file_name(name)
 }
 
 /// Give `scratch` the permissions `path` has, if `path` is there at all.
@@ -531,6 +548,31 @@ Some notes I typed at the top, under no heading at all.
             !path.exists(),
             "and a refused write leaves the user's file alone"
         );
+    }
+
+    /// Memory is shared by every Character Instance, and they write it from one
+    /// process. A scratch file named for the process rather than for the write
+    /// is one path two writers both truncate, so one writer's rename can publish
+    /// the other's half-written bytes as Memory — and only a wipe leaves a
+    /// backup, so there is nothing to recover the loss from.
+    #[test]
+    fn two_writes_never_share_one_scratch_file() {
+        let path = Path::new("/memories/memory.md");
+        let first = scratch_path(path);
+        let second = scratch_path(path);
+
+        assert_ne!(
+            first, second,
+            "each write gets a scratch file of its own, so no writer can truncate another's"
+        );
+        for scratch in [&first, &second] {
+            assert_eq!(
+                scratch.parent(),
+                path.parent(),
+                "written beside Memory, so the rename stays within one filesystem"
+            );
+            assert_ne!(scratch, path, "and never over Memory itself");
+        }
     }
 
     /// Memory is a file the user is invited to keep open in an editor, and a
