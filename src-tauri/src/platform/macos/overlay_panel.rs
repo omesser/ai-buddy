@@ -5,7 +5,8 @@ use std::sync::OnceLock;
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
 use objc2::{msg_send, sel};
 use objc2_app_kit::{
-    NSFloatingWindowLevel, NSWindowCollectionBehavior, NSWindowLevel, NSWindowStyleMask,
+    NSFloatingWindowLevel, NSWindowCollectionBehavior, NSWindowLevel, NSWindowSharingType,
+    NSWindowStyleMask,
 };
 
 /// An `NSPanel` subclass that refuses to become the key or main window.
@@ -43,7 +44,15 @@ fn overlay_panel_class() -> &'static AnyClass {
 }
 
 /// Make the overlay a floating, non-activating panel that follows the user
-/// across Spaces and stays out of the application switcher.
+/// across Spaces, stays out of the application switcher, and is never captured.
+///
+/// Never captured is DESIGN.md decision 8's screen-share rule, answered by the
+/// window server instead of by a rule. macOS publishes no way for an app to
+/// learn that its screen is being shared — Apple's own guidance is that there
+/// is none, and that guessing breaks on every third-party sharing tool — but a
+/// window may declare that its content must not be captured at all. So rather
+/// than detect a share and hide, the Character is absent from every screen
+/// recording, screen share and remote view while its owner keeps it on screen.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ptr = window
         .ns_window()
@@ -78,6 +87,10 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
         let _: () = msg_send![ns_window, setLevel: NSFloatingWindowLevel as NSWindowLevel];
         let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
         let _: () = msg_send![ns_window, setHidesOnDeactivate: false];
+        // AppKit warns that an uncapturable window cannot take part in some
+        // system services. The overlay uses none of them: it draws a sprite,
+        // takes no focus, and prints nothing.
+        let _: () = msg_send![ns_window, setSharingType: NSWindowSharingType::None];
     }
 
     Ok(())

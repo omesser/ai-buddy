@@ -358,6 +358,13 @@ w = windows[0]
 check(w["onscreen"], "window is on screen")
 check(w["layer"] == 3, "floating window level", f"layer={w['layer']}")
 
+# The screen-share half of the hide rules, and the only part of it a machine can
+# check. NSWindowSharingNone is 0, and it is what keeps the Character out of
+# every screen share, screen recording and remote view without anything having
+# to detect one — macOS publishes no way to detect one.
+check(w["sharing"] == 0, "excluded from every screen capture",
+      f"sharing={w['sharing']}")
+
 # One display exactly, rather than the union of them: macOS gives each display
 # its own Space and draws a window spanning two of them on only one, so an
 # overlay wider than a display is invisible on every display but that one. The
