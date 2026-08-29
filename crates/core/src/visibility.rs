@@ -246,6 +246,9 @@ mod tests {
         assert!(rules.presence().visible);
     }
 
+    /// Pins the rule, not anything a user can see today: no platform sets this
+    /// field yet, and `platform::do_not_disturb` says so in a `ponytail:`. The
+    /// reading is what is missing; this is what it will find waiting.
     #[test]
     fn do_not_disturb_hides_the_character_until_it_is_turned_off() {
         let mut rules = HideRules::default();
@@ -494,20 +497,65 @@ mod tests {
         ));
     }
 
+    /// A display that does not begin at the origin, which is every display but
+    /// the primary one. Both of its far edges are its origin plus its size, so
+    /// a window matching only the size is short by the whole origin.
+    fn second_display() -> Rect {
+        Rect {
+            x: 1920.0,
+            y: 200.0,
+            width: 1728.0,
+            height: 1117.0,
+        }
+    }
+
     /// A second display is another whole screen an application can take, and
     /// taking it hides the Character wherever the Character is standing.
     #[test]
     fn a_fullscreen_window_on_a_second_display_counts_too() {
-        let second = Rect {
-            x: 1920.0,
-            y: 0.0,
-            width: 1728.0,
-            height: 1117.0,
-        };
-
         assert!(fullscreen_frontmost(
-            &[window(1920.0, 0.0, 1728.0, 1117.0)],
-            &[display(), second]
+            &[window(1920.0, 200.0, 1728.0, 1117.0)],
+            &[display(), second_display()]
+        ));
+    }
+
+    /// All four edges are measured, and reaching three of them is a window.
+    /// The two on a display of its own are the ones that cost: a window is
+    /// measured against where that display starts, not merely against how big
+    /// it is, and dropping the origin calls a quarter-width window fullscreen
+    /// and takes the Character off both screens.
+    #[test]
+    fn a_window_short_of_any_one_edge_is_not_a_fullscreen_application() {
+        let displays = [display(), second_display()];
+
+        // Full height and out to the right edge, but starting a long way in.
+        assert!(!fullscreen_frontmost(
+            &[window(200.0, 0.0, 1720.0, 1080.0)],
+            &displays
+        ));
+        // Down to the bottom edge, but starting below the menu bar — the
+        // zoomed window above stops short of the bottom as well, so without
+        // this one nothing measures the top edge at all.
+        assert!(!fullscreen_frontmost(
+            &[window(0.0, 30.0, 1920.0, 1050.0)],
+            &displays
+        ));
+        // Full height, pinned to the left edge, and narrow.
+        assert!(!fullscreen_frontmost(
+            &[window(0.0, 0.0, 400.0, 1080.0)],
+            &displays
+        ));
+        // Narrow on the second display: its right edge is past that display's
+        // width, and nowhere near its right edge at 1920 + 1728.
+        assert!(!fullscreen_frontmost(
+            &[window(1920.0, 200.0, 400.0, 1117.0)],
+            &displays
+        ));
+        // Short on the second display: past 1117 points from the top of the
+        // desktop, and still short of its bottom edge at 200 + 1117.
+        assert!(!fullscreen_frontmost(
+            &[window(1920.0, 200.0, 1728.0, 1000.0)],
+            &displays
         ));
     }
 
