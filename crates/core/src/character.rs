@@ -97,6 +97,16 @@ pub const MAX_FRAME_SIDE: u32 = 1024;
 /// to ask for terabytes. A hand-drawn Animation is a handful of frames.
 pub const MAX_FRAMES: usize = 256;
 
+/// The most pixels all of a Character's distinct frames may add up to.
+///
+/// The half `MAX_FRAMES` is still missing: it bounds one Animation, and a
+/// Character may declare as many Animations as it likes. Every distinct frame
+/// buys a whole alpha mask, a byte per pixel held for as long as the Character
+/// is loaded, so four thousand full-size frames are twenty-five megabytes of
+/// package and four gigabytes of mask. This is 256 frames at the largest size a
+/// frame may be.
+pub const MAX_CHARACTER_PIXELS: u64 = 256 * (MAX_FRAME_SIDE as u64) * (MAX_FRAME_SIDE as u64);
+
 /// The fastest an Animation may declare. Past display refresh the extra frames
 /// are never seen, and a four-figure fps is either a mistake or an attempt to
 /// make the renderer thrash.
@@ -531,14 +541,19 @@ fn parse_behavior(
 
 /// Check every declared Animation against the art the package carries. Art the
 /// loader cannot open or that changes size mid-sequence draws a broken sprite
-/// rather than a Character, and art too large to be a sprite asks the renderer
-/// for memory no Character needs. All three are rejections.
+/// rather than a Character, and art too large to be a sprite, or too much of
+/// it, asks the renderer for memory no Character needs. All of them are
+/// rejections.
 fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
     errors: &mut Vec<String>,
 ) -> BTreeMap<String, Animation> {
     let mut animations = BTreeMap::new();
+    // One mask per distinct frame, exactly as the renderer holds them: a frame
+    // two Animations share is charged once.
+    let mut charged: BTreeSet<String> = BTreeSet::new();
+    let mut pixels: u64 = 0;
 
     for (name, declaration) in declared {
         let line = declaration.line;
@@ -562,15 +577,20 @@ fn resolve_animations(
                         size.0, size.1
                     ));
                 }
-                Ok(size) => match frame_size {
-                    None => frame_size = Some(size),
-                    Some(first) if first != size => errors.push(format!(
-                        "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
+                Ok(size) => {
+                    if charged.insert(frame.clone()) {
+                        pixels += u64::from(size.0) * u64::from(size.1);
+                    }
+                    match frame_size {
+                        None => frame_size = Some(size),
+                        Some(first) if first != size => errors.push(format!(
+                            "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
                          and its first frame is {}x{}; every frame is one size",
-                        size.0, size.1, first.0, first.1
-                    )),
-                    Some(_) => {}
-                },
+                            size.0, size.1, first.0, first.1
+                        )),
+                        Some(_) => {}
+                    }
+                }
             }
         }
 
@@ -587,6 +607,13 @@ fn resolve_animations(
                 },
             );
         }
+    }
+
+    if pixels > MAX_CHARACTER_PIXELS {
+        errors.push(format!(
+            "the package's frames are {pixels} pixels in all, over the \
+             {MAX_CHARACTER_PIXELS}-pixel limit"
+        ));
     }
 
     animations
@@ -1181,6 +1208,48 @@ mod tests {
         let over = errors(load_manifest(&repeat(MAX_FRAMES + 1)));
         assert_names(&over, "wave");
         assert_names(&over, &format!("{} frames", MAX_FRAMES + 1));
+    }
+
+    /// Hostile input: `MAX_FRAME_SIDE` bounds one frame and `MAX_FRAMES` one
+    /// Animation, but a Character may declare any number of Animations, so
+    /// neither bounds the masks the renderer holds for the whole Character. A
+    /// frame two Animations share is one mask, so it is charged once (user
+    /// story 48).
+    #[test]
+    fn a_character_whose_frames_outweigh_the_budget_is_rejected() {
+        let frame = png_bytes(MAX_FRAME_SIDE, MAX_FRAME_SIDE);
+        let pixels = u64::from(MAX_FRAME_SIDE) * u64::from(MAX_FRAME_SIDE);
+        let budget = (MAX_CHARACTER_PIXELS / pixels) as usize;
+
+        // Every required Animation shares one frame, so `count` frames of art
+        // are `count` masks however many Animations name them.
+        let declaring_distinct = |count: usize| {
+            let mut package: PackageBytes = (0..count)
+                .map(|i| (format!("big-{i}.png"), frame.clone()))
+                .collect();
+            let mut manifest = String::from("name = Blip\n");
+            for animation in REQUIRED_ANIMATIONS {
+                manifest.push_str(&format!("animation {animation} = big-0.png\n"));
+            }
+            let rest: Vec<String> = (1..count).map(|i| format!("big-{i}.png")).collect();
+            manifest.push_str(&format!("animation wave = {}\n", rest.join(" ")));
+            package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
+            package
+        };
+
+        let character = load(&declaring_distinct(budget)).expect("the budget itself loads");
+        assert_eq!(character.animations["wave"].frames.len(), budget - 1);
+
+        let over = errors(load(&declaring_distinct(budget + 1)));
+        assert_eq!(
+            over,
+            vec![format!(
+                "the package's frames are {} pixels in all, over the \
+                 {MAX_CHARACTER_PIXELS}-pixel limit",
+                (budget as u64 + 1) * pixels
+            )],
+            "the author is told how much art they declared and how much a Character may hold"
+        );
     }
 
     #[test]
