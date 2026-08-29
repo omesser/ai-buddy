@@ -129,6 +129,16 @@ const SLEEP_AFTER_MS: u32 = 60_000;
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
 const CLIMB_SPEED: f64 = 200.0;
 
+/// Points per second the sprite walks along whatever it is standing on. A
+/// tuning knob, slower than a climb: hauling yourself up an edge is urgent and
+/// strolling along a title bar is not.
+const WALK_SPEED: f64 = 120.0;
+
+/// The one Behavior name the Engine acts on, until #8 gives it the Primitives a
+/// Behavior is made of. The Director decides that the sprite walks; the Engine
+/// only knows how.
+const WALK: &str = "walk";
+
 /// Points per second squared. A tuning knob: the number that makes a fall read
 /// as heavy rather than floaty is found by watching it, not by deriving it.
 const GRAVITY: f64 = 1800.0;
@@ -148,6 +158,9 @@ pub struct Engine {
     /// falling or perched, and giving it a State would mean deciding what it
     /// resumes as.
     reacting_ms: u32,
+    /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
+    /// and the Primitive carries none, so it goes the way it was last heading.
+    facing: f64,
 }
 
 impl Engine {
@@ -161,6 +174,7 @@ impl Engine {
             animation: animation_for(State::Falling),
             animation_ms: 0,
             reacting_ms: 0,
+            facing: 1.0,
         }
     }
 
@@ -218,6 +232,18 @@ impl Engine {
             self.state = State::Falling;
         }
 
+        // Walking is the Engine's, deciding to walk is not: nothing else here
+        // moves the sprite of its own accord. A walk needs no ending — it lasts
+        // until the sprite runs out of Perch, which is the whole point of it.
+        if matches!(self.state, State::Grounded | State::Perched)
+            && snapshot
+                .proposal
+                .as_ref()
+                .is_some_and(|proposal| proposal.behavior == WALK)
+        {
+            self.velocity.x = self.facing * WALK_SPEED;
+        }
+
         match self.state {
             State::Falling => {
                 self.velocity.y += GRAVITY * dt;
@@ -255,8 +281,12 @@ impl Engine {
                 }
             }
             // Resting is only ever resting on something. When that something
-            // moves, closes or resizes, the sprite is in the air again.
+            // moves, closes or resizes — or when the sprite walks off the end
+            // of it — the sprite is in the air again, carrying whatever speed
+            // it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
+                self.position.x += self.velocity.x * dt;
+
                 if support_below(self.position, snapshot).map(|s| s.y) != Some(self.position.y) {
                     self.state = State::Falling;
                 } else if self.idle_ms >= SLEEP_AFTER_MS {
@@ -266,10 +296,16 @@ impl Engine {
             State::Dragged => {}
         }
 
+        if self.velocity.x != 0.0 {
+            self.facing = self.velocity.x.signum();
+        }
+
         // Reacting is drawn over whatever the sprite is doing, so a Poke shows
         // even mid-fall. It changes nothing about where the sprite is.
         let animation = if self.reacting_ms > 0 {
             "react"
+        } else if self.is_walking() {
+            "walk"
         } else {
             animation_for(self.state)
         };
@@ -291,6 +327,11 @@ impl Engine {
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
         }
+    }
+
+    /// Under way on foot, rather than in the air with the same speed on it.
+    fn is_walking(&self) -> bool {
+        matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
     }
 }
 
@@ -871,6 +912,107 @@ mod tests {
             State::Grounded,
             "it has only just landed, so it has not been idle a minute"
         );
+    }
+
+    /// A window wide enough to walk along, with its top edge at y=400.
+    fn a_long_perch() -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![Rect {
+                x: 100.0,
+                y: 400.0,
+                width: 800.0,
+                height: 200.0,
+            }],
+            ..snapshot(100)
+        }
+    }
+
+    /// The Director asking for a walk. Until #8 can play the Primitives a
+    /// Behavior names, this name is the one the Engine acts on.
+    fn walk() -> Option<BehaviorProposal> {
+        Some(BehaviorProposal {
+            behavior: "walk".to_string(),
+            dialogue: None,
+        })
+    }
+
+    #[test]
+    fn the_sprite_walks_along_a_window_top_edge() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        let perched = settle(&mut engine, &a_long_perch());
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.x, 200.0, "it landed where it fell");
+
+        let setting_off = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        assert_eq!(setting_off.animation, "walk");
+        assert!(
+            setting_off.position.x > 200.0,
+            "it sets off: {setting_off:?}"
+        );
+
+        let carrying_on = engine.tick(&a_long_perch());
+        assert_eq!(carrying_on.state, State::Perched, "still on the edge");
+        assert_eq!(carrying_on.position.y, 400.0, "and at its height");
+        assert!(
+            carrying_on.position.x > setting_off.position.x,
+            "and keeps going without being told again: {carrying_on:?}"
+        );
+    }
+
+    /// Both ends, because a walk that only ever goes one way would leave the
+    /// other end untested. Which way it goes is the way it was already
+    /// heading, so the throw that puts it on the Perch also aims the walk.
+    #[test]
+    fn the_sprite_walks_off_either_end_of_a_perch() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        let off_the_right = walked_off(&mut engine);
+        assert!(
+            off_the_right.position.x > 900.0,
+            "past the window's right edge: {off_the_right:?}"
+        );
+        assert_eq!(off_the_right.state, State::Grounded);
+        assert_eq!(off_the_right.position.y, 800.0, "down on the floor");
+
+        // Thrown back onto the Perch leftwards, so it walks off the other end.
+        let mut engine = Engine::new(Point { x: 800.0, y: 100.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 800.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..a_long_perch()
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: -300.0, y: 0.0 },
+            }],
+            ..a_long_perch()
+        });
+        let perched = settle(&mut engine, &a_long_perch());
+        assert_eq!(perched.state, State::Perched, "back on it: {perched:?}");
+
+        let off_the_left = walked_off(&mut engine);
+        assert!(
+            off_the_left.position.x < 100.0,
+            "past the window's left edge: {off_the_left:?}"
+        );
+        assert_eq!(off_the_left.state, State::Grounded);
+        assert_eq!(off_the_left.position.y, 800.0);
+    }
+
+    /// Told to walk once, then left alone until it comes to rest again.
+    fn walked_off(engine: &mut Engine) -> Frame {
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        (0..200)
+            .map(|_| engine.tick(&a_long_perch()))
+            .last()
+            .expect("two hundred ticks produce two hundred frames")
     }
 
     #[test]
