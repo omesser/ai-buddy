@@ -20,19 +20,17 @@ the Character onto whichever display it is on."
 
 ## Commit messages
 
-Imperative subject, under 50 characters. The body says why the change exists
-and what breaks without it. It does not summarise the diff, because `git show`
-already does that, and does it better.
+The pull request title is the durable line. `main` takes only squash merges, and
+the merged commit is the pull request title with an empty body. Write that title
+as the one-sentence summary you want in `git log` a year from now.
 
-`c73abdb` is the shape. It names the failure it fixes, `curl: (3) nested brace
-in URL`, explains that ERE has no lazy quantifier so `.+?` matched a long span
-of JSON, and then justifies a decision the diff cannot:
+Branch commits: imperative subject under 50 characters. Keep the body short or
+leave it out. It serves the reviewer while the pull request is open, and the
+merge discards it.
 
-> Pinned for the same reason rust-toolchain.toml is: a formatter that updates
-> itself can reformat the whole repository and fail a pull request that changed
-> none of it.
-
-None of that is recoverable from the diff.
+Reasoning that has to last belongs where it survives. A constraint the next
+change could break goes in a code comment. Everything else goes in the pull
+request description.
 
 ## Pull request descriptions
 
