@@ -737,6 +737,7 @@ fn nearest_edge(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::DEFAULT_WEIGHT;
 
     /// One 1000x800 display with its top-left at the origin.
     fn one_display() -> Rect {
@@ -861,6 +862,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::React, Primitive::Talk],
                     then: Some("settle".to_string()),
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
             (
@@ -868,6 +871,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Sit, Primitive::Sleep],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
         ])
@@ -1068,6 +1073,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Talk],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             )]));
 
@@ -1085,6 +1092,8 @@ mod tests {
         let pacing = |then: &str| Behavior {
             primitives: vec![Primitive::Idle],
             then: Some(then.to_string()),
+            weight: DEFAULT_WEIGHT,
+            trigger: None,
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([
             ("here".to_string(), pacing("there")),

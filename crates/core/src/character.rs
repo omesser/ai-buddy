@@ -30,6 +30,8 @@
 //! loop land = once
 //! behavior greet = react talk then settle
 //! behavior settle = sit sleep
+//! weight settle = 3
+//! when settle = idle over 2m
 //! ```
 //!
 //! Lines rather than a nested format because the data is flat, and a parser
@@ -38,6 +40,7 @@
 //! a declared size can disagree with the art and a derived one cannot.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 /// A Character Package as bytes: file name to contents, as a directory walk or
 /// an archive reader would produce it. The Shell does the reading; the loader
@@ -79,6 +82,12 @@ pub const MANIFEST_LIMIT: usize = 1024 * 1024;
 /// Eight is the cadence the Engine already runs every Animation at, so a
 /// package that declares no fps looks exactly as it did before fps existed.
 pub const DEFAULT_FPS: u32 = 8;
+
+/// How likely a Behavior is to be picked when it does not say.
+///
+/// One rather than zero, so that a Character written before weights existed
+/// still has every Behavior in the running, all of them equally.
+pub const DEFAULT_WEIGHT: u32 = 1;
 
 /// The largest either side of a frame may be, in pixels.
 ///
@@ -186,6 +195,28 @@ impl Animation {
     }
 }
 
+/// What must be true of the Free tier before a Behavior may be picked.
+///
+/// The closed set is the Free tier itself: an author can gate on how long the
+/// user has been away and on which application they are in, because those are
+/// the only two things ADR-0005 lets ai-buddy know for nothing. A condition is
+/// a declaration like any other, so a trigger the loader does not recognise is
+/// rejected rather than quietly never firing.
+///
+/// ponytail: no time-of-day condition, though the Director's context carries
+/// the time. `std` has no local time, and a trigger written as "22 to 6" that
+/// silently meant UTC would be worse than no trigger at all. Add it when a
+/// local hour reaches the Engine seam.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Trigger {
+    /// The user has been away for longer than this.
+    IdleOver(Duration),
+    /// The user has been away for less than this — freshly back, or still here.
+    IdleUnder(Duration),
+    /// This application is frontmost, by the name the platform reports.
+    Frontmost(String),
+}
+
 /// A named sequence of Primitives, declared as data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Behavior {
@@ -193,6 +224,12 @@ pub struct Behavior {
     /// A Behavior that follows this one, by name. Chains are validated to
     /// terminate, so no Character can put the sprite in a loop it never leaves.
     pub then: Option<String>,
+    /// How likely the Static Director is to pick this Behavior against its
+    /// siblings. Zero takes it out of the running entirely, leaving a Behavior
+    /// only something else can reach — a chain, a Poke, or a model.
+    pub weight: u32,
+    /// When this Behavior may be picked, or `None` for any time at all.
+    pub trigger: Option<Trigger>,
 }
 
 /// A Character that has been validated: every required Animation is present,
@@ -306,6 +343,8 @@ struct DeclaredBehavior {
     line: usize,
     primitives: Vec<Primitive>,
     then: Option<String>,
+    weight: u32,
+    trigger: Option<Trigger>,
 }
 
 /// Read the Character Manifest.
@@ -318,6 +357,9 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Declared {
     // they are applied once every Animation is known.
     let mut declared_fps: Vec<(usize, String, u32)> = Vec::new();
     let mut declared_loops: Vec<(usize, String, bool)> = Vec::new();
+    // Likewise for a Behavior's weight and trigger.
+    let mut declared_weights: Vec<(usize, String, u32)> = Vec::new();
+    let mut declared_triggers: Vec<(usize, String, Trigger)> = Vec::new();
 
     for (index, raw) in manifest.lines().enumerate() {
         let line = index + 1;
@@ -434,9 +476,34 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Declared {
                     ));
                 }
             }
+            "weight" => {
+                let Some(behavior) = one_name(keyword, "Behavior", named, line, errors) else {
+                    continue;
+                };
+                match value.parse::<u32>() {
+                    Ok(weight) => declared_weights.push((line, behavior.to_string(), weight)),
+                    Err(_) => errors.push(format!(
+                        "line {line}: weight for behavior {behavior:?} is {value:?}, \
+                         which is not a whole number"
+                    )),
+                }
+            }
+            "when" => {
+                let Some(behavior) = one_name(keyword, "Behavior", named, line, errors) else {
+                    continue;
+                };
+                match parse_trigger(value) {
+                    Some(trigger) => declared_triggers.push((line, behavior.to_string(), trigger)),
+                    None => errors.push(format!(
+                        "line {line}: when for behavior {behavior:?} is {value:?}, \
+                         which is not a condition; a condition reads \"idle over 2m\", \
+                         \"idle under 30s\" or \"app Safari\""
+                    )),
+                }
+            }
             other => errors.push(format!(
                 "line {line}: unknown declaration {other:?}; a Character Manifest declares \
-                 name, animation, fps, loop and behavior"
+                 name, animation, fps, loop, behavior, weight and when"
             )),
         }
     }
@@ -459,8 +526,68 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Declared {
             )),
         }
     }
+    for (line, behavior, weight) in declared_weights {
+        match declared.behaviors.get_mut(&behavior) {
+            Some(declaration) => declaration.weight = weight,
+            None => errors.push(format!(
+                "line {line}: weight names behavior {behavior:?}, \
+                 which the package does not declare"
+            )),
+        }
+    }
+    for (line, behavior, trigger) in declared_triggers {
+        match declared.behaviors.get_mut(&behavior) {
+            Some(declaration) => declaration.trigger = Some(trigger),
+            None => errors.push(format!(
+                "line {line}: when names behavior {behavior:?}, \
+                 which the package does not declare"
+            )),
+        }
+    }
 
     declared
+}
+
+/// One trigger condition, or nothing when it is not one.
+///
+/// The application name is the rest of the line rather than one word, since
+/// "Google Chrome" is what the platform reports and an author writes what they
+/// see.
+fn parse_trigger(value: &str) -> Option<Trigger> {
+    let (condition, rest) = value.split_once(char::is_whitespace)?;
+    let rest = rest.trim();
+
+    match condition {
+        "idle" => {
+            let (comparison, duration) = rest.split_once(char::is_whitespace)?;
+            let duration = parse_duration(duration.trim())?;
+            match comparison {
+                "over" => Some(Trigger::IdleOver(duration)),
+                "under" => Some(Trigger::IdleUnder(duration)),
+                _ => None,
+            }
+        }
+        "app" => (!rest.is_empty()).then(|| Trigger::Frontmost(rest.to_string())),
+        _ => None,
+    }
+}
+
+/// A span written as a count and a unit, as `30s` or `2m`.
+///
+/// Stripped as a suffix rather than split at the last byte: a manifest is
+/// untrusted text, and the last byte of "2\u{043c}" is the middle of a
+/// character, which splitting would panic on.
+fn parse_duration(text: &str) -> Option<Duration> {
+    let (count, seconds_each) = match (text.strip_suffix('s'), text.strip_suffix('m')) {
+        (Some(count), _) => (count, 1),
+        (_, Some(count)) => (count, 60),
+        _ => return None,
+    };
+    count
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(seconds_each)
+        .map(Duration::from_secs)
 }
 
 /// The single thing a declaration names, as `animation idle = ...` names one
@@ -536,6 +663,8 @@ fn parse_behavior(
         line,
         primitives,
         then,
+        weight: DEFAULT_WEIGHT,
+        trigger: None,
     }
 }
 
@@ -697,6 +826,8 @@ fn resolve_behaviors(
                 Behavior {
                     primitives: declaration.primitives,
                     then: declaration.then,
+                    weight: declaration.weight,
+                    trigger: declaration.trigger,
                 },
             )
         })
@@ -931,9 +1062,139 @@ mod tests {
             Behavior {
                 primitives: vec![Primitive::React, Primitive::Talk],
                 then: Some("settle".to_string()),
+                weight: DEFAULT_WEIGHT,
+                trigger: None,
             }
         );
         assert_eq!(character.behaviors["settle"].then, None);
+    }
+
+    #[test]
+    fn a_behavior_carries_the_weight_and_trigger_it_declares() {
+        let manifest = format!(
+            "{}behavior nap = sit sleep\nweight nap = 4\nwhen nap = idle over 2m\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+
+        assert_eq!(
+            character.behaviors["nap"],
+            Behavior {
+                primitives: vec![Primitive::Sit, Primitive::Sleep],
+                then: None,
+                weight: 4,
+                trigger: Some(Trigger::IdleOver(Duration::from_secs(120))),
+            }
+        );
+    }
+
+    /// A Behavior that says nothing about when it happens is one the Static
+    /// Director may pick at any moment, which is what every Character written
+    /// before weights existed declares.
+    #[test]
+    fn a_behavior_that_says_neither_weighs_one_and_waits_for_nothing() {
+        let manifest = format!(
+            "{}behavior greet = react talk\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+
+        assert_eq!(character.behaviors["greet"].weight, DEFAULT_WEIGHT);
+        assert_eq!(character.behaviors["greet"].trigger, None);
+    }
+
+    #[test]
+    fn a_trigger_may_name_an_application_of_several_words() {
+        let manifest = format!(
+            "{}behavior peek = react\nwhen peek = app Google Chrome\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+
+        assert_eq!(
+            character.behaviors["peek"].trigger,
+            Some(Trigger::Frontmost("Google Chrome".to_string()))
+        );
+    }
+
+    /// Qualifiers may be written above the Behavior they qualify, as fps and
+    /// loop mode already may be for an Animation.
+    #[test]
+    fn a_weight_and_a_trigger_may_be_written_above_their_behavior() {
+        let manifest = format!(
+            "{}weight fidget = 7\nwhen fidget = idle under 30s\nbehavior fidget = react\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("package is valid");
+
+        assert_eq!(character.behaviors["fidget"].weight, 7);
+        assert_eq!(
+            character.behaviors["fidget"].trigger,
+            Some(Trigger::IdleUnder(Duration::from_secs(30)))
+        );
+    }
+
+    #[test]
+    fn a_weight_or_a_trigger_naming_no_declared_behavior_is_rejected() {
+        let manifest = format!(
+            "{}behavior greet = react\nweight nap = 4\nwhen doze = idle over 1m\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            errors,
+            vec![
+                "line 11: weight names behavior \"nap\", \
+                 which the package does not declare"
+                    .to_string(),
+                "line 12: when names behavior \"doze\", \
+                 which the package does not declare"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_weight_that_is_not_a_whole_number_is_rejected() {
+        let manifest = format!(
+            "{}behavior greet = react\nweight greet = lots\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            errors,
+            vec!["line 11: weight for behavior \"greet\" is \"lots\", \
+                 which is not a whole number"
+                .to_string()]
+        );
+    }
+
+    #[test]
+    fn a_trigger_that_is_not_a_condition_is_rejected_with_the_conditions() {
+        let manifest = format!(
+            "{}behavior greet = react\nwhen greet = weather rain\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(errors.len(), 1, "{errors:#?}");
+        assert_names(&errors, "\"weather rain\"");
+        assert_names(&errors, "idle over 2m");
+        assert_names(&errors, "app Safari");
+    }
+
+    /// Hostile input: a duration whose last byte is the middle of a character.
+    /// Splitting it off by byte would panic and take the loader with it.
+    #[test]
+    fn a_duration_that_is_not_ascii_is_rejected_rather_than_crashing() {
+        let manifest = format!(
+            "{}behavior nap = sit\nwhen nap = idle over 2\u{043c}\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+
+        assert_names(&errors(load_manifest(&manifest)), "nap");
     }
 
     #[test]
@@ -1072,7 +1333,7 @@ mod tests {
             errors,
             vec![
                 "line 10: unknown declaration \"capability\"; a Character Manifest declares \
-                 name, animation, fps, loop and behavior"
+                 name, animation, fps, loop, behavior, weight and when"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
@@ -1305,8 +1566,8 @@ mod tests {
                 "line 16: \"behavior\" must name exactly one Behavior, and names 0".to_string(),
                 "line 17: behavior \"chase\" ends with \"then\" and no Behavior to follow it".to_string(),
                 "line 18: behavior \"pounce\" follows \"then\" with more than one Behavior".to_string(),
-                "line 19: unknown declaration \"фпс\"; a Character Manifest declares name, animation, fps, loop and behavior".to_string(),
-                "line 20: unknown declaration \"\\0name\"; a Character Manifest declares name, animation, fps, loop and behavior".to_string()
+                "line 19: unknown declaration \"фпс\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string(),
+                "line 20: unknown declaration \"\\0name\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string()
             ],
             "each nonsense line is rejected on its own line, saying what is wrong"
         );
