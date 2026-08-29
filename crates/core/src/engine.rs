@@ -212,6 +212,10 @@ impl Engine {
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
 
+        // Set by a sprite that is woken, so the footing it is put back on is
+        // not mistaken for one it arrived at. See the landing below.
+        let mut woke = false;
+
         // Idling is resting untouched. Time spent in the air or in someone's
         // hand does not count towards nodding off.
         if snapshot.verbs.is_empty() {
@@ -227,6 +231,7 @@ impl Engine {
                 // It gets up. Whether it is still standing on anything is
                 // settled by falling, the same as any other loss of footing.
                 self.state = State::Falling;
+                woke = true;
             }
         }
 
@@ -346,7 +351,11 @@ impl Engine {
         // landed it is already standing, and `land` is the animation of the
         // moment in between. The Engine plays it itself because no Director
         // could propose it in time.
-        if landed {
+        // Not a sprite woken onto the same footing it fell asleep on: settling
+        // that by falling is how the Engine asks what is underneath, and a
+        // sprite that answers in the tick it was asked never left the ground.
+        // A wake with nothing under it still falls, and still lands, later.
+        if landed && !woke {
             started |= self.play(&[Primitive::Land]);
         }
 
@@ -1254,6 +1263,52 @@ mod tests {
             );
             assert_eq!(addressed.animation, "idle", "and nothing is played for it");
         }
+    }
+
+    /// The other side of the wake that plays nothing: a wake is not an arrival
+    /// only because the sprite is put straight back on the footing it fell
+    /// asleep on. Woken with that footing gone, it is in the air like anything
+    /// else, and the landing at the end of the fall is a real one.
+    #[test]
+    fn a_sprite_woken_with_its_perch_gone_still_lands() {
+        let perch = Rect {
+            x: 0.0,
+            y: 400.0,
+            width: 1000.0,
+            height: 200.0,
+        };
+        let resting = WorldSnapshot {
+            windows: vec![perch],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+        assert_eq!(settle(&mut engine, &resting).state, State::Perched);
+        assert_eq!(
+            engine
+                .tick(&WorldSnapshot {
+                    elapsed_ms: 60_000,
+                    ..resting
+                })
+                .state,
+            State::Asleep
+        );
+
+        // Woken by a Summon in the tick the window it stood on goes.
+        let woken = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Summon],
+            ..snapshot(100)
+        });
+        assert_eq!(woken.state, State::Falling, "there is nothing under it");
+        assert_ne!(woken.animation, "land", "it has not arrived anywhere yet");
+
+        let arrived = (0..40)
+            .map(|_| engine.tick(&snapshot(100)))
+            .find(|frame| frame.state == State::Grounded)
+            .expect("it reaches the floor");
+        assert_eq!(
+            arrived.animation, "land",
+            "and the floor it reaches is an arrival like any other"
+        );
     }
 
     /// #6: a Director proposal arriving during a Grab is deferred or dropped,
