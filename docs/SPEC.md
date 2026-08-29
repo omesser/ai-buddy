@@ -567,5 +567,6 @@ static fallback, with the same two Characters.
 Packages, the Memory file, and — once Capture ships — screen content. Two of the three
 exist in v1.
 
-**Attribution.** WindowPet is MIT and its click-through and tray/updater code are lifted
-directly. The README must say so.
+**Attribution.** WindowPet is MIT and is the reference for click-through and for the
+tray/updater shape. No source is copied today; should any be lifted, the attribution
+belongs in the README's prior-art section.

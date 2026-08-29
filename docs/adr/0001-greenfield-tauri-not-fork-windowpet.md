@@ -28,3 +28,6 @@ Click-through is per-window, not per-pixel, in both Tauri and Electron. A small 
 in a large transparent window swallows clicks across the whole rectangle unless the
 cursor is tracked and ignore-mouse-events toggled by hit-testing the sprite's alpha.
 Budget a day, and use WindowPet's implementation as the reference.
+
+Click-through was in the end written here rather than lifted; see the README for what
+is and is not copied.
