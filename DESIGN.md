@@ -25,6 +25,40 @@ The **Director** sits between them. It is an occasional model call that observes
 context and proposes a Behavior. It never runs in the frame loop and never
 drives animation directly.
 
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ai-buddy (Tauri)                                           │
+│                                                             │
+│  ┌───────────────────────┐   ┌───────────────────────────┐  │
+│  │ Spatial Layer (Rust)  │   │ Webview (sprite render)   │  │
+│  │ • physics @ 60fps     │──▶│ • PNG frames, pixelated   │  │
+│  │ • window poll @ 10Hz  │   │ • integer nearest-neighb. │  │
+│  │ • Perch collision     │   │ • per-pixel hit test      │  │
+│  │ • Behavior player     │   └───────────────────────────┘  │
+│  └──────────┬────────────┘                                  │
+│             │ occasional                                    │
+│  ┌──────────▼────────────┐   ┌───────────────────────────┐  │
+│  │ Director              │   │ Local Gate                │  │
+│  │ • proposes Behaviors  │◀──│ • phash change detect     │  │
+│  │ • never in frame loop │   │ • on-device OCR (Vision)  │  │
+│  └───────────────────────┘   └─────────▲─────────────────┘  │
+│                                        │ Captures           │
+│  ┌───────────────────────┐   ┌─────────┴─────────────────┐  │
+│  │ MCP server (ours)     │   │ Sensing                   │  │
+│  │ speak / play_behavior │   │ • CGWindowList @10Hz      │  │
+│  │ list_windows          │   │ • Ambient (consented)     │  │
+│  │ describe_screen       │   │ • On-Demand               │  │
+│  │ recall / remember     │   │                           │  │
+│  └──────────┬────────────┘   └───────────────────────────┘  │
+└─────────────┼───────────────────────────────────────────────┘
+              │ MCP
+     ┌────────▼─────────┐        ┌──────────────────────────┐
+     │ Harness (BYO)    │───────▶│ Executor (theirs)        │
+     │ Claude Code /    │        │ native computer use, or  │
+     │ Codex / any      │        │ desktop-control MCP srv  │
+     └──────────────────┘        └──────────────────────────┘
+```
+
 ## Decisions
 
 ### 1. Nostalgia first, capability second
@@ -136,6 +170,24 @@ package to an evening's drawing.
 **Shipped Characters: two, one faithful Win95 (16-color, hard pixels,
 dithering), one modern pixel art.** Two styles validate the package abstraction
 against real variance before the format is published.
+
+The package on disk, as a directory or the same tree inside an archive:
+
+```
+mochi/
+├── character.manifest    # name, per-Animation frames, fps, loop mode, Behaviors
+├── personality.txt       # Personality Prompt — demeanour only, never capability
+└── frames/
+    ├── idle-0.png        # one PNG per frame, named by the manifest
+    ├── idle-1.png
+    ├── walk-0.png
+    └── ...
+```
+
+Frame size and frame count are read from the art rather than declared: a
+declared size can disagree with the art, and a derived one cannot. The manifest
+is one `key = value` declaration per line and rejects every key it does not
+know, which is what stops a package from declaring itself a capability.
 
 ### 7. Physics, Perches, and five verbs
 
@@ -348,6 +400,9 @@ subscription, no permission prompts. That state is the default demo.
   built-in MCP server for driving characters from Claude Code or Codex. macOS
   supported, Linux planned, early alpha. The closest existing thing to this
   idea.
+- **[UI-TARS-desktop](https://github.com/bytedance/UI-TARS-desktop)** — Apache-2.0,
+  Electron, vision-only. Evidence that a model-agnostic open-source Executor
+  exists, if the Harness ever stops bringing one. Not a companion.
 
 Differentiators, stated deliberately: 2D pixel-art nostalgia rather than 3D VRM;
 a Director that gives the character its own life rather than a puppet an agent
@@ -365,3 +420,47 @@ poses; window-edge physics, which neither project has.
 - **Wayland** degrades the spatial layer to nearly nothing.
 - **Prompt injection** reaches a model with Harness access through three paths:
   Character Packages, the Memory file, and captured screen content.
+- **Asset generation is the top risk to the character library.** Pixel art is
+  the cheapest format to store and the hardest to generate: image models produce
+  pixel-art-*styled* images at high resolution, with anti-aliased edges and
+  drifting palettes, rather than grid-aligned sprites. Consistency of one
+  character across the six to eight frames of a walk cycle is the hard part, not
+  any single frame. Test the mitigation before committing to a library size —
+  one high-resolution reference sheet per Character, downscaled by a scripted
+  nearest-neighbour and fixed-palette pass so every frame lands on the same grid
+  — and prove it on one Character before authoring ten.
+- **A disconnected display** strands the sprite on coordinates that no longer
+  exist. Handle it explicitly; it is otherwise the first bug report.
+
+## Decision index
+
+The numbering is the original decision log's. The sections above group and
+rewrite those decisions, so the numbers do not line up with them; the index is
+kept because it is the only route from a numbered decision to the ADR that
+records it.
+
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Centre of gravity | Nostalgia companion first; productivity as a second layer |
+| 2 | Meaning of "interact with screen" | Spatial first (geometry, Perches); functional second (Summoned) |
+| 3 | Platforms | Cross-platform architecture, macOS first, Windows stubbed |
+| 4 | Harness | BYO via MCP — see decision 17 |
+| 5 | Runtime | Tauri (Rust + webview) — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
+| 6 | Model's role in idle | Director proposes Behaviors occasionally — [ADR-0004](./docs/adr/0004-director-outside-frame-loop.md) |
+| 7 | Character | First-class package format, with pre-built Characters shipped |
+| 8 | macOS window awareness | `CGWindowListCopyWindowInfo` polling @10Hz, no permissions |
+| 9 / 14 | Behavior ownership | Engine-owned Primitives, Character-declared Behaviors — [ADR-0002](./docs/adr/0002-engine-owns-primitives-characters-declare-behaviors.md) |
+| 10 | Physics and verbs | Gravity + Throw; Perch = window top edges only; five verbs, capped |
+| 11 | Z-order | Always-on-top, non-activating, `canJoinAllSpaces`; aggressive auto-hide |
+| 12 / 16 | Sensing | Ambient titles + configurable periodic capture + On-Demand — [ADR-0005](./docs/adr/0005-sensing-posture.md) |
+| 13 | Codebase origin | Greenfield; WindowPet (MIT) as reference — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
+| 15 | Voice | Hotkey PTT + click-to-chat; wake word opt-in, on-device detection only |
+| 15b | Transcription | Trait: Apple `SpeechAnalyzer` on macOS 26+, `whisper.cpp` elsewhere |
+| 17 / 22 | Computer use | MCP server + MCP host; no first-party Executor — [ADR-0003](./docs/adr/0003-no-executor-harness-owns-desktop-control.md) |
+| 18 | Capture processing | Mandatory Local Gate; only changed and interesting frames escalate |
+| 19 | Permissions we own | Sensing only. Never duplicate the Harness's action prompts |
+| 20 | Memory | One shared plaintext Markdown file the user owns; chat history session-scoped |
+| 21 | No Harness attached | Fully charming — full Spatial Layer, chat shows a connect nudge |
+| 23 | Art | True pixel art, integer nearest-neighbour — [ADR-0006](./docs/adr/0006-pixel-art-integer-scaling.md) |
+| 24 | Displays | Overlay spans the union of display frames; the sprite stays put across monitors unless dragged |
+| 25 | Release staging | v1 is charm, chat, Memory, and Harness attach; voice and Ambient Capture deferred |
