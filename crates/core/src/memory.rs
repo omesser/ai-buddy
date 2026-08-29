@@ -50,12 +50,9 @@ impl MemoryManifest {
     ///
     /// The caller cannot know that line in advance — the manifest rewrites a fact
     /// to keep it one line — and the user is owed what actually landed in their
-    /// file rather than what the Harness asked for. Returning it is what lets
-    /// the write be shown instead of accumulating silently.
+    /// file rather than what the Harness asked for.
     ///
-    /// Both arguments come from a Harness, so both are checked here: a fact with
-    /// nothing in it is a dud tool call, and writing it would leave a bare
-    /// bullet in a file the user is invited to read.
+    /// Both arguments come from a Harness, so both are checked here.
     pub fn remember(&self, heading: &str, fact: &str) -> io::Result<String> {
         let heading = non_empty("heading", heading)?;
         let recorded = format!("- {}", non_empty("fact", fact)?);
@@ -85,9 +82,8 @@ impl MemoryManifest {
     ///
     /// Written beside Memory and renamed over it, which is atomic within a
     /// filesystem: Memory is the old file or the new one, never a half-written
-    /// one. It is a file the user is invited to keep open in an editor, and
-    /// backups exist only on wipe, so there is nothing to recover a truncated
-    /// one from.
+    /// one. Backups exist only on wipe, so there is nothing to recover a
+    /// truncated one from.
     fn write(&self, contents: String) -> io::Result<()> {
         if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(parent)?;
@@ -157,18 +153,15 @@ fn epoch_seconds() -> u64 {
 ///
 /// Pure, so the Markdown handling is testable without touching a disk.
 ///
-/// Every other line is carried across untouched. Whatever the user typed —
-/// notes above the first heading, a heading ai-buddy has never heard of, the
-/// same heading twice — outlives the write, because the file is theirs and only
-/// they know what it means.
+/// Every other line is carried across untouched: the file is the user's, and
+/// only they know what their notes mean.
 fn with_fact(document: &str, heading: &str, fact_line: &str) -> String {
     let heading_line = format!("## {}", one_line(heading));
     let mut lines: Vec<&str> = document.lines().collect();
 
     match lines.iter().position(|line| names(line, heading)) {
         // Append at the end of the section, past its blank tail, so the fact
-        // lands under the heading it belongs to rather than at the end of a
-        // file that may be mostly about something else.
+        // lands under its own heading rather than at the end of the file.
         Some(start) => {
             let mut end = lines[start + 1..]
                 .iter()
@@ -202,8 +195,7 @@ fn is_heading(line: &str) -> bool {
 /// Whether `line` is the heading called `heading`.
 ///
 /// Both sides are normalized the way a heading is written, so a section is
-/// always found under the name it was written under. The level is ignored, the
-/// case is not compared, and inner spacing is collapsed: treating a hand-typed
+/// always found under the name it was written under. Treating a hand-typed
 /// `# facts`, or a `Daily  Facts` a Harness spaced its own way, as a different
 /// section from `## Daily Facts` would quietly split the user's Memory in two.
 fn names(line: &str, heading: &str) -> bool {
@@ -213,9 +205,9 @@ fn names(line: &str, heading: &str) -> bool {
 
 /// `text` collapsed onto one line, or `InvalidInput` if there is nothing in it.
 ///
-/// A Harness supplies both a heading and a fact, and an empty one is a dud tool
-/// call rather than something to record: a bare `- ` is litter in a file the
-/// user is meant to read, and a bare `## ` is a section nothing can name.
+/// An empty heading or fact is a dud tool call rather than something to record:
+/// a bare `- ` is litter in a file the user is meant to read, and a bare `## `
+/// is a section nothing can name.
 fn non_empty(label: &str, text: &str) -> io::Result<String> {
     match one_line(text) {
         text if text.is_empty() => Err(io::Error::new(
@@ -228,9 +220,8 @@ fn non_empty(label: &str, text: &str) -> io::Result<String> {
 
 /// Collapse `text` onto one line.
 ///
-/// Memory is untrusted input — a Harness writes it and the user can type
-/// anything into it. A newline inside a fact would forge a heading or a bullet
-/// of its own, so one fact stays one line.
+/// A newline inside a fact would forge a heading or a bullet of its own, so one
+/// fact stays one line.
 fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

@@ -66,8 +66,7 @@ impl FreeTier {
     ///
     /// Idle duration and the time come straight from the adapters, because both
     /// are already the whole answer. The frontmost application is the only thing
-    /// that needs a memory: without one, a caller could only ever see a name and
-    /// not the moment it changed.
+    /// that needs a memory.
     pub fn read(&mut self, source: &dyn ActivitySource, clock: &dyn Clock) -> Activity {
         let frontmost_application = source.frontmost_application();
         let switched = frontmost_application != self.previous;

@@ -120,10 +120,6 @@ impl Cast {
     }
 
     /// Every Animation's frames as `data:` URLs, for the webview to draw from.
-    ///
-    /// Handed over once. The webview picks a frame out of this by the name and
-    /// index each `Frame` carries, so it still holds no authoritative state —
-    /// only the art, which is not state.
     pub fn art(&self) -> &BTreeMap<String, Vec<String>> {
         &self.art
     }
