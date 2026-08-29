@@ -19,3 +19,7 @@ Single-context. Vocabulary is `CONTEXT.md`. v1 scope and requirements are
 ## Comments
 
 Comments say why, not what, and earn their length. See `docs/agents/comments.md`.
+
+## Writing
+
+Commit messages, pull request descriptions and review replies follow the same prose rules. See `docs/agents/writing.md`.
