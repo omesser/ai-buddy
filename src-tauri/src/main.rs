@@ -258,18 +258,23 @@ fn run_frame_loop(
                         activity,
                         recent: recent.clone(),
                     });
-                    if let Some(proposed) = &proposal {
-                        director::remember(&mut recent, proposed.behavior.clone());
-                        if tracing_frames {
-                            eprintln!("director: {}", proposed.behavior);
-                        }
-                    }
                 }
             }
 
             let mut world = assembler.assemble(elapsed_ms, cursor_points, verbs);
             world.proposal = proposal;
             let frame = engine.tick(&world);
+
+            // What the user has seen is what the Engine played, not what the
+            // Director asked for: a proposal the State refuses never reaches
+            // the screen, and suppressing it would silence a Behavior nobody
+            // watched.
+            if let Some(played) = &frame.behavior {
+                director::remember(&mut recent, played.clone());
+                if tracing_frames {
+                    eprintln!("director: {played}");
+                }
+            }
 
             // The overlay covers one display and follows the Character to the
             // next. macOS gives each display its own Space and draws a window

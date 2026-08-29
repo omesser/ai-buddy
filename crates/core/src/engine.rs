@@ -121,6 +121,12 @@ pub struct Frame {
     pub animation_ms: u32,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
+    /// The Behavior that started playing on this frame, if a proposal was
+    /// taken. An event like `dialogue`, and for the Shell rather than the
+    /// renderer: a proposal is advisory, so what the Director suggested and
+    /// what the user actually saw are different lists, and repetition is
+    /// suppressed on the second.
+    pub behavior: Option<String>,
 }
 
 /// How long one Primitive holds the screen.
@@ -379,9 +385,13 @@ impl Engine {
         // After the sprite has been moved, so the State the gate reads is the
         // one the tick ends in. A walk therefore takes its first step on the
         // tick after the proposal, which is what SPEC.md asks for.
+        let mut behavior = None;
         if let Some(proposal) = &snapshot.proposal {
             if let Some(primitives) = self.chain(&proposal.behavior) {
-                started |= self.play(&primitives);
+                if self.play(&primitives) {
+                    started = true;
+                    behavior = Some(proposal.behavior.clone());
+                }
             }
         }
 
@@ -425,6 +435,7 @@ impl Engine {
                 .proposal
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
+            behavior,
         }
     }
 
@@ -1123,6 +1134,39 @@ mod tests {
         assert_eq!(
             unknown.animation_ms, 100,
             "and on its own clock, not restarted by the refusal"
+        );
+    }
+
+    /// #10 suppresses Behaviors the user has recently *seen*, and the Shell
+    /// keeps that list. A proposal is advisory, so what was proposed and what
+    /// was played are different lists, and only the Engine knows the second.
+    #[test]
+    fn a_frame_names_the_behavior_that_started_and_not_one_that_was_refused() {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
+
+        let airborne = engine.tick(&proposing("settle"));
+        assert_eq!(airborne.state, State::Falling);
+        assert_eq!(
+            airborne.behavior, None,
+            "there is no sitting down in mid-air, so nobody saw it"
+        );
+
+        settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            engine.tick(&proposing("settle")).behavior.as_deref(),
+            Some("settle"),
+            "on the floor it plays, and the Shell may remember it"
+        );
+        assert_eq!(
+            engine.tick(&snapshot(100)).behavior,
+            None,
+            "starting is an event, not a state to hold"
+        );
+        assert_eq!(
+            engine.tick(&proposing("cartwheel")).behavior,
+            None,
+            "nor does a Behavior nobody declares count as played"
         );
     }
 
