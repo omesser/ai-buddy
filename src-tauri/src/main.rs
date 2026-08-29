@@ -22,13 +22,11 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy_core::engine::Engine;
+use ai_buddy_core::engine::{Engine, Point};
 use ai_buddy_core::input::Pointer;
-use ai_buddy_core::overlay::{
-    cursor_in_window, display_union as overlay_union, place_sprite, DisplayReport, SpriteRect,
-};
+use ai_buddy_core::overlay::{cursor_in_window, display_for, place_sprite, SpriteRect};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
-use ai_buddy_core::window_source::WindowSource;
+use ai_buddy_core::window_source::{Rect, WindowSource};
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -92,34 +90,14 @@ fn character(cast: tauri::State<'_, Arc<Cast>>) -> BTreeMap<String, Vec<String>>
     cast.art().clone()
 }
 
-/// The union of every visible display, in logical points.
+/// Put the overlay over one display, covering it exactly.
 ///
-/// The overlay spans all displays so the Character can cross between them
-/// without the window moving.
-///
-/// The arithmetic lives in `overlay::display_union`, where it is tested; this
-/// only asks the windowing layer what displays exist and hands the answer over.
-fn display_union(
-    window: &tauri::WebviewWindow,
-) -> Result<(LogicalPosition<f64>, LogicalSize<f64>), String> {
-    let monitors = window
-        .available_monitors()
-        .map_err(|e| format!("cannot enumerate displays: {e}"))?;
-
-    let reports: Vec<DisplayReport> = monitors
-        .iter()
-        .map(|monitor| DisplayReport {
-            position_physical: (monitor.position().x as f64, monitor.position().y as f64),
-            size_physical: (monitor.size().width as f64, monitor.size().height as f64),
-            scale: monitor.scale_factor(),
-        })
-        .collect();
-
-    let (left, top, width, height) = overlay_union(&reports).ok_or("no displays reported")?;
-    Ok((
-        LogicalPosition::new(left, top),
-        LogicalSize::new(width, height),
-    ))
+/// Sized before it is moved. Growing a window anchors its bottom-left corner,
+/// so a window resized after it is placed pushes its own top edge off the
+/// display it was just put on.
+fn cover_display(window: &tauri::WebviewWindow, display: Rect) -> Result<(), tauri::Error> {
+    window.set_size(LogicalSize::new(display.width, display.height))?;
+    window.set_position(LogicalPosition::new(display.x, display.y))
 }
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
@@ -138,10 +116,16 @@ fn run_frame_loop(
     app: tauri::AppHandle,
     cast: Arc<Cast>,
     source: impl WindowSource + Send + 'static,
+    displays: platform::DisplayCache,
+    start: Point,
+    home: Rect,
 ) {
     thread::spawn(move || {
-        let mut engine = Engine::new(starting_position(&source.snapshot()));
+        let mut engine = Engine::new(start);
         let mut assembler = SnapshotAssembler::new(source);
+
+        // The display the overlay is currently over, as setup left it.
+        let mut home = home;
 
         // `None` until the first decision, so the first tick always applies.
         let mut ignoring: Option<bool> = None;
@@ -186,14 +170,12 @@ fn run_frame_loop(
 
             // The windowing layer reports the global cursor against the primary
             // display's scale factor but the window's origin against the
-            // window's own, so each needs undoing with its own factor. Read per
-            // tick rather than cached because displays can be reconfigured while
-            // the app runs.
-            let cursor_scale = window
-                .primary_monitor()
-                .ok()
-                .flatten()
-                .map_or(scale, |monitor| monitor.scale_factor());
+            // window's own, so each needs undoing with its own factor. The
+            // primary's arrives from the cache rather than from a monitor here:
+            // asking a monitor its scale means asking `NSScreen`, and only the
+            // main thread may do that.
+            let displays = displays.read();
+            let cursor_scale = displays.cursor_scale;
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -237,6 +219,30 @@ fn run_frame_loop(
                 eprintln!("verbs: {verbs:?}");
             }
             let frame = engine.tick(&assembler.assemble(elapsed_ms, cursor_points, verbs));
+
+            // The overlay covers one display and follows the Character to the
+            // next. macOS gives each display its own Space and draws a window
+            // that spans two of them on only one, so a window sized to the
+            // display union is invisible everywhere but the display it happens
+            // to belong to — which is how a Character dragged across a boundary
+            // was lost while the Engine still had it in hand.
+            //
+            // The feet decide rather than the cursor, because a Throw crosses
+            // with nobody holding it.
+            //
+            // ponytail: the sprite is clipped while it straddles the seam,
+            // because one window cannot be on two displays. One overlay per
+            // display would draw both halves; that is the upgrade if the pop
+            // reads badly.
+            if let Some(display) =
+                display_for((frame.position.x, frame.position.y), &displays.frames)
+            {
+                // Recorded only once the move is accepted, so a refused one is
+                // retried next tick rather than latched as done.
+                if display != home && cover_display(&window, display).is_ok() {
+                    home = display;
+                }
+            }
 
             // The Engine names an Animation and how long it has been playing;
             // the Character Manifest says what that means in frames. Resolving
@@ -435,16 +441,17 @@ fn main() {
             // wrong default swallows a click; this one loses nothing.
             window.set_ignore_cursor_events(true)?;
 
-            // ponytail: on a mixed-height desktop the window lands a few points
-            // above the union's top, because tao maps a logical top-left through
-            // the primary display's height rather than the union's. Harmless
-            // here — the hit-test derives local coordinates from the window's
-            // real position — but it leaves a thin strip of the taller display
-            // uncovered. #4 owns clamping physics to the union and should fix
-            // the origin properly.
-            let (position, size) = display_union(&window)?;
-            window.set_position(position)?;
-            window.set_size(size)?;
+            // Built before the window is placed rather than after the loop
+            // starts: reading which part of a display is usable means asking
+            // AppKit, and only the main thread may do that.
+            let (source, displays) = platform::window_source(app.handle().clone());
+            let start = starting_position(&source.snapshot());
+
+            // The overlay covers the display the Character starts on, and the
+            // frame loop moves it to whichever display the Character reaches.
+            let home = display_for((start.x, start.y), &displays.read().frames)
+                .ok_or("no displays reported")?;
+            cover_display(&window, home)?;
 
             // The sprite size is the idle Animation's, blown up. Animations may
             // declare different frame sizes, so this is what the Character is
@@ -454,11 +461,12 @@ fn main() {
                 cast.draw("idle", 0).map_or((0, 0), |drawn| drawn.art_size);
 
             eprintln!(
-                "overlay: union {:.0}x{:.0} at ({:.0},{:.0}); character {}; sprite {}x{}",
-                size.width,
-                size.height,
-                position.x,
-                position.y,
+                "overlay: display {:.0}x{:.0} at ({:.0},{:.0}) of {}; character {}; sprite {}x{}",
+                home.width,
+                home.height,
+                home.x,
+                home.y,
+                displays.read().frames.len(),
                 cast.name(),
                 sprite_width * SPRITE_SCALE,
                 sprite_height * SPRITE_SCALE,
@@ -467,11 +475,7 @@ fn main() {
             platform::configure_overlay(&window)?;
             window.show()?;
 
-            // Built here rather than in the loop: reading which part of a
-            // display is usable means asking AppKit, and only the main thread
-            // may do that.
-            let source = platform::window_source(app.handle().clone());
-            run_frame_loop(app.handle().clone(), cast, source);
+            run_frame_loop(app.handle().clone(), cast, source, displays, start, home);
             Ok(())
         })
         .run(tauri::generate_context!())

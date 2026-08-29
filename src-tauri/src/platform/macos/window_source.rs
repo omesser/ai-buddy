@@ -19,8 +19,8 @@ use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource,
 /// The macOS window server's view of the desktop.
 pub struct MacosWindowSource {
     /// Our own process. Its windows are excluded from every read: the overlay
-    /// spans every display, so a sprite allowed to see it would find a Perch
-    /// stretching across the whole desktop and never fall again.
+    /// covers the whole display the sprite is on, so a sprite allowed to see it
+    /// would find a Perch under its own feet and never fall again.
     own_pid: i32,
     /// Where the usable part of each display comes from.
     ///
