@@ -315,12 +315,16 @@ def eyes(px, cy, open_amount, look=0):
         put(px, cx - 1 + look, cy + height - 3, IRIS[2])
 
 
-def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.0, arms=0, ears=7, mark=None):
+def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.0, arms=0, ears=7, mark=None, shadow=True):
     """Nim, posed. Every argument is continuous, which is what buys the
     in-between frames: a walk is the same pose sampled eight times."""
     px = blank()
-    rect(px, 11, GROUND, 10, 1, SHADOW)
-    rect(px, 12, GROUND - 1, 8, 1, SHADOW)
+    # A contact shadow needs contact: the only Animation the Engine plays with
+    # the sprite off the ground turns it off, or Nim falls with the floor
+    # attached to its feet.
+    if shadow:
+        rect(px, 11, GROUND, 10, 1, SHADOW)
+        rect(px, 12, GROUND - 1, 8, 1, SHADOW)
 
     body_cy = 23.0 + bob + squash
     head_cy = 14.5 + bob
@@ -392,9 +396,9 @@ def nim_animations():
         )
 
     fall = [
-        nim(bob=-1.5, sway=-1.0, arms=-2, mouth=2),
-        nim(bob=-1.0, sway=1.0, arms=-2, mouth=3),
-        nim(bob=-1.4, sway=-0.7, arms=-2, mouth=2),
+        nim(bob=-1.5, sway=-1.0, arms=-2, mouth=2, shadow=False),
+        nim(bob=-1.0, sway=1.0, arms=-2, mouth=3, shadow=False),
+        nim(bob=-1.4, sway=-0.7, arms=-2, mouth=2, shadow=False),
     ]
     land = [
         nim(squash=3.0, bob=2.0, sway=1.0, open_amount=0.2, arms=1, ears=5),

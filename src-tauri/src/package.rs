@@ -388,6 +388,7 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
+    use ai_buddy_core::overlay::{AlphaMask, SpriteRect};
 
     use crate::cast::Cast;
 
@@ -869,5 +870,43 @@ mod tests {
             nim.files.values().all(|file| !chip_art.contains(file)),
             "no file is shipped in both packages"
         );
+    }
+
+    /// Whether a frame draws anything the hit-test cannot feel. Nim's contact
+    /// shadow is its one translucent colour, so a pixel that is drawn at all
+    /// but not drawn at `ALPHA_THRESHOLD` is shadow and can be nothing else.
+    fn casts_a_shadow(frame: &[u8]) -> bool {
+        let drawn = AlphaMask::from_png(frame, 1).expect("a shipped frame decodes");
+        let solid =
+            AlphaMask::from_png(frame, crate::ALPHA_THRESHOLD).expect("a shipped frame decodes");
+        let (width, height) = drawn.size();
+        let origin = SpriteRect {
+            x: 0,
+            y: 0,
+            scale: 1,
+        };
+
+        (0..height)
+            .any(|y| (0..width).any(|x| drawn.hit(&origin, x, y) && !solid.hit(&origin, x, y)))
+    }
+
+    /// A contact shadow drawn where there is no contact is not a contact
+    /// shadow. `fall` is the one Animation the Engine plays with the sprite off
+    /// the ground — it draws a throw and a drag as well as a fall — so it is
+    /// the one Animation of Nim's with nothing under its feet.
+    #[test]
+    fn nim_casts_a_shadow_only_when_it_has_something_to_cast_it_on() {
+        let nim = read(&shipped("modern")).expect("Nim is a valid package");
+
+        for animation in character::REQUIRED_ANIMATIONS {
+            for frame in &nim.character.animations[animation].frames {
+                let bytes = nim.files.get(frame).expect("the loader resolved it");
+                assert_eq!(
+                    casts_a_shadow(bytes),
+                    animation != "fall",
+                    "{frame}, a frame of {animation:?}"
+                );
+            }
+        }
     }
 }
