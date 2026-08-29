@@ -17,13 +17,13 @@ or closes, and it stands on the Dock rather than behind it. It can be clicked,
 picked up, dragged and thrown. It knows when to get out of the way: it fades out
 while a fullscreen application has the screen, goes away at once on
 Control-Option-Command-B and comes back the same way, and never appears in a
-screen share or a screen recording at all. It is a real Character Package on disk, and its
-Animations play at the speeds its Character Manifest declares. Startup stops if
-no package loads, because a companion with no Character has nothing to be. There
-is no Director and no Functional Layer yet: double-clicking it is a Summon the
-Engine accepts and nothing answers, because the chat surface it opens arrives
-with #17, and right-clicking does nothing at all — the menu it opens is the
-tray's, which arrives with #18.
+screen share or a screen recording at all. It is a real Character Package on
+disk, and its Animations play at the speeds its Character Manifest declares.
+Startup stops if no package loads, because a companion with no Character has
+nothing to be. There is no Director and no Functional Layer yet: double-clicking
+it is a Summon the Engine accepts and nothing answers, because the chat surface
+it opens arrives with #17, and right-clicking does nothing at all — the menu it
+opens is the tray's, which arrives with #18.
 
 The Engine drives all eight required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
@@ -219,6 +219,9 @@ can answer it. Run the app, then confirm:
     to, still falling or still walking rather than restarting. A *zoomed* window
     is not a fullscreen one: Option-click the green button, or double-click a
     title bar, and the sprite stays and can still sit on that window's top edge.
+    On two displays, a fullscreen application on either one takes the sprite
+    away from both: what decides is the window you are working in, not the
+    screen the sprite is standing on.
 14. **Ordinary window switching changes nothing.** Command-Tab between
     applications, open and close windows, drag them around, switch Spaces. The
     sprite never blinks, never changes what it is in front of, and never

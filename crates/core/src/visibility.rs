@@ -158,6 +158,11 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
 ///
 /// The frames are whole display frames, not the usable ones physics runs in:
 /// the reserved strips are precisely the difference being measured.
+///
+/// Any display counts, including one the Character is not on: what is being
+/// asked is whether the window the user is working in has taken a whole screen,
+/// and a presentation on the second monitor is exactly when a companion should
+/// not be anywhere. Asking per display needs an overlay per display (#62).
 pub fn fullscreen_frontmost(windows: &[WindowRect], frames: &[Rect]) -> bool {
     windows
         .first()
@@ -418,7 +423,8 @@ mod tests {
         ));
     }
 
-    /// A second display is another whole screen an application can take.
+    /// A second display is another whole screen an application can take, and
+    /// taking it hides the Character wherever the Character is standing.
     #[test]
     fn a_fullscreen_window_on_a_second_display_counts_too() {
         let second = Rect {
