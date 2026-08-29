@@ -50,6 +50,11 @@ jobs:
         with:
           workspaces: .
           key: ${{ matrix.os }}
+          # Save the target directory even when the job goes red. A pull
+          # request that fails clippy is exactly the one about to be pushed
+          # again, and without this every one of those pushes starts from a
+          # cold cache — the slowest run this workflow has.
+          cache-on-failure: true
 
       - name: Install shfmt
         # Resolve the asset with jq rather than a regex over the JSON. POSIX ERE
@@ -90,23 +95,49 @@ jobs:
           shfmt --version
 
       - name: Install shellcheck
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            sudo apt-get update && sudo apt-get install -y shellcheck
-          else
-            brew install shellcheck
-          fi
+        # macOS only. Linux gets shellcheck from the apt step below, because two
+        # steps calling apt meant two `apt-get update` runs a few seconds apart,
+        # and the second one refreshes lists that are already current.
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
 
-      - name: Install the Tauri system libraries
-        # Only Linux needs these: macOS has WebKit in the system already. Without
-        # them the shell crate cannot link, which is why it used to be built on
-        # macOS alone.
+      - name: Install the Linux system packages
+        # Only Linux needs the Tauri libraries: macOS has WebKit in the system
+        # already. Without them the shell crate cannot link, which is why the
+        # shell used to be built on macOS alone.
+        #
+        # Not cached. The download is a fraction of this step — most of it is
+        # dpkg unpacking the WebKit headers, which a cache would still have to
+        # do, and restoring a /usr tree out from under dpkg trades a reliable
+        # install for an unreliable one.
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
-            libayatana-appindicator3-dev
+            libayatana-appindicator3-dev shellcheck
+
+      - name: Cache the pre-commit hook environments
+        # The dominant cost of the step below. pre-commit clones every hook repo
+        # and builds a virtualenv per language, three of them here, which is
+        # around twenty seconds of the run and most of what the pre-commit step
+        # spends on macOS.
+        #
+        # The key covers everything the environments are built from: the config
+        # names the repos, their revisions, and codespell's extra dependency, so
+        # editing it rebuilds them. pythonLocation carries the patch version
+        # actions/setup-python resolved, and a virtualenv points at the exact
+        # interpreter that made it — pinning '3.12' is not enough, because a new
+        # patch release lands in a new directory and leaves the cached
+        # environments pointing at one that is gone.
+        #
+        # No restore-keys. A near-miss would restore environments for a config
+        # that no longer applies and then save them again forever; a config
+        # change is rare enough to pay for in full.
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit
         # No SKIP list. The hooks that need macOS test uname themselves and exit
