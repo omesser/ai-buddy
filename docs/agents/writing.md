@@ -1,69 +1,16 @@
 # Writing
 
-The prose rules `docs/agents/comments.md` states for code apply to everything
-else a contributor writes: commit messages, pull request descriptions, and
-review replies. Every sentence earns its place.
+Voice belongs to the `developer-voice` skill. This file holds the one thing no
+skill can know: where writing lands in this repository.
 
-- Lead with the answer. The first sentence says what changed or what is true.
-- One idea per sentence. Active voice.
-- No filler, no exclamation marks, no metaphor where the literal mechanism will
-  do, no stacked em-dash asides, no sentence fragments used as punchlines.
+## The pull request title is the line that survives
 
-The last one is not theoretical. Pull request #56 opened on this line:
+`main` takes squash merges only. The commit subject is the pull request title
+and the body is empty, so nothing else reaches `git log`.
 
-> Not the arithmetic — the window.
-
-The repo owner rejected it. It was built for effect rather than to state a
-fact, and a reader who did not already know the bug learned nothing from it.
-The replacement says the thing: "The overlay now covers one display and follows
-the Character onto whichever display it is on."
-
-## Commit messages
-
-The pull request title is the durable line. `main` takes only squash merges, and
-the merged commit is the pull request title with an empty body. Write that title
-as the one-sentence summary you want in `git log` a year from now.
-
-Branch commits: imperative subject under 50 characters. Keep the body short or
-leave it out. It serves the reviewer while the pull request is open, and the
-merge discards it.
-
-Reasoning that has to last belongs where it survives. A constraint the next
-change could break goes in a code comment. Everything else goes in the pull
-request description.
-
-## Pull request descriptions
-
-A reviewer scans before reading. Lead with the answer, then use sections with
-bullets. Use a table where the content compares things.
-
-#52 is the model. One lead sentence, `git add -A` kept offering to commit a git
-repository inside this one, then three short sections: why, why the whole
-directory rather than a list, and the two commands that verify it. #57 does the
-same and puts its six before-and-after line counts in a table, because that is
-what the content is.
-
-## Review replies
-
-Say what changed and why. Name what you did not change and why not.
-
-The third comment on #56 answers a suggestion by rejecting it, with the
-measurement that settles it:
-
-> `cover_display` is asynchronous: the move is queued rather than applied
-> inside the tick. So the frame being skipped was still correct [...] The
-> `continue` therefore drops a good frame and fixes nothing. Reverted.
-
-A reviewer whose suggestion is silently dropped has to ask again.
-
-## Completeness beats brevity
-
-This is not a length limit. A change a reviewer must be warned about earns
-whatever length that warning takes.
-
-#56 is long on purpose. It records a first diagnosis that was wrong, a written
-specification decision it supersedes in four places, and a known limitation
-where the sprite is clipped on the seam between two displays. Cut any of the
-three and the pull request gets shorter and the review gets worse.
-
-The rule is that every sentence earns its place, not that there are few of them.
+- Write the title as the one-sentence summary a reader should find a year from
+  now.
+- Branch commit bodies serve the reviewer and the merge discards them. Keep them
+  short, or leave them out.
+- Reasoning that has to outlive the review goes in a code comment or the pull
+  request description. `docs/agents/comments.md` covers the first.

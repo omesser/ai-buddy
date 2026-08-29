@@ -22,4 +22,4 @@ Comments say why, not what, and earn their length. See `docs/agents/comments.md`
 
 ## Writing
 
-Commit messages, pull request descriptions and review replies follow the same prose rules. See `docs/agents/writing.md`.
+Squash merges make the pull request title the only line that reaches `git log`. See `docs/agents/writing.md`.
