@@ -36,8 +36,7 @@ const MAX_ELAPSED_MS: u32 = POLL_INTERVAL.as_millis() as u32;
 /// fast as the renderer wants.
 pub struct SnapshotAssembler<S> {
     source: S,
-    /// The last geometry read, handed to the Engine again on every tick until
-    /// the next read replaces it.
+    /// The last geometry read, reused until the next read replaces it.
     geometry: WorldGeometry,
     since_poll: Duration,
 }
@@ -391,7 +390,7 @@ mod tests {
     #[test]
     fn a_sprite_comes_to_rest_on_the_usable_floor_rather_than_behind_the_dock() {
         // A 1920x1080 display reserving 30 points for the menu bar and 98 for
-        // the Dock, which is what this machine reported.
+        // the Dock, read off a running app while #39 was being written.
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {

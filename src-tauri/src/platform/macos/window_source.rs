@@ -26,8 +26,7 @@ pub struct MacosWindowSource {
     ///
     /// Supplied rather than read here, because the reserved strips are the
     /// window manager's answer and this module only speaks to the window
-    /// server. CoreGraphics reports the Dock as a window covering the whole
-    /// display, so nothing in `CGWindowList` can say where its top edge is.
+    /// server.
     read_usable_frames: Box<dyn Fn() -> Vec<Rect> + Send + Sync>,
 }
 

@@ -129,10 +129,8 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     let source = macos::MacosWindowSource::new({
         let cache = cache.clone();
         move || {
-            // Posted, not awaited. A poll that arrives while the main thread is
-            // busy is served the previous answer, which is a strip of screen
-            // that was accurate a moment ago rather than a stall in the frame
-            // loop.
+            // Posted, not awaited: a poll that arrives while the main thread
+            // is busy is served the previous answer.
             if due(&refreshed) {
                 let app = app.clone();
                 let cache = cache.clone();
@@ -188,10 +186,6 @@ pub fn window_source(_app: tauri::AppHandle) -> (impl WindowSource, DisplayCache
 /// primary's. The arithmetic is `window_source::in_points` and
 /// `window_source::usable_frame`, where it is tested; this only asks the
 /// windowing layer what it can see.
-///
-/// The cursor is the one reading the primary's scale is right for. The layer
-/// measures it against that display whichever display it is over, so undoing it
-/// with anything else puts the cursor on a display that is not there.
 #[cfg(target_os = "macos")]
 fn read_displays(app: &tauri::AppHandle) -> Displays {
     use ai_buddy_core::window_source::{in_points, usable_frame};
