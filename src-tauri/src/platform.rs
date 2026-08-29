@@ -87,6 +87,26 @@ pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether Do Not Disturb is on.
+///
+/// No platform will say yet, which the hide rules read as "not on" — the same
+/// answer as a machine where it is off. macOS keeps the live Focus state in
+/// `~/Library/DoNotDisturb/DB`, which needs Full Disk Access to read, and the
+/// public alternative, `INFocusStatusCenter`, opens a consent dialog the first
+/// time it is asked. DESIGN.md decision 9 spends no permission on the Spatial
+/// Layer, so the rule is built, tested and wired, and the reading is what is
+/// missing. The hotkey is what a user has meanwhile.
+///
+/// One function rather than a `cfg` pair, because there is no macOS arm to
+/// write: this is the answer everywhere.
+///
+/// ponytail: constant. Read the real state here the day a consented sensing
+/// tier ships — docs/SPEC.md defers those alongside Capture — and nothing that
+/// reads this changes.
+pub fn do_not_disturb() -> bool {
+    false
+}
+
 /// Whether the primary mouse button is down.
 ///
 /// Polled beside the cursor rather than delivered as an event, so a drag that

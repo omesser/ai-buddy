@@ -64,6 +64,14 @@ async function start() {
     latest = { ...payload, at: performance.now() };
   });
 
+  // The hide rules, which speak only when the answer changes. A rule sends a
+  // duration and the hotkey sends zero, so one line covers both the fade a
+  // fullscreen application gets and the instant answer a keypress gets.
+  await window.__TAURI__.event.listen("presence", ({ payload }) => {
+    sprite.style.transition = `opacity ${payload.fade_ms}ms linear`;
+    sprite.style.opacity = payload.visible ? "1" : "0";
+  });
+
   requestAnimationFrame(draw);
 }
 

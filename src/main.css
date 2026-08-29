@@ -30,4 +30,9 @@ body {
   /* Hidden until the Rust side says where the Character goes. The webview holds
      no authoritative state. */
   visibility: hidden;
+  /* The hide rules fade this between 1 and 0, over a duration they send with
+     each change. Opacity rather than visibility, so the transition can be
+     animated, and so the two gates stay independent: this one is whether the
+     Character should be seen, that one is whether it has been placed yet. */
+  opacity: 1;
 }
