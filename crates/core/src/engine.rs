@@ -866,6 +866,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Walk],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
             (
@@ -1663,6 +1665,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::React, Primitive::Walk],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
             (
@@ -1673,6 +1677,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Sit],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
         ]));
