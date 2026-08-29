@@ -38,3 +38,14 @@ behavior settle = sit sleep
 # to propose beyond expression. The name is the Director's handle on it; what
 # walks is the `walk` Primitive inside.
 behavior walk = walk
+
+# What Blip does with no model configured. The Static Director draws from these
+# by weight, so this is the whole of the placeholder's idle life: greet whoever
+# is at the keyboard, wander once they stop typing, and settle down once they
+# have plainly gone.
+weight greet = 2
+when greet = idle under 10s
+weight walk = 3
+when walk = idle over 10s
+weight settle = 3
+when settle = idle over 2m

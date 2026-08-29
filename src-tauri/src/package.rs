@@ -414,6 +414,29 @@ mod tests {
         }
     }
 
+    /// The Character that ships in the bundle, read from the repository rather
+    /// than built here. Nothing else checks it, and a manifest that stops
+    /// loading is an app that refuses to start.
+    #[test]
+    fn the_shipped_placeholder_character_loads_and_has_a_life() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../characters/placeholder");
+
+        let package = read(&path).expect("the shipped Character Package loads");
+        let behaviors = &package.character.behaviors;
+
+        assert_eq!(package.character.name, "Blip");
+        assert!(
+            behaviors.values().any(|behavior| behavior.weight > 0),
+            "the Static Director has something to pick"
+        );
+        assert!(
+            behaviors
+                .values()
+                .any(|behavior| behavior.trigger.is_some()),
+            "and some of it suits one moment rather than any"
+        );
+    }
+
     /// The files of a minimal valid package: a manifest naming one frame per
     /// required Animation, the frames themselves under `frames/`, and a prompt.
     fn package_files() -> Vec<(String, Vec<u8>)> {

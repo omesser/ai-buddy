@@ -12,6 +12,10 @@
 //! else. The loop reads the wall clock and the cursor, asks
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
+//!
+//! Waking the Director is the loop's too, and for the same reason: `docs/SPEC.md`
+//! has the Shell wake it on a timer and on notable events, and a timer is a
+//! clock. What it proposes is `director`'s; when it is asked is here.
 
 mod cast;
 mod package;
@@ -22,9 +26,11 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ai_buddy_core::director::{self, Context, Director, StaticDirector};
 use ai_buddy_core::engine::{Engine, Point};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{cursor_in_window, display_for, place_sprite, SpriteRect};
+use ai_buddy_core::sensing::{FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use serde::Serialize;
@@ -50,6 +56,13 @@ const ALPHA_THRESHOLD: u8 = 128;
 /// the cursor returns — something outside the window has to ask where it is.
 /// And the Engine advances on elapsed time, so something has to advance it.
 const ENGINE_TICK: Duration = Duration::from_millis(16);
+
+/// How often the Free tier is read.
+///
+/// Far less often than the frame loop turns: the answers change at human speed,
+/// and each read is two calls into AppKit and CoreGraphics that the sprite's
+/// physics have no use for.
+const SENSE_INTERVAL: Duration = Duration::from_secs(1);
 
 const OVERLAY_LABEL: &str = "overlay";
 
@@ -122,6 +135,20 @@ fn run_frame_loop(
     thread::spawn(move || {
         let mut engine = Engine::new(start).with_behaviors(cast.behaviors().clone());
         let mut assembler = SnapshotAssembler::new(source);
+
+        // The Static Director, which is the whole of the buddy's life until a
+        // model is configured: no network, no key, nothing to time out. Seeded
+        // from the wall clock so that two runs are not the same afternoon,
+        // which is the one thing the Engine's own purity forbids it to do.
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos() as u64);
+        let mut director = StaticDirector::new(cast.behaviors().clone(), seed);
+        let mut free_tier = FreeTier::default();
+        let activity_source = platform::activity_source();
+        let mut recent: Vec<String> = Vec::new();
+        let mut since_sense = Duration::ZERO;
+        let mut since_wake = Duration::ZERO;
 
         // The display the overlay is currently over, as setup left it.
         let mut home = home;
@@ -209,7 +236,37 @@ fn run_frame_loop(
             if tracing_frames && !verbs.is_empty() {
                 eprintln!("verbs: {verbs:?}");
             }
-            let frame = engine.tick(&assembler.assemble(elapsed_ms, cursor_points, verbs));
+
+            // The Director's clock is the same elapsed time the Engine is
+            // given, so a loop that stalled wakes it once on the way back
+            // rather than in a burst.
+            let elapsed = Duration::from_millis(u64::from(elapsed_ms));
+            since_sense += elapsed;
+            since_wake += elapsed;
+
+            let mut proposal = None;
+            if since_sense >= SENSE_INTERVAL {
+                since_sense = Duration::ZERO;
+                let activity = free_tier.read(&activity_source, &SystemClock);
+
+                if director::due(since_wake, &activity) {
+                    since_wake = Duration::ZERO;
+                    proposal = director.propose(&Context {
+                        activity,
+                        recent: recent.clone(),
+                    });
+                    if let Some(proposed) = &proposal {
+                        director::remember(&mut recent, proposed.behavior.clone());
+                        if tracing_frames {
+                            eprintln!("director: {}", proposed.behavior);
+                        }
+                    }
+                }
+            }
+
+            let mut world = assembler.assemble(elapsed_ms, cursor_points, verbs);
+            world.proposal = proposal;
+            let frame = engine.tick(&world);
 
             // The overlay covers one display and follows the Character to the
             // next. macOS gives each display its own Space and draws a window

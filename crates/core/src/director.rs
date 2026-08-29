@@ -8,8 +8,9 @@
 //!
 //! Determinism is the point. A pet that surprises its owner is not a pet that
 //! surprises its tests, so the randomness arrives as a seed rather than from a
-//! clock or an operating system, and every test here asserts what was picked
-//! rather than how often it roughly was.
+//! clock or an operating system. Every test below fixes the seed, including the
+//! one about distribution: it counts what a known seed actually drew, so it
+//! cannot flake however tight the band around it is drawn.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -25,6 +26,13 @@ use crate::sensing::Activity;
 /// something. The model-backed Director will want its own, far longer, number:
 /// this one costs nothing to wake.
 pub const WAKE_EVERY: Duration = Duration::from_secs(20);
+
+/// How many Behaviors back the Director is asked to remember.
+///
+/// A tuning knob, and the reason suppression has to be able to give way: a
+/// Character declaring fewer Behaviors than this would otherwise run out of
+/// things it is allowed to do.
+pub const REMEMBERED: usize = 3;
 
 /// What the Director is told about the world on one wake.
 ///
@@ -42,6 +50,16 @@ pub struct Context {
 pub trait Director {
     /// A Behavior to play, or nothing when this moment suits none.
     fn propose(&mut self, context: &Context) -> Option<BehaviorProposal>;
+}
+
+/// Record a Behavior as just played, forgetting whatever fell off the end.
+///
+/// The caller keeps the list because the Director is a function of what it is
+/// handed: what has been played is the Shell's to know, since the Shell is what
+/// plays it.
+pub fn remember(recent: &mut Vec<String>, behavior: String) {
+    recent.insert(0, behavior);
+    recent.truncate(REMEMBERED);
 }
 
 /// Whether this read of the Free tier is worth waking the Director for.
@@ -383,6 +401,17 @@ mod tests {
         let picked = proposed(&mut director, &context(working(), &["nap", "pace"]), 20);
 
         assert_eq!(picked.len(), 20, "repeating beats standing there");
+    }
+
+    #[test]
+    fn what_is_remembered_is_the_last_few_behaviors_newest_first() {
+        let mut recent = Vec::new();
+        for behavior in ["nap", "pace", "wave", "greet"] {
+            remember(&mut recent, behavior.to_string());
+        }
+
+        assert_eq!(recent, ["greet", "wave", "pace"], "\"nap\" is forgotten");
+        assert_eq!(recent.len(), REMEMBERED);
     }
 
     #[test]
