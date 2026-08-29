@@ -518,6 +518,25 @@ mod tests {
         );
     }
 
+    /// The platform reports the primary display first, and that is the one the
+    /// sprite comes into the world on.
+    #[test]
+    fn a_sprite_starts_on_the_first_display_the_platform_reported() {
+        let two_displays = WorldGeometry {
+            usable_frames: vec![
+                rect(0.0, 30.0, 1920.0, 952.0),
+                rect(1920.0, 33.0, 1728.0, 1084.0),
+            ],
+            windows: Vec::new(),
+        };
+
+        assert_eq!(
+            starting_position(&two_displays),
+            Point { x: 960.0, y: 506.0 },
+            "the middle of the first display, not the second"
+        );
+    }
+
     /// The circuit this module closes: geometry from the platform becomes a
     /// world the sprite falls through and lands in.
     #[test]
