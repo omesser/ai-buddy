@@ -207,10 +207,7 @@ impl Pointer {
 
     /// Whether the sprite is being held.
     ///
-    /// The Shell suspends its hit-test while this is true. A drag that outruns
-    /// the sprite would otherwise put the cursor over transparent pixels, hand
-    /// the click through to whatever is underneath, and drop the sprite in the
-    /// user's hand.
+    /// The Shell suspends its hit-test while this is true.
     pub fn grabbing(&self) -> bool {
         self.phase == Phase::Grabbing
     }

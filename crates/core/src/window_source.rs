@@ -86,9 +86,8 @@ pub fn in_points(rect_physical: Rect, scale: f64) -> Rect {
 /// computes it for its own window manager, and reports it as a work area.
 ///
 /// Both rectangles arrive in physical pixels, because that is how a window
-/// server measures a screen, and the Engine works in points. Dividing by the
-/// display's own scale is the whole conversion; using one display's scale for
-/// another is how a sprite ends up half a screen from where it was drawn.
+/// server measures a screen, and the Engine works in points. `in_points` does
+/// the conversion and says which scale factor is the right one.
 ///
 /// A platform that does not report a work area reports an empty one, and gets
 /// the whole frame back. That is the correct answer rather than a degraded
@@ -110,9 +109,8 @@ pub fn usable_frame(frame_physical: Rect, work_area_physical: Rect, scale: f64) 
     let right = (work.x + work.width).min(frame.x + frame.width);
     let bottom = (work.y + work.height).min(frame.y + frame.height);
 
-    // Nothing left to stand on means the platform reported no work area at all,
-    // or one that misses its own display. The whole frame is the honest answer
-    // there: a sprite with too much room walks back, one with none has no floor.
+    // Nothing left to stand on means no work area at all, or one that misses
+    // its own display.
     if right <= left || bottom <= top {
         return frame;
     }
@@ -131,11 +129,9 @@ pub struct WorldGeometry {
     /// The part of each active display a sprite may occupy, in the same
     /// coordinate space as `windows`.
     ///
-    /// Usable area rather than the whole frame, because a display reserves
-    /// strips of itself for furniture the sprite must not disappear behind —
-    /// the Dock and the menu bar on macOS, the taskbar on Windows. See
-    /// `usable_frame`. A platform that reserves nothing reports whole frames,
-    /// which is the same thing said about an emptier desktop.
+    /// Usable area rather than the whole frame; see `usable_frame`. A platform
+    /// that reserves nothing reports whole frames, which is the same thing said
+    /// about an emptier desktop.
     pub usable_frames: Vec<Rect>,
     /// Visible windows in descending z-order: frontmost first.
     pub windows: Vec<WindowRect>,
@@ -235,9 +231,9 @@ mod tests {
         );
     }
 
-    /// The numbers this machine reported while #39 was being written, read
-    /// back off a running app: a 1920x1080 display at scale 1 with a 30-point
-    /// menu bar and a 98-point Dock.
+    /// Literal values read off a running app while #39 was being written: a
+    /// 1920x1080 display at scale 1 with a 30-point menu bar and a 98-point
+    /// Dock.
     #[test]
     fn a_reserved_strip_is_taken_off_the_frame_the_sprite_may_occupy() {
         let usable = usable_frame(
@@ -254,8 +250,8 @@ mod tests {
         );
     }
 
-    /// The second display of the same machine: Retina, so every number it
-    /// reports is twice the points the Engine works in.
+    /// The Retina display beside it, so every number it reports is twice the
+    /// points the Engine works in.
     #[test]
     fn a_displays_own_scale_is_what_converts_it() {
         let usable = usable_frame(

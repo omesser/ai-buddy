@@ -109,8 +109,7 @@ fn cover_display(window: &tauri::WebviewWindow, display: Rect) -> Result<(), tau
 ///
 /// Position is where the two part. The webview draws one sample behind and
 /// interpolates towards this one, so the hit-test rectangle leads what is on
-/// screen by up to one tick — a pixel or two at walking speed, and always in
-/// the direction of travel. src/interpolate.js carries the measurements that
+/// screen by up to one tick. src/interpolate.js carries the measurements that
 /// make that lag the cheaper half of the trade against a stuttering sprite.
 fn run_frame_loop(
     app: tauri::AppHandle,
@@ -145,10 +144,6 @@ fn run_frame_loop(
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
 
-        // The sprite as it was last drawn. Whether a press belongs to the
-        // sprite is a question about the one the user pressed on, and this
-        // tick's Frame does not exist yet when that has to be answered.
-        //
         // The art is looked up again rather than kept, which costs one map
         // lookup and saves copying a mask sixty times a second.
         let mut drawn_last: Option<Drawn> = None;
@@ -193,10 +188,6 @@ fn run_frame_loop(
                 scale,
             );
 
-            // Hit-tested against the rectangle the sprite was last drawn at,
-            // because whether a press belongs to the sprite is a question about
-            // the sprite the user pressed on, not the one this tick is about to
-            // produce.
             let pressed_sprite = drawn_last.as_ref().is_some_and(|last| {
                 cast.draw(last.animation, last.animation_ms)
                     .is_some_and(|art| art.mask.hit(&last.rect, local_x, local_y))
@@ -298,12 +289,10 @@ fn run_frame_loop(
                 );
             }
 
-            // Hit-tested twice a tick, against two different rectangles, because
-            // the two questions are about different moments. Whether a press
-            // belongs to the sprite is about the sprite the user pressed on, so
-            // it uses the one last drawn. Whether the next click should reach us
-            // is about the sprite about to be drawn, so it uses this one — a
-            // cursor that has just arrived over the art must not spend a frame
+            // The tick's second hit-test, against the sprite about to be drawn
+            // rather than the one last drawn: whether the next click should
+            // reach us is a question about where the art is going to be. A
+            // cursor that has just arrived over it must not spend a frame
             // passing clicks to the application underneath.
             let over_sprite = drawn.mask.hit(&sprite, local_x, local_y);
             drawn_last = Some(Drawn {

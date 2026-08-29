@@ -53,10 +53,10 @@ fi
 # A Perch to aim the sprite at.
 #
 # The sprite starts in the middle of the usable part of the first display and
-# falls, so a window whose top edge is below that point is something it can
-# land on. It has to
-# exist before the app does: the fall takes under a second, and a window that
-# arrives afterwards is above the sprite, which is not a surface from below.
+# falls, so a window whose top edge is below that point is something it can land
+# on. It has to exist before the app does: the fall takes under a second, and a
+# window that arrives afterwards is above the sprite, which is not a surface
+# from below.
 # ---------------------------------------------------------------------------
 swift scripts/inspect-window.swift > "$OUT/desktop.json" 2> "$OUT/desktop.err" || {
   echo "FAIL: inspector"
