@@ -335,14 +335,24 @@ fn displays_spanning<'a>(
 }
 
 /// The screen edge the sprite has just arrived at while moving into it, or the
-/// nearest one when it is already outside every display. A sprite out there has
-/// no floor under it and would otherwise fall for ever, so grabbing an edge is
-/// how it gets back over a display at all.
+/// nearest one when it is over no display at all. A sprite out there has no
+/// floor under it and would otherwise fall for ever, so grabbing an edge is how
+/// it gets back over a display.
 ///
-/// ponytail: the outermost edges of all displays, not the true union of their
-/// frames. Gaps between non-aligned displays are #4's problem, and this is the
-/// hook they clamp at.
+/// "Over no display" is the union of the display frames, not the rectangle that
+/// bounds them. Two displays side by side with a gap between them bound a
+/// region the sprite can occupy and no screen covers, and letting go of it
+/// there leaves it with no sideways speed to carry it out — it simply falls,
+/// unseen, for as long as the app runs. A thrown sprite crosses such a gap
+/// before gravity matters, which is why only a drop finds this.
 fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
+    if displays_spanning(x, snapshot).next().is_none() {
+        return nearest_edge(x, snapshot);
+    }
+
+    // Still over a display, so the only wall left is the outermost edge, and
+    // only while the sprite is moving into it. Every inner edge is somewhere to
+    // cross rather than something to catch.
     let left = snapshot
         .displays
         .iter()
@@ -354,13 +364,26 @@ fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64
         .map(|display| display.x + display.width)
         .max_by(f64::total_cmp)?;
 
-    if x > right || (velocity_x > 0.0 && x >= right) {
+    if velocity_x > 0.0 && x >= right {
         Some(right)
-    } else if x < left || (velocity_x < 0.0 && x <= left) {
+    } else if velocity_x < 0.0 && x <= left {
         Some(left)
     } else {
         None
     }
+}
+
+/// The display edge nearest `x`, for a sprite that is over none of them.
+///
+/// Nearest rather than the one it came from: the sprite has no memory of that,
+/// and the shortest way back to somewhere it can stand is the least surprising
+/// place for it to reappear.
+fn nearest_edge(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
+    snapshot
+        .displays
+        .iter()
+        .flat_map(|display| [display.x, display.x + display.width])
+        .min_by(|a, b| (a - x).abs().total_cmp(&(b - x).abs()))
 }
 
 #[cfg(test)]
@@ -810,5 +833,228 @@ mod tests {
         assert_eq!(unmoved.state, State::Grounded, "not flung: {unmoved:?}");
         assert_eq!(unmoved.position, resting.position);
         assert_eq!(unmoved.velocity, Point::default());
+    }
+
+    /// Two displays with a gap between them, which is what "the union of
+    /// visible display frames, not their bounding rectangle" is about. A sprite
+    /// that lands in the gap is over no display at all: nothing holds it up,
+    /// nothing draws it, and nothing brings it back.
+    fn displays_with_a_gap() -> WorldSnapshot {
+        WorldSnapshot {
+            displays: vec![
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+                Rect {
+                    x: 1500.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+            ],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        }
+    }
+
+    /// #4: the sprite is caught by the union of the displays, not by the
+    /// rectangle that bounds them.
+    ///
+    /// Dropped rather than thrown, because that is the case that actually
+    /// strands it. A throw carries enough sideways speed to clear the gap
+    /// before gravity matters; letting go over the gap leaves the sprite with
+    /// no horizontal velocity at all, so it stays over nothing. `floor_under`
+    /// finds no display at that x, `support_below` returns nothing, and it
+    /// falls for ever with no edge to catch.
+    #[test]
+    fn a_sprite_dropped_into_the_gap_between_displays_is_caught_rather_than_lost() {
+        let mut engine = Engine::new(Point { x: 900.0, y: 100.0 });
+
+        // Carried by hand into the gap, then let go still.
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: 1200.0,
+                y: 100.0,
+            },
+            verbs: vec![Verb::Grab],
+            ..displays_with_a_gap()
+        });
+        // Let go. The gap is caught on that same tick rather than after a
+        // fall, because the sprite is already over nothing when the hand opens.
+        engine.tick(&displays_with_a_gap());
+
+        let landed = settle(&mut engine, &displays_with_a_gap());
+        assert!(
+            landed.position.y <= 800.0,
+            "it came to rest rather than falling for ever: {landed:?}"
+        );
+        assert!(
+            landed.position.x <= 1000.0 || landed.position.x >= 1500.0,
+            "and over a display rather than in the gap: {landed:?}"
+        );
+    }
+
+    /// The same gap from the other side, so the fix cannot be a one-sided clamp.
+    #[test]
+    fn the_gap_catches_a_sprite_dropped_nearer_its_far_edge() {
+        let mut engine = Engine::new(Point {
+            x: 1600.0,
+            y: 100.0,
+        });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: 1400.0,
+                y: 100.0,
+            },
+            verbs: vec![Verb::Grab],
+            ..displays_with_a_gap()
+        });
+        engine.tick(&displays_with_a_gap());
+
+        let landed = settle(&mut engine, &displays_with_a_gap());
+        assert!(landed.position.y <= 800.0, "it rests: {landed:?}");
+        assert!(
+            landed.position.x >= 1500.0,
+            "recovered to the nearer display, which is the right-hand one: {landed:?}"
+        );
+    }
+
+    /// #4 asks for an L-shaped arrangement, where the bounding rectangle and
+    /// the union differ in y rather than in x. A second display dropped below
+    /// the first leaves the top-right of the bounding rectangle covering no
+    /// screen at all.
+    ///
+    /// It does not strand the sprite, and this says so rather than assuming it:
+    /// every x in the bounding rectangle is spanned by some display, so there is
+    /// always a floor somewhere below.
+    #[test]
+    fn an_l_shaped_arrangement_leaves_the_sprite_a_floor_everywhere() {
+        let l_shaped = || WorldSnapshot {
+            displays: vec![
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+                Rect {
+                    x: 1000.0,
+                    y: 400.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+            ],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        // Over the second display but above where it begins: inside the
+        // bounding rectangle, outside the union.
+        let mut engine = Engine::new(Point {
+            x: 1500.0,
+            y: 100.0,
+        });
+        let landed = settle(&mut engine, &l_shaped());
+
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(
+            landed.position.y, 1200.0,
+            "it falls past the empty space onto the lower display"
+        );
+        assert_eq!(landed.position.x, 1500.0, "and does not drift sideways");
+    }
+
+    /// And a diagonal arrangement, the other case #4 names: two displays meeting
+    /// at a corner. The x ranges still touch, so there is no gap to fall into,
+    /// and the sprite reaches the lower display's floor.
+    #[test]
+    fn a_diagonal_arrangement_leaves_the_sprite_a_floor_everywhere() {
+        let diagonal = || WorldSnapshot {
+            displays: vec![
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+                Rect {
+                    x: 1000.0,
+                    y: 800.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+            ],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        let mut engine = Engine::new(Point {
+            x: 1500.0,
+            y: 100.0,
+        });
+        let landed = settle(&mut engine, &diagonal());
+
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(landed.position.y, 1600.0);
+        assert!(
+            landed.position.x >= 1000.0 && landed.position.x <= 2000.0,
+            "over the display it landed on: {landed:?}"
+        );
+    }
+
+    /// Displays that touch have no gap, and the sprite must cross freely. A
+    /// clamp that treats every display edge as a wall would trap it on one
+    /// screen.
+    #[test]
+    fn a_sprite_crosses_freely_between_displays_that_touch() {
+        let touching = || WorldSnapshot {
+            displays: vec![
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+                Rect {
+                    x: 1000.0,
+                    y: 0.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+            ],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        let mut engine = Engine::new(Point { x: 900.0, y: 100.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..touching()
+        });
+        // Gently, so it lands on the second display rather than sailing past
+        // it to the outer edge — which is a catch, and a different test.
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 400.0, y: 0.0 },
+            }],
+            ..touching()
+        });
+
+        let landed = settle(&mut engine, &touching());
+        assert!(
+            landed.position.x > 1000.0,
+            "it crossed onto the second display: {landed:?}"
+        );
+        assert_eq!(landed.position.y, 800.0, "and stands on its floor");
+        assert_eq!(
+            landed.state,
+            State::Grounded,
+            "rather than climbing an edge"
+        );
     }
 }
