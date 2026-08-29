@@ -13,8 +13,11 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, and drops when that window moves
-or closes. There is no Character Package, no Director, and no Functional Layer
-yet, and the sprite cannot be grabbed.
+or closes. A Character Package now loads off disk, though nothing draws it yet
+— the overlay still renders the placeholder PNG, and #27 replaces that with the
+Character's own Animations. Startup stops if no package loads, because a
+companion with no Character has nothing to be. There is no Director and no
+Functional Layer yet, and the sprite cannot be grabbed.
 
 ## Running it
 
@@ -113,11 +116,48 @@ and your windows take it from there — its position is the Engine's, and until
 Grab lands there is no way to place it by hand. To watch it react, move or close
 the window it is sitting on.
 
-## The placeholder Character
+## Character Packages
 
-`src/assets/placeholder-idle.png` is a generated 32x32 stand-in, not art. It
-exists to give click-through something with transparent regions to hit-test
-against. Real Characters arrive with the Character Package format.
+A Character Package is a directory or a `.zip` archive holding a
+`character.manifest`, a `personality.txt`, and the frames its manifest names.
+ai-buddy looks for them in two places, in order:
+
+1. `~/Library/Application Support/ai-buddy/characters/` — anything you add.
+2. The Characters shipped with the app, which live in `characters/` in this
+   repository and are copied next to the binary at build time.
+
+The first package that loads is the one you get. Set `AI_BUDDY_CHARACTERS` to a
+`:`-separated list of directories to look in those instead, which is how to try
+a package without installing it.
+
+A package that is rejected says why, one line per mistake. A mistake in a
+declaration names the declaration and the line it is on; a mistake the package
+makes as a whole, such as declaring no name, has no line to point at. A
+directory that holds no `character.manifest` is skipped silently: it was never
+a package, which is a different thing from a broken one.
+
+A `.zip` made by Finder's Compress loads as it is. The `__MACOSX/` tree and the
+`.DS_Store` files Finder puts in it describe your Mac rather than the Character,
+so they are ignored.
+
+The format stays internal and undocumented until v2 — see
+[DESIGN.md](./DESIGN.md).
+
+### The placeholder Character
+
+`characters/placeholder/` is a generated stand-in, not art. It exists so the
+Engine has a Character to drive, and so click-through has something with
+transparent regions to hit-test against. Regenerate its frames with:
+
+```sh
+python3 scripts/make-placeholder-character.py
+```
+
+Standard library only, so there is nothing to install. Real Characters are drawn
+by hand.
+
+`src/assets/placeholder-idle.png` is the older 32x32 stand-in the overlay still
+renders. #27 retires it.
 
 ## Prior art and attribution
 

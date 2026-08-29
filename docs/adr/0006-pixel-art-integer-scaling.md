@@ -2,10 +2,15 @@
 
 Characters are authored as true low-resolution pixel art on a fixed grid and
 rendered with nearest-neighbour filtering at integer scale factors only
-(`image-rendering: pixelated`). Assets are PNG sprite strips plus a JSON
-Character Manifest declaring frame size, count, fps, and loop mode per
-Animation — the format Aseprite exports natively and every 2D engine
-understands.
+(`image-rendering: pixelated`). Assets are PNGs plus a Character Manifest
+declaring fps and loop mode per Animation.
+
+The shape of that manifest is not what this decision turns on, and #7 landed a
+different one from the sketch here: one PNG per frame rather than a strip, a
+`key = value` manifest rather than JSON, and frame size and count read from the
+art rather than declared — a declared size can disagree with the art, and a
+derived one cannot. What holds either way is that the frame grid is fixed and
+the scale factor is an integer.
 
 A future reader on a Retina display will see a deliberately blocky sprite and
 wonder why it was not drawn at native resolution. This is the reason.

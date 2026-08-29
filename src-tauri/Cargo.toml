@@ -17,6 +17,12 @@ tauri-build = {version = "2", features = []}
 tauri = {version = "2", features = ["macos-private-api"]}
 ai-buddy-core = {path = "../crates/core"}
 serde = {version = "1", features = ["derive"]}
+# Reading a Character Package that was shipped as an archive. Zip because it is
+# what Finder's "Compress" produces, and a central-directory parser over
+# untrusted input is not something to hand-roll. `deflate-flate2` rather than
+# the umbrella `deflate` feature: it reuses the flate2 already here under `png`,
+# where the umbrella also drags in zopfli, a compressor only a writer needs.
+zip = {version = "4.2", default-features = false, features = ["deflate-flate2"]}
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

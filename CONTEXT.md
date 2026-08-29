@@ -19,8 +19,9 @@ animations, Character Manifest, personality prompt, and behavior tuning.
 _Avoid_: Skin, theme, mod, plugin
 
 **Character Manifest**:
-The declaration at the root of a Character Package: frame size, count, fps and
-loop mode per Animation, plus the Behaviors the Character declares.
+The declaration at the root of a Character Package: the frames, fps and loop
+mode of each Animation, plus the Behaviors the Character declares. Frame size
+and frame count are read from the art rather than declared.
 _Avoid_: Manifest on its own — a Memory Manifest is one too
 
 **Personality Prompt**:

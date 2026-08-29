@@ -59,6 +59,14 @@ jobs:
         #
         # The asset comes from uname rather than a hardcoded pair, so a runner
         # changing architecture picks the right binary instead of the wrong one.
+        #
+        # Authenticated, because unauthenticated api.github.com allows 60 calls
+        # an hour per source address and hosted runners share theirs. Strangers
+        # spend the budget, the query answers 403 at random, and the job dies.
+        # GITHUB_TOKEN reads a public repository's releases and lifts the limit
+        # into the thousands.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           case "$(uname -s)_$(uname -m)" in
             Linux_x86_64)  asset=_linux_amd64 ;;
@@ -67,10 +75,17 @@ jobs:
             Darwin_x86_64) asset=_darwin_amd64 ;;
             *) echo "no shfmt asset known for $(uname -s) $(uname -m)"; exit 1 ;;
           esac
-          url=$(curl -fsSL https://api.github.com/repos/mvdan/sh/releases/latest \
+          url=$(curl -fsSL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/mvdan/sh/releases/latest \
             | jq -r --arg asset "$asset" \
               '.assets[] | select(.name | endswith($asset)) | .browser_download_url')
-          curl -fsSL -o shfmt "$url"
+          # An empty url here means the query succeeded and matched nothing, so
+          # say that rather than leaving curl to complain about a blank argument.
+          if [ -z "$url" ]; then
+            echo "no shfmt release asset ending in $asset"; exit 1
+          fi
+          curl -fsSL --retry 3 --retry-all-errors -o shfmt "$url"
           chmod +x shfmt && sudo mv shfmt /usr/local/bin/
           shfmt --version
 
