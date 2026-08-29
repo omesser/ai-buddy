@@ -13,7 +13,8 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, and drops when that window moves
-or closes. It is a real Character Package on disk, and its Animations play at
+or closes, and it stands on the Dock rather than behind it. It is a real
+Character Package on disk, and its Animations play at
 the speeds its Character Manifest declares. Startup stops if no package loads,
 because a companion with no Character has nothing to be. There is no Director
 and no Functional Layer yet, and the sprite cannot be grabbed.
@@ -150,7 +151,12 @@ can answer it. Run the app, then confirm:
    blur or soft edges, and every pixel of the sprite is the same size as every
    other. A blurred sprite means the integer scale or the nearest-neighbour
    filtering was lost.
-7. **Declared cadence is honoured.** Point ai-buddy at a copy of the
+7. **It rests on the Dock, not behind it.** Let the sprite settle at the bottom
+   of the screen. Its feet stand on the Dock's top edge and the whole sprite is
+   visible. Then turn on Dock auto-hiding in System Settings: within a poll the
+   sprite falls the rest of the way to the bottom of the screen, because the
+   Dock gave the space back. Turn it off and the sprite is lifted again.
+8. **Declared cadence is honoured.** Point ai-buddy at a copy of the
    placeholder with a faster `fps idle`, and the idle bob is visibly faster
    than it was at the declared 3. Editing the repository's own
    `characters/` changes nothing on its own: the app reads the copy

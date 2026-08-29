@@ -70,7 +70,13 @@ pub struct BehaviorProposal {
 /// Everything the Engine is told about the world for one tick.
 #[derive(Clone, Debug, Default)]
 pub struct WorldSnapshot {
-    /// Visible display frames.
+    /// The part of each visible display a sprite may occupy.
+    ///
+    /// Not the whole display: a screen reserves strips of itself for furniture
+    /// the sprite must not go behind, and the Shell takes those off before the
+    /// Engine sees them. That is why the floor, the ceiling and both walls can
+    /// all be derived from these rectangles without the Engine knowing a Dock
+    /// exists.
     pub displays: Vec<Rect>,
     /// Visible window rectangles in descending z-order.
     pub windows: Vec<Rect>,
@@ -163,6 +169,13 @@ impl Engine {
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
         // the one input that outranks the world.
+        //
+        // Including the usable floor. The cursor may go over the Dock, and a
+        // held sprite goes where the cursor goes rather than stopping short of
+        // a strip the user can plainly see it over. Letting go settles it
+        // somewhere legal, because falling ends on the usable floor like any
+        // other fall — so the reserved strip is somewhere the sprite can be
+        // put and not somewhere it can come to rest. #39.
         if snapshot.verbs.contains(&Verb::Grab) {
             self.state = State::Dragged;
             self.position = snapshot.cursor;
@@ -499,6 +512,56 @@ mod tests {
         assert_eq!(
             restarted.animation_ms, 100,
             "a new animation starts its own clock rather than inheriting one"
+        );
+    }
+
+    /// #39, at the end of the screen no falling test could reach: furniture at
+    /// the top is only ever met by a climb, so a sprite that let go behind the
+    /// menu bar was a defect nothing would have caught.
+    ///
+    /// The Engine learns nothing about menu bars here. It is handed the usable
+    /// part of the display instead of the whole of it, and the ceiling it
+    /// already derives moves with it.
+    #[test]
+    fn a_climb_ends_at_the_usable_top_rather_than_behind_the_menu_bar() {
+        // A display reserving 30 points at the top, as a menu bar does.
+        let usable = || WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 30.0,
+                width: 1000.0,
+                height: 770.0,
+            }],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..usable()
+        });
+        let caught = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..usable()
+        });
+        assert_eq!(caught.state, State::Climbing);
+
+        let highest = (0..200)
+            .map(|_| engine.tick(&usable()).position.y)
+            .fold(f64::INFINITY, f64::min);
+        assert_eq!(
+            highest, 30.0,
+            "it lets go under the menu bar, not at the display's own top of 0"
+        );
+
+        let landed = settle(&mut engine, &usable());
+        assert_eq!(
+            landed.position.y, 800.0,
+            "and falls to the usable floor, which this display does not inset"
         );
     }
 

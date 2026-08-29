@@ -123,9 +123,12 @@ fn display_union(
 /// screen by up to one tick — a pixel or two at walking speed, and always in
 /// the direction of travel. src/interpolate.js carries the measurements that
 /// make that lag the cheaper half of the trade against a stuttering sprite.
-fn run_frame_loop(app: tauri::AppHandle, cast: Arc<Cast>) {
+fn run_frame_loop(
+    app: tauri::AppHandle,
+    cast: Arc<Cast>,
+    source: impl WindowSource + Send + 'static,
+) {
     thread::spawn(move || {
-        let source = platform::window_source();
         let mut engine = Engine::new(starting_position(&source.snapshot()));
         let mut assembler = SnapshotAssembler::new(source);
 
@@ -409,7 +412,11 @@ fn main() {
             platform::configure_overlay(&window)?;
             window.show()?;
 
-            run_frame_loop(app.handle().clone(), cast);
+            // Built here rather than in the loop: reading which part of a
+            // display is usable means asking AppKit, and only the main thread
+            // may do that.
+            let source = platform::window_source(app.handle().clone());
+            run_frame_loop(app.handle().clone(), cast, source);
             Ok(())
         })
         .run(tauri::generate_context!())
