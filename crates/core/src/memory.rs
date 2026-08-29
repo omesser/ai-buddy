@@ -24,16 +24,27 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Memory on disk, at a path the user owns.
 pub struct MemoryManifest {
     path: PathBuf,
+    /// Held across a read-modify-write, so two writers cannot each read the same
+    /// document and have the later rename drop the earlier one's fact.
+    ///
+    /// ponytail: one lock per manifest, which covers the several-Instances-one-
+    /// process case the spec describes. Cross-process file locking if a second
+    /// ai-buddy ever writes the same Memory.
+    writing: Mutex<()>,
 }
 
 impl MemoryManifest {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        Self {
+            path: path.into(),
+            writing: Mutex::new(()),
+        }
     }
 
     /// Everything Memory holds, as the user would see it in an editor.
@@ -53,10 +64,12 @@ impl MemoryManifest {
     /// to keep it one line — and the user is owed what actually landed in their
     /// file rather than what the Harness asked for.
     ///
-    /// Both arguments come from a Harness, so both are checked here.
+    /// Both arguments come from a Harness, so both are checked here — before the
+    /// lock, so a dud tool call never holds up a real write.
     pub fn remember(&self, heading: &str, fact: &str) -> io::Result<String> {
         let heading = non_empty("heading", heading)?;
         let recorded = format!("- {}", non_empty("fact", fact)?);
+        let _writing = self.lock();
         self.write(with_fact(&self.recall()?, &heading, &recorded))?;
         Ok(recorded)
     }
@@ -67,6 +80,7 @@ impl MemoryManifest {
     /// The backup is written first and its failure aborts the wipe, because a
     /// wipe the user did not mean is the one mistake here that cannot be undone.
     pub fn wipe(&self) -> io::Result<Option<PathBuf>> {
+        let _writing = self.lock();
         let memory = self.recall()?;
         if memory.trim().is_empty() {
             self.write(String::new())?;
@@ -78,6 +92,15 @@ impl MemoryManifest {
         keep_permissions_of(&self.path, &backup)?;
         self.write(String::new())?;
         Ok(Some(backup))
+    }
+
+    /// Exclude every other writer for as long as the guard lives.
+    ///
+    /// A poisoned lock is taken anyway: it guards a file rather than an
+    /// invariant held in memory, so one writer's panic must not wedge Memory for
+    /// the rest of the session.
+    fn lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.writing.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Replace Memory's contents, creating its directory on first use.
@@ -717,6 +740,37 @@ Some notes I typed at the top, under no heading at all.
         assert!(
             !stamp.is_empty() && stamp.chars().all(|c| c.is_ascii_digit()),
             "and stamped with when it was taken: {name}"
+        );
+    }
+
+    /// Memory is shared by every Character Instance and they write it from one
+    /// process. Two buddies recording at the same moment must both land: a write
+    /// `remember` reported and the file does not hold is a lie to the user.
+    #[test]
+    fn concurrent_remembers_all_land() {
+        let dir = TempDir::new("concurrent");
+        let manifest = &MemoryManifest::new(dir.join("memory.md"));
+
+        std::thread::scope(|scope| {
+            for writer in 0..4 {
+                scope.spawn(move || {
+                    for i in 0..25 {
+                        manifest
+                            .remember("Facts", &format!("fact {writer}-{i}"))
+                            .expect("remembering writes");
+                    }
+                });
+            }
+        });
+
+        let memory = manifest.recall().expect("recall reads back");
+        assert_eq!(
+            memory
+                .lines()
+                .filter(|line| line.starts_with("- fact"))
+                .count(),
+            100,
+            "every fact remember reported is in the file: {memory}"
         );
     }
 }
