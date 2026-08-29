@@ -170,6 +170,9 @@ pub struct Engine {
     animation_ms: u32,
     /// The Behaviors the Character declares, which a proposal names.
     behaviors: BTreeMap<String, Behavior>,
+    /// The windows of the previous tick, to tell a window that has come to
+    /// contain the sprite from one that contained it all along. See `footing`.
+    previous_windows: Vec<Rect>,
     /// The Primitives of the Behavior being played, last first, so the one on
     /// screen is on top.
     ///
@@ -195,6 +198,7 @@ impl Engine {
             animation: animation_for(State::Falling),
             animation_ms: 0,
             behaviors: BTreeMap::new(),
+            previous_windows: Vec::new(),
             playing: Vec::new(),
             primitive_ms: 0,
             facing: 1.0,
@@ -211,6 +215,10 @@ impl Engine {
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
+
+        // Where it stood before this tick moved it, which is half of what says
+        // whether a window has come to contain it. See `footing`.
+        let previously = self.position;
 
         // Set by a sprite that is woken, so the footing it is put back on is
         // not mistaken for one it arrived at. See the landing below.
@@ -316,7 +324,7 @@ impl Engine {
             State::Grounded | State::Perched | State::Asleep => {
                 self.position.x += self.velocity.x * dt;
 
-                match footing(self.position, snapshot) {
+                match footing(self.position, previously, snapshot, &self.previous_windows) {
                     Some(footing) if footing.y < self.position.y => {
                         self.position.y = footing.y;
                         self.state = footing.state;
@@ -394,6 +402,8 @@ impl Engine {
             self.animation = animation;
             self.animation_ms = 0;
         }
+
+        self.previous_windows.clone_from(&snapshot.windows);
 
         Frame {
             position: self.position,
@@ -563,8 +573,8 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
         .min_by(|a, b| a.y.total_cmp(&b.y))
 }
 
-/// What a resting sprite is standing on: the surface below it, unless a window
-/// has come to contain it.
+/// What a resting sprite is standing on: its Perch, unless a window in front of
+/// that Perch has come to contain it.
 ///
 /// A window dragged over the sprite, or walked into where it overlaps a lower
 /// Perch, would otherwise leave it inside a rectangle rather than on anything.
@@ -577,16 +587,45 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 /// a window is not the trapped-inside case DESIGN.md decision 7 is about — and
 /// every window hanging below the usable floor, as anything behind the Dock
 /// does, contains the ground the sprite stands on.
-fn footing(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
+fn footing(
+    position: Point,
+    previously: Point,
+    snapshot: &WorldSnapshot,
+    previous_windows: &[Rect],
+) -> Option<Support> {
     if floor_under(position.x, snapshot) == Some(position.y) {
         return support_below(position, snapshot);
     }
 
+    // The Perch it is on: a window whose top edge is exactly its own height.
+    // Without one the sprite is standing on nothing and falls. A Perch that
+    // moves out from under it leaves it in the air, and not on the first window
+    // that happens to contain it. #78.
+    let perch = snapshot
+        .windows
+        .iter()
+        .position(|window| window.spans_x(position.x) && window.y == position.y)?;
+
     snapshot
         .windows
         .iter()
+        // Only a window in front of the Perch can swallow the sprite. What is
+        // behind the Perch is behind the sprite too, so the edge it stands on
+        // is still there to be seen. Windows arrive frontmost first, so the
+        // Perch's own place in that order is where the candidates stop.
+        .take(perch)
+        .filter(|window| swallows(window, position))
+        // And only a window that has *come to* contain it: dragged over the
+        // sprite, or walked into where two windows overlap. A window that
+        // already had the sprite inside it is not swallowing it — a maximized
+        // window contains every smaller window in front of it, so the sprite
+        // is inside one from the moment it lands, and raising that window
+        // would otherwise fling the sprite to the top of the screen and keep
+        // it there. #78.
         .filter(|window| {
-            window.spans_x(position.x) && window.y < position.y && position.y < window.bottom()
+            !previous_windows
+                .iter()
+                .any(|before| before == *window && swallows(before, previously))
         })
         .map(|window| Support {
             y: window.y,
@@ -594,6 +633,12 @@ fn footing(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
         })
         .chain(support_below(position, snapshot))
         .min_by(|a, b| a.y.total_cmp(&b.y))
+}
+
+/// Whether the sprite is inside `window` rather than on top of it. A top edge
+/// is a Perch to stand on, so only what is strictly below it is inside.
+fn swallows(window: &Rect, position: Point) -> bool {
+    window.spans_x(position.x) && window.y < position.y && position.y < window.bottom()
 }
 
 /// The bottom of the display the sprite is over, or nothing when it is over no
@@ -1764,6 +1809,50 @@ mod tests {
         assert_eq!(landed.position.y, 800.0, "down to the floor it left");
     }
 
+    /// The same drop, with a window arriving over the sprite as its Perch
+    /// leaves. Stepping up onto a window is a step up from something: with its
+    /// Perch gone the sprite is in the air, and a window that comes over it in
+    /// that same tick is not a rescue. #78.
+    #[test]
+    fn a_perch_that_moves_drops_the_sprite_even_as_a_window_arrives_over_it() {
+        // Frontmost first: the window that arrives is in front of the Perch.
+        let world = |cover_x: f64, perch_x: f64| WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: cover_x,
+                    y: 100.0,
+                    width: 900.0,
+                    height: 500.0,
+                },
+                Rect {
+                    x: perch_x,
+                    y: 400.0,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 150.0 });
+
+        let perched = settle(&mut engine, &world(-1000.0, 50.0));
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0);
+
+        // In one poll: the Perch is dragged away and the other window arrives
+        // over where the sprite was standing.
+        let dropped = engine.tick(&world(0.0, 600.0));
+        assert_eq!(
+            dropped.state,
+            State::Falling,
+            "and not lifted onto the newcomer: {dropped:?}"
+        );
+
+        let landed = settle(&mut engine, &world(0.0, 600.0));
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(landed.position.y, 800.0, "down to the floor it left");
+    }
+
     /// Strictly inside: a top edge is a Perch to stand on, not somewhere the
     /// sprite has been swallowed.
     fn inside_a_window(position: Point, snapshot: &WorldSnapshot) -> bool {
@@ -1813,6 +1902,88 @@ mod tests {
         );
         assert_eq!(lifted.state, State::Perched);
         assert!(!inside_a_window(lifted.position, &covered));
+    }
+
+    /// #78, and the other side of the rule above: a window only swallows the
+    /// sprite when it is drawn in front of the Perch the sprite stands on. This
+    /// one is dragged across the desktop behind that Perch, so the edge under
+    /// the sprite stays in plain sight and the sprite stays on it.
+    #[test]
+    fn a_window_behind_the_perch_does_not_swallow_the_sprite() {
+        let perch = Rect {
+            x: 200.0,
+            y: 400.0,
+            width: 400.0,
+            height: 200.0,
+        };
+        // Frontmost first: the Perch is in front, the dragged window behind it.
+        let world = |x: f64| WorldSnapshot {
+            windows: vec![
+                perch,
+                Rect {
+                    x,
+                    y: 100.0,
+                    width: 900.0,
+                    height: 500.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 400.0, y: 150.0 });
+
+        let perched = settle(&mut engine, &world(-1000.0));
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0);
+
+        // Dragged in from the left, under the sprite and over its Perch.
+        let covered = engine.tick(&world(0.0));
+        assert_eq!(
+            covered.position.y, 400.0,
+            "still on the edge in front of it: {covered:?}"
+        );
+        assert_eq!(covered.state, State::Perched);
+    }
+
+    /// #78 as the overlay harness met it: a maximized window fills the display,
+    /// so every smaller window is inside it and so is a sprite standing on one.
+    /// That window has swallowed nothing — it contained the sprite before the
+    /// sprite landed — and lifting the sprite out of it puts it on the top edge
+    /// of the display, where it stays for the rest of the session.
+    #[test]
+    fn a_window_the_sprite_landed_inside_never_lifts_it_out() {
+        let world = || WorldSnapshot {
+            windows: vec![
+                // Maximized and frontmost, its top edge under the menu bar.
+                Rect {
+                    x: 0.0,
+                    y: 30.0,
+                    width: 1000.0,
+                    height: 730.0,
+                },
+                Rect {
+                    x: 200.0,
+                    y: 400.0,
+                    width: 400.0,
+                    height: 200.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        // Below the maximized window's top edge, as a sprite that starts in the
+        // middle of the usable frame is.
+        let mut engine = Engine::new(Point { x: 400.0, y: 150.0 });
+
+        let perched = settle(&mut engine, &world());
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0, "the window it fell onto");
+
+        let frames: Vec<Frame> = (0..10).map(|_| engine.tick(&world())).collect();
+        assert!(
+            frames
+                .iter()
+                .all(|frame| frame.position == perched.position),
+            "and it stays there rather than climbing to the menu bar: {frames:?}"
+        );
     }
 
     /// The same rule met by walking rather than by a window moving: the sprite
