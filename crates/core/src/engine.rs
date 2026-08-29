@@ -233,6 +233,7 @@ impl Engine {
         // Primitive begun this tick gets its whole turn rather than losing this
         // tick's milliseconds to the one it replaced.
         let mut started = self.advance(snapshot.elapsed_ms);
+        let mut landed = false;
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
         // the one input that outranks the world.
@@ -284,6 +285,7 @@ impl Engine {
                             self.position.y = support.y;
                             self.velocity = Point::default();
                             self.state = support.state;
+                            landed = true;
                         }
                         _ => self.position.y = next_y,
                     }
@@ -337,6 +339,14 @@ impl Engine {
             self.playing.clear();
             self.primitive_ms = 0;
             started = true;
+        }
+
+        // Arriving is an event and not a State: by the time the sprite has
+        // landed it is already standing, and `land` is the animation of the
+        // moment in between. The Engine plays it itself because no Director
+        // could propose it in time.
+        if landed {
+            started |= self.play(&[Primitive::Land]);
         }
 
         // A proposal is advisory, so a Behavior this Character does not declare
@@ -482,6 +492,7 @@ fn animation_of(primitive: Primitive) -> &'static str {
         // The Animation only. The motion belongs to the walk a proposal starts,
         // which outlives this Primitive's turn and ends on running out of Perch.
         Primitive::Walk => "walk",
+        Primitive::Land => "land",
         Primitive::Sit => "sit",
         Primitive::Sleep => "sleep",
         Primitive::React => "react",
@@ -844,6 +855,27 @@ mod tests {
         );
     }
 
+    /// #8: `land` is the last of the eight required Animations nothing could
+    /// reach. Landing is not a State — the sprite is standing the moment it
+    /// arrives — so the end of a fall is played as a Primitive over the
+    /// standing, the same as any other Behavior.
+    #[test]
+    fn a_fall_ends_in_the_landing_animation_before_the_sprite_idles() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+
+        let landed = (0..40)
+            .map(|_| engine.tick(&snapshot(100)))
+            .find(|frame| frame.state == State::Grounded)
+            .expect("a sprite dropped over a display lands on it");
+        assert_eq!(landed.animation, "land");
+
+        assert_eq!(
+            played(&mut engine, 10),
+            [("land", 5), ("idle", 5)],
+            "and the landing gives way to idling rather than holding"
+        );
+    }
+
     /// #8's second criterion. The window it was sitting on closes mid-Behavior,
     /// and sitting in mid-air is not a thing the sprite can be doing.
     #[test]
@@ -976,7 +1008,7 @@ mod tests {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
         engine.tick(&snapshot(1_000));
         let restarted = engine.tick(&snapshot(100));
-        assert_eq!(restarted.animation, "idle", "it landed in that first tick");
+        assert_eq!(restarted.animation, "land", "it landed in that first tick");
         assert_eq!(
             restarted.animation_ms, 100,
             "a new animation starts its own clock rather than inheriting one"

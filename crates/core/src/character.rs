@@ -106,12 +106,14 @@ pub const MAX_FPS: u32 = 60;
 /// into Behaviors and can never define one (ADR-0002).
 ///
 /// The set is what the Engine can already drive: the States it moves the sprite
-/// through, and the one thing it can say. #8 gives them playback; until then a
-/// Character can declare them and validation can reject anything else.
+/// through, the moment a fall ends, and the one thing it can say. Anything a
+/// Character needs beyond them is a Primitive added here for everyone, never a
+/// scripting runtime handed to a package (ADR-0002).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Primitive {
     Idle,
     Walk,
+    Land,
     Sit,
     Sleep,
     React,
@@ -119,9 +121,10 @@ pub enum Primitive {
 }
 
 /// Every Primitive by the name a Character Manifest writes.
-const PRIMITIVES: [(&str, Primitive); 6] = [
+const PRIMITIVES: [(&str, Primitive); 7] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
+    ("land", Primitive::Land),
     ("sit", Primitive::Sit),
     ("sleep", Primitive::Sleep),
     ("react", Primitive::React),
@@ -918,7 +921,7 @@ mod tests {
             errors,
             vec![
                 "line 10: behavior \"greet\" declares \"jump\", which is not a Primitive; \
-                 the Primitives are idle, walk, sit, sleep, react, talk"
+                 the Primitives are idle, walk, land, sit, sleep, react, talk"
                     .to_string()
             ],
             "the author is told the offending word and what they may write instead"
