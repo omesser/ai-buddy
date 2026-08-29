@@ -89,9 +89,12 @@ pub struct Pointer {
     prior: Point,
     prior_ms: u32,
     /// Since the last click, so the next one can tell a double-click from a
-    /// second prod. `u32::MAX` means there is no click to pair with — no click
-    /// yet, or the last pair already spent.
+    /// second prod. `u32::MAX` means there is no click to pair with.
     since_click_ms: u32,
+    /// Whether this run of clicks has already summoned. Spending the pair
+    /// alone would only re-arm it on the click after, so drumming on the
+    /// sprite would open a chat surface every second click.
+    summoned: bool,
 }
 
 impl Default for Pointer {
@@ -107,6 +110,7 @@ impl Default for Pointer {
             prior: Point::default(),
             prior_ms: 0,
             since_click_ms: u32::MAX,
+            summoned: false,
         }
     }
 }
@@ -174,13 +178,14 @@ impl Pointer {
             // as long as it took to decide.
             (Phase::Pressed, false) => {
                 self.phase = Phase::Idle;
-                if self.since_click_ms <= DOUBLE_CLICK_MS {
-                    // Spent, so drumming on the sprite summons once rather than
-                    // once per click.
-                    self.since_click_ms = u32::MAX;
+                let paired = self.since_click_ms <= DOUBLE_CLICK_MS;
+                self.since_click_ms = 0;
+                // A gap ends the run, and the next pair may summon again.
+                self.summoned &= paired;
+                if paired && !self.summoned {
+                    self.summoned = true;
                     vec![Verb::Poke, Verb::Summon]
                 } else {
-                    self.since_click_ms = 0;
                     vec![Verb::Poke]
                 }
             }
@@ -297,15 +302,41 @@ mod tests {
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
     }
 
-    /// A pair is spent once it is spent. Drumming on the sprite would otherwise
-    /// open a chat surface for every click after the first.
+    /// A pair is spent for the whole run of clicks, not re-armed by the next
+    /// one. Drumming on the sprite would otherwise open a chat surface every
+    /// second click, and #17 makes that a window each time.
     #[test]
-    fn a_third_quick_click_does_not_summon_again() {
+    fn drumming_on_the_sprite_summons_once() {
         let mut pointer = Pointer::default();
 
+        let drummed: Vec<Vec<Verb>> = (0..6).map(|_| click(&mut pointer)).collect();
+
+        assert_eq!(
+            drummed,
+            vec![
+                vec![Verb::Poke],
+                vec![Verb::Poke, Verb::Summon],
+                vec![Verb::Poke],
+                vec![Verb::Poke],
+                vec![Verb::Poke],
+                vec![Verb::Poke],
+            ]
+        );
+    }
+
+    /// And re-arms once the drumming stops: two clicks after a pause are a
+    /// fresh double-click, not part of the run that already summoned.
+    #[test]
+    fn a_pause_re_arms_the_double_click() {
+        let mut pointer = Pointer::default();
         click(&mut pointer);
         assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+        click(&mut pointer);
+
+        pause(&mut pointer);
+
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
     }
 
     /// Clicking, picking the sprite up and putting it down, then clicking again
