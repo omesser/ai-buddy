@@ -12,7 +12,56 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::window_source::WindowSource;
+use ai_buddy_core::window_source::{Rect, WindowSource};
+
+/// The displays as the frame loop needs to see them, from one read.
+///
+/// Everything here comes from `NSScreen`, which may only be asked on the main
+/// thread, so the loop is served the last answer read there rather than asking
+/// for its own. Gathered into one type because it is one main-thread hop.
+#[derive(Clone, Debug)]
+pub struct Displays {
+    /// The whole frame of each display, in logical points.
+    ///
+    /// Whole rather than usable, because the overlay has to cover the Dock and
+    /// the menu bar: a held sprite may be dragged over both, and a window that
+    /// stopped at the usable edge would clip it there.
+    pub frames: Vec<Rect>,
+    /// The part of each display a sprite may occupy, in logical points.
+    pub usable_frames: Vec<Rect>,
+    /// The scale factor the windowing layer measures the global cursor
+    /// against.
+    ///
+    /// It is the primary display's, whichever display the cursor is actually
+    /// over: the layer takes the cursor in points and multiplies by that one
+    /// factor, so that one factor is what undoes it.
+    pub cursor_scale: f64,
+}
+
+impl Default for Displays {
+    /// A desktop nothing has been read from yet. The scale is 1 rather than 0
+    /// because it is a divisor.
+    fn default() -> Self {
+        Self {
+            frames: Vec::new(),
+            usable_frames: Vec::new(),
+            cursor_scale: 1.0,
+        }
+    }
+}
+
+/// The last read of the displays, shared between the refresh and its readers.
+#[derive(Clone, Default)]
+pub struct DisplayCache(Arc<Mutex<Displays>>);
+
+impl DisplayCache {
+    /// What the main thread last saw. Stale by up to `USABLE_FRAME_REFRESH`,
+    /// which is a desktop that was accurate a moment ago rather than a stall in
+    /// the frame loop.
+    pub fn read(&self) -> Displays {
+        self.0.lock().map(|read| read.clone()).unwrap_or_default()
+    }
+}
 
 /// How often the reserved strips are re-read.
 ///
@@ -73,30 +122,33 @@ pub fn primary_button_down() -> bool {
 /// appears to work and is not allowed to: `WryHandle::available_monitors`
 /// reaches through a field named `main_thread` to do it.
 #[cfg(target_os = "macos")]
-pub fn window_source(app: tauri::AppHandle) -> impl WindowSource {
-    let frames = Arc::new(Mutex::new(usable_frames(&app)));
+pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
+    let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
     let refreshed = Arc::new(Mutex::new(Instant::now()));
 
-    macos::MacosWindowSource::new(move || {
-        // Posted, not awaited. A poll that arrives while the main thread is
-        // busy is served the previous answer, which is a strip of screen that
-        // was accurate a moment ago rather than a stall in the frame loop.
-        if due(&refreshed) {
-            let app = app.clone();
-            let frames = Arc::clone(&frames);
-            let _ = app.clone().run_on_main_thread(move || {
-                let read = usable_frames(&app);
-                if let Ok(mut frames) = frames.lock() {
-                    *frames = read;
-                }
-            });
-        }
+    let source = macos::MacosWindowSource::new({
+        let cache = cache.clone();
+        move || {
+            // Posted, not awaited. A poll that arrives while the main thread is
+            // busy is served the previous answer, which is a strip of screen
+            // that was accurate a moment ago rather than a stall in the frame
+            // loop.
+            if due(&refreshed) {
+                let app = app.clone();
+                let cache = cache.clone();
+                let _ = app.clone().run_on_main_thread(move || {
+                    let read = read_displays(&app);
+                    if let Ok(mut displays) = cache.0.lock() {
+                        *displays = read;
+                    }
+                });
+            }
 
-        frames
-            .lock()
-            .map(|frames| frames.clone())
-            .unwrap_or_default()
-    })
+            cache.read().usable_frames
+        }
+    });
+
+    (source, cache)
 }
 
 /// Whether enough time has passed to ask the main thread again, marking it
@@ -116,50 +168,69 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
 /// Without window geometry the Spatial Layer degrades to screen-edge physics,
 /// which `docs/SPEC.md` calls a supported mode rather than a failure.
 #[cfg(not(target_os = "macos"))]
-pub fn window_source(_app: tauri::AppHandle) -> impl WindowSource {
-    ai_buddy_core::window_source::StubWindowSource
+pub fn window_source(_app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
+    (
+        ai_buddy_core::window_source::StubWindowSource,
+        DisplayCache::default(),
+    )
 }
 
-/// The part of each display a sprite may occupy, in logical points.
+/// The displays as the windowing layer sees them right now.
 ///
-/// Read every poll rather than cached, because the reserved strips move while
-/// the app runs: the Dock hides and returns, changes edge, and a display can be
+/// Read on a timer rather than once, because the desktop changes while the app
+/// runs: the Dock hides and returns, changes edge, and a display can be
 /// attached or unplugged.
 ///
 /// Tauri reports a monitor in physical pixels and the Engine works in points,
 /// so every number here goes in physical and comes out logical. Two of the four
-/// bugs `docs/SPEC.md` lists were this conversion done wrong — a union computed
-/// in pixels, and one scale factor used across two displays — so the scale
+/// bugs `docs/SPEC.md` lists were this conversion done wrong, so the scale
 /// passed is always the scale of the monitor being converted, never the
-/// primary's. The arithmetic is `window_source::usable_frame`, where it is
-/// tested; this only asks the windowing layer what it can see.
+/// primary's. The arithmetic is `window_source::in_points` and
+/// `window_source::usable_frame`, where it is tested; this only asks the
+/// windowing layer what it can see.
+///
+/// The cursor is the one reading the primary's scale is right for. The layer
+/// measures it against that display whichever display it is over, so undoing it
+/// with anything else puts the cursor on a display that is not there.
 #[cfg(target_os = "macos")]
-fn usable_frames(app: &tauri::AppHandle) -> Vec<ai_buddy_core::window_source::Rect> {
-    use ai_buddy_core::window_source::{usable_frame, Rect};
+fn read_displays(app: &tauri::AppHandle) -> Displays {
+    use ai_buddy_core::window_source::{in_points, usable_frame};
 
     let Ok(monitors) = app.available_monitors() else {
-        return Vec::new();
+        return Displays::default();
     };
 
-    monitors
-        .iter()
-        .map(|monitor| {
-            let work = monitor.work_area();
-            usable_frame(
-                Rect {
-                    x: f64::from(monitor.position().x),
-                    y: f64::from(monitor.position().y),
-                    width: f64::from(monitor.size().width),
-                    height: f64::from(monitor.size().height),
-                },
-                Rect {
-                    x: f64::from(work.position.x),
-                    y: f64::from(work.position.y),
-                    width: f64::from(work.size.width),
-                    height: f64::from(work.size.height),
-                },
-                monitor.scale_factor(),
-            )
-        })
-        .collect()
+    let mut displays = Displays {
+        cursor_scale: app
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map_or(1.0, |monitor| monitor.scale_factor()),
+        ..Displays::default()
+    };
+
+    for monitor in monitors.iter() {
+        let work = monitor.work_area();
+        let frame = Rect {
+            x: f64::from(monitor.position().x),
+            y: f64::from(monitor.position().y),
+            width: f64::from(monitor.size().width),
+            height: f64::from(monitor.size().height),
+        };
+        let work = Rect {
+            x: f64::from(work.position.x),
+            y: f64::from(work.position.y),
+            width: f64::from(work.size.width),
+            height: f64::from(work.size.height),
+        };
+
+        displays
+            .frames
+            .push(in_points(frame, monitor.scale_factor()));
+        displays
+            .usable_frames
+            .push(usable_frame(frame, work, monitor.scale_factor()));
+    }
+
+    displays
 }

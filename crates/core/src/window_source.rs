@@ -55,6 +55,27 @@ pub struct WindowRect {
     pub layer: i32,
 }
 
+/// A rectangle the window server measured in physical pixels, in points.
+///
+/// The scale passed is always the scale of the display the rectangle was
+/// measured on, never the primary's: each display reports its geometry against
+/// its own factor, and two of the four bugs `docs/SPEC.md` lists were one
+/// factor used across two of them.
+///
+/// A scale of zero or less would divide every coordinate into infinity, so it
+/// counts as 1. A display describing itself as nonsense should still be
+/// somewhere the sprite can stand.
+pub fn in_points(rect_physical: Rect, scale: f64) -> Rect {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+
+    Rect {
+        x: rect_physical.x / scale,
+        y: rect_physical.y / scale,
+        width: rect_physical.width / scale,
+        height: rect_physical.height / scale,
+    }
+}
+
 /// The part of a display a sprite may occupy, in logical points.
 ///
 /// Screens reserve strips of themselves for furniture the sprite must not
@@ -73,16 +94,8 @@ pub struct WindowRect {
 /// the whole frame back. That is the correct answer rather than a degraded
 /// one: a desktop reserving nothing is a desktop the sprite may cross entirely.
 pub fn usable_frame(frame_physical: Rect, work_area_physical: Rect, scale: f64) -> Rect {
-    let scale = if scale > 0.0 { scale } else { 1.0 };
-    let logical = |rect: Rect| Rect {
-        x: rect.x / scale,
-        y: rect.y / scale,
-        width: rect.width / scale,
-        height: rect.height / scale,
-    };
-
-    let frame = logical(frame_physical);
-    let work = logical(work_area_physical);
+    let frame = in_points(frame_physical, scale);
+    let work = in_points(work_area_physical, scale);
 
     // Clamped into the frame edge by edge, rather than refused whole if any
     // edge escapes. Refusing hands back the entire display, which is bug #39
@@ -201,6 +214,24 @@ mod tests {
             width,
             height,
         }
+    }
+
+    /// The two displays this machine reports, read off a running app: a 1x
+    /// external beside a 2x built-in. Each reports its geometry against its own
+    /// scale, so the built-in's origin arrives already doubled, and converting
+    /// both with one factor is how the overlay ends up on a display that is not
+    /// there.
+    #[test]
+    fn each_display_converts_with_its_own_scale() {
+        assert_eq!(
+            in_points(rect(0.0, 0.0, 1920.0, 1080.0), 1.0),
+            rect(0.0, 0.0, 1920.0, 1080.0)
+        );
+        assert_eq!(
+            in_points(rect(3840.0, 0.0, 3456.0, 2234.0), 2.0),
+            rect(1920.0, 0.0, 1728.0, 1117.0),
+            "the built-in sits at 1920 in points, not at 3840"
+        );
     }
 
     /// The numbers this machine reported while #39 was being written, read

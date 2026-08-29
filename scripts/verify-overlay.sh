@@ -323,12 +323,6 @@ print("\nDisplays:")
 for d in displays:
     print(f"  {d['w']:.0f}x{d['h']:.0f} at ({d['x']:.0f},{d['y']:.0f})")
 
-union_l = min(d["x"] for d in displays)
-union_t = min(d["y"] for d in displays)
-union_r = max(d["x"] + d["w"] for d in displays)
-union_b = max(d["y"] + d["h"] for d in displays)
-union_w, union_h = union_r - union_l, union_b - union_t
-
 print("\nChecks:")
 check(len(windows) == 1, "exactly one overlay window", f"found {len(windows)}")
 if not windows:
@@ -337,14 +331,18 @@ if not windows:
 w = windows[0]
 check(w["onscreen"], "window is on screen")
 check(w["layer"] == 3, "floating window level", f"layer={w['layer']}")
-check(w["w"] == union_w and w["h"] == union_h,
-      "window spans the display union",
-      f"{w['w']:.0f}x{w['h']:.0f} vs {union_w:.0f}x{union_h:.0f}")
 
-# Known and deferred to #4, so reported but not failed.
-dx, dy = w["x"] - union_l, w["y"] - union_t
-if dx or dy:
-    print(f"  NOTE  origin offset by ({dx:.0f},{dy:.0f}) - known, see #4")
+# One display exactly, rather than the union of them: macOS gives each display
+# its own Space and draws a window spanning two of them on only one, so an
+# overlay wider than a display is invisible on every display but that one. The
+# frame loop moves it to whichever display the Character is on, and the origin
+# has to match too — a window covering the right area of the wrong display is
+# the same disappearance.
+covered = [d for d in displays
+           if (w["x"], w["y"], w["w"], w["h"]) == (d["x"], d["y"], d["w"], d["h"])]
+check(len(covered) == 1,
+      "window covers exactly one display",
+      f"{w['w']:.0f}x{w['h']:.0f} at ({w['x']:.0f},{w['y']:.0f})")
 
 ls = open(f"{out}/lsappinfo.txt").read()
 check('type="UIElement"' in ls, "accessory app: no Dock tile or switcher entry")

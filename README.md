@@ -108,8 +108,8 @@ scripts/verify-overlay.sh          # or --keep to leave the app running
 ```
 
 It checks that exactly one overlay window exists at floating level, that its
-bounds match the union of the displays, and that the app is an accessory with no
-Dock tile or switcher entry.
+bounds match one whole display — the one the Character is on — and that the app
+is an accessory with no Dock tile or switcher entry.
 
 Then it checks the frame loop against a real desktop. It opens a plain window of
 its own below where the sprite starts, so the sprite has a Perch to aim at, and

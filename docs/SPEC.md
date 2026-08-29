@@ -295,10 +295,17 @@ Each platform implementation declares its capabilities rather than assuming them
 are unavailable, and the Spatial Layer degrades to screen-edge physics only. This is a
 supported degraded mode, not an error state.
 
-Multi-monitor uses one coordinate space. The overlay window is sized to the union of
-visible display frames. Physics clamps to that union rather than to its bounding
-rectangle, so the sprite cannot enter gaps between non-aligned displays. Backing scale
-factor is resolved per display at render time, not in the Engine.
+Multi-monitor uses one coordinate space. Physics clamps to the union of visible display
+frames rather than to its bounding rectangle, so the sprite cannot enter gaps between
+non-aligned displays. Backing scale factor is resolved per display at render time, not in
+the Engine.
+
+The overlay window covers one display and follows the sprite to the next. It cannot be
+sized to the union: macOS gives each display its own Space and draws a window spanning
+two of them on only one, so a union-sized overlay is invisible on every display but the
+one it belongs to. The Engine is unaffected — it works in the space all displays share,
+and the Shell picks the display the sprite's contact point is on, or the nearest when it
+is on none.
 
 ### Overlay and input
 

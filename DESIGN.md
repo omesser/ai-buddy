@@ -346,9 +346,14 @@ to being called spyware.
 
 ### 14. Multi-monitor: one coordinate space
 
-The overlay is sized to the union of visible display frames, and physics runs in
-a single coordinate space. Reconciling per-display windows is considerably
-harder.
+Physics runs in a single coordinate space, the one every display shares.
+Reconciling per-display physics would be considerably harder.
+
+The overlay window is the exception, and not by choice: macOS gives each display
+its own Space and draws a window spanning two of them on only one, so the window
+covers a single display and the frame loop moves it to whichever display the
+sprite reaches. A sprite straddling the boundary is clipped, which one overlay
+per display would fix and nothing else will.
 
 Two real problems to budget for: differing backing scale factors between
 displays, and gaps between non-aligned displays. Clamp to the union of visible
@@ -462,5 +467,5 @@ records it.
 | 20 | Memory | One shared plaintext Markdown file the user owns; chat history session-scoped |
 | 21 | No Harness attached | Fully charming — full Spatial Layer, chat shows a connect nudge |
 | 23 | Art | True pixel art, integer nearest-neighbour — [ADR-0006](./docs/adr/0006-pixel-art-integer-scaling.md) |
-| 24 | Displays | Overlay spans the union of display frames; the sprite stays put across monitors unless dragged |
+| 24 | Displays | Overlay covers one display and follows the sprite; physics spans them all |
 | 25 | Release staging | v1 is charm, chat, Memory, and Harness attach; voice and Ambient Capture deferred |

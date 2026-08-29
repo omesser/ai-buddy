@@ -9,10 +9,10 @@
 // Why Swift and not Rust, in a Rust repository: the crate's own WindowSource
 // now reads these same CoreGraphics calls, so the bindings are no longer the
 // obstacle. It cannot stand in for this, though — WindowSource is deliberately
-// blind to our own process, because the overlay spans every display and a
-// Character able to see it would find a Perch across the whole desktop and
-// never fall again. This script exists to observe precisely that window, so the
-// two want opposite things.
+// blind to our own process, because the overlay covers the whole display the
+// Character is on and a Character able to see it would find a Perch under its
+// own feet and never fall again. This script exists to observe precisely that
+// window, so the two want opposite things.
 //
 // Xcode is already required to build a Tauri app on macOS, so `swift` costs
 // nothing to run. Keeping the observer outside the app's own toolchain is worth

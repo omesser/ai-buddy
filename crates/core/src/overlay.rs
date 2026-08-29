@@ -5,6 +5,12 @@
 //! per cursor position, whether the pixel under it is actually drawn. That
 //! decision is this module. It is pure arithmetic so it can be tested without a
 //! windowing system.
+//!
+//! Placing the overlay is here for the same reason. Which display the window
+//! covers and where the art lands inside it are two more sums the Shell would
+//! otherwise do by hand beside the window server, where nothing can check them.
+
+use crate::window_source::Rect;
 
 /// Convert a global cursor reading into overlay-window coordinates, in points.
 ///
@@ -31,43 +37,40 @@ pub fn cursor_in_window(
     )
 }
 
-/// One display, exactly as the windowing layer reports it.
+/// The display a point is on, or the nearest one when it is on none.
 ///
-/// Position and size arrive in physical pixels measured against *this* display's
-/// own scale factor, which is why the scale travels with them.
-pub struct DisplayReport {
-    pub position_physical: (f64, f64),
-    pub size_physical: (f64, f64),
-    pub scale: f64,
+/// The overlay covers one display at a time, so something has to name which.
+/// Containment answers it almost always, and the fallback is for the moments it
+/// cannot: displays need not be flush, so a cursor can sit in the gap between
+/// two of them, and a thrown sprite passes outside the outermost edge before
+/// physics catches it. The nearest display is the answer there because the
+/// point is on its way into or out of that one, and because the alternative —
+/// no display — leaves the overlay nowhere to be and the Character invisible.
+///
+/// A point on a shared edge belongs to the first display that reported it,
+/// which is arbitrary and has to be: both answers are equally true.
+///
+/// `None` only when no display was reported, which is a machine with no screen.
+pub fn display_for(point: (f64, f64), displays: &[Rect]) -> Option<Rect> {
+    displays
+        .iter()
+        .min_by(|a, b| outside_by(point, a).total_cmp(&outside_by(point, b)))
+        .copied()
 }
 
-/// The union of every display, in logical points: `(left, top, width, height)`.
+/// How far outside a rectangle a point lies, squared. Zero anywhere inside it.
 ///
-/// Points, not physical pixels, because each display reports its geometry
-/// against its own scale factor. On a mixed-DPI desktop a 2x display reports an
-/// origin already multiplied by two while a 1x display does not, so the two
-/// "physical" rectangles share no origin and their union is meaningless. Points
-/// are the space the window server composites in and the space the webview draws
-/// in, so they are the space to reason in.
-///
-/// `None` when no display was reported, which is a machine with no screen rather
-/// than a union of nothing.
-pub fn display_union(displays: &[DisplayReport]) -> Option<(f64, f64, f64, f64)> {
-    let mut bounds: Option<(f64, f64, f64, f64)> = None;
+/// Squared because only the ordering is read, and the square root that would
+/// turn this into a distance reorders nothing.
+fn outside_by(point: (f64, f64), rect: &Rect) -> f64 {
+    let dx = (rect.x - point.0)
+        .max(point.0 - (rect.x + rect.width))
+        .max(0.0);
+    let dy = (rect.y - point.1)
+        .max(point.1 - (rect.y + rect.height))
+        .max(0.0);
 
-    for display in displays {
-        let left = display.position_physical.0 / display.scale;
-        let top = display.position_physical.1 / display.scale;
-        let right = left + display.size_physical.0 / display.scale;
-        let bottom = top + display.size_physical.1 / display.scale;
-
-        bounds = Some(match bounds {
-            None => (left, top, right, bottom),
-            Some((l, t, r, b)) => (l.min(left), t.min(top), r.max(right), b.max(bottom)),
-        });
-    }
-
-    bounds.map(|(left, top, right, bottom)| (left, top, right - left, bottom - top))
+    dx * dx + dy * dy
 }
 
 /// Where to draw the art, given where the Character's feet are.
@@ -327,57 +330,77 @@ mod tests {
         );
     }
 
-    /// The arrangement this bug actually shipped on: a 1x external display beside
-    /// a 2x built-in. Each monitor reports its geometry against its own scale, so
-    /// the built-in's origin arrives already doubled. Unioning the raw rectangles
-    /// produced a 7296x2234 window on a 3648x1117 desktop, twice the width and
-    /// hanging off the top of the screen.
-    ///
-    /// The expected values are what CoreGraphics independently reports for the
-    /// same desktop: displays at (0,0,1920,1080) and (1920,0,1728,1117).
-    #[test]
-    fn a_mixed_dpi_desktop_unions_in_points_not_pixels() {
-        let displays = [
-            DisplayReport {
-                position_physical: (0.0, 0.0),
-                size_physical: (1920.0, 1080.0),
-                scale: 1.0,
-            },
-            DisplayReport {
-                position_physical: (3840.0, 0.0),
-                size_physical: (3456.0, 2234.0),
-                scale: 2.0,
-            },
-        ];
-
-        assert_eq!(display_union(&displays), Some((0.0, 0.0, 3648.0, 1117.0)));
+    fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
-    /// Displays need not start at the origin, and one may sit above another.
+    /// The desktop the sprite went missing on, in the points every number here
+    /// is already in: a 1920x1080 external beside a 1728x1117 built-in that
+    /// reports itself in doubled pixels. A cursor on the built-in is at 1920 or
+    /// more across, and the overlay has to follow it there.
+    fn mixed_dpi() -> [Rect; 2] {
+        [
+            rect(0.0, 0.0, 1920.0, 1080.0),
+            rect(1920.0, 0.0, 1728.0, 1117.0),
+        ]
+    }
+
     #[test]
-    fn a_display_above_and_left_of_the_others_moves_the_union_origin() {
+    fn a_point_on_a_display_belongs_to_that_display() {
+        let displays = mixed_dpi();
+
+        assert_eq!(display_for((960.0, 540.0), &displays), Some(displays[0]));
+        assert_eq!(display_for((2600.0, 500.0), &displays), Some(displays[1]));
+        assert_eq!(
+            display_for((1920.5, 500.0), &displays),
+            Some(displays[1]),
+            "half a point across the seam is across it"
+        );
+        assert_eq!(
+            display_for((1920.0, 500.0), &displays),
+            Some(displays[0]),
+            "the seam itself goes to whichever display reported first"
+        );
+    }
+
+    /// Displays are not always flush, and a cursor can sit in the gap between
+    /// two of them. The overlay still has to be somewhere.
+    #[test]
+    fn a_point_in_the_gap_between_displays_belongs_to_the_nearer_one() {
         let displays = [
-            DisplayReport {
-                position_physical: (0.0, 0.0),
-                size_physical: (1920.0, 1080.0),
-                scale: 1.0,
-            },
-            DisplayReport {
-                position_physical: (-1280.0, -400.0),
-                size_physical: (1280.0, 800.0),
-                scale: 1.0,
-            },
+            rect(0.0, 0.0, 1920.0, 1080.0),
+            rect(2000.0, 0.0, 1728.0, 1117.0),
         ];
 
+        assert_eq!(display_for((1930.0, 500.0), &displays), Some(displays[0]));
+        assert_eq!(display_for((1990.0, 500.0), &displays), Some(displays[1]));
+    }
+
+    /// A Throw carries the sprite past the outermost edge before physics
+    /// catches it, and a display can be unplugged with the sprite on it.
+    #[test]
+    fn a_point_off_every_display_belongs_to_the_nearest_one() {
+        let displays = mixed_dpi();
+
         assert_eq!(
-            display_union(&displays),
-            Some((-1280.0, -400.0, 3200.0, 1480.0)),
-            "the union spans from the topmost-leftmost edge to the far corner"
+            display_for((4000.0, 2000.0), &displays),
+            Some(displays[1]),
+            "off the bottom-right corner of the desktop"
+        );
+        assert_eq!(
+            display_for((-500.0, -500.0), &displays),
+            Some(displays[0]),
+            "off the top-left corner of the desktop"
         );
     }
 
     #[test]
-    fn no_displays_is_no_union() {
-        assert_eq!(display_union(&[]), None);
+    fn no_displays_is_nowhere_to_put_the_overlay() {
+        assert_eq!(display_for((960.0, 540.0), &[]), None);
     }
 }
