@@ -18,6 +18,12 @@ body {
 
 #sprite {
   position: absolute;
+  /* Positioned by transform rather than by left/top: the renderer moves the
+     sprite every display frame, and a transform is composited rather than
+     re-laying out the page. */
+  top: 0;
+  left: 0;
+  transform-origin: top left;
   /* ADR-0006: true pixel art, nearest-neighbour, integer scale factors only. */
   image-rendering: pixelated;
   -webkit-user-drag: none;

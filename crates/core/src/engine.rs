@@ -94,18 +94,15 @@ pub struct Frame {
     pub state: State,
     /// The Animation to play, by the name every Character Package must supply.
     pub animation: &'static str,
-    /// How far into that Animation the sprite is. The renderer wraps it by the
-    /// frame count, which it knows from the manifest and the Engine does not.
-    pub frame_index: usize,
+    /// How long the current Animation has been playing, in milliseconds.
+    ///
+    /// Not a frame index: which frame that is depends on the fps and loop mode
+    /// the Character Manifest declares, which the Engine has no business
+    /// knowing. `character::Animation::frame_at` does that arithmetic.
+    pub animation_ms: u32,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
 }
-
-/// How long one Animation frame is held.
-///
-/// ponytail: one cadence for every Animation, roughly 8fps. Per-Animation fps
-/// and loop mode arrive on the Character manifest with #7, and replace this.
-const FRAME_MS: u32 = 125;
 
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
 /// knob: long enough not to nod off mid-conversation, short enough that a sprite
@@ -237,7 +234,7 @@ impl Engine {
             velocity: self.velocity,
             state: self.state,
             animation: self.animation,
-            frame_index: (self.animation_ms / FRAME_MS) as usize,
+            animation_ms: self.animation_ms,
             dialogue: snapshot
                 .proposal
                 .as_ref()
@@ -482,16 +479,15 @@ mod tests {
     }
 
     #[test]
-    fn the_frame_names_the_animation_and_walks_through_it_as_time_passes() {
+    fn the_frame_names_the_animation_and_how_long_it_has_been_playing() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
 
-        // At 8 frames per second an animation holds each frame for 125ms.
         let first = engine.tick(&snapshot(100));
         assert_eq!(first.animation, "fall");
-        assert_eq!(first.frame_index, 0, "100ms in, still the first frame");
+        assert_eq!(first.animation_ms, 100);
 
         let second = engine.tick(&snapshot(100));
-        assert_eq!(second.frame_index, 1, "200ms in, the second frame");
+        assert_eq!(second.animation_ms, 200, "still falling, still accruing");
 
         let landed = settle(&mut engine, &snapshot(100));
         assert_eq!(landed.animation, "idle");
@@ -501,8 +497,8 @@ mod tests {
         let restarted = engine.tick(&snapshot(100));
         assert_eq!(restarted.animation, "idle", "it landed in that first tick");
         assert_eq!(
-            restarted.frame_index, 0,
-            "a new animation starts from its first frame"
+            restarted.animation_ms, 100,
+            "a new animation starts its own clock rather than inheriting one"
         );
     }
 
