@@ -7,6 +7,7 @@
 #![cfg(target_os = "macos")]
 
 mod overlay_panel;
+mod pointer;
 mod window_source;
 
 // Nothing constructs the activity source yet: the Director is its first
@@ -18,6 +19,7 @@ mod window_source;
 mod sensing;
 
 pub use overlay_panel::configure_overlay;
+pub use pointer::primary_button_down;
 pub use window_source::MacosWindowSource;
 
 #[allow(unused_imports)]

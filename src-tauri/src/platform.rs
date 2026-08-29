@@ -38,6 +38,23 @@ pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the primary mouse button is down.
+///
+/// Polled beside the cursor rather than delivered as an event, so a drag that
+/// outruns the sprite keeps being seen. See `macos::pointer`.
+#[cfg(target_os = "macos")]
+pub fn primary_button_down() -> bool {
+    macos::primary_button_down()
+}
+
+/// Without a way to read the button there are no interaction verbs, and the
+/// sprite is watched rather than touched. A supported degradation, like the
+/// missing window geometry beside it.
+#[cfg(not(target_os = "macos"))]
+pub fn primary_button_down() -> bool {
+    false
+}
+
 /// Where window geometry comes from.
 ///
 /// The usable part of each display is read through Tauri rather than from the

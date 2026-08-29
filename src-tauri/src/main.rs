@@ -23,8 +23,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::engine::Engine;
+use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{
-    cursor_in_window, display_union as overlay_union, place_sprite, DisplayReport,
+    cursor_in_window, display_union as overlay_union, place_sprite, DisplayReport, SpriteRect,
 };
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::window_source::WindowSource;
@@ -56,6 +57,16 @@ const OVERLAY_LABEL: &str = "overlay";
 
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
+
+/// Where the sprite was last drawn, and what it was drawn as.
+///
+/// Kept for one tick so the hit-test can ask about the sprite the user is
+/// looking at rather than the one this tick is about to produce.
+struct Drawn {
+    rect: SpriteRect,
+    animation: &'static str,
+    animation_ms: u32,
+}
 
 /// One tick's instruction to the renderer: where to draw the sprite in logical
 /// points from the overlay's top-left, and which Animation frame to draw.
@@ -135,6 +146,8 @@ fn run_frame_loop(
         // `None` until the first decision, so the first tick always applies.
         let mut ignoring: Option<bool> = None;
 
+        let mut pointer = Pointer::default();
+
         // Click-through is invisible: nothing on screen says whether the overlay
         // is currently swallowing clicks or passing them on. This trace is the
         // only way to watch the decision without a human clicking. Off unless
@@ -147,6 +160,14 @@ fn run_frame_loop(
         let tracing_frames = std::env::var_os("AI_BUDDY_TRACE_FRAMES").is_some();
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
+
+        // The sprite as it was last drawn. Whether a press belongs to the
+        // sprite is a question about the one the user pressed on, and this
+        // tick's Frame does not exist yet when that has to be answered.
+        //
+        // The art is looked up again rather than kept, which costs one map
+        // lookup and saves copying a mask sixty times a second.
+        let mut drawn_last: Option<Drawn> = None;
 
         loop {
             thread::sleep(ENGINE_TICK);
@@ -183,15 +204,39 @@ fn run_frame_loop(
             let elapsed_ms = u32::try_from(last_tick.elapsed().as_millis()).unwrap_or(u32::MAX);
             last_tick = Instant::now();
 
-            let frame = engine.tick(&assembler.assemble(
+            let (local_x, local_y) = cursor_in_window(
+                (cursor.x, cursor.y),
+                cursor_scale,
+                (origin.x as f64, origin.y as f64),
+                scale,
+            );
+
+            // Hit-tested against the rectangle the sprite was last drawn at,
+            // because whether a press belongs to the sprite is a question about
+            // the sprite the user pressed on, not the one this tick is about to
+            // produce.
+            let pressed_sprite = drawn_last.as_ref().is_some_and(|last| {
+                cast.draw(last.animation, last.animation_ms)
+                    .is_some_and(|art| art.mask.hit(&last.rect, local_x, local_y))
+            });
+
+            // The Engine works in points across every display, which is the
+            // space the cursor reading becomes once its own scale is undone.
+            let cursor_points = ai_buddy_core::engine::Point {
+                x: cursor.x / cursor_scale,
+                y: cursor.y / cursor_scale,
+            };
+            let verbs = pointer.update(
+                pressed_sprite,
+                platform::primary_button_down(),
+                cursor_points,
                 elapsed_ms,
-                // The Engine works in points across every display, which is the
-                // space the cursor reading becomes once its own scale is undone.
-                ai_buddy_core::engine::Point {
-                    x: cursor.x / cursor_scale,
-                    y: cursor.y / cursor_scale,
-                },
-            ));
+            );
+
+            if tracing_frames && !verbs.is_empty() {
+                eprintln!("verbs: {verbs:?}");
+            }
+            let frame = engine.tick(&assembler.assemble(elapsed_ms, cursor_points, verbs));
 
             // The Engine names an Animation and how long it has been playing;
             // the Character Manifest says what that means in frames. Resolving
@@ -247,15 +292,25 @@ fn run_frame_loop(
                 );
             }
 
-            let (local_x, local_y) = cursor_in_window(
-                (cursor.x, cursor.y),
-                cursor_scale,
-                (origin.x as f64, origin.y as f64),
-                scale,
-            );
-
+            // Hit-tested twice a tick, against two different rectangles, because
+            // the two questions are about different moments. Whether a press
+            // belongs to the sprite is about the sprite the user pressed on, so
+            // it uses the one last drawn. Whether the next click should reach us
+            // is about the sprite about to be drawn, so it uses this one — a
+            // cursor that has just arrived over the art must not spend a frame
+            // passing clicks to the application underneath.
             let over_sprite = drawn.mask.hit(&sprite, local_x, local_y);
-            let ignore = !over_sprite;
+            drawn_last = Some(Drawn {
+                rect: sprite,
+                animation: frame.animation,
+                animation_ms: frame.animation_ms,
+            });
+
+            // Click-through returns wherever the sprite is not drawn — except
+            // while it is held. A drag that outruns the art would otherwise put
+            // the cursor over transparent pixels, hand the button to whatever
+            // is underneath, and drop the sprite in the user's hand.
+            let ignore = !(over_sprite || pointer.grabbing());
             let flipped = ignoring != Some(ignore);
 
             // Only record the new state once the platform accepted it. Recording
