@@ -125,13 +125,14 @@ pub struct Frame {
 
 /// How long one Primitive holds the screen.
 ///
-/// A tuning knob, and one for every Primitive of every Character: how long a
-/// sprite stays startled or sits down for is behaviour, and how many frames
-/// that fills is the Character Manifest's business. The Engine deliberately
-/// does not know an Animation's length — fps and loop mode are the Character's
-/// — so it cannot play a Primitive "until the art runs out". An Animation
-/// declared `loop = once` holds its last frame for the remainder, which is what
-/// a brief startle looks like.
+/// ponytail: one duration for every Primitive of every Character. The Engine
+/// deliberately does not know an Animation's length — fps and loop mode are the
+/// Character Manifest's — so it cannot play a Primitive until the art runs out.
+/// Art shorter than the turn costs nothing: `loop = once` holds its last frame
+/// for the remainder, which is what a brief startle looks like. Longer art is
+/// the ceiling, and the placeholder already sits on it — `fps sleep = 1` over
+/// two frames is a 2000ms strip the sprite leaves at frame 0. Give a Primitive
+/// its own duration when a Character's art needs to outlast this one.
 const PRIMITIVE_MS: u32 = 600;
 
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
@@ -939,6 +940,45 @@ mod tests {
         );
     }
 
+    /// The rest of #8's third criterion. Falling is only one of the four States
+    /// that are not standing on something, and the gate is one rule for all of
+    /// them: asleep is a thing to be woken out of rather than acted from, and a
+    /// sprite hauling itself up a screen edge has no more floor than one in
+    /// mid-air. `settle` opens on `sit`, which neither State draws by itself,
+    /// so the Animation says whether the gate let it through.
+    #[test]
+    fn a_behavior_that_settles_is_refused_asleep_and_mid_climb() {
+        let mut engine = a_resting_sprite();
+        assert_eq!(engine.tick(&snapshot(60_000)).state, State::Asleep);
+
+        let asleep = engine.tick(&proposing("settle"));
+        assert_eq!(asleep.state, State::Asleep);
+        assert_eq!(asleep.animation, "sleep", "it stays asleep instead");
+
+        let mut engine =
+            Engine::new(Point { x: 900.0, y: 400.0 }).with_behaviors(declared_behaviors());
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        assert_eq!(
+            engine
+                .tick(&WorldSnapshot {
+                    verbs: vec![Verb::Throw {
+                        velocity: Point { x: 2000.0, y: 0.0 },
+                    }],
+                    ..snapshot(100)
+                })
+                .state,
+            State::Climbing
+        );
+
+        let climbing = engine.tick(&proposing("settle"));
+        assert_eq!(climbing.state, State::Climbing);
+        assert_eq!(climbing.animation, "walk", "it goes on climbing");
+    }
+
     /// Expression is the exception: being startled or speaking says nothing
     /// about where the sprite's feet are, so a Poke is answered mid-fall and so
     /// is a Behavior made only of those.
@@ -1219,9 +1259,14 @@ mod tests {
     /// #6: a Director proposal arriving during a Grab is deferred or dropped,
     /// never yanking the sprite. Being held is the one moment the sprite is the
     /// user's rather than the Director's.
+    ///
+    /// `settle` is a Behavior this Character does declare, so what refuses it
+    /// is the State gate and not the name: a proposal nobody declares is
+    /// refused on the way in, and would leave this rule unguarded.
     #[test]
     fn a_proposal_during_a_grab_never_moves_the_sprite() {
-        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let mut engine =
+            Engine::new(Point { x: 500.0, y: 100.0 }).with_behaviors(declared_behaviors());
         let held = WorldSnapshot {
             cursor: Point { x: 300.0, y: 300.0 },
             verbs: vec![Verb::Grab],
@@ -1231,7 +1276,7 @@ mod tests {
 
         let proposed = engine.tick(&WorldSnapshot {
             proposal: Some(BehaviorProposal {
-                behavior: "wander".to_string(),
+                behavior: "settle".to_string(),
                 dialogue: Some("off we go".to_string()),
             }),
             ..held.clone()
@@ -1242,6 +1287,10 @@ mod tests {
             proposed.position,
             Point { x: 300.0, y: 300.0 },
             "and exactly where the cursor left it"
+        );
+        assert_eq!(
+            proposed.animation, "fall",
+            "it dangles from the cursor rather than sitting down in mid-air"
         );
         assert_eq!(
             proposed.dialogue.as_deref(),

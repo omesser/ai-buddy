@@ -24,12 +24,13 @@ tray's, which arrives with #18.
 
 The Engine drives all eight required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
-plays when a fall ends, `react` answers a Poke, and every one of them is a
-Primitive a Character can compose into a Behavior. A Behavior plays its
-Primitives in order and the Behaviors it chains into, and is refused or
-abandoned when the State the sprite is in does not permit it. Nothing proposes
-one yet — the Director arrives later — so `talk` waits on a proposal to name a
-Behavior that plays it.
+plays when a fall ends and `react` answers a Poke. Seven of the eight are also
+Primitives a Character can compose into a Behavior — all but `fall`, which is
+what losing your footing looks like rather than something a Behavior can ask
+for. A Behavior plays its Primitives in order and the Behaviors it chains into,
+and is refused or abandoned when the State the sprite is in does not permit it.
+Nothing proposes one yet — the Director arrives later — so `talk` waits on a
+proposal to name a Behavior that plays it.
 
 ## Running it
 
