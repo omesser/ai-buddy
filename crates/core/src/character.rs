@@ -132,6 +132,36 @@ pub struct Animation {
     pub looping: bool,
 }
 
+impl Animation {
+    /// Which frame is on screen `elapsed_ms` after this Animation started.
+    ///
+    /// The whole of frame selection, and the reason the renderer needs no clock
+    /// of its own: the Engine reports how long the current Animation has been
+    /// playing, and this maps that onto a frame using what the Character
+    /// Manifest declared.
+    ///
+    /// Multiplying before dividing keeps the cadence exact for every fps rather
+    /// than only for the ones that divide a second evenly — 12fps is 83.33ms a
+    /// frame, and rounding it to 83 drifts a frame every three seconds.
+    pub fn frame_at(&self, elapsed_ms: u32) -> usize {
+        // Validation rejects a package with either of these, so this guards the
+        // struct rather than the format: the fields are public, and a divide by
+        // zero in the renderer would take the frame loop with it.
+        let count = self.frames.len() as u64;
+        if self.fps == 0 || count == 0 {
+            return 0;
+        }
+
+        let elapsed = u64::from(elapsed_ms) * u64::from(self.fps) / 1000;
+        let index = if self.looping {
+            elapsed % count
+        } else {
+            elapsed.min(count - 1)
+        };
+        index as usize
+    }
+}
+
 /// A named sequence of Primitives, declared as data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Behavior {
@@ -692,6 +722,69 @@ mod tests {
             errors.iter().any(|error| error.contains(offender)),
             "no error names {offender:?}: {errors:#?}"
         );
+    }
+
+    /// An Animation with `frames` frames, playing at `fps`.
+    fn animation(frames: usize, fps: u32, looping: bool) -> Animation {
+        Animation {
+            frames: (0..frames).map(|i| format!("f-{i}.png")).collect(),
+            frame_size: (2, 2),
+            fps,
+            looping,
+        }
+    }
+
+    #[test]
+    fn a_frame_is_held_for_as_long_as_the_declared_fps_says() {
+        // Four frames at 8fps: 125ms each, so the strip lasts half a second.
+        let walk = animation(4, 8, true);
+
+        assert_eq!(walk.frame_at(0), 0);
+        assert_eq!(walk.frame_at(124), 0, "still inside the first frame");
+        assert_eq!(walk.frame_at(125), 1, "the second frame begins");
+        assert_eq!(walk.frame_at(374), 2);
+        assert_eq!(walk.frame_at(375), 3, "the last frame of the strip");
+    }
+
+    #[test]
+    fn a_declared_fps_changes_how_fast_the_same_strip_plays() {
+        let slow = animation(4, 2, true);
+        let fast = animation(4, 24, true);
+
+        // Half a second in, a 2fps idle is on its second frame and a 24fps one
+        // has been round the strip three times.
+        assert_eq!(slow.frame_at(500), 1);
+        assert_eq!(fast.frame_at(500), 0);
+        assert_eq!(fast.frame_at(542), 1);
+    }
+
+    #[test]
+    fn a_looping_animation_wraps_at_the_end_of_the_strip() {
+        let walk = animation(4, 8, true);
+
+        assert_eq!(walk.frame_at(500), 0, "half a second in, back to the start");
+        assert_eq!(walk.frame_at(625), 1);
+        // Twenty strips later, on the frame it started on.
+        assert_eq!(walk.frame_at(10_000), 0);
+        assert!(
+            walk.frame_at(u32::MAX) < 4,
+            "an Animation left playing for seven weeks still names a real frame"
+        );
+    }
+
+    #[test]
+    fn a_once_animation_holds_its_last_frame() {
+        let land = animation(3, 8, false);
+
+        assert_eq!(land.frame_at(250), 2, "the last frame");
+        assert_eq!(land.frame_at(375), 2, "and it stays there");
+        assert_eq!(land.frame_at(u32::MAX), 2);
+    }
+
+    #[test]
+    fn a_single_frame_animation_is_always_on_its_only_frame() {
+        assert_eq!(animation(1, 8, true).frame_at(u32::MAX), 0);
+        assert_eq!(animation(1, 8, false).frame_at(u32::MAX), 0);
     }
 
     #[test]

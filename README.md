@@ -13,11 +13,15 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, and drops when that window moves
-or closes. A Character Package now loads off disk, though nothing draws it yet
-— the overlay still renders the placeholder PNG, and #27 replaces that with the
-Character's own Animations. Startup stops if no package loads, because a
-companion with no Character has nothing to be. There is no Director and no
-Functional Layer yet, and the sprite cannot be grabbed.
+or closes. It is a real Character Package on disk, and its Animations play at
+the speeds its Character Manifest declares. Startup stops if no package loads,
+because a companion with no Character has nothing to be. There is no Director
+and no Functional Layer yet, and the sprite cannot be grabbed.
+
+The Engine drives five of the eight required Animations today. `idle`, `walk`,
+`fall`, `sit` and `sleep` each answer a State; `fall` covers being dragged as
+well. `land`, `react` and `talk` are events rather than States and start
+playing when Behaviors do.
 
 ## Running it
 
@@ -29,12 +33,39 @@ cd src-tauri
 cargo run
 ```
 
-No Node toolchain and no bundler: the front end is static files under `src/`,
-which Tauri embeds at build time.
+No bundler: the front end is static files under `src/`, which Tauri embeds at
+build time.
 
 ## Development
 
-Install the hooks once after cloning:
+### Toolchains
+
+Three, and each earns its place:
+
+| Toolchain | Needed for | Needed to build? |
+|---|---|---|
+| **Rust** | everything: the core crate, the Tauri shell | yes |
+| **Python** | `pre-commit`, and the placeholder Character's frame generator | no |
+| **Node** | the renderer's unit tests, and nothing else | no |
+
+Node is the newest and the least obvious, so: the webview front end has been
+JavaScript since the first overlay commit, because that is what a Tauri front
+end is. What Node adds is a way to *test* the arithmetic in it. `interpolate`
+runs once per display frame between Engine ticks, so it cannot live in Rust, and
+docs/SPEC.md holds that "arithmetic is never exempt, wherever it lives".
+
+That dependency is deliberately as thin as it goes: `node --test` and
+`node:assert` from the standard library, no test framework, no package manager,
+no lockfile, and no `node_modules`. The root `package.json` exists only to
+declare the renderer ESM, so no Node release's module detection has to guess.
+Any Node that ships `node --test` will do; CI uses the current LTS.
+
+### Hooks
+
+Hooks lint, format and typecheck. They do not run tests — neither `cargo test`
+nor the renderer's. Tests run in CI, and by hand as below.
+
+Install them once after cloning:
 
 ```sh
 pre-commit install
@@ -54,13 +85,15 @@ Most of what this feature does is invisible. Nothing on screen says whether the
 overlay is currently swallowing clicks or passing them on, so verification is
 split in three.
 
-**Unit tests** cover the arithmetic — the alpha lookup and the coordinate
-conversions. Fast, pure, no windowing system, because the core crate depends on
-no platform binding at all:
+**Unit tests** cover the arithmetic — the alpha lookup, the coordinate
+conversions, frame selection, and the renderer's interpolation between Engine
+ticks. Fast, pure, no windowing system, because the core crate depends on no
+platform binding at all:
 
 ```sh
 cargo test -p ai-buddy-core     # the pure core, builds anywhere
 cargo test                      # everything, including the macOS shell
+node --test tests/*.test.js     # the renderer's own arithmetic
 ```
 
 **`scripts/verify-overlay.sh`** covers everything else a machine can reach. It
@@ -110,6 +143,28 @@ can answer it. Run the app, then confirm:
    the other application and focus never moves.
 4. **Follows you across Spaces.** Switch Spaces. The sprite is present on the
    new one, in the same screen position.
+5. **Motion is continuous, not stepped.** Watch it fall. It slides down the
+   screen rather than jumping between positions, and it does not judder when it
+   crosses a window's edge.
+6. **The art is crisp.** On a Retina display the pixels are hard squares with no
+   blur or soft edges, and every pixel of the sprite is the same size as every
+   other. A blurred sprite means the integer scale or the nearest-neighbour
+   filtering was lost.
+7. **Declared cadence is honoured.** Point ai-buddy at a copy of the
+   placeholder with a faster `fps idle`, and the idle bob is visibly faster
+   than it was at the declared 3. Editing the repository's own
+   `characters/` changes nothing on its own: the app reads the copy
+   `tauri-build` placed next to the binary, not the source of that copy.
+
+   ```sh
+   mkdir -p /tmp/ai-buddy-fast
+   cp -R characters/placeholder /tmp/ai-buddy-fast/
+   sed -i '' 's/^fps idle = 3$/fps idle = 20/' /tmp/ai-buddy-fast/placeholder/character.manifest
+   cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-fast cargo run
+   ```
+
+   `AI_BUDDY_CHARACTERS` replaces the search paths rather than adding to them,
+   so nothing installed is touched and there is nothing to put back.
 
 The sprite starts in the middle of the first display and goes wherever gravity
 and your windows take it from there — its position is the Engine's, and until
@@ -155,9 +210,6 @@ python3 scripts/make-placeholder-character.py
 
 Standard library only, so there is nothing to install. Real Characters are drawn
 by hand.
-
-`src/assets/placeholder-idle.png` is the older 32x32 stand-in the overlay still
-renders. #27 retires it.
 
 ## Prior art and attribution
 

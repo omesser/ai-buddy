@@ -13,26 +13,25 @@
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
 
+mod cast;
 mod package;
 mod platform;
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy_core::character::Character;
 use ai_buddy_core::engine::Engine;
 use ai_buddy_core::overlay::{
-    cursor_in_window, display_union as overlay_union, place_sprite, AlphaMask, DisplayReport,
+    cursor_in_window, display_union as overlay_union, place_sprite, DisplayReport,
 };
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::window_source::WindowSource;
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
-/// The placeholder Character art. Rust reads the pixels to hit-test the cursor;
-/// the webview loads the same file to draw it. One file, two readers.
-const SPRITE_PNG: &[u8] = include_bytes!("../../src/assets/placeholder-idle.png");
-const SPRITE_SRC: &str = "assets/placeholder-idle.png";
+use cast::Cast;
 
 /// Nearest-neighbour blow-up, in logical points. ADR-0006 permits integers only.
 const SPRITE_SCALE: i32 = 4;
@@ -65,13 +64,21 @@ const FRAME_EVENT: &str = "frame";
 /// state — it draws what it was last told and remembers nothing.
 #[derive(Clone, Copy, Serialize)]
 struct Placement {
-    src: &'static str,
     x: i32,
     y: i32,
     width: i32,
     height: i32,
     animation: &'static str,
     frame_index: usize,
+}
+
+/// The Character's art, fetched once by the webview when it loads.
+///
+/// A command rather than an event: an event emitted during setup would race the
+/// webview's own listener, and the art does not change while the app runs.
+#[tauri::command]
+fn character(cast: tauri::State<'_, Arc<Cast>>) -> BTreeMap<String, Vec<String>> {
+    cast.art().clone()
 }
 
 /// The union of every visible display, in logical points.
@@ -107,14 +114,17 @@ fn display_union(
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
-/// The webview is told where to draw, and the hit-test is told where the sprite
-/// now is — the same rectangle, and a stale one would make click-through
-/// disagree with what the user can see.
-fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
+/// The webview is told where to draw and the hit-test is told where the sprite
+/// is, both out of one `Frame`, so the outline the hit-test measures belongs to
+/// the Animation frame the user sees.
+///
+/// Position is where the two part. The webview draws one sample behind and
+/// interpolates towards this one, so the hit-test rectangle leads what is on
+/// screen by up to one tick — a pixel or two at walking speed, and always in
+/// the direction of travel. src/interpolate.js carries the measurements that
+/// make that lag the cheaper half of the trade against a stuttering sprite.
+fn run_frame_loop(app: tauri::AppHandle, cast: Arc<Cast>) {
     thread::spawn(move || {
-        let (art_width, art_height) = mask.size();
-        let (width, height) = (art_width * SPRITE_SCALE, art_height * SPRITE_SCALE);
-
         let source = platform::window_source();
         let mut engine = Engine::new(starting_position(&source.snapshot()));
         let mut assembler = SnapshotAssembler::new(source);
@@ -180,6 +190,18 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                 },
             ));
 
+            // The Engine names an Animation and how long it has been playing;
+            // the Character Manifest says what that means in frames. Resolving
+            // it here rather than in the webview keeps the frame the hit-test
+            // measures and the frame the user sees the same one.
+            let Some(drawn) = cast.draw(frame.animation, frame.animation_ms) else {
+                continue; // a Character with no drawable Animation at all
+            };
+            let (width, height) = (
+                drawn.art_size.0 * SPRITE_SCALE,
+                drawn.art_size.1 * SPRITE_SCALE,
+            );
+
             let sprite = place_sprite(
                 (frame.position.x, frame.position.y),
                 (origin.x as f64, origin.y as f64),
@@ -191,13 +213,12 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
             let _ = window.emit(
                 FRAME_EVENT,
                 Placement {
-                    src: SPRITE_SRC,
                     x: sprite.x,
                     y: sprite.y,
                     width,
                     height,
                     animation: frame.animation,
-                    frame_index: frame.frame_index,
+                    frame_index: drawn.index,
                 },
             );
 
@@ -219,7 +240,7 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                     sprite.x,
                     sprite.y,
                     frame.animation,
-                    frame.frame_index,
+                    drawn.index,
                 );
             }
 
@@ -230,7 +251,7 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
                 scale,
             );
 
-            let over_sprite = mask.hit(&sprite, local_x, local_y);
+            let over_sprite = drawn.mask.hit(&sprite, local_x, local_y);
             let ignore = !over_sprite;
             let flipped = ignoring != Some(ignore);
 
@@ -268,14 +289,9 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
 /// meant to load and did not is exactly what its author needs to hear about. A
 /// location that was never a package is not worth a line.
 ///
-/// Nothing draws it yet — the overlay still renders the placeholder art below,
-/// and #27 replaces that with the Character's own Animations. This closes the
-/// gap #7 left: the loader had no caller, so no Character anyone could author
-/// could be loaded at all.
-///
 /// Finding none stops startup, so the failure names every directory that was
 /// searched: that list is the whole of what the reader has to go on.
-fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
+fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
     // The shipped Characters are an app resource, which `tauri-build` copies
     // next to the binary for `cargo run` as well as into a bundle.
     let bundled = app
@@ -288,13 +304,28 @@ fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
     let candidates = package::installed(&search_paths);
 
     for candidate in &candidates {
-        match package::read(candidate) {
-            Ok(character) => {
-                eprintln!("character: {} from {}", character.name, candidate.display());
-                return Ok(character);
+        let loaded = match package::read(candidate) {
+            Ok(loaded) => loaded,
+            Err(package::ReadError::NotAPackage(_)) => continue,
+            Err(why) => {
+                eprintln!("character: {why}");
+                continue;
             }
-            Err(package::ReadError::NotAPackage(_)) => {}
-            Err(why) => eprintln!("character: {why}"),
+        };
+
+        let name = loaded.character.name.clone();
+        match Cast::new(loaded, ALPHA_THRESHOLD) {
+            Ok(cast) => {
+                eprintln!("character: {name} from {}", candidate.display());
+                return Ok(cast);
+            }
+            // Art the loader accepted and this could not resolve. A rejection
+            // like any other: one package with an unreadable frame should not
+            // cost the user every Character behind it in the search.
+            Err(why) => eprintln!(
+                "character: {} could not be drawn: {why}",
+                candidate.display()
+            ),
         }
     }
 
@@ -310,18 +341,18 @@ fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
 
 fn main() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![character])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
             // means no overlay. Reported and exited rather than returned as a
             // setup error: Tauri turns that into a panic the event loop cannot
             // unwind, which buries the one line worth reading under a
             // backtrace.
-            let _character = load_character(&app.handle().clone()).unwrap_or_else(|why| {
+            let cast = Arc::new(load_character(&app.handle().clone()).unwrap_or_else(|why| {
                 eprintln!("character: {why}");
                 std::process::exit(1);
-            });
-            let mask = AlphaMask::from_png(SPRITE_PNG, ALPHA_THRESHOLD)?;
-            let (art_width, art_height) = mask.size();
+            }));
+            app.manage(Arc::clone(&cast));
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.
@@ -357,20 +388,28 @@ fn main() {
             window.set_position(position)?;
             window.set_size(size)?;
 
+            // The sprite size is the idle Animation's, blown up. Animations may
+            // declare different frame sizes, so this is what the Character is
+            // usually drawn at rather than what it is always drawn at; it is
+            // here because scripts/verify-overlay.sh crops a screenshot to it.
+            let (sprite_width, sprite_height) =
+                cast.draw("idle", 0).map_or((0, 0), |drawn| drawn.art_size);
+
             eprintln!(
-                "overlay: union {:.0}x{:.0} at ({:.0},{:.0}); sprite {}x{}",
+                "overlay: union {:.0}x{:.0} at ({:.0},{:.0}); character {}; sprite {}x{}",
                 size.width,
                 size.height,
                 position.x,
                 position.y,
-                art_width * SPRITE_SCALE,
-                art_height * SPRITE_SCALE,
+                cast.name(),
+                sprite_width * SPRITE_SCALE,
+                sprite_height * SPRITE_SCALE,
             );
 
             platform::configure_overlay(&window)?;
             window.show()?;
 
-            run_frame_loop(app.handle().clone(), mask);
+            run_frame_loop(app.handle().clone(), cast);
             Ok(())
         })
         .run(tauri::generate_context!())
