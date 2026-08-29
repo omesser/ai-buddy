@@ -53,6 +53,11 @@ fn overlay_panel_class() -> &'static AnyClass {
 /// window may declare that its content must not be captured at all. So rather
 /// than detect a share and hide, the Character is absent from every screen
 /// recording, screen share and remote view while its owner keeps it on screen.
+///
+/// The price is that the Character cannot be screenshotted either: the system's
+/// own capture goes down the same path. `AI_BUDDY_CAPTURABLE` gives the
+/// exclusion up for one run, which is how to photograph your own Character, and
+/// how anyone drawing one looks at its art against a real desktop.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let ptr = window
         .ns_window()
@@ -90,8 +95,17 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
         // AppKit warns that an uncapturable window cannot take part in some
         // system services. The overlay uses none of them: it draws a sprite,
         // takes no focus, and prints nothing.
-        let _: () = msg_send![ns_window, setSharingType: NSWindowSharingType::None];
+        let _: () = msg_send![ns_window, setSharingType: sharing_type()];
     }
 
     Ok(())
+}
+
+/// Whether this run lets itself be captured. See `configure_overlay`.
+fn sharing_type() -> NSWindowSharingType {
+    if std::env::var_os("AI_BUDDY_CAPTURABLE").is_some() {
+        NSWindowSharingType::ReadOnly
+    } else {
+        NSWindowSharingType::None
+    }
 }

@@ -14,7 +14,10 @@ Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/is
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, and drops when that window moves
 or closes, and it stands on the Dock rather than behind it. It can be clicked,
-picked up, dragged and thrown. It is a real Character Package on disk, and its
+picked up, dragged and thrown. It knows when to get out of the way: it fades out
+while a fullscreen application has the screen, goes away at once on
+Control-Option-Command-B and comes back the same way, and never appears in a
+screen share or a screen recording at all. It is a real Character Package on disk, and its
 Animations play at the speeds its Character Manifest declares. Startup stops if
 no package loads, because a companion with no Character has nothing to be. There
 is no Director and no Functional Layer yet: double-clicking it is a Summon the
@@ -115,8 +118,9 @@ scripts/verify-overlay.sh          # or --keep to leave the app running
 ```
 
 It checks that exactly one overlay window exists at floating level, that its
-bounds match one whole display — the one the Character is on — and that the app
-is an accessory with no Dock tile or switcher entry.
+bounds match one whole display — the one the Character is on — that the window
+server has been told never to hand that window to a screen capture, and that the
+app is an accessory with no Dock tile or switcher entry.
 
 Then it checks the frame loop against a real desktop. It opens a plain window of
 its own below where the sprite starts, so the sprite has a Perch to aim at, and
@@ -128,11 +132,24 @@ interval — and comes to rest again on the display below.
 
 Last it checks the hit-test pipeline: it puts the cursor on the sprite's centre
 and then on its transparent top-left corner, and asserts a hit on the first and
-a miss on the second. The cursor goes back where you left it. It also saves
-screenshots of each display plus a tight crop of the perched sprite under
-`.verify/`, so the art and its transparency can be eyeballed.
+a miss on the second. The cursor goes back where you left it. It also saves a
+screenshot of each display under `.verify/`. The sprite is not in them: the
+overlay refuses every screen capture, and `screencapture` is one. To photograph
+your own Character — to look at its art, or to show somebody — start the app
+with `AI_BUDDY_CAPTURABLE=1`, which gives that up for one run.
 
 Keep hands off the mouse while it runs.
+
+Every change of the hide rules prints a `presence:` line without being asked
+for, which says whether the sprite was shown or hidden and over how long. It is
+a handful of lines in a session, and it is how to tell a rule that did not fire
+from a fade that did not play.
+
+**Do Not Disturb is not wired to anything yet.** The rule is built and tested,
+and no reading reaches it: macOS keeps the live Focus state behind Full Disk
+Access, and the only public alternative opens a consent dialog on first use,
+which the Spatial Layer does not spend permissions on. Turning Do Not Disturb on
+changes nothing today. The hotkey is what to use meanwhile.
 
 For a live view of what the app is deciding, set `AI_BUDDY_TRACE_HITTEST=1` for
 the click-through decision and `AI_BUDDY_TRACE_FRAMES=1` for the Engine's
@@ -194,6 +211,38 @@ can answer it. Run the app, then confirm:
     over the Dock — it follows the cursor the whole way, because a held sprite
     goes where your hand goes. Let go and it settles back onto the Dock's top
     edge, fully visible.
+13. **A fullscreen application takes the screen and the Character leaves it.**
+    Put any application into fullscreen — the green button, or
+    Control-Command-F. Within about a tenth of a second the sprite fades out
+    over a fifth of a second: it dissolves rather than blinking off. Leave
+    fullscreen and it fades back in, carrying on from wherever the Engine got
+    to, still falling or still walking rather than restarting. A *zoomed* window
+    is not a fullscreen one: Option-click the green button, or double-click a
+    title bar, and the sprite stays and can still sit on that window's top edge.
+14. **Ordinary window switching changes nothing.** Command-Tab between
+    applications, open and close windows, drag them around, switch Spaces. The
+    sprite never blinks, never changes what it is in front of, and never
+    disappears. Only a fullscreen application takes it away.
+15. **The hotkey puts it away and brings it back at once.** Press
+    Control-Option-Command-B. The sprite is gone on the keystroke, with no
+    fade. Press it again and it is back, instantly, wherever it had got to.
+    While it is away, click where it was: the click reaches the window
+    underneath, and the sprite does not react to it when it returns.
+16. **The hotkey outranks the rules.** Press the hotkey to put the sprite away,
+    then enter a fullscreen application and leave it again. The sprite stays
+    away — a fullscreen application quitting must not hand back a Character you
+    put away yourself. Press the hotkey again to get it back.
+17. **It is absent from a real screen share.** Start a real share — Zoom, Meet,
+    Teams — sharing your whole screen, and look at what the other end sees,
+    either on a second machine or in the meeting's own preview of your share.
+    The sprite is on your screen and not in theirs. Then check the system's own
+    capture the same way: Command-Shift-5 to record, and Command-Shift-3 to take
+    a screenshot. Neither one contains the sprite. This is the window server
+    refusing to hand the overlay to any capture, rather than ai-buddy detecting
+    a share, so it holds for every sharing tool including ones nobody has heard
+    of. `scripts/verify-overlay.sh` asserts the setting; only this step shows
+    the effect. It is also why you cannot screenshot your Character: start the
+    app with `AI_BUDDY_CAPTURABLE=1` for a run where you can.
 
 The sprite starts in the middle of the first display and goes wherever gravity
 and your windows take it from there, or wherever you put it. To watch it fall

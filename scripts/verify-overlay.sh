@@ -299,32 +299,10 @@ STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
 
-# A tight crop around the sprite, with padding, so the edges of the art can be
-# eyeballed against whatever is behind them. A full-desktop grab is too big to
-# judge transparency from.
-#
-# Taken at rest rather than mid-run. It used to have to be mid-run: at rest the
-# sprite sat at the bottom of the screen, where the Dock draws over it. Now it
-# rests on the Dock (#39), so this crop is also the proof of that — the sprite
-# is whole, above the Dock, rather than three quarters buried in it.
-python3 - "$OUT" << 'PY'
-import json, re, subprocess, sys
-
-out = sys.argv[1]
-log = open(f"{out}/app.log").read()
-windows = json.load(open(f"{out}/window.json"))["windows"]
-size = re.search(r"sprite (\d+)x(\d+)", log)
-at = re.findall(r"^frame: \S+ Grounded \S+ sprite\((-?\d+),(-?\d+)\)", log, re.M)
-
-if windows and size and at:
-    width, height = (int(g) for g in size.groups())
-    x, y = (int(g) for g in at[-1])
-    pad = 40
-    region = (f"{windows[0]['x'] + x - pad},{windows[0]['y'] + y - pad},"
-              f"{width + pad * 2},{height + pad * 2}")
-    subprocess.run(["screencapture", "-x", "-R", region, f"{out}/sprite.png"], check=False)
-PY
-
+# No crop of the sprite any more. The overlay refuses every screen capture,
+# and screencapture is one, so the crop this used to take would be a picture
+# of the desktop where the sprite is. The art is eyeballed on screen instead,
+# or in a run started with AI_BUDDY_CAPTURABLE=1.
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
 for i in $(seq 1 "$DISPLAY_COUNT"); do
