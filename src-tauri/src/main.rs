@@ -239,18 +239,21 @@ fn run_frame_loop(
 
             // The Director's clock is the same elapsed time the Engine is
             // given, so a loop that stalled wakes it once on the way back
-            // rather than in a burst.
+            // rather than in a burst. Firing takes one interval off the clock
+            // rather than zeroing it, for the reason `SnapshotAssembler` gives:
+            // zeroing throws the overshoot away and stretches every interval by
+            // most of a tick.
             let elapsed = Duration::from_millis(u64::from(elapsed_ms));
             since_sense += elapsed;
             since_wake += elapsed;
 
             let mut proposal = None;
             if since_sense >= SENSE_INTERVAL {
-                since_sense = Duration::ZERO;
+                since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let activity = free_tier.read(&activity_source, &SystemClock);
 
                 if director::due(since_wake, &activity) {
-                    since_wake = Duration::ZERO;
+                    since_wake = since_wake.saturating_sub(director::WAKE_EVERY);
                     proposal = director.propose(&Context {
                         activity,
                         recent: recent.clone(),
