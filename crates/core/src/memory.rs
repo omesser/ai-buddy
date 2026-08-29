@@ -75,6 +75,7 @@ impl MemoryManifest {
 
         let backup = backup_path(&self.path);
         fs::write(&backup, &memory)?;
+        keep_permissions_of(&self.path, &backup)?;
         self.write(String::new())?;
         Ok(Some(backup))
     }
@@ -124,14 +125,14 @@ fn scratch_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Give `scratch` the permissions `path` has, if `path` is there at all.
+/// Give `fresh` the permissions `path` has, if `path` is there at all.
 ///
-/// The replacement is a new file and would otherwise arrive with whatever the
-/// umask says. Memory holds what the buddies know about the user, so narrowing
-/// who can read it has to survive a write.
-fn keep_permissions_of(path: &Path, scratch: &Path) -> io::Result<()> {
+/// A scratch file or a backup is a new file and would otherwise arrive with
+/// whatever the umask says. Memory holds what the buddies know about the user,
+/// so narrowing who can read it has to survive a write and a wipe alike.
+fn keep_permissions_of(path: &Path, fresh: &Path) -> io::Result<()> {
     match fs::metadata(path) {
-        Ok(existing) => fs::set_permissions(scratch, existing.permissions()),
+        Ok(existing) => fs::set_permissions(fresh, existing.permissions()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
@@ -655,6 +656,38 @@ Some notes I typed at the top, under no heading at all.
                 & 0o777,
             0o600,
             "Memory is still readable only by the user who narrowed it"
+        );
+    }
+
+    /// The backup holds exactly what Memory held. If the user narrowed who can
+    /// read Memory, the copy left beside it has to be just as narrow — a wipe is
+    /// not the moment to hand that back.
+    #[test]
+    fn a_backup_keeps_the_permissions_the_user_set() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new("backup-permissions");
+        let path = dir.join("memory.md");
+        let manifest = MemoryManifest::new(&path);
+        manifest
+            .remember("Facts", "Oded's cat is called Simba")
+            .expect("remembering writes");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .expect("the user narrows who can read Memory");
+
+        let backup = manifest
+            .wipe()
+            .expect("wipe succeeds")
+            .expect("there was something to back up");
+
+        assert_eq!(
+            fs::metadata(&backup)
+                .expect("the backup is there")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600,
+            "the backup is as private as the Memory it copies"
         );
     }
 
