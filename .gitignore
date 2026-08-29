@@ -34,5 +34,12 @@ tmp/
 .env.*
 !.env.example
 
-# Local Claude/agent state (keep shared config, ignore local-only)
-.claude/settings.local.json
+# Claude Code's working directory: local settings, and the throwaway worktrees
+# subagents are given. Those worktrees are checkouts of this repository, so
+# committing one would nest a clone inside itself.
+#
+# The whole directory rather than the local-only files inside it. Nothing here
+# has ever been shared, and an ignore that lists what to skip goes stale the
+# moment the tool adds something new. Un-ignore a specific path with `!` if a
+# file here ever becomes worth committing.
+.claude/
