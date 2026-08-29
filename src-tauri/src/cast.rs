@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use ai_buddy_core::character::Character;
+use ai_buddy_core::character::{Behavior, Character};
 use ai_buddy_core::overlay::AlphaMask;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -94,6 +94,11 @@ impl Cast {
 
     pub fn name(&self) -> &str {
         &self.character.name
+    }
+
+    /// The Behaviors this Character declares, for the Engine to play.
+    pub fn behaviors(&self) -> &BTreeMap<String, Behavior> {
+        &self.character.behaviors
     }
 
     /// Which frame of `animation` is on screen `animation_ms` after it started.

@@ -121,7 +121,7 @@ fn run_frame_loop(
     home: Rect,
 ) {
     thread::spawn(move || {
-        let mut engine = Engine::new(start);
+        let mut engine = Engine::new(start).with_behaviors(cast.behaviors().clone());
         let mut assembler = SnapshotAssembler::new(source);
 
         // The display the overlay is currently over, as setup left it.
