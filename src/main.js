@@ -7,9 +7,7 @@ import { interpolate } from "./interpolate.js";
 
 const sprite = document.getElementById("sprite");
 
-// Every Animation's frames as data: URLs, fetched once. Art, not state — a
-// Character Package lives outside this directory, so there is no URL the
-// webview could fetch its frames from.
+// Every Animation's frames as data: URLs, fetched once. Art, not state.
 let art = {};
 
 // The two most recent placements and when each arrived. Drawing the latest one

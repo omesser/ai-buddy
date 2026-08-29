@@ -386,8 +386,7 @@ mod tests {
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    /// A 2x2 RGBA PNG. Art a renderer can open is all the loader asks of a
-    /// frame; what is drawn in it is nobody's business here.
+    /// A 2x2 RGBA PNG, which is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
 
     /// A directory of our own under the system temp dir, removed when the test

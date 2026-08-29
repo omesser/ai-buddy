@@ -1,10 +1,10 @@
 //! The Character Package loader: bytes in, either a validated Character or the
 //! list of mistakes its author has to fix.
 //!
-//! Pure and synchronous, like the rest of the Engine seam. Every byte the
-//! loader looks at is handed to it, so it opens nothing, reaches no platform
-//! and cannot be slowed down by a disk. That is also what lets a hostile
-//! package be tested by constructing a map of file bytes.
+//! Pure and synchronous, like the rest of the Engine seam. Every byte is handed
+//! to it, so it opens nothing, reaches no platform and cannot be slowed down by
+//! a disk. That is also what lets a hostile package be tested as a map of file
+//! bytes.
 //!
 //! A Character Package is untrusted input twice over: an author's mistake and a
 //! deliberate attack arrive through the same door, and a Personality Prompt
@@ -60,10 +60,9 @@ pub const REQUIRED_ANIMATIONS: [&str; 8] = [
 
 /// How long a Personality Prompt may be, in characters.
 ///
-/// A bound rather than a preference: the prompt is untrusted text that goes
-/// into every Character Prompt the Director sends, so an unbounded one is a way
-/// to spend a user's tokens and to bury the sensing context under prose.
-/// Generous enough for a paragraph of personality.
+/// The prompt is untrusted text that goes into every Character Prompt the
+/// Director sends, so an unbounded one spends a user's tokens and buries the
+/// sensing context under prose. Generous enough for a paragraph of personality.
 pub const PERSONALITY_LIMIT: usize = 2000;
 
 /// Frames per second an Animation plays at when it does not say.
@@ -74,12 +73,11 @@ pub const DEFAULT_FPS: u32 = 8;
 
 /// The largest either side of a frame may be, in pixels.
 ///
-/// A bound rather than a preference, and the same kind of bound as `MAX_FPS`:
-/// a PNG header costs the same few dozen bytes whatever size it claims, so a
-/// package can declare a 100000x100000 frame for nothing and leave the
-/// renderer to allocate forty gigabytes for one sprite. A
-/// desktop mascot is a couple of hundred pixels tall, so 1024 is generous even
-/// for art drawn at twice the size of a Retina display.
+/// A PNG header costs the same few dozen bytes whatever size it claims, so a
+/// package can declare a 100000x100000 frame for nothing and leave the renderer
+/// to allocate forty gigabytes for one sprite. A desktop mascot is a couple of
+/// hundred pixels tall, so 1024 is generous even for art drawn at twice the
+/// size of a Retina display.
 pub const MAX_FRAME_SIDE: u32 = 1024;
 
 /// The fastest an Animation may declare. Past display refresh the extra frames
@@ -123,9 +121,7 @@ pub struct Animation {
     /// Frame file names in play order, resolvable against the same
     /// `PackageBytes` the Character was loaded from.
     pub frames: Vec<String>,
-    /// Width and height of every frame, in pixels, read from the art rather
-    /// than declared: a declared size can disagree with the art, and a derived
-    /// one cannot.
+    /// Width and height of every frame, in pixels, read from the art.
     pub frame_size: (u32, u32),
     pub fps: u32,
     /// Whether the Animation repeats or holds its last frame.
@@ -135,10 +131,8 @@ pub struct Animation {
 impl Animation {
     /// Which frame is on screen `elapsed_ms` after this Animation started.
     ///
-    /// The whole of frame selection, and the reason the renderer needs no clock
-    /// of its own: the Engine reports how long the current Animation has been
-    /// playing, and this maps that onto a frame using what the Character
-    /// Manifest declared.
+    /// The whole of frame selection, and why the renderer needs no clock of its
+    /// own.
     ///
     /// Multiplying before dividing keeps the cadence exact for every fps rather
     /// than only for the ones that divide a second evenly — 12fps is 83.33ms a
@@ -176,8 +170,7 @@ pub struct Behavior {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Character {
     pub name: String,
-    /// The Personality Prompt, or empty when the package ships none. Prose for
-    /// the Director, never an instruction and never a capability.
+    /// The Personality Prompt, or empty when the package ships none.
     pub personality: String,
     pub animations: BTreeMap<String, Animation>,
     pub behaviors: BTreeMap<String, Behavior>,
@@ -279,12 +272,10 @@ struct DeclaredBehavior {
     then: Option<String>,
 }
 
-/// Read the Character Manifest: one declaration per line, `key = value`, with
-/// blank lines and `#` comments ignored.
+/// Read the Character Manifest.
 ///
-/// A line the loader cannot make sense of is an error and never a guess. That
-/// is what makes the set of declarations closed, and a closed set is what stops
-/// a package from declaring itself a capability.
+/// A line the loader cannot make sense of is an error and never a guess, which
+/// is what keeps the set of declarations closed.
 fn parse(manifest: &str, errors: &mut Vec<String>) -> Declared {
     let mut declared = Declared::default();
     // fps and loop mode may be written above the Animation they qualify, so
@@ -452,8 +443,7 @@ fn one_name<'a>(
 /// `then <behavior>`.
 ///
 /// A word that is not a Primitive is reported and dropped rather than
-/// abandoning the declaration, so the rest of the Character Manifest is still
-/// checked and the author sees every mistake at once.
+/// abandoning the declaration, so the rest of the line is still checked.
 fn parse_behavior(
     behavior: &str,
     value: &str,
@@ -503,11 +493,10 @@ fn parse_behavior(
     }
 }
 
-/// Check every declared Animation against the art the package actually
-/// carries. Art the loader cannot open, that changes size mid-sequence, or
-/// that is too large to be a sprite, is a rejection: the first two draw a
-/// broken sprite rather than a Character, and the third asks the renderer for
-/// memory no Character needs.
+/// Check every declared Animation against the art the package carries. Art the
+/// loader cannot open or that changes size mid-sequence draws a broken sprite
+/// rather than a Character, and art too large to be a sprite asks the renderer
+/// for memory no Character needs. All three are rejections.
 fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
@@ -583,12 +572,10 @@ fn art_size(bytes: &[u8]) -> Result<(u32, u32), String> {
 
 /// Check that every Behavior can be played to an end.
 ///
-/// A Behavior may hand over to another when it finishes, which is a loop
-/// waiting to happen: a chain that comes back to a Behavior it has already run
-/// would hold the sprite for ever. Walking each chain iteratively, and
-/// remembering what has already been walked, keeps the check linear in the
-/// number of declarations and takes no stack, so a package built to be deep
-/// is rejected rather than crashing.
+/// A chain that comes back to a Behavior it has already run would hold the
+/// sprite for ever. Walking each chain iteratively, and remembering what has
+/// already been walked, keeps the check linear and takes no stack, so a package
+/// built to be deep is rejected rather than crashing.
 fn resolve_behaviors(
     declared: BTreeMap<String, DeclaredBehavior>,
     errors: &mut Vec<String>,
@@ -678,7 +665,7 @@ mod tests {
     use super::*;
 
     /// A 2x2 RGBA PNG. Art a renderer can open is all the loader asks of a
-    /// frame; what is drawn in it is nobody's business here.
+    /// frame.
     const FRAME: &[u8] = include_bytes!("../tests/fixtures/alpha-2x2.png");
 
     /// One frame file per required Animation, plus a `wave` no manifest has to
@@ -1285,9 +1272,8 @@ mod tests {
         );
     }
 
-    /// A valid PNG of the given size, for the tests that need art of a size
-    /// the fixture does not have. The encoder is already a dependency of the
-    /// renderer.
+    /// A valid PNG of the given size, for the tests the fixture cannot serve.
+    /// The encoder is already a dependency of the renderer.
     fn png_bytes(width: u32, height: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
         let mut encoder = png::Encoder::new(&mut bytes, width, height);
