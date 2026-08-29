@@ -111,10 +111,10 @@ pub fn primary_button_down() -> bool {
 /// manager's answer and CoreGraphics cannot give it: it reports the Dock as a
 /// window covering the whole display.
 ///
-/// Only macOS is wired up. `docs/SPEC.md` puts Windows out of scope for v1, and
-/// it still gets `StubWindowSource` and no displays at all. What this buys is
-/// that the taskbar needs no separate concept when Windows does land: Tauri
-/// fills the same work area from `SPI_GETWORKAREA`.
+/// Only macOS reads windows. `docs/SPEC.md` puts Windows out of scope for v1,
+/// so every other platform gets displays and no windows. What this buys is that
+/// the taskbar needs no separate concept when Windows does land: Tauri fills the
+/// same work area from `SPI_GETWORKAREA`.
 ///
 /// Call this on the main thread. The work area comes from `NSScreen`, which may
 /// only be asked there, so the answer is read here and again on a timer, and
@@ -164,20 +164,50 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
 }
 
 /// Without window geometry the Spatial Layer degrades to screen-edge physics,
-/// which `docs/SPEC.md` calls a supported mode rather than a failure.
+/// which `docs/SPEC.md` calls a supported mode rather than a failure. The
+/// displays still come from Tauri, which reads them on every platform; only the
+/// windows are missing.
+///
+/// ponytail: read once at startup rather than on a timer, so a display plugged
+/// in later goes unnoticed until restart. Add the refresh when a Wayland or X11
+/// build actually ships.
 #[cfg(not(target_os = "macos"))]
-pub fn window_source(_app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
-    (
-        ai_buddy_core::window_source::StubWindowSource,
-        DisplayCache::default(),
-    )
+pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
+    let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
+    (DisplayOnlySource(cache.clone()), cache)
+}
+
+/// Screen edges and nothing else.
+///
+/// `Capabilities::default()` declares no `window_geometry`, so `snapshot()`
+/// clears the windows and the Engine is handed a world with a floor and walls
+/// and no Perches — which is what the degraded mode is.
+#[cfg(not(target_os = "macos"))]
+struct DisplayOnlySource(DisplayCache);
+
+#[cfg(not(target_os = "macos"))]
+impl WindowSource for DisplayOnlySource {
+    fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
+        ai_buddy_core::window_source::Capabilities::default()
+    }
+
+    fn read(&self) -> ai_buddy_core::window_source::WorldGeometry {
+        ai_buddy_core::window_source::WorldGeometry {
+            usable_frames: self.0.read().usable_frames,
+            windows: Vec::new(),
+        }
+    }
 }
 
 /// The displays as the windowing layer sees them right now.
 ///
-/// Read on a timer rather than once, because the desktop changes while the app
-/// runs: the Dock hides and returns, changes edge, and a display can be
+/// Read on a timer rather than once on macOS, because the desktop changes while
+/// the app runs: the Dock hides and returns, changes edge, and a display can be
 /// attached or unplugged.
+///
+/// Portable Tauri, so it is not gated on macOS: the degraded mode needs the same
+/// screen edges, and reading them anywhere is what keeps it a degradation rather
+/// than a world with no floor in it.
 ///
 /// Tauri reports a monitor in physical pixels and the Engine works in points,
 /// so every number here goes in physical and comes out logical. Two of the four
@@ -186,7 +216,6 @@ pub fn window_source(_app: tauri::AppHandle) -> (impl WindowSource, DisplayCache
 /// primary's. The arithmetic is `window_source::in_points` and
 /// `window_source::usable_frame`, where it is tested; this only asks the
 /// windowing layer what it can see.
-#[cfg(target_os = "macos")]
 fn read_displays(app: &tauri::AppHandle) -> Displays {
     use ai_buddy_core::window_source::{in_points, usable_frame};
 
