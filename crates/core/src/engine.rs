@@ -958,6 +958,31 @@ mod tests {
         assert_eq!(falling.animation, "talk");
     }
 
+    /// Load-time validation rejects a chain that comes back on itself, so this
+    /// is the second lock on the same door: the Engine is handed Behaviors
+    /// rather than a validated Character, and a Behavior that could hang the
+    /// frame loop is the one thing ADR-0002 promises no package can be.
+    #[test]
+    fn a_behavior_that_chains_back_to_itself_still_ends() {
+        let pacing = |then: &str| Behavior {
+            primitives: vec![Primitive::Idle],
+            then: Some(then.to_string()),
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([
+            ("here".to_string(), pacing("there")),
+            ("there".to_string(), pacing("here")),
+        ]));
+        settle(&mut engine, &snapshot(100));
+
+        assert_eq!(engine.tick(&proposing("here")).animation, "idle");
+        assert_eq!(
+            played(&mut engine, 20),
+            [("idle", 20)],
+            "each Behavior of the loop is played once and the sprite goes back \
+             to idling, rather than the tick never returning"
+        );
+    }
+
     /// A proposal the Character cannot play is refused, and refusing it is not
     /// an interruption: the Director names a Behavior, and a Character that was
     /// swapped or is simply older may not declare it.
