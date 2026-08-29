@@ -339,11 +339,18 @@ mod tests {
         }
     }
 
-    /// The desktop the sprite went missing on, in the points every number here
-    /// is already in: a 1920x1080 external beside a 1728x1117 built-in that
-    /// reports itself in doubled pixels. A cursor on the built-in is at 1920 or
-    /// more across, and the overlay has to follow it there.
-    fn mixed_dpi() -> [Rect; 2] {
+    /// Two displays side by side, the second starting where the first ends.
+    ///
+    /// Literal points, so this runs the same on any machine, including one with
+    /// a single display. `display_for` compares rectangles and never sees a
+    /// scale factor: converting a display into points is `window_source`'s job
+    /// and is tested there. These are the sizes that conversion produces for a
+    /// 1080p display beside a Retina one, which is the arrangement the bug was
+    /// reported on.
+    ///
+    /// The seam at 1920 is the point of the fixture. Every case below is about
+    /// which side of it a point falls on.
+    fn two_displays() -> [Rect; 2] {
         [
             rect(0.0, 0.0, 1920.0, 1080.0),
             rect(1920.0, 0.0, 1728.0, 1117.0),
@@ -352,7 +359,7 @@ mod tests {
 
     #[test]
     fn a_point_on_a_display_belongs_to_that_display() {
-        let displays = mixed_dpi();
+        let displays = two_displays();
 
         assert_eq!(display_for((960.0, 540.0), &displays), Some(displays[0]));
         assert_eq!(display_for((2600.0, 500.0), &displays), Some(displays[1]));
@@ -385,7 +392,7 @@ mod tests {
     /// catches it, and a display can be unplugged with the sprite on it.
     #[test]
     fn a_point_off_every_display_belongs_to_the_nearest_one() {
-        let displays = mixed_dpi();
+        let displays = two_displays();
 
         assert_eq!(
             display_for((4000.0, 2000.0), &displays),

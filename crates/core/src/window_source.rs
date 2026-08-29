@@ -216,11 +216,12 @@ mod tests {
         }
     }
 
-    /// The two displays this machine reports, read off a running app: a 1x
-    /// external beside a 2x built-in. Each reports its geometry against its own
-    /// scale, so the built-in's origin arrives already doubled, and converting
-    /// both with one factor is how the overlay ends up on a display that is not
-    /// there.
+    /// A 1x display beside a 2x one. Literal values, so this runs the same
+    /// anywhere, and they are what a window server reports for that pair.
+    ///
+    /// A window server gives each display's geometry against that display's own
+    /// scale, so the 2x display's origin arrives already doubled. Converting
+    /// both with one factor puts the overlay on a display that is not there.
     #[test]
     fn each_display_converts_with_its_own_scale() {
         assert_eq!(
@@ -230,7 +231,7 @@ mod tests {
         assert_eq!(
             in_points(rect(3840.0, 0.0, 3456.0, 2234.0), 2.0),
             rect(1920.0, 0.0, 1728.0, 1117.0),
-            "the built-in sits at 1920 in points, not at 3840"
+            "the 2x display sits at 1920 in points, not at 3840"
         );
     }
 
