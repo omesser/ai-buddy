@@ -13,11 +13,13 @@
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
 
+mod package;
 mod platform;
 
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ai_buddy_core::character::Character;
 use ai_buddy_core::engine::Engine;
 use ai_buddy_core::overlay::{
     cursor_in_window, display_union as overlay_union, place_sprite, AlphaMask, DisplayReport,
@@ -34,6 +36,10 @@ const SPRITE_SRC: &str = "assets/placeholder-idle.png";
 
 /// Nearest-neighbour blow-up, in logical points. ADR-0006 permits integers only.
 const SPRITE_SCALE: i32 = 4;
+
+/// Where the shipped Character Packages sit inside the app's resources. Kept in
+/// step with `bundle.resources` in `tauri.conf.json`.
+const BUNDLED_CHARACTERS: &str = "characters";
 
 /// Alpha at or above this counts as drawn. See `AlphaMask::from_png`.
 const ALPHA_THRESHOLD: u8 = 128;
@@ -255,9 +261,65 @@ fn run_frame_loop(app: tauri::AppHandle, mask: AlphaMask) {
     });
 }
 
+/// The Character to put on screen: the first package that loads out of every
+/// place ai-buddy looks.
+///
+/// Every rejection is reported before moving on, because a package that was
+/// meant to load and did not is exactly what its author needs to hear about. A
+/// location that was never a package is not worth a line.
+///
+/// Nothing draws it yet — the overlay still renders the placeholder art below,
+/// and #27 replaces that with the Character's own Animations. This closes the
+/// gap #7 left: the loader had no caller, so no Character anyone could author
+/// could be loaded at all.
+///
+/// Finding none stops startup, so the failure names every directory that was
+/// searched: that list is the whole of what the reader has to go on.
+fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
+    // The shipped Characters are an app resource, which `tauri-build` copies
+    // next to the binary for `cargo run` as well as into a bundle.
+    let bundled = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|dir| dir.join(BUNDLED_CHARACTERS));
+
+    let search_paths = package::search_paths(bundled);
+    let candidates = package::installed(&search_paths);
+
+    for candidate in &candidates {
+        match package::read(candidate) {
+            Ok(character) => {
+                eprintln!("character: {} from {}", character.name, candidate.display());
+                return Ok(character);
+            }
+            Err(package::ReadError::NotAPackage(_)) => {}
+            Err(why) => eprintln!("character: {why}"),
+        }
+    }
+
+    Err(format!(
+        "no Character Package loaded. ai-buddy looked in: {}",
+        search_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            // A companion with no Character has nothing to be, so no Character
+            // means no overlay. Reported and exited rather than returned as a
+            // setup error: Tauri turns that into a panic the event loop cannot
+            // unwind, which buries the one line worth reading under a
+            // backtrace.
+            let _character = load_character(&app.handle().clone()).unwrap_or_else(|why| {
+                eprintln!("character: {why}");
+                std::process::exit(1);
+            });
             let mask = AlphaMask::from_png(SPRITE_PNG, ALPHA_THRESHOLD)?;
             let (art_width, art_height) = mask.size();
 

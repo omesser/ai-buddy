@@ -1,0 +1,35 @@
+# The placeholder Character. Not art — a stand-in that gives the renderer eight
+# visibly different Animations to play, and the hit-test something with
+# transparent regions to test against. Regenerate the frames with
+# scripts/make-placeholder-character.py.
+
+name = Blip
+
+animation idle = frames/idle-0.png frames/idle-1.png
+animation walk = frames/walk-0.png frames/walk-1.png frames/walk-2.png frames/walk-3.png
+animation fall = frames/fall-0.png frames/fall-1.png
+animation land = frames/land-0.png frames/land-1.png frames/land-2.png
+animation sit = frames/sit-0.png frames/sit-1.png
+animation sleep = frames/sleep-0.png frames/sleep-1.png
+animation react = frames/react-0.png frames/react-1.png frames/react-2.png
+animation talk = frames/talk-0.png frames/talk-1.png frames/talk-2.png frames/talk-3.png
+
+# Cadence per Animation, which is the point of declaring it: a slow idle and a
+# fast walk are the same eight frame counts playing at different speeds.
+fps idle = 3
+fps walk = 12
+fps fall = 8
+fps land = 14
+fps sit = 2
+fps sleep = 1
+fps react = 12
+fps talk = 10
+
+# Landing and reacting are events. They play through once and hold their last
+# frame rather than looping, which is what stops a landed sprite from squashing
+# itself every half second for ever.
+loop land = once
+loop react = once
+
+behavior greet = react talk then settle
+behavior settle = sit sleep

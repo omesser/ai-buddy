@@ -341,7 +341,8 @@ ls = open(f"{out}/lsappinfo.txt").read()
 check('type="UIElement"' in ls, "accessory app: no Dock tile or switcher entry")
 
 log = open(f"{out}/app.log").read()
-check(log.startswith("overlay:"), "app reported its geometry on startup")
+check(re.search(r"^character: ", log, re.M) is not None, "app loaded a Character Package")
+check(re.search(r"^overlay: ", log, re.M) is not None, "app reported its geometry on startup")
 check("hit-test:" in log, "hit-test trace is running")
 check("frame:" in log, "frame trace is running")
 
