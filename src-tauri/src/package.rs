@@ -383,8 +383,11 @@ fn strip_single_root(files: PackageBytes) -> PackageBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_buddy_core::director::{Context, Director, StaticDirector};
+    use ai_buddy_core::sensing::Activity;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::{Duration, UNIX_EPOCH};
 
     /// A 2x2 RGBA PNG, which is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
@@ -417,6 +420,12 @@ mod tests {
     /// The Character that ships in the bundle, read from the repository rather
     /// than built here. Nothing else checks it, and a manifest that stops
     /// loading is an app that refuses to start.
+    ///
+    /// Blip's idle life is asserted through a Static Director rather than off
+    /// the declarations, because what would break it is not a Behavior going
+    /// missing but the `when` conditions leaving a stretch of the day with
+    /// nothing in it. `weight` is read directly: every Behavior has one, so
+    /// only the number says whether the manifest's balance survived loading.
     #[test]
     fn the_shipped_placeholder_character_loads_and_has_a_life() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../characters/placeholder");
@@ -425,16 +434,28 @@ mod tests {
         let behaviors = &package.character.behaviors;
 
         assert_eq!(package.character.name, "Blip");
-        assert!(
-            behaviors.values().any(|behavior| behavior.weight > 0),
-            "the Static Director has something to pick"
+        assert_eq!(
+            behaviors.get("greet").map(|behavior| behavior.weight),
+            Some(2),
+            "the declared balance is Blip's, not the default one"
         );
-        assert!(
-            behaviors
-                .values()
-                .any(|behavior| behavior.trigger.is_some()),
-            "and some of it suits one moment rather than any"
-        );
+
+        let mut director = StaticDirector::new(behaviors.clone(), 1);
+        for idle in [0, 60, 300].map(Duration::from_secs) {
+            let moment = Context {
+                activity: Activity {
+                    frontmost_application: Some("Terminal".to_string()),
+                    switched: false,
+                    idle,
+                    at: UNIX_EPOCH,
+                },
+                recent: Vec::new(),
+            };
+            assert!(
+                director.propose(&moment).is_some(),
+                "Blip has something to do {idle:?} after the user stopped typing"
+            );
+        }
     }
 
     /// The files of a minimal valid package: a manifest naming one frame per
