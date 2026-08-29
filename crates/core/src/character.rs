@@ -80,6 +80,14 @@ pub const DEFAULT_FPS: u32 = 8;
 /// size of a Retina display.
 pub const MAX_FRAME_SIDE: u32 = 1024;
 
+/// The most frames an Animation may declare.
+///
+/// The bound `MAX_FRAME_SIDE` is missing half of: a frame reference costs eight
+/// bytes of manifest and buys a whole copy of the art in the renderer, so a
+/// manifest that fits the package budget can still name one frame often enough
+/// to ask for terabytes. A hand-drawn Animation is a handful of frames.
+pub const MAX_FRAMES: usize = 256;
+
 /// The fastest an Animation may declare. Past display refresh the extra frames
 /// are never seen, and a four-figure fps is either a mistake or an attempt to
 /// make the renderer thrash.
@@ -319,13 +327,23 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Declared {
                 let Some(animation) = one_name(keyword, "Animation", named, line, errors) else {
                     continue;
                 };
-                let frames: Vec<String> = value.split_whitespace().map(String::from).collect();
-                if frames.is_empty() {
+                // Counted before the frames are built, so a manifest naming
+                // millions of them is rejected without being allocated.
+                let count = value.split_whitespace().count();
+                if count == 0 {
                     errors.push(format!(
                         "line {line}: animation {animation:?} declares no frames"
                     ));
                     continue;
                 }
+                if count > MAX_FRAMES {
+                    errors.push(format!(
+                        "line {line}: animation {animation:?} declares {count} frames, \
+                         and an Animation may have at most {MAX_FRAMES}"
+                    ));
+                    continue;
+                }
+                let frames: Vec<String> = value.split_whitespace().map(String::from).collect();
                 let declaration = DeclaredAnimation {
                     line,
                     frames,
@@ -1105,6 +1123,28 @@ mod tests {
         )));
         assert_names(&twice, "idle");
         assert_names(&twice, "twice");
+    }
+
+    /// Hostile input: a frame reference is eight bytes of manifest and a whole
+    /// copy of the art in the renderer, so an unbounded frame count is a way to
+    /// hand the renderer an allocation it dies on. The bound is checked on both
+    /// sides so it cannot drift by one.
+    #[test]
+    fn an_animation_with_more_frames_than_the_bound_is_rejected_by_name() {
+        let repeat = |count: usize| {
+            format!(
+                "{}animation wave = {}\n",
+                declaring(&REQUIRED_ANIMATIONS),
+                vec!["wave-0.png"; count].join(" ")
+            )
+        };
+
+        let character = load_manifest(&repeat(MAX_FRAMES)).expect("the bound itself loads");
+        assert_eq!(character.animations["wave"].frames.len(), MAX_FRAMES);
+
+        let over = errors(load_manifest(&repeat(MAX_FRAMES + 1)));
+        assert_names(&over, "wave");
+        assert_names(&over, &format!("{} frames", MAX_FRAMES + 1));
     }
 
     #[test]
