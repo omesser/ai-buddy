@@ -39,6 +39,14 @@ function draw(now) {
   // onto a fractional grid by the compositor. ADR-0006.
   sprite.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
 
+  // The hide rules, carried on every frame rather than announced when they
+  // change: a change announced while this file was still fetching its art is a
+  // change nobody heard. Writing the same two values again costs nothing and
+  // restarts no transition. A rule sends a duration and the hotkey sends zero,
+  // so one line covers both the fade and the instant answer.
+  sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  sprite.style.opacity = latest.visible ? "1" : "0";
+
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === drawn) {
     return;
@@ -62,14 +70,6 @@ async function start() {
   await window.__TAURI__.event.listen("frame", ({ payload }) => {
     previous = latest;
     latest = { ...payload, at: performance.now() };
-  });
-
-  // The hide rules, which speak only when the answer changes. A rule sends a
-  // duration and the hotkey sends zero, so one line covers both the fade a
-  // fullscreen application gets and the instant answer a keypress gets.
-  await window.__TAURI__.event.listen("presence", ({ payload }) => {
-    sprite.style.transition = `opacity ${payload.fade_ms}ms linear`;
-    sprite.style.opacity = payload.visible ? "1" : "0";
   });
 
   requestAnimationFrame(draw);

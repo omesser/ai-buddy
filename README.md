@@ -221,7 +221,10 @@ can answer it. Run the app, then confirm:
     title bar, and the sprite stays and can still sit on that window's top edge.
     On two displays, a fullscreen application on either one takes the sprite
     away from both: what decides is the window you are working in, not the
-    screen the sprite is standing on.
+    screen the sprite is standing on. Then quit ai-buddy, go fullscreen, and
+    start it again: the sprite never appears at all, because what it must be
+    rides on every frame rather than being announced once, before the window
+    that draws it was listening.
 14. **Ordinary window switching changes nothing.** Command-Tab between
     applications, open and close windows, drag them around, switch Spaces. The
     sprite never blinks, never changes what it is in front of, and never

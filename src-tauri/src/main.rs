@@ -26,7 +26,7 @@ use ai_buddy_core::engine::{Engine, Point};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{cursor_in_window, display_for, place_sprite, SpriteRect};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
-use ai_buddy_core::visibility::{fullscreen_frontmost, Desktop, HideRules};
+use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -58,9 +58,6 @@ const OVERLAY_LABEL: &str = "overlay";
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
 
-/// The event telling the webview whether the Character is on screen.
-const PRESENCE_EVENT: &str = "presence";
-
 /// Where the sprite was last drawn, and what it was drawn as.
 ///
 /// Kept for one tick so the hit-test can ask about the sprite the user is
@@ -84,16 +81,15 @@ struct Placement {
     height: i32,
     animation: &'static str,
     frame_index: usize,
-}
-
-/// One instruction for the renderer: fade the Character to visible or gone,
-/// over this many milliseconds.
-///
-/// Sent only when the answer changes. The overlay window stays where it is and
-/// the Engine keeps running behind it, so a Character that was walking when a
-/// fullscreen application arrived is wherever it walked to when it comes back.
-#[derive(Clone, Copy, Serialize)]
-struct Presence {
+    /// Whether the hide rules have the Character on screen, and how long the
+    /// change that decided it was given.
+    ///
+    /// Carried on every frame rather than announced on the tick it changes.
+    /// The first tick fires 16ms into setup, before the webview has fetched
+    /// its art and begun listening, and Tauri buffers nothing for a listener
+    /// that is not there yet — so a Character hidden at launch would be told
+    /// to go once, to nobody, and stay on top of the fullscreen application
+    /// all session.
     visible: bool,
     fade_ms: u32,
 }
@@ -250,7 +246,7 @@ fn run_frame_loop(
             // hit-tested is the art that was last drawn. A Character nobody can
             // see is not there to be pressed, so a click where it would have
             // been reaches the window underneath and pokes nothing.
-            let visible = rules.lock().is_ok_and(|rules| rules.visible());
+            let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
             let pressed_sprite = visible
                 && drawn_last.as_ref().is_some_and(|last| {
@@ -286,32 +282,30 @@ fn run_frame_loop(
 
             let frame = engine.tick(&snapshot);
 
-            // Silent on almost every tick. The renderer is told only when the
-            // answer changes, so a fullscreen application held for an hour
-            // costs one event rather than one an Engine tick.
-            let visible = match rules.lock().map(|mut rules| rules.update(desktop)) {
-                Ok(Some(change)) => {
-                    // Unconditional, unlike the traces above, because it is
-                    // rare — a handful of lines in a session — and because
-                    // whether a rule fired is the first thing anyone checking
-                    // hiding by hand needs to know.
-                    eprintln!(
-                        "presence: {} over {}ms",
-                        if change.visible { "shown" } else { "hidden" },
-                        change.fade_ms,
-                    );
-
-                    let _ = window.emit(
-                        PRESENCE_EVENT,
-                        Presence {
-                            visible: change.visible,
-                            fade_ms: change.fade_ms,
-                        },
-                    );
-                    change.visible
-                }
-                _ => visible,
-            };
+            // The log is what is silent on almost every tick, not the
+            // renderer: only a change is worth a line, and a fullscreen
+            // application held for an hour is one of them rather than one an
+            // Engine tick.
+            let presence = rules
+                .lock()
+                .map(|mut rules| {
+                    if let Some(change) = rules.update(desktop) {
+                        // Unconditional, unlike the traces above, because it is
+                        // rare — a handful of lines in a session — and because
+                        // whether a rule fired is the first thing anyone
+                        // checking hiding by hand needs to know.
+                        eprintln!(
+                            "presence: {} over {}ms",
+                            if change.visible { "shown" } else { "hidden" },
+                            change.fade_ms,
+                        );
+                    }
+                    rules.presence()
+                })
+                .unwrap_or(Change {
+                    visible,
+                    fade_ms: 0,
+                });
 
             // The overlay covers one display and follows the Character to the
             // next. macOS gives each display its own Space and draws a window
@@ -366,6 +360,8 @@ fn run_frame_loop(
                     height,
                     animation: frame.animation,
                     frame_index: drawn.index,
+                    visible: presence.visible,
+                    fade_ms: presence.fade_ms,
                 },
             );
 
@@ -409,7 +405,7 @@ fn run_frame_loop(
             // a drag that outruns the art would otherwise put the cursor over
             // transparent pixels, hand the button to whatever is underneath,
             // and drop the sprite in the user's hand.
-            let ignore = !(visible && (over_sprite || pointer.grabbing()));
+            let ignore = !(presence.visible && (over_sprite || pointer.grabbing()));
             let flipped = ignoring != Some(ignore);
 
             // Only record the new state once the platform accepted it. Recording

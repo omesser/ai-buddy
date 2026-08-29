@@ -92,8 +92,13 @@ pub struct HideRules {
     /// application that comes and goes must not hand back a Character its
     /// owner dismissed.
     dismissed: bool,
-    /// What the overlay was last told to be.
+    /// What the overlay must be. Asked every tick rather than announced when
+    /// it changes, so a webview still loading its art when a rule fired is
+    /// told the answer on the first frame it draws.
     presence: Presence,
+    /// How long the move into that presence was given, so the answer above
+    /// arrives late with the fade that produced it rather than a fresh one.
+    fade_ms: u32,
 }
 
 impl HideRules {
@@ -119,16 +124,23 @@ impl HideRules {
             Presence::Shown
         };
 
-        (was.visible() != self.presence.visible()).then(|| Change {
-            visible: self.presence.visible(),
-            fade_ms: fade_ms(was, self.presence),
-        })
+        if was.visible() == self.presence.visible() {
+            return None;
+        }
+        self.fade_ms = fade_ms(was, self.presence);
+        Some(self.presence())
     }
 
-    /// Whether the Character is on screen. The hit-test asks: a Character
-    /// nobody can see must not swallow the click that lands where it would be.
-    pub fn visible(&self) -> bool {
-        self.presence.visible()
+    /// What the overlay must be right now, whether or not this tick changed
+    /// it. The hit-test asks — a Character nobody can see must not swallow the
+    /// click that lands where it would be — and so does every frame sent to
+    /// the renderer, because a change announced once is announced before
+    /// anybody is listening.
+    pub fn presence(&self) -> Change {
+        Change {
+            visible: self.presence.visible(),
+            fade_ms: self.fade_ms,
+        }
     }
 }
 
@@ -219,7 +231,7 @@ mod tests {
 
         assert_eq!(rules.update(Desktop::default()), None);
         assert_eq!(rules.update(Desktop::default()), None);
-        assert!(rules.visible());
+        assert!(rules.presence().visible);
     }
 
     #[test]
@@ -227,11 +239,11 @@ mod tests {
         let mut rules = HideRules::default();
 
         assert_eq!(rules.update(fullscreen()), faded_out());
-        assert!(!rules.visible());
+        assert!(!rules.presence().visible);
         assert_eq!(rules.update(fullscreen()), None, "said once, not held");
 
         assert_eq!(rules.update(Desktop::default()), faded_in());
-        assert!(rules.visible());
+        assert!(rules.presence().visible);
     }
 
     #[test]
@@ -308,7 +320,7 @@ mod tests {
             None,
             "the rule lifting does not undo the hotkey"
         );
-        assert!(!rules.visible());
+        assert!(!rules.presence().visible);
 
         rules.toggle();
         assert_eq!(
@@ -335,7 +347,7 @@ mod tests {
             None,
             "the rule still has it, so nothing on screen changed"
         );
-        assert!(!rules.visible());
+        assert!(!rules.presence().visible);
 
         assert_eq!(rules.update(Desktop::default()), faded_in());
     }
@@ -367,13 +379,72 @@ mod tests {
     #[test]
     fn a_hidden_character_is_not_there_to_be_clicked() {
         let mut rules = HideRules::default();
-        assert!(rules.visible());
+        assert!(rules.presence().visible);
 
         rules.update(do_not_disturb());
-        assert!(!rules.visible());
+        assert!(!rules.presence().visible);
 
         rules.update(Desktop::default());
-        assert!(rules.visible());
+        assert!(rules.presence().visible);
+    }
+
+    /// What the renderer is told on every tick, rather than on the tick the
+    /// answer changed. A change is announced once, and the first tick lands
+    /// before the webview has finished loading its art and started listening:
+    /// a Character hidden then would sit on top of the fullscreen application
+    /// that hid it for the rest of the session.
+    #[test]
+    fn the_rules_still_say_the_character_is_gone_long_after_the_rule_fired() {
+        let mut rules = HideRules::default();
+        assert_eq!(
+            rules.presence(),
+            Change {
+                visible: true,
+                fade_ms: 0
+            },
+            "on screen at the start, and not faded there"
+        );
+
+        for _ in 0..4 {
+            rules.update(fullscreen());
+        }
+        assert_eq!(
+            rules.presence(),
+            Change {
+                visible: false,
+                fade_ms: FADE_MS
+            }
+        );
+
+        for _ in 0..4 {
+            rules.update(Desktop::default());
+        }
+        assert_eq!(
+            rules.presence(),
+            Change {
+                visible: true,
+                fade_ms: FADE_MS
+            }
+        );
+    }
+
+    /// The standing answer carries the fade that produced it, so a Character
+    /// put away by hotkey is still put away at once on the ticks that say
+    /// nothing — the renderer must not fade in what a keypress banished.
+    #[test]
+    fn the_standing_answer_carries_the_fade_of_the_change_that_made_it() {
+        let mut rules = HideRules::default();
+        rules.toggle();
+        rules.update(Desktop::default());
+        rules.update(Desktop::default());
+
+        assert_eq!(
+            rules.presence(),
+            Change {
+                visible: false,
+                fade_ms: 0
+            }
+        );
     }
 
     fn display() -> Rect {
