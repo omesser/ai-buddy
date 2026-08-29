@@ -24,6 +24,7 @@
 // WindowSource. Screen Recording is needed only for the screenshots that
 // verify-overlay.sh takes, never for this.
 
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -32,11 +33,40 @@ var activeCount: UInt32 = 0
 CGGetActiveDisplayList(0, nil, &activeCount)
 var ids = [CGDirectDisplayID](repeating: 0, count: Int(activeCount))
 CGGetActiveDisplayList(activeCount, &ids, &activeCount)
+// The usable part of each display as well as its frame. A screen reserves
+// strips of itself for the Dock and the menu bar, and the sprite comes to rest
+// on the near edge of those rather than behind them (#39). NSScreen is the only
+// thing that will say where they are: CoreGraphics reports the Dock as a window
+// covering the whole display.
+//
+// NSScreen measures from the bottom of the main display and CoreGraphics from
+// the top, so the insets are read from NSScreen and applied to the CoreGraphics
+// frame, which is the space every other number in this file is in.
+let screens = NSScreen.screens
 for id in ids {
     let b = CGDisplayBounds(id)
+    var usable: [String: Any] = ["x": b.origin.x, "y": b.origin.y, "w": b.width, "h": b.height]
+
+    if let screen = screens.first(where: {
+        ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?
+            .uint32Value == id
+    }) {
+        let f = screen.frame
+        let v = screen.visibleFrame
+        let left = v.origin.x - f.origin.x
+        let right = (f.origin.x + f.width) - (v.origin.x + v.width)
+        let dock = v.origin.y - f.origin.y
+        let menuBar = (f.origin.y + f.height) - (v.origin.y + v.height)
+        usable = [
+            "x": b.origin.x + left, "y": b.origin.y + menuBar,
+            "w": b.width - left - right, "h": b.height - dock - menuBar,
+        ]
+    }
+
     displays.append([
         "id": Int(id), "x": b.origin.x, "y": b.origin.y,
         "w": b.width, "h": b.height,
+        "usable": usable,
     ])
 }
 

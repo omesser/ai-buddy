@@ -55,11 +55,75 @@ pub struct WindowRect {
     pub layer: i32,
 }
 
+/// The part of a display a sprite may occupy, in logical points.
+///
+/// Screens reserve strips of themselves for furniture the sprite must not
+/// disappear behind: the Dock and the menu bar on macOS, the taskbar on
+/// Windows. That reservation cannot be read from the window list — macOS
+/// reports the Dock as a window covering the whole display, so its top edge
+/// looks like the top of the screen — but every desktop platform already
+/// computes it for its own window manager, and reports it as a work area.
+///
+/// Both rectangles arrive in physical pixels, because that is how a window
+/// server measures a screen, and the Engine works in points. Dividing by the
+/// display's own scale is the whole conversion; using one display's scale for
+/// another is how a sprite ends up half a screen from where it was drawn.
+///
+/// A platform that does not report a work area reports an empty one, and gets
+/// the whole frame back. That is the correct answer rather than a degraded
+/// one: a desktop reserving nothing is a desktop the sprite may cross entirely.
+pub fn usable_frame(frame_physical: Rect, work_area_physical: Rect, scale: f64) -> Rect {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let logical = |rect: Rect| Rect {
+        x: rect.x / scale,
+        y: rect.y / scale,
+        width: rect.width / scale,
+        height: rect.height / scale,
+    };
+
+    let frame = logical(frame_physical);
+    let work = logical(work_area_physical);
+
+    // Clamped into the frame edge by edge, rather than refused whole if any
+    // edge escapes. Refusing hands back the entire display, which is bug #39
+    // returning silently, and it would take almost nothing to trigger: a
+    // fractional scale factor — macOS offers several — divides these numbers
+    // into values that need not land back exactly on the frame's own edges, and
+    // being over by one unit in the last place is enough. Clamping cannot
+    // invert the rectangle and cannot put the sprite outside its display, which
+    // are the two properties physics needs.
+    let left = work.x.max(frame.x);
+    let top = work.y.max(frame.y);
+    let right = (work.x + work.width).min(frame.x + frame.width);
+    let bottom = (work.y + work.height).min(frame.y + frame.height);
+
+    // Nothing left to stand on means the platform reported no work area at all,
+    // or one that misses its own display. The whole frame is the honest answer
+    // there: a sprite with too much room walks back, one with none has no floor.
+    if right <= left || bottom <= top {
+        return frame;
+    }
+
+    Rect {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    }
+}
+
 /// The geometry half of a `WorldSnapshot`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldGeometry {
-    /// Every active display's frame, in the same coordinate space as `windows`.
-    pub display_frames: Vec<Rect>,
+    /// The part of each active display a sprite may occupy, in the same
+    /// coordinate space as `windows`.
+    ///
+    /// Usable area rather than the whole frame, because a display reserves
+    /// strips of itself for furniture the sprite must not disappear behind —
+    /// the Dock and the menu bar on macOS, the taskbar on Windows. See
+    /// `usable_frame`. A platform that reserves nothing reports whole frames,
+    /// which is the same thing said about an emptier desktop.
+    pub usable_frames: Vec<Rect>,
     /// Visible windows in descending z-order: frontmost first.
     pub windows: Vec<WindowRect>,
 }
@@ -139,6 +203,129 @@ mod tests {
         }
     }
 
+    /// The numbers this machine reported while #39 was being written, read
+    /// back off a running app: a 1920x1080 display at scale 1 with a 30-point
+    /// menu bar and a 98-point Dock.
+    #[test]
+    fn a_reserved_strip_is_taken_off_the_frame_the_sprite_may_occupy() {
+        let usable = usable_frame(
+            rect(0.0, 0.0, 1920.0, 1080.0),
+            rect(0.0, 30.0, 1920.0, 952.0),
+            1.0,
+        );
+
+        assert_eq!(usable, rect(0.0, 30.0, 1920.0, 952.0));
+        assert_eq!(
+            usable.y + usable.height,
+            982.0,
+            "the Dock's top edge, which is where the sprite comes to rest"
+        );
+    }
+
+    /// The second display of the same machine: Retina, so every number it
+    /// reports is twice the points the Engine works in.
+    #[test]
+    fn a_displays_own_scale_is_what_converts_it() {
+        let usable = usable_frame(
+            rect(3840.0, 0.0, 3456.0, 2234.0),
+            rect(3840.0, 66.0, 3456.0, 2168.0),
+            2.0,
+        );
+
+        assert_eq!(usable, rect(1920.0, 33.0, 1728.0, 1084.0));
+        assert_eq!(
+            usable.y + usable.height,
+            1117.0,
+            "no Dock on this one, so the floor is the bottom of the display"
+        );
+    }
+
+    /// A Dock on the left or the right is a setting, not an edge case. The
+    /// sprite should meet its inner edge as a wall.
+    #[test]
+    fn a_reserved_strip_at_the_side_narrows_the_frame() {
+        let usable = usable_frame(
+            rect(0.0, 0.0, 1920.0, 1080.0),
+            rect(80.0, 30.0, 1840.0, 1050.0),
+            1.0,
+        );
+
+        assert_eq!(usable.x, 80.0, "the sprite cannot walk left of the Dock");
+        assert_eq!(usable.x + usable.width, 1920.0, "and the right edge stands");
+    }
+
+    #[test]
+    fn a_platform_that_reserves_nothing_yields_the_whole_frame() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(usable_frame(frame, frame, 1.0), frame);
+    }
+
+    /// A platform with no work area of its own — the stub, or a compositor that
+    /// will not say — must leave the sprite a display to stand on.
+    #[test]
+    fn an_unreported_work_area_yields_the_whole_frame() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(usable_frame(frame, rect(0.0, 0.0, 0.0, 0.0), 1.0), frame);
+    }
+
+    /// A work area larger than its display, or hanging off it, is a platform
+    /// contradicting itself. Clamped into the display rather than refused: the
+    /// sprite must never be handed a rectangle it can leave, and refusing would
+    /// quietly give back the whole display, which is the bug this exists to fix.
+    #[test]
+    fn a_work_area_that_escapes_its_display_is_clamped_into_it() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+
+        assert_eq!(
+            usable_frame(frame, rect(0.0, 0.0, 4000.0, 4000.0), 1.0),
+            frame,
+            "a work area swallowing the display reserves nothing"
+        );
+        assert_eq!(
+            usable_frame(frame, rect(-100.0, 30.0, 1920.0, 952.0), 1.0),
+            rect(0.0, 30.0, 1820.0, 952.0),
+            "the part off the left is cut, and the Dock inset survives"
+        );
+        assert_eq!(
+            usable_frame(frame, rect(0.0, 30.0, 1920.0, 1080.0), 1.0),
+            rect(0.0, 30.0, 1920.0, 1050.0),
+            "the part off the bottom is cut, and the menu bar inset survives"
+        );
+    }
+
+    /// The reason clamping beats refusing. A fractional scale divides these
+    /// numbers into values that need not land back on the frame's own edges,
+    /// and a rectangle over by one unit in the last place must not cost the
+    /// sprite its Dock inset.
+    #[test]
+    fn a_fractional_scale_does_not_give_the_whole_display_back() {
+        // 1.5x, which macOS offers: a 2880x1620 panel drawn as 1920x1080 points
+        // with the same 30-point menu bar and 98-point Dock.
+        let usable = usable_frame(
+            rect(0.0, 0.0, 2880.0, 1620.0),
+            rect(0.0, 45.0, 2880.0, 1428.0),
+            1.5,
+        );
+
+        assert_eq!(
+            usable.y + usable.height,
+            982.0,
+            "still the Dock's top edge, not the display's bottom at 1080"
+        );
+        assert!(
+            usable.height < 1080.0,
+            "the reservation was not thrown away"
+        );
+    }
+
+    /// A scale of zero would divide every coordinate into infinity.
+    #[test]
+    fn a_nonsensical_scale_is_treated_as_one() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+        let usable = usable_frame(frame, rect(0.0, 30.0, 1920.0, 952.0), 0.0);
+        assert_eq!(usable, rect(0.0, 30.0, 1920.0, 952.0));
+    }
+
     fn window(owner: &str, bounds: Rect) -> WindowRect {
         WindowRect {
             bounds,
@@ -149,24 +336,21 @@ mod tests {
 
     /// The Wayland case: displays are known, windows are not.
     #[test]
-    fn a_platform_without_window_geometry_yields_display_frames_and_no_windows() {
+    fn a_platform_without_window_geometry_yields_usable_frames_and_no_windows() {
         let source = FakeWindowSource {
             capabilities: Capabilities {
                 window_geometry: false,
                 absolute_positioning: false,
             },
             geometry: WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![window("Terminal", rect(10.0, 20.0, 800.0, 600.0))],
             },
         };
 
         let snapshot = source.snapshot();
 
-        assert_eq!(
-            snapshot.display_frames,
-            vec![rect(0.0, 0.0, 1920.0, 1080.0)]
-        );
+        assert_eq!(snapshot.usable_frames, vec![rect(0.0, 0.0, 1920.0, 1080.0)]);
         assert!(
             snapshot.windows.is_empty(),
             "no window_geometry capability means no rectangles: {:?}",
@@ -185,7 +369,7 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![
                     window("Terminal", rect(10.0, 20.0, 800.0, 600.0)),
                     window("Finder", rect(30.0, 40.0, 500.0, 400.0)),

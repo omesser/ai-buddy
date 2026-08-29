@@ -86,7 +86,7 @@ impl<S: WindowSource> SnapshotAssembler<S> {
 /// a Perch.
 fn world_snapshot(geometry: &WorldGeometry, cursor: Point, elapsed_ms: u32) -> WorldSnapshot {
     WorldSnapshot {
-        displays: geometry.display_frames.iter().copied().map(rect).collect(),
+        displays: geometry.usable_frames.iter().copied().map(rect).collect(),
         windows: geometry
             .windows
             .iter()
@@ -132,7 +132,7 @@ fn rect(rect: crate::window_source::Rect) -> Rect {
 /// fall reads as a fall and near enough that all of it is watched.
 pub fn starting_position(geometry: &WorldGeometry) -> Point {
     geometry
-        .display_frames
+        .usable_frames
         .first()
         .map_or(Point::default(), |display| Point {
             x: display.x + display.width / 2.0,
@@ -196,7 +196,7 @@ mod tests {
                 widths
                     .iter()
                     .map(|&width| WorldGeometry {
-                        display_frames: vec![rect(0.0, 0.0, width, 800.0)],
+                        usable_frames: vec![rect(0.0, 0.0, width, 800.0)],
                         windows: Vec::new(),
                     })
                     .collect(),
@@ -218,7 +218,7 @@ mod tests {
         fn read(&self) -> WorldGeometry {
             self.0.set(self.0.get() + 1.0);
             WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, self.0.get(), 800.0)],
+                usable_frames: vec![rect(0.0, 0.0, self.0.get(), 800.0)],
                 windows: Vec::new(),
             }
         }
@@ -244,7 +244,7 @@ mod tests {
         let source = FakeWindowSource {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![
                     window("Terminal", rect(10.0, 20.0, 800.0, 600.0)),
                     window("Finder", rect(30.0, 40.0, 500.0, 400.0)),
@@ -314,7 +314,7 @@ mod tests {
         let source = FakeWindowSource {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![
                     elevated("Control Center", rect(1264.0, 0.0, 39.0, 30.0), 25),
                     elevated("Window Server", rect(0.0, 0.0, 1920.0, 30.0), 24),
@@ -351,7 +351,7 @@ mod tests {
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![elevated("Window Server", rect(0.0, 0.0, 1920.0, 30.0), 24)],
             },
         });
@@ -369,6 +369,89 @@ mod tests {
         );
     }
 
+    /// #39: the sprite used to come to rest at the bottom of the display, which
+    /// is behind the Dock — the Dock draws above the overlay, so three quarters
+    /// of the art disappeared under it. Nothing in the window list can say where
+    /// the Dock's top edge is, because macOS reports the Dock as a window
+    /// covering the whole display. The fix is upstream of the Engine: the
+    /// rectangles it is handed are the usable part of each display, so the floor
+    /// it already derives is the Dock's top edge.
+    #[test]
+    fn a_sprite_comes_to_rest_on_the_usable_floor_rather_than_behind_the_dock() {
+        // A 1920x1080 display reserving 30 points for the menu bar and 98 for
+        // the Dock, which is what this machine reported.
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: WorldGeometry {
+                usable_frames: vec![rect(0.0, 30.0, 1920.0, 952.0)],
+                windows: Vec::new(),
+            },
+        });
+        let mut engine = Engine::new(Point { x: 960.0, y: 40.0 });
+
+        let landed = (0..100)
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .last()
+            .expect("a hundred ticks produce a hundred frames");
+
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(
+            landed.position.y, 982.0,
+            "the Dock's top edge, not the display's bottom edge at 1080"
+        );
+    }
+
+    /// #39 asked for this to be asserted rather than assumed: a Dock that hides
+    /// gives its strip back, and the sprite resting on it is standing on
+    /// nothing. Nothing new was needed to make it work — resting is only ever
+    /// resting on something, and the Engine re-derives that every tick — but a
+    /// sprite left hanging in the air is the failure nobody would notice until
+    /// they saw it.
+    #[test]
+    fn a_reservation_that_disappears_drops_the_sprite_that_was_resting_on_it() {
+        let dock = || WorldGeometry {
+            usable_frames: vec![rect(0.0, 30.0, 1920.0, 952.0)],
+            windows: Vec::new(),
+        };
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: dock(),
+        });
+        let mut engine = Engine::new(Point { x: 960.0, y: 40.0 });
+
+        let resting = (0..100)
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .last()
+            .expect("a hundred ticks produce a hundred frames");
+        assert_eq!(resting.position.y, 982.0, "on the Dock");
+        assert_eq!(resting.state, State::Grounded);
+
+        // The Dock hides, so the display is usable to its bottom edge.
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: WorldGeometry {
+                usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
+                windows: Vec::new(),
+            },
+        });
+
+        let first = engine.tick(&assembler.assemble(20, Point::default()));
+        assert_eq!(
+            first.state,
+            State::Falling,
+            "the strip it was standing on is gone, so it is in the air"
+        );
+
+        let landed = (0..100)
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .last()
+            .expect("a hundred ticks produce a hundred frames");
+        assert_eq!(
+            landed.position.y, 1080.0,
+            "and falls the rest of the way to the bottom of the display"
+        );
+    }
+
     /// A slept machine or a suspended process hands the loop minutes of wall
     /// clock at once.
     #[test]
@@ -376,7 +459,7 @@ mod tests {
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
-                display_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
+                usable_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
                 windows: Vec::new(),
             },
         });
@@ -423,7 +506,7 @@ mod tests {
     #[test]
     fn a_sprite_ticked_from_a_platforms_geometry_lands_on_that_desktops_window() {
         let desktop = WorldGeometry {
-            display_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
+            usable_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
             // Spans the middle of the display, so the sprite starts above it.
             windows: vec![window("Terminal", rect(400.0, 500.0, 300.0, 200.0))],
         };

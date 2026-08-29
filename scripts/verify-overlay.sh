@@ -138,29 +138,6 @@ swift scripts/inspect-window.swift > "$OUT/window.json" 2> "$OUT/window.err" ||
     cat "$OUT/window.err"
   }
 
-# A tight crop around the sprite, with padding, so the edges of the art can be
-# eyeballed against whatever is behind them. A full-desktop grab is too big to
-# judge transparency from. Taken now, while the sprite is perched in the open:
-# where it ends up at rest is the bottom of the screen, and the Dock sits at a
-# higher window level than the overlay and covers it there.
-python3 - "$OUT" << 'PY'
-import json, re, subprocess, sys
-
-out = sys.argv[1]
-log = open(f"{out}/app.log").read()
-windows = json.load(open(f"{out}/window.json"))["windows"]
-size = re.search(r"sprite (\d+)x(\d+)", log)
-at = re.findall(r"^frame: \S+ Perched \S+ sprite\((-?\d+),(-?\d+)\)", log, re.M)
-
-if windows and size and at:
-    width, height = (int(g) for g in size.groups())
-    x, y = (int(g) for g in at[-1])
-    pad = 40
-    region = (f"{windows[0]['x'] + x - pad},{windows[0]['y'] + y - pad},"
-              f"{width + pad * 2},{height + pad * 2}")
-    subprocess.run(["screencapture", "-x", "-R", region, f"{out}/sprite.png"], check=False)
-PY
-
 PERCH_LINES=$(grep -c '^{' "$OUT/perch.log")
 for _ in $(seq 1 40); do
   [ "$(grep -c '^{' "$OUT/perch.log")" -gt "$PERCH_LINES" ] && break
@@ -251,9 +228,15 @@ check(all(f[2:] == tail[0][2:] for f in tail) and tail[-1][1] in ("Grounded", "P
 check(tail[-1][3] > steps[0]["y"],
       "lower than the window it had been perched on")
 
-floors = [d["y"] + d["h"] for d in displays if d["x"] <= tail[-1][2] <= d["x"] + d["w"]]
-check(any(tail[-1][3] <= floor + 1 for floor in floors),
-      "never below the bottom of the display it is over",
+# The usable floor, not the display's bottom edge. A screen reserves a strip of
+# itself for the Dock, and the sprite rests on the near edge of it rather than
+# behind it (#39). An inequality against the display bottom would pass either
+# way and so would never notice the difference; this is an equality.
+usable = [d["usable"] for d in displays]
+floors = [u["y"] + u["h"] for u in usable
+          if u["x"] <= tail[-1][2] <= u["x"] + u["w"]]
+check(any(abs(tail[-1][3] - floor) <= 1 for floor in floors),
+      "comes to rest on the usable floor rather than behind the Dock",
       "floors " + ", ".join(f"{floor:.0f}" for floor in floors))
 
 # The Dock and the menu bar are not Perches. The prop at the Dock's own window
@@ -289,6 +272,32 @@ PY
 STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
+
+# A tight crop around the sprite, with padding, so the edges of the art can be
+# eyeballed against whatever is behind them. A full-desktop grab is too big to
+# judge transparency from.
+#
+# Taken at rest rather than mid-run. It used to have to be mid-run: at rest the
+# sprite sat at the bottom of the screen, where the Dock draws over it. Now it
+# rests on the Dock (#39), so this crop is also the proof of that — the sprite
+# is whole, above the Dock, rather than three quarters buried in it.
+python3 - "$OUT" << 'PY'
+import json, re, subprocess, sys
+
+out = sys.argv[1]
+log = open(f"{out}/app.log").read()
+windows = json.load(open(f"{out}/window.json"))["windows"]
+size = re.search(r"sprite (\d+)x(\d+)", log)
+at = re.findall(r"^frame: \S+ Grounded \S+ sprite\((-?\d+),(-?\d+)\)", log, re.M)
+
+if windows and size and at:
+    width, height = (int(g) for g in size.groups())
+    x, y = (int(g) for g in at[-1])
+    pad = 40
+    region = (f"{windows[0]['x'] + x - pad},{windows[0]['y'] + y - pad},"
+              f"{width + pad * 2},{height + pad * 2}")
+    subprocess.run(["screencapture", "-x", "-R", region, f"{out}/sprite.png"], check=False)
+PY
 
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)

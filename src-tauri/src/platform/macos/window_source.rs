@@ -10,18 +10,11 @@
 use objc2::runtime::AnyObject;
 use objc2_core_foundation::{CFDictionary, CGRect};
 use objc2_core_graphics::{
-    CGDisplayBounds, CGError, CGGetActiveDisplayList, CGRectMakeWithDictionaryRepresentation,
-    CGWindowListCopyWindowInfo, CGWindowListOption,
+    CGRectMakeWithDictionaryRepresentation, CGWindowListCopyWindowInfo, CGWindowListOption,
 };
 use objc2_foundation::{ns_string, NSArray, NSDictionary, NSNumber, NSString};
 
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
-
-/// ponytail: a fixed sixteen displays, because `CGGetActiveDisplayList`
-/// truncates rather than failing and the seventeenth display would silently go
-/// missing from the physics. Call it twice — once with a null buffer for the
-/// count — if anyone ever plugs in more.
-const MAX_DISPLAYS: u32 = 16;
 
 /// The macOS window server's view of the desktop.
 pub struct MacosWindowSource {
@@ -29,19 +22,21 @@ pub struct MacosWindowSource {
     /// spans every display, so a sprite allowed to see it would find a Perch
     /// stretching across the whole desktop and never fall again.
     own_pid: i32,
+    /// Where the usable part of each display comes from.
+    ///
+    /// Supplied rather than read here, because the reserved strips are the
+    /// window manager's answer and this module only speaks to the window
+    /// server. CoreGraphics reports the Dock as a window covering the whole
+    /// display, so nothing in `CGWindowList` can say where its top edge is.
+    read_usable_frames: Box<dyn Fn() -> Vec<Rect> + Send + Sync>,
 }
 
 impl MacosWindowSource {
-    pub fn new() -> Self {
+    pub fn new(read_usable_frames: impl Fn() -> Vec<Rect> + Send + Sync + 'static) -> Self {
         Self {
             own_pid: std::process::id() as i32,
+            read_usable_frames: Box::new(read_usable_frames),
         }
-    }
-}
-
-impl Default for MacosWindowSource {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -55,33 +50,10 @@ impl WindowSource for MacosWindowSource {
 
     fn read(&self) -> WorldGeometry {
         WorldGeometry {
-            display_frames: display_frames(),
+            usable_frames: (self.read_usable_frames)(),
             windows: visible_windows(self.own_pid),
         }
     }
-}
-
-/// Every active display's frame, in the global display coordinate space.
-///
-/// `CGDisplayBounds` is in points with the origin at the top-left of the main
-/// display, which is the same space `kCGWindowBounds` uses. Asking AppKit
-/// instead would mean converting out of its bottom-left, per-screen space for
-/// no gain.
-fn display_frames() -> Vec<Rect> {
-    let mut ids = [0u32; MAX_DISPLAYS as usize];
-    let mut count = 0u32;
-
-    // SAFETY: both pointers address local storage, and `MAX_DISPLAYS` is the
-    // true capacity of `ids`.
-    let status = unsafe { CGGetActiveDisplayList(MAX_DISPLAYS, ids.as_mut_ptr(), &mut count) };
-    if status != CGError::Success {
-        return Vec::new();
-    }
-
-    ids[..count as usize]
-        .iter()
-        .map(|&id| rect(CGDisplayBounds(id)))
-        .collect()
 }
 
 /// Visible windows, frontmost first.
@@ -181,7 +153,16 @@ mod tests {
     #[test]
     #[ignore = "needs a real desktop; run by hand"]
     fn live_desktop_geometry_follows_the_real_windows() {
-        let source = MacosWindowSource::new();
+        // Displays are the window manager's answer and arrive from the Shell,
+        // so this stands one in. Windows are what this test watches.
+        let source = MacosWindowSource::new(|| {
+            vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            }]
+        });
         let start = std::time::Instant::now();
         let deadline = start + std::time::Duration::from_secs(5);
         let mut previous = None;
@@ -195,7 +176,7 @@ mod tests {
             polls += 1;
 
             assert!(
-                !geometry.display_frames.is_empty(),
+                !geometry.usable_frames.is_empty(),
                 "a real desktop has at least one display"
             );
             assert!(
@@ -207,7 +188,7 @@ mod tests {
                 println!(
                     "\nt+{:.1}s  displays: {:?}",
                     start.elapsed().as_secs_f64(),
-                    geometry.display_frames
+                    geometry.usable_frames
                 );
                 for w in &geometry.windows {
                     println!(
