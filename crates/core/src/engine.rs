@@ -58,9 +58,10 @@ pub enum Verb {
 
 /// What the Director proposed since the previous tick.
 ///
-/// The Engine only speaks the line for now. Playing the named Behavior needs
-/// the Primitives and the Character's declarations, which arrive with #8; until
-/// then an unknown name costs nothing, because nothing acts on it.
+/// The Engine speaks the line, and acts on the one Behavior name it already
+/// knows how to play (`WALK`). Playing any other needs the Primitives and the
+/// Character's declarations, which arrive with #8; until then an unrecognised
+/// name costs nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BehaviorProposal {
     pub behavior: String,
@@ -129,6 +130,18 @@ const SLEEP_AFTER_MS: u32 = 60_000;
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
 const CLIMB_SPEED: f64 = 200.0;
 
+/// Points per second the sprite walks along whatever it is standing on. A
+/// tuning knob, slower than a climb: hauling yourself up an edge is urgent and
+/// strolling along a title bar is not.
+const WALK_SPEED: f64 = 120.0;
+
+/// The one Behavior name the Engine acts on, until #8 gives it the Primitives a
+/// Behavior is made of. The Director decides that the sprite walks; the Engine
+/// only knows how — so a Character that declares no Behavior by this name is
+/// one a Director can never set walking, which is why the placeholder declares
+/// one.
+const WALK: &str = "walk";
+
 /// Points per second squared. A tuning knob: the number that makes a fall read
 /// as heavy rather than floaty is found by watching it, not by deriving it.
 const GRAVITY: f64 = 1800.0;
@@ -137,7 +150,7 @@ pub struct Engine {
     position: Point,
     velocity: Point,
     state: State,
-    /// Milliseconds the sprite has rested untouched.
+    /// Milliseconds the sprite has spent on its feet, untouched.
     idle_ms: u32,
     animation: &'static str,
     /// Milliseconds since the current Animation started.
@@ -148,6 +161,9 @@ pub struct Engine {
     /// falling or perched, and giving it a State would mean deciding what it
     /// resumes as.
     reacting_ms: u32,
+    /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
+    /// and the Primitive carries none, so it goes the way it was last heading.
+    facing: f64,
 }
 
 impl Engine {
@@ -161,6 +177,7 @@ impl Engine {
             animation: animation_for(State::Falling),
             animation_ms: 0,
             reacting_ms: 0,
+            facing: 1.0,
         }
     }
 
@@ -218,6 +235,18 @@ impl Engine {
             self.state = State::Falling;
         }
 
+        // Walking is the Engine's, deciding to walk is not: nothing else here
+        // moves the sprite of its own accord. A walk needs no ending — it lasts
+        // until the sprite runs out of Perch, which is the whole point of it.
+        if matches!(self.state, State::Grounded | State::Perched)
+            && snapshot
+                .proposal
+                .as_ref()
+                .is_some_and(|proposal| proposal.behavior == WALK)
+        {
+            self.velocity.x = self.facing * WALK_SPEED;
+        }
+
         match self.state {
             State::Falling => {
                 self.velocity.y += GRAVITY * dt;
@@ -255,21 +284,41 @@ impl Engine {
                 }
             }
             // Resting is only ever resting on something. When that something
-            // moves, closes or resizes, the sprite is in the air again.
+            // moves, closes or resizes — or when the sprite walks off the end
+            // of it — the sprite is in the air again, carrying whatever speed
+            // it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
-                if support_below(self.position, snapshot).map(|s| s.y) != Some(self.position.y) {
-                    self.state = State::Falling;
-                } else if self.idle_ms >= SLEEP_AFTER_MS {
-                    self.state = State::Asleep;
+                self.position.x += self.velocity.x * dt;
+
+                match footing(self.position, snapshot) {
+                    Some(footing) if footing.y < self.position.y => {
+                        self.position.y = footing.y;
+                        self.state = footing.state;
+                    }
+                    Some(footing) if footing.y == self.position.y => {
+                        // Still moving is still awake. A walk proposed just
+                        // before the timer comes due would otherwise leave the
+                        // sprite gliding along the edge playing `sleep`.
+                        if self.idle_ms >= SLEEP_AFTER_MS && self.velocity.x == 0.0 {
+                            self.state = State::Asleep;
+                        }
+                    }
+                    _ => self.state = State::Falling,
                 }
             }
             State::Dragged => {}
+        }
+
+        if self.velocity.x != 0.0 {
+            self.facing = self.velocity.x.signum();
         }
 
         // Reacting is drawn over whatever the sprite is doing, so a Poke shows
         // even mid-fall. It changes nothing about where the sprite is.
         let animation = if self.reacting_ms > 0 {
             "react"
+        } else if self.is_walking() {
+            "walk"
         } else {
             animation_for(self.state)
         };
@@ -291,6 +340,11 @@ impl Engine {
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
         }
+    }
+
+    /// Under way on foot, rather than in the air with the same speed on it.
+    fn is_walking(&self) -> bool {
+        matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
     }
 }
 
@@ -344,6 +398,39 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
             state: State::Perched,
         })
         .chain(floor)
+        .min_by(|a, b| a.y.total_cmp(&b.y))
+}
+
+/// What a resting sprite is standing on: the surface below it, unless a window
+/// has come to contain it.
+///
+/// A window dragged over the sprite, or walked into where it overlaps a lower
+/// Perch, would otherwise leave it inside a rectangle rather than on anything.
+/// Its top edge is the surface instead, which is also why two overlapping
+/// windows settle on one Perch: the topmost edge wins, and it wins again next
+/// tick.
+///
+/// A sprite on the floor is exempt. The floor is under every window and the
+/// sprite is drawn in front of them all, so standing on the ground in front of
+/// a window is not the trapped-inside case DESIGN.md decision 7 is about — and
+/// every window hanging below the usable floor, as anything behind the Dock
+/// does, contains the ground the sprite stands on.
+fn footing(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
+    if floor_under(position.x, snapshot) == Some(position.y) {
+        return support_below(position, snapshot);
+    }
+
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| {
+            window.spans_x(position.x) && window.y < position.y && position.y < window.bottom()
+        })
+        .map(|window| Support {
+            y: window.y,
+            state: State::Perched,
+        })
+        .chain(support_below(position, snapshot))
         .min_by(|a, b| a.y.total_cmp(&b.y))
 }
 
@@ -873,6 +960,208 @@ mod tests {
         );
     }
 
+    /// A window wide enough to walk along, with its top edge at y=400.
+    fn a_long_perch() -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![Rect {
+                x: 100.0,
+                y: 400.0,
+                width: 800.0,
+                height: 200.0,
+            }],
+            ..snapshot(100)
+        }
+    }
+
+    /// The Director asking for a walk. Until #8 can play the Primitives a
+    /// Behavior names, this name is the one the Engine acts on.
+    fn walk() -> Option<BehaviorProposal> {
+        Some(BehaviorProposal {
+            behavior: "walk".to_string(),
+            dialogue: None,
+        })
+    }
+
+    #[test]
+    fn the_sprite_walks_along_a_window_top_edge() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        let perched = settle(&mut engine, &a_long_perch());
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.x, 200.0, "it landed where it fell");
+
+        let setting_off = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        assert_eq!(setting_off.animation, "walk");
+        assert!(
+            setting_off.position.x > 200.0,
+            "it sets off: {setting_off:?}"
+        );
+
+        let carrying_on = engine.tick(&a_long_perch());
+        assert_eq!(carrying_on.state, State::Perched, "still on the edge");
+        assert_eq!(carrying_on.position.y, 400.0, "and at its height");
+        assert!(
+            carrying_on.position.x > setting_off.position.x,
+            "and keeps going without being told again: {carrying_on:?}"
+        );
+    }
+
+    /// Both ends, because a walk that only ever goes one way would leave the
+    /// other end untested. Which way it goes is the way it was already
+    /// heading, so the throw that puts it on the Perch also aims the walk.
+    #[test]
+    fn the_sprite_walks_off_either_end_of_a_perch() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        let off_the_right = walked_off(&mut engine);
+        assert!(
+            off_the_right.position.x > 900.0,
+            "past the window's right edge: {off_the_right:?}"
+        );
+        assert_eq!(off_the_right.state, State::Grounded);
+        assert_eq!(off_the_right.position.y, 800.0, "down on the floor");
+
+        // Thrown back onto the Perch leftwards, so it walks off the other end.
+        let mut engine = Engine::new(Point { x: 800.0, y: 100.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 800.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..a_long_perch()
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: -300.0, y: 0.0 },
+            }],
+            ..a_long_perch()
+        });
+        let perched = settle(&mut engine, &a_long_perch());
+        assert_eq!(perched.state, State::Perched, "back on it: {perched:?}");
+
+        let off_the_left = walked_off(&mut engine);
+        assert!(
+            off_the_left.position.x < 100.0,
+            "past the window's left edge: {off_the_left:?}"
+        );
+        assert_eq!(off_the_left.state, State::Grounded);
+        assert_eq!(off_the_left.position.y, 800.0);
+    }
+
+    /// Told to walk once, then left alone until it comes to rest again.
+    fn walked_off(engine: &mut Engine) -> Frame {
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        (0..200)
+            .map(|_| engine.tick(&a_long_perch()))
+            .last()
+            .expect("two hundred ticks produce two hundred frames")
+    }
+
+    /// #5: a walk under way keeps the sprite awake. Nodding off is for a sprite
+    /// that has been left alone, and a Director prodding an idle sprite into a
+    /// walk is exactly when the sleep timer is about to come due.
+    #[test]
+    fn a_walking_sprite_does_not_nod_off_mid_stride() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        // Poked, then left alone until it is one tick short of nodding off.
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        });
+        let nearly_asleep = engine.tick(&WorldSnapshot {
+            elapsed_ms: SLEEP_AFTER_MS - 100,
+            ..a_long_perch()
+        });
+        assert_eq!(nearly_asleep.state, State::Perched, "not asleep yet");
+
+        // The tick the timer comes due is the tick it sets off walking.
+        let setting_off = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let strolling: Vec<Frame> = (0..20).map(|_| engine.tick(&a_long_perch())).collect();
+
+        assert_eq!(setting_off.animation, "walk", "{setting_off:?}");
+        assert!(
+            strolling
+                .iter()
+                .all(|frame| frame.state == State::Perched && frame.animation == "walk"),
+            "it walks the edge awake rather than sleeping its way along it: {strolling:?}"
+        );
+    }
+
+    /// #5, and DESIGN.md decision 7: the bad case is a sprite trapped inside an
+    /// occluded window, not a sprite standing on the ground in front of one.
+    /// Windows routinely hang below the usable floor — anything behind the Dock
+    /// does — and the floor is under everything, so being within one is the
+    /// normal state of a sprite standing on the ground.
+    #[test]
+    fn a_window_over_the_floor_leaves_the_sprite_standing_on_it() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+        let grounded = settle(&mut engine, &snapshot(100));
+        assert_eq!(grounded.state, State::Grounded);
+        assert_eq!(grounded.position.y, 800.0, "the usable floor");
+
+        // A window is dragged over it, hanging below the usable floor.
+        let covered = WorldSnapshot {
+            windows: vec![Rect {
+                x: 0.0,
+                y: 100.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            ..snapshot(100)
+        };
+        let frames: Vec<Frame> = (0..10).map(|_| engine.tick(&covered)).collect();
+        assert!(
+            frames
+                .iter()
+                .all(|frame| frame.position == grounded.position && frame.state == State::Grounded),
+            "it stays on the ground rather than flying up to the title bar: {frames:?}"
+        );
+    }
+
+    /// The other half of what makes a window the sprite's footing: it has to
+    /// have come to contain it. A window floating clear above the Perch is not
+    /// something the sprite is inside, so it is not something to be lifted onto.
+    #[test]
+    fn a_window_floating_above_the_perch_is_not_footing() {
+        let world = || WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 0.0,
+                    y: 100.0,
+                    width: 1000.0,
+                    height: 150.0,
+                },
+                Rect {
+                    x: 0.0,
+                    y: 400.0,
+                    width: 1000.0,
+                    height: 200.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 300.0 });
+
+        let perched = settle(&mut engine, &world());
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0, "the edge below it");
+
+        let frames: Vec<Frame> = (0..10).map(|_| engine.tick(&world())).collect();
+        assert!(
+            frames.iter().all(|frame| frame.position.y == 400.0),
+            "and it stays there rather than being hoisted to the one above: {frames:?}"
+        );
+    }
+
     #[test]
     fn the_sprite_perches_on_a_window_top_edge_and_falls_when_the_window_goes() {
         let window = WorldSnapshot {
@@ -897,6 +1186,187 @@ mod tests {
         let landed = settle(&mut engine, &snapshot(100));
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0);
+    }
+
+    /// The sibling of the window closing: the window is still there, it has
+    /// simply been dragged elsewhere. Nothing but its position changes, so a
+    /// rule written against the window list rather than against what is under
+    /// the sprite would keep it standing on thin air.
+    #[test]
+    fn the_sprite_falls_when_its_perch_moves_out_from_under_it() {
+        let window = |x: f64| WorldSnapshot {
+            windows: vec![Rect {
+                x,
+                y: 400.0,
+                width: 300.0,
+                height: 200.0,
+            }],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+
+        let perched = settle(&mut engine, &window(50.0));
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0);
+
+        // The same window, dragged out from under it rather than closed.
+        let dropped = engine.tick(&window(600.0));
+        assert_eq!(dropped.state, State::Falling);
+
+        let landed = settle(&mut engine, &window(600.0));
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(landed.position.y, 800.0, "down to the floor it left");
+    }
+
+    /// Strictly inside: a top edge is a Perch to stand on, not somewhere the
+    /// sprite has been swallowed.
+    fn inside_a_window(position: Point, snapshot: &WorldSnapshot) -> bool {
+        snapshot.windows.iter().any(|window| {
+            position.x > window.x
+                && position.x < window.x + window.width
+                && position.y > window.y
+                && position.y < window.bottom()
+        })
+    }
+
+    /// #5: the sprite is never left inside a window rectangle. The overlay is
+    /// always on top, so a sprite standing inside one is not hidden by it — it
+    /// is drawn floating in the middle of the window, sitting on nothing.
+    #[test]
+    fn a_window_dragged_over_the_sprite_lifts_it_onto_its_edge() {
+        let perch = Rect {
+            x: 0.0,
+            y: 400.0,
+            width: 1000.0,
+            height: 200.0,
+        };
+        let resting = WorldSnapshot {
+            windows: vec![perch],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+        assert_eq!(settle(&mut engine, &resting).position.y, 400.0);
+
+        // A second window is dragged over it, swallowing the edge it stands on.
+        let covered = WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 200.0,
+                    y: 200.0,
+                    width: 800.0,
+                    height: 400.0,
+                },
+                perch,
+            ],
+            ..snapshot(100)
+        };
+        let lifted = engine.tick(&covered);
+        assert_eq!(
+            lifted.position.y, 200.0,
+            "up onto the new top edge: {lifted:?}"
+        );
+        assert_eq!(lifted.state, State::Perched);
+        assert!(!inside_a_window(lifted.position, &covered));
+    }
+
+    /// The same rule met by walking rather than by a window moving: the sprite
+    /// strolls along one edge into the middle of a window that overlaps it.
+    #[test]
+    fn a_walk_under_an_overlapping_window_steps_up_onto_it() {
+        let overlapping = || WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 500.0,
+                    y: 250.0,
+                    width: 500.0,
+                    height: 400.0,
+                },
+                Rect {
+                    x: 0.0,
+                    y: 400.0,
+                    width: 1000.0,
+                    height: 200.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        assert_eq!(settle(&mut engine, &overlapping()).position.y, 400.0);
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..overlapping()
+        });
+        let walked: Vec<Frame> = (0..40).map(|_| engine.tick(&overlapping())).collect();
+
+        assert!(
+            walked.iter().any(|frame| frame.position.y == 250.0),
+            "it steps up onto the window it walked under: {walked:?}"
+        );
+        assert!(
+            walked
+                .iter()
+                .filter(|frame| matches!(
+                    frame.state,
+                    State::Grounded | State::Perched | State::Asleep
+                ))
+                .all(|frame| !inside_a_window(frame.position, &overlapping())),
+            "and never comes to rest inside one: {walked:?}"
+        );
+    }
+
+    /// Two windows overlapping in x, the upper one hanging below the usable
+    /// floor as a window behind the Dock does.
+    fn overlapping_windows() -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 0.0,
+                    y: 300.0,
+                    width: 600.0,
+                    height: 600.0,
+                },
+                Rect {
+                    x: 200.0,
+                    y: 500.0,
+                    width: 600.0,
+                    height: 300.0,
+                },
+            ],
+            ..snapshot(100)
+        }
+    }
+
+    /// #5: overlapping windows resolve to one Perch and stay there. Two edges
+    /// under one sprite is the arrangement that would have it flicking between
+    /// them, one per tick, for as long as both windows are open.
+    #[test]
+    fn overlapping_windows_resolve_to_one_perch_without_jitter() {
+        let mut engine = Engine::new(Point { x: 400.0, y: 0.0 });
+        let falling: Vec<Frame> = (0..40)
+            .map(|_| engine.tick(&overlapping_windows()))
+            .collect();
+        let landed = falling.last().expect("forty ticks produce forty frames");
+
+        assert_eq!(landed.state, State::Perched);
+        assert_eq!(landed.position.y, 300.0, "the upper of the two edges");
+        assert!(
+            falling.iter().all(|frame| frame.position.y <= 300.0),
+            "and it never fell past that edge to the lower one: {falling:?}"
+        );
+
+        let settled: Vec<(Point, State)> = (0..20)
+            .map(|_| {
+                let frame = engine.tick(&overlapping_windows());
+                (frame.position, frame.state)
+            })
+            .collect();
+        assert!(
+            settled
+                .iter()
+                .all(|resting| *resting == (landed.position, landed.state)),
+            "it sits still rather than flicking between them: {settled:?}"
+        );
     }
 
     #[test]

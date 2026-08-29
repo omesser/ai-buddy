@@ -201,6 +201,13 @@ it. Sides and bottoms are ignored entirely. That is most of the perceived
 aliveness for a fraction of the collision work, and it avoids the bad cases —
 sprite trapped inside an occluded window, jitter where windows overlap.
 
+A bottom edge is read for one thing and it is not collision: telling whether a
+window has come to contain a resting sprite — dragged over it, or walked into
+where two windows overlap — in which case the sprite steps up onto that
+window's top edge rather than being left standing inside a rectangle. The floor
+is exempt, because every window behind the Dock hangs below it and a sprite on
+the ground in front of a window is not trapped in anything.
+
 The verb set is fixed at five: **Grab**, **Throw**, **Poke**, **Menu**,
 **Summon**. Every verb is a tax on every Character that will ever exist, so
 additions wait for v2.
