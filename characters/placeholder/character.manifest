@@ -34,6 +34,7 @@ loop react = once
 behavior greet = react talk then settle
 behavior settle = sit sleep
 
-# The one Behavior the Engine can already play, so a Director has something to
-# propose that visibly moves the sprite before #8 gives the rest playback.
+# The one Behavior that moves the sprite anywhere, so a Director has something
+# to propose beyond expression. The name is the Director's handle on it; what
+# walks is the `walk` Primitive inside.
 behavior walk = walk

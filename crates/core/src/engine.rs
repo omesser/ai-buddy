@@ -148,13 +148,6 @@ const CLIMB_SPEED: f64 = 200.0;
 /// strolling along a title bar is not.
 const WALK_SPEED: f64 = 120.0;
 
-/// The one Behavior name the Engine acts on, until #8 gives it the Primitives a
-/// Behavior is made of. The Director decides that the sprite walks; the Engine
-/// only knows how — so a Character that declares no Behavior by this name is
-/// one a Director can never set walking, which is why the placeholder declares
-/// one.
-const WALK: &str = "walk";
-
 /// Points per second squared. A tuning knob: the number that makes a fall read
 /// as heavy rather than floaty is found by watching it, not by deriving it.
 const GRAVITY: f64 = 1800.0;
@@ -268,16 +261,30 @@ impl Engine {
             self.state = State::Falling;
         }
 
+        // A proposal is advisory, so a Behavior this Character does not declare
+        // is refused rather than reported, and refusing it interrupts nothing.
+        //
+        // Before the sprite is moved, because `Walk` moves it: a Behavior
+        // proposed this tick sets off this tick rather than standing still for
+        // one, which at 60Hz is the difference between a walk and a stutter.
+        if let Some(proposal) = &snapshot.proposal {
+            if let Some(primitives) = self.chain(&proposal.behavior) {
+                started |= self.play(&primitives);
+            }
+        }
+
         // Walking is the Engine's, deciding to walk is not: nothing else here
         // moves the sprite of its own accord. A walk needs no ending — it lasts
-        // until the sprite runs out of Perch, which is the whole point of it.
-        if matches!(self.state, State::Grounded | State::Perched)
-            && snapshot
-                .proposal
-                .as_ref()
-                .is_some_and(|proposal| proposal.behavior == WALK)
-        {
-            self.velocity.x = self.facing * WALK_SPEED;
+        // until the sprite runs out of Perch, which is the whole point of it —
+        // so the velocity holds once the Behavior is over. What does end it is
+        // the next Primitive of the same Behavior, or a sprite sitting down
+        // would slide along the edge it sat on.
+        if matches!(self.state, State::Grounded | State::Perched) {
+            match self.playing.last() {
+                Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
+                Some(_) => self.velocity.x = 0.0,
+                None => {}
+            }
         }
 
         match self.state {
@@ -365,14 +372,6 @@ impl Engine {
         // A wake with nothing under it still falls, and still lands, later.
         if landed && !woke {
             started |= self.play(&[Primitive::Land]);
-        }
-
-        // A proposal is advisory, so a Behavior this Character does not declare
-        // is refused rather than reported, and refusing it interrupts nothing.
-        if let Some(proposal) = &snapshot.proposal {
-            if let Some(primitives) = self.chain(&proposal.behavior) {
-                started |= self.play(&primitives);
-            }
         }
 
         // A Poke is answered, whatever else is going on. Being prodded is the
@@ -830,9 +829,16 @@ mod tests {
     }
 
     /// The Behaviors the placeholder Character declares: a greeting that chains
-    /// into settling down.
+    /// into settling down, and a stroll.
     fn declared_behaviors() -> BTreeMap<String, Behavior> {
         BTreeMap::from([
+            (
+                "walk".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Walk],
+                    then: None,
+                },
+            ),
             (
                 "greet".to_string(),
                 Behavior {
@@ -1564,8 +1570,8 @@ mod tests {
         }
     }
 
-    /// The Director asking for a walk. Until #8 can play the Primitives a
-    /// Behavior names, this name is the one the Engine acts on.
+    /// The Director asking for a walk, by the name the placeholder Character
+    /// declares for a Behavior of one `walk` Primitive.
     fn walk() -> Option<BehaviorProposal> {
         Some(BehaviorProposal {
             behavior: "walk".to_string(),
@@ -1573,9 +1579,71 @@ mod tests {
         })
     }
 
+    /// The Primitive is what walks, not the name over it. A Character is free to
+    /// call a stroll anything, and a Director that proposes one gets a sprite
+    /// that moves — which is what makes `walk` a Primitive rather than a name
+    /// the Engine keeps a list of.
+    #[test]
+    fn a_walk_is_the_primitive_that_reaches_the_screen_and_not_the_behaviors_name() {
+        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 }).with_behaviors(BTreeMap::from([
+            (
+                "amble".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::React, Primitive::Walk],
+                    then: None,
+                },
+            ),
+            (
+                // Named for the walk it is not: a Character that declares this
+                // has declared sitting down, whatever the Director reads into
+                // the name.
+                "walk".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Sit],
+                    then: None,
+                },
+            ),
+        ]));
+        settle(&mut engine, &a_long_perch());
+
+        let reacting = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "amble".to_string(),
+                dialogue: None,
+            }),
+            ..a_long_perch()
+        });
+        assert_eq!(reacting.animation, "react");
+        assert_eq!(
+            reacting.position.x, 200.0,
+            "the Behavior opens on a Primitive that does not move it"
+        );
+
+        let strolling = (0..12)
+            .map(|_| engine.tick(&a_long_perch()))
+            .last()
+            .unwrap();
+        assert_eq!(strolling.animation, "walk");
+        assert!(
+            strolling.position.x > 200.0,
+            "and sets off once the walk comes up: {strolling:?}"
+        );
+
+        let sitting = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        assert_eq!(sitting.animation, "sit");
+        assert_eq!(
+            sitting.velocity.x, 0.0,
+            "a Behavior called walk that does not walk stops the one under way"
+        );
+    }
+
     #[test]
     fn the_sprite_walks_along_a_window_top_edge() {
-        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        let mut engine =
+            Engine::new(Point { x: 200.0, y: 0.0 }).with_behaviors(declared_behaviors());
         let perched = settle(&mut engine, &a_long_perch());
         assert_eq!(perched.state, State::Perched);
         assert_eq!(perched.position.x, 200.0, "it landed where it fell");
@@ -1604,7 +1672,8 @@ mod tests {
     /// heading, so the throw that puts it on the Perch also aims the walk.
     #[test]
     fn the_sprite_walks_off_either_end_of_a_perch() {
-        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        let mut engine =
+            Engine::new(Point { x: 200.0, y: 0.0 }).with_behaviors(declared_behaviors());
         settle(&mut engine, &a_long_perch());
 
         let off_the_right = walked_off(&mut engine);
@@ -1616,7 +1685,8 @@ mod tests {
         assert_eq!(off_the_right.position.y, 800.0, "down on the floor");
 
         // Thrown back onto the Perch leftwards, so it walks off the other end.
-        let mut engine = Engine::new(Point { x: 800.0, y: 100.0 });
+        let mut engine =
+            Engine::new(Point { x: 800.0, y: 100.0 }).with_behaviors(declared_behaviors());
         engine.tick(&WorldSnapshot {
             cursor: Point { x: 800.0, y: 100.0 },
             verbs: vec![Verb::Grab],
@@ -1657,7 +1727,8 @@ mod tests {
     /// walk is exactly when the sleep timer is about to come due.
     #[test]
     fn a_walking_sprite_does_not_nod_off_mid_stride() {
-        let mut engine = Engine::new(Point { x: 200.0, y: 0.0 });
+        let mut engine =
+            Engine::new(Point { x: 200.0, y: 0.0 }).with_behaviors(declared_behaviors());
         settle(&mut engine, &a_long_perch());
 
         // Poked, then left alone until it is one tick short of nodding off.
@@ -2007,7 +2078,8 @@ mod tests {
             ],
             ..snapshot(100)
         };
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
         assert_eq!(settle(&mut engine, &overlapping()).position.y, 400.0);
 
         engine.tick(&WorldSnapshot {
