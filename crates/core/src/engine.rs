@@ -1041,6 +1041,36 @@ mod tests {
         assert_eq!(landed.position.y, 800.0);
     }
 
+    /// The sibling of the window closing: the window is still there, it has
+    /// simply been dragged elsewhere. Nothing but its position changes, so a
+    /// rule written against the window list rather than against what is under
+    /// the sprite would keep it standing on thin air.
+    #[test]
+    fn the_sprite_falls_when_its_perch_moves_out_from_under_it() {
+        let window = |x: f64| WorldSnapshot {
+            windows: vec![Rect {
+                x,
+                y: 400.0,
+                width: 300.0,
+                height: 200.0,
+            }],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+
+        let perched = settle(&mut engine, &window(50.0));
+        assert_eq!(perched.state, State::Perched);
+        assert_eq!(perched.position.y, 400.0);
+
+        // The same window, dragged out from under it rather than closed.
+        let dropped = engine.tick(&window(600.0));
+        assert_eq!(dropped.state, State::Falling);
+
+        let landed = settle(&mut engine, &window(600.0));
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(landed.position.y, 800.0, "down to the floor it left");
+    }
+
     #[test]
     fn a_grab_takes_the_sprite_over_and_letting_go_drops_it() {
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
