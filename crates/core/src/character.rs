@@ -65,6 +65,15 @@ pub const REQUIRED_ANIMATIONS: [&str; 8] = [
 /// sensing context under prose. Generous enough for a paragraph of personality.
 pub const PERSONALITY_LIMIT: usize = 2000;
 
+/// How large a Character Manifest may be, in bytes.
+///
+/// A bound rather than a preference, and the same kind of bound as
+/// `MAX_FRAME_SIDE`: every declaration the loader reads costs an error String
+/// when it is malformed, so a manifest of junk lines that compresses to
+/// kilobytes in the archive spends gigabytes being rejected. Generous for a
+/// file that is one short line per Animation and Behavior.
+pub const MANIFEST_LIMIT: usize = 1024 * 1024;
+
 /// Frames per second an Animation plays at when it does not say.
 ///
 /// Eight is the cadence the Engine already runs every Animation at, so a
@@ -199,7 +208,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     let mut errors = Vec::new();
 
     // Nothing else in the package means anything without the Character
-    // Manifest, so these two are the only rejections reported on their own.
+    // Manifest, so these are the only rejections reported on their own.
     let Some(bytes) = package.get(CHARACTER_MANIFEST_FILE) else {
         return Err(vec![format!(
             "the package contains no {CHARACTER_MANIFEST_FILE}"
@@ -208,6 +217,12 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     let Ok(manifest) = std::str::from_utf8(bytes) else {
         return Err(vec![format!("{CHARACTER_MANIFEST_FILE} is not UTF-8 text")]);
     };
+    if manifest.len() > MANIFEST_LIMIT {
+        return Err(vec![format!(
+            "{CHARACTER_MANIFEST_FILE} is {} bytes, over the {MANIFEST_LIMIT}-byte limit",
+            manifest.len()
+        )]);
+    }
 
     let declared = parse(manifest, &mut errors);
 
@@ -994,6 +1009,24 @@ mod tests {
             errors,
             vec!["character.manifest is not UTF-8 text".to_string()],
             "the author is told the file is not text, not merely that it is at fault"
+        );
+    }
+
+    /// Hostile input: a manifest that is megabytes of junk lines. Every line
+    /// the loader cannot read costs an error String, so a manifest read
+    /// whatever its size answers a small package with gigabytes of rejection.
+    #[test]
+    fn a_character_manifest_over_the_limit_is_rejected_by_size() {
+        let manifest = "z\n".repeat(MANIFEST_LIMIT);
+
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![format!(
+                "character.manifest is {} bytes, over the {MANIFEST_LIMIT}-byte limit",
+                manifest.len()
+            )],
+            "the manifest is refused by size, not read line by line"
         );
     }
 
