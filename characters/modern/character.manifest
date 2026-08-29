@@ -1,0 +1,39 @@
+# Nim, the modern pixel-art Character: a palette larger than sixteen colours,
+# shaded on a ramp lit from the upper left, a translucent contact shadow, and
+# enough in-between frames that the motion eases rather than steps.
+# Regenerate the frames with scripts/make-shipped-characters.py.
+
+name = Nim
+
+animation idle = frames/idle-0.png frames/idle-1.png frames/idle-2.png frames/idle-3.png frames/idle-4.png frames/idle-5.png
+animation walk = frames/walk-0.png frames/walk-1.png frames/walk-2.png frames/walk-3.png frames/walk-4.png frames/walk-5.png frames/walk-6.png frames/walk-7.png
+animation fall = frames/fall-0.png frames/fall-1.png frames/fall-2.png
+animation land = frames/land-0.png frames/land-1.png frames/land-2.png frames/land-3.png
+animation sit = frames/sit-0.png frames/sit-1.png frames/sit-2.png frames/sit-3.png
+animation sleep = frames/sleep-0.png frames/sleep-1.png frames/sleep-2.png frames/sleep-3.png
+animation react = frames/react-0.png frames/react-1.png frames/react-2.png frames/react-3.png frames/react-4.png
+animation talk = frames/talk-0.png frames/talk-1.png frames/talk-2.png frames/talk-3.png frames/talk-4.png frames/talk-5.png
+
+# Twice Chip's frames everywhere, played fast enough that the in-betweens are
+# seen rather than sat through. Sleep is the exception: a breath that slow is
+# the point of it.
+fps idle = 8
+fps walk = 12
+fps fall = 8
+fps land = 12
+fps sit = 8
+fps sleep = 3
+fps react = 12
+fps talk = 10
+
+loop land = once
+loop react = once
+
+# Nim comes to rest. Every Behavior here but the walk ends sitting or asleep,
+# which is the whole difference between living with Nim and living with Chip.
+behavior walk = walk
+behavior doze = sit sleep
+behavior amble = walk sit then doze
+behavior stretch = idle sit then doze
+behavior mumble = talk sit
+behavior greet = react talk then doze
