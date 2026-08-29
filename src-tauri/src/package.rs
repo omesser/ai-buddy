@@ -383,8 +383,13 @@ fn strip_single_root(files: PackageBytes) -> PackageBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
+
+    use crate::cast::Cast;
 
     /// A 2x2 RGBA PNG, which is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
@@ -713,6 +718,156 @@ mod tests {
             vec![characters.join("blip"), characters.join("mochi.zip")],
             "a directory and an archive count; a loose file does not, \
              and a search path that is not there is not an error"
+        );
+    }
+
+    /// A Character Package this repository ships, by its directory name.
+    fn shipped(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../characters")
+            .join(name)
+    }
+
+    fn shipped_character(name: &str) -> Character {
+        read(&shipped(name))
+            .unwrap_or_else(|why| panic!("{why}"))
+            .character
+    }
+
+    /// Every Animation one of a Character's Behaviors puts on screen, played
+    /// through the Engine that will play it for real rather than read off the
+    /// manifest: what a Behavior does is what the Engine makes of it.
+    fn played(character: &Character, behavior: &str) -> BTreeSet<&'static str> {
+        let ground = WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(character.behaviors.clone());
+
+        // On its feet first: every Primitive but expression is refused in
+        // mid-air, so a sprite still falling would refuse the lot.
+        for _ in 0..40 {
+            engine.tick(&ground);
+        }
+
+        let proposed = WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: behavior.to_string(),
+                dialogue: None,
+            }),
+            ..ground.clone()
+        };
+        let mut seen = BTreeSet::from([engine.tick(&proposed).animation]);
+        // Six seconds: longer than the longest chain either Character declares,
+        // and short of the walls a walk would otherwise reach.
+        for _ in 0..60 {
+            seen.insert(engine.tick(&ground).animation);
+        }
+        seen
+    }
+
+    /// #9's first criterion. The same `read` a user's own package goes
+    /// through, told nothing about which Character it is opening.
+    #[test]
+    fn both_shipped_characters_load_through_the_same_loader() {
+        for (directory, name) in [("win95", "Chip"), ("modern", "Nim")] {
+            let package = read(&shipped(directory)).unwrap_or_else(|why| panic!("{why}"));
+            assert_eq!(package.character.name, name);
+            assert!(
+                package.character.behaviors.contains_key("walk"),
+                "{name} declares the one Behavior the Engine acts on itself, \
+                 or no Director could ever set it walking"
+            );
+
+            let cast = Cast::new(package, crate::ALPHA_THRESHOLD)
+                .unwrap_or_else(|why| panic!("{name}'s art resolves: {why}"));
+            for animation in character::REQUIRED_ANIMATIONS {
+                assert!(
+                    cast.draw(animation, 0).is_some(),
+                    "{name} draws its {animation:?} animation"
+                );
+            }
+        }
+    }
+
+    /// #9's fourth criterion. Primitives are the Engine's and the eight
+    /// Animations are required, so this can only fail by one Character
+    /// reaching for something the other has not got — which is the whole
+    /// reason the required set is required.
+    #[test]
+    fn neither_shipped_character_needs_a_primitive_the_other_cannot_use() {
+        let chip = shipped_character("win95");
+        let nim = shipped_character("modern");
+
+        for (theirs, mine) in [(&chip, &nim), (&nim, &chip)] {
+            for behavior in mine.behaviors.keys() {
+                for animation in played(mine, behavior) {
+                    assert!(
+                        theirs.animations.contains_key(animation),
+                        "{:?} plays {animation:?} in {behavior:?}, which {:?} cannot draw",
+                        mine.name,
+                        theirs.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// #9's third criterion, which is about the Behaviors and not the drawing:
+    /// Chip is never off its feet and Nim always ends up on its side, so a
+    /// Director choosing among what each declares gives two different lives.
+    #[test]
+    fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
+        let chip = shipped_character("win95");
+        for behavior in chip.behaviors.keys() {
+            let seen = played(&chip, behavior);
+            assert!(
+                !seen.contains("sit") && !seen.contains("sleep"),
+                "Chip settles down in {behavior:?}: {seen:?}"
+            );
+        }
+
+        let nim = shipped_character("modern");
+        for behavior in nim.behaviors.keys().filter(|name| *name != "walk") {
+            let seen = played(&nim, behavior);
+            assert!(
+                seen.contains("sit") || seen.contains("sleep"),
+                "Nim never comes to rest in {behavior:?}: {seen:?}"
+            );
+        }
+    }
+
+    /// The failure mode #9 names: one Character shipped twice with the palette
+    /// swapped. Frame counts are read off the art rather than declared, so a
+    /// manifest cannot claim in-between frames the drawing has not got.
+    #[test]
+    fn the_two_shipped_characters_are_not_one_character_twice() {
+        let chip = read(&shipped("win95")).expect("Chip is a valid package");
+        let nim = read(&shipped("modern")).expect("Nim is a valid package");
+
+        for animation in character::REQUIRED_ANIMATIONS {
+            let (hard, smooth) = (
+                chip.character.animations[animation].frames.len(),
+                nim.character.animations[animation].frames.len(),
+            );
+            assert!(
+                smooth > hard,
+                "{animation:?} is {smooth} frames of Nim against {hard} of Chip, \
+                 and the modern Character is the one that eases"
+            );
+        }
+
+        let chip_art: BTreeSet<&Vec<u8>> = chip.files.values().collect();
+        assert!(
+            nim.files.values().all(|file| !chip_art.contains(file)),
+            "no file is shipped in both packages"
         );
     }
 }
