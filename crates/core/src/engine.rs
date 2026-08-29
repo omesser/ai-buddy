@@ -287,10 +287,17 @@ impl Engine {
             State::Grounded | State::Perched | State::Asleep => {
                 self.position.x += self.velocity.x * dt;
 
-                if support_below(self.position, snapshot).map(|s| s.y) != Some(self.position.y) {
-                    self.state = State::Falling;
-                } else if self.idle_ms >= SLEEP_AFTER_MS {
-                    self.state = State::Asleep;
+                match footing(self.position, snapshot) {
+                    Some(footing) if footing.y < self.position.y => {
+                        self.position.y = footing.y;
+                        self.state = footing.state;
+                    }
+                    Some(footing) if footing.y == self.position.y => {
+                        if self.idle_ms >= SLEEP_AFTER_MS {
+                            self.state = State::Asleep;
+                        }
+                    }
+                    _ => self.state = State::Falling,
                 }
             }
             State::Dragged => {}
@@ -385,6 +392,29 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
             state: State::Perched,
         })
         .chain(floor)
+        .min_by(|a, b| a.y.total_cmp(&b.y))
+}
+
+/// What a resting sprite is standing on: the surface below it, unless a window
+/// has come to contain it.
+///
+/// A window dragged over the sprite, or walked into where it overlaps a lower
+/// Perch, would otherwise leave it inside a rectangle rather than on anything.
+/// Its top edge is the surface instead, which is also why two overlapping
+/// windows settle on one Perch: the topmost edge wins, and it wins again next
+/// tick.
+fn footing(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| {
+            window.spans_x(position.x) && window.y < position.y && position.y < window.bottom()
+        })
+        .map(|window| Support {
+            y: window.y,
+            state: State::Perched,
+        })
+        .chain(support_below(position, snapshot))
         .min_by(|a, b| a.y.total_cmp(&b.y))
 }
 
@@ -1069,6 +1099,157 @@ mod tests {
         let landed = settle(&mut engine, &window(600.0));
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0, "down to the floor it left");
+    }
+
+    /// Strictly inside: a top edge is a Perch to stand on, not somewhere the
+    /// sprite has been swallowed.
+    fn inside_a_window(position: Point, snapshot: &WorldSnapshot) -> bool {
+        snapshot.windows.iter().any(|window| {
+            position.x > window.x
+                && position.x < window.x + window.width
+                && position.y > window.y
+                && position.y < window.bottom()
+        })
+    }
+
+    /// #5: the sprite is never left inside a window rectangle. The overlay is
+    /// always on top, so a sprite standing inside one is not hidden by it — it
+    /// is drawn floating in the middle of the window, sitting on nothing.
+    #[test]
+    fn a_window_dragged_over_the_sprite_lifts_it_onto_its_edge() {
+        let perch = Rect {
+            x: 0.0,
+            y: 400.0,
+            width: 1000.0,
+            height: 200.0,
+        };
+        let resting = WorldSnapshot {
+            windows: vec![perch],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+        assert_eq!(settle(&mut engine, &resting).position.y, 400.0);
+
+        // A second window is dragged over it, swallowing the edge it stands on.
+        let covered = WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 200.0,
+                    y: 200.0,
+                    width: 800.0,
+                    height: 400.0,
+                },
+                perch,
+            ],
+            ..snapshot(100)
+        };
+        let lifted = engine.tick(&covered);
+        assert_eq!(
+            lifted.position.y, 200.0,
+            "up onto the new top edge: {lifted:?}"
+        );
+        assert_eq!(lifted.state, State::Perched);
+        assert!(!inside_a_window(lifted.position, &covered));
+    }
+
+    /// The same rule met by walking rather than by a window moving: the sprite
+    /// strolls along one edge into the middle of a window that overlaps it.
+    #[test]
+    fn a_walk_under_an_overlapping_window_steps_up_onto_it() {
+        let overlapping = || WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 500.0,
+                    y: 250.0,
+                    width: 500.0,
+                    height: 400.0,
+                },
+                Rect {
+                    x: 0.0,
+                    y: 400.0,
+                    width: 1000.0,
+                    height: 200.0,
+                },
+            ],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        assert_eq!(settle(&mut engine, &overlapping()).position.y, 400.0);
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..overlapping()
+        });
+        let walked: Vec<Frame> = (0..40).map(|_| engine.tick(&overlapping())).collect();
+
+        assert!(
+            walked.iter().any(|frame| frame.position.y == 250.0),
+            "it steps up onto the window it walked under: {walked:?}"
+        );
+        assert!(
+            walked
+                .iter()
+                .filter(|frame| matches!(
+                    frame.state,
+                    State::Grounded | State::Perched | State::Asleep
+                ))
+                .all(|frame| !inside_a_window(frame.position, &overlapping())),
+            "and never comes to rest inside one: {walked:?}"
+        );
+    }
+
+    /// Two windows overlapping in x, the upper one hanging below the usable
+    /// floor as a window behind the Dock does.
+    fn overlapping_windows() -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![
+                Rect {
+                    x: 0.0,
+                    y: 300.0,
+                    width: 600.0,
+                    height: 600.0,
+                },
+                Rect {
+                    x: 200.0,
+                    y: 500.0,
+                    width: 600.0,
+                    height: 300.0,
+                },
+            ],
+            ..snapshot(100)
+        }
+    }
+
+    /// #5: overlapping windows resolve to one Perch and stay there. Two edges
+    /// under one sprite is the arrangement that would have it flicking between
+    /// them, one per tick, for as long as both windows are open.
+    #[test]
+    fn overlapping_windows_resolve_to_one_perch_without_jitter() {
+        let mut engine = Engine::new(Point { x: 400.0, y: 0.0 });
+        let falling: Vec<Frame> = (0..40)
+            .map(|_| engine.tick(&overlapping_windows()))
+            .collect();
+        let landed = falling.last().expect("forty ticks produce forty frames");
+
+        assert_eq!(landed.state, State::Perched);
+        assert_eq!(landed.position.y, 300.0, "the upper of the two edges");
+        assert!(
+            falling.iter().all(|frame| frame.position.y <= 300.0),
+            "and it never fell past that edge to the lower one: {falling:?}"
+        );
+
+        let settled: Vec<(Point, State)> = (0..20)
+            .map(|_| {
+                let frame = engine.tick(&overlapping_windows());
+                (frame.position, frame.state)
+            })
+            .collect();
+        assert!(
+            settled
+                .iter()
+                .all(|resting| *resting == (landed.position, landed.state)),
+            "it sits still rather than flicking between them: {settled:?}"
+        );
     }
 
     #[test]
