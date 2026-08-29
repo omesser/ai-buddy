@@ -52,8 +52,9 @@ fi
 # ---------------------------------------------------------------------------
 # A Perch to aim the sprite at.
 #
-# The sprite starts in the middle of the first display and falls, so a window
-# whose top edge is below that point is something it can land on. It has to
+# The sprite starts in the middle of the usable part of the first display and
+# falls, so a window whose top edge is below that point is something it can
+# land on. It has to
 # exist before the app does: the fall takes under a second, and a window that
 # arrives afterwards is above the sprite, which is not a surface from below.
 # ---------------------------------------------------------------------------
@@ -66,13 +67,38 @@ swift scripts/inspect-window.swift > "$OUT/desktop.json" 2> "$OUT/desktop.err" |
 RECTS=$(
   python3 - "$OUT/desktop.json" << 'PY'
 import json, sys
-d = json.load(open(sys.argv[1]))["displays"][0]
-# The Perch: 200 points below where the sprite starts, and 400 wide around it,
-# so the sprite is over the window and has somewhere to fall from.
-print(int(d["x"] + d["w"] / 2 - 200), int(d["y"] + d["h"] / 2 + 200), 400, 240)
+
+# Where the app puts the sprite, computed the way the app computes it:
+# `snapshot::starting_position` takes the middle of the *usable* frame of the
+# first display. Usable, not the whole frame, so the menu bar's height and the
+# Dock's edge and size shift this start point, and props measured from the
+# frame's centre instead would sit at a different distance from the sprite on
+# every desktop. First display, because tao's `available_monitors` and this
+# script's inspector both enumerate `CGGetActiveDisplayList`, which reports the
+# main display first.
+u = json.load(open(sys.argv[1]))["displays"][0]["usable"]
+sprite_x = u["x"] + u["w"] / 2
+sprite_y = u["y"] + u["h"] / 2
+
+# Every offset below is a fraction of the room between the sprite and the floor
+# rather than a fixed number of points. A fixed drop is calibrated to one
+# display's height and one Dock: on a shorter screen it puts a prop's top edge
+# past the bottom, where macOS refuses to place a titled window, so the prop
+# never steps and a working frame loop reads as broken.
+#
+# What is left assumed: that the room below the sprite is deep enough for the
+# Perch to step down 80 points and stay on screen, which needs a usable height
+# of roughly 350 points. Every display macOS runs on clears that.
+room = u["h"] / 2
+width = min(400.0, u["w"])
+left = int(sprite_x - width / 2)
+
+# The Perch: halfway from the sprite to the floor, and wide enough around the
+# sprite that it is over the window and has somewhere to fall from.
+print(left, int(sprite_y + room / 2), int(width), 240)
 # The furniture: between the sprite's start and that Perch, so the sprite falls
 # through it on the way down and the trace says whether it stopped.
-print(int(d["x"] + d["w"] / 2 - 200), int(d["y"] + d["h"] / 2 + 60), 400, 120)
+print(left, int(sprite_y + room / 6), int(width), 120)
 PY
 )
 PERCH_RECT=$(echo "$RECTS" | sed -n 1p)
@@ -338,10 +364,14 @@ check(w["layer"] == 3, "floating window level", f"layer={w['layer']}")
 # frame loop moves it to whichever display the Character is on, and the origin
 # has to match too — a window covering the right area of the wrong display is
 # the same disappearance.
+#
+# Any match, not exactly one: mirrored displays report the same rectangle, and
+# two matches there is one answer said twice rather than a window spanning two
+# screens. What rules a union out is the equality itself.
 covered = [d for d in displays
            if (w["x"], w["y"], w["w"], w["h"]) == (d["x"], d["y"], d["w"], d["h"])]
-check(len(covered) == 1,
-      "window covers exactly one display",
+check(bool(covered),
+      "window covers one whole display and no more",
       f"{w['w']:.0f}x{w['h']:.0f} at ({w['x']:.0f},{w['y']:.0f})")
 
 ls = open(f"{out}/lsappinfo.txt").read()
