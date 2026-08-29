@@ -37,6 +37,51 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Find what this run changed
+        id: changed
+        # A pull request that edits only Markdown was installing Rust, apt and a
+        # cargo cache to run tests nothing in its diff could reach. #54, #63,
+        # #67 and #68 each paid for a two-platform build to check prose.
+        #
+        # `files_ignore` is an allowlist of what is not code, rather than a list
+        # of the extensions that are: a file type nobody anticipated counts as
+        # code until someone says otherwise. That makes this workflow code too,
+        # so a change to the detection cannot switch itself off.
+        #
+        # Pinned to a commit rather than a tag, which the other actions here are
+        # not. This one was compromised in March 2025 (CVE-2025-30066): its tags
+        # were repointed at a commit that wrote runner memory, secrets included,
+        # into the build log. A tag is a moving target and a commit is not.
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files_ignore: |
+            **/*.md
+            LICENSE
+
+      - name: Decide whether this run touches code
+        id: changes
+        # One path reaches `code=false`: a pull request where the action ran
+        # and every changed file was ignored. Everything else runs in full,
+        # because a wasted minute costs far less than a check that quietly
+        # stopped running.
+        #
+        # That covers an action that breaks, since the step above is
+        # `continue-on-error` and its outcome is checked here. It also covers
+        # workflow_dispatch, which is asked for deliberately, and push to main,
+        # where the merged state is what ships and is verified once.
+        env:
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
+        run: |
+          code=true
+          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
+            [ "${{ github.event_name }}" = pull_request ]; then
+            code=false
+          fi
+          echo "touches code: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -50,14 +95,17 @@ jobs:
         # here depends on the module-syntax detection that only newer releases
         # do unflagged. Named anyway, so the dependency is visible rather than
         # inherited from whatever the runner image happens to carry.
+        if: steps.changes.outputs.code == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 'lts/*'
 
       - name: Install Rust
+        if: steps.changes.outputs.code == 'true'
         run: rustup toolchain install stable --profile minimal --component clippy
 
       - name: Cache cargo build
+        if: steps.changes.outputs.code == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
@@ -82,6 +130,7 @@ jobs:
         # spend the budget, the query answers 403 at random, and the job dies.
         # GITHUB_TOKEN reads a public repository's releases and lifts the limit
         # into the thousands.
+        if: steps.changes.outputs.code == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -110,7 +159,7 @@ jobs:
         # macOS only. Linux gets shellcheck from the apt step below, because two
         # steps calling apt meant two `apt-get update` runs a few seconds apart,
         # and the second one refreshes lists that are already current.
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
         run: brew install shellcheck
 
       - name: Install the Linux system packages
@@ -122,7 +171,7 @@ jobs:
         # dpkg unpacking the WebKit headers, which a cache would still have to
         # do, and restoring a /usr tree out from under dpkg trades a reliable
         # install for an unreliable one.
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -152,9 +201,18 @@ jobs:
           key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit
-        # No SKIP list. The hooks that need macOS test uname themselves and exit
-        # cleanly elsewhere, printing why — pre-commit has no platform key, and a
-        # SKIP list here would hide that from anyone running the hooks locally.
+        # The one step that runs hooks of every kind, so a docs-only run cannot
+        # simply be skipped: the whitespace, encoding, YAML/JSON/TOML and
+        # codespell hooks are exactly what such a change needs checking against.
+        # SKIP takes only the hooks whose toolchain the steps above just
+        # declined to install, so what drops out is what could not have run.
+        #
+        # Still no SKIP list by platform. The hooks that need macOS test uname
+        # themselves and exit cleanly elsewhere, printing why — pre-commit has
+        # no platform key, and naming them here would hide that from anyone
+        # running the hooks locally.
+        env:
+          SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy-core,cargo-clippy-shell,shfmt,shellcheck' || '' }}
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
@@ -165,6 +223,7 @@ jobs:
         # --target all, not the host: a dependency behind
         # [target.'cfg(target_os = "macos")'.dependencies] is invisible to a
         # host-only tree, which is exactly how it would come back.
+        if: steps.changes.outputs.code == 'true'
         run: |
           tree=$(cargo tree -p ai-buddy-core --target all)
           if echo "$tree" | grep -qE '\b(tauri|objc2)'; then
@@ -174,6 +233,7 @@ jobs:
       - name: Rust tests
         # --doc as well as --all-targets: --all-targets excludes doctests, so a
         # `///` example would otherwise never run anywhere.
+        if: steps.changes.outputs.code == 'true'
         run: |
           cargo test --all-targets
           cargo test --doc
@@ -188,6 +248,7 @@ jobs:
         # An explicit glob, not `--test tests/`: Node 24 reads a bare directory
         # as a test file and fails with MODULE_NOT_FOUND, where Node 20 recursed
         # into it. Naming the files leaves nothing for a release to reinterpret.
+        if: steps.changes.outputs.code == 'true'
         run: node --test tests/*.test.js
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
