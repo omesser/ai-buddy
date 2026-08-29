@@ -258,8 +258,14 @@ effect. Its contract:
 - Input: a `WorldSnapshot` carrying display frames, Perch-eligible window rectangles in
   descending z-order, cursor position, pending interaction verbs, elapsed time since the
   previous tick, and any Behavior proposal delivered since the last tick.
-- Output: a `Frame` carrying sprite position and velocity, current State, current
-  animation identifier and frame index, and optional dialogue.
+- Output: a `Frame` carrying sprite position and velocity, current State, the current
+  animation identifier with how long that Animation has been playing, and optional
+  dialogue.
+
+Which frame of that Animation is on screen is not the Engine's to say. Selecting a frame
+needs the fps and the loop mode, and a Character Manifest declares both per Animation.
+The Engine reports the elapsed play time it does own, and `Animation::frame_at` maps that
+onto an index.
 
 The Engine performs no I/O, holds no timers, and reads no clock. Time enters only as
 elapsed milliseconds on the snapshot. This makes every physics and behavior property
