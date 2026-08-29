@@ -54,6 +54,16 @@ pub enum Verb {
     Throw { velocity: Point },
     /// A click on the sprite.
     Poke,
+    /// A right-click on the sprite. Opens the same menu the tray icon opens,
+    /// which #18 owns; until it exists the verb is accepted and shows nothing.
+    Menu,
+    /// A double-click on the sprite. Opens the chat surface, which is #17;
+    /// until it exists the verb is accepted and shows nothing.
+    ///
+    /// Accepted now rather than added later because the verb set is fixed at
+    /// five: every verb is a tax on every Character that will ever exist, and a
+    /// sixth would mean a ninth Required Animation.
+    Summon,
 }
 
 /// What the Director proposed since the previous tick.
@@ -772,6 +782,71 @@ mod tests {
             first, second,
             "and the order the verbs arrive in changes nothing"
         );
+    }
+
+    /// #6: a Grab overrides any State. The hand is the one input that outranks
+    /// everything else the sprite might be doing — asleep, perched, halfway up
+    /// a screen edge — because a companion you cannot pick up whenever you like
+    /// is furniture.
+    #[test]
+    fn a_grab_takes_the_sprite_out_of_whatever_state_it_was_in() {
+        let day = a_day_in_the_life();
+
+        for state in [
+            State::Grounded,
+            State::Falling,
+            State::Dragged,
+            State::Perched,
+            State::Climbing,
+            State::Asleep,
+        ] {
+            // Replay the day only as far as the first tick in this State, so
+            // the Grab lands on a sprite that is genuinely in it.
+            let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+            assert!(
+                day.iter().any(|s| engine.tick(s).state == state),
+                "{state:?} is never reached, so the Grab is untested from it"
+            );
+
+            let grabbed = engine.tick(&WorldSnapshot {
+                cursor: Point { x: 640.0, y: 360.0 },
+                verbs: vec![Verb::Grab],
+                ..snapshot(100)
+            });
+
+            assert_eq!(grabbed.state, State::Dragged, "grabbed while {state:?}");
+            assert_eq!(grabbed.position, Point { x: 640.0, y: 360.0 });
+        }
+    }
+
+    /// #6 fixes the verb set at five so no Character ever has to grow another
+    /// Animation for a sixth. Summon opens the chat surface (#17) and Menu opens
+    /// the tray's menu (#18); neither exists, so both are accepted and show
+    /// nothing. They are still the user reaching for the sprite, so a sleeping
+    /// one wakes — an interaction that left it snoring would read as ignored.
+    #[test]
+    fn a_summon_or_a_menu_wakes_the_sprite_without_moving_it() {
+        for verb in [Verb::Summon, Verb::Menu] {
+            let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+            let resting = settle(&mut engine, &snapshot(100));
+            assert_eq!(resting.state, State::Grounded);
+
+            // A full minute of nobody touching it.
+            assert_eq!(engine.tick(&snapshot(60_000)).state, State::Asleep);
+
+            let addressed = engine.tick(&WorldSnapshot {
+                cursor: Point { x: 900.0, y: 700.0 },
+                verbs: vec![verb],
+                ..snapshot(100)
+            });
+
+            assert_eq!(addressed.state, State::Grounded, "awake, after {verb:?}");
+            assert_eq!(
+                addressed.position, resting.position,
+                "{verb:?} does not walk the sprite to the cursor"
+            );
+            assert_eq!(addressed.animation, "idle", "and nothing is played for it");
+        }
     }
 
     /// #6: a Director proposal arriving during a Grab is deferred or dropped,

@@ -17,8 +17,10 @@ or closes, and it stands on the Dock rather than behind it. It can be clicked,
 picked up, dragged and thrown. It is a real Character Package on disk, and its
 Animations play at the speeds its Character Manifest declares. Startup stops if
 no package loads, because a companion with no Character has nothing to be. There
-is no Director and no Functional Layer yet, and right-clicking does nothing —
-the menu it opens is the tray's, which arrives with #18.
+is no Director and no Functional Layer yet: double-clicking it is a Summon the
+Engine accepts and nothing answers, because the chat surface it opens arrives
+with #17, and right-clicking does nothing at all — the menu it opens is the
+tray's, which arrives with #18.
 
 The Engine drives six of the eight required Animations today. `idle`, `walk`,
 `fall`, `sit` and `sleep` each answer a State; `fall` covers being dragged as
@@ -183,11 +185,14 @@ can answer it. Run the app, then confirm:
 11. **A flick throws it.** Drag and release while still moving and it leaves
     your hand on an arc. Hold still for a moment before releasing and it drops
     straight down instead, which is how you put it down rather than throw it.
+12. **It can be put down over the Dock, and does not stay there.** Drag it down
+    over the Dock — it follows the cursor the whole way, because a held sprite
+    goes where your hand goes. Let go and it settles back onto the Dock's top
+    edge, fully visible.
 
 The sprite starts in the middle of the first display and goes wherever gravity
-and your windows take it from there — its position is the Engine's, and until
-Grab lands there is no way to place it by hand. To watch it react, move or close
-the window it is sitting on.
+and your windows take it from there, or wherever you put it. To watch it fall
+without touching it, move or close the window it is sitting on.
 
 ## Character Packages
 

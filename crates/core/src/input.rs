@@ -10,6 +10,10 @@
 //! Deciding immediately would make every click yank the sprite to the cursor
 //! and drop it, which is the difference between a companion you can prod and
 //! one you cannot touch without moving.
+//!
+//! Four of the five verbs are decided here. Menu is not: #18 owns the menu
+//! itself and the tray icon that has to open the same one, so the right-click
+//! that opens it arrives with them rather than ahead of them.
 
 use crate::engine::{Point, Verb};
 
@@ -24,6 +28,14 @@ const DRAG_THRESHOLD: f64 = 4.0;
 /// A tuning knob, and the other half of the same decision: pressing and
 /// holding is how you pick something up when you do not want to move it yet.
 const DRAG_DELAY_MS: u32 = 180;
+
+/// How close together two clicks must be to count as one double-click, in
+/// milliseconds.
+///
+/// A tuning knob, near the macOS default. Long enough for a deliberate
+/// double-click with an ordinary hand, short enough that prodding the sprite
+/// twice because it was fun stays two Pokes.
+const DOUBLE_CLICK_MS: u32 = 400;
 
 /// How fast the hand must still be moving for a release to be a Throw, in
 /// points per second.
@@ -76,6 +88,13 @@ pub struct Pointer {
     travel_ms: u32,
     prior: Point,
     prior_ms: u32,
+    /// Since the last click, so the next one can tell a double-click from a
+    /// second prod. `u32::MAX` means there is no click to pair with.
+    since_click_ms: u32,
+    /// Whether this run of clicks has already summoned. Spending the pair
+    /// alone would only re-arm it on the click after, so drumming on the
+    /// sprite would open a chat surface every second click.
+    summoned: bool,
 }
 
 impl Default for Pointer {
@@ -90,6 +109,8 @@ impl Default for Pointer {
             travel_ms: 0,
             prior: Point::default(),
             prior_ms: 0,
+            since_click_ms: u32::MAX,
+            summoned: false,
         }
     }
 }
@@ -117,6 +138,7 @@ impl Pointer {
         };
         self.cursor = Some(cursor);
         self.sample(moved, elapsed_ms);
+        self.since_click_ms = self.since_click_ms.saturating_add(elapsed_ms);
 
         let pressed = held && !self.was_held;
         self.was_held = held;
@@ -136,6 +158,8 @@ impl Pointer {
                 self.pressed_ms = self.pressed_ms.saturating_add(elapsed_ms);
                 if self.dragging_yet() {
                     self.phase = Phase::Grabbing;
+                    // A gesture between two clicks is not a double-click.
+                    self.since_click_ms = u32::MAX;
                     vec![Verb::Grab]
                 } else {
                     Vec::new()
@@ -147,9 +171,23 @@ impl Pointer {
             // own — it can fall out from under a held press — and a click that
             // landed on it is a click on it. Requiring the release to be over
             // the art as well would make a falling sprite impossible to prod.
+            //
+            // Twice in quick succession it is also a Summon. The Poke stays:
+            // swallowing the reaction to the second click while waiting to see
+            // whether a third arrives would leave the sprite looking dead for
+            // as long as it took to decide.
             (Phase::Pressed, false) => {
                 self.phase = Phase::Idle;
-                vec![Verb::Poke]
+                let paired = self.since_click_ms <= DOUBLE_CLICK_MS;
+                self.since_click_ms = 0;
+                // A gap ends the run, and the next pair may summon again.
+                self.summoned &= paired;
+                if paired && !self.summoned {
+                    self.summoned = true;
+                    vec![Verb::Poke, Verb::Summon]
+                } else {
+                    vec![Verb::Poke]
+                }
             }
 
             (Phase::Grabbing, true) => vec![Verb::Grab],
@@ -225,6 +263,98 @@ mod tests {
 
     /// A tick of the frame loop, at roughly the rate it runs.
     const TICK: u32 = 16;
+
+    /// A whole click: press and release without moving.
+    fn click(pointer: &mut Pointer) -> Vec<Verb> {
+        pointer.update(true, true, at(100.0, 100.0), TICK);
+        pointer.update(true, false, at(100.0, 100.0), TICK)
+    }
+
+    /// Waits out the double-click interval with the button up.
+    fn pause(pointer: &mut Pointer) {
+        for _ in 0..DOUBLE_CLICK_MS / TICK + 2 {
+            pointer.update(true, false, at(100.0, 100.0), TICK);
+        }
+    }
+
+    /// #6: two clicks in quick succession are a Summon, the deliberate act that
+    /// opens the chat surface.
+    ///
+    /// The second click is still a Poke. A double-click is two clicks, and
+    /// swallowing the reaction to the first would leave the sprite looking dead
+    /// for as long as it took to decide.
+    #[test]
+    fn two_quick_clicks_poke_twice_and_summon() {
+        let mut pointer = Pointer::default();
+
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+    }
+
+    /// The interval is the whole of what separates prodding the sprite twice
+    /// from asking it for the chat surface.
+    #[test]
+    fn two_clicks_further_apart_are_two_pokes() {
+        let mut pointer = Pointer::default();
+
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+        pause(&mut pointer);
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+    }
+
+    /// A pair is spent for the whole run of clicks, not re-armed by the next
+    /// one. Drumming on the sprite would otherwise open a chat surface every
+    /// second click, and #17 makes that a window each time.
+    #[test]
+    fn drumming_on_the_sprite_summons_once() {
+        let mut pointer = Pointer::default();
+
+        let drummed: Vec<Vec<Verb>> = (0..6).map(|_| click(&mut pointer)).collect();
+
+        assert_eq!(
+            drummed,
+            vec![
+                vec![Verb::Poke],
+                vec![Verb::Poke, Verb::Summon],
+                vec![Verb::Poke],
+                vec![Verb::Poke],
+                vec![Verb::Poke],
+                vec![Verb::Poke],
+            ]
+        );
+    }
+
+    /// And re-arms once the drumming stops: two clicks after a pause are a
+    /// fresh double-click, not part of the run that already summoned.
+    #[test]
+    fn a_pause_re_arms_the_double_click() {
+        let mut pointer = Pointer::default();
+        click(&mut pointer);
+        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+        click(&mut pointer);
+
+        pause(&mut pointer);
+
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+    }
+
+    /// Clicking, picking the sprite up and putting it down, then clicking again
+    /// is two clicks with a gesture between them, not a double-click.
+    #[test]
+    fn a_grab_between_two_clicks_is_not_a_double_click() {
+        let mut pointer = Pointer::default();
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+
+        pointer.update(true, true, at(100.0, 100.0), TICK);
+        assert_eq!(
+            pointer.update(true, true, at(120.0, 100.0), TICK),
+            vec![Verb::Grab]
+        );
+        pointer.update(true, false, at(120.0, 100.0), TICK);
+
+        assert_eq!(click(&mut pointer), vec![Verb::Poke]);
+    }
 
     #[test]
     fn a_click_on_the_sprite_is_a_poke_and_never_moves_it() {
