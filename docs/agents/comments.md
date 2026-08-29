@@ -1,7 +1,7 @@
 # Comments
 
-Comments say why, not what. That rule stands. This one is about length: a
-comment earns every line it takes.
+Comments should say why, not what. We strive to keep them short and informative.
+A comment earns every line it takes.
 
 ## What earns the words
 
