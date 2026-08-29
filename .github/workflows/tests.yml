@@ -37,29 +37,46 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Decide whether this run touches code
-        id: changes
-        # A pull request that edits only Markdown was installing Rust, apt and
-        # a cargo cache to run tests nothing in its diff could reach. #54, #63,
+      - name: Find what this run changed
+        id: changed
+        # A pull request that edits only Markdown was installing Rust, apt and a
+        # cargo cache to run tests nothing in its diff could reach. #54, #63,
         # #67 and #68 each paid for a two-platform build to check prose.
         #
-        # Everything below fails towards the full run. An event that carries no
-        # diff to take, a base commit the runner does not have, or a git that
-        # errors all leave code=true — a wasted minute costs far less than a
-        # check that quietly stopped running. push to main is deliberately in
-        # that set: the merged state is what ships, and it is verified once.
+        # `files_ignore` is an allowlist of what is not code, rather than a list
+        # of the extensions that are: a file type nobody anticipated counts as
+        # code until someone says otherwise. That makes this workflow code too,
+        # so a change to the detection cannot switch itself off.
         #
-        # An allowlist of what is not code, rather than a list of extensions
-        # that are: a file type nobody anticipated is code until someone says
-        # so. That makes this workflow code too, so a change to the detection
-        # cannot switch itself off.
+        # Pinned to a commit rather than a tag, which the other actions here are
+        # not. This one was compromised in March 2025 (CVE-2025-30066): its tags
+        # were repointed at a commit that wrote runner memory, secrets included,
+        # into the build log. A tag is a moving target and a commit is not.
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files_ignore: |
+            **/*.md
+            LICENSE
+
+      - name: Decide whether this run touches code
+        id: changes
+        # One path reaches `code=false`: a pull request where the action ran
+        # and every changed file was ignored. Everything else runs in full,
+        # because a wasted minute costs far less than a check that quietly
+        # stopped running.
+        #
+        # That covers an action that breaks, since the step above is
+        # `continue-on-error` and its outcome is checked here. It also covers
+        # workflow_dispatch, which is asked for deliberately, and push to main,
+        # where the merged state is what ships and is verified once.
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
         run: |
           code=true
-          if [ -n "$BASE" ] && files=$(git diff --name-only "$BASE" HEAD) &&
-            [ -n "$files" ] &&
-            ! printf '%s\n' "$files" | grep -qvE '\.md$|^LICENSE$'; then
+          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
+            [ "${{ github.event_name }}" = pull_request ]; then
             code=false
           fi
           echo "touches code: $code"
