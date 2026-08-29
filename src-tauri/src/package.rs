@@ -88,8 +88,18 @@ impl std::fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 
+/// A Character and the bytes it was loaded from.
+///
+/// The bytes are kept because a validated `Character` names its frames without
+/// carrying them: the renderer and the hit-test both need the art itself, and
+/// reading the package twice to get it would be the only alternative.
+pub struct Package {
+    pub character: Character,
+    pub files: PackageBytes,
+}
+
 /// Read a Character Package from a directory or an archive.
-pub fn read(path: &Path) -> Result<Character, ReadError> {
+pub fn read(path: &Path) -> Result<Package, ReadError> {
     let unreadable = |why: String| ReadError::Unreadable {
         path: path.to_path_buf(),
         why,
@@ -108,10 +118,13 @@ pub fn read(path: &Path) -> Result<Character, ReadError> {
         return Err(ReadError::NotAPackage(path.to_path_buf()));
     }
 
-    character::load(&files).map_err(|errors| ReadError::Rejected {
-        path: path.to_path_buf(),
-        errors,
-    })
+    match character::load(&files) {
+        Ok(character) => Ok(Package { character, files }),
+        Err(errors) => Err(ReadError::Rejected {
+            path: path.to_path_buf(),
+            errors,
+        }),
+    }
 }
 
 /// Where ai-buddy looks for Character Packages, in the order it looks.
@@ -470,9 +483,11 @@ mod tests {
     }
 
     /// The rejection, or a failure naming the Character that loaded instead.
-    fn refusal(result: Result<Character, ReadError>) -> ReadError {
+    ///
+    /// `Package` carries every byte of the art, so it is never `Debug`-printed.
+    fn refusal(result: Result<Package, ReadError>) -> ReadError {
         match result {
-            Ok(character) => panic!("expected a refusal, loaded {}", character.name),
+            Ok(package) => panic!("expected a refusal, loaded {}", package.character.name),
             Err(why) => why,
         }
     }
@@ -483,7 +498,7 @@ mod tests {
         let root = dir.join("blip");
         write_package(&root);
 
-        let character = read(&root).expect("the package is valid");
+        let character = read(&root).expect("the package is valid").character;
         assert_eq!(character.name, "Blip");
         assert_eq!(character.personality, "Blip is cheerful.");
         assert_eq!(
@@ -506,7 +521,8 @@ mod tests {
 
         let from_directory = read(&root).expect("the directory is valid");
         let from_archive = read(&archive).expect("the archive is valid");
-        assert_eq!(from_directory, from_archive);
+        assert_eq!(from_directory.character, from_archive.character);
+        assert_eq!(from_directory.files, from_archive.files);
     }
 
     /// What an author actually hands you, since Finder's Compress is why this
@@ -523,7 +539,11 @@ mod tests {
 
         let from_directory = read(&root).expect("the directory is valid");
         let from_archive = read(&archive).expect("the archive is valid");
-        assert_eq!(from_directory, from_archive);
+        assert_eq!(from_directory.character, from_archive.character);
+        assert_eq!(
+            from_directory.files, from_archive.files,
+            "the litter is dropped rather than carried as package content"
+        );
     }
 
     /// The depth bound is the one the constant names: the package root and
