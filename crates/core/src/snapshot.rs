@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use crate::engine::{Point, Rect, WorldSnapshot};
+use crate::engine::{Point, Rect, Verb, WorldSnapshot};
 use crate::window_source::{WindowSource, WorldGeometry, POLL_INTERVAL};
 
 /// The longest step of the world the Engine is ever told about, whatever the
@@ -56,7 +56,7 @@ impl<S: WindowSource> SnapshotAssembler<S> {
 
     /// One tick's snapshot: `elapsed_ms` since the previous tick, and the
     /// cursor in the Engine's coordinate space.
-    pub fn assemble(&mut self, elapsed_ms: u32, cursor: Point) -> WorldSnapshot {
+    pub fn assemble(&mut self, elapsed_ms: u32, cursor: Point, verbs: Vec<Verb>) -> WorldSnapshot {
         let elapsed_ms = elapsed_ms.min(MAX_ELAPSED_MS);
 
         // The due check comes before the tick's own time is added, and a read
@@ -69,7 +69,7 @@ impl<S: WindowSource> SnapshotAssembler<S> {
         }
         self.since_poll += Duration::from_millis(u64::from(elapsed_ms));
 
-        world_snapshot(&self.geometry, cursor, elapsed_ms)
+        world_snapshot(&self.geometry, cursor, elapsed_ms, verbs)
     }
 }
 
@@ -84,7 +84,12 @@ impl<S: WindowSource> SnapshotAssembler<S> {
 /// levels count as somewhere to stand is decided here, where the platform is
 /// still in view, and the Engine is handed a world in which every rectangle is
 /// a Perch.
-fn world_snapshot(geometry: &WorldGeometry, cursor: Point, elapsed_ms: u32) -> WorldSnapshot {
+fn world_snapshot(
+    geometry: &WorldGeometry,
+    cursor: Point,
+    elapsed_ms: u32,
+    verbs: Vec<Verb>,
+) -> WorldSnapshot {
     WorldSnapshot {
         displays: geometry.usable_frames.iter().copied().map(rect).collect(),
         windows: geometry
@@ -95,9 +100,10 @@ fn world_snapshot(geometry: &WorldGeometry, cursor: Point, elapsed_ms: u32) -> W
             .collect(),
         cursor,
         elapsed_ms,
-        // Verbs arrive with Grab (#6) and proposals with the Director (#12).
-        // Nothing produces either yet, so an empty snapshot is not a stub: it
-        // is the truth about a desktop nobody has touched the sprite on.
+        verbs,
+        // Proposals arrive with the Director (#11). Nothing produces one yet,
+        // so an empty one is not a stub: it is the truth about a Director that
+        // has not spoken.
         ..WorldSnapshot::default()
     }
 }
@@ -252,7 +258,8 @@ mod tests {
             },
         };
 
-        let snapshot = SnapshotAssembler::new(source).assemble(16, Point { x: 7.0, y: 9.0 });
+        let snapshot =
+            SnapshotAssembler::new(source).assemble(16, Point { x: 7.0, y: 9.0 }, Vec::new());
 
         assert_eq!(
             snapshot.displays,
@@ -294,7 +301,12 @@ mod tests {
 
         // 20ms ticks against a 100ms poll interval: five ticks per read.
         let widths: Vec<f64> = (0..15)
-            .map(|_| assembler.assemble(20, Point::default()).displays[0].width)
+            .map(|_| {
+                assembler
+                    .assemble(20, Point::default(), Vec::new())
+                    .displays[0]
+                    .width
+            })
             .collect();
 
         assert_eq!(
@@ -329,7 +341,7 @@ mod tests {
             },
         };
 
-        let snapshot = SnapshotAssembler::new(source).assemble(16, Point::default());
+        let snapshot = SnapshotAssembler::new(source).assemble(16, Point::default(), Vec::new());
 
         assert_eq!(
             snapshot.windows,
@@ -358,7 +370,7 @@ mod tests {
         let mut engine = Engine::new(Point { x: 960.0, y: 0.0 });
 
         let landed = (0..100)
-            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
             .last()
             .expect("a hundred ticks produce a hundred frames");
 
@@ -390,7 +402,7 @@ mod tests {
         let mut engine = Engine::new(Point { x: 960.0, y: 40.0 });
 
         let landed = (0..100)
-            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
             .last()
             .expect("a hundred ticks produce a hundred frames");
 
@@ -420,7 +432,7 @@ mod tests {
         let mut engine = Engine::new(Point { x: 960.0, y: 40.0 });
 
         let resting = (0..100)
-            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
             .last()
             .expect("a hundred ticks produce a hundred frames");
         assert_eq!(resting.position.y, 982.0, "on the Dock");
@@ -435,7 +447,7 @@ mod tests {
             },
         });
 
-        let first = engine.tick(&assembler.assemble(20, Point::default()));
+        let first = engine.tick(&assembler.assemble(20, Point::default(), Vec::new()));
         assert_eq!(
             first.state,
             State::Falling,
@@ -443,7 +455,7 @@ mod tests {
         );
 
         let landed = (0..100)
-            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
             .last()
             .expect("a hundred ticks produce a hundred frames");
         assert_eq!(
@@ -465,7 +477,7 @@ mod tests {
         });
         let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
 
-        let snapshot = assembler.assemble(300_000, Point::default());
+        let snapshot = assembler.assemble(300_000, Point::default(), Vec::new());
         assert_eq!(
             snapshot.elapsed_ms, 100,
             "no more than one poll interval of world is ever integrated at once"
@@ -491,7 +503,12 @@ mod tests {
 
         // 16ms ticks divide 100ms unevenly, which is the case that drifts.
         let reads = (0..400)
-            .map(|_| assembler.assemble(16, Point::default()).displays[0].width)
+            .map(|_| {
+                assembler
+                    .assemble(16, Point::default(), Vec::new())
+                    .displays[0]
+                    .width
+            })
             .last()
             .expect("four hundred ticks produce four hundred snapshots");
 
@@ -524,7 +541,7 @@ mod tests {
         });
 
         let landed = (0..50)
-            .map(|_| engine.tick(&assembler.assemble(20, Point::default())))
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
             .last()
             .expect("fifty ticks produce fifty frames");
 

@@ -13,16 +13,17 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, and drops when that window moves
-or closes, and it stands on the Dock rather than behind it. It is a real
-Character Package on disk, and its Animations play at
-the speeds its Character Manifest declares. Startup stops if no package loads,
-because a companion with no Character has nothing to be. There is no Director
-and no Functional Layer yet, and the sprite cannot be grabbed.
+or closes, and it stands on the Dock rather than behind it. It can be clicked,
+picked up, dragged and thrown. It is a real Character Package on disk, and its
+Animations play at the speeds its Character Manifest declares. Startup stops if
+no package loads, because a companion with no Character has nothing to be. There
+is no Director and no Functional Layer yet, and right-clicking does nothing —
+the menu it opens is the tray's, which arrives with #18.
 
-The Engine drives five of the eight required Animations today. `idle`, `walk`,
+The Engine drives six of the eight required Animations today. `idle`, `walk`,
 `fall`, `sit` and `sleep` each answer a State; `fall` covers being dragged as
-well. `land`, `react` and `talk` are events rather than States and start
-playing when Behaviors do.
+well, and `react` answers a Poke. `land` and `talk` are events rather than
+States and start playing when Behaviors do.
 
 ## Running it
 
@@ -171,6 +172,17 @@ can answer it. Run the app, then confirm:
 
    `AI_BUDDY_CHARACTERS` replaces the search paths rather than adding to them,
    so nothing installed is touched and there is nothing to put back.
+
+9. **A click makes it react.** Click the sprite once without moving the mouse.
+   It plays its `react` animation for about half a second, then goes back to
+   what it was doing. Clicking again while it reacts restarts the reaction.
+10. **Press and drag picks it up.** Press on the sprite and move. It follows the
+    cursor. Drag faster than it can follow, so the cursor leaves the art
+    entirely — it stays held. Release over a window and it lands on that
+    window's top edge.
+11. **A flick throws it.** Drag and release while still moving and it leaves
+    your hand on an arc. Hold still for a moment before releasing and it drops
+    straight down instead, which is how you put it down rather than throw it.
 
 The sprite starts in the middle of the first display and goes wherever gravity
 and your windows take it from there — its position is the Engine's, and until

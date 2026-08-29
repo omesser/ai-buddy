@@ -110,6 +110,17 @@ pub struct Frame {
     pub dialogue: Option<String>,
 }
 
+/// How long a Poke keeps the sprite reacting.
+///
+/// ponytail: one duration for every Character's reaction. A tuning knob rather
+/// than a frame count: how long the sprite stays startled is
+/// behaviour, and how many frames that fills is the Character Manifest's
+/// business. A `react` declared `loop = once` holds its last frame for the
+/// remainder, which is what being briefly startled looks like.
+///
+/// #8 replaces this when Behaviors can play an Animation and say when it ends.
+const REACT_MS: u32 = 600;
+
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
 /// knob: long enough not to nod off mid-conversation, short enough that a sprite
 /// on an unattended desktop settles down.
@@ -131,6 +142,12 @@ pub struct Engine {
     animation: &'static str,
     /// Milliseconds since the current Animation started.
     animation_ms: u32,
+    /// Milliseconds of reacting left, after a Poke.
+    ///
+    /// Not a State: reacting is something the sprite does while standing,
+    /// falling or perched, and giving it a State would mean deciding what it
+    /// resumes as.
+    reacting_ms: u32,
 }
 
 impl Engine {
@@ -143,6 +160,7 @@ impl Engine {
             idle_ms: 0,
             animation: animation_for(State::Falling),
             animation_ms: 0,
+            reacting_ms: 0,
         }
     }
 
@@ -165,6 +183,20 @@ impl Engine {
                 // settled by falling, the same as any other loss of footing.
                 self.state = State::Falling;
             }
+        }
+
+        // A Poke is answered, whatever else is going on. Being prodded is the
+        // one thing a companion must never ignore, and it reads as alive
+        // exactly because it interrupts.
+        // Prodded again mid-reaction, it reacts again from the beginning. The
+        // Animation's own clock has to be restarted for that to show: the name
+        // has not changed, so the bookkeeping below would otherwise carry on
+        // counting and a second Poke would extend a held last frame.
+        let poked = snapshot.verbs.contains(&Verb::Poke);
+        if poked {
+            self.reacting_ms = REACT_MS;
+        } else {
+            self.reacting_ms = self.reacting_ms.saturating_sub(snapshot.elapsed_ms);
         }
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
@@ -234,8 +266,14 @@ impl Engine {
             State::Dragged => {}
         }
 
-        let animation = animation_for(self.state);
-        if animation == self.animation {
+        // Reacting is drawn over whatever the sprite is doing, so a Poke shows
+        // even mid-fall. It changes nothing about where the sprite is.
+        let animation = if self.reacting_ms > 0 {
+            "react"
+        } else {
+            animation_for(self.state)
+        };
+        if animation == self.animation && !poked {
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         } else {
             self.animation = animation;
@@ -562,6 +600,188 @@ mod tests {
         assert_eq!(
             landed.position.y, 800.0,
             "and falls to the usable floor, which this display does not inset"
+        );
+    }
+
+    /// A second Poke restarts the reaction rather than extending a held frame.
+    /// `react` is declared `loop = once`, so an Animation left running past its
+    /// last frame simply holds it: without restarting the clock, prodding twice
+    /// would look exactly like prodding once.
+    #[test]
+    fn poking_again_mid_reaction_starts_the_reaction_over() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let poke = || WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        };
+        engine.tick(&poke());
+        let mid = engine.tick(&snapshot(100));
+        assert_eq!(mid.animation, "react");
+        assert!(mid.animation_ms > 0, "the reaction has been running");
+
+        let again = engine.tick(&poke());
+        assert_eq!(again.animation, "react");
+        assert_eq!(
+            again.animation_ms, 0,
+            "and the second Poke plays it from its first frame"
+        );
+    }
+
+    /// #6: verbs arriving in the same tick resolve deterministically. A Grab
+    /// and a Poke together is the ordinary case — a press that has just become
+    /// a drag can share a tick with the click that preceded it — and the hand
+    /// has to win, because a sprite that reacts instead of being picked up is a
+    /// sprite that ignored you.
+    #[test]
+    fn a_grab_and_a_poke_in_one_tick_resolve_the_same_way_every_time() {
+        let together = || WorldSnapshot {
+            cursor: Point { x: 400.0, y: 200.0 },
+            verbs: vec![Verb::Poke, Verb::Grab],
+            ..snapshot(100)
+        };
+        let reversed = || WorldSnapshot {
+            verbs: vec![Verb::Grab, Verb::Poke],
+            ..together()
+        };
+
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let first = engine.tick(&together());
+
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let second = engine.tick(&reversed());
+
+        assert_eq!(
+            first.state,
+            State::Dragged,
+            "the hand wins over the reaction"
+        );
+        assert_eq!(first.position, Point { x: 400.0, y: 200.0 });
+        assert_eq!(
+            first, second,
+            "and the order the verbs arrive in changes nothing"
+        );
+    }
+
+    /// #6: a Director proposal arriving during a Grab is deferred or dropped,
+    /// never yanking the sprite. Being held is the one moment the sprite is the
+    /// user's rather than the Director's.
+    #[test]
+    fn a_proposal_during_a_grab_never_moves_the_sprite() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let held = WorldSnapshot {
+            cursor: Point { x: 300.0, y: 300.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        };
+        engine.tick(&held);
+
+        let proposed = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "wander".to_string(),
+                dialogue: Some("off we go".to_string()),
+            }),
+            ..held.clone()
+        });
+
+        assert_eq!(proposed.state, State::Dragged, "still in the hand");
+        assert_eq!(
+            proposed.position,
+            Point { x: 300.0, y: 300.0 },
+            "and exactly where the cursor left it"
+        );
+        assert_eq!(
+            proposed.dialogue.as_deref(),
+            Some("off we go"),
+            "it may still speak, which moves nothing"
+        );
+    }
+
+    /// #39 left this decision to #6 and asked for it to be asserted: a held
+    /// sprite may be taken below the usable floor, over the Dock, because the
+    /// cursor may go there. Letting go puts it back somewhere it can stand.
+    #[test]
+    fn a_sprite_dropped_below_the_usable_floor_settles_back_onto_it() {
+        // A display whose usable part stops short of its bottom edge, as one
+        // with a Dock does.
+        let usable = || WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 700.0,
+            }],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let held = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 500.0, y: 900.0 },
+            verbs: vec![Verb::Grab],
+            ..usable()
+        });
+        assert_eq!(held.position.y, 900.0, "the hand may take it over the Dock");
+
+        let landed = settle(&mut engine, &usable());
+        assert_eq!(
+            landed.position.y, 700.0,
+            "and letting go settles it on the usable floor"
+        );
+        assert_eq!(landed.state, State::Grounded);
+    }
+
+    /// #6: a Poke is the one interaction that has to be visible, and the
+    /// Required Animation Set carries `react` for it. Before this the verb only
+    /// woke a sleeping sprite and reset the idle timer, so prodding a wide-awake
+    /// one did nothing at all.
+    #[test]
+    fn a_poke_plays_the_reaction_and_then_goes_back_to_what_it_was_doing() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let resting = settle(&mut engine, &snapshot(100));
+        assert_eq!(resting.animation, "idle");
+
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!(poked.animation, "react");
+        assert_eq!(
+            poked.state,
+            State::Grounded,
+            "reacting is not a State: it is still standing where it stood"
+        );
+
+        assert_eq!(
+            engine.tick(&snapshot(100)).animation,
+            "react",
+            "and it lasts longer than the tick it started on"
+        );
+
+        let after = (0..20)
+            .map(|_| engine.tick(&snapshot(100)))
+            .last()
+            .expect("twenty ticks produce twenty frames");
+        assert_eq!(after.animation, "idle", "then back to idling");
+    }
+
+    /// Being prodded mid-air is answered too, and does not change the fall.
+    #[test]
+    fn a_poke_while_falling_reacts_without_interrupting_the_fall() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        let falling = engine.tick(&snapshot(100));
+        assert_eq!(falling.state, State::Falling);
+
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!(poked.animation, "react");
+        assert_eq!(poked.state, State::Falling);
+        assert!(
+            poked.position.y > falling.position.y,
+            "still going down: {poked:?}"
         );
     }
 
