@@ -5,6 +5,9 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
+use crate::character::{Behavior, Primitive};
+use std::collections::{BTreeMap, BTreeSet};
+
 /// A point in the one coordinate space the Engine works in: points, y growing
 /// downward, spanning every visible display.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -68,10 +71,9 @@ pub enum Verb {
 
 /// What the Director proposed since the previous tick.
 ///
-/// The Engine speaks the line, and acts on the one Behavior name it already
-/// knows how to play (`WALK`). Playing any other needs the Primitives and the
-/// Character's declarations, which arrive with #8; until then an unrecognised
-/// name costs nothing.
+/// Advisory: the Engine plays the named Behavior if the Character declares one
+/// by that name and the sprite's State permits its Primitives, and refuses it
+/// otherwise. The line is spoken either way, since speaking moves nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BehaviorProposal {
     pub behavior: String,
@@ -121,16 +123,16 @@ pub struct Frame {
     pub dialogue: Option<String>,
 }
 
-/// How long a Poke keeps the sprite reacting.
+/// How long one Primitive holds the screen.
 ///
-/// ponytail: one duration for every Character's reaction. A tuning knob rather
-/// than a frame count: how long the sprite stays startled is
-/// behaviour, and how many frames that fills is the Character Manifest's
-/// business. A `react` declared `loop = once` holds its last frame for the
-/// remainder, which is what being briefly startled looks like.
-///
-/// #8 replaces this when Behaviors can play an Animation and say when it ends.
-const REACT_MS: u32 = 600;
+/// A tuning knob, and one for every Primitive of every Character: how long a
+/// sprite stays startled or sits down for is behaviour, and how many frames
+/// that fills is the Character Manifest's business. The Engine deliberately
+/// does not know an Animation's length — fps and loop mode are the Character's
+/// — so it cannot play a Primitive "until the art runs out". An Animation
+/// declared `loop = once` holds its last frame for the remainder, which is what
+/// a brief startle looks like.
+const PRIMITIVE_MS: u32 = 600;
 
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
 /// knob: long enough not to nod off mid-conversation, short enough that a sprite
@@ -165,12 +167,17 @@ pub struct Engine {
     animation: &'static str,
     /// Milliseconds since the current Animation started.
     animation_ms: u32,
-    /// Milliseconds of reacting left, after a Poke.
+    /// The Behaviors the Character declares, which a proposal names.
+    behaviors: BTreeMap<String, Behavior>,
+    /// The Primitives of the Behavior being played, last first, so the one on
+    /// screen is on top.
     ///
-    /// Not a State: reacting is something the sprite does while standing,
-    /// falling or perched, and giving it a State would mean deciding what it
-    /// resumes as.
-    reacting_ms: u32,
+    /// Not a State: playing a Behavior is something the sprite does while
+    /// standing, falling or perched, and giving it a State would mean deciding
+    /// what it resumes as.
+    playing: Vec<Primitive>,
+    /// Milliseconds left of the Primitive being played.
+    primitive_ms: u32,
     /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
     /// and the Primitive carries none, so it goes the way it was last heading.
     facing: f64,
@@ -186,9 +193,19 @@ impl Engine {
             idle_ms: 0,
             animation: animation_for(State::Falling),
             animation_ms: 0,
-            reacting_ms: 0,
+            behaviors: BTreeMap::new(),
+            playing: Vec::new(),
+            primitive_ms: 0,
             facing: 1.0,
         }
+    }
+
+    /// The Behaviors this Character declares. Nothing else reaches the Engine
+    /// from a Character Package: art is the renderer's, and a Behavior is
+    /// Primitives the Engine already owns.
+    pub fn with_behaviors(mut self, behaviors: BTreeMap<String, Behavior>) -> Self {
+        self.behaviors = behaviors;
+        self
     }
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
@@ -212,19 +229,10 @@ impl Engine {
             }
         }
 
-        // A Poke is answered, whatever else is going on. Being prodded is the
-        // one thing a companion must never ignore, and it reads as alive
-        // exactly because it interrupts.
-        // Prodded again mid-reaction, it reacts again from the beginning. The
-        // Animation's own clock has to be restarted for that to show: the name
-        // has not changed, so the bookkeeping below would otherwise carry on
-        // counting and a second Poke would extend a held last frame.
-        let poked = snapshot.verbs.contains(&Verb::Poke);
-        if poked {
-            self.reacting_ms = REACT_MS;
-        } else {
-            self.reacting_ms = self.reacting_ms.saturating_sub(snapshot.elapsed_ms);
-        }
+        // What was already playing ages before anything new starts, so a
+        // Primitive begun this tick gets its whole turn rather than losing this
+        // tick's milliseconds to the one it replaced.
+        let mut started = self.advance(snapshot.elapsed_ms);
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
         // the one input that outranks the world.
@@ -323,16 +331,44 @@ impl Engine {
             self.facing = self.velocity.x.signum();
         }
 
-        // Reacting is drawn over whatever the sprite is doing, so a Poke shows
+        // Losing its footing abandons the rest of a Behavior: what the sprite
+        // was in the middle of doing was only ever a thing to do standing up.
+        if !self.permitted(&self.playing) {
+            self.playing.clear();
+            self.primitive_ms = 0;
+            started = true;
+        }
+
+        // A proposal is advisory, so a Behavior this Character does not declare
+        // is refused rather than reported, and refusing it interrupts nothing.
+        if let Some(proposal) = &snapshot.proposal {
+            if let Some(primitives) = self.chain(&proposal.behavior) {
+                started |= self.play(&primitives);
+            }
+        }
+
+        // A Poke is answered, whatever else is going on. Being prodded is the
+        // one thing a companion must never ignore, and it reads as alive
+        // exactly because it interrupts — including a Behavior, and including
+        // its own reaction: prodded again, it reacts again from the beginning.
+        if snapshot.verbs.contains(&Verb::Poke) {
+            started |= self.play(&[Primitive::React]);
+        }
+
+        // A Behavior is drawn over whatever the sprite is doing, so a Poke shows
         // even mid-fall. It changes nothing about where the sprite is.
-        let animation = if self.reacting_ms > 0 {
-            "react"
-        } else if self.is_walking() {
-            "walk"
-        } else {
-            animation_for(self.state)
+        let animation = match self.playing.last() {
+            Some(primitive) => animation_of(*primitive),
+            // A walk outlasts the Primitive that starts it: the velocity holds
+            // until the sprite runs out of Perch, so the Animation has to hold
+            // with it rather than dropping back to standing mid-stride.
+            None if self.is_walking() => "walk",
+            None => animation_for(self.state),
         };
-        if animation == self.animation && !poked {
+        // A Primitive that starts restarts the Animation's clock even when the
+        // name has not changed, or a second Poke would extend a held last frame
+        // instead of playing the reaction again.
+        if animation == self.animation && !started {
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         } else {
             self.animation = animation;
@@ -355,6 +391,101 @@ impl Engine {
     /// Under way on foot, rather than in the air with the same speed on it.
     fn is_walking(&self) -> bool {
         matches!(self.state, State::Grounded | State::Perched) && self.velocity.x != 0.0
+    }
+
+    /// Age the Behavior being played by `elapsed_ms`, moving on to each
+    /// Primitive as the one before it runs out. True when the Primitive on
+    /// screen changed.
+    fn advance(&mut self, elapsed_ms: u32) -> bool {
+        let mut left = elapsed_ms;
+        let mut moved_on = false;
+
+        while !self.playing.is_empty() && left >= self.primitive_ms {
+            left -= self.primitive_ms;
+            self.playing.pop();
+            self.primitive_ms = PRIMITIVE_MS;
+            moved_on = true;
+        }
+        if self.playing.is_empty() {
+            self.primitive_ms = 0;
+        } else {
+            self.primitive_ms -= left;
+        }
+
+        moved_on
+    }
+
+    /// Start playing `primitives`, unless the State the sprite is in forbids
+    /// any of them. True when it started.
+    ///
+    /// All or nothing: a Behavior is a sequence its author meant to be seen
+    /// whole, and playing the half of it that fits leaves the sprite stopping
+    /// mid-thought.
+    fn play(&mut self, primitives: &[Primitive]) -> bool {
+        if primitives.is_empty() || !self.permitted(primitives) {
+            return false;
+        }
+        // Last first, so the Primitive on screen is the one on top.
+        self.playing = primitives.iter().rev().copied().collect();
+        self.primitive_ms = PRIMITIVE_MS;
+        true
+    }
+
+    /// Whether the State the sprite is in permits every one of `primitives`.
+    ///
+    /// Expression carries in any State: being startled or speaking says nothing
+    /// about where the sprite's feet are, which is why a Poke is answered
+    /// mid-fall. Everything else settles or moves the sprite, and only means
+    /// something while it is standing on a surface — there is no sitting down
+    /// in mid-air, and none of it while asleep, which is a thing to be woken
+    /// out of rather than to act from.
+    fn permitted(&self, primitives: &[Primitive]) -> bool {
+        primitives.iter().all(|primitive| match primitive {
+            Primitive::React | Primitive::Talk => true,
+            _ => matches!(self.state, State::Grounded | State::Perched),
+        })
+    }
+
+    /// Every Primitive a named Behavior plays, the Behaviors it chains into
+    /// included, or nothing when the Character does not declare it.
+    ///
+    /// Flattened when play starts rather than followed a link at a time,
+    /// because a Behavior is one thing to abandon and one thing to refuse.
+    /// Load-time validation rejects a chain that comes back on itself, and this
+    /// stops on one anyway: the Engine is handed Behaviors rather than a
+    /// validated Character, and hanging the frame loop is the one thing
+    /// ADR-0002 promises no package can do.
+    fn chain(&self, behavior: &str) -> Option<Vec<Primitive>> {
+        let mut primitives = Vec::new();
+        let mut walked: BTreeSet<&str> = BTreeSet::new();
+        let mut current = self.behaviors.get_key_value(behavior)?;
+
+        while walked.insert(current.0.as_str()) {
+            primitives.extend(current.1.primitives.iter().copied());
+            match current.1.then.as_deref() {
+                Some(next) => match self.behaviors.get_key_value(next) {
+                    Some(next) => current = next,
+                    None => break,
+                },
+                None => break,
+            }
+        }
+
+        Some(primitives)
+    }
+}
+
+/// Which of the Required Animation Set a Primitive plays.
+fn animation_of(primitive: Primitive) -> &'static str {
+    match primitive {
+        Primitive::Idle => "idle",
+        // The Animation only. The motion belongs to the walk a proposal starts,
+        // which outlives this Primitive's turn and ends on running out of Perch.
+        Primitive::Walk => "walk",
+        Primitive::Sit => "sit",
+        Primitive::Sleep => "sleep",
+        Primitive::React => "react",
+        Primitive::Talk => "talk",
     }
 }
 
@@ -630,6 +761,185 @@ mod tests {
         let script = a_day_in_the_life();
 
         assert_eq!(play(&script), play(&script));
+    }
+
+    /// The Behaviors the placeholder Character declares: a greeting that chains
+    /// into settling down.
+    fn declared_behaviors() -> BTreeMap<String, Behavior> {
+        BTreeMap::from([
+            (
+                "greet".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::React, Primitive::Talk],
+                    then: Some("settle".to_string()),
+                },
+            ),
+            (
+                "settle".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Sit, Primitive::Sleep],
+                    then: None,
+                },
+            ),
+        ])
+    }
+
+    /// A sprite standing on the floor of one display, with those Behaviors to
+    /// play.
+    fn a_resting_sprite() -> Engine {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
+        settle(&mut engine, &snapshot(100));
+        engine
+    }
+
+    fn proposing(behavior: &str) -> WorldSnapshot {
+        WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: behavior.to_string(),
+                dialogue: None,
+            }),
+            ..snapshot(100)
+        }
+    }
+
+    /// What plays over `ticks` further 100ms ticks, as each Animation and the
+    /// number of ticks it held the screen for.
+    fn played(engine: &mut Engine, ticks: usize) -> Vec<(&'static str, usize)> {
+        let mut run: Vec<(&'static str, usize)> = Vec::new();
+        for _ in 0..ticks {
+            let animation = engine.tick(&snapshot(100)).animation;
+            match run.last_mut() {
+                Some((last, count)) if *last == animation => *count += 1,
+                _ => run.push((animation, 1)),
+            }
+        }
+        run
+    }
+
+    /// #8's first criterion. `greet` is two Primitives and then the two of
+    /// `settle`, so a chain is played as one Behavior rather than stopping at
+    /// the word that joins them.
+    #[test]
+    fn a_behavior_plays_its_primitives_in_order_and_follows_the_one_it_names() {
+        let mut engine = a_resting_sprite();
+
+        assert_eq!(
+            engine.tick(&proposing("greet")).animation,
+            "react",
+            "the proposal is applied on the tick it arrives"
+        );
+
+        assert_eq!(
+            played(&mut engine, 29),
+            [
+                ("react", 5),
+                ("talk", 6),
+                ("sit", 6),
+                ("sleep", 6),
+                ("idle", 6),
+            ],
+            "each Primitive holds the screen for as long as the next, \
+             and the sprite goes back to idling when the Behavior ends"
+        );
+    }
+
+    /// #8's second criterion. The window it was sitting on closes mid-Behavior,
+    /// and sitting in mid-air is not a thing the sprite can be doing.
+    #[test]
+    fn a_behavior_that_becomes_invalid_mid_play_is_abandoned() {
+        let window = Rect {
+            x: 50.0,
+            y: 400.0,
+            width: 300.0,
+            height: 200.0,
+        };
+        let on_a_window = WorldSnapshot {
+            windows: vec![window],
+            ..snapshot(100)
+        };
+
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
+        assert_eq!(settle(&mut engine, &on_a_window).state, State::Perched);
+
+        assert_eq!(
+            engine
+                .tick(&WorldSnapshot {
+                    windows: vec![window],
+                    ..proposing("settle")
+                })
+                .animation,
+            "sit"
+        );
+
+        let fell = engine.tick(&snapshot(100));
+        assert_eq!(fell.state, State::Falling);
+        assert_eq!(fell.animation, "fall", "it stops sitting the moment it can");
+
+        let after = played(&mut engine, 40);
+        assert!(
+            !after
+                .iter()
+                .any(|(animation, _)| ["sit", "sleep"].contains(animation)),
+            "and the rest of the Behavior never comes back: {after:?}"
+        );
+    }
+
+    /// #8's third criterion. Refused rather than deferred: a Behavior proposed
+    /// for a sprite in mid-air was proposed for a sprite that no longer exists
+    /// by the time it lands.
+    #[test]
+    fn a_behavior_the_state_forbids_is_refused() {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
+        let falling = engine.tick(&proposing("settle"));
+
+        assert_eq!(falling.state, State::Falling);
+        assert_eq!(falling.animation, "fall", "it goes on falling instead");
+
+        let after = played(&mut engine, 40);
+        assert!(
+            !after
+                .iter()
+                .any(|(animation, _)| ["sit", "sleep"].contains(animation)),
+            "and landing does not start what was refused: {after:?}"
+        );
+    }
+
+    /// Expression is the exception: being startled or speaking says nothing
+    /// about where the sprite's feet are, so a Poke is answered mid-fall and so
+    /// is a Behavior made only of those.
+    #[test]
+    fn a_behavior_of_expression_alone_plays_in_any_state() {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([(
+                "chatter".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Talk],
+                    then: None,
+                },
+            )]));
+
+        let falling = engine.tick(&proposing("chatter"));
+        assert_eq!(falling.state, State::Falling);
+        assert_eq!(falling.animation, "talk");
+    }
+
+    /// A proposal the Character cannot play is refused, and refusing it is not
+    /// an interruption: the Director names a Behavior, and a Character that was
+    /// swapped or is simply older may not declare it.
+    #[test]
+    fn an_unknown_behavior_is_refused_without_disrupting_what_is_playing() {
+        let mut engine = a_resting_sprite();
+        engine.tick(&proposing("greet"));
+
+        let unknown = engine.tick(&proposing("cartwheel"));
+        assert_eq!(unknown.animation, "react", "still greeting");
+        assert_eq!(
+            unknown.animation_ms, 100,
+            "and on its own clock, not restarted by the refusal"
+        );
     }
 
     #[test]
