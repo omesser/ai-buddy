@@ -168,11 +168,15 @@ const WALK_SPEED: f64 = 120.0;
 /// as heavy rather than floaty is found by watching it, not by deriving it.
 const GRAVITY: f64 = 1800.0;
 
-/// Points per second squared. A Perch that accelerates harder than this yanks
-/// the sprite off; below it the sprite Holds and keeps its place on the edge.
-/// Measured against the time between fresh samples, not a fixed poll: idle
-/// and ride use different cadences. #98.
+/// Points per second squared. The yank gate is this times `YANK_WINDOW_S`:
+/// a change in Perch speed larger than that, measured against the speed
+/// from about one idle poll ago, drops the sprite. The last 16 ms slope
+/// treats WindowServer jitter as a yank. #98.
 pub const RIDE_ACCELERATION: f64 = 10_000.0;
+
+/// How far back the yank gate looks. Fast poll still tracks the window;
+/// only the fall decision stays on this cadence. #98.
+const YANK_WINDOW_S: f64 = 0.1;
 
 pub struct Engine {
     position: Point,
@@ -229,6 +233,10 @@ pub struct Engine {
     /// Seconds since the last fresh window sample. Velocity and acceleration
     /// are that interval, not a constant poll, because idle and ride differ. #98.
     since_sample_s: f64,
+    /// Perch velocity from about `YANK_WINDOW_S` ago. The fall decision
+    /// compares against this, not the last 16 ms sample. #98.
+    yank_reference: Point,
+    since_yank_ref_s: f64,
 }
 
 impl Engine {
@@ -255,6 +263,8 @@ impl Engine {
             last_perch: None,
             hold_offset_x: 0.0,
             since_sample_s: 0.0,
+            yank_reference: Point::default(),
+            since_yank_ref_s: 0.0,
         }
     }
 
@@ -604,8 +614,8 @@ impl Engine {
         };
         let ax = (velocity.x - self.perch_velocity.x) / sample_s;
         let ay = (velocity.y - self.perch_velocity.y) / sample_s;
-        let acceleration = ax.hypot(ay);
-        if acceleration > RIDE_ACCELERATION {
+        let dv = (velocity.x - self.yank_reference.x).hypot(velocity.y - self.yank_reference.y);
+        if dv > RIDE_ACCELERATION * YANK_WINDOW_S {
             return PerchCarry::Yank;
         }
         // From rest there is no curve yet — only a speed. Treating that
@@ -617,6 +627,11 @@ impl Engine {
             Point { x: ax, y: ay }
         };
         self.perch_velocity = velocity;
+        self.since_yank_ref_s += sample_s;
+        if self.since_yank_ref_s >= YANK_WINDOW_S {
+            self.yank_reference = velocity;
+            self.since_yank_ref_s = 0.0;
+        }
         self.coast_s = 0.0;
         PerchCarry::Ride(current)
     }
@@ -626,6 +641,8 @@ impl Engine {
         self.perch_acceleration = Point::default();
         self.coast_s = 0.0;
         self.since_sample_s = 0.0;
+        self.yank_reference = Point::default();
+        self.since_yank_ref_s = 0.0;
     }
 
     fn coasting(&self) -> bool {
@@ -2504,6 +2521,25 @@ mod tests {
         assert_eq!(still.position.y, 380.0);
         assert_eq!(still.animation, "sit");
         assert!(!still.riding);
+    }
+
+    /// #98: ride poll is 16 ms so the sprite can track, but the yank gate
+    /// looks back ~100 ms. Six points in 16 ms after a 200 pt/s ride is
+    /// 10_937 pt/s² — over `RIDE_ACCELERATION` — and 175 pt/s against the
+    /// speed from a poll ago. Fast poll has to keep tracking; only the
+    /// fall decision stays low-pass.
+    #[test]
+    fn a_short_sample_wobble_does_not_yank() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+        assert_eq!(engine.tick(&perch(50.0, 380.0)).state, State::Perched);
+
+        let mut wobble = perch(50.0, 374.0);
+        wobble.elapsed_ms = 16;
+        let riding = engine.tick(&wobble);
+        assert_eq!(riding.state, State::Perched, "{riding:?}");
+        assert_eq!(riding.position.y, 374.0);
+        assert_eq!(riding.animation, "hold");
     }
 
     /// #98: a yank is a loss of footing even when the window moves up over
