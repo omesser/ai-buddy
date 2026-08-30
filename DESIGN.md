@@ -220,6 +220,29 @@ stepping up would strand it somewhere the user cannot see it. The floor is
 exempt, because every window behind the Dock hangs below it and a sprite on the
 ground in front of a window is not trapped in anything.
 
+**A moving Perch carries the sprite.** Standing on a platform that moves means
+moving with it, so a window dragged down, up or sideways takes the sprite along
+at the place it held on the edge. The rule this replaces dropped the sprite the
+moment its Perch shifted, which only ever looked right for a downward drag,
+where the sprite re-landed on the edge it had just lost; moved up or sideways,
+the window left it behind in mid-air. Riding changes position and never
+velocity, or flinging a window across the desktop would launch the sprite
+ballistically.
+
+What breaks the grip is the jerk and not the speed. The sprite rides while the
+edge's speed changes gently, and is left standing where it was — falling from
+there — when it changes faster than the ride gate: a yank, a maximize, a window
+flung across the screen. A top speed is the obvious alternative and it is the
+wrong one, because a fast drag that started smoothly is still something to hold
+on to. The gate compares against the edge's speed of a tenth of a second ago
+rather than the previous frame's, since at 16 ms the window server's own jitter
+reads as a yank. The number is tuned against a real dragged window, not derived.
+
+The window under the sprite is matched between polls by its size and nearest
+position, because the snapshot carries geometry and no window identity. A
+resized window is therefore a different window, and the sprite falls off it as
+it would off one that closed.
+
 Occlusion is a landing rule and never a resting one. An edge hidden behind a
 window in front of it is nowhere to land, but a sprite already standing on one
 stays there: raising a window over a Perch moves nothing, and re-deriving
