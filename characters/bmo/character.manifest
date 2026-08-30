@@ -27,6 +27,8 @@ variant_of = "idle"
 # Idling, BMO mostly stands; now and then it sings, or rides its skateboard.
 # Walking, it sometimes dribbles a football the whole way.
 
+# Cruise, push, cruise, cheer — the bail frame stays in the pack: a board
+# that vanishes mid-loop reads as a glitch, not a trick.
 [animations.skate]
 frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "frames/skate-2.png"]
 fps = 3
