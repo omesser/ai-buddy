@@ -7,13 +7,18 @@
 
 use std::time::Duration;
 
-/// How often the Shell should read the source: approximately 10Hz.
+/// How often the Shell should read the source while the sprite is still.
 ///
-/// Windows move at human speed, and the Engine interpolates between reads, so
-/// smoothness is the renderer's problem rather than a reason to poll faster.
-/// Ten times a second is what keeps a full window-list enumeration off the
-/// frame loop and out of the battery budget.
+/// Windows move at human speed, and a sitting buddy does not need the list
+/// sixty times a second. A ride switches to `RIDE_POLL_INTERVAL`. #98.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// How often the Shell should read the source while the sprite is riding.
+///
+/// The OS paints the window every frame; 10 Hz left a hitch the derivatives
+/// could not hide. Only a ride pays this rate, so the list stays off the
+/// battery budget the rest of the day. #98.
+pub const RIDE_POLL_INTERVAL: Duration = Duration::from_millis(16);
 
 /// What a platform can actually tell us about the desktop.
 ///

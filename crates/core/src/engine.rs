@@ -101,6 +101,13 @@ pub struct WorldSnapshot {
     /// A Behavior proposal delivered since the previous tick, if the Director
     /// made one. Advisory: the Engine is free to refuse it.
     pub proposal: Option<BehaviorProposal>,
+    /// Bumps when the assembler actually re-read the window list. Zero means
+    /// the caller did not say, and the Engine treats every tick as a fresh
+    /// sample — which is what the tests that construct snapshots by hand are.
+    /// A reused generation is a tick between polls: the rectangles have not
+    /// changed, and a riding sprite has to coast on the last Perch velocity
+    /// or it hitch-steps while the window slides. #98.
+    pub poll_generation: u64,
 }
 
 /// Everything the renderer is told after one tick.
@@ -127,6 +134,9 @@ pub struct Frame {
     /// what the user actually saw are different lists, and repetition is
     /// suppressed on the second.
     pub behavior: Option<String>,
+    /// Whether this tick carried the sprite with a moving Perch. The Shell
+    /// polls the window list at the frame rate only then. #98.
+    pub riding: bool,
 }
 
 /// How long one Primitive holds the screen.
@@ -160,13 +170,9 @@ const GRAVITY: f64 = 1800.0;
 
 /// Points per second squared. A Perch that accelerates harder than this yanks
 /// the sprite off; below it the sprite Holds and keeps its place on the edge.
-/// Measured against the window poll, not the Engine tick: geometry is reused
-/// between polls, and a 16ms still frame is not a stop. #98.
+/// Measured against the time between fresh samples, not a fixed poll: idle
+/// and ride use different cadences. #98.
 pub const RIDE_ACCELERATION: f64 = 10_000.0;
-
-/// How often window geometry is actually new. `RIDE_ACCELERATION` is sampled
-/// against this, matching `window_source::POLL_INTERVAL`.
-const WINDOW_SAMPLE_S: f64 = 0.1;
 
 pub struct Engine {
     position: Point,
@@ -201,8 +207,28 @@ pub struct Engine {
     /// Whether this tick translated the sprite with a moving Perch. Decides
     /// the Hold animation; not a State — the sprite is still Perched. #98.
     riding: bool,
-    /// Last observed velocity of the ridden Perch, for the acceleration gate.
+    /// Last observed velocity of the ridden Perch, for the acceleration gate
+    /// and for coasting between polls. #98.
     perch_velocity: Point,
+    /// Last observed acceleration of the ridden Perch. Constant-velocity
+    /// coasting hitch-steps when a drag speeds up or slows; keeping the
+    /// derivative lets the in-between ticks follow the curve. #98.
+    perch_acceleration: Point,
+    /// Seconds since the last fresh window sample, so a coast integrates
+    /// from the sample rather than compounding Euler error each tick.
+    coast_s: f64,
+    /// The assembler's last `poll_generation`. Equal generations mean the
+    /// window list was reused and a ride has to coast rather than wait. #98.
+    last_poll_generation: u64,
+    /// The Perch the sprite last stood on, remembered so a coast that has
+    /// left the stale rectangle can still match the window when it updates.
+    last_perch: Option<Rect>,
+    /// How far along that Perch the sprite stands, so a snap back onto a
+    /// fresh sample keeps the place it was holding.
+    hold_offset_x: f64,
+    /// Seconds since the last fresh window sample. Velocity and acceleration
+    /// are that interval, not a constant poll, because idle and ride differ. #98.
+    since_sample_s: f64,
 }
 
 impl Engine {
@@ -223,6 +249,12 @@ impl Engine {
             facing: 1.0,
             riding: false,
             perch_velocity: Point::default(),
+            perch_acceleration: Point::default(),
+            coast_s: 0.0,
+            last_poll_generation: 0,
+            last_perch: None,
+            hold_offset_x: 0.0,
+            since_sample_s: 0.0,
         }
     }
 
@@ -396,8 +428,16 @@ impl Engine {
 
         self.previous_windows.clone_from(&snapshot.windows);
         self.previous_position = self.position;
-        if !matches!(self.state, State::Perched | State::Asleep) {
-            self.perch_velocity = Point::default();
+        self.last_poll_generation = snapshot.poll_generation;
+        if matches!(self.state, State::Perched | State::Asleep) {
+            if let Some(perch) = perch_at(self.position, &snapshot.windows) {
+                self.last_perch = Some(perch);
+                self.hold_offset_x = self.position.x - perch.x;
+            }
+        } else {
+            self.rest_perch();
+            self.last_perch = None;
+            self.hold_offset_x = 0.0;
         }
 
         Frame {
@@ -411,6 +451,7 @@ impl Engine {
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
+            riding: self.riding,
         }
     }
 
@@ -474,11 +515,54 @@ impl Engine {
             // carrying whatever speed it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
                 self.position.x += self.velocity.x * dt;
+                if self.last_perch.is_some() {
+                    self.hold_offset_x += self.velocity.x * dt;
+                }
 
-                if let Some(delta) = self.ride_delta(snapshot) {
-                    self.position.x += delta.x;
-                    self.position.y += delta.y;
+                let fresh = snapshot.poll_generation == 0
+                    || snapshot.poll_generation != self.last_poll_generation;
+                self.since_sample_s += dt;
+
+                if fresh {
+                    let sample_s = if snapshot.poll_generation == 0 {
+                        dt
+                    } else {
+                        self.since_sample_s
+                    };
+                    self.since_sample_s = 0.0;
+                    match self.perch_carry(snapshot, sample_s) {
+                        PerchCarry::Ride(window) => {
+                            self.place_on(window);
+                            self.last_perch = Some(window);
+                            self.riding = true;
+                        }
+                        PerchCarry::Still(window) => {
+                            self.place_on(window);
+                            self.last_perch = Some(window);
+                            self.rest_perch();
+                        }
+                        PerchCarry::Yank => {
+                            self.rest_perch();
+                            return Some(Contact::Airborne);
+                        }
+                        PerchCarry::Lost => self.rest_perch(),
+                    }
+                } else if self.coasting() {
+                    // The window is still moving on screen; we just have not
+                    // been told yet. Stale rectangles would call this a fall.
+                    self.coast_s += dt;
+                    let t = self.coast_s;
+                    if let Some(origin) = self.last_perch {
+                        self.position.x = origin.x
+                            + self.hold_offset_x
+                            + self.perch_velocity.x * t
+                            + 0.5 * self.perch_acceleration.x * t * t;
+                        self.position.y = origin.y
+                            + self.perch_velocity.y * t
+                            + 0.5 * self.perch_acceleration.y * t * t;
+                    }
                     self.riding = true;
+                    return Some(Contact::Standing);
                 }
 
                 match footing(self.position, snapshot, |window| self.swallowed_by(window)) {
@@ -494,29 +578,67 @@ impl Engine {
         }
     }
 
-    /// How far a slowly moving Perch carries the sprite this tick, or nothing
-    /// when there is no Perch, it did not move, or it accelerated past the
-    /// ride gate. A yank is a fall, not a lift onto the same window. #98.
-    fn ride_delta(&mut self, snapshot: &WorldSnapshot) -> Option<Point> {
-        let previous = perch_at(self.previous_position, &self.previous_windows)?;
-        let current = match_perch(previous, &snapshot.windows)?;
+    /// What a fresh window sample says about the Perch the sprite was on. #98.
+    fn perch_carry(&mut self, snapshot: &WorldSnapshot, sample_s: f64) -> PerchCarry {
+        let Some(previous) = self
+            .last_perch
+            .or_else(|| perch_at(self.previous_position, &self.previous_windows))
+        else {
+            return PerchCarry::Lost;
+        };
+        let Some(current) = match_perch(previous, &snapshot.windows) else {
+            return PerchCarry::Lost;
+        };
         let delta = Point {
             x: current.x - previous.x,
             y: current.y - previous.y,
         };
         if delta.x == 0.0 && delta.y == 0.0 {
-            return None;
+            return PerchCarry::Still(current);
         }
 
+        let sample_s = sample_s.max(0.001);
         let velocity = Point {
-            x: delta.x / WINDOW_SAMPLE_S,
-            y: delta.y / WINDOW_SAMPLE_S,
+            x: delta.x / sample_s,
+            y: delta.y / sample_s,
         };
-        let ax = (velocity.x - self.perch_velocity.x) / WINDOW_SAMPLE_S;
-        let ay = (velocity.y - self.perch_velocity.y) / WINDOW_SAMPLE_S;
-        self.perch_velocity = velocity;
+        let ax = (velocity.x - self.perch_velocity.x) / sample_s;
+        let ay = (velocity.y - self.perch_velocity.y) / sample_s;
         let acceleration = ax.hypot(ay);
-        (acceleration <= RIDE_ACCELERATION).then_some(delta)
+        if acceleration > RIDE_ACCELERATION {
+            return PerchCarry::Yank;
+        }
+        // From rest there is no curve yet — only a speed. Treating that
+        // first sample as constant velocity avoids a fake launch that
+        // snaps back when the drag holds.
+        self.perch_acceleration = if self.perch_velocity.x == 0.0 && self.perch_velocity.y == 0.0 {
+            Point::default()
+        } else {
+            Point { x: ax, y: ay }
+        };
+        self.perch_velocity = velocity;
+        self.coast_s = 0.0;
+        PerchCarry::Ride(current)
+    }
+
+    fn rest_perch(&mut self) {
+        self.perch_velocity = Point::default();
+        self.perch_acceleration = Point::default();
+        self.coast_s = 0.0;
+        self.since_sample_s = 0.0;
+    }
+
+    fn coasting(&self) -> bool {
+        self.perch_velocity.x != 0.0
+            || self.perch_velocity.y != 0.0
+            || self.perch_acceleration.x != 0.0
+            || self.perch_acceleration.y != 0.0
+    }
+
+    /// Put the sprite back on `window` at the offset it was holding.
+    fn place_on(&mut self, window: Rect) {
+        self.position.x = window.x + self.hold_offset_x;
+        self.position.y = window.y;
     }
 
     /// Whether `window` has come to contain the sprite this tick: dragged over
@@ -733,6 +855,18 @@ fn thrown_velocity(snapshot: &WorldSnapshot) -> Option<Point> {
         Verb::Throw { velocity } => Some(*velocity),
         _ => None,
     })
+}
+
+/// What a fresh window sample says about the Perch the sprite was standing on.
+enum PerchCarry {
+    /// Dragged slowly: snap onto the new edge and coast until the next sample.
+    Ride(Rect),
+    /// Same edge as last time: snap back if a coast overshot, then sit.
+    Still(Rect),
+    /// Dragged hard enough to lose footing.
+    Yank,
+    /// Closed, resized, or never a Perch.
+    Lost,
 }
 
 /// A surface the sprite can come to rest on.
@@ -2277,6 +2411,7 @@ mod tests {
             }
         );
         assert_eq!(up.animation, "hold");
+        assert!(up.riding, "the Shell polls fast only while this is set");
 
         let across = engine.tick(&perch(70.0, 380.0));
         assert_eq!(across.state, State::Perched, "sideways: {across:?}");
@@ -2301,6 +2436,61 @@ mod tests {
         assert_eq!(down.animation, "hold");
     }
 
+    /// #98: window geometry is reused between polls. The sprite has to keep
+    /// the last Perch velocity on those ticks, or it hitch-steps at the poll
+    /// rate while the window itself slides every frame.
+    #[test]
+    fn the_sprite_coasts_with_the_perch_between_polls() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        let mut moving = perch(50.0, 380.0);
+        moving.poll_generation = 1;
+        let caught_up = engine.tick(&moving);
+        assert_eq!(caught_up.position.y, 380.0);
+        assert_eq!(caught_up.animation, "hold");
+
+        // Same rectangle, same generation: the assembler has not read again.
+        // 20 points in 100 ms is 200 points/s, so 16 ms is 3.2 points further.
+        moving.elapsed_ms = 16;
+        let coasting = engine.tick(&moving);
+        assert_eq!(coasting.state, State::Perched, "{coasting:?}");
+        assert_eq!(coasting.animation, "hold");
+        assert!(
+            (coasting.position.y - 376.8).abs() < 1e-9,
+            "it continues at the Perch's last speed, not waiting for the next poll: {coasting:?}"
+        );
+    }
+
+    /// #98: a Perch that is speeding up is not at constant velocity between
+    /// polls. Coasting with the last acceleration keeps the sprite on the
+    /// window instead of hitching every time a new sample snaps it back.
+    #[test]
+    fn the_sprite_coasts_with_the_perch_acceleration_between_polls() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        let mut first = perch(50.0, 390.0);
+        first.poll_generation = 1;
+        assert_eq!(engine.tick(&first).position.y, 390.0);
+
+        // 10 points, then 20: -100 points/s, then -200. Acceleration is
+        // -1000 points/s² — under the yank gate, so it still rides.
+        let mut faster = perch(50.0, 370.0);
+        faster.poll_generation = 2;
+        assert_eq!(engine.tick(&faster).position.y, 370.0);
+
+        faster.elapsed_ms = 16;
+        let coasting = engine.tick(&faster);
+        assert_eq!(coasting.state, State::Perched, "{coasting:?}");
+        assert_eq!(coasting.animation, "hold");
+        // v Δt + ½ a Δt² = -200·0.016 + ½·(-1000)·0.016² = -3.328
+        assert!(
+            (coasting.position.y - 366.672).abs() < 1e-9,
+            "it continues at the last speed and acceleration: {coasting:?}"
+        );
+    }
+
     /// #98: the ride ends when the Perch is still. Holding on is the motion,
     /// not a new way to sit.
     #[test]
@@ -2313,6 +2503,7 @@ mod tests {
         assert_eq!(still.state, State::Perched);
         assert_eq!(still.position.y, 380.0);
         assert_eq!(still.animation, "sit");
+        assert!(!still.riding);
     }
 
     /// #98: a yank is a loss of footing even when the window moves up over

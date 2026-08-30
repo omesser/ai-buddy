@@ -183,8 +183,8 @@ import json, re, sys
 
 out, closed_ms = sys.argv[1], int(sys.argv[2])
 
-# docs/SPEC.md: WindowSource is read at approximately 10Hz. The slack covers one
-# engine tick plus however long pkill and this script's own timestamp take.
+# The first step happens while still perched, so the idle 10Hz poll applies.
+# The slack covers one extra tick plus pkill and this script's timestamps.
 POLL_MS, SLACK_MS = 100, 150
 
 frames = [

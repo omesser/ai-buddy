@@ -342,16 +342,32 @@ def blob(px, cx, cy, rx, ry, ramp, lift=0):
                 put(px, x, y, shade(nx, ny, ramp, lift))
 
 
-def ear(px, x, top, sway, flip, length=7):
+def ear(px, x, top, sway, flip, length=7, splay=0.0, flat=0.0):
     """An ear that trails the head: it is anchored where it meets the skull and
     leans further the nearer the tip, so a sway is a curve rather than a slide.
-    A drooping ear is a short one."""
+    A drooping ear is a short one. `splay` opens the tip outward; `flat` lays
+    the same length along the head. The row that meets the skull stays put."""
     for row in range(7 - length, 7):
-        lean = int(round(sway * ((6 - row) / 6.0) ** 2 * 2.0))
-        rx = x + flip * lean
+        t = (6 - row) / 6.0
+        lean = sway * t * t * 2.0 + splay * t
+        ux, uy = x + flip * lean, top + row
+        fx, fy = x + flip * (6 - row), top + 6
+        rx = int(round(ux * (1.0 - flat) + fx * flat))
+        ry = int(round(uy * (1.0 - flat) + fy * flat))
         ramp = PLUM[6 - row // 3] if flip > 0 else PLUM[4 - row // 3]
-        put(px, rx, top + row, ramp)
-        put(px, rx + flip, top + row, PLUM[2])
+        put(px, rx, ry, ramp)
+        # Upright: two wide. Flat: two tall — highlight over the dark row
+        # that still sits on the skull. One extra tip pixel lengthens the
+        # bar without walking the touchpoint off the head.
+        if flat > 0.5:
+            hi = PLUM[6] if flip > 0 else PLUM[4]
+            put(px, rx, ry - 1, hi)
+            put(px, rx, ry, PLUM[2])
+            if row == 7 - length:
+                put(px, rx + flip, ry - 1, hi)
+                put(px, rx + flip, ry, PLUM[2])
+        else:
+            put(px, rx + flip, ry, PLUM[2])
 
 
 def eyes(px, cy, open_amount, look=0):
@@ -369,7 +385,7 @@ def eyes(px, cy, open_amount, look=0):
         put(px, cx - 1 + look, cy + height - 3, IRIS[2])
 
 
-def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.0, arms=0, ears=7, mark=None, shadow=True):
+def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.0, arms=0, ears=7, mark=None, shadow=True, reach=False, splay=0.0, flat=0.0):
     """Nim, posed. Every argument is continuous, which is what buys the
     in-between frames: a walk is the same pose sampled eight times."""
     px = blank()
@@ -397,10 +413,13 @@ def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.
 
     for side in (-1, 1):
         ax = 16 + side * 9
-        rect(px, ax - 1, int(body_cy) - 1 + arms * side, 2, 4, PLUM[3 if side < 0 else 5])
+        ay = int(body_cy) - 1 + (abs(arms) if reach else arms * side)
+        # Hold keeps the shoulder and grows the rest of the limb to the floor.
+        height = GROUND - ay + 1 if reach else 4
+        rect(px, ax - 1, ay, 2, height, PLUM[3 if side < 0 else 5])
 
-    ear(px, 11, int(head_cy) - 11, sway, -1, ears)
-    ear(px, 20, int(head_cy) - 11, sway, 1, ears)
+    ear(px, 11, int(head_cy) - 11, sway, -1, ears, splay, flat)
+    ear(px, 20, int(head_cy) - 11, sway, 1, ears, splay, flat)
     blob(px, 16, head_cy, 7.5, 6.5, PLUM, lift=1)
     eyes(px, int(head_cy) - 1, open_amount, look)
     put(px, 11, int(head_cy) + 2, BLUSH)
@@ -501,8 +520,10 @@ def nim_animations():
         "fall": fall,
         "land": land,
         "sit": sit,
+        # Two keys: the approved grip, then the same grip with ears laid out.
+        # The frames between are the flatten, not a breath.
         "hold": [
-            nim(squash=2.2 + i * 0.15, bob=1.5, sway=0.4 - i * 0.2, look=i % 2, ears=5, arms=1 if i % 2 == 0 else -1)
+            nim(squash=2.2, bob=1.5, sway=0.4, ears=5, arms=1, reach=True, splay=4.0, flat=i / 3.0)
             for i in range(4)
         ],
         "sleep": sleep,

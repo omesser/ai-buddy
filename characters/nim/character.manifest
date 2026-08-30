@@ -30,6 +30,7 @@ fps talk = 10
 
 loop land = once
 loop react = once
+loop hold = once
 
 # Nim comes to rest. Every Behavior here but the walk ends sitting or asleep,
 # which is the whole difference between living with Nim and living with BMO.

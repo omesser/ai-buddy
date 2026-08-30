@@ -276,7 +276,8 @@ model, and no waiting.
 ### Platform layer
 
 `WindowSource` is a trait producing `WorldSnapshot` geometry. The macOS implementation
-polls `CGWindowListCopyWindowInfo` at approximately 10Hz, which returns window bounds,
+polls `CGWindowListCopyWindowInfo` at 10Hz while the sprite is still, and at the Engine tick
+(16 ms) while it is riding a moving Perch, which returns window bounds,
 owning application name, and layer with no permission prompt. Window titles require
 Screen Recording consent and are not used in v1.
 
