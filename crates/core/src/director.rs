@@ -241,13 +241,18 @@ impl Default for Pace {
 ///
 /// True on frontmost-app change, idle crossing `IDLE_OVER`, time in one State
 /// reaching `STATE_BOUND`, or `since_wake >= every`. Free, so it may be chatty.
+/// Quiet under Do Not Disturb: no Director wakes cost less than refused proposals.
 pub fn due(
     since_wake: Duration,
     every: Duration,
     activity: &Activity,
     previous_idle: Duration,
     since_state: Duration,
+    do_not_disturb: bool,
 ) -> bool {
+    if do_not_disturb {
+        return false;
+    }
     activity.switched
         || (previous_idle < IDLE_OVER && activity.idle >= IDLE_OVER)
         || since_state >= STATE_BOUND
@@ -257,13 +262,19 @@ pub fn due(
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
 ///
 /// Reactive when the user addressed the buddy. Ambient when `since_ambient`
-/// has reached the current `Pace`. Never while the display is asleep.
+/// has reached the current `Pace`. Never while the display is asleep. Quiet
+/// under Do Not Disturb so the Character stays visible and Poke still works;
+/// displays-asleep would drop Poke too.
 pub fn session_due(
     addressed: bool,
     since_ambient: Duration,
     pace: &Pace,
     displays_asleep: bool,
+    do_not_disturb: bool,
 ) -> bool {
+    if do_not_disturb {
+        return false;
+    }
     !displays_asleep && (addressed || since_ambient >= pace.wait())
 }
 
@@ -747,6 +758,7 @@ mod tests {
             activity,
             Duration::MAX,
             Duration::ZERO,
+            false,
         )
     }
 
@@ -786,7 +798,8 @@ mod tests {
                 WAKE_EVERY,
                 &away,
                 Duration::ZERO,
-                Duration::ZERO
+                Duration::ZERO,
+                false
             ),
             "idle crossed IDLE_OVER"
         );
@@ -796,7 +809,8 @@ mod tests {
                 WAKE_EVERY,
                 &still,
                 IDLE_OVER,
-                Duration::ZERO
+                Duration::ZERO,
+                false
             ),
             "staying away is not another event"
         );
@@ -806,7 +820,8 @@ mod tests {
                 WAKE_EVERY,
                 &working(),
                 Duration::ZERO,
-                Duration::ZERO
+                Duration::ZERO,
+                false
             ),
             "still at the machine is not a crossing"
         );
@@ -820,7 +835,8 @@ mod tests {
                 WAKE_EVERY,
                 &working(),
                 Duration::MAX,
-                STATE_BOUND
+                STATE_BOUND,
+                false
             ),
             "since_state reached STATE_BOUND"
         );
@@ -829,7 +845,8 @@ mod tests {
             WAKE_EVERY,
             &working(),
             Duration::MAX,
-            STATE_BOUND - Duration::from_millis(1)
+            STATE_BOUND - Duration::from_millis(1),
+            false
         ));
     }
 
@@ -841,14 +858,16 @@ mod tests {
             longer,
             &working(),
             Duration::MAX,
-            Duration::ZERO
+            Duration::ZERO,
+            false
         ));
         assert!(due(
             longer,
             longer,
             &working(),
             Duration::MAX,
-            Duration::ZERO
+            Duration::ZERO,
+            false
         ));
     }
 
@@ -857,23 +876,23 @@ mod tests {
         let pace = Pace::new();
 
         assert!(
-            session_due(true, Duration::ZERO, &pace, false),
+            session_due(true, Duration::ZERO, &pace, false, false),
             "the user addressed the buddy"
         );
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false),
+            !session_due(false, Duration::ZERO, &pace, false, false),
             "nothing happened and the wait has not elapsed"
         );
         assert!(
-            session_due(false, Pace::FIRST, &pace, false),
+            session_due(false, Pace::FIRST, &pace, false, false),
             "the first ambient wait has elapsed"
         );
         assert!(
-            !session_due(true, Duration::ZERO, &pace, true),
+            !session_due(true, Duration::ZERO, &pace, true, false),
             "asleep: not even a Poke spends tokens"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, true),
+            !session_due(false, Pace::FIRST, &pace, true, false),
             "asleep: ambient stays quiet"
         );
     }
@@ -1179,5 +1198,114 @@ mod tests {
         let sent = follow_up(&placed);
         assert!(sent.contains("what just happened: placed on a perch"));
         assert!(sent.contains("perch: a Cursor window"), "{sent}");
+    }
+
+    #[test]
+    fn session_due_is_false_under_do_not_disturb_even_when_addressed() {
+        let pace = Pace::new();
+
+        assert!(
+            !session_due(true, Duration::ZERO, &pace, false, true),
+            "addressed but Do Not Disturb is on"
+        );
+        assert!(
+            !session_due(false, Pace::FIRST, &pace, false, true),
+            "ambient wait elapsed but Do Not Disturb is on"
+        );
+    }
+
+    #[test]
+    fn session_due_unchanged_when_do_not_disturb_is_off() {
+        let pace = Pace::new();
+
+        assert!(
+            session_due(true, Duration::ZERO, &pace, false, false),
+            "addressed and Do Not Disturb is off"
+        );
+        assert!(
+            session_due(false, Pace::FIRST, &pace, false, false),
+            "ambient wait elapsed and Do Not Disturb is off"
+        );
+        assert!(
+            !session_due(false, Duration::ZERO, &pace, false, false),
+            "nothing happened and wait not elapsed"
+        );
+        assert!(
+            !session_due(true, Duration::ZERO, &pace, true, false),
+            "asleep silences even when Do Not Disturb is off"
+        );
+    }
+
+    #[test]
+    fn due_is_false_under_do_not_disturb_even_when_timer_fires() {
+        assert!(
+            !due(
+                WAKE_EVERY,
+                WAKE_EVERY,
+                &working(),
+                Duration::MAX,
+                Duration::ZERO,
+                true
+            ),
+            "timer elapsed but Do Not Disturb is on"
+        );
+
+        let switched = Activity {
+            switched: true,
+            ..working()
+        };
+        assert!(
+            !due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &switched,
+                Duration::MAX,
+                Duration::ZERO,
+                true
+            ),
+            "frontmost switched but Do Not Disturb is on"
+        );
+    }
+
+    #[test]
+    fn due_unchanged_when_do_not_disturb_is_off() {
+        assert!(
+            due(
+                WAKE_EVERY,
+                WAKE_EVERY,
+                &working(),
+                Duration::MAX,
+                Duration::ZERO,
+                false
+            ),
+            "timer elapsed and Do Not Disturb is off"
+        );
+
+        let switched = Activity {
+            switched: true,
+            ..working()
+        };
+        assert!(
+            due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &switched,
+                Duration::MAX,
+                Duration::ZERO,
+                false
+            ),
+            "frontmost switched and Do Not Disturb is off"
+        );
+        assert!(
+            !due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &working(),
+                Duration::MAX,
+                Duration::ZERO,
+                false
+            ),
+            "nothing happened and timer not elapsed"
+        );
     }
 }

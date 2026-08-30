@@ -300,6 +300,10 @@ impl Engine {
         self.do_not_disturb = enabled;
     }
 
+    pub fn do_not_disturb(&self) -> bool {
+        self.do_not_disturb
+    }
+
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
 
