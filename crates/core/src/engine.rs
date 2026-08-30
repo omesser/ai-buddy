@@ -249,6 +249,10 @@ pub struct Engine {
     /// compares against this, not the last 16 ms sample. #98.
     yank_reference: Point,
     since_yank_ref_s: f64,
+    /// #84: quiet but not gone. Director proposals are refused and unprompted
+    /// dialogue is not spoken, while Poke/Grab/Throw still work and the
+    /// Character stays visible.
+    do_not_disturb: bool,
 }
 
 impl Engine {
@@ -277,6 +281,7 @@ impl Engine {
             since_sample_s: 0.0,
             yank_reference: Point::default(),
             since_yank_ref_s: 0.0,
+            do_not_disturb: false,
         }
     }
 
@@ -286,6 +291,13 @@ impl Engine {
     pub fn with_behaviors(mut self, behaviors: BTreeMap<String, Behavior>) -> Self {
         self.behaviors = behaviors;
         self
+    }
+
+    /// #84: toggle Do Not Disturb. The Character stays visible but stops
+    /// starting things: no Director proposals are applied and no unprompted
+    /// dialogue is spoken. Poke, Grab, and Throw still work.
+    pub fn set_do_not_disturb(&mut self, enabled: bool) {
+        self.do_not_disturb = enabled;
     }
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
@@ -309,7 +321,10 @@ impl Engine {
         // only a verb does that. The timer is otherwise still running when the
         // Behavior is played at the end of the tick, and a sprite that nods off
         // first is asleep when the gate reads its State. #5.
-        if snapshot.proposal.is_some() {
+        //
+        // #84: Do Not Disturb means proposals do not count as being addressed,
+        // so the idle timer keeps running and the sprite settles to sleep.
+        if snapshot.proposal.is_some() && !self.do_not_disturb {
             self.idle_ms = 0;
         }
 
@@ -410,12 +425,17 @@ impl Engine {
         // After the sprite has been moved, so the State the gate reads is the
         // one the tick ends in. A walk therefore takes its first step on the
         // tick after the proposal, which is what SPEC.md asks for.
+        //
+        // #84: Do Not Disturb refuses proposals before they reach the State
+        // gate, so the Character stops starting things while staying visible.
         let mut behavior = None;
         if let Some(proposal) = &snapshot.proposal {
-            if let Some(primitives) = self.chain(&proposal.behavior) {
-                if self.play(&primitives) {
-                    started = true;
-                    behavior = Some(proposal.behavior.clone());
+            if !self.do_not_disturb {
+                if let Some(primitives) = self.chain(&proposal.behavior) {
+                    if self.play(&primitives) {
+                        started = true;
+                        behavior = Some(proposal.behavior.clone());
+                    }
                 }
             }
         }
@@ -468,10 +488,14 @@ impl Engine {
             state: self.state,
             animation: self.animation,
             animation_ms: self.animation_ms,
-            dialogue: snapshot
-                .proposal
-                .as_ref()
-                .and_then(|proposal| proposal.dialogue.clone()),
+            dialogue: if self.do_not_disturb {
+                None
+            } else {
+                snapshot
+                    .proposal
+                    .as_ref()
+                    .and_then(|proposal| proposal.dialogue.clone())
+            },
             behavior,
             riding: self.riding,
             facing: self.facing,
@@ -3513,6 +3537,160 @@ mod tests {
             landed.state,
             State::Grounded,
             "rather than climbing an edge"
+        );
+    }
+
+    /// #84: Do Not Disturb refuses Director proposals while the Character stays
+    /// visible on screen.
+    #[test]
+    fn a_proposal_offered_under_do_not_disturb_is_not_applied() {
+        let mut engine = a_resting_sprite();
+        engine.set_do_not_disturb(true);
+
+        let refused = engine.tick(&proposing("greet"));
+
+        assert_eq!(
+            refused.animation, "idle",
+            "the proposal was refused and the sprite stays idle"
+        );
+        assert_eq!(
+            refused.behavior, None,
+            "no Behavior started playing on this frame"
+        );
+        assert!(
+            refused.position.y <= 800.0,
+            "the Character stays on screen: {refused:?}"
+        );
+    }
+
+    /// #84: turning Do Not Disturb off resumes proposals on the next wake
+    /// without reconstructing the Engine.
+    #[test]
+    fn the_same_proposal_is_applied_once_do_not_disturb_is_off() {
+        let mut engine = a_resting_sprite();
+        engine.set_do_not_disturb(true);
+
+        engine.tick(&proposing("greet"));
+
+        engine.set_do_not_disturb(false);
+        let applied = engine.tick(&proposing("greet"));
+
+        assert_eq!(
+            applied.animation, "react",
+            "the proposal is applied once Do Not Disturb is off"
+        );
+        assert_eq!(applied.behavior, Some("greet".to_string()));
+    }
+
+    /// #84: Poke still plays `react` from the Engine, the user-initiated
+    /// reaction.
+    #[test]
+    fn poke_still_plays_react_while_do_not_disturb_is_on() {
+        let mut engine = a_resting_sprite();
+        engine.set_do_not_disturb(true);
+
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+
+        assert_eq!(
+            poked.animation, "react",
+            "Poke still plays react while Do Not Disturb is on"
+        );
+    }
+
+    /// #84: Grab and Throw still move the sprite while Do Not Disturb is on.
+    #[test]
+    fn grab_and_throw_still_move_the_sprite_under_do_not_disturb() {
+        let mut engine = a_resting_sprite();
+        let start = engine.tick(&snapshot(100)).position;
+        engine.set_do_not_disturb(true);
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 400.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 600.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+
+        assert_eq!(grabbed.state, State::Dragged);
+        assert!(
+            (grabbed.position.x - 600.0).abs() < 0.1,
+            "Grab moved the sprite: {grabbed:?}"
+        );
+
+        let thrown = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: 500.0,
+                    y: -200.0,
+                },
+            }],
+            ..snapshot(100)
+        });
+
+        assert_eq!(thrown.state, State::Falling);
+        assert!(
+            thrown.position.x > start.x,
+            "Throw moved the sprite: start={start:?}, thrown={thrown:?}"
+        );
+    }
+
+    /// #84: unprompted Director dialogue is not spoken while Do Not Disturb is
+    /// on.
+    #[test]
+    fn unprompted_director_dialogue_is_not_spoken_under_do_not_disturb() {
+        let mut engine = a_resting_sprite();
+        engine.set_do_not_disturb(true);
+
+        let silent = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "greet".to_string(),
+                dialogue: Some("hello there".to_string()),
+            }),
+            ..snapshot(100)
+        });
+
+        assert_eq!(
+            silent.dialogue, None,
+            "unprompted dialogue is refused under Do Not Disturb"
+        );
+    }
+
+    /// #84: idle Behaviors do not start while Do Not Disturb is on, and the
+    /// buddy settles into sleep.
+    #[test]
+    fn idle_behaviors_do_not_start_and_the_buddy_settles_to_sleep() {
+        let mut engine = a_resting_sprite();
+        engine.set_do_not_disturb(true);
+
+        let quietening: Vec<Frame> = (0..20)
+            .map(|_| {
+                engine.tick(&WorldSnapshot {
+                    proposal: Some(BehaviorProposal {
+                        behavior: "greet".to_string(),
+                        dialogue: None,
+                    }),
+                    ..snapshot(100)
+                })
+            })
+            .collect();
+
+        assert!(
+            quietening.iter().all(|frame| frame.animation == "idle"),
+            "proposals do not start Behaviors while Do Not Disturb is on"
+        );
+
+        let asleep = engine.tick(&snapshot(60_000));
+        assert_eq!(
+            asleep.state,
+            State::Asleep,
+            "the sprite settles to sleep without Director proposals waking it"
         );
     }
 }

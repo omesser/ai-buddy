@@ -240,15 +240,15 @@ desktop level. One window cannot be both, and restacking dynamically by sprite
 state produces flicker on every platform. Peeking out from behind windows is
 given up deliberately.
 
-The investment goes into **hide rules** instead: fade out when a fullscreen app
-is frontmost, and go at once when the user asks. A companion that knows when to
-disappear is the difference between a pet and malware.
+The investment goes into **hide rules** instead: fullscreen frontmost and the
+hotkey. A companion that knows when to disappear is the difference between a pet
+and malware.
 
-Do Not Disturb is not one of them. Being quiet is not being gone: it means the
-Character stops starting things — no proposals, nothing said unprompted — while
-it stays on screen and can still be picked up. That is its own mode. Screen
-capture is not one either: the overlay is excluded from every capture at the
-window level, so there is nothing to fade.
+Do Not Disturb is not a hide rule. Being quiet is not being gone: the Character
+stays visible and stops starting things — Director proposals are refused and
+unprompted dialogue is not spoken — while Poke, Grab, and Throw still work. That
+is #84. Screen capture is not a hide rule either: the overlay is excluded from
+every capture at the window level, so there is nothing to fade.
 
 ### 9. Sensing: no permissions until they buy something
 
