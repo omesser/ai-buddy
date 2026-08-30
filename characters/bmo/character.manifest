@@ -1,21 +1,20 @@
-# BMO, the little living console: a mint shell in eight flat colours, hard
-# pixel edges, no anti-aliasing, and ordered dithering only where a shade
-# between two of those eight is genuinely wanted. Everything it feels shows on
-# the screen in its face. Regenerate the frames with
-# scripts/make-shipped-characters.py.
+# BMO in three-quarter view, cut from the Flambo's Inferno sprite sheet and
+# quantised to its ten flat colours — every pose side-on, heading right, and
+# the Engine's facing mirrors it for leftward travel. The idle, talk and
+# sleep faces are drawn by hand on the sheet's own screen, matching its grid
+# and palette, because the game's determined game-face belongs on the action
+# poses and not on a buddy meeting your eye. The frames are static art;
+# scripts/make-shipped-characters.py draws Nim only.
 
 name = "BMO"
 
-# Two or three frames each, held hard and cut fast. A handheld answers the
-# instant a button is pressed; the cadence is where that reads, not the drawing.
-
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
-fps = 4
+fps = 2
 
 [animations.walk]
-frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
-fps = 10
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
+fps = 12
 
 [animations.fall]
 frames = ["frames/fall-0.png", "frames/fall-1.png"]
@@ -28,15 +27,15 @@ loop = "once"
 
 [animations.sit]
 frames = ["frames/sit-0.png", "frames/sit-1.png"]
-fps = 3
+fps = 2
 
 [animations.hold]
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
-fps = 8
+fps = 4
 
 [animations.sleep]
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
-fps = 2
+fps = 1
 
 [animations.react]
 frames = ["frames/react-0.png", "frames/react-1.png"]
@@ -44,8 +43,8 @@ fps = 12
 loop = "once"
 
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
-fps = 10
+frames = ["frames/talk-0.png", "frames/talk-1.png"]
+fps = 8
 
 # BMO does not settle. Every Behavior here ends on its feet, which is what a
 # Character who would rather be playing looks like from the outside: the sit and

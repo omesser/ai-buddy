@@ -289,8 +289,8 @@ can answer it. Run the app, then confirm:
     edge, fully visible.
 13. **The two shipped Characters are two companions.** Run each in turn (see
     [The shipped Characters](#the-shipped-characters)) and watch it idle. BMO
-    cuts between two poses four times a second, in eight flat colours with
-    nothing under its feet; Nim eases through six, blinks, and carries a
+    stands in three-quarter view and blinks about once a second, in the ten
+    flat colours of its sheet; Nim eases through six, blinks, and carries a
     translucent shadow. Poke each: BMO's startle is two frames and over, Nim's
     plays through five. The Behaviors each declares show when a Director
     proposes one (Static, or the HTTP stand-in with a key). Sitting and
@@ -392,11 +392,13 @@ The format stays internal and undocumented until v2 — see
 Two ship, in deliberately different styles, so that the format is proven against
 real variance rather than against itself:
 
-- **`characters/bmo/` — BMO**, hard-edged flat art. Eight colours, flat fills,
-  no anti-aliasing, and dithering only where a shade between two of those
-  colours is genuinely wanted. Two or three frames an Animation, cut fast, and
-  what changes between them is mostly the face on its screen. BMO never
-  settles: every Behavior it declares ends on its feet.
+- **`characters/bmo/` — BMO**, game-sprite art. Every pose is cut from the
+  *Flambo's Inferno* sprite sheet (see
+  [Prior art and attribution](#prior-art-and-attribution)), quantised to its
+  ten flat colours, side-on and heading right — the Engine's facing mirrors it
+  to walk left. The idle, talk and sleep faces are drawn by hand on the
+  sheet's own screen, in its grid and palette. BMO never settles: every
+  Behavior it declares ends on its feet.
 - **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames
@@ -461,7 +463,7 @@ python3 scripts/make-blip-character.py
 ```
 
 Standard library only, so there is nothing to install, which is the same reason
-the shipped Characters are generated the same way.
+Nim is generated the same way.
 
 ## Prior art and attribution
 
@@ -476,6 +478,12 @@ attribution belongs in this section.
 
 [desktop-homunculus](https://github.com/not-elm/desktop-homunculus) informed the
 MCP-server-as-companion shape considered and rejected in the same ADR.
+
+BMO's frames are cut from a community rip of the *Adventure Time: Flambo's
+Inferno* browser-game sprite sheet, quantised to a fixed palette and
+hand-adjusted (faces, sleep screen). BMO and the underlying sprites are
+Cartoon Network IP; the character is a development asset, and none of this
+repository's license claims cover that art.
 
 ## License
 
