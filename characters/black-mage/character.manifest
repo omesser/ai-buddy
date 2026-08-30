@@ -1,0 +1,79 @@
+# FF1 Black Mage, from the GigaGuy custom sprite sheet (Spriters Resource
+# asset 17261). Pixel art scaled to be readable on desktop; frames face right
+# for the engine's mirroring. Poses sliced from the 196x205 grid. Where the
+# sheet lacked a required pose, the closest existing one was reused.
+#
+# TODO: Replace placeholder frames with actual sliced sprites from the
+# downloaded GigaGuy sheet at https://www.spriters-resource.com/custom_edited/finalfantasy1customs/asset/17261/
+
+name = "Black Mage"
+scale = 3
+
+[animations.idle]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 2
+
+[animations.walk]
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
+fps = 8
+
+[animations.fall]
+frames = ["frames/fall-0.png", "frames/fall-1.png"]
+fps = 6
+
+[animations.land]
+frames = ["frames/land-0.png", "frames/land-1.png"]
+fps = 10
+loop = "once"
+
+[animations.sit]
+frames = ["frames/sit-0.png", "frames/sit-1.png"]
+fps = 2
+
+[animations.hold]
+frames = ["frames/hold-0.png", "frames/hold-1.png"]
+fps = 4
+
+[animations.sleep]
+frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
+fps = 1
+
+[animations.react]
+frames = ["frames/react-0.png", "frames/react-1.png"]
+fps = 10
+loop = "once"
+
+[animations.talk]
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
+fps = 4
+
+# A mage who casts from safety. Greets briefly, settles into contemplation,
+# rarely wanders. The arc: acknowledge presence, stand idle most of the time,
+# sit when idle persists, sleep deeply after long absence.
+
+[behaviors.greet]
+play = ["react", "talk"]
+then = "ponder"
+weight = 3
+when = "idle under 10s"
+
+[behaviors.ponder]
+play = ["idle"]
+weight = 4
+when = "idle over 10s"
+
+[behaviors.settle]
+play = ["sit"]
+then = "meditate"
+weight = 3
+when = "idle over 1m"
+
+[behaviors.meditate]
+play = ["sit", "sleep"]
+weight = 5
+when = "idle over 2m"
+
+[behaviors.walk]
+play = ["walk"]
+weight = 1
+when = "idle over 30s"
