@@ -229,19 +229,25 @@ the window left it behind in mid-air. Riding changes position and never
 velocity, or flinging a window across the desktop would launch the sprite
 ballistically.
 
-What breaks the grip is the jerk and not the speed. The sprite rides while the
-edge's speed changes gently, and is left standing where it was — falling from
-there — when it changes faster than the ride gate: a yank, a maximize, a window
-flung across the screen. A top speed is the obvious alternative and it is the
-wrong one, because a fast drag that started smoothly is still something to hold
-on to. The gate compares against the edge's speed of a tenth of a second ago
-rather than the previous frame's, since at 16 ms the window server's own jitter
-reads as a yank. The number is tuned against a real dragged window, not derived.
+**The gate is on acceleration, not on speed.** There is no top speed a Perch
+may travel at. The sprite rides while the edge's speed changes gently and is
+left standing where it was — falling from there — when the speed changes by
+more than the gate allows: a yank, a maximize, a window flung across the
+screen. A speed limit was the obvious alternative and it is the wrong one. A
+window already sliding quickly is something the sprite has hold of and keeps
+hold of; what breaks a grip is the edge jumping to a speed it was not at a
+moment ago. The gate measures that change against the edge's speed of a tenth
+of a second ago rather than the previous frame's, because at 16 ms the window
+server's own jitter reads as a jump. The number is a feel value, tuned against
+a real dragged window rather than derived.
 
-The window under the sprite is matched between polls by its size and nearest
-position, because the snapshot carries geometry and no window identity. A
-resized window is therefore a different window, and the sprite falls off it as
-it would off one that closed.
+A resize drops the sprite, and a move does not. The window under the sprite is
+matched between polls by its size and nearest position, so changing the size
+makes it a different window and the sprite falls off it as it would off one
+that closed. That falls out of matching on geometry rather than on an identity
+the window server would hand out, and it is kept because it feels right: a
+window growing under the sprite is a bigger change to what it is standing on
+than the same window sliding.
 
 Occlusion is a landing rule and never a resting one. An edge hidden behind a
 window in front of it is nowhere to land, but a sprite already standing on one
