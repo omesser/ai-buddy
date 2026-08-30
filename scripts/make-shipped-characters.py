@@ -117,12 +117,14 @@ def rounded(px, x0, y0, w, h, fill, edge):
 
 def face(px, bx, top, eyes, mouth, dim):
     """The screen and the face inside it. This is the whole of BMO's
-    expression: everything else only tilts and bobs around it."""
-    rounded(px, bx + 2, top + 2, 14, 11, GLASS, DEEP)
+    expression: everything else only tilts and bobs around it. The face is
+    sparse on purpose — two dark ovals set high and one shallow wide curve set
+    low, and nothing else drawn at all."""
+    rounded(px, bx + 2, top + 2, 14, 10, GLASS, DEEP)
     if dim:
         # Asleep the screen is turned down, not off — a difference one flat
         # colour cannot say and a checkerboard of two can.
-        dither(px, bx + 3, top + 3, 12, 9, GLASS, MINT)
+        dither(px, bx + 3, top + 3, 12, 8, GLASS, MINT)
 
     if eyes == "shut":
         # Closed eyes are curves, or a sleeping BMO reads as a switched-off one.
@@ -131,39 +133,74 @@ def face(px, bx, top, eyes, mouth, dim):
             put(px, x, top + 6, INK)
             put(px, x + 3, top + 6, INK)
     elif eyes == "wide":
+        # Startled eyes open upward and leave a clear row above the mouth. Grown
+        # downward instead they meet it, and the whole face becomes one smudge.
         for x in (bx + 4, bx + 10):
-            rect(px, x, top + 4, 3, 4, INK)
+            rect(px, x, top + 3, 3, 4, INK)
     else:
         for x in (bx + 5, bx + 11):
-            rect(px, x, top + 5, 2, 3, INK)
+            rect(px, x, top + 4, 2, 3, INK)
 
     if mouth == "open":
-        rect(px, bx + 8, top + 9, 2, 2, INK)
+        rect(px, bx + 7, top + 8, 4, 2, INK)
     elif mouth == "wide":
-        rect(px, bx + 7, top + 9, 4, 2, INK)
-        rect(px, bx + 8, top + 11, 2, 1, INK)
+        # An open mouth is round, not a slab: four across with the corners off,
+        # set low enough that it never touches the wide eyes above it.
+        rect(px, bx + 7, top + 8, 4, 3, INK)
+        for y in (top + 8, top + 10):
+            put(px, bx + 7, y, CLEAR)
+            put(px, bx + 10, y, CLEAR)
     elif mouth == "gasp":
         rect(px, bx + 8, top + 8, 2, 3, INK)
     elif mouth == "flat":
-        rect(px, bx + 7, top + 10, 4, 1, INK)
-    else:  # the resting smile, drawn as a curve rather than a line
-        put(px, bx + 7, top + 9, INK)
-        rect(px, bx + 8, top + 10, 2, 1, INK)
-        put(px, bx + 10, top + 9, INK)
+        rect(px, bx + 7, top + 9, 4, 1, INK)
+    else:
+        # The signature: six pixels wide and two tall, the ends a pixel above
+        # the line. A deeper curve is a grin and a shorter one is a dot, and
+        # BMO is neither.
+        put(px, bx + 6, top + 8, INK)
+        rect(px, bx + 7, top + 9, 4, 1, INK)
+        put(px, bx + 11, top + 8, INK)
+
+
+def button(px, x, y, colour):
+    """Four across with the corners knocked off — the smallest circle this grid
+    can draw. Three across leaves a plus, which is the D-pad's shape and would
+    read as a second one."""
+    rect(px, x, y + 1, 4, 2, colour)
+    rect(px, x + 1, y, 2, 1, colour)
+    rect(px, x + 1, y + 3, 2, 1, colour)
 
 
 def panel(px, bx, top):
-    """What makes it a console rather than a green box: a D-pad, three buttons
-    and a pair of slots, all on the shell below the screen."""
-    rect(px, bx + 2, top + 16, 5, 1, INK)
-    rect(px, bx + 4, top + 14, 1, 5, INK)
+    """What makes it a console rather than a green box: a navy D-pad, a red and
+    a blue button beside it, the yellow play triangle, and the cartridge slot.
+    Every one of them stands clear of its neighbours — crowded, they merge into
+    one coloured smudge at the size this is actually seen."""
+    rect(px, bx + 2, top + 15, 5, 1, INK)
+    rect(px, bx + 4, top + 13, 1, 5, INK)
 
-    rect(px, bx + 9, top + 14, 2, 2, RED)
-    rect(px, bx + 12, top + 14, 2, 2, YELLOW)
-    rect(px, bx + 9, top + 17, 2, 2, BLUE)
+    button(px, bx + 8, top + 13, RED)
+    button(px, bx + 13, top + 13, BLUE)
 
-    rect(px, bx + 2, top + 20, 5, 1, INK)
-    rect(px, bx + 9, top + 20, 5, 1, INK)
+    for row, width in enumerate((1, 2, 1)):
+        rect(px, bx + 12, top + 18 + row, width, 1, YELLOW)
+
+    rect(px, bx + 2, top + 19, 6, 2, INK)
+
+
+def arm(px, x0, y, out, slope):
+    """A long thin arm: two pixels thick, sloping over its length, with a small
+    hand on the end. Long light limbs hung off a heavy shell are most of what
+    separates BMO from a green box with stumps, so they reach well clear of the
+    body rather than sitting flush against it."""
+    for i in range(4):
+        x = x0 + out * i
+        put(px, x, y + slope * (i // 2), MINT)
+        put(px, x, y + slope * (i // 2) + 1, DEEP)
+    for x in (x0 + out * 4, x0 + out * 5):
+        rect(px, x, y + slope * 2, 1, 2, MINT)
+        put(px, x, y + slope * 2 + 2, DEEP)
 
 
 def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, fold=False, dim=False):
@@ -175,10 +212,11 @@ def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, f
     top = 3 + drop
     bottom = top + 23
 
-    for x, side in ((bx - 3, -1), (bx + 18, 1)):
-        arm = top + 12 + arms + swing * side
-        rect(px, x, arm, 3, 3, MINT)
-        rect(px, x, arm + 2, 3, 1, DEEP)
+    # A raised arm bends upward from the shoulder. Reusing the resting droop
+    # for it would put the hands below the elbows with the arms overhead.
+    slope = -1 if arms < 0 else 1
+    for x0, out in ((bx - 1, -1), (bx + 18, 1)):
+        arm(px, x0, top + 12 + arms + swing * out, out, slope)
 
     rounded(px, bx, top, 18, 24, MINT, DEEP)
     # The one shade on the shell, and the only place one is wanted: the underside
@@ -188,17 +226,17 @@ def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, f
     panel(px, bx, top)
 
     if fold:
-        # Sitting, the legs are under BMO rather than beside it: one wide block
-        # where two stubs were.
-        rect(px, 9, bottom + 1, 14, GROUND - bottom, DEEP)
+        # Sitting, the legs are under BMO rather than beside it: one block
+        # where two thin supports were.
+        rect(px, 10, bottom + 1, 12, GROUND - bottom, DEEP)
     else:
-        for side, x in ((-1, 10 - stride), (1, 18 + stride)):
+        for side, x in ((-1, 11 - stride), (1, 19 + stride)):
             # A leg that swings through is a leg off the floor. Two pixels is
             # the whole of it at this size, and it is what separates a stride
             # from both feet sliding apart and back.
             sole = GROUND - (2 if lift == side else 0)
-            rect(px, x, bottom + 1, 4, sole - bottom - 1, MINT)
-            rect(px, x, sole - 1, 4, 2, DEEP)
+            rect(px, x, bottom + 1, 2, sole - bottom - 1, MINT)
+            rect(px, x, sole - 1, 2, 2, DEEP)
     return px
 
 
@@ -212,9 +250,9 @@ def bmo_animations():
         # and rises as one leg swings under it. Four poses, none repeated, or
         # the cycle reads as the two it actually draws.
         "walk": [
-            bmo(drop=1, stride=2, swing=1),
+            bmo(drop=1, stride=2, swing=2),
             bmo(stride=-1, lift=-1),
-            bmo(drop=1, stride=2, swing=-1),
+            bmo(drop=1, stride=2, swing=-2),
             bmo(stride=-1, lift=1),
         ],
         "fall": [
