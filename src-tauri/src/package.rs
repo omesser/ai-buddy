@@ -60,7 +60,7 @@ pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
 /// earlier would silently replace the buddy everybody sees. A preference and
 /// not a requirement — if it will not load, the search carries on behind it.
 /// Settings remembering a choice is #18; until then this is the only answer.
-pub const DEFAULT_CHARACTER: &str = "chip";
+pub const DEFAULT_CHARACTER: &str = "bmo";
 
 /// The environment variable that starts one named Character rather than the
 /// first one found.
@@ -168,8 +168,8 @@ pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
 
 /// The candidates named `wanted`, or all of them when nothing is named.
 ///
-/// A package is named by its file name without the extension, so `chip` names
-/// `chip/` and `chip.zip` alike. Naming a Character that is not installed
+/// A package is named by its file name without the extension, so `bmo` names
+/// `bmo/` and `bmo.zip` alike. Naming a Character that is not installed
 /// leaves nothing rather than falling through to the next one: starting some
 /// other Character than the one asked for is a worse answer than saying so.
 pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
@@ -759,16 +759,16 @@ mod tests {
         let candidates = vec![
             PathBuf::from("/characters/nim"),
             PathBuf::from("/characters/blip"),
-            PathBuf::from("/characters/chip"),
+            PathBuf::from("/characters/bmo"),
         ];
 
         assert_eq!(
-            preferring(candidates.clone(), "chip").first(),
-            Some(&PathBuf::from("/characters/chip")),
+            preferring(candidates.clone(), "bmo").first(),
+            Some(&PathBuf::from("/characters/bmo")),
             "the default is met first wherever it sorts"
         );
         assert_eq!(
-            preferring(candidates.clone(), "chip").len(),
+            preferring(candidates.clone(), "bmo").len(),
             candidates.len(),
             "and the rest stay behind it, so a default that will not load is not the end"
         );
@@ -781,18 +781,18 @@ mod tests {
 
     /// Without this there is no way to start a particular Character: the search
     /// takes the first package that loads, so `nim` wins on name order and
-    /// `chip` is unreachable until #18 ships a menu to choose from.
+    /// `bmo` is unreachable until #18 ships a menu to choose from.
     #[test]
     fn a_named_character_is_the_only_candidate_left() {
         let candidates = vec![
             PathBuf::from("/characters/nim"),
             PathBuf::from("/characters/blip"),
-            PathBuf::from("/characters/chip.zip"),
+            PathBuf::from("/characters/bmo.zip"),
         ];
 
         assert_eq!(
-            named(candidates.clone(), Some(OsStr::new("chip"))),
-            vec![PathBuf::from("/characters/chip.zip")],
+            named(candidates.clone(), Some(OsStr::new("bmo"))),
+            vec![PathBuf::from("/characters/bmo.zip")],
             "named by its file name, archive or directory alike"
         );
         assert_eq!(
@@ -882,7 +882,7 @@ mod tests {
     /// package loses a frame or names one it does not carry.
     #[test]
     fn both_shipped_characters_load_through_the_same_loader() {
-        for (directory, name) in [("chip", "Chip"), ("nim", "Nim")] {
+        for (directory, name) in [("bmo", "BMO"), ("nim", "Nim")] {
             let package = read(&shipped(directory)).unwrap_or_else(|why| panic!("{why}"));
             assert_eq!(package.character.name, name);
             assert!(
@@ -907,18 +907,18 @@ mod tests {
     /// Nothing a Character declares decides when it sits: `animation_for`
     /// perches it on a window and puts it to sleep after a minute whoever it
     /// is. What a Character declares is what a Director may set it doing, and
-    /// there the two disagree — no Behavior of Chip's ever settles, and every
+    /// there the two disagree — no Behavior of BMO's ever settles, and every
     /// Behavior of Nim's but the walk does. Two different lives from the same
     /// Director, and not before one exists: nothing proposes a Behavior until
     /// #11.
     #[test]
     fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
-        let chip = shipped_character("chip");
-        for behavior in chip.behaviors.keys() {
-            let seen = played(&chip, behavior);
+        let bmo = shipped_character("bmo");
+        for behavior in bmo.behaviors.keys() {
+            let seen = played(&bmo, behavior);
             assert!(
                 !seen.contains("sit") && !seen.contains("sleep"),
-                "Chip settles down in {behavior:?}: {seen:?}"
+                "BMO settles down in {behavior:?}: {seen:?}"
             );
         }
 
@@ -937,24 +937,24 @@ mod tests {
     /// manifest cannot claim in-between frames the drawing has not got.
     #[test]
     fn the_two_shipped_characters_are_not_one_character_twice() {
-        let chip = read(&shipped("chip")).expect("Chip is a valid package");
+        let bmo = read(&shipped("bmo")).expect("BMO is a valid package");
         let nim = read(&shipped("nim")).expect("Nim is a valid package");
 
         for animation in character::REQUIRED_ANIMATIONS {
             let (hard, smooth) = (
-                chip.character.animations[animation].frames.len(),
+                bmo.character.animations[animation].frames.len(),
                 nim.character.animations[animation].frames.len(),
             );
             assert!(
                 smooth > hard,
-                "{animation:?} is {smooth} frames of Nim against {hard} of Chip, \
+                "{animation:?} is {smooth} frames of Nim against {hard} of BMO, \
                  and Nim is the one that eases"
             );
         }
 
-        let chip_art: BTreeSet<&Vec<u8>> = chip.files.values().collect();
+        let bmo_art: BTreeSet<&Vec<u8>> = bmo.files.values().collect();
         assert!(
-            nim.files.values().all(|file| !chip_art.contains(file)),
+            nim.files.values().all(|file| !bmo_art.contains(file)),
             "no file is shipped in both packages"
         );
     }

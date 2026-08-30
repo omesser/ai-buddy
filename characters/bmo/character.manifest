@@ -1,9 +1,10 @@
-# Chip, the faithful Win95 Character: the sixteen VGA colours, flat fills, the
-# raised-button bevel of the era, and ordered dithering wherever a shade
-# between two of those colours is wanted. Regenerate the frames with
+# BMO, the little living console: a mint shell in seven flat colours, hard
+# pixel edges, no anti-aliasing, and ordered dithering only where a shade
+# between two of those seven is genuinely wanted. Everything it feels shows on
+# the screen in its face. Regenerate the frames with
 # scripts/make-shipped-characters.py.
 
-name = Chip
+name = BMO
 
 animation idle = frames/idle-0.png frames/idle-1.png
 animation walk = frames/walk-0.png frames/walk-1.png frames/walk-2.png frames/walk-3.png
@@ -14,8 +15,8 @@ animation sleep = frames/sleep-0.png frames/sleep-1.png
 animation react = frames/react-0.png frames/react-1.png
 animation talk = frames/talk-0.png frames/talk-1.png frames/talk-2.png
 
-# Two or three frames each, held hard and cut fast. A machine from 1995 snaps
-# between poses; the cadence is where that reads, not the drawing.
+# Two or three frames each, held hard and cut fast. A handheld answers the
+# instant a button is pressed; the cadence is where that reads, not the drawing.
 fps idle = 4
 fps walk = 10
 fps fall = 8
@@ -28,10 +29,9 @@ fps talk = 10
 loop land = once
 loop react = once
 
-# Chip does not rest. Every Behavior here ends on its feet, which is what a
-# Character who thinks a screensaver is a moral failing looks like from the
-# outside: the sit and sleep art exists, and only the Engine's own idling ever
-# reaches it.
+# BMO does not settle. Every Behavior here ends on its feet, which is what a
+# Character who would rather be playing looks like from the outside: the sit and
+# sleep art exists, and only the Engine's own idling ever reaches it.
 behavior walk = walk
 behavior patrol = walk react walk then walk
 behavior fidget = react idle react

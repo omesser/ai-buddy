@@ -14,7 +14,7 @@ animation sleep = frames/sleep-0.png frames/sleep-1.png frames/sleep-2.png frame
 animation react = frames/react-0.png frames/react-1.png frames/react-2.png frames/react-3.png frames/react-4.png
 animation talk = frames/talk-0.png frames/talk-1.png frames/talk-2.png frames/talk-3.png frames/talk-4.png frames/talk-5.png
 
-# Twice Chip's frames everywhere, played fast enough that the in-betweens are
+# Twice BMO's frames everywhere, played fast enough that the in-betweens are
 # seen rather than sat through. Sleep is the exception: a breath that slow is
 # the point of it.
 fps idle = 8
@@ -30,7 +30,7 @@ loop land = once
 loop react = once
 
 # Nim comes to rest. Every Behavior here but the walk ends sitting or asleep,
-# which is the whole difference between living with Nim and living with Chip.
+# which is the whole difference between living with Nim and living with BMO.
 behavior walk = walk
 behavior doze = sit sleep
 behavior amble = walk sit then doze

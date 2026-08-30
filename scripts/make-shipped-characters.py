@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Draw the two shipped Characters, Chip and Nim.
+"""Draw the two shipped Characters, BMO and Nim.
 
 The two exist to prove the Character Package format against real variance, so
 they are drawn by two different techniques rather than one technique twice:
 
-  * **Chip** is faithful Win95 — the sixteen VGA colours, flat fills, the
-    raised-button bevel of the era, and ordered dithering wherever a shade
-    between two of those sixteen is wanted. Few frames, held hard.
+  * **BMO** is hard-edged flat art — seven colours, flat fills, no
+    anti-aliasing, and ordered dithering only where a shade between two of
+    those seven is genuinely wanted. Few frames, held hard.
   * **Nim** is modern pixel art — a shaded ramp lit from the upper left, a
     palette four times the size, translucent contact shadow, and enough
     in-between frames that the motion reads as smooth rather than stepped.
@@ -18,7 +18,7 @@ third file to import would cost more than the twelve lines it saves.
 
     python3 scripts/make-shipped-characters.py
 
-It rewrites characters/chip/frames/ and characters/nim/frames/ in place.
+It rewrites characters/bmo/frames/ and characters/nim/frames/ in place.
 The manifests and the Personality Prompts are written by hand and never touched.
 """
 
@@ -77,155 +77,153 @@ def png(px):
 
 
 # --------------------------------------------------------------------------
-# Chip — faithful Win95
+# BMO — the little living console
 # --------------------------------------------------------------------------
 
-# The sixteen colours a VGA text mode had, which is the whole palette Chip is
-# allowed. Anything between two of them is dithered, never mixed.
-BLACK = (0x00, 0x00, 0x00, 255)
-NAVY = (0x00, 0x00, 0x80, 255)
-DGREEN = (0x00, 0x80, 0x00, 255)
-TEAL = (0x00, 0x80, 0x80, 255)
-MAROON = (0x80, 0x00, 0x00, 255)
-PURPLE = (0x80, 0x00, 0x80, 255)
-OLIVE = (0x80, 0x80, 0x00, 255)
-SILVER = (0xC0, 0xC0, 0xC0, 255)
-GREY = (0x80, 0x80, 0x80, 255)
-BLUE = (0x00, 0x00, 0xFF, 255)
-GREEN = (0x00, 0xFF, 0x00, 255)
-CYAN = (0x00, 0xFF, 0xFF, 255)
-RED = (0xFF, 0x00, 0x00, 255)
-MAGENTA = (0xFF, 0x00, 0xFF, 255)
-YELLOW = (0xFF, 0xFF, 0x00, 255)
-WHITE = (0xFF, 0xFF, 0xFF, 255)
+# Seven flat colours and nothing between them. A console moulded from coloured
+# plastic has no gradients in it, so anything wanting a shade between two of
+# these is dithered rather than mixed — and rarely, because BMO is one flat
+# shell rather than a lit box.
+MINT = (0x7A, 0xD4, 0xBE, 255)
+DEEP = (0x3C, 0x8B, 0x7C, 255)
+GLASS = (0xE9, 0xF6, 0xEC, 255)
+INK = (0x1B, 0x2B, 0x33, 255)
+RED = (0xD8, 0x3A, 0x3A, 255)
+YELLOW = (0xF2, 0xC4, 0x3D, 255)
+BLUE = (0x3F, 0x7C, 0xD8, 255)
 
-VGA = {
-    BLACK, NAVY, DGREEN, TEAL, MAROON, PURPLE, OLIVE, SILVER,
-    GREY, BLUE, GREEN, CYAN, RED, MAGENTA, YELLOW, WHITE,
-}
+PALETTE = {MINT, DEEP, GLASS, INK, RED, YELLOW, BLUE}
 
 
 def dither(px, x0, y0, w, h, a, b):
-    """Two colours on a checkerboard — the era's only way to shade."""
+    """Two palette colours on a checkerboard — the only shade BMO is allowed."""
     for y in range(y0, y0 + h):
         for x in range(x0, x0 + w):
             put(px, x, y, a if (x + y) % 2 == 0 else b)
 
 
-def bevel(px, x0, y0, w, h, fill, light, dark):
-    """A raised Win95 control: lit top and left, shadowed bottom and right."""
+def rounded(px, x0, y0, w, h, fill, edge):
+    """A rounded rectangle with a hard one-pixel rim. The rim is what keeps a
+    mint shell legible on a pale desktop, where the fill alone washes out."""
     rect(px, x0, y0, w, h, fill)
-    rect(px, x0, y0, w, 1, light)
-    rect(px, x0, y0, 1, h, light)
-    rect(px, x0, y0 + h - 1, w, 1, dark)
-    rect(px, x0 + w - 1, y0, 1, h, dark)
-    put(px, x0 + w - 1, y0, dark)
-    put(px, x0, y0 + h - 1, dark)
+    rect(px, x0, y0, w, 1, edge)
+    rect(px, x0, y0 + h - 1, w, 1, edge)
+    rect(px, x0, y0, 1, h, edge)
+    rect(px, x0 + w - 1, y0, 1, h, edge)
+    for x in (x0, x0 + w - 1):
+        for y in (y0, y0 + h - 1):
+            put(px, x, y, CLEAR)
 
 
-def screen(px, top, eyes, mouth, asleep):
-    """The CRT face: recessed, scanlined, and dark when Chip is asleep."""
-    x0, y0, w, h = 10, top + 2, 12, 7
-    rect(px, x0 - 1, y0 - 1, w + 2, h + 2, GREY)
-    rect(px, x0 - 1, y0 + h, w + 2, 1, WHITE)
-    rect(px, x0 + w, y0 - 1, 1, h + 2, WHITE)
-
-    if asleep:
-        # A dark screen with a screensaver crawling over it is what a 1995
-        # machine looks like when nobody is at it.
-        rect(px, x0, y0, w, h, BLACK)
-        return
-    # Scanlines: teal and dark-teal rows, which is dithering by row rather than
-    # by pixel and reads as a phosphor screen.
-    for row in range(h):
-        rect(px, x0, y0 + row, w, 1, TEAL if row % 2 == 0 else DGREEN)
+def face(px, bx, top, eyes, mouth, dim):
+    """The screen and the face inside it. This is the whole of BMO's
+    expression: everything else only tilts and bobs around it."""
+    rounded(px, bx + 2, top + 2, 14, 11, GLASS, DEEP)
+    if dim:
+        # Asleep the screen is turned down, not off — a difference one flat
+        # colour cannot say and a checkerboard of two can.
+        dither(px, bx + 3, top + 3, 12, 9, GLASS, MINT)
 
     if eyes == "shut":
-        rect(px, 12, y0 + 3, 3, 1, GREEN)
-        rect(px, 17, y0 + 3, 3, 1, GREEN)
+        # Closed eyes are curves, or a sleeping BMO reads as a switched-off one.
+        for x in (bx + 4, bx + 10):
+            rect(px, x + 1, top + 5, 2, 1, INK)
+            put(px, x, top + 6, INK)
+            put(px, x + 3, top + 6, INK)
+    elif eyes == "wide":
+        for x in (bx + 4, bx + 10):
+            rect(px, x, top + 4, 3, 4, INK)
     else:
-        wide = eyes == "wide"
-        for x in (12, 17):
-            rect(px, x, y0 + 1, 3, 3 if wide else 2, GREEN)
-            if wide:
-                put(px, x + 1, y0 + 2, BLACK)
-    if mouth:
-        rect(px, 13, y0 + 5, 6, min(mouth, 2), GREEN)
-    else:
-        rect(px, 13, y0 + 5, 6, 1, DGREEN)
+        for x in (bx + 5, bx + 11):
+            rect(px, x, top + 5, 2, 3, INK)
+
+    if mouth == "open":
+        rect(px, bx + 8, top + 9, 2, 2, INK)
+    elif mouth == "wide":
+        rect(px, bx + 7, top + 9, 4, 2, INK)
+        rect(px, bx + 8, top + 11, 2, 1, INK)
+    elif mouth == "gasp":
+        rect(px, bx + 8, top + 8, 2, 3, INK)
+    elif mouth == "flat":
+        rect(px, bx + 7, top + 10, 4, 1, INK)
+    else:  # the resting smile, drawn as a curve rather than a line
+        put(px, bx + 7, top + 9, INK)
+        rect(px, bx + 8, top + 10, 2, 1, INK)
+        put(px, bx + 10, top + 9, INK)
 
 
-def chip(drop=0, eyes="open", mouth=0, stride=0, arms=0, bulb=RED, asleep=False, mark=None):
-    """Chip, posed. `drop` compresses him toward the floor; the feet never move."""
+def panel(px, bx, top):
+    """What makes it a console rather than a green box: a D-pad, three buttons
+    and a pair of slots, all on the shell below the screen."""
+    rect(px, bx + 2, top + 16, 5, 1, INK)
+    rect(px, bx + 4, top + 14, 1, 5, INK)
+
+    rect(px, bx + 9, top + 14, 2, 2, RED)
+    rect(px, bx + 12, top + 14, 2, 2, YELLOW)
+    rect(px, bx + 9, top + 17, 2, 2, BLUE)
+
+    rect(px, bx + 2, top + 20, 5, 1, INK)
+    rect(px, bx + 9, top + 20, 5, 1, INK)
+
+
+def bmo(drop=0, lean=0, eyes="open", mouth="smile", stride=0, arms=0, swing=0, fold=False, dim=False):
+    """BMO, posed. `drop` lowers the body and shortens the legs to meet it, so
+    the feet stay on the bottom row however far down the body comes."""
     px = blank()
-    head_top = 6 + drop
-    body_top = 19 + drop
-    body_bottom = 28
+    bx = 7 + lean
+    top = 3 + drop
+    bottom = top + 23
 
-    # Antenna, above everything, with a bulb that changes colour rather than
-    # position: a blinking light is the cheapest liveliness a box has. It
-    # shortens rather than leaving the grid when Chip rises.
-    bulb_top = max(0, head_top - 6)
-    rect(px, 16, bulb_top + 2, 1, head_top - bulb_top - 2, GREY)
-    rect(px, 15, bulb_top, 2, 2, bulb)
+    for x, side in ((bx - 3, -1), (bx + 18, 1)):
+        arm = top + 12 + arms + swing * side
+        rect(px, x, arm, 3, 3, MINT)
+        rect(px, x, arm + 2, 3, 1, DEEP)
 
-    bevel(px, 8, head_top, 16, 12, SILVER, WHITE, GREY)
-    screen(px, head_top, eyes, mouth, asleep)
-    rect(px, 14, head_top + 12, 4, body_top - head_top - 12, GREY)
+    rounded(px, bx, top, 18, 24, MINT, DEEP)
+    # The one shade on the shell, and the only place one is wanted: the underside
+    # of a moulded case turns away from everything that lights it.
+    dither(px, bx + 1, bottom - 2, 16, 2, MINT, DEEP)
+    face(px, bx, top, eyes, mouth, dim)
+    panel(px, bx, top)
 
-    bevel(px, 6, body_top, 20, body_bottom - body_top + 1, SILVER, WHITE, GREY)
-    # A shaded lower half, in the only way sixteen colours allow.
-    dither(px, 7, body_bottom - 3, 18, 3, SILVER, GREY)
-    rect(px, 8, body_top + 2, 3, 2, MAROON if asleep else RED)
-    for row in range(2):
-        rect(px, 14, body_top + 2 + row * 2, 8, 1, GREY)
-
-    for x, side in ((3, -1), (26, 1)):
-        rect(px, x, body_top + 2 + arms * side, 3, 3, GREY)
-        rect(px, x, body_top + 2 + arms * side, 3, 1, SILVER)
-
-    # Feet last: they are the only part that stands on the floor, so nothing
-    # may be drawn over them.
-    for x in (8 - stride, 18 + stride):
-        rect(px, x, GROUND - 2, 6, 3, GREY)
-        rect(px, x, GROUND - 2, 6, 1, SILVER)
-        rect(px, x, GROUND, 6, 1, BLACK)
-
-    if mark == "bang":
-        rect(px, 26, 0, 2, 5, YELLOW)
-        rect(px, 26, 6, 2, 2, YELLOW)
-    elif mark is not None:  # a screensaver Z, at the offset given
-        zx, zy = 12 + mark, head_top + 4
-        rect(px, zx, zy, 5, 1, GREEN)
-        rect(px, zx, zy + 4, 5, 1, GREEN)
-        for i in range(3):
-            put(px, zx + 3 - i, zy + 1 + i, GREEN)
+    if fold:
+        # Sitting, the legs are under BMO rather than beside it: one wide block
+        # where two stubs were.
+        rect(px, 9, bottom + 1, 14, GROUND - bottom, DEEP)
+    else:
+        for x in (10 - stride, 18 + stride):
+            rect(px, x, bottom + 1, 4, GROUND - bottom - 1, MINT)
+            rect(px, x, GROUND - 1, 4, 2, DEEP)
     return px
 
 
-def chip_animations():
-    """Chip's eight Animations. Two or three frames each, held hard: a machine
-    from 1995 snaps between poses rather than easing between them."""
+def bmo_animations():
+    """BMO's eight Animations. Two to four frames each, cut fast: a handheld
+    answers the instant a button is pressed, and the frame counts are where
+    that reads. What changes between frames is mostly the face."""
     return {
-        "idle": [chip(), chip(bulb=MAROON)],
+        "idle": [bmo(), bmo(drop=1)],
         "walk": [
-            chip(stride=2, arms=1),
-            chip(drop=1, stride=0),
-            chip(stride=2, arms=-1),
-            chip(drop=1, stride=0, bulb=MAROON),
+            bmo(stride=2, lean=1, swing=1),
+            bmo(drop=1),
+            bmo(stride=2, lean=-1, swing=-1),
+            bmo(drop=1),
         ],
-        "fall": [chip(drop=-2, arms=-2, eyes="wide", mouth=2), chip(drop=-1, arms=-2, eyes="wide", mouth=1)],
-        "land": [chip(drop=4, eyes="shut", stride=3), chip(drop=1, stride=1)],
-        "sit": [chip(drop=6, stride=3), chip(drop=6, stride=3, bulb=MAROON)],
+        "fall": [
+            bmo(drop=-1, arms=-6, eyes="wide", mouth="gasp", stride=2),
+            bmo(arms=-5, eyes="wide", mouth="gasp", stride=1),
+        ],
+        "land": [bmo(drop=4, eyes="shut", mouth="wide", stride=2), bmo(drop=1)],
+        "sit": [bmo(drop=4, fold=True), bmo(drop=4, fold=True, eyes="shut")],
         "sleep": [
-            chip(drop=6, stride=3, eyes="shut", asleep=True, bulb=MAROON, mark=0),
-            chip(drop=6, stride=3, eyes="shut", asleep=True, bulb=MAROON, mark=4),
+            bmo(drop=4, fold=True, eyes="shut", mouth="flat", dim=True),
+            bmo(drop=5, fold=True, eyes="shut", mouth="flat", dim=True),
         ],
         "react": [
-            chip(drop=-1, eyes="wide", mouth=2, arms=-1, bulb=YELLOW, mark="bang"),
-            chip(eyes="wide", mouth=1, bulb=YELLOW, mark="bang"),
+            bmo(drop=-1, arms=-3, eyes="wide", mouth="gasp"),
+            bmo(arms=-1, eyes="wide", mouth="wide"),
         ],
-        "talk": [chip(mouth=1), chip(mouth=2, bulb=MAROON), chip(mouth=0)],
+        "talk": [bmo(mouth="open"), bmo(drop=1, mouth="wide"), bmo(mouth="smile")],
     }
 
 
@@ -370,8 +368,8 @@ def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.
 
 
 def nim_animations():
-    """Nim's eight Animations. Twice the frames of Chip's everywhere, because
-    the whole difference between them is that Nim eases and Chip snaps."""
+    """Nim's eight Animations. Twice the frames of BMO's everywhere, because
+    the whole difference between them is that Nim eases and BMO snaps."""
     idle = []
     for i in range(6):
         phase = i / 6.0 * math.tau
@@ -473,19 +471,19 @@ def write(name, animations):
 
 
 def main():
-    chip_art = chip_animations()
+    bmo_art = bmo_animations()
     nim_art = nim_animations()
 
-    # The check the styles are held to. Chip is a sixteen-colour Character and
-    # Nim is not, and a stray colour in either is the failure this file exists
-    # to make impossible: two Characters that differ only in their palette are
-    # the reskin #9 says is not good enough.
-    used = colours(chip_art) - {CLEAR}
-    assert used <= VGA, f"Chip drew outside the VGA sixteen: {used - VGA}"
-    assert len(used) <= 15, f"Chip drew {len(used)} colours and transparency"
+    # The check the styles are held to. BMO is flat and hard-edged and Nim is
+    # neither, and a stray colour in either is the failure this file exists to
+    # make impossible: two Characters that differ only in their palette are the
+    # reskin #9 says is not good enough.
+    used = colours(bmo_art) - {CLEAR}
+    assert used <= PALETTE, f"BMO drew outside its palette: {used - PALETTE}"
+    assert all(colour[3] == 255 for colour in used), "BMO drew a soft edge"
     assert len(colours(nim_art) - {CLEAR}) > 16, "Nim fits in a sixteen-colour palette"
 
-    for name, art in (("chip", chip_art), ("nim", nim_art)):
+    for name, art in (("bmo", bmo_art), ("nim", nim_art)):
         assert set(art) == {"idle", "walk", "fall", "land", "sit", "sleep", "react", "talk"}
         write(name, art)
 

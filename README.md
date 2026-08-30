@@ -267,10 +267,11 @@ The format stays internal and undocumented until v2 — see
 Two ship, in deliberately different styles, so that the format is proven against
 real variance rather than against itself:
 
-- **`characters/chip/` — Chip**, faithful Win95. The sixteen VGA colours, flat
-  fills, the raised-button bevel of the era, and dithering wherever a shade
-  between two of those colours is wanted. Two or three frames an Animation, cut
-  fast. Chip never settles: every Behavior it declares ends on its feet.
+- **`characters/bmo/` — BMO**, hard-edged flat art. Seven colours, flat fills,
+  no anti-aliasing, and dithering only where a shade between two of those
+  colours is genuinely wanted. Two or three frames an Animation, cut fast, and
+  what changes between them is mostly the face on its screen. BMO never
+  settles: every Behavior it declares ends on its feet.
 - **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames
@@ -294,7 +295,7 @@ python3 scripts/make-shipped-characters.py
 Name a Character to start that one:
 
 ```sh
-cd src-tauri && AI_BUDDY_CHARACTER=chip cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=bmo cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=blip cargo run
 ```
@@ -303,17 +304,17 @@ The name is the package's directory, without the `.zip` if it is an archive.
 Naming a Character that is not installed starts nothing and says so, rather than
 quietly starting a different one.
 
-With nothing named you get **Chip**, which is `DEFAULT_CHARACTER` in
+With nothing named you get **BMO**, which is `DEFAULT_CHARACTER` in
 `src-tauri/src/package.rs` rather than whichever package happens to sort first —
 otherwise adding one could silently replace the Character everybody meets. It is
-a preference and not a requirement: if Chip will not load, the search carries on
+a preference and not a requirement: if BMO will not load, the search carries on
 behind it. Remembering a Character you chose is settings, which is #18.
 
 Either way the app prints what it loaded, which is the quickest way to be sure
 you are looking at the Character you meant:
 
 ```
-character: Chip from ../characters/chip
+character: BMO from ../characters/bmo
 ```
 
 This is a developer's switch, and the app has no menu to change Character while
@@ -327,7 +328,7 @@ cd src-tauri && AI_BUDDY_CHARACTERS=/path/to/my-packages cargo run
 ### Blip, the stand-in
 
 `characters/blip/` is a generated stand-in rather than art. It shipped before
-Chip and Nim did, so that the Engine had a Character to drive and click-through
+BMO and Nim did, so that the Engine had a Character to drive and click-through
 had something with transparent regions to hit-test against, and it stays for
 both. Regenerate its frames with:
 
