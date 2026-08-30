@@ -23,7 +23,11 @@ body {
      re-laying out the page. */
   top: 0;
   left: 0;
-  transform-origin: top left;
+  /* Center origin so `scaleX(-1)` mirrors the sprite about its own midline.
+     The translation is unaffected — only the flip has an origin — and the
+     sprite's width is always even (art width times an integer scale), so the
+     mirrored pixels stay on the grid. */
+  transform-origin: center;
   /* ADR-0006: true pixel art, nearest-neighbour, integer scale factors only. */
   image-rendering: pixelated;
   -webkit-user-drag: none;

@@ -1001,8 +1001,9 @@ mod tests {
             scale: 1,
         };
 
-        (0..height)
-            .any(|y| (0..width).any(|x| drawn.hit(&origin, x, y) && !solid.hit(&origin, x, y)))
+        (0..height).any(|y| {
+            (0..width).any(|x| drawn.hit(&origin, x, y, false) && !solid.hit(&origin, x, y, false))
+        })
     }
 
     /// A contact shadow drawn where there is no contact is not a contact

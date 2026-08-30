@@ -137,6 +137,10 @@ pub struct Frame {
     /// Whether this tick carried the sprite with a moving Perch. The Shell
     /// polls the window list at the frame rate only then. #98.
     pub riding: bool,
+    /// Which way the sprite is pointed, as -1.0 (left) or 1.0 (right). Only
+    /// horizontal travel turns it, so a stop keeps the last heading and the
+    /// renderer can mirror the art by it without flicker at rest.
+    pub facing: f64,
 }
 
 /// How long one Primitive holds the screen.
@@ -470,6 +474,7 @@ impl Engine {
                 .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
             riding: self.riding,
+            facing: self.facing,
         }
     }
 
@@ -2074,6 +2079,49 @@ mod tests {
             behavior: "walk".to_string(),
             dialogue: None,
         })
+    }
+
+    /// The art has one heading, so the renderer mirrors it by `facing`. Only
+    /// travel may turn the sprite: a stop, a doze, a straight fall all keep
+    /// the last heading, or it would spin on the spot at rest.
+    #[test]
+    fn the_sprite_faces_the_way_it_travels_and_keeps_it_at_rest() {
+        let mut engine = a_character_at(Point { x: 400.0, y: 0.0 });
+        let perched = settle(&mut engine, &a_long_perch());
+        assert_eq!(perched.facing, 1.0, "untraveled, it points right");
+
+        // Thrown leftwards onto the Perch.
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 800.0, y: 100.0 },
+            verbs: vec![Verb::Grab],
+            ..a_long_perch()
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: -300.0, y: 0.0 },
+            }],
+            ..a_long_perch()
+        });
+        let flying = engine.tick(&a_long_perch());
+        assert_eq!(flying.facing, -1.0, "it flies the way it was thrown");
+
+        let at_rest = settle(&mut engine, &a_long_perch());
+        assert_eq!(at_rest.velocity.x, 0.0);
+        assert_eq!(
+            at_rest.facing, -1.0,
+            "and coming to rest keeps the heading: {at_rest:?}"
+        );
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let strolling = engine.tick(&a_long_perch());
+        assert_eq!(
+            strolling.velocity.x, -WALK_SPEED,
+            "it walks the way it faces"
+        );
+        assert_eq!(strolling.facing, -1.0);
     }
 
     /// The Primitive is what walks, not the name over it. A Character is free to

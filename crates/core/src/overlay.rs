@@ -205,7 +205,12 @@ impl AlphaMask {
     /// A cursor outside the sprite's rectangle is never a hit. The bounds are
     /// checked before the divide because integer division truncates toward zero,
     /// so a cursor just left of the sprite would otherwise land on column 0.
-    pub fn hit(&self, sprite: &SpriteRect, cursor_x: i32, cursor_y: i32) -> bool {
+    ///
+    /// `mirrored` samples column `width - 1 - px`: the renderer flips the art
+    /// about the box's center when the sprite faces left, and at an integer
+    /// scale that is exactly the reversed art column, so the pixels this feels
+    /// are the pixels the user sees.
+    pub fn hit(&self, sprite: &SpriteRect, cursor_x: i32, cursor_y: i32, mirrored: bool) -> bool {
         let local_x = cursor_x - sprite.x;
         let local_y = cursor_y - sprite.y;
         if local_x < 0 || local_y < 0 {
@@ -218,6 +223,7 @@ impl AlphaMask {
             return false;
         }
 
+        let px = if mirrored { self.width - 1 - px } else { px };
         self.opaque[(py * self.width + px) as usize]
     }
 }
@@ -237,10 +243,37 @@ mod tests {
         };
 
         assert!(
-            !mask.hit(&sprite, 100, 200),
+            !mask.hit(&sprite, 100, 200, false),
             "top-left corner is transparent"
         );
-        assert!(mask.hit(&sprite, 108, 200), "third column is opaque");
+        assert!(mask.hit(&sprite, 108, 200, false), "third column is opaque");
+    }
+
+    /// Facing left, the renderer draws the art flipped, so the clickable
+    /// pixels must flip with it or an asymmetric sprite is clickable where it
+    /// is empty and click-through where it is drawn.
+    #[test]
+    fn a_mirrored_sprite_hit_tests_against_the_flipped_columns() {
+        let mask = AlphaMask::from_rows(&["##....", "##...."]);
+        let sprite = SpriteRect {
+            x: 100,
+            y: 200,
+            scale: 4,
+        };
+
+        assert!(
+            mask.hit(&sprite, 100, 200, false),
+            "as authored, the ink is on the left"
+        );
+        assert!(
+            !mask.hit(&sprite, 100, 200, true),
+            "mirrored, the left edge is clear"
+        );
+        assert!(
+            mask.hit(&sprite, 123, 200, true),
+            "and the ink is on the right"
+        );
+        assert!(!mask.hit(&sprite, 123, 200, false));
     }
 
     #[test]
@@ -253,16 +286,31 @@ mod tests {
         };
 
         // The sprite covers 100..116 horizontally, 200..208 vertically.
-        assert!(mask.hit(&sprite, 100, 200), "top-left corner is inside");
-        assert!(mask.hit(&sprite, 115, 207), "bottom-right corner is inside");
-
-        assert!(!mask.hit(&sprite, 99, 204), "one point left of the sprite");
         assert!(
-            !mask.hit(&sprite, 116, 204),
+            mask.hit(&sprite, 100, 200, false),
+            "top-left corner is inside"
+        );
+        assert!(
+            mask.hit(&sprite, 115, 207, false),
+            "bottom-right corner is inside"
+        );
+
+        assert!(
+            !mask.hit(&sprite, 99, 204, false),
+            "one point left of the sprite"
+        );
+        assert!(
+            !mask.hit(&sprite, 116, 204, false),
             "one point right of the sprite"
         );
-        assert!(!mask.hit(&sprite, 108, 199), "one point above the sprite");
-        assert!(!mask.hit(&sprite, 108, 208), "one point below the sprite");
+        assert!(
+            !mask.hit(&sprite, 108, 199, false),
+            "one point above the sprite"
+        );
+        assert!(
+            !mask.hit(&sprite, 108, 208, false),
+            "one point below the sprite"
+        );
     }
 
     /// The fixture is a 2x2 RGBA PNG whose alpha values are, row-major:
@@ -277,10 +325,16 @@ mod tests {
             scale: 1,
         };
 
-        assert!(!mask.hit(&sprite, 0, 0), "alpha 0 is clear");
-        assert!(mask.hit(&sprite, 1, 0), "alpha 255 is opaque");
-        assert!(mask.hit(&sprite, 0, 1), "alpha 200 is above the threshold");
-        assert!(!mask.hit(&sprite, 1, 1), "alpha 10 is below the threshold");
+        assert!(!mask.hit(&sprite, 0, 0, false), "alpha 0 is clear");
+        assert!(mask.hit(&sprite, 1, 0, false), "alpha 255 is opaque");
+        assert!(
+            mask.hit(&sprite, 0, 1, false),
+            "alpha 200 is above the threshold"
+        );
+        assert!(
+            !mask.hit(&sprite, 1, 1, false),
+            "alpha 10 is below the threshold"
+        );
     }
 
     #[test]
