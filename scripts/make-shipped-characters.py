@@ -166,11 +166,12 @@ def panel(px, bx, top):
     rect(px, bx + 9, top + 20, 5, 1, INK)
 
 
-def bmo(drop=0, lean=0, eyes="open", mouth="smile", stride=0, arms=0, swing=0, fold=False, dim=False):
+def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, fold=False, dim=False):
     """BMO, posed. `drop` lowers the body and shortens the legs to meet it, so
-    the feet stay on the bottom row however far down the body comes."""
+    the feet stay on the bottom row however far down the body comes. `lift`
+    takes one foot off that row, which is the only thing that is allowed to."""
     px = blank()
-    bx = 7 + lean
+    bx = 7
     top = 3 + drop
     bottom = top + 23
 
@@ -191,9 +192,13 @@ def bmo(drop=0, lean=0, eyes="open", mouth="smile", stride=0, arms=0, swing=0, f
         # where two stubs were.
         rect(px, 9, bottom + 1, 14, GROUND - bottom, DEEP)
     else:
-        for x in (10 - stride, 18 + stride):
-            rect(px, x, bottom + 1, 4, GROUND - bottom - 1, MINT)
-            rect(px, x, GROUND - 1, 4, 2, DEEP)
+        for side, x in ((-1, 10 - stride), (1, 18 + stride)):
+            # A leg that swings through is a leg off the floor. Two pixels is
+            # the whole of it at this size, and it is what separates a stride
+            # from both feet sliding apart and back.
+            sole = GROUND - (2 if lift == side else 0)
+            rect(px, x, bottom + 1, 4, sole - bottom - 1, MINT)
+            rect(px, x, sole - 1, 4, 2, DEEP)
     return px
 
 
@@ -203,11 +208,14 @@ def bmo_animations():
     that reads. What changes between frames is mostly the face."""
     return {
         "idle": [bmo(), bmo(drop=1)],
+        # A gait is a bob, not a lean: the body sits low with both feet planted
+        # and rises as one leg swings under it. Four poses, none repeated, or
+        # the cycle reads as the two it actually draws.
         "walk": [
-            bmo(stride=2, lean=1, swing=1),
-            bmo(drop=1),
-            bmo(stride=2, lean=-1, swing=-1),
-            bmo(drop=1),
+            bmo(drop=1, stride=2, swing=1),
+            bmo(stride=-1, lift=-1),
+            bmo(drop=1, stride=2, swing=-1),
+            bmo(stride=-1, lift=1),
         ],
         "fall": [
             bmo(drop=-1, arms=-6, eyes="wide", mouth="gasp", stride=2),
