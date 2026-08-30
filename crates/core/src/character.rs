@@ -1161,6 +1161,7 @@ fn loop_path(path: &[&str], closes_at: &str) -> String {
 mod tests {
     use super::*;
     use crate::overlay::SpriteRect;
+    use std::path::Path;
 
     /// A 2x2 RGBA PNG whose top-left pixel is transparent. Art a renderer can
     /// open is all the loader asks of a frame.
@@ -2242,5 +2243,75 @@ mod tests {
             .expect("image data is writable");
         writer.finish().expect("PNG is finishable");
         bytes
+    }
+
+    #[test]
+    fn an_imported_petscodex_character_package_loads() {
+        use std::fs;
+
+        let fixture_dir = Path::new("tests/fixtures/imported-pet");
+        if !fixture_dir.exists() {
+            panic!(
+                "Fixture not found. Generate with: python3 -c \"...\"\n\
+                 See test source for generation command."
+            );
+        }
+
+        let mut package = PackageBytes::new();
+        for entry in fs::read_dir(fixture_dir).expect("fixture dir is readable") {
+            let entry = entry.expect("entry is readable");
+            let path = entry.path();
+            if path.is_file() {
+                let key = path
+                    .file_name()
+                    .expect("has filename")
+                    .to_string_lossy()
+                    .to_string();
+                package.insert(key, fs::read(&path).expect("file is readable"));
+            }
+        }
+
+        let frames_dir = fixture_dir.join("frames");
+        if frames_dir.exists() {
+            for entry in fs::read_dir(&frames_dir).expect("frames dir is readable") {
+                let entry = entry.expect("entry is readable");
+                let path = entry.path();
+                if path.is_file() && path.extension().map_or(false, |e| e == "png") {
+                    let key = path
+                        .file_name()
+                        .expect("has filename")
+                        .to_string_lossy()
+                        .to_string();
+                    package.insert(key, fs::read(&path).expect("file is readable"));
+                }
+            }
+        }
+
+        let character = load(&package).expect("imported fixture loads");
+
+        assert_eq!(character.name, "Test Fixture");
+        for required in REQUIRED_ANIMATIONS {
+            assert!(
+                character.animations.contains_key(required),
+                "character has {required}"
+            );
+        }
+
+        assert!(
+            character.animations.contains_key("waiting"),
+            "waiting animation is present"
+        );
+        assert!(
+            character.animations["idle"]
+                .variants
+                .contains(&"waiting".to_string()),
+            "waiting is in idle's variant ring"
+        );
+
+        assert!(!character.animations["land"].looping, "land plays once");
+        assert!(!character.animations["react"].looping, "react plays once");
+
+        let drawn = character.draw("idle", 0).expect("idle draws");
+        assert!(drawn.frame_size.0 > 0 && drawn.frame_size.1 > 0);
     }
 }

@@ -43,3 +43,6 @@ tmp/
 # moment the tool adds something new. Un-ignore a specific path with `!` if a
 # file here ever becomes worth committing.
 .claude/
+__pycache__/
+*.pyc
+*.pyo

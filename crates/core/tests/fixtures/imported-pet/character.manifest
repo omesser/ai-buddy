@@ -1,0 +1,49 @@
+# Imported from petscodex: test-fixture
+# License: MIT
+
+name = "Test Fixture"
+render_mode = "pixelated"
+scale = 4
+
+[animations.idle]
+frames = ["idle-0.png", "idle-1.png", "idle-2.png", "idle-3.png", "idle-4.png", "idle-5.png"]
+fps = 5
+
+[animations.waiting]
+frames = ["waiting-0.png", "waiting-1.png", "waiting-2.png", "waiting-3.png", "waiting-4.png", "waiting-5.png"]
+fps = 6
+variant_of = "idle"
+
+[animations.walk]
+frames = ["walk-0.png", "walk-1.png", "walk-2.png", "walk-3.png", "walk-4.png", "walk-5.png", "walk-6.png", "walk-7.png"]
+fps = 8
+
+[animations.fall]
+frames = ["fall-0.png", "fall-1.png"]
+fps = 2
+
+[animations.land]
+frames = ["land-0.png", "land-1.png"]
+fps = 2
+loop = "once"
+
+[animations.sit]
+frames = ["sit-0.png", "sit-1.png", "sit-2.png", "sit-3.png", "sit-4.png", "sit-5.png"]
+fps = 6
+
+[animations.sleep]
+frames = ["sleep-0.png"]
+fps = 1
+
+[animations.react]
+frames = ["react-0.png", "react-1.png", "react-2.png", "react-3.png", "react-4.png", "react-5.png", "react-6.png", "react-7.png"]
+fps = 7
+loop = "once"
+
+[animations.talk]
+frames = ["talk-0.png", "talk-1.png", "talk-2.png", "talk-3.png"]
+fps = 6
+
+[animations.hold]
+frames = ["hold-0.png", "hold-1.png"]
+fps = 2
