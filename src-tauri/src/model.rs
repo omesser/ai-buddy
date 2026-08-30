@@ -21,6 +21,15 @@ use serde::Serialize;
 /// think, and 8s was enough to lose a Grok wake to Static.
 pub const TIMEOUT: Duration = Duration::from_secs(20);
 
+const TRACE: &str = "AI_BUDDY_TRACE_DIRECTOR";
+
+/// Prompt, raw reply, and parse. Off unless asked: a Character Prompt is
+/// a paragraph, and printing it sixty times a minute would bury everything
+/// else. Same gate as the hit-test and frame traces.
+pub fn tracing() -> bool {
+    std::env::var_os(TRACE).is_some()
+}
+
 const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
 const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
 const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
@@ -146,6 +155,10 @@ pub struct Endpoint {
 
 impl Completer for Endpoint {
     fn complete(&self, prompt: &str) -> Result<String, String> {
+        if tracing() {
+            eprintln!("director: POST {} model={}", self.url, self.model);
+            eprintln!("director: prompt\n{prompt}");
+        }
         let body = request_body(&self.model, prompt, uses_responses(&self.url));
         let mut request = ureq::post(&self.url)
             .set("Content-Type", "application/json")
@@ -161,9 +174,30 @@ impl Completer for Endpoint {
                 request = request.set("x-api-key", &self.api_key);
             }
         }
-        let response = request.send_json(body).map_err(|error| error.to_string())?;
+        let response = request.send_json(body).map_err(|error| {
+            if tracing() {
+                eprintln!("director: http {error}");
+            }
+            error.to_string()
+        })?;
         let text = response.into_string().map_err(|error| error.to_string())?;
-        content_from_body(&text)
+        if tracing() {
+            eprintln!("director: body\n{text}");
+        }
+        match content_from_body(&text) {
+            Ok(content) => {
+                if tracing() {
+                    eprintln!("director: content\n{content}");
+                }
+                Ok(content)
+            }
+            Err(error) => {
+                if tracing() {
+                    eprintln!("director: extract {error}");
+                }
+                Err(error)
+            }
+        }
     }
 }
 

@@ -27,7 +27,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
-use ai_buddy_core::director::{self, Context, Director, ModelDirector, Pace, StaticDirector};
+use ai_buddy_core::director::{self, Context, Director, ModelDirector, Pace, StaticDirector, Wake};
 use ai_buddy_core::engine::{Engine, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
@@ -514,7 +514,35 @@ fn run_frame_loop(
                 let context = in_flight
                     .take()
                     .expect("a started call still has its context");
+                if model::tracing() {
+                    match &wake {
+                        Wake::Proposed(parsed) => eprintln!(
+                            "director: parsed {}{}",
+                            parsed.behavior,
+                            parsed
+                                .dialogue
+                                .as_deref()
+                                .map(|line| format!(" | {line}"))
+                                .unwrap_or_default(),
+                        ),
+                        Wake::Failed => eprintln!("director: failed; Static fallback"),
+                    }
+                }
                 proposal = director::fallback(wake, &mut director, &context);
+                if model::tracing() {
+                    match &proposal {
+                        Some(playing) => eprintln!(
+                            "director: playing {}{}",
+                            playing.behavior,
+                            playing
+                                .dialogue
+                                .as_deref()
+                                .map(|line| format!(" | {line}"))
+                                .unwrap_or_default(),
+                        ),
+                        None => eprintln!("director: nothing to play"),
+                    }
+                }
             }
 
             if since_sense >= SENSE_INTERVAL {

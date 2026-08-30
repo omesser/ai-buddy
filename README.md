@@ -206,6 +206,11 @@ frames — state, position and animation, once per tick. Both trace in the point
 space every display shares, so the positions they report are comparable with
 what the window server says about any display.
 
+`AI_BUDDY_TRACE_DIRECTOR=1` prints each session wake: the URL and model, the
+Character Prompt, the raw HTTP body, the extracted text, and whether that
+parsed into a Behavior (or fell back to Static). Off unless asked — a prompt
+is a paragraph. Poke the sprite to force a wake.
+
 There is one overlay per display and every one of them is told where the
 sprite is, so the trace is one line per tick rather than one per overlay. Which
 overlay the cursor is on is on the hit-test line.
