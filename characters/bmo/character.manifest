@@ -14,13 +14,18 @@ scale = 1
 # itself — and the sit is its self-play set: four games on its own screen.
 
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png"]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 1
+
+[animations.sing]
+frames = ["frames/sing-0.png", "frames/sing-1.png", "frames/sing-2.png", "frames/sing-3.png"]
 fps = 3
+variant_of = "idle"
 
 # A variant is more art for the same life: the renderer cycles the ring —
-# base first, then each variant — holding each for a few seconds of whole
-# loops. Idling, BMO sings, then rides its skateboard; walking, it sometimes
-# dribbles a football the whole way.
+# base first and three times as long, then each variant — in whole loops.
+# Idling, BMO mostly stands; now and then it sings, or rides its skateboard.
+# Walking, it sometimes dribbles a football the whole way.
 
 [animations.skate]
 frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "frames/skate-2.png"]

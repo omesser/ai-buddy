@@ -378,14 +378,28 @@ impl Character {
                     .map(|(name, animation)| (name.as_str(), animation))
             }))
             .collect();
-        let slot = |animation: &Animation| -> u32 {
+        // The base holds three slots to every variant's one: a variant is
+        // seasoning, and a ring of equal shares reads as a Character that
+        // cannot sit still.
+        let slot = |animation: &Animation, hold: u32| -> u32 {
             let loop_ms = (animation.frames.len() as u32 * 1000 / animation.fps).max(1);
-            loop_ms * VARIANT_HOLD_MS.div_ceil(loop_ms).max(1)
+            loop_ms * hold.div_ceil(loop_ms).max(1)
         };
-        let total: u32 = members.iter().map(|(_, member)| slot(member)).sum();
+        let hold_for = |i: usize| {
+            if i == 0 {
+                3 * VARIANT_HOLD_MS
+            } else {
+                VARIANT_HOLD_MS
+            }
+        };
+        let total: u32 = members
+            .iter()
+            .enumerate()
+            .map(|(i, (_, member))| slot(member, hold_for(i)))
+            .sum();
         let mut t = ms % total.max(1);
-        for (member_name, member) in &members {
-            let s = slot(member);
+        for (i, (member_name, member)) in members.iter().enumerate() {
+            let s = slot(member, hold_for(i));
             if t < s {
                 return Some((member_name, member, t));
             }
@@ -1760,9 +1774,9 @@ mod tests {
     /// then it wraps. The engine keeps asking for "idle" throughout.
     #[test]
     fn a_variant_ring_cycles_by_whole_loops_and_wraps() {
-        // idle: one frame at the default 8fps, a 125ms loop, so its slot is
-        // exactly 4000ms of whole loops. spin: one frame at 1fps, 1000ms
-        // loops, a 4000ms slot. The ring is 8000ms around.
+        // idle: one frame at the default 8fps, a 125ms loop; the base holds
+        // three variant-slots' worth, exactly 12000ms of whole loops. spin:
+        // one frame at 1fps, 1000ms loops, a 4000ms slot. 16000ms around.
         let manifest = format!(
             "{}[animations.spin]\nframes = [\"idle-0.png\"]\nfps = 1\nvariant_of = \"idle\"\n",
             declaring(&REQUIRED_ANIMATIONS)
@@ -1777,14 +1791,14 @@ mod tests {
                 .to_string()
         };
         assert_eq!(playing(0), "idle");
-        assert_eq!(playing(3999), "idle");
-        assert_eq!(playing(4000), "spin", "the slot ends on a whole loop");
-        assert_eq!(playing(7999), "spin");
-        assert_eq!(playing(8000), "idle", "the ring wraps to its base");
+        assert_eq!(playing(11999), "idle", "the base holds three slots");
+        assert_eq!(playing(12000), "spin", "the slot ends on a whole loop");
+        assert_eq!(playing(15999), "spin");
+        assert_eq!(playing(16000), "idle", "the ring wraps to its base");
 
         // Time inside a slot starts at that slot's own zero, so a member
         // begins at its first frame rather than mid-loop.
-        assert_eq!(character.draw("idle", 4000).expect("draws").index, 0);
+        assert_eq!(character.draw("idle", 12000).expect("draws").index, 0);
 
         // Asked for directly, a variant is an ordinary Animation.
         assert_eq!(character.draw("spin", 0).expect("draws").animation, "spin");
