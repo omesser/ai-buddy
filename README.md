@@ -267,11 +267,11 @@ The format stays internal and undocumented until v2 — see
 Two ship, in deliberately different styles, so that the format is proven against
 real variance rather than against itself:
 
-- **`characters/win95/` — Chip**, faithful Win95. The sixteen VGA colours, flat
+- **`characters/chip/` — Chip**, faithful Win95. The sixteen VGA colours, flat
   fills, the raised-button bevel of the era, and dithering wherever a shade
   between two of those colours is wanted. Two or three frames an Animation, cut
   fast. Chip never settles: every Behavior it declares ends on its feet.
-- **`characters/modern/` — Nim**, modern pixel art. A palette larger than
+- **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames
   everywhere so the motion eases rather than steps. Nim comes to rest: every
@@ -292,25 +292,24 @@ python3 scripts/make-shipped-characters.py
 #### Running one of them
 
 Packages are searched in name order and the first that loads is the one you get,
-so `modern` is what you see with nothing chosen. Name a Character to start that
-one instead:
+so `chip` is what you see with nothing chosen. Name a Character to start that one
+instead:
 
 ```sh
-cd src-tauri && AI_BUDDY_CHARACTER=win95 cargo run   # Chip
-cd src-tauri && AI_BUDDY_CHARACTER=modern cargo run  # Nim
+cd src-tauri && AI_BUDDY_CHARACTER=chip cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=placeholder cargo run  # Blip
 ```
 
-The name is the package's directory, without the `.zip` if it is an archive —
-`win95`, not `Chip`. The two differ on purpose: the directory is the package,
-and `name` in its manifest is the Character inside it, the way
-`characters/placeholder/` holds `Blip`. Naming a Character that is not installed
-starts nothing and says so, rather than quietly starting a different one.
+The name is the package's directory, without the `.zip` if it is an archive.
+Naming a Character that is not installed starts nothing and says so, rather than
+quietly starting a different one.
 
 Either way the app prints what it loaded, which is the quickest way to be sure
 you are looking at the Character you meant:
 
 ```
-character: Chip from ../characters/win95
+character: Chip from ../characters/chip
 ```
 
 This is a developer's switch, and the app has no menu to change Character while

@@ -160,8 +160,8 @@ pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
 
 /// The candidates named `wanted`, or all of them when nothing is named.
 ///
-/// A package is named by its file name without the extension, so `win95` names
-/// `win95/` and `win95.zip` alike. Naming a Character that is not installed
+/// A package is named by its file name without the extension, so `chip` names
+/// `chip/` and `chip.zip` alike. Naming a Character that is not installed
 /// leaves nothing rather than falling through to the next one: starting some
 /// other Character than the one asked for is a worse answer than saying so.
 pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
@@ -732,19 +732,19 @@ mod tests {
     }
 
     /// Without this there is no way to start a particular Character: the search
-    /// takes the first package that loads, so `modern` wins on name order and
-    /// `win95` is unreachable until #18 ships a menu to choose from.
+    /// takes the first package that loads, so `nim` wins on name order and
+    /// `chip` is unreachable until #18 ships a menu to choose from.
     #[test]
     fn a_named_character_is_the_only_candidate_left() {
         let candidates = vec![
-            PathBuf::from("/characters/modern"),
+            PathBuf::from("/characters/nim"),
             PathBuf::from("/characters/placeholder"),
-            PathBuf::from("/characters/win95.zip"),
+            PathBuf::from("/characters/chip.zip"),
         ];
 
         assert_eq!(
-            named(candidates.clone(), Some(OsStr::new("win95"))),
-            vec![PathBuf::from("/characters/win95.zip")],
+            named(candidates.clone(), Some(OsStr::new("chip"))),
+            vec![PathBuf::from("/characters/chip.zip")],
             "named by its file name, archive or directory alike"
         );
         assert_eq!(
@@ -834,7 +834,7 @@ mod tests {
     /// package loses a frame or names one it does not carry.
     #[test]
     fn both_shipped_characters_load_through_the_same_loader() {
-        for (directory, name) in [("win95", "Chip"), ("modern", "Nim")] {
+        for (directory, name) in [("chip", "Chip"), ("nim", "Nim")] {
             let package = read(&shipped(directory)).unwrap_or_else(|why| panic!("{why}"));
             assert_eq!(package.character.name, name);
             assert!(
@@ -865,7 +865,7 @@ mod tests {
     /// #11.
     #[test]
     fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
-        let chip = shipped_character("win95");
+        let chip = shipped_character("chip");
         for behavior in chip.behaviors.keys() {
             let seen = played(&chip, behavior);
             assert!(
@@ -874,7 +874,7 @@ mod tests {
             );
         }
 
-        let nim = shipped_character("modern");
+        let nim = shipped_character("nim");
         for behavior in nim.behaviors.keys().filter(|name| *name != "walk") {
             let seen = played(&nim, behavior);
             assert!(
@@ -889,8 +889,8 @@ mod tests {
     /// manifest cannot claim in-between frames the drawing has not got.
     #[test]
     fn the_two_shipped_characters_are_not_one_character_twice() {
-        let chip = read(&shipped("win95")).expect("Chip is a valid package");
-        let nim = read(&shipped("modern")).expect("Nim is a valid package");
+        let chip = read(&shipped("chip")).expect("Chip is a valid package");
+        let nim = read(&shipped("nim")).expect("Nim is a valid package");
 
         for animation in character::REQUIRED_ANIMATIONS {
             let (hard, smooth) = (
@@ -900,7 +900,7 @@ mod tests {
             assert!(
                 smooth > hard,
                 "{animation:?} is {smooth} frames of Nim against {hard} of Chip, \
-                 and the modern Character is the one that eases"
+                 and Nim is the one that eases"
             );
         }
 
@@ -935,7 +935,7 @@ mod tests {
     /// the one Animation of Nim's with nothing under its feet.
     #[test]
     fn nim_casts_a_shadow_only_when_it_has_something_to_cast_it_on() {
-        let nim = read(&shipped("modern")).expect("Nim is a valid package");
+        let nim = read(&shipped("nim")).expect("Nim is a valid package");
 
         for animation in character::REQUIRED_ANIMATIONS {
             for frame in &nim.character.animations[animation].frames {

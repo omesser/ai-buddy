@@ -18,7 +18,7 @@ third file to import would cost more than the twelve lines it saves.
 
     python3 scripts/make-shipped-characters.py
 
-It rewrites characters/win95/frames/ and characters/modern/frames/ in place.
+It rewrites characters/chip/frames/ and characters/nim/frames/ in place.
 The manifests and the Personality Prompts are written by hand and never touched.
 """
 
@@ -485,7 +485,7 @@ def main():
     assert len(used) <= 15, f"Chip drew {len(used)} colours and transparency"
     assert len(colours(nim_art) - {CLEAR}) > 16, "Nim fits in a sixteen-colour palette"
 
-    for name, art in (("win95", chip_art), ("modern", nim_art)):
+    for name, art in (("chip", chip_art), ("nim", nim_art)):
         assert set(art) == {"idle", "walk", "fall", "land", "sit", "sleep", "react", "talk"}
         write(name, art)
 
