@@ -1,7 +1,7 @@
-# The placeholder Character. Not art — a stand-in that gives the renderer eight
+# Blip, the stand-in. Not art — it gives the renderer eight
 # visibly different Animations to play, and the hit-test something with
 # transparent regions to test against. Regenerate the frames with
-# scripts/make-placeholder-character.py.
+# scripts/make-blip-character.py.
 
 name = Blip
 

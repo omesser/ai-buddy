@@ -300,18 +300,27 @@ frames rather than to its bounding rectangle, so the sprite cannot enter gaps be
 non-aligned displays. Backing scale factor is resolved per display at render time, not in
 the Engine.
 
-The overlay window covers one display and follows the sprite to the next. It cannot be
+There is one overlay window per display, each covering that display. No window can be
 sized to the union: macOS gives each display its own Space and draws a window spanning
 two of them on only one, so a union-sized overlay is invisible on every display but the
-one it belongs to. The Engine is unaffected — it works in the space all displays share,
-and the Shell picks the display the sprite's contact point is on, or the nearest when it
-is on none.
+one it belongs to. The set follows the desktop, so a display attached or removed while
+the app runs gains or loses its overlay without a restart.
+
+Every overlay is told where the sprite is, in its own coordinates, and each draws the
+part that falls inside it. A Character straddling a seam is therefore whole: the two
+halves are clipped by the two overlays and meet at the seam. The Engine is unaffected —
+it works in the space all displays share and knows nothing about windows.
 
 ### Overlay and input
 
-One always-on-top overlay window per Character Instance. On macOS: a non-activating panel
-at floating level, joining all Spaces, stationary, excluded from the application switcher,
-never accepting first responder status.
+One always-on-top overlay window per display per Character Instance. On macOS: a
+non-activating panel at floating level, joining all Spaces, stationary, excluded from the
+application switcher, never accepting first responder status. Identical on every overlay,
+which is why one code path builds and configures them all.
+
+Click-through is decided once per tick, in the shared point space, and applied to the
+overlay the cursor is on; every other overlay passes clicks through, so a sprite on one
+display never swallows a click on another.
 
 Click-through is per-window rather than per-pixel in Tauri. The overlay tracks the cursor
 and toggles ignore-mouse-events by hit-testing the sprite's current alpha, so transparent
@@ -381,8 +390,9 @@ One Markdown file, append-structured under stable headings. Headings are advisor
 never parsed for correctness. Malformed content is still valid Markdown, so a bad
 hand-edit degrades rather than breaks.
 
-Shared by every Character Instance. The file is watched for external modification and
-reloaded. A single timestamped backup is written before a wipe.
+Shared by every Character Instance. Every recall reads the file, so an edit made outside
+ai-buddy is visible to the next recall without a watcher or a reload path. A single
+timestamped backup is written before a wipe.
 
 Memory is treated as untrusted input. It reaches Harness prompts, and the user can type
 anything into it.
@@ -455,7 +465,9 @@ waiting. Coverage:
 - **Perch collision** — the sprite lands on a window's top edge; walks along it; falls off
   either end; passes upward through an edge from below; falls when the window moves out
   from under it; falls when the window disappears; behaves correctly when two windows
-  overlap; is never left inside a window that has come to contain it.
+  overlap; is never left inside a window that has come to contain it; never lands on an
+  edge hidden behind a window in front of it, or on one no display covers; stays on the
+  edge it is standing on when a window is raised in front of it.
 - **State machine** — every transition reachable from every State; no State is a dead end;
   Grab overrides any State; releasing a Grab with velocity enters Throw and without
   velocity enters fall.
@@ -483,10 +495,10 @@ applications and password fields from every sensing result.
 
 ### Memory
 
-Tested as a store against a temporary file. Coverage: round-trip of a remembered fact;
-external modification is picked up; malformed content still loads and preserves what it
-can; wipe writes a backup first; a hand-written file that has never been touched by
-ai-buddy loads correctly.
+Tested as a store against a temporary file. Coverage: round-trip of a remembered fact; an
+edit made outside ai-buddy is visible to the next recall; malformed content still reads
+back and preserves what it can; wipe writes a backup first; a hand-written file that has
+never been touched by ai-buddy reads back correctly.
 
 ### Fakes, not mocks
 

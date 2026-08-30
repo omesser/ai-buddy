@@ -21,6 +21,7 @@
 //! files, allocate an unbounded number of bytes, or walk an unbounded depth.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -52,6 +53,22 @@ const MAX_PACKAGE_DEPTH: usize = 8;
 /// `:`-separated list of directories. Present for development and for the
 /// verification script; a user never needs it.
 pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
+
+/// The Character a new user meets, when nothing has chosen another.
+///
+/// Name order is not a decision: without this, adding a package that sorts
+/// earlier would silently replace the buddy everybody sees. A preference and
+/// not a requirement — if it will not load, the search carries on behind it.
+/// Settings remembering a choice is #18; until then this is the only answer.
+pub const DEFAULT_CHARACTER: &str = "bmo";
+
+/// The environment variable that starts one named Character rather than the
+/// first one found.
+///
+/// The search takes the first package that loads, so name order alone decides
+/// which Character a developer sees, and the others cannot be reached at all.
+/// A user picks from the menu instead, which is #18.
+pub const CHARACTER_VAR: &str = "AI_BUDDY_CHARACTER";
 
 /// Why a location did not become a Character.
 #[derive(Debug)]
@@ -147,6 +164,35 @@ pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
     }
     paths.extend(bundled);
     paths
+}
+
+/// The candidates named `wanted`, or all of them when nothing is named.
+///
+/// A package is named by its file name without the extension, so `bmo` names
+/// `bmo/` and `bmo.zip` alike. Naming a Character that is not installed
+/// leaves nothing rather than falling through to the next one: starting some
+/// other Character than the one asked for is a worse answer than saying so.
+pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
+    let Some(wanted) = wanted else {
+        return candidates;
+    };
+
+    candidates
+        .into_iter()
+        .filter(|candidate| candidate.file_stem() == Some(wanted))
+        .collect()
+}
+
+/// The candidates with `first` at the front, in the order given otherwise.
+///
+/// Ordering rather than filtering, so a default that turns out to be broken
+/// costs the user the Character they expected and not the app.
+pub fn preferring(candidates: Vec<PathBuf>, first: &str) -> Vec<PathBuf> {
+    let (preferred, rest): (Vec<PathBuf>, Vec<PathBuf>) = candidates
+        .into_iter()
+        .partition(|candidate| candidate.file_stem() == Some(OsStr::new(first)));
+
+    preferred.into_iter().chain(rest).collect()
 }
 
 /// Every Character Package visible in `search_paths`, in the order found.
@@ -383,8 +429,14 @@ fn strip_single_root(files: PackageBytes) -> PackageBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
+    use ai_buddy_core::overlay::{AlphaMask, SpriteRect};
+
+    use crate::cast::Cast;
 
     /// A 2x2 RGBA PNG, which is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
@@ -699,6 +751,61 @@ mod tests {
         }
     }
 
+    /// Name order is not a decision. Without a default the Character a new user
+    /// meets is whichever package sorts first, so adding one could silently
+    /// replace the buddy everybody sees.
+    #[test]
+    fn the_default_character_is_met_first_and_is_not_the_only_one() {
+        let candidates = vec![
+            PathBuf::from("/characters/nim"),
+            PathBuf::from("/characters/blip"),
+            PathBuf::from("/characters/bmo"),
+        ];
+
+        assert_eq!(
+            preferring(candidates.clone(), "bmo").first(),
+            Some(&PathBuf::from("/characters/bmo")),
+            "the default is met first wherever it sorts"
+        );
+        assert_eq!(
+            preferring(candidates.clone(), "bmo").len(),
+            candidates.len(),
+            "and the rest stay behind it, so a default that will not load is not the end"
+        );
+        assert_eq!(
+            preferring(candidates.clone(), "nobody"),
+            candidates,
+            "a default that is not installed leaves the search order alone"
+        );
+    }
+
+    /// Without this there is no way to start a particular Character: the search
+    /// takes the first package that loads, so `nim` wins on name order and
+    /// `bmo` is unreachable until #18 ships a menu to choose from.
+    #[test]
+    fn a_named_character_is_the_only_candidate_left() {
+        let candidates = vec![
+            PathBuf::from("/characters/nim"),
+            PathBuf::from("/characters/blip"),
+            PathBuf::from("/characters/bmo.zip"),
+        ];
+
+        assert_eq!(
+            named(candidates.clone(), Some(OsStr::new("bmo"))),
+            vec![PathBuf::from("/characters/bmo.zip")],
+            "named by its file name, archive or directory alike"
+        );
+        assert_eq!(
+            named(candidates.clone(), None),
+            candidates,
+            "and naming nothing leaves the search as it was"
+        );
+        assert!(
+            named(candidates, Some(OsStr::new("nobody"))).is_empty(),
+            "a Character that is not there is no Character, not the next one along"
+        );
+    }
+
     #[test]
     fn installed_packages_are_the_directories_and_archives_in_the_search_paths() {
         let dir = TempDir::new("installed");
@@ -714,5 +821,179 @@ mod tests {
             "a directory and an archive count; a loose file does not, \
              and a search path that is not there is not an error"
         );
+    }
+
+    /// A Character Package this repository ships, by its directory name.
+    fn shipped(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../characters")
+            .join(name)
+    }
+
+    fn shipped_character(name: &str) -> Character {
+        read(&shipped(name))
+            .unwrap_or_else(|why| panic!("{why}"))
+            .character
+    }
+
+    /// Every Animation one of a Character's Behaviors puts on screen, played
+    /// through the Engine that will play it for real rather than read off the
+    /// manifest: what a Behavior does is what the Engine makes of it.
+    fn played(character: &Character, behavior: &str) -> BTreeSet<&'static str> {
+        let ground = WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1000.0,
+                height: 800.0,
+            }],
+            elapsed_ms: 100,
+            ..WorldSnapshot::default()
+        };
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(character.behaviors.clone());
+
+        // On its feet first: every Primitive but expression is refused in
+        // mid-air, so a sprite still falling would refuse the lot.
+        for _ in 0..40 {
+            engine.tick(&ground);
+        }
+
+        let proposed = WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: behavior.to_string(),
+                dialogue: None,
+            }),
+            ..ground.clone()
+        };
+        let mut seen = BTreeSet::from([engine.tick(&proposed).animation]);
+        // Six seconds: longer than the longest chain either Character declares,
+        // and short of the walls a walk would otherwise reach.
+        for _ in 0..60 {
+            seen.insert(engine.tick(&ground).animation);
+        }
+        seen
+    }
+
+    /// #9's first criterion, and its fourth. A Primitive is the Engine's and
+    /// plays one of the eight Animations every Character must supply, so
+    /// "neither package needs a Primitive the other cannot use" is the same
+    /// claim as "both draw all eight" — which is what fails here if a shipped
+    /// package loses a frame or names one it does not carry.
+    #[test]
+    fn both_shipped_characters_load_through_the_same_loader() {
+        for (directory, name) in [("bmo", "BMO"), ("nim", "Nim")] {
+            let package = read(&shipped(directory)).unwrap_or_else(|why| panic!("{why}"));
+            assert_eq!(package.character.name, name);
+            assert!(
+                package.character.behaviors.contains_key("walk"),
+                "{name} declares the one Behavior the Engine acts on itself, \
+                 or no Director could ever set it walking"
+            );
+
+            let cast = Cast::new(package, crate::ALPHA_THRESHOLD)
+                .unwrap_or_else(|why| panic!("{name}'s art resolves: {why}"));
+            for animation in character::REQUIRED_ANIMATIONS {
+                assert!(
+                    cast.draw(animation, 0).is_some(),
+                    "{name} draws its {animation:?} animation"
+                );
+            }
+        }
+    }
+
+    /// #9's third criterion, which is about the Behaviors and not the drawing.
+    ///
+    /// Nothing a Character declares decides when it sits: `animation_for`
+    /// perches it on a window and puts it to sleep after a minute whoever it
+    /// is. What a Character declares is what a Director may set it doing, and
+    /// there the two disagree — no Behavior of BMO's ever settles, and every
+    /// Behavior of Nim's but the walk does. Two different lives from the same
+    /// Director, and not before one exists: nothing proposes a Behavior until
+    /// #11.
+    #[test]
+    fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
+        let bmo = shipped_character("bmo");
+        for behavior in bmo.behaviors.keys() {
+            let seen = played(&bmo, behavior);
+            assert!(
+                !seen.contains("sit") && !seen.contains("sleep"),
+                "BMO settles down in {behavior:?}: {seen:?}"
+            );
+        }
+
+        let nim = shipped_character("nim");
+        for behavior in nim.behaviors.keys().filter(|name| *name != "walk") {
+            let seen = played(&nim, behavior);
+            assert!(
+                seen.contains("sit") || seen.contains("sleep"),
+                "Nim never comes to rest in {behavior:?}: {seen:?}"
+            );
+        }
+    }
+
+    /// The failure mode #9 names: one Character shipped twice with the palette
+    /// swapped. Frame counts are read off the art rather than declared, so a
+    /// manifest cannot claim in-between frames the drawing has not got.
+    #[test]
+    fn the_two_shipped_characters_are_not_one_character_twice() {
+        let bmo = read(&shipped("bmo")).expect("BMO is a valid package");
+        let nim = read(&shipped("nim")).expect("Nim is a valid package");
+
+        for animation in character::REQUIRED_ANIMATIONS {
+            let (hard, smooth) = (
+                bmo.character.animations[animation].frames.len(),
+                nim.character.animations[animation].frames.len(),
+            );
+            assert!(
+                smooth > hard,
+                "{animation:?} is {smooth} frames of Nim against {hard} of BMO, \
+                 and Nim is the one that eases"
+            );
+        }
+
+        let bmo_art: BTreeSet<&Vec<u8>> = bmo.files.values().collect();
+        assert!(
+            nim.files.values().all(|file| !bmo_art.contains(file)),
+            "no file is shipped in both packages"
+        );
+    }
+
+    /// Whether a frame draws anything the hit-test cannot feel. Nim's contact
+    /// shadow is its one translucent colour, so a pixel that is drawn at all
+    /// but not drawn at `ALPHA_THRESHOLD` is shadow and can be nothing else.
+    fn casts_a_shadow(frame: &[u8]) -> bool {
+        let drawn = AlphaMask::from_png(frame, 1).expect("a shipped frame decodes");
+        let solid =
+            AlphaMask::from_png(frame, crate::ALPHA_THRESHOLD).expect("a shipped frame decodes");
+        let (width, height) = drawn.size();
+        let origin = SpriteRect {
+            x: 0,
+            y: 0,
+            scale: 1,
+        };
+
+        (0..height)
+            .any(|y| (0..width).any(|x| drawn.hit(&origin, x, y) && !solid.hit(&origin, x, y)))
+    }
+
+    /// A contact shadow drawn where there is no contact is not a contact
+    /// shadow. `fall` is the one Animation the Engine plays with the sprite off
+    /// the ground — it draws a throw and a drag as well as a fall — so it is
+    /// the one Animation of Nim's with nothing under its feet.
+    #[test]
+    fn nim_casts_a_shadow_only_when_it_has_something_to_cast_it_on() {
+        let nim = read(&shipped("nim")).expect("Nim is a valid package");
+
+        for animation in character::REQUIRED_ANIMATIONS {
+            for frame in &nim.character.animations[animation].frames {
+                let bytes = nim.files.get(frame).expect("the loader resolved it");
+                assert_eq!(
+                    casts_a_shadow(bytes),
+                    animation != "fall",
+                    "{frame}, a frame of {animation:?}"
+                );
+            }
+        }
     }
 }

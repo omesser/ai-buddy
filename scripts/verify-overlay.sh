@@ -327,37 +327,62 @@ print("\nDisplays:")
 for d in displays:
     print(f"  {d['w']:.0f}x{d['h']:.0f} at ({d['x']:.0f},{d['y']:.0f})")
 
+
+def bounds(r):
+    return (r["x"], r["y"], r["w"], r["h"])
+
+
 print("\nChecks:")
-check(len(windows) == 1, "exactly one overlay window", f"found {len(windows)}")
+# One overlay per display, each covering its own: a Character straddling a seam
+# is drawn by the overlay on each side, so both halves are on screen. One window
+# could not do it — macOS gives each display its own Space and draws a window
+# spanning two of them on only one, so an overlay wider than a display is
+# invisible on every display but that one.
+#
+# Counted over distinct rectangles rather than raw entries, because the two
+# sides are enumerated differently: displays here come from
+# CGGetActiveDisplayList and the overlays from NSScreen, and a mirrored pair is
+# two of the first and one of the second. One overlay is the right answer for a
+# mirrored pair, so counting the rectangles is what asks the question the app
+# can actually answer.
+screens = {bounds(d) for d in displays}
+check(len(windows) == len(screens),
+      "one overlay window per display",
+      f"{len(windows)} windows, {len(screens)} distinct displays")
 if not windows:
     sys.exit(1)
 
-w = windows[0]
-check(w["onscreen"], "window is on screen")
-check(w["layer"] == 3, "floating window level", f"layer={w['layer']}")
+# Identical rules on every one of them. A second window is a second place for
+# the level and the on-screen flag to disagree, which is the whole risk of
+# having more than one.
+check(all(w["onscreen"] for w in windows), "every overlay is on screen")
+levels = {w["layer"] for w in windows}
+check(levels == {3}, "every overlay is at floating level", f"levels={sorted(levels)}")
 
 # The screen-share half of the hide rules, and the only part of it a machine can
 # check. NSWindowSharingNone is 0, and it is what keeps the Character out of
 # every screen share, screen recording and remote view without anything having
 # to detect one — macOS publishes no way to detect one.
-check(w["sharing"] == 0, "excluded from every screen capture",
-      f"sharing={w['sharing']}")
+sharing = {w["sharing"] for w in windows}
+check(sharing == {0}, "every overlay is excluded from screen capture",
+      f"sharing={sorted(sharing)}")
 
-# One display exactly, rather than the union of them: macOS gives each display
-# its own Space and draws a window spanning two of them on only one, so an
-# overlay wider than a display is invisible on every display but that one. The
-# frame loop moves it to whichever display the Character is on, and the origin
-# has to match too — a window covering the right area of the wrong display is
-# the same disappearance.
+# The origin has to match too — a window covering the right area of the wrong
+# display is the same disappearance.
 #
-# Any match, not exactly one: mirrored displays report the same rectangle, and
-# two matches there is one answer said twice rather than a window spanning two
-# screens. What rules a union out is the equality itself.
-covered = [d for d in displays
-           if (w["x"], w["y"], w["w"], w["h"]) == (d["x"], d["y"], d["w"], d["h"])]
-check(bool(covered),
-      "window covers one whole display and no more",
-      f"{w['w']:.0f}x{w['h']:.0f} at ({w['x']:.0f},{w['y']:.0f})")
+# Matched by set rather than pairwise: mirrored displays report the same
+# rectangle, and which overlay answers which of them is not a fact worth
+# asserting. What rules a union out is the equality itself.
+uncovered = [d for d in displays if bounds(d) not in {bounds(w) for w in windows}]
+check(not uncovered,
+      "every display has an overlay covering it whole",
+      f"{len(uncovered)} uncovered: " + ", ".join(
+          f"{d['w']:.0f}x{d['h']:.0f} at ({d['x']:.0f},{d['y']:.0f})" for d in uncovered))
+
+astray = [w for w in windows if bounds(w) not in {bounds(d) for d in displays}]
+check(not astray,
+      "no overlay covers anything but a whole display",
+      ", ".join(f"{w['w']:.0f}x{w['h']:.0f} at ({w['x']:.0f},{w['y']:.0f})" for w in astray))
 
 ls = open(f"{out}/lsappinfo.txt").read()
 check('type="UIElement"' in ls, "accessory app: no Dock tile or switcher entry")
@@ -396,16 +421,16 @@ echo "Hit-test pipeline:"
 BEFORE=$(swift scripts/cursor-position.swift)
 SPRITE_AT=$(
   python3 - "$OUT" << 'PY'
-import json, re, sys
+import re, sys
 out = sys.argv[1]
 log = open(f"{out}/app.log").read()
-w = json.load(open(f"{out}/window.json"))["windows"][0]
 size = re.search(r"sprite (\d+)x(\d+)", log)
 at = re.findall(r"^frame: .* sprite\((-?\d+),(-?\d+)\)", log, re.M)
 if not (size and at):
     sys.exit(1)
-# Where the art's top-left corner is on screen, and how big it is.
-print(int(w["x"]) + int(at[-1][0]), int(w["y"]) + int(at[-1][1]), *size.groups())
+# Where the art's top-left corner is on screen, and how big it is. Already in
+# the shared point space, which is the space the cursor is warped in.
+print(int(at[-1][0]), int(at[-1][1]), *size.groups())
 PY
 ) || SPRITE_AT=""
 
