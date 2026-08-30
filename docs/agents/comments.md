@@ -23,8 +23,9 @@ a number the next reader is free to change.
 
 ## What does not
 
-A comment that restates the code. From `src-tauri/src/cast.rs`, on a one-line
-getter:
+A comment that restates the code. From a one-line getter this repository once
+shipped (`src-tauri/src/cast.rs`, dissolved in #94 — the example outlives the
+file):
 
 ```rust
 /// Every Animation's frames as `data:` URLs, for the webview to draw from.
@@ -35,7 +36,7 @@ getter:
 pub fn art(&self) -> &BTreeMap<String, Vec<String>> {
 ```
 
-The module doc above it already says why the frames are `data:` URLs, and
+The module doc above it already said why the frames are `data:` URLs, and
 `src/main.js` already says the webview owns no state. The first line is the
 whole comment:
 

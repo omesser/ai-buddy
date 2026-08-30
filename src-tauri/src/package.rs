@@ -6,15 +6,16 @@
 //! I/O, so it belongs in the Shell rather than in `ai-buddy-core` — the same
 //! split as `WindowSource`.
 //!
-//! The three ways a package can fail to become a Character are kept apart,
-//! because they are three different problems for whoever has to fix them:
+//! The two ways a location can fail to yield bytes are kept apart, because
+//! they are two different problems for whoever has to fix them:
 //!
 //! - **Not a package** — this location holds no Character Manifest. A user
 //!   pointed at their Downloads folder.
 //! - **Unreadable** — the bytes could not be got at all: permissions, a
 //!   truncated archive, a path that is not there.
-//! - **Rejected** — the bytes were read and `character::load` refused them. The
-//!   author has a package and a list of things to fix in it.
+//!
+//! Whether the bytes are a Character is `character::load`'s answer alone, and
+//! its rejections are the author's list of things to fix.
 //!
 //! A Character Package is untrusted input, so the reader is bounded before it
 //! is convenient: a package cannot make ai-buddy read an unbounded number of
@@ -26,7 +27,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use ai_buddy_core::character::{self, Character, PackageBytes, CHARACTER_MANIFEST_FILE};
+use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE};
 
 /// The file extension of a packaged Character. Zip because it is what a person
 /// gets from Finder's "Compress", not because the format needs a container.
@@ -70,15 +71,13 @@ pub const DEFAULT_CHARACTER: &str = "bmo";
 /// A user picks from the menu instead, which is #18.
 pub const CHARACTER_VAR: &str = "AI_BUDDY_CHARACTER";
 
-/// Why a location did not become a Character.
+/// Why a location did not yield a package's bytes.
 #[derive(Debug)]
 pub enum ReadError {
     /// There is no Character Manifest here, so this was never a package.
     NotAPackage(PathBuf),
     /// The bytes could not be read at all.
     Unreadable { path: PathBuf, why: String },
-    /// The bytes were read, and the loader refused them.
-    Rejected { path: PathBuf, errors: Vec<String> },
 }
 
 impl std::fmt::Display for ReadError {
@@ -92,31 +91,17 @@ impl std::fmt::Display for ReadError {
             Self::Unreadable { path, why } => {
                 write!(f, "{} could not be read: {why}", path.display())
             }
-            Self::Rejected { path, errors } => {
-                write!(f, "{} is not a valid Character Package:", path.display())?;
-                for error in errors {
-                    write!(f, "\n  - {error}")?;
-                }
-                Ok(())
-            }
         }
     }
 }
 
 impl std::error::Error for ReadError {}
 
-/// A Character and the bytes it was loaded from.
+/// Read a Character Package's bytes from a directory or an archive.
 ///
-/// The bytes are kept because a validated `Character` names its frames without
-/// carrying them: the renderer and the hit-test both need the art itself, and
-/// reading the package twice to get it would be the only alternative.
-pub struct Package {
-    pub character: Character,
-    pub files: PackageBytes,
-}
-
-/// Read a Character Package from a directory or an archive.
-pub fn read(path: &Path) -> Result<Package, ReadError> {
+/// Bytes, not a Character: whether they are one is `character::load`'s answer,
+/// asked by the caller.
+pub fn read(path: &Path) -> Result<PackageBytes, ReadError> {
     let unreadable = |why: String| ReadError::Unreadable {
         path: path.to_path_buf(),
         why,
@@ -135,13 +120,7 @@ pub fn read(path: &Path) -> Result<Package, ReadError> {
         return Err(ReadError::NotAPackage(path.to_path_buf()));
     }
 
-    match character::load(&files) {
-        Ok(character) => Ok(Package { character, files }),
-        Err(errors) => Err(ReadError::Rejected {
-            path: path.to_path_buf(),
-            errors,
-        }),
-    }
+    Ok(files)
 }
 
 /// Where ai-buddy looks for Character Packages, in the order it looks.
@@ -434,12 +413,11 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{Duration, UNIX_EPOCH};
 
+    use ai_buddy_core::character::{self, Character};
     use ai_buddy_core::director::{Context, Director, StaticDirector};
     use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
     use ai_buddy_core::overlay::{AlphaMask, SpriteRect};
     use ai_buddy_core::sensing::Activity;
-
-    use crate::cast::Cast;
 
     /// A 2x2 RGBA PNG, which is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
@@ -489,14 +467,10 @@ mod tests {
         ];
 
         for (directory, name, behavior, weight) in shipped {
-            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../characters")
-                .join(directory);
+            let character = shipped_character(directory);
+            let behaviors = &character.behaviors;
 
-            let package = read(&path).expect("the shipped Character Package loads");
-            let behaviors = &package.character.behaviors;
-
-            assert_eq!(package.character.name, name);
+            assert_eq!(character.name, name);
             assert_eq!(
                 behaviors.get(behavior).map(|declared| declared.weight),
                 Some(weight),
@@ -589,12 +563,13 @@ mod tests {
         zip.finish().expect("archive is finishable");
     }
 
-    /// The rejection, or a failure naming the Character that loaded instead.
+    /// The rejection, or a failure naming the path that read instead.
     ///
-    /// `Package` carries every byte of the art, so it is never `Debug`-printed.
-    fn refusal(result: Result<Package, ReadError>) -> ReadError {
+    /// The bytes carry every frame of the art, so they are never
+    /// `Debug`-printed.
+    fn refusal(result: Result<PackageBytes, ReadError>) -> ReadError {
         match result {
-            Ok(package) => panic!("expected a refusal, loaded {}", package.character.name),
+            Ok(_) => panic!("expected a refusal, read a package"),
             Err(why) => why,
         }
     }
@@ -605,7 +580,8 @@ mod tests {
         let root = dir.join("blip");
         write_package(&root);
 
-        let character = read(&root).expect("the package is valid").character;
+        let files = read(&root).expect("the package reads");
+        let character = character::load(&files).expect("the package is valid");
         assert_eq!(character.name, "Blip");
         assert_eq!(character.personality, "Blip is cheerful.");
         assert_eq!(
@@ -626,10 +602,13 @@ mod tests {
         let archive = dir.join("blip.zip");
         write_archive(&archive, "blip", false);
 
-        let from_directory = read(&root).expect("the directory is valid");
-        let from_archive = read(&archive).expect("the archive is valid");
-        assert_eq!(from_directory.character, from_archive.character);
-        assert_eq!(from_directory.files, from_archive.files);
+        let from_directory = read(&root).expect("the directory reads");
+        let from_archive = read(&archive).expect("the archive reads");
+        assert_eq!(from_directory, from_archive);
+        assert_eq!(
+            character::load(&from_directory).expect("the package is valid"),
+            character::load(&from_archive).expect("the package is valid"),
+        );
     }
 
     /// What an author actually hands you, since Finder's Compress is why this
@@ -644,11 +623,10 @@ mod tests {
         let archive = dir.join("blip.zip");
         write_archive(&archive, "blip", true);
 
-        let from_directory = read(&root).expect("the directory is valid");
-        let from_archive = read(&archive).expect("the archive is valid");
-        assert_eq!(from_directory.character, from_archive.character);
+        let from_directory = read(&root).expect("the directory reads");
+        let from_archive = read(&archive).expect("the archive reads");
         assert_eq!(
-            from_directory.files, from_archive.files,
+            from_directory, from_archive,
             "the litter is dropped rather than carried as package content"
         );
     }
@@ -682,7 +660,8 @@ mod tests {
     }
 
     /// The distinction the author cares about: a package with a mistake in it
-    /// is a different problem from a directory that was never a package.
+    /// is a different problem from a directory that was never a package. The
+    /// first reads and is rejected by the loader; only the second is disowned.
     #[test]
     fn a_package_missing_a_required_animation_is_rejected_rather_than_disowned() {
         let dir = TempDir::new("broken-package");
@@ -694,16 +673,12 @@ mod tests {
         )
         .expect("manifest is writable");
 
-        match refusal(read(&root)) {
-            ReadError::Rejected { path, errors } => {
-                assert_eq!(path, root);
-                assert!(
-                    errors.iter().any(|error| error.contains("\"walk\"")),
-                    "the rejection names the missing animation: {errors:#?}"
-                );
-            }
-            other => panic!("expected Rejected, got {other:?}"),
-        }
+        let files = read(&root).expect("a broken package still reads");
+        let errors = character::load(&files).expect_err("and the loader rejects it");
+        assert!(
+            errors.iter().any(|error| error.contains("\"walk\"")),
+            "the rejection names the missing animation: {errors:#?}"
+        );
     }
 
     #[test]
@@ -887,9 +862,8 @@ mod tests {
     }
 
     fn shipped_character(name: &str) -> Character {
-        read(&shipped(name))
-            .unwrap_or_else(|why| panic!("{why}"))
-            .character
+        let files = read(&shipped(name)).unwrap_or_else(|why| panic!("{why}"));
+        character::load(&files).unwrap_or_else(|errors| panic!("{name}: {errors:#?}"))
     }
 
     /// Every Animation one of a Character's Behaviors puts on screen, played
@@ -939,19 +913,17 @@ mod tests {
     #[test]
     fn both_shipped_characters_load_through_the_same_loader() {
         for (directory, name) in [("bmo", "BMO"), ("nim", "Nim")] {
-            let package = read(&shipped(directory)).unwrap_or_else(|why| panic!("{why}"));
-            assert_eq!(package.character.name, name);
+            let character = shipped_character(directory);
+            assert_eq!(character.name, name);
             assert!(
-                package.character.behaviors.contains_key("walk"),
+                character.behaviors.contains_key("walk"),
                 "{name} declares the one Behavior the Engine acts on itself, \
                  or no Director could ever set it walking"
             );
 
-            let cast = Cast::new(package, crate::ALPHA_THRESHOLD)
-                .unwrap_or_else(|why| panic!("{name}'s art resolves: {why}"));
             for animation in character::REQUIRED_ANIMATIONS {
                 assert!(
-                    cast.draw(animation, 0).is_some(),
+                    character.draw(animation, 0).is_some(),
                     "{name} draws its {animation:?} animation"
                 );
             }
@@ -993,13 +965,13 @@ mod tests {
     /// manifest cannot claim in-between frames the drawing has not got.
     #[test]
     fn the_two_shipped_characters_are_not_one_character_twice() {
-        let bmo = read(&shipped("bmo")).expect("BMO is a valid package");
-        let nim = read(&shipped("nim")).expect("Nim is a valid package");
+        let bmo = shipped_character("bmo");
+        let nim = shipped_character("nim");
 
         for animation in character::REQUIRED_ANIMATIONS {
             let (hard, smooth) = (
-                bmo.character.animations[animation].frames.len(),
-                nim.character.animations[animation].frames.len(),
+                bmo.animations[animation].frames.len(),
+                nim.animations[animation].frames.len(),
             );
             assert!(
                 smooth > hard,
@@ -1008,10 +980,10 @@ mod tests {
             );
         }
 
-        let bmo_art: BTreeSet<&Vec<u8>> = bmo.files.values().collect();
+        let bmo_art: BTreeSet<&Vec<u8>> = bmo.art.values().map(|art| &art.png).collect();
         assert!(
-            nim.files.values().all(|file| !bmo_art.contains(file)),
-            "no file is shipped in both packages"
+            nim.art.values().all(|art| !bmo_art.contains(&art.png)),
+            "no frame is shipped in both packages"
         );
     }
 
@@ -1020,8 +992,8 @@ mod tests {
     /// but not drawn at `ALPHA_THRESHOLD` is shadow and can be nothing else.
     fn casts_a_shadow(frame: &[u8]) -> bool {
         let drawn = AlphaMask::from_png(frame, 1).expect("a shipped frame decodes");
-        let solid =
-            AlphaMask::from_png(frame, crate::ALPHA_THRESHOLD).expect("a shipped frame decodes");
+        let solid = AlphaMask::from_png(frame, character::ALPHA_THRESHOLD)
+            .expect("a shipped frame decodes");
         let (width, height) = drawn.size();
         let origin = SpriteRect {
             x: 0,
@@ -1039,13 +1011,12 @@ mod tests {
     /// the one Animation of Nim's with nothing under its feet.
     #[test]
     fn nim_casts_a_shadow_only_when_it_has_something_to_cast_it_on() {
-        let nim = read(&shipped("nim")).expect("Nim is a valid package");
+        let nim = shipped_character("nim");
 
         for animation in character::REQUIRED_ANIMATIONS {
-            for frame in &nim.character.animations[animation].frames {
-                let bytes = nim.files.get(frame).expect("the loader resolved it");
+            for frame in &nim.animations[animation].frames {
                 assert_eq!(
-                    casts_a_shadow(bytes),
+                    casts_a_shadow(&nim.art[frame].png),
                     animation != "fall",
                     "{frame}, a frame of {animation:?}"
                 );
