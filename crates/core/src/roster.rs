@@ -119,6 +119,7 @@ mod tests {
                     frame_size: (32, 32),
                     fps: 8,
                     looping: true,
+                    variants: Vec::new(),
                 },
             );
         }
@@ -149,6 +150,8 @@ mod tests {
             animations,
             behaviors,
             art: BTreeMap::new(),
+            smooth: false,
+            scale: 1,
         }
     }
 

@@ -11,13 +11,10 @@ png = "0.18"
 # Parse only: the loader reads manifests and never writes one, and serde would
 # put its error strings where the Character-Manifest ones belong.
 toml_edit = {version = "0.25", default-features = false, features = ["parse"]}
-<<<<<<< HEAD
 uuid = {version = "1.11", features = ["v4"]}
-=======
 serde = {version = "1", features = ["derive"]}
 
 # Local civil time for the Free tier. One `localtime_r` call. Not a
 # window-server binding; Windows is out of v1 and does not use this.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
->>>>>>> origin/main
