@@ -83,6 +83,9 @@ struct Drawn {
     rect: SpriteRect,
     animation: &'static str,
     animation_ms: u32,
+    /// Whether the art was drawn mirrored, so the hit-test feels the same
+    /// pixels the user saw — this tick's facing may already differ.
+    mirrored: bool,
 }
 
 /// One tick's instruction to the renderer: where to draw the sprite in logical
@@ -425,7 +428,10 @@ fn run_frame_loop(
                 && drawn_last.as_ref().is_some_and(|last| {
                     character
                         .draw(last.animation, last.animation_ms)
-                        .is_some_and(|art| art.mask.hit(&last.rect, cursor_at.0, cursor_at.1))
+                        .is_some_and(|art| {
+                            art.mask
+                                .hit(&last.rect, cursor_at.0, cursor_at.1, last.mirrored)
+                        })
                 });
             let verbs = pointer.update(
                 pressed_sprite,
@@ -586,11 +592,13 @@ fn run_frame_loop(
             // reach us is a question about where the art is going to be. A
             // cursor that has just arrived over it must not spend a frame
             // passing clicks to the application underneath.
-            let over_sprite = drawn.mask.hit(&sprite, cursor_at.0, cursor_at.1);
+            let mirrored = frame.facing < 0.0;
+            let over_sprite = drawn.mask.hit(&sprite, cursor_at.0, cursor_at.1, mirrored);
             drawn_last = Some(Drawn {
                 rect: sprite,
                 animation: frame.animation,
                 animation_ms: frame.animation_ms,
+                mirrored,
             });
 
             // Click-through returns wherever the sprite is not drawn, and
