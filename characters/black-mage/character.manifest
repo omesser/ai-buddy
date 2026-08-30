@@ -1,10 +1,12 @@
 # FF1 Black Mage, from the GigaGuy custom sprite sheet (Spriters Resource
 # asset 17261). Pixel art scaled to be readable on desktop; frames face right
-# for the engine's mirroring. Poses sliced from the 196x205 grid. Where the
-# sheet lacked a required pose, the closest existing one was reused.
+# for the engine's mirroring. Where the sheet lacks a required pose, the
+# closest existing one should be reused (e.g. hold from idle).
 #
-# TODO: Replace placeholder frames with actual sliced sprites from the
-# downloaded GigaGuy sheet at https://www.spriters-resource.com/custom_edited/finalfantasy1customs/asset/17261/
+# Frames are currently 2x2 placeholders. Replace with actual poses sliced from
+# the 196x205 GIF using nearest-neighbour, grid-aligned cuts, keeping the
+# sheet's palette. Download from:
+# https://www.spriters-resource.com/custom_edited/finalfantasy1customs/asset/17261/
 
 name = "Black Mage"
 scale = 3
