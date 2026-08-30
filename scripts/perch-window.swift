@@ -8,9 +8,10 @@
 // but opening one of our own is free, and the window server reports it to
 // WindowSource exactly like any other window.
 //
-// Each event prints one JSON line: when it happened, in Unix milliseconds, and
-// the bounds the window server actually settled on, in the top-left-origin
-// points WindowSource reads. Both matter. A titled window's frame is taller
+// Each event prints one JSON line: when it happened, in Unix milliseconds, the
+// bounds the window server actually settled on, in the top-left-origin points
+// WindowSource reads, and how deep the window sits among the ordinary windows
+// in front of it. All three matter. A titled window's frame is taller
 // than the content rectangle it was asked for and AppKit may constrain where it
 // lands, so what was requested is not evidence; what the server reports is. The
 // timestamp is what lets verify-overlay.sh measure how long the app took to
@@ -94,10 +95,9 @@ Timer.scheduledTimer(withTimeInterval: reassertInterval, repeats: true) { _ in
 /// is the move, not the reading.
 func report(at: Date) {
     var line: [String: Double] = ["at_ms": at.timeIntervalSince1970 * 1000]
-    if let list = CGWindowListCopyWindowInfo(
-        .optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]],
-        let bounds = list.first?[kCGWindowBounds as String] as? [String: Any]
-    {
+    let entry = (CGWindowListCopyWindowInfo(
+        .optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]])?.first
+    if let bounds = entry?[kCGWindowBounds as String] as? [String: Any] {
         line["x"] = bounds["X"] as? Double ?? 0
         line["y"] = bounds["Y"] as? Double ?? 0
         line["w"] = bounds["Width"] as? Double ?? 0
@@ -105,11 +105,24 @@ func report(at: Date) {
     }
     // The level the window server settled on, not the one that was asked for:
     // what makes a prop furniture is where the server put it.
-    if let list = CGWindowListCopyWindowInfo(
-        .optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]],
-        let layer = list.first?[kCGWindowLayer as String] as? Int
-    {
+    if let layer = entry?[kCGWindowLayer as String] as? Int {
         line["layer"] = Double(layer)
+    }
+    // How many ordinary windows are in front of this one, 0 when it is the
+    // frontmost. Bounds alone cannot tell a Perch from an edge buried behind
+    // another window — both report the same top edge — so a check that reads
+    // only the bounds passes whether or not the sprite could have landed (#90).
+    // The on-screen list comes back front to back.
+    if let onScreen = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
+        as? [[String: Any]]
+    {
+        let depth = onScreen
+            .filter { $0[kCGWindowLayer as String] as? Int == 0 }
+            .firstIndex { $0[kCGWindowNumber as String] as? Int == window.windowNumber }
+        // Absent for a prop the list does not carry: an elevated one is at no
+        // depth among ordinary windows, and the check that reads this is only
+        // ever asked about the Perch.
+        if let depth { line["depth"] = Double(depth) }
     }
     let data = try! JSONSerialization.data(withJSONObject: line)
     print(String(data: data, encoding: .utf8)!)

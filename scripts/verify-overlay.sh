@@ -227,6 +227,29 @@ check(landed is not None,
       "it comes to rest on a real window's top edge",
       f"window top y={steps[0]['y']:.0f}")
 
+# That check reads a position and nothing else, and a prop buried behind another
+# window has the same top edge at the same y as a visible one — so on its own it
+# passes whether or not the landing it exists to assert could have happened
+# (#90). The prop reports how many ordinary windows are in front of it, and
+# anything but the front means the run tested nothing.
+#
+# Asked over every report from the app's first frame to the moment the prop was
+# closed, rather than only the ones after a landing. A burial is exactly what
+# stops the sprite landing (#86), so gating this on the landing would leave the
+# case it exists for reported as a position mismatch — which is what sent #89
+# looking in the wrong place. A missing depth is the window server not listing
+# the prop among ordinary windows at all, which is worse than buried.
+under_test = [s for s in steps if frames[0][0] <= s["at_ms"] <= closed_ms]
+buried = [s for s in under_test if s.get("depth") != 0]
+if buried:
+    depth = buried[0].get("depth")
+    detail = "off the ordinary window list" if depth is None else f"{depth:.0f} deep"
+    detail += f", {buried[0]['at_ms'] - frames[0][0]:.0f}ms into the run"
+else:
+    detail = f"frontmost in all {len(under_test)} reports the app could see"
+check(bool(under_test) and not buried,
+      "the Perch stays in front of every other window", detail)
+
 # The first step the prop took once the sprite was already perched on it.
 step = first(lambda s: landed and s["at_ms"] > landed[0], steps[1:])
 if step is None:
