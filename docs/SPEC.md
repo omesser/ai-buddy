@@ -381,8 +381,9 @@ One Markdown file, append-structured under stable headings. Headings are advisor
 never parsed for correctness. Malformed content is still valid Markdown, so a bad
 hand-edit degrades rather than breaks.
 
-Shared by every Character Instance. The file is watched for external modification and
-reloaded. A single timestamped backup is written before a wipe.
+Shared by every Character Instance. Every recall reads the file, so an edit made outside
+ai-buddy is visible to the next recall without a watcher or a reload path. A single
+timestamped backup is written before a wipe.
 
 Memory is treated as untrusted input. It reaches Harness prompts, and the user can type
 anything into it.
@@ -485,10 +486,10 @@ applications and password fields from every sensing result.
 
 ### Memory
 
-Tested as a store against a temporary file. Coverage: round-trip of a remembered fact;
-external modification is picked up; malformed content still loads and preserves what it
-can; wipe writes a backup first; a hand-written file that has never been touched by
-ai-buddy loads correctly.
+Tested as a store against a temporary file. Coverage: round-trip of a remembered fact; an
+edit made outside ai-buddy is visible to the next recall; malformed content still reads
+back and preserves what it can; wipe writes a backup first; a hand-written file that has
+never been touched by ai-buddy reads back correctly.
 
 ### Fakes, not mocks
 
