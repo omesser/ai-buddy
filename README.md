@@ -21,10 +21,12 @@ Control-Option-Command-B and comes back the same way, and never appears in a
 screen share or a screen recording at all. It is a real Character Package on
 disk, and its Animations play at the speeds its Character Manifest declares.
 Startup stops if no package loads, because a companion with no Character has
-nothing to be. There is no Director and no Functional Layer yet: double-clicking
-it is a Summon the Engine accepts and nothing answers, because the chat surface
-it opens arrives with #17, and right-clicking does nothing at all — the menu it
-opens is the tray's, which arrives with #18.
+nothing to be. A Director proposes Behaviors: Static weights with nothing
+configured, or an HTTP stand-in if you set a key (see [Running it](#running-it)).
+A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)).
+There is no chat surface and no menu yet: double-clicking is a Summon the
+Engine accepts and nothing answers (#17), and right-clicking does nothing at
+all — the menu it opens is the tray's (#18).
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
@@ -33,8 +35,7 @@ Poke. Eight of the nine are also Primitives a Character can compose into a
 Behavior — all but `fall`, which is what losing your footing looks like rather
 than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into,
 and is refused or abandoned when the State the sprite is in does not permit it.
-Nothing proposes one yet — the Director arrives later — so `talk` waits on a
-proposal to name a Behavior that plays it.
+`talk` plays when a proposal names a Behavior that includes it.
 
 ## Running it
 
@@ -48,6 +49,76 @@ cargo run
 
 No bundler: the front end is static files under `src/`, which Tauri embeds at
 build time.
+
+With no Director key the sprite still has a life: Static weights pick among
+the Character's declared Behaviors. A key turns on the HTTP stand-in
+([ADR-0008](./docs/adr/0008-one-harness-session.md) — disposable until a
+Harness attaches).
+
+OpenAI, Anthropic's compatibility layer, and Ollama use `/v1/chat/completions`.
+[xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses
+`/v1/responses`; `AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai` selects that
+path. An explicit full URL (ending in `/chat/completions` or `/responses`)
+is used as-is.
+
+```sh
+# OpenAI
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.openai.com \
+AI_BUDDY_DIRECTOR_MODEL=gpt-4o-mini \
+cargo run
+
+# Anthropic (OpenAI-compatible /v1/chat/completions)
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.anthropic.com \
+AI_BUDDY_DIRECTOR_MODEL=claude-haiku-4-5 \
+cargo run
+
+# xAI — get a key at https://console.x.ai
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
+AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+cargo run
+
+# Ollama — the key is required by the stand-in and ignored by Ollama
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY=ollama \
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+AI_BUDDY_DIRECTOR_MODEL=llama3.2 \
+cargo run
+```
+
+| Variable | What it does |
+|---|---|
+| `AI_BUDDY_DIRECTOR_API_KEY` | Required for the HTTP stand-in. Empty or unset is Static only. |
+| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
+| `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
+| `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. |
+| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First ambient wait, in seconds (default 900). Doubles after each unused ambient wake, caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+
+Session calls stay quiet while the main display is asleep. #18 will bind these
+in settings.
+
+A 403 from xAI is the server refusing the key, not a bad JSON body (that is
+a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai);
+`/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that
+requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries
+chat-completions if Responses returns 403 or 404.
+
+`scripts/probe-model.sh` hits the same Completer without starting the
+overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST
+paths. Same env as `cargo run`. It prints status and body, never the key.
+Later this is also how to check a Harness is reachable.
+
+```sh
+AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
+AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+scripts/probe-model.sh
+```
 
 ## Development
 
@@ -153,6 +224,11 @@ frames — state, position and animation, once per tick. Both trace in the point
 space every display shares, so the positions they report are comparable with
 what the window server says about any display.
 
+`AI_BUDDY_TRACE_DIRECTOR=1` prints each session wake: `--- prompt ---` is
+what we sent, `--- model ---` is the reply, then whether that played as a
+Behavior (or fell back to Static). Off unless asked. Poke, throw, pick up,
+or place on a Perch to force a wake.
+
 There is one overlay per display and every one of them is told where the
 sprite is, so the trace is one line per tick rather than one per overlay. Which
 overlay the cursor is on is on the hit-test line.
@@ -216,12 +292,11 @@ can answer it. Run the app, then confirm:
     cuts between two poses four times a second, in eight flat colours with
     nothing under its feet; Nim eases through six, blinks, and carries a
     translucent shadow. Poke each: BMO's startle is two frames and over, Nim's
-    plays through five. What you cannot watch yet is the half that is not
-    drawing — the Behaviors each declares — because nothing proposes one until
-    the Director lands, and sitting and sleeping are meanwhile the Engine's own
-    idling and look the same for either. Then judge the drawing itself, which
-    no test can: the frames are generated by a script and nobody has claimed
-    they are good.
+    plays through five. The Behaviors each declares show when a Director
+    proposes one (Static, or the HTTP stand-in with a key). Sitting and
+    sleeping can also be the Engine's own idling and look the same for either.
+    Then judge the drawing itself, which no test can: the frames are generated
+    by a script and nobody has claimed they are good.
 
 14. **A fullscreen application takes the screen and the Character leaves it.**
     Put any application into fullscreen — the green button, or
@@ -330,9 +405,8 @@ real variance rather than against itself:
 
 The difference is the Behaviors as much as the drawing, which is what makes
 switching feel like a different companion rather than a reskin — from the day a
-Director proposes one. Nothing does yet, so what reaches the screen today is the
-drawing and the cadence, and when the sprite sits or sleeps is the Engine's own
-idling rather than anything either Character asked for. Both are drawn by a
+Director proposes one. Sitting and sleeping can also be the Engine's own
+idling when nothing has proposed. Both are drawn by a
 script rather than by hand, which is what the repository can honestly claim;
 regenerate both with:
 

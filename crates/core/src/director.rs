@@ -1,31 +1,42 @@
-//! The Static Director: the buddy's life with no model and no network.
+//! Director: propose the next Behavior.
 //!
-//! What wakes it and what it is told are the Shell's; what it picks is here,
-//! and it is a pure function of the context and a seed. DESIGN.md decision 5
-//! keeps it as the configurable fallback for exactly the moments a model-backed
-//! Director cannot serve: none configured, turned off in settings, offline, or
-//! answering too slowly to wait for.
+//! `StaticDirector` picks from the Character's weights. Use it when no
+//! Harness is attached, the Director is off, or a session call fails
+//! (DESIGN.md decision 5, ADR-0008). `ModelDirector` sends a Character
+//! Prompt through a `Completer` and parses the reply. The Completer is the
+//! attached Harness once #16 lands; until then it is an HTTP stand-in. This
+//! crate does not do I/O.
 //!
-//! Determinism is the point. A pet that surprises its owner is not a pet that
-//! surprises its tests, so the randomness arrives as a seed rather than from a
-//! clock or an operating system. Every test below fixes the seed, including the
-//! one about distribution: it counts what a known seed actually drew, so it
-//! cannot flake however tight the band around it is drawn.
+//! The Shell decides when to call either one. Do not wait on the model in
+//! the frame loop. Apply a finished proposal on the next tick, or drop it.
+//! Static may wake often (`due`). A session wake is `session_due`: reactive
+//! or backed-off, never while the display is asleep.
+//!
+//! `StaticDirector` tests pass a fixed seed so the same inputs pick the same
+//! Behaviors on every run.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::character::{Behavior, Trigger};
-use crate::engine::BehaviorProposal;
+use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
-/// How long the Director goes unwoken when nothing notable happens.
+/// How long the Static Director goes unwoken when nothing notable happens.
 ///
 /// A tuning knob. Long enough that the sprite is not constantly interrupting
 /// itself, short enough that a glance at the desktop usually catches it doing
-/// something. The model-backed Director will want its own, far longer, number:
-/// this one costs nothing to wake.
+/// something. This path costs nothing to wake. A session wake is `Pace`, not
+/// this number.
 pub const WAKE_EVERY: Duration = Duration::from_secs(20);
+
+/// Idle duration that counts as the user leaving.
+/// Wake once when idle crosses this. Do not wake again while it stays over.
+pub const IDLE_OVER: Duration = Duration::from_secs(5 * 60);
+
+/// Wake if the sprite has been in the same State this long.
+pub const STATE_BOUND: Duration = Duration::from_secs(90);
 
 /// How many Behaviors back the Director is asked to remember.
 ///
@@ -33,6 +44,19 @@ pub const WAKE_EVERY: Duration = Duration::from_secs(20);
 /// Character declaring fewer Behaviors than this would otherwise run out of
 /// things it is allowed to do.
 pub const REMEMBERED: usize = 3;
+
+/// What the user (or the clock) just did, in one word for the follow-up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Happened {
+    Poke,
+    Throw,
+    Summon,
+    /// Grab started this tick. Grab itself repeats every held tick.
+    Grab,
+    /// The sprite just became Perched — placed on a window edge.
+    Perch,
+    Ambient,
+}
 
 /// What the Director is told about the world on one wake.
 ///
@@ -44,12 +68,121 @@ pub struct Context {
     pub activity: Activity,
     /// Behavior identifiers played recently, most recent first.
     pub recent: Vec<String>,
+    /// The active Character's Personality Prompt. Empty when the package
+    /// shipped none.
+    pub personality: String,
+    pub state: State,
+    pub happened: Happened,
+    /// What the feet are on: a window (owner name), the floor above the
+    /// Dock, or a screen edge. Not a title — that needs Screen Recording.
+    pub standing: String,
 }
 
 /// Whatever decides what the buddy does next.
 pub trait Director {
     /// A Behavior to play, or nothing when this moment suits none.
     fn propose(&mut self, context: &Context) -> Option<BehaviorProposal>;
+}
+
+/// Completes a Character Prompt.
+///
+/// The attached Harness, once #16 lands. Until then, an HTTP stand-in in the
+/// shell. Tests put a double here.
+pub trait Completer {
+    fn complete(&self, prompt: &str) -> Result<String, String>;
+}
+
+/// Result of one model call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Wake {
+    Proposed(BehaviorProposal),
+    /// Completer error, timeout, or unparsable reply. Use `StaticDirector`.
+    Failed,
+}
+
+/// Sends a Character Prompt through a `Completer` and parses the reply.
+pub struct ModelDirector<C> {
+    completer: C,
+    behaviors: Vec<String>,
+    /// The Character Prompt is the opening turn only. After a successful
+    /// Completer hop, later wakes send `follow_up`.
+    opened: AtomicBool,
+}
+
+impl<C> ModelDirector<C> {
+    pub fn new(completer: C, behaviors: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            completer,
+            behaviors: behaviors.into_iter().map(Into::into).collect(),
+            opened: AtomicBool::new(false),
+        }
+    }
+}
+
+impl<C: Completer> ModelDirector<C> {
+    /// The user turn for this wake. Settings shows this string.
+    pub fn prompt(&self, context: &Context) -> String {
+        if self.opened.load(Ordering::SeqCst) {
+            follow_up(context)
+        } else {
+            character_prompt(context, self.behaviors.iter())
+        }
+    }
+
+    pub fn wake(&self, context: &Context) -> Wake {
+        match self.completer.complete(&self.prompt(context)) {
+            Ok(reply) => {
+                // The Completer has the opening; later turns stay short
+                // even if this reply failed to parse.
+                self.opened.store(true, Ordering::SeqCst);
+                match parse_proposal(&reply) {
+                    Ok(proposal) if self.knows(&proposal.behavior) => Wake::Proposed(proposal),
+                    Ok(proposal) if proposal.behavior.eq_ignore_ascii_case("say") => {
+                        Wake::Proposed(BehaviorProposal {
+                            behavior: String::new(),
+                            dialogue: proposal.dialogue.or(Some(proposal.behavior)),
+                        })
+                    }
+                    _ => match as_speech(&reply) {
+                        Some(said) => Wake::Proposed(said),
+                        None => Wake::Failed,
+                    },
+                }
+            }
+            Err(_) => Wake::Failed,
+        }
+    }
+
+    fn knows(&self, name: &str) -> bool {
+        self.behaviors.iter().any(|declared| declared == name)
+    }
+}
+
+/// A reply that is not a declared Behavior. Empty name: the Engine speaks
+/// and starts nothing. #17 will show this in a bubble.
+fn as_speech(reply: &str) -> Option<BehaviorProposal> {
+    let text = reply.trim();
+    let text = text
+        .strip_prefix("say:")
+        .or_else(|| text.strip_prefix("Say:"))
+        .map(str::trim)
+        .unwrap_or(text);
+    (!text.is_empty()).then(|| BehaviorProposal {
+        behavior: String::new(),
+        dialogue: Some(text.to_string()),
+    })
+}
+
+/// Return the model proposal, or ask `StaticDirector` if the call failed.
+pub fn fallback(
+    wake: Wake,
+    static_director: &mut StaticDirector,
+    context: &Context,
+) -> Option<BehaviorProposal> {
+    match wake {
+        Wake::Proposed(proposal) => Some(proposal),
+        Wake::Failed => static_director.propose(context),
+    }
 }
 
 /// Record a Behavior as just played, forgetting whatever fell off the end.
@@ -62,13 +195,198 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
     recent.truncate(REMEMBERED);
 }
 
-/// Whether this read of the Free tier is worth waking the Director for.
+/// Ambient wait between session wakes. Doubles after each ambient call,
+/// resets when the user addresses the buddy. ADR-0008.
+#[derive(Clone, Debug)]
+pub struct Pace {
+    first: Duration,
+    wait: Duration,
+}
+
+impl Pace {
+    /// First ambient wait, and the value a reactive wake resets to.
+    pub const FIRST: Duration = Duration::from_secs(15 * 60);
+    /// Ceiling after repeated ambient wakes with no one addressing the buddy.
+    pub const CAP: Duration = Duration::from_secs(2 * 60 * 60);
+
+    pub fn new() -> Self {
+        Self::with_first(Self::FIRST)
+    }
+
+    pub fn with_first(first: Duration) -> Self {
+        let first = first.clamp(Duration::from_secs(1), Self::CAP);
+        Self { first, wait: first }
+    }
+
+    pub fn wait(&self) -> Duration {
+        self.wait
+    }
+
+    pub fn after_ambient(&mut self) {
+        self.wait = self.wait.saturating_mul(2).min(Self::CAP);
+    }
+
+    pub fn after_reactive(&mut self) {
+        self.wait = self.first;
+    }
+}
+
+impl Default for Pace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Whether to wake the Static Director.
 ///
-/// A switch of application is the one thing the user will notice being ignored:
-/// they moved to another window and the buddy carried on as though nothing
-/// happened. Everything else is the timer.
-pub fn due(since_wake: Duration, activity: &Activity) -> bool {
-    activity.switched || since_wake >= WAKE_EVERY
+/// True on frontmost-app change, idle crossing `IDLE_OVER`, time in one State
+/// reaching `STATE_BOUND`, or `since_wake >= every`. Free, so it may be chatty.
+pub fn due(
+    since_wake: Duration,
+    every: Duration,
+    activity: &Activity,
+    previous_idle: Duration,
+    since_state: Duration,
+) -> bool {
+    activity.switched
+        || (previous_idle < IDLE_OVER && activity.idle >= IDLE_OVER)
+        || since_state >= STATE_BOUND
+        || since_wake >= every
+}
+
+/// Whether to wake the session Director (Harness, or the HTTP stand-in).
+///
+/// Reactive when the user addressed the buddy. Ambient when `since_ambient`
+/// has reached the current `Pace`. Never while the display is asleep.
+pub fn session_due(
+    addressed: bool,
+    since_ambient: Duration,
+    pace: &Pace,
+    displays_asleep: bool,
+) -> bool {
+    !displays_asleep && (addressed || since_ambient >= pace.wait())
+}
+
+/// The opening turn: who this is, what it may propose, and this moment.
+///
+/// Later wakes send `follow_up` only. The Completer holds the conversation
+/// so the Personality Prompt is not paid for again.
+pub fn character_prompt(
+    context: &Context,
+    behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+) -> String {
+    let names: Vec<String> = behaviors
+        .into_iter()
+        .map(|name| name.as_ref().to_string())
+        .collect();
+    let declared = if names.is_empty() {
+        "(none)".to_string()
+    } else {
+        names.join(", ")
+    };
+    let personality = if context.personality.is_empty() {
+        "(no personality)"
+    } else {
+        context.personality.as_str()
+    };
+
+    format!(
+        "{personality}\n\
+         \n\
+         You may propose one of these behaviors: {declared}\n\
+         \n\
+         Reply with the behavior name on the first line.\n\
+         An optional spoken line may follow on the next line.\n\
+         Propose nothing else.\n\
+         \n\
+         {}",
+        follow_up(context)
+    )
+}
+
+/// A later turn in the same session. No Personality Prompt, no roster.
+pub fn follow_up(context: &Context) -> String {
+    let recent = if context.recent.is_empty() {
+        "(none)".to_string()
+    } else {
+        context.recent.join(", ")
+    };
+    let clock = format_clock(context.activity.hour, context.activity.minute);
+    let happened = match context.happened {
+        Happened::Poke => "poked",
+        Happened::Throw => "thrown",
+        Happened::Summon => "summoned",
+        Happened::Grab => "picked up",
+        Happened::Perch => "placed on a perch",
+        Happened::Ambient => "time passed",
+    };
+    let state = match context.state {
+        State::Grounded => "idle",
+        State::Falling => "falling",
+        State::Dragged => "held",
+        State::Perched => "perched",
+        State::Climbing => "climbing",
+        State::Asleep => "asleep",
+    };
+    let open = match context.activity.frontmost_application.as_deref() {
+        Some(name) if !name.is_empty() => format!("{name} is the frontmost window"),
+        _ => "nothing is frontmost".to_string(),
+    };
+
+    format!(
+        "what just happened: {happened}\n\
+         recent: {recent}\n\
+         time: {clock}\n\
+         state: {state}\n\
+         perch: {standing}\n\
+         open: {open}\n",
+        standing = if context.standing.is_empty() {
+            "nothing"
+        } else {
+            context.standing.as_str()
+        },
+    )
+}
+
+/// The reply was not a Behavior name. Fall back instead of guessing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParseError;
+
+/// Parse a reply as a Behavior name on the first line and optional dialogue
+/// after. Anything else is `ParseError`.
+pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
+    let mut lines = reply.lines().map(str::trim).filter(|line| !line.is_empty());
+    let first = lines.next().ok_or(ParseError)?;
+    let (name, inline) = match first.split_once('|') {
+        Some((name, line)) => (name.trim(), Some(line.trim())),
+        None => (first, None),
+    };
+    if name.is_empty() || !identifier(name) {
+        return Err(ParseError);
+    }
+
+    let dialogue = match inline {
+        Some(line) if !line.is_empty() => Some(line.to_string()),
+        _ => {
+            let rest: Vec<&str> = lines.collect();
+            (!rest.is_empty()).then(|| rest.join(" "))
+        }
+    };
+
+    Ok(BehaviorProposal {
+        behavior: name.to_string(),
+        dialogue,
+    })
+}
+
+/// True if `name` is a single token. The Engine still rejects unknown names.
+fn identifier(name: &str) -> bool {
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn format_clock(hour: u8, minute: u8) -> String {
+    format!("{hour:02}:{minute:02}")
 }
 
 /// Weighted selection over a Character's declared Behaviors. No model, no
@@ -217,6 +535,9 @@ mod tests {
             switched: false,
             idle: Duration::ZERO,
             at: UNIX_EPOCH,
+            hour: 0,
+            minute: 0,
+            displays_asleep: false,
         }
     }
 
@@ -224,6 +545,10 @@ mod tests {
         Context {
             activity,
             recent: recent.iter().map(|name| name.to_string()).collect(),
+            personality: "a shy robot.".to_string(),
+            state: State::Grounded,
+            happened: Happened::Poke,
+            standing: String::new(),
         }
     }
 
@@ -414,6 +739,17 @@ mod tests {
         assert_eq!(recent.len(), REMEMBERED);
     }
 
+    /// Timer and switch only: idle has not crossed and the State is fresh.
+    fn on_timer(since_wake: Duration, activity: &Activity) -> bool {
+        due(
+            since_wake,
+            WAKE_EVERY,
+            activity,
+            Duration::MAX,
+            Duration::ZERO,
+        )
+    }
+
     #[test]
     fn the_director_wakes_on_a_switch_and_otherwise_on_the_timer() {
         let switched = Activity {
@@ -421,9 +757,427 @@ mod tests {
             ..working()
         };
 
-        assert!(due(Duration::ZERO, &switched), "a new application is news");
-        assert!(!due(Duration::ZERO, &working()), "nothing has happened");
-        assert!(!due(WAKE_EVERY - Duration::from_millis(1), &working()));
-        assert!(due(WAKE_EVERY, &working()), "the timer comes due");
+        assert!(
+            on_timer(Duration::ZERO, &switched),
+            "frontmost application changed"
+        );
+        assert!(
+            !on_timer(Duration::ZERO, &working()),
+            "nothing has happened"
+        );
+        assert!(!on_timer(WAKE_EVERY - Duration::from_millis(1), &working()));
+        assert!(on_timer(WAKE_EVERY, &working()), "the timer comes due");
+    }
+
+    #[test]
+    fn the_director_wakes_when_idle_crosses_the_threshold_and_not_while_past_it() {
+        let away = Activity {
+            idle: IDLE_OVER,
+            ..working()
+        };
+        let still = Activity {
+            idle: IDLE_OVER + Duration::from_secs(30),
+            ..working()
+        };
+
+        assert!(
+            due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &away,
+                Duration::ZERO,
+                Duration::ZERO
+            ),
+            "idle crossed IDLE_OVER"
+        );
+        assert!(
+            !due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &still,
+                IDLE_OVER,
+                Duration::ZERO
+            ),
+            "staying away is not another event"
+        );
+        assert!(
+            !due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &working(),
+                Duration::ZERO,
+                Duration::ZERO
+            ),
+            "still at the machine is not a crossing"
+        );
+    }
+
+    #[test]
+    fn the_director_wakes_when_one_state_outlasts_its_bound() {
+        assert!(
+            due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &working(),
+                Duration::MAX,
+                STATE_BOUND
+            ),
+            "since_state reached STATE_BOUND"
+        );
+        assert!(!due(
+            Duration::ZERO,
+            WAKE_EVERY,
+            &working(),
+            Duration::MAX,
+            STATE_BOUND - Duration::from_millis(1)
+        ));
+    }
+
+    #[test]
+    fn wake_frequency_is_the_interval_the_caller_hands_in() {
+        let longer = Duration::from_secs(180);
+        assert!(!due(
+            WAKE_EVERY,
+            longer,
+            &working(),
+            Duration::MAX,
+            Duration::ZERO
+        ));
+        assert!(due(
+            longer,
+            longer,
+            &working(),
+            Duration::MAX,
+            Duration::ZERO
+        ));
+    }
+
+    #[test]
+    fn a_session_wake_is_reactive_or_backed_off_and_silent_while_asleep() {
+        let pace = Pace::new();
+
+        assert!(
+            session_due(true, Duration::ZERO, &pace, false),
+            "the user addressed the buddy"
+        );
+        assert!(
+            !session_due(false, Duration::ZERO, &pace, false),
+            "nothing happened and the wait has not elapsed"
+        );
+        assert!(
+            session_due(false, Pace::FIRST, &pace, false),
+            "the first ambient wait has elapsed"
+        );
+        assert!(
+            !session_due(true, Duration::ZERO, &pace, true),
+            "asleep: not even a Poke spends tokens"
+        );
+        assert!(
+            !session_due(false, Pace::FIRST, &pace, true),
+            "asleep: ambient stays quiet"
+        );
+    }
+
+    #[test]
+    fn ambient_session_waits_double_and_a_reactive_wake_resets_them() {
+        let mut pace = Pace::new();
+        assert_eq!(pace.wait(), Pace::FIRST);
+
+        pace.after_ambient();
+        assert_eq!(pace.wait(), Pace::FIRST * 2);
+        pace.after_ambient();
+        assert_eq!(pace.wait(), Pace::FIRST * 4);
+
+        pace.after_reactive();
+        assert_eq!(pace.wait(), Pace::FIRST, "addressed: start the wait over");
+    }
+
+    #[test]
+    fn ambient_session_waits_do_not_grow_past_the_cap() {
+        let mut pace = Pace::with_first(Pace::CAP);
+        pace.after_ambient();
+        assert_eq!(pace.wait(), Pace::CAP);
+    }
+
+    #[test]
+    fn a_clean_reply_is_a_behavior_and_optional_dialogue() {
+        let spoken = parse_proposal("stroll\nhey there").expect("a named Behavior");
+        assert_eq!(spoken.behavior, "stroll");
+        assert_eq!(spoken.dialogue.as_deref(), Some("hey there"));
+
+        let quiet = parse_proposal("wave").expect("dialogue is optional");
+        assert_eq!(quiet.behavior, "wave");
+        assert_eq!(quiet.dialogue, None);
+
+        let inline = parse_proposal("nap | sleepy").expect("one-line form");
+        assert_eq!(inline.behavior, "nap");
+        assert_eq!(inline.dialogue.as_deref(), Some("sleepy"));
+    }
+
+    /// Completer that returns a fixed reply and records the prompt it received.
+    struct Scripted {
+        reply: Result<String, String>,
+        seen: std::sync::Mutex<Option<String>>,
+    }
+
+    impl Scripted {
+        fn says(reply: &str) -> Self {
+            Self {
+                reply: Ok(reply.to_string()),
+                seen: std::sync::Mutex::new(None),
+            }
+        }
+
+        fn fails() -> Self {
+            Self {
+                reply: Err("timeout".to_string()),
+                seen: std::sync::Mutex::new(None),
+            }
+        }
+    }
+
+    impl Completer for Scripted {
+        fn complete(&self, prompt: &str) -> Result<String, String> {
+            *self.seen.lock().expect("the lock is not poisoned") = Some(prompt.to_string());
+            self.reply.clone()
+        }
+    }
+
+    #[test]
+    fn a_model_director_proposes_what_the_completer_replies() {
+        let director = ModelDirector::new(Scripted::says("stroll\nhey"), ["stroll", "wave"]);
+        let moment = context(working(), &[]);
+
+        match director.wake(&moment) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "stroll");
+                assert_eq!(proposal.dialogue.as_deref(), Some("hey"));
+            }
+            other => panic!("the reply was a proposal, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_completer_is_sent_the_character_prompt() {
+        let director = ModelDirector::new(Scripted::says("wave"), ["wave"]);
+        let moment = context(working(), &["nap"]);
+        let expected = character_prompt(&moment, ["wave"]);
+
+        director.wake(&moment);
+
+        assert_eq!(
+            director
+                .completer
+                .seen
+                .lock()
+                .expect("the lock is not poisoned")
+                .as_deref(),
+            Some(expected.as_str()),
+            "Completer must receive character_prompt's output"
+        );
+    }
+
+    #[test]
+    fn a_director_error_falls_back_to_the_static_director() {
+        let model = ModelDirector::new(Scripted::fails(), ["nap"]);
+        let mut static_director = StaticDirector::new(declaring(&[("nap", 1, None)]), 1);
+        let moment = context(working(), &[]);
+
+        let proposal = fallback(model.wake(&moment), &mut static_director, &moment)
+            .expect("StaticDirector proposed");
+
+        assert_eq!(proposal.behavior, "nap");
+        assert_eq!(proposal.dialogue, None, "the fallback does not speak");
+    }
+
+    #[test]
+    fn a_valid_model_proposal_is_kept_and_the_static_director_is_not_asked() {
+        let model = ModelDirector::new(Scripted::says("wave"), ["wave", "nap"]);
+        let mut static_director = StaticDirector::new(declaring(&[("nap", 1, None)]), 1);
+        let moment = context(working(), &[]);
+
+        let proposal =
+            fallback(model.wake(&moment), &mut static_director, &moment).expect("model proposed");
+
+        assert_eq!(
+            proposal.behavior, "wave",
+            "a Behavior the Static Director does not even declare"
+        );
+    }
+
+    #[test]
+    fn a_garbled_reply_is_an_error_not_a_guess() {
+        assert!(parse_proposal("").is_err(), "empty reply");
+        assert!(
+            parse_proposal("Sure, a stroll would be nice!").is_err(),
+            "prose is not an identifier"
+        );
+        assert!(
+            parse_proposal("***").is_err(),
+            "punctuation is not an identifier"
+        );
+    }
+
+    #[test]
+    fn a_reply_that_is_not_a_behavior_is_said() {
+        let director = ModelDirector::new(
+            Scripted::says("It's 23:59! Almost a brand new day!"),
+            ["wave", "report"],
+        );
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty(), "speaking is not a Behavior");
+                assert_eq!(
+                    said.dialogue.as_deref(),
+                    Some("It's 23:59! Almost a brand new day!")
+                );
+            }
+            other => panic!("prose should be said, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_say_prefix_is_stripped_and_the_rest_is_spoken() {
+        let director = ModelDirector::new(Scripted::says("say: hey"), ["wave"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("hey"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+
+        let piped = ModelDirector::new(Scripted::says("say | hey"), ["wave"]);
+        match piped.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("hey"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_undeclared_identifier_is_said_not_played() {
+        let director = ModelDirector::new(Scripted::says("cartwheel"), ["wave"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("cartwheel"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+    }
+
+    /// The prompt must include every Free-tier field. Settings shows this string.
+    #[test]
+    fn the_character_prompt_is_the_payload_the_model_is_sent() {
+        let moment = Context {
+            activity: Activity {
+                frontmost_application: Some("Terminal".to_string()),
+                switched: false,
+                idle: Duration::from_secs(12),
+                at: UNIX_EPOCH,
+                hour: 22,
+                minute: 15,
+                displays_asleep: false,
+            },
+            recent: vec!["stroll".to_string(), "nap".to_string()],
+            personality: "Blip is cheerful.".to_string(),
+            state: State::Grounded,
+            happened: Happened::Poke,
+            standing: "the display floor, above the Dock".to_string(),
+        };
+
+        let payload = character_prompt(&moment, ["greet", "stroll", "wave"]);
+
+        assert!(
+            payload.contains("Blip is cheerful."),
+            "personality: {payload}"
+        );
+        assert!(
+            payload.contains("Terminal is the frontmost window"),
+            "frontmost: {payload}"
+        );
+        assert!(
+            payload.contains("22:15"),
+            "local time of day, not UTC from `at` (00:00): {payload}"
+        );
+        assert!(
+            !payload.contains("00:00"),
+            "UNIX_EPOCH as UTC must not appear: {payload}"
+        );
+        assert!(
+            payload.contains("stroll") && payload.contains("nap"),
+            "recent Behavior identifiers: {payload}"
+        );
+        assert!(
+            payload.contains("greet") && payload.contains("wave"),
+            "declared Behaviors: {payload}"
+        );
+        assert!(
+            payload.contains("what just happened: poked") && payload.contains("state: idle"),
+            "this moment: {payload}"
+        );
+        assert!(
+            payload.contains("perch: the display floor, above the Dock"),
+            "standing: {payload}"
+        );
+    }
+
+    #[test]
+    fn a_later_wake_sends_only_the_follow_up() {
+        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let first = context(working(), &["nap"]);
+        director.wake(&first);
+
+        let later = Context {
+            happened: Happened::Throw,
+            state: State::Falling,
+            ..first
+        };
+        director.wake(&later);
+
+        let sent = director
+            .completer
+            .seen
+            .lock()
+            .expect("the lock is not poisoned")
+            .clone()
+            .expect("a follow-up was sent");
+        assert_eq!(sent, follow_up(&later));
+        assert!(
+            !sent.contains("a shy robot."),
+            "personality is the opening only: {sent}"
+        );
+        assert!(
+            !sent.contains("You may propose"),
+            "the roster is the opening only: {sent}"
+        );
+        assert!(
+            sent.contains("what just happened: thrown") && sent.contains("state: falling"),
+            "{sent}"
+        );
+    }
+
+    #[test]
+    fn pick_up_and_perch_are_named_in_the_follow_up() {
+        let picked = context(working(), &[]);
+        let picked = Context {
+            happened: Happened::Grab,
+            state: State::Dragged,
+            ..picked
+        };
+        assert!(follow_up(&picked).contains("what just happened: picked up"));
+
+        let placed = Context {
+            happened: Happened::Perch,
+            state: State::Perched,
+            standing: "a Cursor window".to_string(),
+            ..picked
+        };
+        let sent = follow_up(&placed);
+        assert!(sent.contains("what just happened: placed on a perch"));
+        assert!(sent.contains("perch: a Cursor window"), "{sent}");
     }
 }

@@ -1,6 +1,6 @@
 //! The Free tier on macOS, without consent.
 //!
-//! Two APIs, chosen because neither is gated by TCC:
+//! Three APIs, chosen because none is gated by TCC:
 //!
 //! - `NSWorkspace.frontmostApplication` names the application the user is in.
 //!   It reports the application, never a window and never a title, so there is
@@ -9,6 +9,8 @@
 //!   input event was. It is a count of seconds, not the events themselves:
 //!   reading what the user typed needs an event tap, and an event tap needs
 //!   Accessibility. This module installs none.
+//! - `CGDisplayIsAsleep` on the main display. A session Director does not
+//!   wake while the lid is closed or the screens have gone to sleep.
 //!
 //! Anything richer — the frontmost window's title, its contents, the clipboard —
 //! is the Ambient or On-Demand tier, behind consent per ADR-0005 and out of
@@ -53,6 +55,18 @@ impl ActivitySource for MacosActivitySource {
         );
         idle_from_seconds(seconds)
     }
+
+    fn displays_asleep(&self) -> bool {
+        // One display is enough: a lid-closed Mac sleeps the main one.
+        // `boolean_t` is a C int, not Rust `bool`.
+        unsafe { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
+    }
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGMainDisplayID() -> u32;
+    fn CGDisplayIsAsleep(display: u32) -> u32;
 }
 
 /// Turn the window server's reading into a duration.

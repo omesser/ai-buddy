@@ -1,10 +1,10 @@
 # The Director proposes Behaviors; the model never drives animation
 
 The Character's idle life is driven by a local state machine playing declared
-Behaviors. A model — the Director — wakes only occasionally (a few minutes, or on
-a notable event: a new frontmost app, prolonged idleness, an unusual hour) and
-proposes a Behavior for the engine to play. It is never in the frame loop and
-never decides individual animation frames.
+Behaviors. A model — the Director — wakes only occasionally and proposes a
+Behavior for the engine to play. It is never in the frame loop and never
+decides individual animation frames. Who that model is, and how rare
+"occasionally" is, is [ADR-0008](./0008-one-harness-session.md).
 
 ## Considered Options
 

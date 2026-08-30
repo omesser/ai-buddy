@@ -521,8 +521,15 @@ mod tests {
                 switched: false,
                 idle,
                 at: UNIX_EPOCH,
+                hour: 0,
+                minute: 0,
+                displays_asleep: false,
             },
             recent: Vec::new(),
+            personality: character.personality.clone(),
+            state: ai_buddy_core::engine::State::Grounded,
+            happened: ai_buddy_core::director::Happened::Ambient,
+            standing: String::new(),
         };
 
         (0..64)

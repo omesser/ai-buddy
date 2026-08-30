@@ -21,9 +21,11 @@ The **Functional Layer** is invoked, asynchronous, and does the real work. It is
 reached by Summoning the buddy. It performs actions through an external Harness
 the user attaches. ai-buddy never bundles one.
 
-The **Director** sits between them. It is an occasional model call that observes
-context and proposes a Behavior. It never runs in the frame loop and never
-drives animation directly.
+The **Director** sits between them. It proposes a Behavior. Static weights
+fill that role when nothing is attached. An attached Harness fills it from
+the same conversation as chat — one session, not a second model. It never
+runs in the frame loop and never drives animation directly. See
+[ADR-0008](./docs/adr/0008-one-harness-session.md).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -120,17 +122,22 @@ afternoon. WindowPet's implementation is the reference.
 
 ### 5. The Director proposes; it never animates
 
-The model wakes occasionally — on a timer, or on a notable event such as a new
-frontmost app or a long idle — and emits a short Behavior for the local engine
-to play cheaply. It is never in the frame loop.
+The model wakes occasionally and emits a short Behavior for the local engine
+to play cheaply. It is never in the frame loop. Who the model is, and how
+rare a wake is, is [ADR-0008](./docs/adr/0008-one-harness-session.md): an
+attached Harness is the Director and chat; a session wake is reactive or
+exponentially backed-off, and silent while the display is asleep.
 
 Rejected:
 
 - **Prompt-at-authoring only** (character prompt compiles to static weights, no
-  runtime model) — kept as the configurable fallback, so the buddy still has a
-  life when offline or when no key is present.
+  runtime model) — kept as the fallback when no Harness is attached, when the
+  Director is off, and when a session call fails.
 - **Model in the loop** — paying tokens for a cartoon to decide to scratch
   itself. Unusable battery, cost, and latency.
+- **A second inference API beside the Harness** — two minds. The HTTP
+  Completer in #11 is a stand-in for that Harness session, not a product
+  surface.
 
 This is the decision that keeps the character visibly alive while the Functional
 Layer is thinking, which is exactly where a naive design looks broken.
@@ -396,9 +403,10 @@ space.
   multi-monitor, tray
 - Character Package format, engine Primitives, declarative Behaviors
 - Two shipped Characters, 8 required animations each
-- Director on the free sensing tier — frontmost app name, idle duration, time of
-  day, recent Behaviors, Personality Prompt. No permissions required.
-- Static-weights fallback when no model is configured
+- Director on the free sensing tier — Character Prompt once, then short
+  follow-ups (what just happened, time of day, State, frontmost window,
+  recent Behaviors). No permissions required.
+- Static-weights fallback when no Harness is attached
 - MCP server and Harness attach
 - Chat surface
 - Memory
@@ -415,8 +423,8 @@ ai-buddy Executor, an undo system, a provider abstraction layer, per-Instance
 memory.
 
 With nothing configured, ai-buddy is a complete product: spatial layer, physics,
-Director, ambient reactions, and a nudge to connect a Harness. No API key, no
-subscription, no permission prompts. That state is the default demo.
+Static Director, ambient reactions, and a nudge to connect a Harness. No API
+key, no subscription, no permission prompts. That state is the default demo.
 
 ## Prior art
 
