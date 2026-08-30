@@ -21,6 +21,7 @@
 //! files, allocate an unbounded number of bytes, or walk an unbounded depth.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -52,6 +53,14 @@ const MAX_PACKAGE_DEPTH: usize = 8;
 /// `:`-separated list of directories. Present for development and for the
 /// verification script; a user never needs it.
 pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
+
+/// The environment variable that starts one named Character rather than the
+/// first one found.
+///
+/// The search takes the first package that loads, so name order alone decides
+/// which Character a developer sees, and the others cannot be reached at all.
+/// A user picks from the menu instead, which is #18.
+pub const CHARACTER_VAR: &str = "AI_BUDDY_CHARACTER";
 
 /// Why a location did not become a Character.
 #[derive(Debug)]
@@ -147,6 +156,23 @@ pub fn search_paths(bundled: Option<PathBuf>) -> Vec<PathBuf> {
     }
     paths.extend(bundled);
     paths
+}
+
+/// The candidates named `wanted`, or all of them when nothing is named.
+///
+/// A package is named by its file name without the extension, so `win95` names
+/// `win95/` and `win95.zip` alike. Naming a Character that is not installed
+/// leaves nothing rather than falling through to the next one: starting some
+/// other Character than the one asked for is a worse answer than saying so.
+pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
+    let Some(wanted) = wanted else {
+        return candidates;
+    };
+
+    candidates
+        .into_iter()
+        .filter(|candidate| candidate.file_stem() == Some(wanted))
+        .collect()
 }
 
 /// Every Character Package visible in `search_paths`, in the order found.
@@ -703,6 +729,33 @@ mod tests {
             }
             other => panic!("expected Unreadable, got {other:?}"),
         }
+    }
+
+    /// Without this there is no way to start a particular Character: the search
+    /// takes the first package that loads, so `modern` wins on name order and
+    /// `win95` is unreachable until #18 ships a menu to choose from.
+    #[test]
+    fn a_named_character_is_the_only_candidate_left() {
+        let candidates = vec![
+            PathBuf::from("/characters/modern"),
+            PathBuf::from("/characters/placeholder"),
+            PathBuf::from("/characters/win95.zip"),
+        ];
+
+        assert_eq!(
+            named(candidates.clone(), Some(OsStr::new("win95"))),
+            vec![PathBuf::from("/characters/win95.zip")],
+            "named by its file name, archive or directory alike"
+        );
+        assert_eq!(
+            named(candidates.clone(), None),
+            candidates,
+            "and naming nothing leaves the search as it was"
+        );
+        assert!(
+            named(candidates, Some(OsStr::new("nobody"))).is_empty(),
+            "a Character that is not there is no Character, not the next one along"
+        );
     }
 
     #[test]

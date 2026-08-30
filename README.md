@@ -289,14 +289,36 @@ regenerate both with:
 python3 scripts/make-shipped-characters.py
 ```
 
+#### Running one of them
+
 Packages are searched in name order and the first that loads is the one you get,
-so `modern` is what you see with nothing installed. A search path is a directory
-of packages rather than a package, so running a particular one means giving it a
-directory of its own:
+so `modern` is what you see with nothing chosen. Name a Character to start that
+one instead:
 
 ```sh
-mkdir -p /tmp/ai-buddy-one && cp -R characters/win95 /tmp/ai-buddy-one/
-cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-one cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=win95 cargo run   # Chip
+cd src-tauri && AI_BUDDY_CHARACTER=modern cargo run  # Nim
+```
+
+The name is the package's directory, without the `.zip` if it is an archive —
+`win95`, not `Chip`. The two differ on purpose: the directory is the package,
+and `name` in its manifest is the Character inside it, the way
+`characters/placeholder/` holds `Blip`. Naming a Character that is not installed
+starts nothing and says so, rather than quietly starting a different one.
+
+Either way the app prints what it loaded, which is the quickest way to be sure
+you are looking at the Character you meant:
+
+```
+character: Chip from ../characters/win95
+```
+
+This is a developer's switch, and the app has no menu to change Character while
+it runs — that is #18. To try a package without installing it, point the search
+somewhere else instead:
+
+```sh
+cd src-tauri && AI_BUDDY_CHARACTERS=/path/to/my-packages cargo run
 ```
 
 ### The placeholder Character
