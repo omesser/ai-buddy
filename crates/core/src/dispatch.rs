@@ -9,10 +9,9 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::memory::MemoryManifest;
-use crate::tools::{self, DenyList};
+use crate::tools::{self, DenyList, InstanceInfo};
 use crate::window_source::WindowSource;
 
-/// A successful tool dispatch result.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolResult {
@@ -25,7 +24,6 @@ pub enum ToolResult {
     ListInstances(tools::ListInstancesResult),
 }
 
-/// A tool dispatch error.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DispatchError {
     pub code: ErrorCode,
@@ -40,17 +38,23 @@ pub enum ErrorCode {
     ExecutionFailed,
 }
 
-/// Dispatch context carrying dependencies the handlers need.
 pub struct DispatchContext<'a> {
     pub window_source: &'a dyn WindowSource,
     pub memory_path: PathBuf,
     pub denylist: DenyList,
-    pub roster: &'a [(String, String)],
+    pub roster: &'a [InstanceInfo],
 }
 
-/// Dispatch one tool call.
-///
-/// Returns the handler's result as JSON or a structured error.
+fn parse_args<T: for<'de> Deserialize<'de>>(
+    arguments: Value,
+    tool_name: &str,
+) -> Result<T, DispatchError> {
+    serde_json::from_value(arguments).map_err(|e| DispatchError {
+        code: ErrorCode::InvalidArguments,
+        message: format!("Invalid arguments for {}: {}", tool_name, e),
+    })
+}
+
 pub fn dispatch(
     tool_name: &str,
     arguments: Value,
@@ -62,10 +66,7 @@ pub fn dispatch(
             struct Args {
                 message: String,
             }
-            let args: Args = serde_json::from_value(arguments).map_err(|e| DispatchError {
-                code: ErrorCode::InvalidArguments,
-                message: format!("Invalid arguments for speak: {}", e),
-            })?;
+            let args: Args = parse_args(arguments, tool_name)?;
             let result = tools::speak(&args.message);
             Ok(ToolResult::Speak(result))
         }
@@ -74,10 +75,7 @@ pub fn dispatch(
             struct Args {
                 behavior: String,
             }
-            let args: Args = serde_json::from_value(arguments).map_err(|e| DispatchError {
-                code: ErrorCode::InvalidArguments,
-                message: format!("Invalid arguments for play_behavior: {}", e),
-            })?;
+            let args: Args = parse_args(arguments, tool_name)?;
             let result = tools::play_behavior(&args.behavior);
             Ok(ToolResult::PlayBehavior(result))
         }
@@ -103,10 +101,7 @@ pub fn dispatch(
                 heading: String,
                 fact: String,
             }
-            let args: Args = serde_json::from_value(arguments).map_err(|e| DispatchError {
-                code: ErrorCode::InvalidArguments,
-                message: format!("Invalid arguments for remember: {}", e),
-            })?;
+            let args: Args = parse_args(arguments, tool_name)?;
             let memory = MemoryManifest::new(&context.memory_path);
             let result =
                 tools::remember(&memory, &args.heading, &args.fact).map_err(|e| DispatchError {
@@ -126,21 +121,26 @@ pub fn dispatch(
     }
 }
 
-/// List all available tools.
-///
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolInfo {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+}
+
 /// Returns exactly the seven tools from #15 / tools.rs, and none that post
 /// input events.
 pub fn list_tools() -> Vec<ToolInfo> {
     vec![
         ToolInfo {
             name: "speak".to_string(),
-            description: "Make the Character speak a line of dialogue.".to_string(),
+            description: "Make the Character speak a line of dialogue".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "message": {
                         "type": "string",
-                        "description": "The message the Character should speak"
+                        "description": "The message to speak"
                     }
                 },
                 "required": ["message"]
@@ -148,7 +148,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "play_behavior".to_string(),
-            description: "Play a named Behavior.".to_string(),
+            description: "Play a named Behavior".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -162,7 +162,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "list_windows".to_string(),
-            description: "List visible windows with bounds and owning application.".to_string(),
+            description: "List visible windows with bounds and owning application".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -170,7 +170,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "describe_screen".to_string(),
-            description: "Describe what is on screen (v1: window metadata only).".to_string(),
+            description: "Describe what is on screen (v1: window metadata only)".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -178,7 +178,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "recall".to_string(),
-            description: "Recall everything Memory holds.".to_string(),
+            description: "Recall everything Memory holds".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -186,7 +186,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "remember".to_string(),
-            description: "Remember one fact under a heading.".to_string(),
+            description: "Remember one fact under a heading".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -204,20 +204,13 @@ pub fn list_tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "list_instances".to_string(),
-            description: "List Character Instances and their names.".to_string(),
+            description: "List Character Instances and their names".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {}
             }),
         },
     ]
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolInfo {
-    pub name: String,
-    pub description: String,
-    pub input_schema: Value,
 }
 
 #[cfg(test)]
@@ -266,27 +259,42 @@ mod tests {
         }
     }
 
-    // Seam 1: dispatch returns documented success JSON for each tool
+    fn test_context<'a>(
+        temp: &TempDir,
+        source: &'a FakeWindowSource,
+        roster: &'a [InstanceInfo],
+    ) -> DispatchContext<'a> {
+        DispatchContext {
+            window_source: source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster,
+        }
+    }
 
-    #[test]
-    fn dispatch_speak_returns_speak_result() {
-        let temp = TempDir::new("speak");
-        let source = FakeWindowSource {
+    fn fake_source(windows: Vec<WindowRect>) -> FakeWindowSource {
+        FakeWindowSource {
             capabilities: Capabilities {
                 window_geometry: true,
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows,
             },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        }
+    }
+
+    #[test]
+    fn dispatch_speak_returns_speak_result() {
+        let temp = TempDir::new("speak");
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({"message": "Hello, world"});
         let result = dispatch("speak", args, &context).expect("dispatch succeeds");
@@ -303,22 +311,8 @@ mod tests {
     #[test]
     fn dispatch_play_behavior_returns_play_behavior_result() {
         let temp = TempDir::new("play");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({"behavior": "wave"});
         let result = dispatch("play_behavior", args, &context).expect("dispatch succeeds");
@@ -335,27 +329,8 @@ mod tests {
     #[test]
     fn dispatch_list_windows_returns_list_windows_result() {
         let temp = TempDir::new("list-windows");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![window("Terminal", 10.0, 20.0, 800.0, 600.0)],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![window("Terminal", 10.0, 20.0, 800.0, 600.0)]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({});
         let result = dispatch("list_windows", args, &context).expect("dispatch succeeds");
@@ -372,27 +347,8 @@ mod tests {
     #[test]
     fn dispatch_describe_screen_returns_describe_screen_result() {
         let temp = TempDir::new("describe");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![window("Safari", 30.0, 40.0, 1200.0, 800.0)],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![window("Safari", 30.0, 40.0, 1200.0, 800.0)]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({});
         let result = dispatch("describe_screen", args, &context).expect("dispatch succeeds");
@@ -414,22 +370,8 @@ mod tests {
             .remember("Facts", "The user likes coffee")
             .expect("remembering writes");
 
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({});
         let result = dispatch("recall", args, &context).expect("dispatch succeeds");
@@ -445,22 +387,8 @@ mod tests {
     #[test]
     fn dispatch_remember_returns_remember_result() {
         let temp = TempDir::new("remember");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({"heading": "Facts", "fact": "The user's name is Oded"});
         let result = dispatch("remember", args, &context).expect("dispatch succeeds");
@@ -476,26 +404,18 @@ mod tests {
     #[test]
     fn dispatch_list_instances_returns_list_instances_result() {
         let temp = TempDir::new("list-instances");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
         let roster = [
-            ("inst-1".to_string(), "Clippy".to_string()),
-            ("inst-2".to_string(), "Ferris".to_string()),
+            InstanceInfo {
+                id: "inst-1".to_string(),
+                name: "Clippy".to_string(),
+            },
+            InstanceInfo {
+                id: "inst-2".to_string(),
+                name: "Ferris".to_string(),
+            },
         ];
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &roster,
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &roster);
 
         let args = json!({});
         let result = dispatch("list_instances", args, &context).expect("dispatch succeeds");
@@ -513,22 +433,8 @@ mod tests {
     #[test]
     fn dispatch_unknown_tool_returns_error() {
         let temp = TempDir::new("unknown");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({});
         let result = dispatch("click_mouse", args, &context);
@@ -542,22 +448,8 @@ mod tests {
     #[test]
     fn dispatch_with_invalid_arguments_returns_error() {
         let temp = TempDir::new("bad-args");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({"wrong_field": 42});
         let result = dispatch("speak", args, &context);
@@ -566,8 +458,6 @@ mod tests {
         let err = result.unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidArguments);
     }
-
-    // Seam 2: list_tools names exactly the seven tools, no input event tools
 
     #[test]
     fn list_tools_returns_exactly_seven_tools() {
@@ -601,39 +491,19 @@ mod tests {
         assert!(!names.contains(&"move_mouse"));
     }
 
-    // Seam 3: denylist is applied through dispatch
-
     #[test]
     fn dispatch_list_windows_applies_denylist() {
         let temp = TempDir::new("denylist-list");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("1Password", 30.0, 40.0, 400.0, 300.0),
-                ],
-            },
-        };
         let denylist = DenyList {
             excluded_applications: vec!["1Password".to_string()],
             filter_password_fields: true,
         };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist,
-            roster: &[],
-        };
+        let source = fake_source(vec![
+            window("Terminal", 10.0, 20.0, 800.0, 600.0),
+            window("1Password", 30.0, 40.0, 400.0, 300.0),
+        ]);
+        let mut context = test_context(&temp, &source, &[]);
+        context.denylist = denylist;
 
         let args = json!({});
         let result = dispatch("list_windows", args, &context).expect("dispatch succeeds");
@@ -650,34 +520,16 @@ mod tests {
     #[test]
     fn dispatch_describe_screen_applies_denylist() {
         let temp = TempDir::new("denylist-describe");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("1Password", 30.0, 40.0, 400.0, 300.0),
-                ],
-            },
-        };
         let denylist = DenyList {
             excluded_applications: vec!["1Password".to_string()],
             filter_password_fields: true,
         };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist,
-            roster: &[],
-        };
+        let source = fake_source(vec![
+            window("Terminal", 10.0, 20.0, 800.0, 600.0),
+            window("1Password", 30.0, 40.0, 400.0, 300.0),
+        ]);
+        let mut context = test_context(&temp, &source, &[]);
+        context.denylist = denylist;
 
         let args = json!({});
         let result = dispatch("describe_screen", args, &context).expect("dispatch succeeds");
@@ -691,27 +543,11 @@ mod tests {
         }
     }
 
-    // Seam 4: list_instances reflects the roster, including empty
-
     #[test]
     fn dispatch_list_instances_with_empty_roster_returns_empty_list() {
         let temp = TempDir::new("empty-roster");
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![],
-                windows: vec![],
-            },
-        };
-        let context = DispatchContext {
-            window_source: &source,
-            memory_path: temp.join("memory.md"),
-            denylist: DenyList::default(),
-            roster: &[],
-        };
+        let source = fake_source(vec![]);
+        let context = test_context(&temp, &source, &[]);
 
         let args = json!({});
         let result = dispatch("list_instances", args, &context).expect("dispatch succeeds");

@@ -190,16 +190,9 @@ pub fn remember(memory: &MemoryManifest, heading: &str, fact: &str) -> io::Resul
     Ok(RememberResult { recorded })
 }
 
-/// List Character Instances and their names.
-pub fn list_instances(instances: &[(String, String)]) -> ListInstancesResult {
+pub fn list_instances(instances: &[InstanceInfo]) -> ListInstancesResult {
     ListInstancesResult {
-        instances: instances
-            .iter()
-            .map(|(id, name)| InstanceInfo {
-                id: id.clone(),
-                name: name.clone(),
-            })
-            .collect(),
+        instances: instances.to_vec(),
     }
 }
 
@@ -532,8 +525,14 @@ mod tests {
     #[test]
     fn list_instances_returns_spawned_instances() {
         let instances = vec![
-            ("abc-123".to_string(), "Buddy One".to_string()),
-            ("def-456".to_string(), "Buddy Two".to_string()),
+            InstanceInfo {
+                id: "abc-123".to_string(),
+                name: "Buddy One".to_string(),
+            },
+            InstanceInfo {
+                id: "def-456".to_string(),
+                name: "Buddy Two".to_string(),
+            },
         ];
 
         let result = list_instances(&instances);
@@ -547,7 +546,10 @@ mod tests {
 
     #[test]
     fn list_instances_reflects_dismissal() {
-        let instances = vec![("abc-123".to_string(), "Buddy One".to_string())];
+        let instances = vec![InstanceInfo {
+            id: "abc-123".to_string(),
+            name: "Buddy One".to_string(),
+        }];
 
         let before = list_instances(&instances);
         assert_eq!(before.instances.len(), 1);
