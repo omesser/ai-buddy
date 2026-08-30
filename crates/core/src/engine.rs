@@ -654,38 +654,46 @@ fn footing(
         .iter()
         .position(|window| window.spans_x(position.x) && window.y == position.y)?;
 
-    snapshot
-        .windows
+    // A window that has *come to* contain the sprite: dragged over it, or
+    // walked into where two windows overlap. One that already had the sprite
+    // inside it is not swallowing it — a maximized window contains every
+    // smaller window in front of it, so the sprite is inside one from the
+    // moment it lands, and raising that window would otherwise fling the
+    // sprite to the top of the screen and keep it there. #78.
+    //
+    // Only a window in front of the Perch can, which is why the candidates
+    // stop at the Perch's own place in the order: what is behind the Perch is
+    // behind the sprite too, so the edge it stands on is still there to be
+    // seen.
+    let swallowing = |window: &Rect| {
+        swallows(window, position)
+            && !previous_windows
+                .iter()
+                .any(|before| before == window && swallows(before, previously))
+    };
+
+    // With nothing new over it the sprite keeps the edge it is standing on,
+    // seen or not. Occlusion decides where the sprite may land, never whether
+    // it may stay: a window raised in front of a Perch moves nothing, and a
+    // sprite made to re-earn its footing against `is_perch` every tick drops
+    // through the edge it was sitting on the moment one is clicked. #5.
+    let held = (!snapshot.windows[..perch].iter().any(swallowing)).then_some(Support {
+        y: position.y,
+        state: State::Perched,
+    });
+
+    snapshot.windows[..perch]
         .iter()
         .enumerate()
-        // Only a window in front of the Perch can swallow the sprite. What is
-        // behind the Perch is behind the sprite too, so the edge it stands on
-        // is still there to be seen. Windows arrive frontmost first, so the
-        // Perch's own place in that order is where the candidates stop.
-        .take(perch)
-        // And only where its own top edge is somewhere to stand: lifting the
-        // sprite onto an edge that is hidden or off-screen strands it in the
-        // place this is meant to get it out of.
-        .filter(|(index, window)| {
-            swallows(window, position) && is_perch(*index, position.x, snapshot)
-        })
-        .map(|(_, window)| window)
-        // And only a window that has *come to* contain it: dragged over the
-        // sprite, or walked into where two windows overlap. A window that
-        // already had the sprite inside it is not swallowing it — raising a
-        // maximized window over the sprite's Perch would otherwise fling the
-        // sprite to the top of the screen and keep it there. It loses its
-        // footing all the same, because that Perch is now hidden, and falls to
-        // whatever is still visible below it. #78.
-        .filter(|window| {
-            !previous_windows
-                .iter()
-                .any(|before| before == *window && swallows(before, previously))
-        })
-        .map(|window| Support {
+        // Swallowed only onto a top edge that is somewhere to stand: lifting
+        // the sprite onto an edge that is hidden or off-screen strands it in
+        // the place this is meant to get it out of.
+        .filter(|(index, window)| swallowing(window) && is_perch(*index, position.x, snapshot))
+        .map(|(_, window)| Support {
             y: window.y,
             state: State::Perched,
         })
+        .chain(held)
         .chain(support_below(position, snapshot))
         .min_by(|a, b| a.y.total_cmp(&b.y))
 }
@@ -2184,10 +2192,11 @@ mod tests {
     /// under the menu bar, where it stays for the rest of the session.
     ///
     /// The window has swallowed nothing — it contained the sprite before the
-    /// sprite landed. What the sprite has lost is the edge it stood on, now
-    /// hidden behind the window that was raised over it, so it falls.
+    /// sprite landed — and nothing has moved, so the sprite has lost nothing
+    /// either. Occlusion says where the sprite may land, never whether it may
+    /// stay: the edge under its feet is still an edge at the same height.
     #[test]
-    fn a_window_raised_over_the_perch_drops_the_sprite_rather_than_lifting_it() {
+    fn a_window_raised_over_the_perch_leaves_the_sprite_on_it() {
         let maximized = Rect {
             // Its top edge under the menu bar, its bottom on the usable floor.
             x: 0.0,
@@ -2217,12 +2226,12 @@ mod tests {
         let raised = world(vec![maximized, perch]);
         let frames: Vec<Frame> = (0..40).map(|_| engine.tick(&raised)).collect();
         assert!(
-            frames.iter().all(|frame| frame.position.y >= 400.0),
-            "it drops rather than climbing to the menu bar: {frames:?}"
+            frames
+                .iter()
+                .all(|frame| frame.position == perched.position && frame.state == State::Perched),
+            "neither hoisted to the menu bar nor dropped through the edge it \
+             was standing on: {frames:?}"
         );
-        let landed = frames.last().expect("forty ticks produce forty frames");
-        assert_eq!(landed.state, State::Grounded);
-        assert_eq!(landed.position.y, 800.0, "down to the floor: {landed:?}");
     }
 
     /// The same rule met by walking rather than by a window moving: the sprite

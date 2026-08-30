@@ -211,6 +211,12 @@ stepping up would strand it somewhere the user cannot see it. The floor is
 exempt, because every window behind the Dock hangs below it and a sprite on the
 ground in front of a window is not trapped in anything.
 
+Occlusion is a landing rule and never a resting one. An edge hidden behind a
+window in front of it is nowhere to land, but a sprite already standing on one
+stays there: raising a window over a Perch moves nothing, and re-deriving
+visibility every tick drops the sprite through the edge it is sitting on the
+first time the user clicks a maximized window.
+
 The verb set is fixed at five: **Grab**, **Throw**, **Poke**, **Menu**,
 **Summon**. Every verb is a tax on every Character that will ever exist, so
 additions wait for v2.

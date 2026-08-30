@@ -85,7 +85,8 @@ _Avoid_: Brain, agent, planner
 A window's top edge treated as a one-way platform the sprite can land on, walk
 along, and fall off. Window sides and bottoms are not Perches, and neither is
 the length of an edge that cannot be seen: one hidden behind a window in front
-of it, or hanging over no display.
+of it, or hanging over no display. That governs where the sprite may land. An
+edge it is already standing on it keeps until the edge itself goes.
 _Avoid_: Ledge, platform, surface
 
 ### Layers
