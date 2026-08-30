@@ -101,7 +101,9 @@ fps = 6
 # The react art is a wince, and it belongs to being poked or dropped — the
 # engine plays it there on its own. Written into these Behaviors it fired on
 # nearly every Director wake and read as BMO getting hurt mid-walk, so the
-# pauses here are calm ones: standing, talking, or sitting down to a game.
+# pauses here are calm ones: standing or talking. Never sitting — no
+# Behavior of BMO's settles, and the idle ring gives a plain stand its
+# variety on its own.
 
 [behaviors.walk]
 play = ["walk"]
@@ -115,7 +117,7 @@ weight = 3
 when = "idle over 2m"
 
 [behaviors.fidget]
-play = ["idle", "sit", "idle"]
+play = ["idle"]
 weight = 2
 when = "idle over 10s"
 
