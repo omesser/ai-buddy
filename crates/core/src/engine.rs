@@ -233,10 +233,6 @@ impl Engine {
             self.idle_ms = 0;
         }
 
-        // A woken sprite, so the footing it is put back on is not mistaken
-        // for one it arrived at. See the landing below.
-        let woke = self.state == State::Asleep && !snapshot.verbs.is_empty();
-
         // Being addressed is not being left alone, so a proposal holds off the
         // sleep timer without waking a sprite that has already nodded off —
         // only a verb does that. The timer is otherwise still running when the
@@ -251,7 +247,9 @@ impl Engine {
         // tick's milliseconds to the one it replaced.
         let mut started = self.advance(snapshot.elapsed_ms);
 
-        let state = transition::on_verbs(self.state, &snapshot.verbs);
+        // `woke` marks a sprite a verb roused, so the footing it is put back
+        // on is not mistaken for one it arrived at. See the landing below.
+        let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
         // the one input that outranks the world.
@@ -591,19 +589,24 @@ mod transition {
         Ceiling,
     }
 
-    /// Where the user's hand leaves the sprite, before any physics runs.
-    pub fn on_verbs(state: State, verbs: &[Verb]) -> State {
+    /// Where the user's hand leaves the sprite before any physics runs, and
+    /// whether a verb woke it. The wake is reported rather than left for the
+    /// caller to re-derive, so what waking means is written here once.
+    pub fn on_verbs(state: State, verbs: &[Verb]) -> (State, bool) {
+        let woke = state == State::Asleep && !verbs.is_empty();
+
         if verbs.contains(&Verb::Grab) {
-            return State::Dragged;
+            return (State::Dragged, woke);
         }
-        match state {
+        let state = match state {
             // Let go. Thrown or simply dropped, what follows is a fall.
             State::Dragged => State::Falling,
             // Woken. Whether it is still standing on anything is settled by
             // falling, the same as any other loss of footing.
-            State::Asleep if !verbs.is_empty() => State::Falling,
+            _ if woke => State::Falling,
             _ => state,
-        }
+        };
+        (state, woke)
     }
 
     /// Where this tick's physics leaves the sprite. `rested` is whether it
