@@ -167,8 +167,9 @@ through a package is not theoretical.
 8 animations must work; one with 30 should look better. Eight keeps a hobbyist
 package to an evening's drawing.
 
-**Shipped Characters: two, one faithful Win95 (16-color, hard pixels,
-dithering), one modern pixel art.** Two styles validate the package abstraction
+**Shipped Characters: two, one hard-pixel retro (a small flat palette, no
+anti-aliasing, dithering only where a shade between two of its colours is
+wanted), one modern pixel art.** Two styles validate the package abstraction
 against real variance before the format is published.
 
 The package on disk, as a directory or the same tree inside an archive:

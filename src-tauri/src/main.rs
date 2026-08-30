@@ -489,7 +489,12 @@ fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
         .map(|dir| dir.join(BUNDLED_CHARACTERS));
 
     let search_paths = package::search_paths(bundled);
-    let candidates = package::installed(&search_paths);
+    let wanted = std::env::var_os(package::CHARACTER_VAR);
+    let installed = package::installed(&search_paths);
+    let candidates = match &wanted {
+        Some(_) => package::named(installed, wanted.as_deref()),
+        None => package::preferring(installed, package::DEFAULT_CHARACTER),
+    };
 
     for candidate in &candidates {
         let loaded = match package::read(candidate) {
@@ -517,14 +522,21 @@ fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
         }
     }
 
-    Err(format!(
-        "no Character Package loaded. ai-buddy looked in: {}",
-        search_paths
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    ))
+    let looked_in = search_paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // Which of the two failed matters: a Character that is not installed is a
+    // typo in the name, and every Character failing to load is a broken build.
+    Err(match wanted {
+        Some(wanted) => format!(
+            "no Character Package named {} loaded. ai-buddy looked in: {looked_in}",
+            wanted.to_string_lossy()
+        ),
+        None => format!("no Character Package loaded. ai-buddy looked in: {looked_in}"),
+    })
 }
 
 fn main() {
