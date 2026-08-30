@@ -1,0 +1,17 @@
+[package]
+name = "ai-buddy-mcp-server"
+description = "MCP server exposing ai-buddy's tool dispatch over stdio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ai-buddy-mcp"
+path = "src/main.rs"
+
+[dependencies]
+ai-buddy-core = {path = "../core"}
+# Simplified: just use core dispatch, skip rmcp complexity for now
+# A real Harness (#16) can spawn this and call the dispatch
+serde_json = "1"
