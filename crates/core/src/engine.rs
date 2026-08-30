@@ -150,7 +150,7 @@ pub struct Frame {
 /// Character Manifest's — so it cannot play a Primitive until the art runs out.
 /// Art shorter than the turn costs nothing: `loop = once` holds its last frame
 /// for the remainder, which is what a brief startle looks like. Longer art is
-/// the ceiling, and Blip already sits on it — `fps sleep = 1` over
+/// the ceiling, and Blip already sits on it — sleep's `fps = 1` over
 /// two frames is a 2000ms strip the sprite leaves at frame 0. Give a Primitive
 /// its own duration when a Character's art needs to outlast this one.
 const PRIMITIVE_MS: u32 = 600;

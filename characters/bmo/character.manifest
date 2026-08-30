@@ -4,48 +4,77 @@
 # the screen in its face. Regenerate the frames with
 # scripts/make-shipped-characters.py.
 
-name = BMO
-
-animation idle = frames/idle-0.png frames/idle-1.png
-animation walk = frames/walk-0.png frames/walk-1.png frames/walk-2.png frames/walk-3.png
-animation fall = frames/fall-0.png frames/fall-1.png
-animation land = frames/land-0.png frames/land-1.png
-animation sit = frames/sit-0.png frames/sit-1.png
-animation hold = frames/hold-0.png frames/hold-1.png
-animation sleep = frames/sleep-0.png frames/sleep-1.png
-animation react = frames/react-0.png frames/react-1.png
-animation talk = frames/talk-0.png frames/talk-1.png frames/talk-2.png
+name = "BMO"
 
 # Two or three frames each, held hard and cut fast. A handheld answers the
 # instant a button is pressed; the cadence is where that reads, not the drawing.
-fps idle = 4
-fps walk = 10
-fps fall = 8
-fps land = 12
-fps sit = 3
-fps hold = 8
-fps sleep = 2
-fps react = 12
-fps talk = 10
 
-loop land = once
-loop react = once
+[animations.idle]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 4
+
+[animations.walk]
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
+fps = 10
+
+[animations.fall]
+frames = ["frames/fall-0.png", "frames/fall-1.png"]
+fps = 8
+
+[animations.land]
+frames = ["frames/land-0.png", "frames/land-1.png"]
+fps = 12
+loop = "once"
+
+[animations.sit]
+frames = ["frames/sit-0.png", "frames/sit-1.png"]
+fps = 3
+
+[animations.hold]
+frames = ["frames/hold-0.png", "frames/hold-1.png"]
+fps = 8
+
+[animations.sleep]
+frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
+fps = 2
+
+[animations.react]
+frames = ["frames/react-0.png", "frames/react-1.png"]
+fps = 12
+loop = "once"
+
+[animations.talk]
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
+fps = 10
 
 # BMO does not settle. Every Behavior here ends on its feet, which is what a
 # Character who would rather be playing looks like from the outside: the sit and
 # sleep art exists, and only the Engine's own idling ever reaches it.
-behavior walk = walk
-behavior patrol = walk react walk then walk
-behavior fidget = react idle react
-behavior report = talk react talk
-behavior greet = react talk then patrol
+#
+# The weights are what BMO does with no model configured. Weighted towards
+# announcing and moving, because that is where the personality lives: a small
+# thing happening is an event, so `report` is the heaviest. `walk` is the
+# lightest — it is the bare Primitive, and `patrol` is the same walk with BMO
+# looking at something.
 
-# What BMO does with no model configured. Weighted towards announcing and
-# moving, because that is where the personality lives: a small thing happening
-# is an event, so `report` is the heaviest. `walk` is the lightest — it is the
-# bare Primitive, and `patrol` is the same walk with BMO looking at something.
-weight report = 4
-weight patrol = 3
-weight greet = 3
-weight fidget = 2
-weight walk = 1
+[behaviors.walk]
+play = ["walk"]
+weight = 1
+
+[behaviors.patrol]
+play = ["walk", "react", "walk"]
+then = "walk"
+weight = 3
+
+[behaviors.fidget]
+play = ["react", "idle", "react"]
+weight = 2
+
+[behaviors.report]
+play = ["talk", "react", "talk"]
+weight = 4
+
+[behaviors.greet]
+play = ["react", "talk"]
+then = "patrol"
+weight = 3

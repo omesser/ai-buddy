@@ -499,12 +499,12 @@ mod tests {
     /// The files of a minimal valid package: a manifest naming one frame per
     /// required Animation, the frames themselves under `frames/`, and a prompt.
     fn package_files() -> Vec<(String, Vec<u8>)> {
-        let mut manifest = String::from("name = Blip\n");
+        let mut manifest = String::from("name = \"Blip\"\n");
         let mut files = Vec::new();
 
         for animation in character::REQUIRED_ANIMATIONS {
             manifest.push_str(&format!(
-                "animation {animation} = frames/{animation}-0.png\n"
+                "[animations.{animation}]\nframes = [\"frames/{animation}-0.png\"]\n"
             ));
             files.push((format!("frames/{animation}-0.png"), FRAME.to_vec()));
         }
@@ -669,7 +669,7 @@ mod tests {
         write_package(&root);
         fs::write(
             root.join(CHARACTER_MANIFEST_FILE),
-            "name = Blip\nanimation idle = frames/idle-0.png\n",
+            "name = \"Blip\"\n[animations.idle]\nframes = [\"frames/idle-0.png\"]\n",
         )
         .expect("manifest is writable");
 

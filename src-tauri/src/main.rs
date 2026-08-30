@@ -842,12 +842,15 @@ mod tests {
     /// A Character whose Animations are `animations`, plus one frame each for
     /// every required Animation they do not name.
     fn character_declaring(animations: &[Declared<'_>]) -> Character {
-        let mut manifest = String::from("name = Blip\n");
+        let mut manifest = String::from("name = \"Blip\"\n");
         let mut files = PackageBytes::new();
 
         let mut declare = |name: &str, frames: &[(&str, &[u8])]| {
-            let names: Vec<&str> = frames.iter().map(|(file, _)| *file).collect();
-            manifest.push_str(&format!("animation {name} = {}\n", names.join(" ")));
+            let names: Vec<String> = frames.iter().map(|(file, _)| format!("{file:?}")).collect();
+            manifest.push_str(&format!(
+                "[animations.{name}]\nframes = [{}]\n",
+                names.join(", ")
+            ));
             for (file, bytes) in frames {
                 files.insert((*file).to_string(), bytes.to_vec());
             }
