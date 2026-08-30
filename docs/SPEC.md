@@ -455,7 +455,9 @@ waiting. Coverage:
 - **Perch collision** — the sprite lands on a window's top edge; walks along it; falls off
   either end; passes upward through an edge from below; falls when the window moves out
   from under it; falls when the window disappears; behaves correctly when two windows
-  overlap; is never left inside a window that has come to contain it.
+  overlap; is never left inside a window that has come to contain it; never lands on an
+  edge hidden behind a window in front of it, or on one no display covers; stays on the
+  edge it is standing on when a window is raised in front of it.
 - **State machine** — every transition reachable from every State; no State is a dead end;
   Grab overrides any State; releasing a Grab with velocity enters Throw and without
   velocity enters fall.
