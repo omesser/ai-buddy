@@ -4,9 +4,9 @@
 The two exist to prove the Character Package format against real variance, so
 they are drawn by two different techniques rather than one technique twice:
 
-  * **BMO** is hard-edged flat art — seven colours, flat fills, no
+  * **BMO** is hard-edged flat art — eight colours, flat fills, no
     anti-aliasing, and ordered dithering only where a shade between two of
-    those seven is genuinely wanted. Few frames, held hard.
+    those eight is genuinely wanted. Few frames, held hard.
   * **Nim** is modern pixel art — a shaded ramp lit from the upper left, a
     palette four times the size, translucent contact shadow, and enough
     in-between frames that the motion reads as smooth rather than stepped.
@@ -80,11 +80,15 @@ def png(px):
 # BMO — the little living console
 # --------------------------------------------------------------------------
 
-# Seven flat colours and nothing between them. A console moulded from coloured
+# Eight flat colours and nothing between them. A console moulded from coloured
 # plastic has no gradients in it, so anything wanting a shade between two of
 # these is dithered rather than mixed — and rarely, because BMO is one flat
 # shell rather than a lit box.
 MINT = (0x7A, 0xD4, 0xBE, 255)
+# The limbs, a step darker than the shell: in the source design BMO's arms and
+# legs are moulded from darker plastic than the body, and limbs drawn in MINT
+# read as part of the shell rather than hanging off it.
+LIMB = (0x58, 0xA9, 0x96, 255)
 DEEP = (0x3C, 0x8B, 0x7C, 255)
 GLASS = (0xE9, 0xF6, 0xEC, 255)
 INK = (0x1B, 0x2B, 0x33, 255)
@@ -92,7 +96,7 @@ RED = (0xD8, 0x3A, 0x3A, 255)
 YELLOW = (0xF2, 0xC4, 0x3D, 255)
 BLUE = (0x3F, 0x7C, 0xD8, 255)
 
-PALETTE = {MINT, DEEP, GLASS, INK, RED, YELLOW, BLUE}
+PALETTE = {MINT, LIMB, DEEP, GLASS, INK, RED, YELLOW, BLUE}
 
 
 def dither(px, x0, y0, w, h, a, b):
@@ -196,10 +200,10 @@ def arm(px, x0, y, out, slope):
     body rather than sitting flush against it."""
     for i in range(4):
         x = x0 + out * i
-        put(px, x, y + slope * (i // 2), MINT)
+        put(px, x, y + slope * (i // 2), LIMB)
         put(px, x, y + slope * (i // 2) + 1, DEEP)
     for x in (x0 + out * 4, x0 + out * 5):
-        rect(px, x, y + slope * 2, 1, 2, MINT)
+        rect(px, x, y + slope * 2, 1, 2, LIMB)
         put(px, x, y + slope * 2 + 2, DEEP)
 
 
@@ -228,14 +232,14 @@ def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, f
     if fold:
         # Sitting, the legs are under BMO rather than beside it: one block
         # where two thin supports were.
-        rect(px, 10, bottom + 1, 12, GROUND - bottom, DEEP)
+        rect(px, 10, bottom + 1, 12, GROUND - bottom, LIMB)
     else:
         for side, x in ((-1, 11 - stride), (1, 19 + stride)):
             # A leg that swings through is a leg off the floor. Two pixels is
             # the whole of it at this size, and it is what separates a stride
             # from both feet sliding apart and back.
             sole = GROUND - (2 if lift == side else 0)
-            rect(px, x, bottom + 1, 2, sole - bottom - 1, MINT)
+            rect(px, x, bottom + 1, 2, sole - bottom - 1, LIMB)
             rect(px, x, sole - 1, 2, 2, DEEP)
     return px
 
