@@ -560,9 +560,10 @@ impl Engine {
                 }
             }
             // Resting is only ever resting on something. When that something
-            // moves slowly the sprite Holds and rides it (#98). A yank, a
-            // close, a resize, or walking off the end leaves it in the air,
-            // carrying whatever speed it walked off with.
+            // moves slowly the sprite Holds and rides it (#98). A resize is
+            // a move of the top edge and rides the same way (#85). A yank, a
+            // close, or walking off the end leaves it in the air, carrying
+            // whatever speed it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
                 self.position.x += self.velocity.x * dt;
                 if self.last_perch.is_some() {
@@ -931,7 +932,7 @@ enum PerchCarry {
     Still(Window),
     /// Dragged hard enough to lose footing.
     Yank,
-    /// Closed, resized, or never a Perch.
+    /// Closed, minimized, or no longer somewhere the sprite can stand.
     Lost,
 }
 
@@ -2731,6 +2732,45 @@ mod tests {
             },
             "carried by window 1, not snapped onto window 2"
         );
+    }
+
+    /// #85: a resize moves the top edge, so it is a move. Matching the Perch
+    /// by size ruled every resize out and dropped the sprite off a window
+    /// that was still under it; matching by id carries it, and the grip gate
+    /// still governs how fast the edge may go.
+    #[test]
+    fn a_perch_resized_from_its_top_edge_is_ridden_like_one_that_moved() {
+        let sized = |y: f64, height: f64| WorldSnapshot {
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 50.0,
+                    y,
+                    width: 300.0,
+                    height,
+                },
+            )],
+            ..snapshot(100)
+        };
+
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let perched = settle(&mut engine, &sized(400.0, 200.0));
+        assert_eq!(perched.position.y, 400.0);
+
+        // The top border dragged up 20 points: the window grows, the edge
+        // moves, and the sprite goes with it.
+        let taller = engine.tick(&sized(380.0, 220.0));
+        assert_eq!(taller.state, State::Perched, "{taller:?}");
+        assert_eq!(taller.position.y, 380.0);
+        assert!(taller.riding);
+
+        // The same border yanked 200 points: over the grip, so the sprite is
+        // left behind rather than snapped onto the new edge.
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &sized(400.0, 200.0));
+        let yanked = engine.tick(&sized(200.0, 400.0));
+        assert_eq!(yanked.state, State::Falling, "{yanked:?}");
+        assert_eq!(yanked.position.y, 400.0, "left where it stood");
     }
 
     /// #98: ride poll is 16 ms so the sprite can track, but the yank gate
