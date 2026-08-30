@@ -37,3 +37,14 @@ behavior amble = walk sit then doze
 behavior stretch = idle sit then doze
 behavior mumble = talk sit
 behavior greet = react talk then doze
+
+# What Nim does with no model configured, and the inverse of BMO's balance:
+# eleven hours a day asleep is a distribution, so `doze` outweighs everything
+# and `walk` — the one Behavior that neither ends nor starts at rest — is what
+# Nim would least rather be doing.
+weight doze = 5
+weight stretch = 3
+weight mumble = 2
+weight amble = 2
+weight greet = 2
+weight walk = 1

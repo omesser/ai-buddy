@@ -37,3 +37,13 @@ behavior patrol = walk react walk then walk
 behavior fidget = react idle react
 behavior report = talk react talk
 behavior greet = react talk then patrol
+
+# What BMO does with no model configured. Weighted towards announcing and
+# moving, because that is where the personality lives: a small thing happening
+# is an event, so `report` is the heaviest. `walk` is the lightest — it is the
+# bare Primitive, and `patrol` is the same walk with BMO looking at something.
+weight report = 4
+weight patrol = 3
+weight greet = 3
+weight fidget = 2
+weight walk = 1

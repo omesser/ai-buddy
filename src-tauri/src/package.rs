@@ -432,9 +432,12 @@ mod tests {
     use std::collections::BTreeSet;
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::{Duration, UNIX_EPOCH};
 
+    use ai_buddy_core::director::{Context, Director, StaticDirector};
     use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
     use ai_buddy_core::overlay::{AlphaMask, SpriteRect};
+    use ai_buddy_core::sensing::Activity;
 
     use crate::cast::Cast;
 
@@ -463,6 +466,59 @@ mod tests {
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The Characters that ship in the bundle, read from the repository rather
+    /// than built here. Nothing else checks them, and a manifest that stops
+    /// loading is an app that refuses to start.
+    ///
+    /// Each idle life is asserted through a Static Director rather than off the
+    /// declarations, because what would break it is not a Behavior going
+    /// missing but the `when` conditions leaving a stretch of the day with
+    /// nothing in it. `weight` is read directly: every Behavior has one, so
+    /// only the number says whether the manifest's balance survived loading.
+    /// Each Character below names one Behavior it deliberately weights away
+    /// from the default, which is what stops a balance silently going flat.
+    #[test]
+    fn every_shipped_character_loads_and_has_a_life() {
+        let shipped = [
+            ("blip", "Blip", "greet", 2),
+            ("bmo", "BMO", "report", 4),
+            ("nim", "Nim", "doze", 5),
+        ];
+
+        for (directory, name, behavior, weight) in shipped {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../characters")
+                .join(directory);
+
+            let package = read(&path).expect("the shipped Character Package loads");
+            let behaviors = &package.character.behaviors;
+
+            assert_eq!(package.character.name, name);
+            assert_eq!(
+                behaviors.get(behavior).map(|declared| declared.weight),
+                Some(weight),
+                "the declared balance is {name}'s, not the default one"
+            );
+
+            let mut director = StaticDirector::new(behaviors.clone(), 1);
+            for idle in [0, 60, 300].map(Duration::from_secs) {
+                let moment = Context {
+                    activity: Activity {
+                        frontmost_application: Some("Terminal".to_string()),
+                        switched: false,
+                        idle,
+                        at: UNIX_EPOCH,
+                    },
+                    recent: Vec::new(),
+                };
+                assert!(
+                    director.propose(&moment).is_some(),
+                    "{name} has something to do {idle:?} after the user stopped typing"
+                );
+            }
         }
     }
 

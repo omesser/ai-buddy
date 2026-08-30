@@ -12,6 +12,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
 
 /// The displays as the frame loop needs to see them, from one read.
@@ -102,6 +103,21 @@ pub fn primary_button_down() -> bool {
 #[cfg(not(target_os = "macos"))]
 pub fn primary_button_down() -> bool {
     false
+}
+
+/// Where the Free tier comes from: what the user is in, and how long since they
+/// touched anything.
+#[cfg(target_os = "macos")]
+pub fn activity_source() -> impl ActivitySource {
+    macos::MacosActivitySource
+}
+
+/// A platform that reports nothing is one where every Behavior with a trigger
+/// simply never fires, which leaves the untriggered ones — a life, if a duller
+/// one. The same supported degradation as the missing window geometry.
+#[cfg(not(target_os = "macos"))]
+pub fn activity_source() -> impl ActivitySource {
+    ai_buddy_core::sensing::StubActivitySource
 }
 
 /// Where window geometry comes from.
