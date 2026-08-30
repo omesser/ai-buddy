@@ -51,30 +51,45 @@ fps = 10
 # Character who would rather be playing looks like from the outside: the sit and
 # sleep art exists, and only the Engine's own idling ever reaches it.
 #
-# The weights are what BMO does with no model configured. Weighted towards
-# announcing and moving, because that is where the personality lives: a small
-# thing happening is an event, so `report` is the heaviest. `walk` is the
-# lightest — it is the bare Primitive, and `patrol` is the same walk with BMO
-# looking at something.
+# What BMO does with no model configured. The arc: say hello to whoever is at
+# the keyboard, keep announcing for a minute after they stop in case anybody is
+# still listening, and walk the desk once they have plainly gone. That last
+# phase is still an active one — BMO does not settle, so being alone is a
+# circuit to patrol rather than somewhere to sit down.
+#
+# The bands overlap rather than meeting at a point. Two conditions that met
+# exactly at 10s would leave BMO with nothing eligible at that instant.
+#
+# Weights balance within a phase now, not across the whole day. `greet`
+# outranks `report` in the seconds somebody is actually there, because a
+# Character this pleased to see you says hello before it files a report;
+# `report` outranks the fidgeting in the minute after they stop, which is the
+# only stretch it still has an audience for. `walk` stays lightest: it is the
+# bare Primitive, and `patrol` is the same walk with BMO looking at something.
 
 [behaviors.walk]
 play = ["walk"]
 weight = 1
+when = "idle over 30s"
 
 [behaviors.patrol]
 play = ["walk", "react", "walk"]
 then = "walk"
 weight = 3
+when = "idle over 2m"
 
 [behaviors.fidget]
 play = ["react", "idle", "react"]
 weight = 2
+when = "idle over 10s"
 
 [behaviors.report]
 play = ["talk", "react", "talk"]
-weight = 4
+weight = 3
+when = "idle under 1m"
 
 [behaviors.greet]
 play = ["react", "talk"]
 then = "patrol"
-weight = 3
+weight = 4
+when = "idle under 10s"

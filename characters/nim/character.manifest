@@ -51,34 +51,52 @@ fps = 10
 # Nim comes to rest. Every Behavior here but the walk ends sitting or asleep,
 # which is the whole difference between living with Nim and living with BMO.
 #
-# The weights are what Nim does with no model configured, and the inverse of
-# BMO's balance: eleven hours a day asleep is a distribution, so `doze`
-# outweighs everything and `walk` — the one Behavior that neither ends nor
-# starts at rest — is what Nim would least rather be doing.
+# What Nim does with no model configured, and the inverse of BMO's balance:
+# nothing here stays on its feet for long. The arc: notice whoever arrived —
+# late, and over a window three times blip's, because Nim is slow to notice
+# anything — stretch and amble towards somewhere to sit once they stop typing,
+# say the thing it saw a long moment after the fact, and sleep once they have
+# plainly gone. Eleven hours a day asleep is a fact about a clock, and no
+# manifest can name one, so it is written here as the deepest idle band.
+#
+# The bands overlap by ten seconds, so no instant of the day is one where Nim
+# has nothing it may do.
+#
+# `doze` outweighs everything in the only phase it now fires, which is what
+# those eleven hours look like from a Behavior table. `amble` is lighter than
+# `stretch` because both end with Nim off its feet and only one makes it walk
+# there first, and `walk` — the one Behavior that neither starts nor ends at
+# rest — stays what Nim would least rather be doing.
 
 [behaviors.walk]
 play = ["walk"]
 weight = 1
+when = "idle under 30s"
 
 [behaviors.doze]
 play = ["sit", "sleep"]
 weight = 5
+when = "idle over 2m"
 
 [behaviors.amble]
 play = ["walk", "sit"]
 then = "doze"
-weight = 2
+weight = 1
+when = "idle over 20s"
 
 [behaviors.stretch]
 play = ["idle", "sit"]
 then = "doze"
 weight = 3
+when = "idle over 20s"
 
 [behaviors.mumble]
 play = ["talk", "sit"]
 weight = 2
+when = "idle over 1m"
 
 [behaviors.greet]
 play = ["react", "talk"]
 then = "doze"
 weight = 2
+when = "idle under 30s"
