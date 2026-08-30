@@ -49,6 +49,12 @@ pub struct ListWindowsResult {
     pub windows: Vec<WindowInfo>,
 }
 
+/// Tool result for the `describe_screen` tool.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DescribeScreenResult {
+    pub description: String,
+}
+
 /// Tool result for the `recall` tool.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecallResult {
@@ -133,6 +139,40 @@ pub fn list_windows(source: &dyn WindowSource, denylist: &DenyList) -> ListWindo
         .collect();
 
     ListWindowsResult { windows }
+}
+
+/// Describe what is on screen.
+///
+/// v1: window metadata only, since Capture is deferred. Returns a text
+/// description of visible windows and their applications. The denylist removes
+/// excluded applications from the result.
+pub fn describe_screen(source: &dyn WindowSource, denylist: &DenyList) -> DescribeScreenResult {
+    let geometry = source.snapshot();
+    
+    let visible_windows: Vec<_> = geometry
+        .windows
+        .into_iter()
+        .filter(|w| denylist.allows(&w.owner))
+        .collect();
+
+    let description = if visible_windows.is_empty() {
+        "No windows are visible.".to_string()
+    } else {
+        let mut parts = vec![format!("{} visible windows:", visible_windows.len())];
+        for window in visible_windows {
+            parts.push(format!(
+                "- {} at ({:.0}, {:.0}), size {:.0}x{:.0}",
+                window.owner,
+                window.bounds.x,
+                window.bounds.y,
+                window.bounds.width,
+                window.bounds.height
+            ));
+        }
+        parts.join("\n")
+    };
+
+    DescribeScreenResult { description }
 }
 
 /// Recall everything Memory holds.
@@ -311,6 +351,76 @@ mod tests {
 
         assert_eq!(result.windows.len(), 1);
         assert_eq!(result.windows[0].owner, "Terminal");
+    }
+
+    #[test]
+    fn describe_screen_returns_text_description_of_visible_windows() {
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                windows: vec![
+                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window("Safari", 30.0, 40.0, 1200.0, 800.0),
+                ],
+            },
+        };
+        let denylist = DenyList::default();
+
+        let result = describe_screen(&source, &denylist);
+
+        assert!(result.description.contains("2 visible windows"));
+        assert!(result.description.contains("Terminal"));
+        assert!(result.description.contains("Safari"));
+    }
+
+    #[test]
+    fn describe_screen_excludes_denylisted_applications() {
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                windows: vec![
+                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window("1Password", 30.0, 40.0, 400.0, 300.0),
+                ],
+            },
+        };
+        let denylist = DenyList {
+            excluded_applications: vec!["1Password".to_string()],
+            filter_password_fields: true,
+        };
+
+        let result = describe_screen(&source, &denylist);
+
+        assert!(result.description.contains("1 visible window"));
+        assert!(result.description.contains("Terminal"));
+        assert!(!result.description.contains("1Password"));
+    }
+
+    #[test]
+    fn describe_screen_returns_message_when_no_windows_visible() {
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                windows: vec![],
+            },
+        };
+        let denylist = DenyList::default();
+
+        let result = describe_screen(&source, &denylist);
+
+        assert_eq!(result.description, "No windows are visible.");
     }
 
     // Memory tools
