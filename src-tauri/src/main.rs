@@ -132,15 +132,18 @@ fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
+/// `art_urls`'s output as Tauri managed state. A newtype because managed
+/// state is keyed by type, so a bare map would silently collide with any
+/// other managed map of the same shape.
+struct ArtUrls(BTreeMap<String, Vec<String>>);
+
 /// The Character's art, fetched once by the webview when it loads.
 ///
 /// A command rather than an event: an event emitted during setup would race the
 /// webview's own listener, and the art does not change while the app runs.
 #[tauri::command]
-fn character(
-    art: tauri::State<'_, BTreeMap<String, Vec<String>>>,
-) -> BTreeMap<String, Vec<String>> {
-    art.inner().clone()
+fn character(art: tauri::State<'_, ArtUrls>) -> BTreeMap<String, Vec<String>> {
+    art.0.clone()
 }
 
 /// Put the overlay over one display, covering it exactly.
@@ -650,7 +653,7 @@ fn main() {
                 eprintln!("character: {why}");
                 std::process::exit(1);
             }));
-            app.manage(art_urls(&character));
+            app.manage(ArtUrls(art_urls(&character)));
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.

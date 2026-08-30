@@ -295,7 +295,7 @@ impl Character {
     /// validated Character cannot be asked for: the Engine names one of the
     /// eight required Animations, and a package missing one was rejected.
     /// Substituting a different Animation would be worse than drawing nothing,
-    /// because the webview would still be told the name it asked for.
+    /// because the renderer would still be told the name it asked for.
     pub fn draw(&self, animation: &str, animation_ms: u32) -> Option<Drawn<'_>> {
         let animation = self.animations.get(animation)?;
         let index = animation.frame_at(animation_ms);
