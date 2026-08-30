@@ -758,7 +758,7 @@ mod tests {
     fn the_default_character_is_met_first_and_is_not_the_only_one() {
         let candidates = vec![
             PathBuf::from("/characters/nim"),
-            PathBuf::from("/characters/placeholder"),
+            PathBuf::from("/characters/blip"),
             PathBuf::from("/characters/chip"),
         ];
 
@@ -786,7 +786,7 @@ mod tests {
     fn a_named_character_is_the_only_candidate_left() {
         let candidates = vec![
             PathBuf::from("/characters/nim"),
-            PathBuf::from("/characters/placeholder"),
+            PathBuf::from("/characters/blip"),
             PathBuf::from("/characters/chip.zip"),
         ];
 

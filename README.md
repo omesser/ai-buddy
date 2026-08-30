@@ -54,7 +54,7 @@ Three, and each earns its place:
 | Toolchain | Needed for | Needed to build? |
 |---|---|---|
 | **Rust** | everything: the core crate, the Tauri shell | yes |
-| **Python** | `pre-commit`, and the placeholder Character's frame generator | no |
+| **Python** | `pre-commit`, and the Characters' frame generators | no |
 | **Node** | the renderer's unit tests, and nothing else | no |
 
 Node is the newest and the least obvious, so: the webview front end has been
@@ -170,15 +170,15 @@ can answer it. Run the app, then confirm:
    sprite falls the rest of the way to the bottom of the screen, because the
    Dock gave the space back. Turn it off and the sprite is lifted again.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of the
-   placeholder with a faster `fps idle`, and the idle bob is visibly faster
+   Blip with a faster `fps idle`, and the idle bob is visibly faster
    than it was at the declared 3. Editing the repository's own
    `characters/` changes nothing on its own: the app reads the copy
    `tauri-build` placed next to the binary, not the source of that copy.
 
    ```sh
    mkdir -p /tmp/ai-buddy-fast
-   cp -R characters/placeholder /tmp/ai-buddy-fast/
-   sed -i '' 's/^fps idle = 3$/fps idle = 20/' /tmp/ai-buddy-fast/placeholder/character.manifest
+   cp -R characters/blip /tmp/ai-buddy-fast/
+   sed -i '' 's/^fps idle = 3$/fps idle = 20/' /tmp/ai-buddy-fast/blip/character.manifest
    cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-fast cargo run
    ```
 
@@ -296,7 +296,7 @@ Name a Character to start that one:
 ```sh
 cd src-tauri && AI_BUDDY_CHARACTER=chip cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
-cd src-tauri && AI_BUDDY_CHARACTER=placeholder cargo run  # Blip
+cd src-tauri && AI_BUDDY_CHARACTER=blip cargo run
 ```
 
 The name is the package's directory, without the `.zip` if it is an archive.
@@ -324,14 +324,15 @@ somewhere else instead:
 cd src-tauri && AI_BUDDY_CHARACTERS=/path/to/my-packages cargo run
 ```
 
-### The placeholder Character
+### Blip, the stand-in
 
-`characters/placeholder/` is a generated stand-in, not art. It exists so the
-Engine has a Character to drive, and so click-through has something with
-transparent regions to hit-test against. Regenerate its frames with:
+`characters/blip/` is a generated stand-in rather than art. It shipped before
+Chip and Nim did, so that the Engine had a Character to drive and click-through
+had something with transparent regions to hit-test against, and it stays for
+both. Regenerate its frames with:
 
 ```sh
-python3 scripts/make-placeholder-character.py
+python3 scripts/make-blip-character.py
 ```
 
 Standard library only, so there is nothing to install, which is the same reason

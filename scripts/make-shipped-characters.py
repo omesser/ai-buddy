@@ -11,7 +11,7 @@ they are drawn by two different techniques rather than one technique twice:
     palette four times the size, translucent contact shadow, and enough
     in-between frames that the motion reads as smooth rather than stepped.
 
-Pure standard library, as `make-placeholder-character.py` is and for the same
+Pure standard library, as `make-blip-character.py` is and for the same
 reason: a build step that needs Pillow installed is a build step that stops
 working. The PNG writer is copied from there rather than shared, because a
 third file to import would cost more than the twelve lines it saves.
