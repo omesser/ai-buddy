@@ -74,9 +74,11 @@ frames = ["frames/react-0.png", "frames/react-1.png"]
 fps = 10
 loop = "once"
 
+# Gesture, rest, bigger gesture, rest: talking hands, standing up. The pack's
+# grinning lean-back frames read as sitting and were mistaken for the sit.
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png"]
-fps = 6
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-1.png"]
+fps = 4
 
 # BMO does not settle. Every Behavior here ends on its feet, which is what a
 # Character who would rather be playing looks like from the outside: the sit and
