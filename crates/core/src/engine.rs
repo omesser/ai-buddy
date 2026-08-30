@@ -121,6 +121,12 @@ pub struct Frame {
     pub animation_ms: u32,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
+    /// The Behavior that started playing on this frame, if a proposal was
+    /// taken. An event like `dialogue`, and for the Shell rather than the
+    /// renderer: a proposal is advisory, so what the Director suggested and
+    /// what the user actually saw are different lists, and repetition is
+    /// suppressed on the second.
+    pub behavior: Option<String>,
 }
 
 /// How long one Primitive holds the screen.
@@ -130,7 +136,7 @@ pub struct Frame {
 /// Character Manifest's — so it cannot play a Primitive until the art runs out.
 /// Art shorter than the turn costs nothing: `loop = once` holds its last frame
 /// for the remainder, which is what a brief startle looks like. Longer art is
-/// the ceiling, and the placeholder already sits on it — `fps sleep = 1` over
+/// the ceiling, and Blip already sits on it — `fps sleep = 1` over
 /// two frames is a 2000ms strip the sprite leaves at frame 0. Give a Primitive
 /// its own duration when a Character's art needs to outlast this one.
 const PRIMITIVE_MS: u32 = 600;
@@ -379,9 +385,13 @@ impl Engine {
         // After the sprite has been moved, so the State the gate reads is the
         // one the tick ends in. A walk therefore takes its first step on the
         // tick after the proposal, which is what SPEC.md asks for.
+        let mut behavior = None;
         if let Some(proposal) = &snapshot.proposal {
             if let Some(primitives) = self.chain(&proposal.behavior) {
-                started |= self.play(&primitives);
+                if self.play(&primitives) {
+                    started = true;
+                    behavior = Some(proposal.behavior.clone());
+                }
             }
         }
 
@@ -425,6 +435,7 @@ impl Engine {
                 .proposal
                 .as_ref()
                 .and_then(|proposal| proposal.dialogue.clone()),
+            behavior,
         }
     }
 
@@ -784,6 +795,7 @@ fn nearest_edge(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::DEFAULT_WEIGHT;
 
     /// One 1000x800 display with its top-left at the origin.
     fn one_display() -> Rect {
@@ -892,7 +904,7 @@ mod tests {
         assert_eq!(play(&script), play(&script));
     }
 
-    /// The Behaviors the placeholder Character declares: a greeting that chains
+    /// The Behaviors the Blip Character declares: a greeting that chains
     /// into settling down, and a stroll.
     fn declared_behaviors() -> BTreeMap<String, Behavior> {
         BTreeMap::from([
@@ -901,6 +913,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Walk],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
             (
@@ -908,6 +922,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::React, Primitive::Talk],
                     then: Some("settle".to_string()),
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
             (
@@ -915,6 +931,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Sit, Primitive::Sleep],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
         ])
@@ -1115,6 +1133,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Talk],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             )]));
 
@@ -1132,6 +1152,8 @@ mod tests {
         let pacing = |then: &str| Behavior {
             primitives: vec![Primitive::Idle],
             then: Some(then.to_string()),
+            weight: DEFAULT_WEIGHT,
+            trigger: None,
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([
             ("here".to_string(), pacing("there")),
@@ -1161,6 +1183,39 @@ mod tests {
         assert_eq!(
             unknown.animation_ms, 100,
             "and on its own clock, not restarted by the refusal"
+        );
+    }
+
+    /// #10 suppresses Behaviors the user has recently *seen*, and the Shell
+    /// keeps that list. A proposal is advisory, so what was proposed and what
+    /// was played are different lists, and only the Engine knows the second.
+    #[test]
+    fn a_frame_names_the_behavior_that_started_and_not_one_that_was_refused() {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
+
+        let airborne = engine.tick(&proposing("settle"));
+        assert_eq!(airborne.state, State::Falling);
+        assert_eq!(
+            airborne.behavior, None,
+            "there is no sitting down in mid-air, so nobody saw it"
+        );
+
+        settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            engine.tick(&proposing("settle")).behavior.as_deref(),
+            Some("settle"),
+            "on the floor it plays, and the Shell may remember it"
+        );
+        assert_eq!(
+            engine.tick(&snapshot(100)).behavior,
+            None,
+            "starting is an event, not a state to hold"
+        );
+        assert_eq!(
+            engine.tick(&proposing("cartwheel")).behavior,
+            None,
+            "nor does a Behavior nobody declares count as played"
         );
     }
 
@@ -1634,7 +1689,7 @@ mod tests {
         }
     }
 
-    /// The Director asking for a walk, by the name the placeholder Character
+    /// The Director asking for a walk, by the name the Blip Character
     /// declares for a Behavior of one `walk` Primitive.
     fn walk() -> Option<BehaviorProposal> {
         Some(BehaviorProposal {
@@ -1657,6 +1712,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::React, Primitive::Walk],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
             (
@@ -1667,6 +1724,8 @@ mod tests {
                 Behavior {
                     primitives: vec![Primitive::Sit],
                     then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
                 },
             ),
         ]));

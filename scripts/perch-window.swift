@@ -19,6 +19,13 @@
 // It terminates on its own, so an interrupted run cannot leave a stray window
 // on the user's screen.
 //
+// The window keeps re-asserting its place at the front of its level for as long
+// as it lives. An accessory app's window has no claim on the front and anything
+// that takes focus buries it — the app under test starting up is enough — and an
+// edge covered by a window reported in front of it is not a Perch (#86). A
+// buried prop is one the sprite falls straight through, so a check that means to
+// assert a landing asserts nothing. Drop the re-assert and that returns.
+//
 // An optional window level makes the same prop into desktop furniture: the Dock
 // sits at 20 and the menu bar at 24, and neither is a Perch. A prop opened up
 // there is the only way to check that from a script, because the real furniture
@@ -36,6 +43,11 @@ import AppKit
 let stepPoints = 80.0
 let stepInterval = 5.0
 let steps = 3
+
+/// How often the prop re-asserts its place at the front of its level. Faster
+/// than the app's ~10Hz window poll, so a burial cannot survive a whole tick and
+/// be read as one.
+let reassertInterval = 0.05
 
 /// A backstop, not a schedule: the script kills this window when it is done
 /// with it, and this is what happens if the script never gets the chance.
@@ -72,6 +84,9 @@ window.title = "ai-buddy perch"
 window.setFrame(appKitRect(top: y), display: true)
 window.level = NSWindow.Level(rawValue: level)
 window.orderFrontRegardless()
+Timer.scheduledTimer(withTimeInterval: reassertInterval, repeats: true) { _ in
+    window.orderFrontRegardless()
+}
 
 /// One line per event: when it happened, and what the window server says the
 /// window's bounds are. `at` is passed in rather than read here, because the

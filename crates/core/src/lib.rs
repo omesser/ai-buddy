@@ -5,6 +5,7 @@
 //! the outside world are declared here as traits and implemented in the shell.
 
 pub mod character;
+pub mod director;
 pub mod engine;
 pub mod input;
 pub mod memory;
