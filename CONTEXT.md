@@ -86,8 +86,16 @@ A window's top edge treated as a one-way platform the sprite can land on, walk
 along, and fall off. Window sides and bottoms are not Perches, and neither is
 the length of an edge that cannot be seen: one hidden behind a window in front
 of it, or hanging over no display. That governs where the sprite may land. An
-edge it is already standing on it keeps until the edge itself goes.
+edge it is already standing on it keeps until the edge itself goes, or until a
+yank accelerates the window past the ride gate. A slow drag is still the same
+edge: the sprite Holds and rides.
 _Avoid_: Ledge, platform, surface
+
+**Hold**:
+The Primitive and required Animation of gripping a moving Perch so the sprite
+keeps its place on the edge. Engine-played, like Land: no Director proposes it
+in time. Not a State — the sprite stays Perched.
+_Avoid_: Squat, cling, grab (Grab is the verb that picks the sprite up)
 
 **Surface**:
 What the sprite stands on: a display's floor, or a Perch. The umbrella over

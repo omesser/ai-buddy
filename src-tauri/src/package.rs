@@ -906,9 +906,9 @@ mod tests {
     }
 
     /// #9's first criterion, and its fourth. A Primitive is the Engine's and
-    /// plays one of the eight Animations every Character must supply, so
+    /// plays one of the nine Animations every Character must supply, so
     /// "neither package needs a Primitive the other cannot use" is the same
-    /// claim as "both draw all eight" — which is what fails here if a shipped
+    /// claim as "both draw all nine" — which is what fails here if a shipped
     /// package loses a frame or names one it does not carry.
     #[test]
     fn both_shipped_characters_load_through_the_same_loader() {

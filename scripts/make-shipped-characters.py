@@ -245,7 +245,7 @@ def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, f
 
 
 def bmo_animations():
-    """BMO's eight Animations. Two to four frames each, cut fast: a handheld
+    """BMO's nine Animations. Two to four frames each, cut fast: a handheld
     answers the instant a button is pressed, and the frame counts are where
     that reads. What changes between frames is mostly the face."""
     return {
@@ -265,6 +265,12 @@ def bmo_animations():
         ],
         "land": [bmo(drop=4, eyes="shut", mouth="wide", stride=2), bmo(drop=1)],
         "sit": [bmo(drop=4, fold=True), bmo(drop=4, fold=True, eyes="shut")],
+        # Lower than a sit, arms down the sides: gripping a moving Perch, not
+        # resting on a still one.
+        "hold": [
+            bmo(drop=5, fold=True, arms=1, eyes="wide"),
+            bmo(drop=5, fold=True, arms=2, eyes="wide"),
+        ],
         "sleep": [
             bmo(drop=4, fold=True, eyes="shut", mouth="flat", dim=True),
             bmo(drop=5, fold=True, eyes="shut", mouth="flat", dim=True),
@@ -418,7 +424,7 @@ def nim(bob=0.0, squash=0.0, sway=0.0, open_amount=1.0, look=0, mouth=0, step=0.
 
 
 def nim_animations():
-    """Nim's eight Animations. Twice the frames of BMO's everywhere, because
+    """Nim's nine Animations. Twice the frames of BMO's everywhere, because
     the whole difference between them is that Nim eases and BMO snaps."""
     idle = []
     for i in range(6):
@@ -495,6 +501,10 @@ def nim_animations():
         "fall": fall,
         "land": land,
         "sit": sit,
+        "hold": [
+            nim(squash=2.2 + i * 0.15, bob=1.5, sway=0.4 - i * 0.2, look=i % 2, ears=5, arms=1 if i % 2 == 0 else -1)
+            for i in range(4)
+        ],
         "sleep": sleep,
         "react": react,
         "talk": talk,
@@ -534,7 +544,9 @@ def main():
     assert len(colours(nim_art) - {CLEAR}) > 16, "Nim fits in a sixteen-colour palette"
 
     for name, art in (("bmo", bmo_art), ("nim", nim_art)):
-        assert set(art) == {"idle", "walk", "fall", "land", "sit", "sleep", "react", "talk"}
+        assert set(art) == {
+            "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold"
+        }
         write(name, art)
 
 

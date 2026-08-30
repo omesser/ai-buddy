@@ -63,11 +63,11 @@ pub const CHARACTER_MANIFEST_FILE: &str = "character.manifest";
 /// with no prompt still has its whole idle life, which is local and model-free.
 pub const PERSONALITY_FILE: &str = "personality.txt";
 
-/// The animations every Character must supply, fixed at eight so a hobbyist
-/// package stays an evening's drawing (ADR-0002). Any other Animation a package
-/// declares is optional: used when present, absent silently when not.
-pub const REQUIRED_ANIMATIONS: [&str; 8] = [
-    "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk",
+/// The animations every Character must supply, fixed at nine so a hobbyist
+/// package stays an evening's drawing (ADR-0002, #98). Any other Animation a
+/// package declares is optional: used when present, absent silently when not.
+pub const REQUIRED_ANIMATIONS: [&str; 9] = [
+    "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
 ];
 
 /// How long a Personality Prompt may be, in characters.
@@ -152,10 +152,13 @@ pub enum Primitive {
     Sleep,
     React,
     Talk,
+    /// Gripping a moving Perch. The Engine plays this itself (#98); a
+    /// Character may also compose it.
+    Hold,
 }
 
 /// Every Primitive by the name a Character Manifest writes.
-const PRIMITIVES: [(&str, Primitive); 7] = [
+const PRIMITIVES: [(&str, Primitive); 8] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
     ("land", Primitive::Land),
@@ -163,6 +166,7 @@ const PRIMITIVES: [(&str, Primitive); 7] = [
     ("sleep", Primitive::Sleep),
     ("react", Primitive::React),
     ("talk", Primitive::Talk),
+    ("hold", Primitive::Hold),
 ];
 
 /// The word that chains one Behavior to the next, and so the one word a
@@ -293,7 +297,7 @@ impl Character {
     ///
     /// `None` only for an Animation this Character does not have, which a
     /// validated Character cannot be asked for: the Engine names one of the
-    /// eight required Animations, and a package missing one was rejected.
+    /// nine required Animations, and a package missing one was rejected.
     /// Substituting a different Animation would be worse than drawing nothing,
     /// because the renderer would still be told the name it asked for.
     pub fn draw(&self, animation: &str, animation_ms: u32) -> Option<Drawn<'_>> {
@@ -1187,8 +1191,10 @@ mod tests {
 
     #[test]
     fn a_missing_required_animation_is_rejected_by_name() {
-        let seven = ["idle", "walk", "fall", "sit", "sleep", "react", "talk"];
-        let errors = errors(load_manifest(&declaring(&seven)));
+        let eight = [
+            "idle", "walk", "fall", "sit", "sleep", "react", "talk", "hold",
+        ];
+        let errors = errors(load_manifest(&declaring(&eight)));
 
         assert_eq!(
             errors.len(),
@@ -1329,10 +1335,10 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 11: weight names behavior \"nap\", \
+                "line 12: weight names behavior \"nap\", \
                  which the package does not declare"
                     .to_string(),
-                "line 12: when names behavior \"doze\", \
+                "line 13: when names behavior \"doze\", \
                  which the package does not declare"
                     .to_string(),
             ]
@@ -1349,7 +1355,7 @@ mod tests {
 
         assert_eq!(
             errors,
-            vec!["line 11: weight for behavior \"greet\" is \"lots\", \
+            vec!["line 12: weight for behavior \"greet\" is \"lots\", \
                  which is not a whole number"
                 .to_string()]
         );
@@ -1392,8 +1398,8 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 10: behavior \"greet\" declares \"jump\", which is not a Primitive; \
-                 the Primitives are idle, walk, land, sit, sleep, react, talk"
+                "line 11: behavior \"greet\" declares \"jump\", which is not a Primitive; \
+                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold"
                     .to_string()
             ],
             "the author is told the offending word and what they may write instead"
@@ -1410,7 +1416,7 @@ mod tests {
 
         assert_eq!(
             errors,
-            vec!["line 10: behavior \"pace\" cannot terminate: \
+            vec!["line 11: behavior \"pace\" cannot terminate: \
                  \"pace\" -> \"turn\" -> \"pace\""
                 .to_string()],
             "the author is given the whole cycle and the line it starts on"
@@ -1439,7 +1445,7 @@ mod tests {
 
         assert_eq!(
             errors,
-            vec!["line 10: behavior \"greet\" follows \"nap\", \
+            vec!["line 11: behavior \"greet\" follows \"nap\", \
                  which the package does not declare"
                 .to_string()],
             "the author is told which behavior points at what, and where"
@@ -1516,7 +1522,7 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 10: unknown declaration \"capability\"; a Character Manifest declares \
+                "line 11: unknown declaration \"capability\"; a Character Manifest declares \
                  name, animation, fps, loop, behavior, weight and when"
                     .to_string()
             ],
@@ -1531,7 +1537,7 @@ mod tests {
 
         assert_eq!(
             errors,
-            vec!["line 10: \"animation idle\" is not a declaration; \
+            vec!["line 11: \"animation idle\" is not a declaration; \
                  every line reads \"key = value\""
                 .to_string()],
             "the author is told the shape a line must take, not just its number"
@@ -1741,17 +1747,17 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 10: a declaration with no name".to_string(),
-                "line 11: \"name\" is not a declaration; every line reads \"key = value\"".to_string(),
-                "line 12: \"animation\" must name exactly one Animation, and names 0".to_string(),
-                "line 13: \"animation\" must name exactly one Animation, and names 2".to_string(),
-                "line 14: \"fps\" must name exactly one Animation, and names 0".to_string(),
-                "line 15: \"loop\" must name exactly one Animation, and names 0".to_string(),
-                "line 16: \"behavior\" must name exactly one Behavior, and names 0".to_string(),
-                "line 17: behavior \"chase\" ends with \"then\" and no Behavior to follow it".to_string(),
-                "line 18: behavior \"pounce\" follows \"then\" with more than one Behavior".to_string(),
-                "line 19: unknown declaration \"фпс\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string(),
-                "line 20: unknown declaration \"\\0name\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string()
+                "line 11: a declaration with no name".to_string(),
+                "line 12: \"name\" is not a declaration; every line reads \"key = value\"".to_string(),
+                "line 13: \"animation\" must name exactly one Animation, and names 0".to_string(),
+                "line 14: \"animation\" must name exactly one Animation, and names 2".to_string(),
+                "line 15: \"fps\" must name exactly one Animation, and names 0".to_string(),
+                "line 16: \"loop\" must name exactly one Animation, and names 0".to_string(),
+                "line 17: \"behavior\" must name exactly one Behavior, and names 0".to_string(),
+                "line 18: behavior \"chase\" ends with \"then\" and no Behavior to follow it".to_string(),
+                "line 19: behavior \"pounce\" follows \"then\" with more than one Behavior".to_string(),
+                "line 20: unknown declaration \"фпс\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string(),
+                "line 21: unknown declaration \"\\0name\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string()
             ],
             "each nonsense line is rejected on its own line, saying what is wrong"
         );
@@ -1795,10 +1801,12 @@ mod tests {
 
     #[test]
     fn every_mistake_is_reported_in_one_pass() {
-        let seven = ["idle", "walk", "fall", "sit", "sleep", "react", "talk"];
+        let eight = [
+            "idle", "walk", "fall", "sit", "sleep", "react", "talk", "hold",
+        ];
         let manifest = format!(
             "{}capability = screen_recording\nbehavior greet = jump\n",
-            declaring(&seven)
+            declaring(&eight)
         );
         let errors = errors(load_manifest(&manifest));
 

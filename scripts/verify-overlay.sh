@@ -232,14 +232,16 @@ step = first(lambda s: landed and s["at_ms"] > landed[0], steps[1:])
 if step is None:
     check(False, "the prop window stepped down while the sprite was perched")
 else:
-    noticed = first(lambda f: f[0] >= step["at_ms"] and f[1] == "Falling")
-    check(noticed is not None and noticed[0] - step["at_ms"] <= POLL_MS + SLACK_MS,
-          "a window that moves is noticed within about one poll interval",
-          f"{noticed[0] - step['at_ms']:.0f}ms" if noticed else "never noticed")
-    check(first(lambda f: f[0] > step["at_ms"] and f[1] == "Perched"
-                and abs(f[3] - step["y"]) <= 1) is not None,
-          "the sprite follows the window to its new top edge",
-          f"new top y={step['y']:.0f}")
+    followed = first(lambda f: f[0] >= step["at_ms"] and f[1] == "Perched"
+                    and abs(f[3] - step["y"]) <= 1)
+    check(followed is not None and followed[0] - step["at_ms"] <= POLL_MS + SLACK_MS,
+          "a slowly moved window is ridden within about one poll interval",
+          f"{followed[0] - step['at_ms']:.0f}ms" if followed else "never followed")
+    fell = first(lambda f: landed and followed and landed[0] < f[0] < followed[0]
+                 and f[1] == "Falling")
+    check(fell is None,
+          "the sprite rides the step rather than falling onto the new edge",
+          f"fell at {fell[0]:.0f}ms" if fell else "stayed perched")
 
 dropped = first(lambda f: f[0] >= closed_ms and f[1] == "Falling")
 check(dropped is not None and dropped[0] - closed_ms <= POLL_MS + SLACK_MS,

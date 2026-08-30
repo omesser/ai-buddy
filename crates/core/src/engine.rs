@@ -158,6 +158,16 @@ const WALK_SPEED: f64 = 120.0;
 /// as heavy rather than floaty is found by watching it, not by deriving it.
 const GRAVITY: f64 = 1800.0;
 
+/// Points per second squared. A Perch that accelerates harder than this yanks
+/// the sprite off; below it the sprite Holds and keeps its place on the edge.
+/// Measured against the window poll, not the Engine tick: geometry is reused
+/// between polls, and a 16ms still frame is not a stop. #98.
+pub const RIDE_ACCELERATION: f64 = 10_000.0;
+
+/// How often window geometry is actually new. `RIDE_ACCELERATION` is sampled
+/// against this, matching `window_source::POLL_INTERVAL`.
+const WINDOW_SAMPLE_S: f64 = 0.1;
+
 pub struct Engine {
     position: Point,
     velocity: Point,
@@ -188,6 +198,11 @@ pub struct Engine {
     /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
     /// and the Primitive carries none, so it goes the way it was last heading.
     facing: f64,
+    /// Whether this tick translated the sprite with a moving Perch. Decides
+    /// the Hold animation; not a State — the sprite is still Perched. #98.
+    riding: bool,
+    /// Last observed velocity of the ridden Perch, for the acceleration gate.
+    perch_velocity: Point,
 }
 
 impl Engine {
@@ -206,6 +221,8 @@ impl Engine {
             playing: Vec::new(),
             primitive_ms: 0,
             facing: 1.0,
+            riding: false,
+            perch_velocity: Point::default(),
         }
     }
 
@@ -279,7 +296,9 @@ impl Engine {
         if matches!(state, State::Grounded | State::Perched) {
             match self.on_screen() {
                 Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
-                Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep) => self.velocity.x = 0.0,
+                Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep | Primitive::Hold) => {
+                    self.velocity.x = 0.0
+                }
                 _ => {}
             }
         }
@@ -314,6 +333,21 @@ impl Engine {
         // A wake with nothing under it still falls, and still lands, later.
         if matches!(contact, Some(transition::Contact::Landed(_))) && !woke {
             started |= self.play(&[Primitive::Land]);
+        }
+
+        // Riding is an event the Director cannot propose in time, the same
+        // as landing. Holding on is not resting, so an Asleep sprite that
+        // has to ride wakes rather than sleeping through the move. #98.
+        if self.riding {
+            self.idle_ms = 0;
+            self.state = State::Perched;
+            if self.on_screen() != Some(Primitive::Hold) {
+                started |= self.play(&[Primitive::Hold]);
+            }
+        } else if self.on_screen() == Some(Primitive::Hold) {
+            self.playing.clear();
+            self.primitive_ms = 0;
+            started = true;
         }
 
         // A proposal is advisory, so a Behavior this Character does not declare
@@ -362,6 +396,9 @@ impl Engine {
 
         self.previous_windows.clone_from(&snapshot.windows);
         self.previous_position = self.position;
+        if !matches!(self.state, State::Perched | State::Asleep) {
+            self.perch_velocity = Point::default();
+        }
 
         Frame {
             position: self.position,
@@ -389,6 +426,7 @@ impl Engine {
     ) -> Option<transition::Contact> {
         use transition::Contact;
 
+        self.riding = false;
         match state {
             State::Falling => {
                 self.velocity.y += GRAVITY * dt;
@@ -431,11 +469,17 @@ impl Engine {
                 }
             }
             // Resting is only ever resting on something. When that something
-            // moves, closes or resizes — or when the sprite walks off the end
-            // of it — the sprite is in the air again, carrying whatever speed
-            // it walked off with.
+            // moves slowly the sprite Holds and rides it (#98). A yank, a
+            // close, a resize, or walking off the end leaves it in the air,
+            // carrying whatever speed it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
                 self.position.x += self.velocity.x * dt;
+
+                if let Some(delta) = self.ride_delta(snapshot) {
+                    self.position.x += delta.x;
+                    self.position.y += delta.y;
+                    self.riding = true;
+                }
 
                 match footing(self.position, snapshot, |window| self.swallowed_by(window)) {
                     Some(footing) if footing.y < self.position.y => {
@@ -448,6 +492,31 @@ impl Engine {
             }
             State::Dragged => None,
         }
+    }
+
+    /// How far a slowly moving Perch carries the sprite this tick, or nothing
+    /// when there is no Perch, it did not move, or it accelerated past the
+    /// ride gate. A yank is a fall, not a lift onto the same window. #98.
+    fn ride_delta(&mut self, snapshot: &WorldSnapshot) -> Option<Point> {
+        let previous = perch_at(self.previous_position, &self.previous_windows)?;
+        let current = match_perch(previous, &snapshot.windows)?;
+        let delta = Point {
+            x: current.x - previous.x,
+            y: current.y - previous.y,
+        };
+        if delta.x == 0.0 && delta.y == 0.0 {
+            return None;
+        }
+
+        let velocity = Point {
+            x: delta.x / WINDOW_SAMPLE_S,
+            y: delta.y / WINDOW_SAMPLE_S,
+        };
+        let ax = (velocity.x - self.perch_velocity.x) / WINDOW_SAMPLE_S;
+        let ay = (velocity.y - self.perch_velocity.y) / WINDOW_SAMPLE_S;
+        self.perch_velocity = velocity;
+        let acceleration = ax.hypot(ay);
+        (acceleration <= RIDE_ACCELERATION).then_some(delta)
     }
 
     /// Whether `window` has come to contain the sprite this tick: dragged over
@@ -640,14 +709,15 @@ fn animation_of(primitive: Primitive) -> &'static str {
         Primitive::Sleep => "sleep",
         Primitive::React => "react",
         Primitive::Talk => "talk",
+        Primitive::Hold => "hold",
     }
 }
 
 /// Which of the Required Animation Set a State plays.
 ///
 /// A dragged sprite dangles from the cursor, which is what `fall` already
-/// draws; the required set has no animation of its own for being held, and
-/// eight required animations is already a tax on every Character.
+/// draws; being picked up is not the same as Holding onto a moving Perch,
+/// and the required set spends its ninth Animation on the latter. #98.
 fn animation_for(state: State) -> &'static str {
     match state {
         State::Grounded => "idle",
@@ -800,6 +870,29 @@ fn footing(
         .chain(held)
         .chain(support_below(position, snapshot))
         .min_by(|a, b| a.y.total_cmp(&b.y))
+}
+
+/// The window whose top edge the sprite is standing on, if any.
+fn perch_at(position: Point, windows: &[Rect]) -> Option<Rect> {
+    windows
+        .iter()
+        .copied()
+        .find(|window| window.spans_x(position.x) && window.y == position.y)
+}
+
+/// The same window in a later snapshot: same size, nearest origin. Snapshots
+/// carry rectangles, not ids, so a pair of identical windows can swap and
+/// this will pick the nearer one. A close or a resize has no match. #98.
+fn match_perch(previous: Rect, windows: &[Rect]) -> Option<Rect> {
+    windows
+        .iter()
+        .copied()
+        .filter(|window| window.width == previous.width && window.height == previous.height)
+        .min_by(|a, b| {
+            let da = (a.x - previous.x).hypot(a.y - previous.y);
+            let db = (b.x - previous.x).hypot(b.y - previous.y);
+            da.total_cmp(&db)
+        })
 }
 
 /// Whether the sprite is inside `window` rather than on top of it. A top edge
@@ -1095,7 +1188,7 @@ mod tests {
         );
     }
 
-    /// #8: `land` is the last of the eight required Animations nothing could
+    /// #8: `land` is the last of the nine required Animations nothing could
     /// reach. Landing is not a State — the sprite is standing the moment it
     /// arrives — so the end of a fall is played as a Primitive over the
     /// standing, the same as any other Behavior.
@@ -2142,13 +2235,102 @@ mod tests {
         assert_eq!(perched.state, State::Perched);
         assert_eq!(perched.position.y, 400.0);
 
-        // The same window, dragged out from under it rather than closed.
+        // The same window, yanked out from under it rather than closed. #98.
         let dropped = engine.tick(&window(600.0));
         assert_eq!(dropped.state, State::Falling);
 
         let landed = settle(&mut engine, &window(600.0));
         assert_eq!(landed.state, State::Grounded);
         assert_eq!(landed.position.y, 800.0, "down to the floor it left");
+    }
+
+    /// A window the sprite can stand on, moved without changing size.
+    fn perch(x: f64, y: f64) -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![Rect {
+                x,
+                y,
+                width: 300.0,
+                height: 200.0,
+            }],
+            ..snapshot(100)
+        }
+    }
+
+    /// #98: a Perch dragged slowly is still underfoot. The sprite keeps the
+    /// place it had on the edge rather than falling through the window that
+    /// now contains it.
+    #[test]
+    fn the_sprite_rides_a_slowly_dragged_perch() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let perched = settle(&mut engine, &perch(50.0, 400.0));
+        assert_eq!(perched.state, State::Perched);
+        let offset_x = perched.position.x - 50.0;
+
+        let up = engine.tick(&perch(50.0, 380.0));
+        assert_eq!(up.state, State::Perched, "up with the window: {up:?}");
+        assert_eq!(
+            up.position,
+            Point {
+                x: perched.position.x,
+                y: 380.0
+            }
+        );
+        assert_eq!(up.animation, "hold");
+
+        let across = engine.tick(&perch(70.0, 380.0));
+        assert_eq!(across.state, State::Perched, "sideways: {across:?}");
+        assert_eq!(
+            across.position,
+            Point {
+                x: 70.0 + offset_x,
+                y: 380.0
+            }
+        );
+        assert_eq!(across.animation, "hold");
+
+        let down = engine.tick(&perch(70.0, 400.0));
+        assert_eq!(down.state, State::Perched, "down with the window: {down:?}");
+        assert_eq!(
+            down.position,
+            Point {
+                x: 70.0 + offset_x,
+                y: 400.0
+            }
+        );
+        assert_eq!(down.animation, "hold");
+    }
+
+    /// #98: the ride ends when the Perch is still. Holding on is the motion,
+    /// not a new way to sit.
+    #[test]
+    fn a_still_perch_returns_the_sprite_to_sitting() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+        assert_eq!(engine.tick(&perch(50.0, 380.0)).animation, "hold");
+
+        let still = engine.tick(&perch(50.0, 380.0));
+        assert_eq!(still.state, State::Perched);
+        assert_eq!(still.position.y, 380.0);
+        assert_eq!(still.animation, "sit");
+    }
+
+    /// #98: a yank is a loss of footing even when the window moves up over
+    /// the sprite. Lifted is for a *different* window that has come to
+    /// contain it, not for the Perch it just lost.
+    #[test]
+    fn an_upward_yank_drops_the_sprite_rather_than_lifting_it() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        // Far enough to exceed the ride gate, near enough that the sprite is
+        // still inside the rectangle — the case that used to Lift it. #98.
+        let yanked = engine.tick(&perch(50.0, 250.0));
+        assert_eq!(yanked.state, State::Falling, "{yanked:?}");
+        assert_eq!(
+            yanked.position.y, 400.0,
+            "it is not carried onto the new edge"
+        );
     }
 
     /// The same drop, with a window arriving over the sprite as its Perch
