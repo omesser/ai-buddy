@@ -75,7 +75,11 @@ function draw(now) {
 }
 
 async function start() {
-  art = await window.__TAURI__.core.invoke("character");
+  const character = await window.__TAURI__.core.invoke("character");
+  art = character.art;
+  // The Character Manifest's render_mode: smooth art asks the compositor to
+  // filter when scaling, where pixel art (main.css's default) must not.
+  if (character.smooth) sprite.style.imageRendering = "auto";
 
   // There is one overlay per display and each is told where the sprite is in
   // its own coordinates, so this asks for the frames addressed to this window

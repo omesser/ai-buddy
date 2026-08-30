@@ -106,6 +106,18 @@ pub const DEFAULT_FPS: u32 = 8;
 /// still has every Behavior in the running, all of them equally.
 pub const DEFAULT_WEIGHT: u32 = 1;
 
+/// The scale the renderer uses when a Character does not say.
+///
+/// Four is what the shipped pixel-art Characters have always been drawn at;
+/// a package written before `scale` existed renders exactly as it did.
+pub const DEFAULT_SCALE: u32 = 4;
+
+/// The largest integer factor a Character may ask to be drawn at.
+///
+/// ADR-0006 constrains display scaling to small integer factors; art wanting
+/// to be bigger on screen should be authored bigger instead.
+pub const MAX_SCALE: u32 = 4;
+
 /// The largest either side of a frame may be, in pixels.
 ///
 /// A PNG header costs the same few dozen bytes whatever size it claims, so a
@@ -280,6 +292,12 @@ pub struct Character {
     pub behaviors: BTreeMap<String, Behavior>,
     /// Every distinct frame any Animation names, by the name it is named.
     pub art: BTreeMap<String, Art>,
+    /// The renderer smooths this art when scaling instead of keeping hard
+    /// pixels — the `render_mode` ADR-0006 reserved, for Characters whose
+    /// frames are drawn rather than gridded.
+    pub smooth: bool,
+    /// The integer factor the renderer draws the art at.
+    pub scale: u32,
 }
 
 /// What the renderer needs to draw one tick.
@@ -378,6 +396,8 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             animations,
             behaviors,
             art,
+            smooth: declared.smooth.unwrap_or(false),
+            scale: declared.scale.unwrap_or(DEFAULT_SCALE),
         }),
         _ => Err(errors),
     }
@@ -407,6 +427,8 @@ fn personality(package: &PackageBytes, errors: &mut Vec<String>) -> String {
 #[derive(Default)]
 struct Declared {
     name: Option<String>,
+    smooth: Option<bool>,
+    scale: Option<u32>,
     animations: BTreeMap<String, DeclaredAnimation>,
     behaviors: BTreeMap<String, DeclaredBehavior>,
 }
@@ -495,9 +517,26 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
                         .to_string(),
                 ),
             },
+            "render_mode" => match item.as_str() {
+                Some("pixelated") => declared.smooth = Some(false),
+                Some("smooth") => declared.smooth = Some(true),
+                _ => errors.push(format!(
+                    "\"render_mode\" is {}, and must be \"pixelated\" or \"smooth\"",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "scale" => match item.as_integer() {
+                Some(scale) if (1..=i64::from(MAX_SCALE)).contains(&scale) => {
+                    declared.scale = Some(scale as u32)
+                }
+                _ => errors.push(format!(
+                    "\"scale\" is {}, and must be a whole number from 1 to {MAX_SCALE}",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
-                 name, animations and behaviors"
+                 name, render_mode, scale, animations and behaviors"
             )),
         }
     }
@@ -1541,10 +1580,56 @@ mod tests {
             errors,
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, animations and behaviors"
+                 name, render_mode, scale, animations and behaviors"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
+        );
+    }
+
+    /// The render_mode ADR-0006 reserved: undeclared stays pixelated at the
+    /// default scale, so every package written before the fields existed
+    /// renders exactly as it did.
+    #[test]
+    fn render_mode_and_scale_are_declared_or_defaulted() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert!(!character.smooth);
+        assert_eq!(character.scale, DEFAULT_SCALE);
+
+        let manifest = format!(
+            "render_mode = \"smooth\"\nscale = 1\n{}",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("loads");
+        assert!(character.smooth);
+        assert_eq!(character.scale, 1);
+    }
+
+    #[test]
+    fn a_render_mode_that_is_neither_option_is_rejected_by_its_text() {
+        let manifest = format!(
+            "render_mode = \"blurry\"\n{}",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![
+                "\"render_mode\" is \"blurry\", and must be \"pixelated\" or \"smooth\""
+                    .to_string()
+            ],
+        );
+    }
+
+    #[test]
+    fn a_scale_outside_its_bounds_is_rejected_by_its_text() {
+        let manifest = format!("scale = 9\n{}", declaring(&REQUIRED_ANIMATIONS));
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![format!(
+                "\"scale\" is 9, and must be a whole number from 1 to {MAX_SCALE}"
+            )],
         );
     }
 

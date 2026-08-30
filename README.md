@@ -289,8 +289,8 @@ can answer it. Run the app, then confirm:
     edge, fully visible.
 13. **The two shipped Characters are two companions.** Run each in turn (see
     [The shipped Characters](#the-shipped-characters)) and watch it idle. BMO
-    stands in three-quarter view and blinks about once a second, in the ten
-    flat colours of its sheet; Nim eases through six, blinks, and carries a
+    hums to itself through a four-frame singing loop, in soft drawn lines at
+    its authored size; Nim eases through six, blinks, and carries a
     translucent shadow. Poke each: BMO's startle is two frames and over, Nim's
     plays through five. The Behaviors each declares show when a Director
     proposes one (Static, or the HTTP stand-in with a key). Sitting and
@@ -392,13 +392,14 @@ The format stays internal and undocumented until v2 — see
 Two ship, in deliberately different styles, so that the format is proven against
 real variance rather than against itself:
 
-- **`characters/bmo/` — BMO**, game-sprite art. Every pose is cut from the
-  *Flambo's Inferno* sprite sheet (see
-  [Prior art and attribution](#prior-art-and-attribution)), quantised to its
-  ten flat colours, side-on and heading right — the Engine's facing mirrors it
-  to walk left. The idle, talk and sleep faces are drawn by hand on the
-  sheet's own screen, in its grid and palette. BMO never settles: every
-  Behavior it declares ends on its feet.
+- **`characters/bmo/` — BMO**, drawn shimeji art (see
+  [Prior art and attribution](#prior-art-and-attribution)): soft anti-aliased
+  lines rather than a pixel grid, so its manifest declares
+  `render_mode = "smooth"` and `scale = 1` — the render mode ADR-0006
+  reserved, and the first Character to use it. Every pose is cut from the
+  pack's 46 and heads right; the Engine's facing mirrors it to walk left.
+  Idling it sings; sitting it plays four games on its own screen. BMO never
+  settles: every Behavior it declares ends on its feet.
 - **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames
@@ -479,11 +480,11 @@ attribution belongs in this section.
 [desktop-homunculus](https://github.com/not-elm/desktop-homunculus) informed the
 MCP-server-as-companion shape considered and rejected in the same ADR.
 
-BMO's frames are cut from a community rip of the *Adventure Time: Flambo's
-Inferno* browser-game sprite sheet, quantised to a fixed palette and
-hand-adjusted (faces, sleep screen). BMO and the underlying sprites are
-Cartoon Network IP; the character is a development asset, and none of this
-repository's license claims cover that art.
+BMO's frames are cut from the free
+[BMO shimeji pack](https://shimejishop.com/free/bmo-shimeji/) on shimejishop,
+flipped to head right, with a one-pixel breathing shift added for sleep. BMO
+is Cartoon Network IP and the pack is fan art; the character is a development
+asset, and none of this repository's license claims cover that art.
 
 ## License
 

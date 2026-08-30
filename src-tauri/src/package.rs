@@ -1002,9 +1002,9 @@ mod tests {
     }
 
     /// The failure mode #9 names: one Character shipped twice with the palette
-    /// swapped. BMO is game-sheet art on a 32x44 grid and Nim is drawn on
-    /// 32x32, so the packages may not share a frame's geometry, let alone its
-    /// bytes — and Nim, the one that eases, still carries more frames overall.
+    /// swapped. BMO is drawn shimeji art on its own large grid and Nim is
+    /// pixel art on 32x32, so the packages may not share a frame's geometry,
+    /// let alone its bytes — and Nim still carries more frames overall.
     #[test]
     fn the_two_shipped_characters_are_not_one_character_twice() {
         let bmo = shipped_character("bmo");

@@ -43,9 +43,6 @@ use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
-/// Nearest-neighbour blow-up, in logical points. ADR-0006 permits integers only.
-const SPRITE_SCALE: i32 = 4;
-
 /// Where the shipped Character Packages sit inside the app's resources. Kept in
 /// step with `bundle.resources` in `tauri.conf.json`.
 const BUNDLED_CHARACTERS: &str = "characters";
@@ -159,18 +156,23 @@ fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
-/// `art_urls`'s output as Tauri managed state. A newtype because managed
-/// state is keyed by type, so a bare map would silently collide with any
-/// other managed map of the same shape.
-struct ArtUrls(BTreeMap<String, Vec<String>>);
+/// What the webview needs of the Character, as Tauri managed state: the art
+/// as `data:` URLs, and whether to smooth it when scaling (the Character
+/// Manifest's `render_mode`). A struct rather than a bare map so managed
+/// state, keyed by type, cannot collide with another map of the same shape.
+#[derive(Clone, serde::Serialize)]
+struct ArtUrls {
+    art: BTreeMap<String, Vec<String>>,
+    smooth: bool,
+}
 
 /// The Character's art, fetched once by the webview when it loads.
 ///
 /// A command rather than an event: an event emitted during setup would race the
 /// webview's own listener, and the art does not change while the app runs.
 #[tauri::command]
-fn character(art: tauri::State<'_, ArtUrls>) -> BTreeMap<String, Vec<String>> {
-    art.0.clone()
+fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
+    art.inner().clone()
 }
 
 /// Last Character Prompt and current Director config. #18's settings panel
@@ -730,18 +732,15 @@ fn run_frame_loop(
             let Some(drawn) = character.draw(frame.animation, frame.animation_ms) else {
                 continue; // a Character with no drawable Animation at all
             };
+            let scale = character.scale as i32;
             let (width, height) = (
-                drawn.frame_size.0 as i32 * SPRITE_SCALE,
-                drawn.frame_size.1 as i32 * SPRITE_SCALE,
+                drawn.frame_size.0 as i32 * scale,
+                drawn.frame_size.1 as i32 * scale,
             );
 
             // Placed once, in the space every display shares. Each overlay is
             // handed it in its own coordinates below.
-            let sprite = place_sprite(
-                (frame.position.x, frame.position.y),
-                (width, height),
-                SPRITE_SCALE,
-            );
+            let sprite = place_sprite((frame.position.x, frame.position.y), (width, height), scale);
 
             if tracing_frames {
                 // Unix milliseconds, so that a prop window opened by the
@@ -947,7 +946,10 @@ fn main() {
                 eprintln!("character: {why}");
                 std::process::exit(1);
             }));
-            app.manage(ArtUrls(art_urls(&character)));
+            app.manage(ArtUrls {
+                art: art_urls(&character),
+                smooth: character.smooth,
+            });
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.
@@ -981,8 +983,8 @@ fn main() {
                 "overlay: {} display(s); character {}; sprite {}x{}",
                 covered.len(),
                 character.name,
-                sprite_width as i32 * SPRITE_SCALE,
-                sprite_height as i32 * SPRITE_SCALE,
+                sprite_width as i32 * character.scale as i32,
+                sprite_height as i32 * character.scale as i32,
             );
 
             // Shared because the hotkey and the frame loop each see half of the
