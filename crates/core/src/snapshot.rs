@@ -105,6 +105,43 @@ impl<S: WindowSource> SnapshotAssembler<S> {
             self.poll_generation,
         )
     }
+
+    /// What the sprite's feet are on, for the Director. Titles need Screen
+    /// Recording; the owner name is what the window server gives for free.
+    pub fn standing_on(&self, feet: Point) -> String {
+        describe_standing(feet, &self.geometry)
+    }
+}
+
+/// Name the surface under `feet`. A Perch is a window (owner, not title);
+/// the usable floor is the Dock's top; a display's left or right is an edge.
+pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
+    for window in geometry
+        .windows
+        .iter()
+        .filter(|window| perch_eligible(window.layer))
+    {
+        let bounds = &window.bounds;
+        if feet.y == bounds.y && feet.x >= bounds.x && feet.x <= bounds.x + bounds.width {
+            let owner = window.owner.trim();
+            return if owner.is_empty() {
+                "a window".to_string()
+            } else {
+                format!("a {owner} window")
+            };
+        }
+    }
+    for display in &geometry.usable_frames {
+        let right = display.x + display.width;
+        let bottom = display.y + display.height;
+        if feet.y == bottom && feet.x >= display.x && feet.x <= right {
+            return "the display floor, above the Dock".to_string();
+        }
+        if feet.y >= display.y && feet.y <= bottom && (feet.x == display.x || feet.x == right) {
+            return "the screen edge".to_string();
+        }
+    }
+    "nothing".to_string()
 }
 
 /// The Engine's view of one moment, from what the platform reported.
@@ -137,9 +174,8 @@ fn world_snapshot(
         elapsed_ms,
         verbs,
         poll_generation,
-        // Proposals arrive with the Director (#11). Nothing produces one yet,
-        // so an empty one is not a stub: it is the truth about a Director that
-        // has not spoken.
+        // The frame loop writes `proposal` after assemble(). None means no
+        // proposal this tick.
         ..WorldSnapshot::default()
     }
 }
@@ -638,5 +674,49 @@ mod tests {
 
         assert_eq!(landed.state, State::Perched);
         assert_eq!(landed.position.y, 500.0, "the window's top edge");
+    }
+
+    #[test]
+    fn standing_names_the_window_owner_not_a_title() {
+        let desktop = WorldGeometry {
+            usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
+            windows: vec![window("Cursor", rect(100.0, 200.0, 800.0, 600.0))],
+        };
+        assert_eq!(
+            describe_standing(Point { x: 140.0, y: 200.0 }, &desktop),
+            "a Cursor window"
+        );
+        assert_eq!(
+            describe_standing(
+                Point {
+                    x: 960.0,
+                    y: 1080.0
+                },
+                &desktop
+            ),
+            "the display floor, above the Dock"
+        );
+        assert_eq!(
+            describe_standing(Point { x: 0.0, y: 400.0 }, &desktop),
+            "the screen edge"
+        );
+    }
+
+    #[test]
+    fn furniture_is_not_named_as_a_perch() {
+        let desktop = WorldGeometry {
+            usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
+            windows: vec![elevated("Dock", rect(0.0, 1050.0, 1920.0, 80.0), 20)],
+        };
+        assert_eq!(
+            describe_standing(
+                Point {
+                    x: 960.0,
+                    y: 1080.0
+                },
+                &desktop
+            ),
+            "the display floor, above the Dock"
+        );
     }
 }

@@ -13,5 +13,6 @@ pub mod overlay;
 pub mod roster;
 pub mod sensing;
 pub mod snapshot;
+pub mod tools;
 pub mod visibility;
 pub mod window_source;

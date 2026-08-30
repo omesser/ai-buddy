@@ -13,10 +13,11 @@
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
 //!
-//! Waking the Director is the loop's too, and for the same reason: `docs/SPEC.md`
-//! has the Shell wake it on a timer and on notable events, and a timer is a
-//! clock. What it proposes is `director`'s; when it is asked is here.
+//! Waking the Director is the loop's too, and for the same reason: a timer
+//! is a clock. Static may wake often. A session wake is reactive or backed
+//! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+mod model;
 mod package;
 mod platform;
 
@@ -26,11 +27,13 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
-use ai_buddy_core::director::{self, Context, Director, StaticDirector};
-use ai_buddy_core::engine::{Engine, Point};
+use ai_buddy_core::director::{
+    self, Context, Director, Happened, ModelDirector, Pace, StaticDirector, Wake,
+};
+use ai_buddy_core::engine::{Engine, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
-use ai_buddy_core::sensing::{FreeTier, SystemClock};
+use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
 use ai_buddy_core::window_source::{Rect, WindowSource};
@@ -39,9 +42,6 @@ use base64::Engine as _;
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
-
-/// Nearest-neighbour blow-up, in logical points. ADR-0006 permits integers only.
-const SPRITE_SCALE: i32 = 4;
 
 /// Where the shipped Character Packages sit inside the app's resources. Kept in
 /// step with `bundle.resources` in `tauri.conf.json`.
@@ -75,6 +75,12 @@ fn overlay_label(index: usize) -> String {
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
 
+/// Director config and the last Character Prompt, for the frame loop.
+struct DirectorRun {
+    config: model::DirectorConfig,
+    inspect: Arc<Mutex<model::DirectorInspect>>,
+}
+
 /// Where the sprite was last drawn, and what it was drawn as.
 ///
 /// Kept for one tick so the hit-test can ask about the sprite the user is
@@ -94,12 +100,15 @@ struct Drawn {
 /// Pushed every tick rather than fetched, so the webview holds no authoritative
 /// state — it draws what it was last told and remembers nothing.
 #[derive(Clone, Copy, Serialize)]
-struct Placement {
+struct Placement<'a> {
     x: i32,
     y: i32,
     width: i32,
     height: i32,
-    animation: &'static str,
+    /// The Animation whose art to draw — the one `Character::draw` resolved
+    /// (a variant, or an optional Animation's fallback), which is not always
+    /// the name the Engine asked with.
+    animation: &'a str,
     frame_index: usize,
     /// Whether the hide rules have the Character on screen, and how long the
     /// change that decided it was given.
@@ -150,18 +159,35 @@ fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
-/// `art_urls`'s output as Tauri managed state. A newtype because managed
-/// state is keyed by type, so a bare map would silently collide with any
-/// other managed map of the same shape.
-struct ArtUrls(BTreeMap<String, Vec<String>>);
+/// What the webview needs of the Character, as Tauri managed state: the art
+/// as `data:` URLs, and whether to smooth it when scaling (the Character
+/// Manifest's `render_mode`). A struct rather than a bare map so managed
+/// state, keyed by type, cannot collide with another map of the same shape.
+#[derive(Clone, serde::Serialize)]
+struct ArtUrls {
+    art: BTreeMap<String, Vec<String>>,
+    smooth: bool,
+}
 
 /// The Character's art, fetched once by the webview when it loads.
 ///
 /// A command rather than an event: an event emitted during setup would race the
 /// webview's own listener, and the art does not change while the app runs.
 #[tauri::command]
-fn character(art: tauri::State<'_, ArtUrls>) -> BTreeMap<String, Vec<String>> {
-    art.0.clone()
+fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
+    art.inner().clone()
+}
+
+/// Last Character Prompt and current Director config. #18's settings panel
+/// calls this.
+#[tauri::command]
+fn director_payload(
+    inspect: tauri::State<'_, Arc<Mutex<model::DirectorInspect>>>,
+) -> model::DirectorInspect {
+    inspect
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
 }
 
 /// Put the overlay over one display, covering it exactly.
@@ -319,6 +345,9 @@ fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
 /// interpolates towards this one, so the hit-test rectangle leads what is on
 /// screen by up to one tick. src/interpolate.js carries the measurements that
 /// make that lag the cheaper half of the trade against a stuttering sprite.
+// One over the clippy cap. Director config belongs here. Folding it into
+// the other seven would mix a timer with window geometry.
+#[allow(clippy::too_many_arguments)]
 fn run_frame_loop(
     app: tauri::AppHandle,
     character: Arc<Character>,
@@ -327,24 +356,42 @@ fn run_frame_loop(
     rules: Arc<Mutex<HideRules>>,
     start: Point,
     covered: Vec<Rect>,
+    director_run: DirectorRun,
 ) {
     thread::spawn(move || {
         let mut engine = Engine::new(start).with_behaviors(character.behaviors.clone());
         let mut assembler = SnapshotAssembler::new(source);
 
         // The Static Director, which is the whole of the buddy's life until a
-        // model is configured: no network, no key, nothing to time out. Seeded
+        // Harness is attached: no network, no key, nothing to time out. Seeded
         // from the wall clock so that two runs are not the same afternoon,
         // which is the one thing the Engine's own purity forbids it to do.
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos() as u64);
+        let DirectorRun { config, inspect } = director_run;
         let mut director = StaticDirector::new(character.behaviors.clone(), seed);
+        let model = config.enabled.then(|| {
+            Arc::new(ModelDirector::new(
+                model::endpoint().expect("enabled means a key was set"),
+                character.behaviors.keys().cloned(),
+            ))
+        });
+        let pending = model::InFlight::new();
+        let mut in_flight: Option<Context> = None;
         let mut free_tier = FreeTier::default();
         let activity_source = platform::activity_source();
         let mut recent: Vec<String> = Vec::new();
         let mut since_sense = Duration::ZERO;
         let mut since_wake = Duration::ZERO;
+        let mut previous_idle = Duration::MAX;
+        let mut since_state = Duration::ZERO;
+        let mut last_state: Option<State> = None;
+        let mut pace = Pace::with_first(config.ambient_first);
+        let mut since_ambient = Duration::ZERO;
+        let mut last_activity: Option<Activity> = None;
+        let mut addressed = false;
+        let mut happened = Happened::Ambient;
 
         // One click-through flag per overlay, `None` until that overlay's first
         // decision so the first tick always applies.
@@ -444,6 +491,27 @@ fn run_frame_loop(
                 eprintln!("verbs: {verbs:?}");
             }
 
+            // Grab is on every held tick. Only the first tick of a hold is a
+            // pick-up; the rest would otherwise wake the session while dragging.
+            let grab_started = verbs.iter().any(|verb| matches!(verb, Verb::Grab))
+                && last_state != Some(State::Dragged);
+            if verbs
+                .iter()
+                .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Throw { .. }))
+                || grab_started
+            {
+                addressed = true;
+                happened = if verbs.iter().any(|verb| matches!(verb, Verb::Throw { .. })) {
+                    Happened::Throw
+                } else if grab_started {
+                    Happened::Grab
+                } else if verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
+                    Happened::Poke
+                } else {
+                    Happened::Summon
+                };
+            }
+
             // The Director's clock is the same elapsed time the Engine is
             // given, so a loop that stalled wakes it once on the way back
             // rather than in a burst. Firing takes one interval off the clock
@@ -453,19 +521,89 @@ fn run_frame_loop(
             let elapsed = Duration::from_millis(u64::from(elapsed_ms));
             since_sense += elapsed;
             since_wake += elapsed;
+            since_state += elapsed;
+            if !last_activity
+                .as_ref()
+                .is_some_and(|activity| activity.displays_asleep)
+            {
+                since_ambient += elapsed;
+            }
 
             let mut proposal = None;
+            let arrived = pending.try_take();
+            let applied = arrived.is_some();
+            if let Some(wake) = arrived {
+                let context = in_flight
+                    .take()
+                    .expect("a started call still has its context");
+                if model::tracing() {
+                    match &wake {
+                        Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(
+                            "director: parsed {}{}",
+                            parsed.behavior,
+                            parsed
+                                .dialogue
+                                .as_deref()
+                                .map(|line| format!(" | {line}"))
+                                .unwrap_or_default(),
+                        ),
+                        Wake::Proposed(_) => {}
+                        Wake::Failed => eprintln!("director: failed; Static fallback"),
+                    }
+                }
+                proposal = director::fallback(wake, &mut director, &context);
+                if model::tracing() {
+                    match &proposal {
+                        Some(playing) if playing.behavior.is_empty() => {
+                            eprintln!(
+                                "director: saying {}",
+                                playing.dialogue.as_deref().unwrap_or("")
+                            );
+                        }
+                        Some(playing) => eprintln!(
+                            "director: playing {}{}",
+                            playing.behavior,
+                            playing
+                                .dialogue
+                                .as_deref()
+                                .map(|line| format!(" | {line}"))
+                                .unwrap_or_default(),
+                        ),
+                        None => eprintln!("director: nothing to play"),
+                    }
+                }
+            }
+
             if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let activity = free_tier.read(&activity_source, &SystemClock);
+                let due = director::due(
+                    since_wake,
+                    config.wake_every,
+                    &activity,
+                    previous_idle,
+                    since_state,
+                );
+                previous_idle = activity.idle;
 
-                if director::due(since_wake, &activity) {
-                    since_wake = since_wake.saturating_sub(director::WAKE_EVERY);
-                    proposal = director.propose(&Context {
-                        activity,
-                        recent: recent.clone(),
-                    });
+                if due {
+                    since_wake = since_wake.saturating_sub(config.wake_every);
+                    since_state = Duration::ZERO;
+                    // Static keeps the free life going. A session call in
+                    // flight is the one exception: do not stack a weight pick
+                    // on a proposal that is about to land.
+                    if pending.ready() && !applied {
+                        proposal = director.propose(&Context {
+                            activity: activity.clone(),
+                            recent: recent.clone(),
+                            personality: character.personality.clone(),
+                            state: last_state.unwrap_or(State::Grounded),
+                            happened,
+                            standing: String::new(),
+                        });
+                    }
                 }
+                last_activity = Some(activity);
             }
 
             let mut world = assembler.assemble(elapsed_ms, cursor_points, verbs);
@@ -480,6 +618,51 @@ fn run_frame_loop(
 
             let frame = engine.tick(&world);
             assembler.poll_fast(frame.riding);
+
+            let became_perched = last_state.is_some()
+                && frame.state == State::Perched
+                && last_state != Some(State::Perched);
+            if became_perched {
+                addressed = true;
+                happened = Happened::Perch;
+            }
+
+            if last_state != Some(frame.state) {
+                last_state = Some(frame.state);
+                since_state = Duration::ZERO;
+            }
+
+            // After the tick so a Throw is already Falling, not still Dragged.
+            if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
+                if director::session_due(addressed, since_ambient, &pace, activity.displays_asleep)
+                    && pending.ready()
+                    && !applied
+                {
+                    let context = Context {
+                        activity: activity.clone(),
+                        recent: recent.clone(),
+                        personality: character.personality.clone(),
+                        state: frame.state,
+                        happened,
+                        standing: assembler.standing_on(frame.position),
+                    };
+                    if addressed {
+                        pace.after_reactive();
+                    } else {
+                        pace.after_ambient();
+                    }
+                    addressed = false;
+                    happened = Happened::Ambient;
+                    since_ambient = Duration::ZERO;
+                    let payload = model.prompt(&context);
+                    if let Ok(mut inspect) = inspect.lock() {
+                        inspect.last_payload = Some(payload);
+                        inspect.wake_secs = pace.wait().as_secs();
+                    }
+                    pending.start(Arc::clone(model), context.clone());
+                    in_flight = Some(context);
+                }
+            }
 
             // What the user has seen is what the Engine played, not what the
             // Director asked for: a proposal the State refuses never reaches
@@ -552,18 +735,15 @@ fn run_frame_loop(
             let Some(drawn) = character.draw(frame.animation, frame.animation_ms) else {
                 continue; // a Character with no drawable Animation at all
             };
+            let scale = character.scale as i32;
             let (width, height) = (
-                drawn.frame_size.0 as i32 * SPRITE_SCALE,
-                drawn.frame_size.1 as i32 * SPRITE_SCALE,
+                drawn.frame_size.0 as i32 * scale,
+                drawn.frame_size.1 as i32 * scale,
             );
 
             // Placed once, in the space every display shares. Each overlay is
             // handed it in its own coordinates below.
-            let sprite = place_sprite(
-                (frame.position.x, frame.position.y),
-                (width, height),
-                SPRITE_SCALE,
-            );
+            let sprite = place_sprite((frame.position.x, frame.position.y), (width, height), scale);
 
             if tracing_frames {
                 // Unix milliseconds, so that a prop window opened by the
@@ -637,7 +817,7 @@ fn run_frame_loop(
                         y: local.y,
                         width,
                         height,
-                        animation: frame.animation,
+                        animation: drawn.animation,
                         frame_index: drawn.index,
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
@@ -752,8 +932,13 @@ fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
 }
 
 fn main() {
+    // Same Completer, no overlay. scripts/probe-model.sh is the face of this.
+    if std::env::args().any(|arg| arg == "--probe-model") {
+        std::process::exit(model::run_probe());
+    }
+
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![character])
+        .invoke_handler(tauri::generate_handler![character, director_payload])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
             // means no overlay. Reported and exited rather than returned as a
@@ -764,7 +949,10 @@ fn main() {
                 eprintln!("character: {why}");
                 std::process::exit(1);
             }));
-            app.manage(ArtUrls(art_urls(&character)));
+            app.manage(ArtUrls {
+                art: art_urls(&character),
+                smooth: character.smooth,
+            });
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.
@@ -798,8 +986,8 @@ fn main() {
                 "overlay: {} display(s); character {}; sprite {}x{}",
                 covered.len(),
                 character.name,
-                sprite_width as i32 * SPRITE_SCALE,
-                sprite_height as i32 * SPRITE_SCALE,
+                sprite_width as i32 * character.scale as i32,
+                sprite_height as i32 * character.scale as i32,
             );
 
             // Shared because the hotkey and the frame loop each see half of the
@@ -807,6 +995,19 @@ fn main() {
             // read on the loop's.
             let rules = Arc::new(Mutex::new(HideRules::default()));
             register_hide_hotkey(app.handle(), Arc::clone(&rules));
+
+            let config = model::config();
+            let inspect = Arc::new(Mutex::new(config.inspect()));
+            app.manage(Arc::clone(&inspect));
+            if config.enabled {
+                eprintln!(
+                    "director: model, ambient first {}s",
+                    config.ambient_first.as_secs()
+                );
+            } else if config.configured {
+                eprintln!("director: off; using StaticDirector");
+            }
+            let director_run = DirectorRun { config, inspect };
 
             run_frame_loop(
                 app.handle().clone(),
@@ -816,6 +1017,7 @@ fn main() {
                 rules,
                 start,
                 covered,
+                director_run,
             );
             Ok(())
         })

@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Draw the two shipped Characters, BMO and Nim.
+"""Draw Nim, the script-drawn shipped Character.
 
-The two exist to prove the Character Package format against real variance, so
-they are drawn by two different techniques rather than one technique twice:
-
-  * **BMO** is hard-edged flat art — eight colours, flat fills, no
-    anti-aliasing, and ordered dithering only where a shade between two of
-    those eight is genuinely wanted. Few frames, held hard.
-  * **Nim** is modern pixel art — a shaded ramp lit from the upper left, a
-    palette four times the size, translucent contact shadow, and enough
-    in-between frames that the motion reads as smooth rather than stepped.
+Nim is modern pixel art — a shaded ramp lit from the upper left, a translucent
+contact shadow, and enough in-between frames that the motion reads as smooth
+rather than stepped. BMO is not drawn here: its frames are static art cut from
+a game sprite sheet and quantised to a fixed palette (see
+characters/bmo/character.manifest), so the two shipped Characters still prove
+the format against real variance — one generated, one drawn by hand elsewhere.
 
 Pure standard library, as `make-blip-character.py` is and for the same
 reason: a build step that needs Pillow installed is a build step that stops
@@ -18,8 +15,8 @@ third file to import would cost more than the twelve lines it saves.
 
     python3 scripts/make-shipped-characters.py
 
-It rewrites characters/bmo/frames/ and characters/nim/frames/ in place.
-The manifests and the Personality Prompts are written by hand and never touched.
+It rewrites characters/nim/frames/ in place. The manifests, the Personality
+Prompts, and all of characters/bmo/ are written by hand and never touched.
 """
 
 import math
@@ -74,213 +71,6 @@ def png(px):
         + chunk(b"IDAT", zlib.compress(raw, 9))
         + chunk(b"IEND", b"")
     )
-
-
-# --------------------------------------------------------------------------
-# BMO — the little living console
-# --------------------------------------------------------------------------
-
-# Eight flat colours and nothing between them. A console moulded from coloured
-# plastic has no gradients in it, so anything wanting a shade between two of
-# these is dithered rather than mixed — and rarely, because BMO is one flat
-# shell rather than a lit box.
-MINT = (0x7A, 0xD4, 0xBE, 255)
-# The limbs, a step darker than the shell: in the source design BMO's arms and
-# legs are moulded from darker plastic than the body, and limbs drawn in MINT
-# read as part of the shell rather than hanging off it.
-LIMB = (0x58, 0xA9, 0x96, 255)
-DEEP = (0x3C, 0x8B, 0x7C, 255)
-GLASS = (0xE9, 0xF6, 0xEC, 255)
-INK = (0x1B, 0x2B, 0x33, 255)
-RED = (0xD8, 0x3A, 0x3A, 255)
-YELLOW = (0xF2, 0xC4, 0x3D, 255)
-BLUE = (0x3F, 0x7C, 0xD8, 255)
-
-PALETTE = {MINT, LIMB, DEEP, GLASS, INK, RED, YELLOW, BLUE}
-
-
-def dither(px, x0, y0, w, h, a, b):
-    """Two palette colours on a checkerboard — the only shade BMO is allowed."""
-    for y in range(y0, y0 + h):
-        for x in range(x0, x0 + w):
-            put(px, x, y, a if (x + y) % 2 == 0 else b)
-
-
-def rounded(px, x0, y0, w, h, fill, edge):
-    """A rounded rectangle with a hard one-pixel rim. The rim is what keeps a
-    mint shell legible on a pale desktop, where the fill alone washes out."""
-    rect(px, x0, y0, w, h, fill)
-    rect(px, x0, y0, w, 1, edge)
-    rect(px, x0, y0 + h - 1, w, 1, edge)
-    rect(px, x0, y0, 1, h, edge)
-    rect(px, x0 + w - 1, y0, 1, h, edge)
-    for x in (x0, x0 + w - 1):
-        for y in (y0, y0 + h - 1):
-            put(px, x, y, CLEAR)
-
-
-def face(px, bx, top, eyes, mouth, dim):
-    """The screen and the face inside it. This is the whole of BMO's
-    expression: everything else only tilts and bobs around it. The face is
-    sparse on purpose — two dark ovals set high and one shallow wide curve set
-    low, and nothing else drawn at all."""
-    rounded(px, bx + 2, top + 2, 14, 10, GLASS, DEEP)
-    if dim:
-        # Asleep the screen is turned down, not off — a difference one flat
-        # colour cannot say and a checkerboard of two can.
-        dither(px, bx + 3, top + 3, 12, 8, GLASS, MINT)
-
-    if eyes == "shut":
-        # Closed eyes are curves, or a sleeping BMO reads as a switched-off one.
-        for x in (bx + 4, bx + 10):
-            rect(px, x + 1, top + 5, 2, 1, INK)
-            put(px, x, top + 6, INK)
-            put(px, x + 3, top + 6, INK)
-    elif eyes == "wide":
-        # Startled eyes open upward and leave a clear row above the mouth. Grown
-        # downward instead they meet it, and the whole face becomes one smudge.
-        for x in (bx + 4, bx + 10):
-            rect(px, x, top + 3, 3, 4, INK)
-    else:
-        for x in (bx + 5, bx + 11):
-            rect(px, x, top + 4, 2, 3, INK)
-
-    if mouth == "open":
-        rect(px, bx + 7, top + 8, 4, 2, INK)
-    elif mouth == "wide":
-        # An open mouth is round, not a slab: four across with the corners off,
-        # set low enough that it never touches the wide eyes above it.
-        rect(px, bx + 7, top + 8, 4, 3, INK)
-        for y in (top + 8, top + 10):
-            put(px, bx + 7, y, CLEAR)
-            put(px, bx + 10, y, CLEAR)
-    elif mouth == "gasp":
-        rect(px, bx + 8, top + 8, 2, 3, INK)
-    elif mouth == "flat":
-        rect(px, bx + 7, top + 9, 4, 1, INK)
-    else:
-        # The signature: six pixels wide and two tall, the ends a pixel above
-        # the line. A deeper curve is a grin and a shorter one is a dot, and
-        # BMO is neither.
-        put(px, bx + 6, top + 8, INK)
-        rect(px, bx + 7, top + 9, 4, 1, INK)
-        put(px, bx + 11, top + 8, INK)
-
-
-def button(px, x, y, colour):
-    """Four across with the corners knocked off — the smallest circle this grid
-    can draw. Three across leaves a plus, which is the D-pad's shape and would
-    read as a second one."""
-    rect(px, x, y + 1, 4, 2, colour)
-    rect(px, x + 1, y, 2, 1, colour)
-    rect(px, x + 1, y + 3, 2, 1, colour)
-
-
-def panel(px, bx, top):
-    """What makes it a console rather than a green box: a navy D-pad, a red and
-    a blue button beside it, the yellow play triangle, and the cartridge slot.
-    Every one of them stands clear of its neighbours — crowded, they merge into
-    one coloured smudge at the size this is actually seen."""
-    rect(px, bx + 2, top + 15, 5, 1, INK)
-    rect(px, bx + 4, top + 13, 1, 5, INK)
-
-    button(px, bx + 8, top + 13, RED)
-    button(px, bx + 13, top + 13, BLUE)
-
-    for row, width in enumerate((1, 2, 1)):
-        rect(px, bx + 12, top + 18 + row, width, 1, YELLOW)
-
-    rect(px, bx + 2, top + 19, 6, 2, INK)
-
-
-def arm(px, x0, y, out, slope):
-    """A long thin arm: two pixels thick, sloping over its length, with a small
-    hand on the end. Long light limbs hung off a heavy shell are most of what
-    separates BMO from a green box with stumps, so they reach well clear of the
-    body rather than sitting flush against it."""
-    for i in range(4):
-        x = x0 + out * i
-        put(px, x, y + slope * (i // 2), LIMB)
-        put(px, x, y + slope * (i // 2) + 1, DEEP)
-    for x in (x0 + out * 4, x0 + out * 5):
-        rect(px, x, y + slope * 2, 1, 2, LIMB)
-        put(px, x, y + slope * 2 + 2, DEEP)
-
-
-def bmo(drop=0, eyes="open", mouth="smile", stride=0, lift=0, arms=0, swing=0, fold=False, dim=False):
-    """BMO, posed. `drop` lowers the body and shortens the legs to meet it, so
-    the feet stay on the bottom row however far down the body comes. `lift`
-    takes one foot off that row, which is the only thing that is allowed to."""
-    px = blank()
-    bx = 7
-    top = 3 + drop
-    bottom = top + 23
-
-    # A raised arm bends upward from the shoulder. Reusing the resting droop
-    # for it would put the hands below the elbows with the arms overhead.
-    slope = -1 if arms < 0 else 1
-    for x0, out in ((bx - 1, -1), (bx + 18, 1)):
-        arm(px, x0, top + 12 + arms + swing * out, out, slope)
-
-    rounded(px, bx, top, 18, 24, MINT, DEEP)
-    # The one shade on the shell, and the only place one is wanted: the underside
-    # of a moulded case turns away from everything that lights it.
-    dither(px, bx + 1, bottom - 2, 16, 2, MINT, DEEP)
-    face(px, bx, top, eyes, mouth, dim)
-    panel(px, bx, top)
-
-    if fold:
-        # Sitting, the legs are under BMO rather than beside it: one block
-        # where two thin supports were.
-        rect(px, 10, bottom + 1, 12, GROUND - bottom, LIMB)
-    else:
-        for side, x in ((-1, 11 - stride), (1, 19 + stride)):
-            # A leg that swings through is a leg off the floor. Two pixels is
-            # the whole of it at this size, and it is what separates a stride
-            # from both feet sliding apart and back.
-            sole = GROUND - (2 if lift == side else 0)
-            rect(px, x, bottom + 1, 2, sole - bottom - 1, LIMB)
-            rect(px, x, sole - 1, 2, 2, DEEP)
-    return px
-
-
-def bmo_animations():
-    """BMO's nine Animations. Two to four frames each, cut fast: a handheld
-    answers the instant a button is pressed, and the frame counts are where
-    that reads. What changes between frames is mostly the face."""
-    return {
-        "idle": [bmo(), bmo(drop=1)],
-        # A gait is a bob, not a lean: the body sits low with both feet planted
-        # and rises as one leg swings under it. Four poses, none repeated, or
-        # the cycle reads as the two it actually draws.
-        "walk": [
-            bmo(drop=1, stride=2, swing=2),
-            bmo(stride=-1, lift=-1),
-            bmo(drop=1, stride=2, swing=-2),
-            bmo(stride=-1, lift=1),
-        ],
-        "fall": [
-            bmo(drop=-1, arms=-6, eyes="wide", mouth="gasp", stride=2),
-            bmo(arms=-5, eyes="wide", mouth="gasp", stride=1),
-        ],
-        "land": [bmo(drop=4, eyes="shut", mouth="wide", stride=2), bmo(drop=1)],
-        "sit": [bmo(drop=4, fold=True), bmo(drop=4, fold=True, eyes="shut")],
-        # Lower than a sit, arms down the sides: gripping a moving Perch, not
-        # resting on a still one.
-        "hold": [
-            bmo(drop=5, fold=True, arms=1, eyes="wide"),
-            bmo(drop=5, fold=True, arms=2, eyes="wide"),
-        ],
-        "sleep": [
-            bmo(drop=4, fold=True, eyes="shut", mouth="flat", dim=True),
-            bmo(drop=5, fold=True, eyes="shut", mouth="flat", dim=True),
-        ],
-        "react": [
-            bmo(drop=-1, arms=-3, eyes="wide", mouth="gasp"),
-            bmo(arms=-1, eyes="wide", mouth="wide"),
-        ],
-        "talk": [bmo(mouth="open"), bmo(drop=1, mouth="wide"), bmo(mouth="smile")],
-    }
 
 
 # --------------------------------------------------------------------------
@@ -552,23 +342,17 @@ def write(name, animations):
 
 
 def main():
-    bmo_art = bmo_animations()
     nim_art = nim_animations()
 
-    # The check the styles are held to. BMO is flat and hard-edged and Nim is
-    # neither, and a stray colour in either is the failure this file exists to
-    # make impossible: two Characters that differ only in their palette are the
-    # reskin #9 says is not good enough.
-    used = colours(bmo_art) - {CLEAR}
-    assert used <= PALETTE, f"BMO drew outside its palette: {used - PALETTE}"
-    assert all(colour[3] == 255 for colour in used), "BMO drew a soft edge"
+    # The check the style is held to: a shaded ramp, not a flat reskin — two
+    # Characters that differ only in their palette are the reskin #9 says is
+    # not good enough.
     assert len(colours(nim_art) - {CLEAR}) > 16, "Nim fits in a sixteen-colour palette"
 
-    for name, art in (("bmo", bmo_art), ("nim", nim_art)):
-        assert set(art) == {
-            "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold"
-        }
-        write(name, art)
+    assert set(nim_art) == {
+        "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold"
+    }
+    write("nim", nim_art)
 
 
 if __name__ == "__main__":

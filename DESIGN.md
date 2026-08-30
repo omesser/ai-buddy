@@ -21,9 +21,11 @@ The **Functional Layer** is invoked, asynchronous, and does the real work. It is
 reached by Summoning the buddy. It performs actions through an external Harness
 the user attaches. ai-buddy never bundles one.
 
-The **Director** sits between them. It is an occasional model call that observes
-context and proposes a Behavior. It never runs in the frame loop and never
-drives animation directly.
+The **Director** sits between them. It proposes a Behavior. Static weights
+fill that role when nothing is attached. An attached Harness fills it from
+the same conversation as chat — one session, not a second model. It never
+runs in the frame loop and never drives animation directly. See
+[ADR-0008](./docs/adr/0008-one-harness-session.md).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -120,17 +122,22 @@ afternoon. WindowPet's implementation is the reference.
 
 ### 5. The Director proposes; it never animates
 
-The model wakes occasionally — on a timer, or on a notable event such as a new
-frontmost app or a long idle — and emits a short Behavior for the local engine
-to play cheaply. It is never in the frame loop.
+The model wakes occasionally and emits a short Behavior for the local engine
+to play cheaply. It is never in the frame loop. Who the model is, and how
+rare a wake is, is [ADR-0008](./docs/adr/0008-one-harness-session.md): an
+attached Harness is the Director and chat; a session wake is reactive or
+exponentially backed-off, and silent while the display is asleep.
 
 Rejected:
 
 - **Prompt-at-authoring only** (character prompt compiles to static weights, no
-  runtime model) — kept as the configurable fallback, so the buddy still has a
-  life when offline or when no key is present.
+  runtime model) — kept as the fallback when no Harness is attached, when the
+  Director is off, and when a session call fails.
 - **Model in the loop** — paying tokens for a cartoon to decide to scratch
   itself. Unusable battery, cost, and latency.
+- **A second inference API beside the Harness** — two minds. The HTTP
+  Completer in #11 is a stand-in for that Harness session, not a product
+  surface.
 
 This is the decision that keeps the character visibly alive while the Functional
 Layer is thinking, which is exactly where a naive design looks broken.
@@ -213,6 +220,29 @@ stepping up would strand it somewhere the user cannot see it. The floor is
 exempt, because every window behind the Dock hangs below it and a sprite on the
 ground in front of a window is not trapped in anything.
 
+**A moving Perch carries the sprite.** Standing on a platform that moves means
+moving with it, so a window dragged down, up or sideways takes the sprite along
+at the place it held on the edge. The rule this replaces dropped the sprite the
+moment its Perch shifted, which only ever looked right for a downward drag,
+where the sprite re-landed on the edge it had just lost; moved up or sideways,
+the window left it behind in mid-air. Riding changes position and never
+velocity, or flinging a window across the desktop would launch the sprite
+ballistically.
+
+What breaks the grip is the jerk and not the speed. The sprite rides while the
+edge's speed changes gently, and is left standing where it was — falling from
+there — when it changes faster than the ride gate: a yank, a maximize, a window
+flung across the screen. A top speed is the obvious alternative and it is the
+wrong one, because a fast drag that started smoothly is still something to hold
+on to. The gate compares against the edge's speed of a tenth of a second ago
+rather than the previous frame's, since at 16 ms the window server's own jitter
+reads as a yank. The number is tuned against a real dragged window, not derived.
+
+The window under the sprite is matched between polls by its size and nearest
+position, because the snapshot carries geometry and no window identity. A
+resized window is therefore a different window, and the sprite falls off it as
+it would off one that closed.
+
 Occlusion is a landing rule and never a resting one. An edge hidden behind a
 window in front of it is nowhere to land, but a sprite already standing on one
 stays there: raising a window over a Perch moves nothing, and re-deriving
@@ -233,15 +263,15 @@ desktop level. One window cannot be both, and restacking dynamically by sprite
 state produces flicker on every platform. Peeking out from behind windows is
 given up deliberately.
 
-The investment goes into **hide rules** instead: fade out when a fullscreen app
-is frontmost, and go at once when the user asks. A companion that knows when to
-disappear is the difference between a pet and malware.
+The investment goes into **hide rules** instead: fullscreen frontmost and the
+hotkey. A companion that knows when to disappear is the difference between a pet
+and malware.
 
-Do Not Disturb is not one of them. Being quiet is not being gone: it means the
-Character stops starting things — no proposals, nothing said unprompted — while
-it stays on screen and can still be picked up. That is its own mode. Screen
-capture is not one either: the overlay is excluded from every capture at the
-window level, so there is nothing to fade.
+Do Not Disturb is not a hide rule. Being quiet is not being gone: the Character
+stays visible and stops starting things — Director proposals are refused and
+unprompted dialogue is not spoken — while Poke, Grab, and Throw still work. That
+is #84. Screen capture is not a hide rule either: the overlay is excluded from
+every capture at the window level, so there is nothing to fade.
 
 ### 9. Sensing: no permissions until they buy something
 
@@ -396,9 +426,10 @@ space.
   multi-monitor, tray
 - Character Package format, engine Primitives, declarative Behaviors
 - Two shipped Characters, 8 required animations each
-- Director on the free sensing tier — frontmost app name, idle duration, time of
-  day, recent Behaviors, Personality Prompt. No permissions required.
-- Static-weights fallback when no model is configured
+- Director on the free sensing tier — Character Prompt once, then short
+  follow-ups (what just happened, time of day, State, frontmost window,
+  recent Behaviors). No permissions required.
+- Static-weights fallback when no Harness is attached
 - MCP server and Harness attach
 - Chat surface
 - Memory
@@ -415,8 +446,8 @@ ai-buddy Executor, an undo system, a provider abstraction layer, per-Instance
 memory.
 
 With nothing configured, ai-buddy is a complete product: spatial layer, physics,
-Director, ambient reactions, and a nudge to connect a Harness. No API key, no
-subscription, no permission prompts. That state is the default demo.
+Static Director, ambient reactions, and a nudge to connect a Harness. No API
+key, no subscription, no permission prompts. That state is the default demo.
 
 ## Prior art
 

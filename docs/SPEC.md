@@ -35,13 +35,13 @@ every visible window as a **Perch** it can land on and walk along. It needs no
 permissions, no API key, no network, and no Harness. With nothing configured at all,
 ai-buddy is still a complete product.
 
-The **Director** gives the character a life. It is an occasional model call that observes
-low-cost context — the frontmost application's name, how long you have been idle, the
-time of day, what the buddy has done recently — and proposes a **Behavior** for the local
-engine to play. It never runs in the frame loop and never drives animation directly, so
-the character stays visibly alive while anything else is slow or unavailable. With no
-model configured, the same engine runs on static weights and the character still has a
-life, just a less varied one.
+The **Director** gives the character a life. It observes low-cost context — the
+frontmost application's name, how long you have been idle, the time of day, what
+the buddy has done recently — and proposes a **Behavior** for the local engine to
+play. It never runs in the frame loop and never drives animation directly, so the
+character stays visibly alive while anything else is slow or unavailable. Static
+weights fill the role when no Harness is attached. An attached Harness fills it
+from the same conversation as chat. See [ADR-0008](./adr/0008-one-harness-session.md).
 
 The **Functional Layer** is invoked deliberately. ai-buddy exposes an MCP server of
 buddy-side tools and attaches a **Harness** the user supplies. The Harness reasons and
@@ -117,8 +117,9 @@ that adding a character is drawing, not programming.
     does not appear in my video or my presentation.
 26. As a user, I want the buddy to hide during screen sharing, so that I do not have to
     explain it in a meeting.
-27. As a user, I want the buddy to respect Do Not Disturb, so that it is quiet when I have
-    said I want quiet.
+27. As a user, I want the buddy to respect Do Not Disturb (#84), so that it stays visible
+    but quiet — proposals are refused and unprompted dialogue is not spoken — while Poke,
+    Grab, and Throw still work.
 28. As a user, I want a hotkey that hides and shows the buddy instantly, so that I can
     banish it without opening settings.
 
@@ -140,8 +141,8 @@ that adding a character is drawing, not programming.
     feels different from the morning.
 36. As a user, I want the buddy not to repeat the same behavior over and over, so that it
     does not become obviously mechanical.
-37. As a user with no model configured, I want the buddy to still have idle life, so that
-    the app is worth running offline or without a key.
+37. As a user with no Harness attached, I want the buddy to still have idle life, so that
+    the app is worth running offline or without an agent.
 38. As a user, I want the buddy to keep moving and reacting while the model is thinking,
     so that latency never makes it look frozen or broken.
 39. As a user, I want to spawn more than one buddy, so that I can have several on screen.
@@ -216,8 +217,8 @@ that adding a character is drawing, not programming.
     for myself what leaves my machine.
 69. As a user, I want to turn the Director off entirely and keep the static-weights
     fallback, so that I can run the buddy with no model calls at all.
-70. As a user, I want to control how often the Director wakes, so that I can trade
-    liveliness against cost.
+70. As a user, I want ambient Director wakes to stay cheap — backoff, and none while
+    the display is asleep — so that liveliness does not mean a heartbeat bill.
 71. As a user, I want ai-buddy to update itself, so that I do not have to track releases.
 
 ## Implementation Decisions
@@ -361,22 +362,34 @@ knowledge.
 
 ### Director
 
-A trait returning an optional Behavior proposal given a context record. The Shell wakes it
-on a timer and on notable events: the frontmost application changed, idle duration crossed
-a threshold, or the buddy has been in one State beyond a bound.
+A trait returning an optional Behavior proposal given a context record.
 
-v1 context is the free sensing tier only — frontmost application name, idle duration, time
-of day, recent Behavior identifiers, and the active Character's Personality Prompt. No
-window titles, no screen capture, no clipboard, no input contents.
+v1 context is the free sensing tier only — frontmost application name, time of
+day, State, what just happened, what the feet stand on (window owner, display
+floor above the Dock, or screen edge), recent Behavior identifiers, and the
+active Character's Personality Prompt (opening turn only). No window titles, no
+screen capture, no clipboard, no input contents. Window titles need Screen
+Recording; the Perch is named by owning application instead.
 
-The exact payload is the Character Prompt, inspectable in settings.
+The opening payload is the Character Prompt. Later session turns are a short
+follow-up. Both are inspectable in settings as the last user turn.
 
 Two implementations ship:
 
 - **Static** — weighted selection over the Character's declared Behaviors using their
-  trigger conditions. No model, no network. Used when no model is configured, when the
-  Director is disabled, and as the fallback on any Director error or timeout.
-- **Model-backed** — proposes a Behavior identifier plus optional dialogue.
+  trigger conditions. No model, no network. Used when no Harness is attached, when the
+  Director is disabled, and as the fallback on any session error or timeout. The Shell
+  may wake it often: the path is free.
+- **Session** — an attached Harness, the same conversation as chat. Proposes a Behavior
+  identifier plus optional dialogue. A reply that is not a declared Behavior is
+  spoken (`say:`) and starts nothing; #17 will put that in a bubble. Until a
+  Harness exists, an HTTP Completer stands in behind the same trait
+  ([ADR-0008](./adr/0008-one-harness-session.md)).
+
+A session wake is reactive (the user addressed the buddy: Poke, Throw, Grab
+start, landing on a Perch, Summon, a chat turn) or ambient (exponential
+backoff). It does not run on a fixed interval, and it does not run while the
+display is asleep.
 
 A proposal is advisory. The Engine may refuse it if the proposed Behavior is unknown,
 disallowed in the current State, or would repeat a recently played Behavior. Recent

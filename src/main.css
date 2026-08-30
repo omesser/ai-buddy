@@ -28,7 +28,9 @@ body {
      sprite's width is always even (art width times an integer scale), so the
      mirrored pixels stay on the grid. */
   transform-origin: center;
-  /* ADR-0006: true pixel art, nearest-neighbour, integer scale factors only. */
+  /* ADR-0006: true pixel art, nearest-neighbour, integer scale factors
+     only. A Character declaring render_mode = "smooth" overrides this from
+     main.js. */
   image-rendering: pixelated;
   -webkit-user-drag: none;
   /* Hidden until the Rust side says where the Character goes. The webview holds
