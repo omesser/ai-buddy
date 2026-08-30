@@ -102,6 +102,24 @@ cargo run
 Session calls stay quiet while the main display is asleep. #18 will bind these
 in settings.
 
+A 403 from xAI is the server refusing the key, not a bad JSON body (that is
+a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai);
+`/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that
+requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries
+chat-completions if Responses returns 403 or 404.
+
+`scripts/probe-model.sh` hits the same Completer without starting the
+overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST
+paths. Same env as `cargo run`. It prints status and body, never the key.
+Later this is also how to check a Harness is reachable.
+
+```sh
+AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
+AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+scripts/probe-model.sh
+```
+
 ## Development
 
 ### Toolchains
@@ -206,10 +224,10 @@ frames — state, position and animation, once per tick. Both trace in the point
 space every display shares, so the positions they report are comparable with
 what the window server says about any display.
 
-`AI_BUDDY_TRACE_DIRECTOR=1` prints each session wake: the URL and model, the
-Character Prompt, the raw HTTP body, the extracted text, and whether that
-parsed into a Behavior (or fell back to Static). Off unless asked — a prompt
-is a paragraph. Poke the sprite to force a wake.
+`AI_BUDDY_TRACE_DIRECTOR=1` prints each session wake: `--- prompt ---` is
+what we sent, `--- model ---` is the reply, then whether that played as a
+Behavior (or fell back to Static). Off unless asked. Poke, throw, pick up,
+or place on a Perch to force a wake.
 
 There is one overlay per display and every one of them is told where the
 sprite is, so the trace is one line per tick rather than one per overlay. Which

@@ -527,6 +527,9 @@ mod tests {
             },
             recent: Vec::new(),
             personality: character.personality.clone(),
+            state: ai_buddy_core::engine::State::Grounded,
+            happened: ai_buddy_core::director::Happened::Ambient,
+            standing: String::new(),
         };
 
         (0..64)

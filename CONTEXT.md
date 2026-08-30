@@ -30,10 +30,10 @@ and given to the Director. Governs demeanour only, never capability.
 _Avoid_: System prompt — that is the Character Prompt, which carries this and more
 
 **Character Prompt**:
-The payload assembled for one Director wake: Personality Prompt, sensing
-context, and recent Behavior identifiers. When a Harness is attached it
-enters that conversation, not a second model. Inspectable in settings, never
-authored by hand.
+The opening turn of the Director session: Personality Prompt, the Behaviors
+it may propose, and this moment. Later wakes send a short follow-up (what
+just happened, recent Behaviors, time of day, State, frontmost window) in
+the same conversation. Inspectable in settings, never authored by hand.
 _Avoid_: Persona, preamble, prompt template
 
 **Animation**:

@@ -8,7 +8,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -28,6 +28,15 @@ const TRACE: &str = "AI_BUDDY_TRACE_DIRECTOR";
 /// else. Same gate as the hit-test and frame traces.
 pub fn tracing() -> bool {
     std::env::var_os(TRACE).is_some()
+}
+
+fn trace_block(which: &str, text: &str) {
+    eprintln!("director: --- {which} ---");
+    eprint!("{text}");
+    if !text.ends_with('\n') {
+        eprintln!();
+    }
+    eprintln!("director: --- end {which} ---");
 }
 
 const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
@@ -73,9 +82,7 @@ impl DirectorConfig {
 
 /// Read Director config from the env. No API key means `StaticDirector` only.
 pub fn config() -> DirectorConfig {
-    let configured = std::env::var(API_KEY)
-        .ok()
-        .is_some_and(|key| !key.is_empty());
+    let configured = secret_key().is_some();
     let enabled = configured && !off();
     DirectorConfig {
         enabled,
@@ -83,6 +90,20 @@ pub fn config() -> DirectorConfig {
         wake_every: WAKE_EVERY,
         ambient_first: wake_secs().unwrap_or(Pace::FIRST),
     }
+}
+
+/// Strip wrapping quotes and whitespace. `.env` files quote keys; a
+/// trailing newline is enough to 401 a Bearer token.
+fn trim_key(raw: &str) -> Option<String> {
+    let key = raw
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'')
+        .to_string();
+    (!key.is_empty()).then_some(key)
+}
+
+fn secret_key() -> Option<String> {
+    std::env::var(API_KEY).ok().and_then(|raw| trim_key(&raw))
 }
 
 fn off() -> bool {
@@ -100,7 +121,7 @@ fn wake_secs() -> Option<Duration> {
 
 /// An OpenAI-compatible chat Completer, or `None` when no key is set.
 pub fn endpoint() -> Option<Endpoint> {
-    let api_key = std::env::var(API_KEY).ok().filter(|key| !key.is_empty())?;
+    let api_key = secret_key()?;
     let base = std::env::var(BASE_URL).unwrap_or_else(|_| DEFAULT_BASE.to_string());
     let model = std::env::var(MODEL).unwrap_or_else(|_| DEFAULT_MODEL.to_string());
     Some(Endpoint {
@@ -108,6 +129,7 @@ pub fn endpoint() -> Option<Endpoint> {
         url: completions_url(&base),
         model,
         timeout: TIMEOUT,
+        session: Mutex::new(Vec::new()),
     })
 }
 
@@ -146,22 +168,118 @@ fn uses_responses(url: &str) -> bool {
     url.contains("/responses")
 }
 
+#[derive(Clone)]
+struct Message {
+    role: &'static str,
+    content: String,
+}
+
 pub struct Endpoint {
     api_key: String,
     url: String,
     model: String,
     timeout: Duration,
+    /// Opening + replies, so a follow-up can be short. ADR-0008.
+    session: Mutex<Vec<Message>>,
 }
 
-impl Completer for Endpoint {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
-        if tracing() {
-            eprintln!("director: POST {} model={}", self.url, self.model);
-            eprintln!("director: prompt\n{prompt}");
+impl Endpoint {
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    pub fn is_xai(&self) -> bool {
+        host_is_xai(&self.url)
+    }
+
+    /// Length and last four. Enough to tell two keys apart, not enough to use.
+    pub fn key_fingerprint(&self) -> String {
+        let n = self.api_key.len();
+        let last = if n >= 4 {
+            &self.api_key[n - 4..]
+        } else {
+            "****"
+        };
+        format!("len={n} last={last}")
+    }
+
+    pub fn origin(&self) -> String {
+        origin(&self.url)
+    }
+
+    /// The other xAI inference path, if this URL has one.
+    ///
+    /// Keys are granted per-endpoint. `/v1/responses` is current; many console
+    /// keys only have the legacy chat-completions ACL, which is a 403 rather
+    /// than a 400. The probe hits both; `complete` retries the other on 403/404.
+    pub fn alternate_url(&self) -> Option<String> {
+        alternate_url(&self.url)
+    }
+
+    /// GET `url`. Non-2xx is still `Ok` — the status and body are the answer.
+    pub fn get(&self, url: &str) -> Result<(u16, String), String> {
+        let request = self.headers(ureq::get(url));
+        match request.call() {
+            Ok(response) => read_ok(response),
+            Err(ureq::Error::Status(code, response)) => read_status(code, response),
+            Err(error) => Err(error.to_string()),
         }
-        let body = request_body(&self.model, prompt, uses_responses(&self.url));
-        let mut request = ureq::post(&self.url)
-            .set("Content-Type", "application/json")
+    }
+
+    /// POST `url` with the body that path expects. Used by the probe so a
+    /// 403 on `/v1/responses` is visible next to a 200 on chat-completions.
+    pub fn post(&self, url: &str, prompt: &str) -> Result<String, String> {
+        let snapshot = {
+            let mut session = self.session.lock().expect("session lock");
+            session.push(Message {
+                role: "user",
+                content: prompt.to_string(),
+            });
+            session.clone()
+        };
+        let body = request_body(&self.model, &snapshot, uses_responses(url));
+        let request = self
+            .headers(ureq::post(url))
+            .set("Content-Type", "application/json");
+        let text = match request.send_json(body) {
+            Ok(response) => {
+                let (_, text) = read_ok(response)?;
+                text
+            }
+            Err(ureq::Error::Status(code, response)) => {
+                self.session.lock().expect("session lock").pop();
+                let (_, text) = read_status(code, response)?;
+                return Err(status_error(url, code, &text));
+            }
+            Err(error) => {
+                self.session.lock().expect("session lock").pop();
+                return Err(error.to_string());
+            }
+        };
+        match content_from_body(&text) {
+            Ok(content) => {
+                self.session.lock().expect("session lock").push(Message {
+                    role: "assistant",
+                    content: content.clone(),
+                });
+                Ok(content)
+            }
+            Err(error) => {
+                self.session.lock().expect("session lock").pop();
+                Err(format!("{url}: {error}"))
+            }
+        }
+    }
+
+    fn headers(&self, mut request: ureq::Request) -> ureq::Request {
+        // ureq's default UA gets a WAF 403 on some edges; name ourselves.
+        request = request
+            .set("User-Agent", "ai-buddy")
+            .set("Accept", "application/json")
             .timeout(self.timeout);
         if !self.api_key.is_empty() {
             request = request.set("Authorization", &format!("Bearer {}", self.api_key));
@@ -174,45 +292,217 @@ impl Completer for Endpoint {
                 request = request.set("x-api-key", &self.api_key);
             }
         }
-        let response = request.send_json(body).map_err(|error| {
-            if tracing() {
-                eprintln!("director: http {error}");
-            }
-            error.to_string()
-        })?;
-        let text = response.into_string().map_err(|error| error.to_string())?;
+        request
+    }
+}
+
+impl Completer for Endpoint {
+    fn complete(&self, prompt: &str) -> Result<String, String> {
         if tracing() {
-            eprintln!("director: body\n{text}");
+            eprintln!("director: sending POST {} model={}", self.url, self.model);
+            trace_block("prompt", prompt);
+            eprintln!("director: waiting for model");
         }
-        match content_from_body(&text) {
+        match self.post(&self.url, prompt) {
             Ok(content) => {
                 if tracing() {
-                    eprintln!("director: content\n{content}");
+                    trace_block("model", &content);
                 }
                 Ok(content)
             }
             Err(error) => {
                 if tracing() {
-                    eprintln!("director: extract {error}");
+                    eprintln!("director: http {error}");
                 }
-                Err(error)
+                if let Some(alt) = fallback_url(&self.url, &error) {
+                    if tracing() {
+                        eprintln!("director: trying {alt}");
+                    }
+                    match self.post(&alt, prompt) {
+                        Ok(content) => {
+                            if tracing() {
+                                trace_block("model", &content);
+                            }
+                            Ok(content)
+                        }
+                        Err(alt_error) => {
+                            if tracing() {
+                                eprintln!("director: http {alt_error}");
+                            }
+                            Err(alt_error)
+                        }
+                    }
+                } else {
+                    Err(error)
+                }
             }
         }
     }
 }
 
-fn request_body(model: &str, prompt: &str, responses: bool) -> serde_json::Value {
+fn origin(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let host = rest.split('/').next().unwrap_or(rest);
+    format!("{scheme}://{host}")
+}
+
+fn alternate_url(url: &str) -> Option<String> {
+    if !host_is_xai(url) {
+        return None;
+    }
+    if uses_responses(url) {
+        Some(url.replacen("/responses", "/chat/completions", 1))
+    } else if url.contains("/chat/completions") {
+        Some(url.replacen("/chat/completions", "/responses", 1))
+    } else {
+        None
+    }
+}
+
+/// Retry the legacy xAI path only when Responses was refused, not when the
+/// body was wrong (400) or the key was unknown (401).
+fn fallback_url(url: &str, error: &str) -> Option<String> {
+    let refused = error.contains("status 403") || error.contains("status 404");
+    (refused && uses_responses(url)).then(|| url.replacen("/responses", "/chat/completions", 1))
+}
+
+fn status_error(url: &str, code: u16, body: &str) -> String {
+    const CAP: usize = 400;
+    let body = body.trim();
+    if body.is_empty() {
+        format!("{url}: status {code}")
+    } else if body.len() > CAP {
+        format!("{url}: status {code} {}…", &body[..CAP])
+    } else {
+        format!("{url}: status {code} {body}")
+    }
+}
+
+fn read_ok(response: ureq::Response) -> Result<(u16, String), String> {
+    let code = response.status();
+    let text = response.into_string().map_err(|error| error.to_string())?;
+    Ok((code, text))
+}
+
+fn read_status(code: u16, response: ureq::Response) -> Result<(u16, String), String> {
+    let text = response.into_string().unwrap_or_default();
+    Ok((code, text))
+}
+
+/// Truncate a provider body for a terminal. The probe prints these; a WAF
+/// HTML page should not scroll the useful lines off the screen.
+fn clip_body(body: &str) -> String {
+    const CAP: usize = 400;
+    let body = body.trim();
+    if body.len() > CAP {
+        format!("{}…", &body[..CAP])
+    } else {
+        body.to_string()
+    }
+}
+
+const PING: &str = "Reply with the single word pong and nothing else.";
+
+/// Same Completer the overlay uses, without starting the overlay.
+///
+/// `scripts/probe-model.sh` is the face of this. Later a Harness attach
+/// (#16) can share the command: same env, same exit codes, a second hop.
+pub fn run_probe() -> i32 {
+    let Some(endpoint) = endpoint() else {
+        eprintln!("probe-model: no AI_BUDDY_DIRECTOR_API_KEY");
+        return 2;
+    };
+
+    println!("probe-model");
+    println!("  url    {}", endpoint.url());
+    println!("  model  {}", endpoint.model());
+    println!("  key    {}", endpoint.key_fingerprint());
+    println!();
+
+    let origin = endpoint.origin();
+    probe_get(&endpoint, &format!("{origin}/v1/models"));
+    if endpoint.is_xai() {
+        probe_get(&endpoint, &format!("{origin}/v1/api-key"));
+    }
+
+    let mut ok = probe_post(&endpoint, endpoint.url());
+    if let Some(alt) = endpoint.alternate_url() {
+        ok = probe_post(&endpoint, &alt) || ok;
+    }
+
+    if ok {
+        0
+    } else {
+        if endpoint.is_xai() {
+            eprintln!(
+                "The body above is the answer. 401 is a bad Bearer. \
+                 403 is credits, a key ACL, or team mTLS."
+            );
+        }
+        1
+    }
+}
+
+fn probe_get(endpoint: &Endpoint, url: &str) {
+    println!("GET {url}");
+    match endpoint.get(url) {
+        Ok((code, body)) => println!("  {code} {}", clip_body(&body)),
+        Err(error) => println!("  transport {error}"),
+    }
+    println!();
+}
+
+fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
+    println!("POST {url}");
+    match endpoint.post(url, PING) {
+        Ok(text) => {
+            println!("  ok {}", clip_body(&text));
+            println!();
+            true
+        }
+        Err(error) => {
+            println!("  {}", clip_body(&error));
+            println!();
+            false
+        }
+    }
+}
+
+fn request_body(model: &str, session: &[Message], responses: bool) -> serde_json::Value {
+    let input = if responses && session.len() == 1 {
+        // xAI's first-request example is `input` as a string. Later turns
+        // use the role/content array so the opening is not sent again as
+        // a new conversation.
+        serde_json::Value::String(session[0].content.clone())
+    } else {
+        serde_json::Value::Array(
+            session
+                .iter()
+                .map(|message| {
+                    serde_json::json!({
+                        "role": message.role,
+                        "content": message.content,
+                    })
+                })
+                .collect(),
+        )
+    };
     if responses {
         serde_json::json!({
             "model": model,
-            "input": [{"role": "user", "content": prompt}],
+            "input": input,
             "max_output_tokens": 80,
             "store": false,
+            // grok-4.6 defaults to high: 16s and hundreds of think tokens
+            // for a two-line Behavior pick.
+            "reasoning": { "effort": "low" },
         })
     } else {
         serde_json::json!({
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": input,
             "max_tokens": 80,
         })
     }
@@ -321,11 +611,37 @@ mod tests {
 
     #[test]
     fn a_responses_request_uses_input_and_does_not_store() {
-        let body = request_body("grok-4.6", "wave", true);
-        assert_eq!(body["input"][0]["content"], "wave");
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        let body = request_body("grok-4.6", &session, true);
+        assert_eq!(body["input"], "wave");
         assert_eq!(body["max_output_tokens"], 80);
         assert_eq!(body["store"], false);
+        assert_eq!(body["reasoning"]["effort"], "low");
         assert!(body.get("messages").is_none());
+    }
+
+    #[test]
+    fn a_follow_up_responses_request_sends_the_session() {
+        let session = [
+            Message {
+                role: "user",
+                content: "hello".to_string(),
+            },
+            Message {
+                role: "assistant",
+                content: "wave".to_string(),
+            },
+            Message {
+                role: "user",
+                content: "what just happened: thrown".to_string(),
+            },
+        ];
+        let body = request_body("grok-4.6", &session, true);
+        assert_eq!(body["input"][2]["content"], "what just happened: thrown");
+        assert!(body["input"].is_array());
     }
 
     #[test]
@@ -359,5 +675,44 @@ mod tests {
             "https://api.x.ai/v1/chat/completions",
             "an explicit legacy path is honoured"
         );
+        assert_eq!(
+            completions_url("https://mtls.api.x.ai"),
+            "https://mtls.api.x.ai/v1/responses"
+        );
+    }
+
+    #[test]
+    fn a_quoted_key_is_trimmed() {
+        assert_eq!(trim_key("  sk-abc\n").as_deref(), Some("sk-abc"));
+        assert_eq!(trim_key("\"sk-abc\"").as_deref(), Some("sk-abc"));
+        assert_eq!(trim_key("   ").as_deref(), None);
+    }
+
+    #[test]
+    fn xai_has_a_legacy_alternate_and_openai_does_not() {
+        assert_eq!(
+            alternate_url("https://api.x.ai/v1/responses").as_deref(),
+            Some("https://api.x.ai/v1/chat/completions")
+        );
+        assert_eq!(
+            alternate_url("https://api.openai.com/v1/chat/completions"),
+            None
+        );
+    }
+
+    #[test]
+    fn responses_falls_back_only_when_refused() {
+        let url = "https://api.x.ai/v1/responses";
+        assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 403 {}").is_some());
+        assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 404").is_some());
+        assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 401").is_none());
+        assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 400").is_none());
+    }
+
+    #[test]
+    fn a_status_error_keeps_the_body() {
+        let error = status_error("https://api.x.ai/v1/responses", 403, " {\"error\":\"no\"} ");
+        assert!(error.contains("status 403"));
+        assert!(error.contains("\"error\":\"no\""));
     }
 }

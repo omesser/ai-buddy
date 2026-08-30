@@ -363,11 +363,15 @@ knowledge.
 
 A trait returning an optional Behavior proposal given a context record.
 
-v1 context is the free sensing tier only — frontmost application name, idle duration, time
-of day, recent Behavior identifiers, and the active Character's Personality Prompt. No
-window titles, no screen capture, no clipboard, no input contents.
+v1 context is the free sensing tier only — frontmost application name, time of
+day, State, what just happened, what the feet stand on (window owner, display
+floor above the Dock, or screen edge), recent Behavior identifiers, and the
+active Character's Personality Prompt (opening turn only). No window titles, no
+screen capture, no clipboard, no input contents. Window titles need Screen
+Recording; the Perch is named by owning application instead.
 
-The exact payload is the Character Prompt, inspectable in settings.
+The opening payload is the Character Prompt. Later session turns are a short
+follow-up. Both are inspectable in settings as the last user turn.
 
 Two implementations ship:
 
@@ -376,12 +380,15 @@ Two implementations ship:
   Director is disabled, and as the fallback on any session error or timeout. The Shell
   may wake it often: the path is free.
 - **Session** — an attached Harness, the same conversation as chat. Proposes a Behavior
-  identifier plus optional dialogue. Until a Harness exists, an HTTP Completer stands
-  in behind the same trait ([ADR-0008](./adr/0008-one-harness-session.md)).
+  identifier plus optional dialogue. A reply that is not a declared Behavior is
+  spoken (`say:`) and starts nothing; #17 will put that in a bubble. Until a
+  Harness exists, an HTTP Completer stands in behind the same trait
+  ([ADR-0008](./adr/0008-one-harness-session.md)).
 
-A session wake is reactive (the user addressed the buddy: Poke, Summon, a chat turn)
-or ambient (exponential backoff). It does not run on a fixed interval, and it does
-not run while the display is asleep.
+A session wake is reactive (the user addressed the buddy: Poke, Throw, Grab
+start, landing on a Perch, Summon, a chat turn) or ambient (exponential
+backoff). It does not run on a fixed interval, and it does not run while the
+display is asleep.
 
 A proposal is advisory. The Engine may refuse it if the proposed Behavior is unknown,
 disallowed in the current State, or would repeat a recently played Behavior. Recent

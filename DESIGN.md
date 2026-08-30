@@ -403,8 +403,9 @@ space.
   multi-monitor, tray
 - Character Package format, engine Primitives, declarative Behaviors
 - Two shipped Characters, 8 required animations each
-- Director on the free sensing tier — frontmost app name, idle duration, time of
-  day, recent Behaviors, Personality Prompt. No permissions required.
+- Director on the free sensing tier — Character Prompt once, then short
+  follow-ups (what just happened, time of day, State, frontmost window,
+  recent Behaviors). No permissions required.
 - Static-weights fallback when no Harness is attached
 - MCP server and Harness attach
 - Chat surface

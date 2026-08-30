@@ -27,7 +27,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
-use ai_buddy_core::director::{self, Context, Director, ModelDirector, Pace, StaticDirector, Wake};
+use ai_buddy_core::director::{
+    self, Context, Director, Happened, ModelDirector, Pace, StaticDirector, Wake,
+};
 use ai_buddy_core::engine::{Engine, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
@@ -384,6 +386,7 @@ fn run_frame_loop(
         let mut since_ambient = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;
         let mut addressed = false;
+        let mut happened = Happened::Ambient;
 
         // One click-through flag per overlay, `None` until that overlay's first
         // decision so the first tick always applies.
@@ -483,11 +486,25 @@ fn run_frame_loop(
                 eprintln!("verbs: {verbs:?}");
             }
 
+            // Grab is on every held tick. Only the first tick of a hold is a
+            // pick-up; the rest would otherwise wake the session while dragging.
+            let grab_started = verbs.iter().any(|verb| matches!(verb, Verb::Grab))
+                && last_state != Some(State::Dragged);
             if verbs
                 .iter()
-                .any(|verb| matches!(verb, Verb::Poke | Verb::Summon))
+                .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Throw { .. }))
+                || grab_started
             {
                 addressed = true;
+                happened = if verbs.iter().any(|verb| matches!(verb, Verb::Throw { .. })) {
+                    Happened::Throw
+                } else if grab_started {
+                    Happened::Grab
+                } else if verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
+                    Happened::Poke
+                } else {
+                    Happened::Summon
+                };
             }
 
             // The Director's clock is the same elapsed time the Engine is
@@ -516,7 +533,7 @@ fn run_frame_loop(
                     .expect("a started call still has its context");
                 if model::tracing() {
                     match &wake {
-                        Wake::Proposed(parsed) => eprintln!(
+                        Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(
                             "director: parsed {}{}",
                             parsed.behavior,
                             parsed
@@ -525,12 +542,19 @@ fn run_frame_loop(
                                 .map(|line| format!(" | {line}"))
                                 .unwrap_or_default(),
                         ),
+                        Wake::Proposed(_) => {}
                         Wake::Failed => eprintln!("director: failed; Static fallback"),
                     }
                 }
                 proposal = director::fallback(wake, &mut director, &context);
                 if model::tracing() {
                     match &proposal {
+                        Some(playing) if playing.behavior.is_empty() => {
+                            eprintln!(
+                                "director: saying {}",
+                                playing.dialogue.as_deref().unwrap_or("")
+                            );
+                        }
                         Some(playing) => eprintln!(
                             "director: playing {}{}",
                             playing.behavior,
@@ -568,37 +592,13 @@ fn run_frame_loop(
                             activity: activity.clone(),
                             recent: recent.clone(),
                             personality: character.personality.clone(),
+                            state: last_state.unwrap_or(State::Grounded),
+                            happened,
+                            standing: String::new(),
                         });
                     }
                 }
                 last_activity = Some(activity);
-            }
-
-            if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
-                if director::session_due(addressed, since_ambient, &pace, activity.displays_asleep)
-                    && pending.ready()
-                    && !applied
-                {
-                    let context = Context {
-                        activity: activity.clone(),
-                        recent: recent.clone(),
-                        personality: character.personality.clone(),
-                    };
-                    if addressed {
-                        pace.after_reactive();
-                    } else {
-                        pace.after_ambient();
-                    }
-                    addressed = false;
-                    since_ambient = Duration::ZERO;
-                    let payload = model.prompt(&context);
-                    if let Ok(mut inspect) = inspect.lock() {
-                        inspect.last_payload = Some(payload);
-                        inspect.wake_secs = pace.wait().as_secs();
-                    }
-                    pending.start(Arc::clone(model), context.clone());
-                    in_flight = Some(context);
-                }
             }
 
             let mut world = assembler.assemble(elapsed_ms, cursor_points, verbs);
@@ -614,9 +614,49 @@ fn run_frame_loop(
             let frame = engine.tick(&world);
             assembler.poll_fast(frame.riding);
 
+            let became_perched = last_state.is_some()
+                && frame.state == State::Perched
+                && last_state != Some(State::Perched);
+            if became_perched {
+                addressed = true;
+                happened = Happened::Perch;
+            }
+
             if last_state != Some(frame.state) {
                 last_state = Some(frame.state);
                 since_state = Duration::ZERO;
+            }
+
+            // After the tick so a Throw is already Falling, not still Dragged.
+            if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
+                if director::session_due(addressed, since_ambient, &pace, activity.displays_asleep)
+                    && pending.ready()
+                    && !applied
+                {
+                    let context = Context {
+                        activity: activity.clone(),
+                        recent: recent.clone(),
+                        personality: character.personality.clone(),
+                        state: frame.state,
+                        happened,
+                        standing: assembler.standing_on(frame.position),
+                    };
+                    if addressed {
+                        pace.after_reactive();
+                    } else {
+                        pace.after_ambient();
+                    }
+                    addressed = false;
+                    happened = Happened::Ambient;
+                    since_ambient = Duration::ZERO;
+                    let payload = model.prompt(&context);
+                    if let Ok(mut inspect) = inspect.lock() {
+                        inspect.last_payload = Some(payload);
+                        inspect.wake_secs = pace.wait().as_secs();
+                    }
+                    pending.start(Arc::clone(model), context.clone());
+                    in_flight = Some(context);
+                }
             }
 
             // What the user has seen is what the Engine played, not what the
@@ -890,6 +930,11 @@ fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
 }
 
 fn main() {
+    // Same Completer, no overlay. scripts/probe-model.sh is the face of this.
+    if std::env::args().any(|arg| arg == "--probe-model") {
+        std::process::exit(model::run_probe());
+    }
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![character, director_payload])
         .setup(|app| {
@@ -951,8 +996,8 @@ fn main() {
             app.manage(Arc::clone(&inspect));
             if config.enabled {
                 eprintln!(
-                    "director: model, wake every {}s",
-                    config.wake_every.as_secs()
+                    "director: model, ambient first {}s",
+                    config.ambient_first.as_secs()
                 );
             } else if config.configured {
                 eprintln!("director: off; using StaticDirector");

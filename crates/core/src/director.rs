@@ -16,10 +16,11 @@
 //! Behaviors on every run.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::character::{Behavior, Trigger};
-use crate::engine::BehaviorProposal;
+use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
 /// How long the Static Director goes unwoken when nothing notable happens.
@@ -44,6 +45,19 @@ pub const STATE_BOUND: Duration = Duration::from_secs(90);
 /// things it is allowed to do.
 pub const REMEMBERED: usize = 3;
 
+/// What the user (or the clock) just did, in one word for the follow-up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Happened {
+    Poke,
+    Throw,
+    Summon,
+    /// Grab started this tick. Grab itself repeats every held tick.
+    Grab,
+    /// The sprite just became Perched — placed on a window edge.
+    Perch,
+    Ambient,
+}
+
 /// What the Director is told about the world on one wake.
 ///
 /// The Free tier and the recent past, which is the whole of v1's context per
@@ -57,6 +71,11 @@ pub struct Context {
     /// The active Character's Personality Prompt. Empty when the package
     /// shipped none.
     pub personality: String,
+    pub state: State,
+    pub happened: Happened,
+    /// What the feet are on: a window (owner name), the floor above the
+    /// Dock, or a screen edge. Not a title — that needs Screen Recording.
+    pub standing: String,
 }
 
 /// Whatever decides what the buddy does next.
@@ -85,6 +104,9 @@ pub enum Wake {
 pub struct ModelDirector<C> {
     completer: C,
     behaviors: Vec<String>,
+    /// The Character Prompt is the opening turn only. After a successful
+    /// Completer hop, later wakes send `follow_up`.
+    opened: AtomicBool,
 }
 
 impl<C> ModelDirector<C> {
@@ -92,25 +114,63 @@ impl<C> ModelDirector<C> {
         Self {
             completer,
             behaviors: behaviors.into_iter().map(Into::into).collect(),
+            opened: AtomicBool::new(false),
         }
     }
 }
 
 impl<C: Completer> ModelDirector<C> {
-    /// Character Prompt for this context. Settings shows this string.
+    /// The user turn for this wake. Settings shows this string.
     pub fn prompt(&self, context: &Context) -> String {
-        character_prompt(context, self.behaviors.iter())
+        if self.opened.load(Ordering::SeqCst) {
+            follow_up(context)
+        } else {
+            character_prompt(context, self.behaviors.iter())
+        }
     }
 
     pub fn wake(&self, context: &Context) -> Wake {
         match self.completer.complete(&self.prompt(context)) {
-            Ok(reply) => match parse_proposal(&reply) {
-                Ok(proposal) => Wake::Proposed(proposal),
-                Err(_) => Wake::Failed,
-            },
+            Ok(reply) => {
+                // The Completer has the opening; later turns stay short
+                // even if this reply failed to parse.
+                self.opened.store(true, Ordering::SeqCst);
+                match parse_proposal(&reply) {
+                    Ok(proposal) if self.knows(&proposal.behavior) => Wake::Proposed(proposal),
+                    Ok(proposal) if proposal.behavior.eq_ignore_ascii_case("say") => {
+                        Wake::Proposed(BehaviorProposal {
+                            behavior: String::new(),
+                            dialogue: proposal.dialogue.or(Some(proposal.behavior)),
+                        })
+                    }
+                    _ => match as_speech(&reply) {
+                        Some(said) => Wake::Proposed(said),
+                        None => Wake::Failed,
+                    },
+                }
+            }
             Err(_) => Wake::Failed,
         }
     }
+
+    fn knows(&self, name: &str) -> bool {
+        self.behaviors.iter().any(|declared| declared == name)
+    }
+}
+
+/// A reply that is not a declared Behavior. Empty name: the Engine speaks
+/// and starts nothing. #17 will show this in a bubble.
+fn as_speech(reply: &str) -> Option<BehaviorProposal> {
+    let text = reply.trim();
+    let text = text
+        .strip_prefix("say:")
+        .or_else(|| text.strip_prefix("Say:"))
+        .map(str::trim)
+        .unwrap_or(text);
+    (!text.is_empty()).then(|| BehaviorProposal {
+        behavior: String::new(),
+        dialogue: Some(text.to_string()),
+    })
 }
 
 /// Return the model proposal, or ask `StaticDirector` if the call failed.
@@ -207,23 +267,14 @@ pub fn session_due(
     !displays_asleep && (addressed || since_ambient >= pace.wait())
 }
 
-/// Build the Character Prompt. Settings shows this same string.
+/// The opening turn: who this is, what it may propose, and this moment.
+///
+/// Later wakes send `follow_up` only. The Completer holds the conversation
+/// so the Personality Prompt is not paid for again.
 pub fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> String {
-    let frontmost = context
-        .activity
-        .frontmost_application
-        .as_deref()
-        .unwrap_or("(none)");
-    let idle = format_idle(context.activity.idle);
-    let clock = format_clock(context.activity.hour, context.activity.minute);
-    let recent = if context.recent.is_empty() {
-        "(none)".to_string()
-    } else {
-        context.recent.join(", ")
-    };
     let names: Vec<String> = behaviors
         .into_iter()
         .map(|name| name.as_ref().to_string())
@@ -242,16 +293,58 @@ pub fn character_prompt(
     format!(
         "{personality}\n\
          \n\
-         Frontmost application: {frontmost}\n\
-         Idle: {idle}\n\
-         Time of day: {clock}\n\
-         Recent behaviors: {recent}\n\
-         \n\
          You may propose one of these behaviors: {declared}\n\
          \n\
          Reply with the behavior name on the first line.\n\
          An optional spoken line may follow on the next line.\n\
-         Propose nothing else.\n"
+         Propose nothing else.\n\
+         \n\
+         {}",
+        follow_up(context)
+    )
+}
+
+/// A later turn in the same session. No Personality Prompt, no roster.
+pub fn follow_up(context: &Context) -> String {
+    let recent = if context.recent.is_empty() {
+        "(none)".to_string()
+    } else {
+        context.recent.join(", ")
+    };
+    let clock = format_clock(context.activity.hour, context.activity.minute);
+    let happened = match context.happened {
+        Happened::Poke => "poked",
+        Happened::Throw => "thrown",
+        Happened::Summon => "summoned",
+        Happened::Grab => "picked up",
+        Happened::Perch => "placed on a perch",
+        Happened::Ambient => "time passed",
+    };
+    let state = match context.state {
+        State::Grounded => "idle",
+        State::Falling => "falling",
+        State::Dragged => "held",
+        State::Perched => "perched",
+        State::Climbing => "climbing",
+        State::Asleep => "asleep",
+    };
+    let open = match context.activity.frontmost_application.as_deref() {
+        Some(name) if !name.is_empty() => format!("{name} is the frontmost window"),
+        _ => "nothing is frontmost".to_string(),
+    };
+
+    format!(
+        "what just happened: {happened}\n\
+         recent: {recent}\n\
+         time: {clock}\n\
+         state: {state}\n\
+         perch: {standing}\n\
+         open: {open}\n",
+        standing = if context.standing.is_empty() {
+            "nothing"
+        } else {
+            context.standing.as_str()
+        },
     )
 }
 
@@ -290,15 +383,6 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
 fn identifier(name: &str) -> bool {
     name.chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
-fn format_idle(idle: Duration) -> String {
-    let secs = idle.as_secs();
-    if secs >= 60 && secs % 60 == 0 {
-        format!("{}m", secs / 60)
-    } else {
-        format!("{secs}s")
-    }
 }
 
 fn format_clock(hour: u8, minute: u8) -> String {
@@ -462,6 +546,9 @@ mod tests {
             activity,
             recent: recent.iter().map(|name| name.to_string()).collect(),
             personality: "a shy robot.".to_string(),
+            state: State::Grounded,
+            happened: Happened::Poke,
+            standing: String::new(),
         }
     }
 
@@ -931,6 +1018,57 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_reply_that_is_not_a_behavior_is_said() {
+        let director = ModelDirector::new(
+            Scripted::says("It's 23:59! Almost a brand new day!"),
+            ["wave", "report"],
+        );
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty(), "speaking is not a Behavior");
+                assert_eq!(
+                    said.dialogue.as_deref(),
+                    Some("It's 23:59! Almost a brand new day!")
+                );
+            }
+            other => panic!("prose should be said, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_say_prefix_is_stripped_and_the_rest_is_spoken() {
+        let director = ModelDirector::new(Scripted::says("say: hey"), ["wave"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("hey"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+
+        let piped = ModelDirector::new(Scripted::says("say | hey"), ["wave"]);
+        match piped.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("hey"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_undeclared_identifier_is_said_not_played() {
+        let director = ModelDirector::new(Scripted::says("cartwheel"), ["wave"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("cartwheel"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+    }
+
     /// The prompt must include every Free-tier field. Settings shows this string.
     #[test]
     fn the_character_prompt_is_the_payload_the_model_is_sent() {
@@ -946,6 +1084,9 @@ mod tests {
             },
             recent: vec!["stroll".to_string(), "nap".to_string()],
             personality: "Blip is cheerful.".to_string(),
+            state: State::Grounded,
+            happened: Happened::Poke,
+            standing: "the display floor, above the Dock".to_string(),
         };
 
         let payload = character_prompt(&moment, ["greet", "stroll", "wave"]);
@@ -955,10 +1096,9 @@ mod tests {
             "personality: {payload}"
         );
         assert!(
-            payload.contains("Terminal"),
-            "frontmost application: {payload}"
+            payload.contains("Terminal is the frontmost window"),
+            "frontmost: {payload}"
         );
-        assert!(payload.contains("12s"), "idle duration: {payload}");
         assert!(
             payload.contains("22:15"),
             "local time of day, not UTC from `at` (00:00): {payload}"
@@ -975,5 +1115,69 @@ mod tests {
             payload.contains("greet") && payload.contains("wave"),
             "declared Behaviors: {payload}"
         );
+        assert!(
+            payload.contains("what just happened: poked") && payload.contains("state: idle"),
+            "this moment: {payload}"
+        );
+        assert!(
+            payload.contains("perch: the display floor, above the Dock"),
+            "standing: {payload}"
+        );
+    }
+
+    #[test]
+    fn a_later_wake_sends_only_the_follow_up() {
+        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let first = context(working(), &["nap"]);
+        director.wake(&first);
+
+        let later = Context {
+            happened: Happened::Throw,
+            state: State::Falling,
+            ..first
+        };
+        director.wake(&later);
+
+        let sent = director
+            .completer
+            .seen
+            .lock()
+            .expect("the lock is not poisoned")
+            .clone()
+            .expect("a follow-up was sent");
+        assert_eq!(sent, follow_up(&later));
+        assert!(
+            !sent.contains("a shy robot."),
+            "personality is the opening only: {sent}"
+        );
+        assert!(
+            !sent.contains("You may propose"),
+            "the roster is the opening only: {sent}"
+        );
+        assert!(
+            sent.contains("what just happened: thrown") && sent.contains("state: falling"),
+            "{sent}"
+        );
+    }
+
+    #[test]
+    fn pick_up_and_perch_are_named_in_the_follow_up() {
+        let picked = context(working(), &[]);
+        let picked = Context {
+            happened: Happened::Grab,
+            state: State::Dragged,
+            ..picked
+        };
+        assert!(follow_up(&picked).contains("what just happened: picked up"));
+
+        let placed = Context {
+            happened: Happened::Perch,
+            state: State::Perched,
+            standing: "a Cursor window".to_string(),
+            ..picked
+        };
+        let sent = follow_up(&placed);
+        assert!(sent.contains("what just happened: placed on a perch"));
+        assert!(sent.contains("perch: a Cursor window"), "{sent}");
     }
 }
