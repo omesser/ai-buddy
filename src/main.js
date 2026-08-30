@@ -44,8 +44,10 @@ function draw(now) {
 
   const at = previous ? interpolate(previous, latest, now) : latest;
   // Whole pixels, so a sprite drawn at an integer scale is not resampled back
-  // onto a fractional grid by the compositor. ADR-0006.
-  sprite.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
+  // onto a fractional grid by the compositor. ADR-0006. The art is authored
+  // heading right; `scaleX(-1)` mirrors it in place when the Engine says the
+  // sprite faces left. main.css sets the center origin that makes it in-place.
+  sprite.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px) scaleX(${latest.facing})`;
 
   // The hide rules, carried on every frame rather than announced when they
   // change: a change announced while this file was still fetching its art is a

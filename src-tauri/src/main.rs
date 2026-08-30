@@ -109,6 +109,8 @@ struct Placement {
     /// all session.
     visible: bool,
     fade_ms: u32,
+    /// -1 to mirror the art (heading left), 1 to draw it as authored.
+    facing: i8,
 }
 
 /// Every Animation's frames as `data:` URLs, in play order, keyed by the
@@ -631,6 +633,7 @@ fn run_frame_loop(
                         frame_index: drawn.index,
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
+                        facing: frame.facing as i8,
                     },
                 );
 
