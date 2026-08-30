@@ -170,8 +170,24 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
 /// not be anywhere.
 pub fn fullscreen_frontmost(windows: &[WindowRect], frames: &[Rect]) -> bool {
     windows
-        .first()
+        .iter()
+        .find(|window| frames.iter().any(|frame| overlaps(window, frame)))
         .is_some_and(|window| frames.iter().any(|frame| covers(window, frame)))
+}
+
+/// Whether any of `window` is on `frame` at all.
+///
+/// The frontmost window is not always one the user can see. While an
+/// application is fullscreen, macOS keeps the hidden menu bar in the list in
+/// front of everything, as a full-width strip parked just above its display —
+/// so asking the first window alone asks whether the menu bar is fullscreen,
+/// and it never is. Skipping what is off every display asks the window the
+/// user is actually working in, which is what decides.
+fn overlaps(window: &WindowRect, frame: &Rect) -> bool {
+    window.x < frame.x + frame.width
+        && window.x + window.width > frame.x
+        && window.y < frame.y + frame.height
+        && window.y + window.height > frame.y
 }
 
 /// Whether a window reaches every edge of a display, give or take the slack a
@@ -210,6 +226,82 @@ mod tests {
     /// The desktop the Character spends almost all of its life on. Nothing to
     /// say means nothing said: an overlay told what it already is sixty times a
     /// second is the flicker decision 8 exists to avoid.
+    /// Measured on a real desktop, which is the only way this was ever going
+    /// to be found. While an application is fullscreen macOS keeps the hidden
+    /// menu bar in the window list, in front of everything, as a full-width
+    /// strip sitting just above the display it belongs to. Asking only the
+    /// frontmost window therefore asks whether the menu bar is fullscreen, and
+    /// the answer is always no: the Character faded out for the half second
+    /// the transition took, then came back and sat on top of the fullscreen
+    /// application for as long as it was open.
+    #[test]
+    fn the_hidden_menu_bar_does_not_answer_for_the_window_behind_it() {
+        let displays = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1920.0,
+                y: 0.0,
+                width: 1728.0,
+                height: 1117.0,
+            },
+        ];
+        let menu_bar = WindowRect {
+            x: 0.0,
+            y: -32.0,
+            width: 1920.0,
+            height: 32.0,
+        };
+        let fullscreen = WindowRect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+
+        assert!(
+            fullscreen_frontmost(&[menu_bar, fullscreen], &displays),
+            "the frontmost window that is anywhere on a display is the one being worked in"
+        );
+        assert!(
+            !fullscreen_frontmost(&[menu_bar], &displays),
+            "and a desktop holding nothing but the strip hides nothing"
+        );
+
+        // The menu bar is the one this was found on, but "off every display"
+        // has four sides, and a window parked past any of them is equally not
+        // the one being worked in.
+        for parked in [
+            WindowRect {
+                x: -1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            WindowRect {
+                x: 3648.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            WindowRect {
+                x: 0.0,
+                y: 1117.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ] {
+            assert!(
+                fullscreen_frontmost(&[parked, fullscreen], &displays),
+                "a window parked at {parked:?} is not on any display and answers for nothing"
+            );
+        }
+    }
+
     #[test]
     fn a_quiet_desktop_leaves_the_character_on_screen_and_says_nothing() {
         let mut rules = HideRules::default();
