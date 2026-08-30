@@ -583,6 +583,7 @@ fn run_frame_loop(
                     &activity,
                     previous_idle,
                     since_state,
+                    engine.do_not_disturb(),
                 );
                 previous_idle = activity.idle;
 
@@ -634,8 +635,13 @@ fn run_frame_loop(
 
             // After the tick so a Throw is already Falling, not still Dragged.
             if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
-                if director::session_due(addressed, since_ambient, &pace, activity.displays_asleep)
-                    && pending.ready()
+                if director::session_due(
+                    addressed,
+                    since_ambient,
+                    &pace,
+                    activity.displays_asleep,
+                    engine.do_not_disturb(),
+                ) && pending.ready()
                     && !applied
                 {
                     let context = Context {
