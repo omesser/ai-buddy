@@ -485,9 +485,9 @@ applications and password fields from every sensing result.
 ### Memory
 
 Tested as a store against a temporary file. Coverage: round-trip of a remembered fact; an
-edit made outside ai-buddy is visible to the next recall; malformed content still loads
-and preserves what it can; wipe writes a backup first; a hand-written file that has never
-been touched by ai-buddy loads correctly.
+edit made outside ai-buddy is visible to the next recall; malformed content still reads
+back and preserves what it can; wipe writes a backup first; a hand-written file that has
+never been touched by ai-buddy reads back correctly.
 
 ### Fakes, not mocks
 
