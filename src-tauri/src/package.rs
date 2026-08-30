@@ -1002,24 +1002,36 @@ mod tests {
     }
 
     /// The failure mode #9 names: one Character shipped twice with the palette
-    /// swapped. Frame counts are read off the art rather than declared, so a
-    /// manifest cannot claim in-between frames the drawing has not got.
+    /// swapped. BMO is drawn shimeji art on its own large grid and Nim is
+    /// pixel art on 32x32, so the packages may not share a frame's geometry,
+    /// let alone its bytes — and Nim still carries more frames overall.
     #[test]
     fn the_two_shipped_characters_are_not_one_character_twice() {
         let bmo = shipped_character("bmo");
         let nim = shipped_character("nim");
 
-        for animation in character::REQUIRED_ANIMATIONS {
-            let (hard, smooth) = (
-                bmo.animations[animation].frames.len(),
-                nim.animations[animation].frames.len(),
-            );
-            assert!(
-                smooth > hard,
-                "{animation:?} is {smooth} frames of Nim against {hard} of BMO, \
-                 and Nim is the one that eases"
-            );
-        }
+        // Width and height straight from the PNG header: the IHDR chunk's
+        // first eight data bytes, big-endian, at a fixed offset.
+        let size = |art: &character::Art| {
+            (
+                u32::from_be_bytes(art.png[16..20].try_into().unwrap()),
+                u32::from_be_bytes(art.png[20..24].try_into().unwrap()),
+            )
+        };
+        let bmo_grids: BTreeSet<_> = bmo.art.values().map(size).collect();
+        let nim_grids: BTreeSet<_> = nim.art.values().map(size).collect();
+        assert!(
+            bmo_grids.is_disjoint(&nim_grids),
+            "the two packages draw on the same grid: {bmo_grids:?} and {nim_grids:?}"
+        );
+
+        let frames = |c: &character::Character| -> usize {
+            c.animations.values().map(|a| a.frames.len()).sum()
+        };
+        assert!(
+            frames(&nim) > frames(&bmo),
+            "Nim is the one that eases, and it has no more frames than BMO"
+        );
 
         let bmo_art: BTreeSet<&Vec<u8>> = bmo.art.values().map(|art| &art.png).collect();
         assert!(

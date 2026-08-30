@@ -289,8 +289,8 @@ can answer it. Run the app, then confirm:
     edge, fully visible.
 13. **The two shipped Characters are two companions.** Run each in turn (see
     [The shipped Characters](#the-shipped-characters)) and watch it idle. BMO
-    cuts between two poses four times a second, in eight flat colours with
-    nothing under its feet; Nim eases through six, blinks, and carries a
+    hums to itself through a four-frame singing loop, in soft drawn lines at
+    its authored size; Nim eases through six, blinks, and carries a
     translucent shadow. Poke each: BMO's startle is two frames and over, Nim's
     plays through five. The Behaviors each declares show when a Director
     proposes one (Static, or the HTTP stand-in with a key). Sitting and
@@ -392,11 +392,19 @@ The format stays internal and undocumented until v2 — see
 Two ship, in deliberately different styles, so that the format is proven against
 real variance rather than against itself:
 
-- **`characters/bmo/` — BMO**, hard-edged flat art. Eight colours, flat fills,
-  no anti-aliasing, and dithering only where a shade between two of those
-  colours is genuinely wanted. Two or three frames an Animation, cut fast, and
-  what changes between them is mostly the face on its screen. BMO never
-  settles: every Behavior it declares ends on its feet.
+- **`characters/bmo/` — BMO**, drawn shimeji art (see
+  [Prior art and attribution](#prior-art-and-attribution)): soft anti-aliased
+  lines rather than a pixel grid, so its manifest declares
+  `render_mode = "smooth"` and `scale = 1` — the render mode ADR-0006
+  reserved, and the first Character to use it. Every pose is cut from the
+  pack's 46 and heads right; the Engine's facing mirrors it to walk left.
+  Idling it sings, then rides its skateboard; walking it sometimes dribbles a
+  football; sitting it plays four games on its own screen; scaling a display
+  edge it climbs hand over hand — `climb` being the one optional Animation
+  the engine asks for by name, with walk art the silent fallback. The idle
+  and walk extras are `variant_of` declarations: more art for the same life,
+  cycled by the renderer a few seconds apiece. BMO never settles: every
+  Behavior it declares ends on its feet.
 - **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames
@@ -461,7 +469,7 @@ python3 scripts/make-blip-character.py
 ```
 
 Standard library only, so there is nothing to install, which is the same reason
-the shipped Characters are generated the same way.
+Nim is generated the same way.
 
 ## Prior art and attribution
 
@@ -476,6 +484,12 @@ attribution belongs in this section.
 
 [desktop-homunculus](https://github.com/not-elm/desktop-homunculus) informed the
 MCP-server-as-companion shape considered and rejected in the same ADR.
+
+BMO's frames are cut from the free
+[BMO shimeji pack](https://shimejishop.com/free/bmo-shimeji/) on shimejishop,
+flipped to head right, with a one-pixel breathing shift added for sleep. BMO
+is Cartoon Network IP and the pack is fan art; the character is a development
+asset, and none of this repository's license claims cover that art.
 
 ## License
 

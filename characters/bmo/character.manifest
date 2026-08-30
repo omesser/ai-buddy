@@ -1,51 +1,86 @@
-# BMO, the little living console: a mint shell in eight flat colours, hard
-# pixel edges, no anti-aliasing, and ordered dithering only where a shade
-# between two of those eight is genuinely wanted. Everything it feels shows on
-# the screen in its face. Regenerate the frames with
-# scripts/make-shipped-characters.py.
+# BMO from the shimejishop free pack, drawn art rather than pixel art: soft
+# lines, anti-aliased edges, and the render_mode ADR-0006 reserved for
+# exactly this. Every frame is cut from the pack's 46 and flipped to head
+# right — the Engine's facing mirrors it back for leftward travel. At scale 1
+# the sprite stands its authored size, which is the size a shimeji stands.
+# The frames are static art; scripts/make-shipped-characters.py draws Nim
+# only.
 
 name = "BMO"
+render_mode = "smooth"
+scale = 1
 
-# Two or three frames each, held hard and cut fast. A handheld answers the
-# instant a button is pressed; the cadence is where that reads, not the drawing.
+# The idle is a calm stand; the singing and the skateboard ride its ring as
+# variants. The sit is the pack's self-play set: four games on its own screen.
 
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
-fps = 4
+fps = 1
+
+[animations.sing]
+frames = ["frames/sing-0.png", "frames/sing-1.png", "frames/sing-2.png", "frames/sing-3.png"]
+fps = 3
+variant_of = "idle"
+
+# A variant is more art for the same life: the renderer cycles the ring —
+# base first and three times as long, then each variant — in whole loops.
+# Idling, BMO mostly stands; now and then it sings, or rides its skateboard.
+# Walking, it sometimes dribbles a football the whole way.
+
+# Cruise, push, cruise, cheer — the bail frame stays in the pack: a board
+# that vanishes mid-loop reads as a glitch, not a trick.
+[animations.skate]
+frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "frames/skate-2.png"]
+fps = 3
+variant_of = "idle"
 
 [animations.walk]
-frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
-fps = 10
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-1.png"]
+fps = 8
+
+[animations.ballwalk]
+frames = ["frames/ballwalk-0.png", "frames/ballwalk-1.png"]
+fps = 5
+variant_of = "walk"
+
+# Climbing is the one optional Animation the engine itself asks for, scaling
+# a display edge; a package without it climbs in its walk art.
+
+[animations.climb]
+frames = ["frames/climb-0.png", "frames/climb-1.png", "frames/climb-2.png"]
+fps = 4
 
 [animations.fall]
 frames = ["frames/fall-0.png", "frames/fall-1.png"]
-fps = 8
+fps = 6
 
 [animations.land]
 frames = ["frames/land-0.png", "frames/land-1.png"]
-fps = 12
+fps = 8
 loop = "once"
 
 [animations.sit]
-frames = ["frames/sit-0.png", "frames/sit-1.png"]
-fps = 3
+frames = ["frames/sit-0.png", "frames/sit-1.png", "frames/sit-2.png", "frames/sit-3.png"]
+fps = 1
 
 [animations.hold]
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
-fps = 8
+fps = 4
 
 [animations.sleep]
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
-fps = 2
+fps = 1
 
 [animations.react]
 frames = ["frames/react-0.png", "frames/react-1.png"]
-fps = 12
+fps = 10
 loop = "once"
 
+# Gesture and rest: talking hands, standing up. The pack's grinning
+# lean-back frames read as sitting and were mistaken for the sit.
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
-fps = 10
+frames = ["frames/talk-0.png", "frames/talk-1.png"]
+fps = 3
 
 # BMO does not settle. Every Behavior here ends on its feet, which is what a
 # Character who would rather be playing looks like from the outside: the sit and
@@ -67,29 +102,36 @@ fps = 10
 # only stretch it still has an audience for. `walk` stays lightest: it is the
 # bare Primitive, and `patrol` is the same walk with BMO looking at something.
 
+# The react art is a wince, and it belongs to being poked or dropped — the
+# engine plays it there on its own. Written into these Behaviors it fired on
+# nearly every Director wake and read as BMO getting hurt mid-walk, so the
+# pauses here are calm ones: standing or talking. Never sitting — no
+# Behavior of BMO's settles, and the idle ring gives a plain stand its
+# variety on its own.
+
 [behaviors.walk]
 play = ["walk"]
 weight = 1
 when = "idle over 30s"
 
 [behaviors.patrol]
-play = ["walk", "react", "walk"]
+play = ["walk", "idle", "walk"]
 then = "walk"
 weight = 3
 when = "idle over 2m"
 
 [behaviors.fidget]
-play = ["react", "idle", "react"]
+play = ["idle"]
 weight = 2
 when = "idle over 10s"
 
 [behaviors.report]
-play = ["talk", "react", "talk"]
+play = ["talk", "idle", "talk"]
 weight = 3
 when = "idle under 1m"
 
 [behaviors.greet]
-play = ["react", "talk"]
+play = ["talk"]
 then = "patrol"
 weight = 4
 when = "idle under 10s"
