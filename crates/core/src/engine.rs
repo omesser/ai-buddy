@@ -900,7 +900,9 @@ fn animation_for(state: State) -> &'static str {
         State::Grounded => "idle",
         State::Falling | State::Dragged => "fall",
         State::Perched => "sit",
-        State::Climbing => "walk",
+        // An optional Animation: a Character without climb art draws its walk
+        // instead, resolved by the renderer, never by a missing sprite here.
+        State::Climbing => "climb",
         State::Asleep => "sleep",
     }
 }
@@ -1501,7 +1503,7 @@ mod tests {
 
         let climbing = engine.tick(&proposing("settle"));
         assert_eq!(climbing.state, State::Climbing);
-        assert_eq!(climbing.animation, "walk", "it goes on climbing");
+        assert_eq!(climbing.animation, "climb", "it goes on climbing");
     }
 
     /// Expression is the exception: being startled or speaking says nothing

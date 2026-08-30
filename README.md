@@ -398,8 +398,13 @@ real variance rather than against itself:
   `render_mode = "smooth"` and `scale = 1` — the render mode ADR-0006
   reserved, and the first Character to use it. Every pose is cut from the
   pack's 46 and heads right; the Engine's facing mirrors it to walk left.
-  Idling it sings; sitting it plays four games on its own screen. BMO never
-  settles: every Behavior it declares ends on its feet.
+  Idling it sings, then rides its skateboard; walking it sometimes dribbles a
+  football; sitting it plays four games on its own screen; scaling a display
+  edge it climbs hand over hand — `climb` being the one optional Animation
+  the engine asks for by name, with walk art the silent fallback. The idle
+  and walk extras are `variant_of` declarations: more art for the same life,
+  cycled by the renderer a few seconds apiece. BMO never settles: every
+  Behavior it declares ends on its feet.
 - **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames

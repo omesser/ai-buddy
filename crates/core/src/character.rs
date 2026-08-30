@@ -118,6 +118,13 @@ pub const DEFAULT_SCALE: u32 = 4;
 /// to be bigger on screen should be authored bigger instead.
 pub const MAX_SCALE: u32 = 4;
 
+/// How long the renderer holds each member of a variant ring, at least.
+///
+/// Rounded up to whole loops of the member playing, so the ring never cuts an
+/// Animation mid-stride. A few seconds reads as a mood; loop-for-loop
+/// alternation reads as a costume glitch.
+pub const VARIANT_HOLD_MS: u32 = 4000;
+
 /// The largest either side of a frame may be, in pixels.
 ///
 /// A PNG header costs the same few dozen bytes whatever size it claims, so a
@@ -200,6 +207,10 @@ pub struct Animation {
     pub fps: u32,
     /// Whether the Animation repeats or holds its last frame.
     pub looping: bool,
+    /// Names of the Animations that declared `variant_of` this one, in name
+    /// order. The renderer cycles through this one and each of these in turn,
+    /// holding each for a few seconds of whole loops.
+    pub variants: Vec<String>,
 }
 
 impl Animation {
@@ -302,6 +313,10 @@ pub struct Character {
 
 /// What the renderer needs to draw one tick.
 pub struct Drawn<'a> {
+    /// The Animation actually drawing — the one asked for, its optional
+    /// fallback, or the variant the ring has cycled to. The renderer indexes
+    /// its art by this name, never by the one the engine asked with.
+    pub animation: &'a str,
     pub mask: &'a AlphaMask,
     /// The frame's size in pixels, before any scaling.
     pub frame_size: (u32, u32),
@@ -323,17 +338,66 @@ impl Character {
     /// Substituting a different Animation would be worse than drawing nothing,
     /// because the renderer would still be told the name it asked for.
     pub fn draw(&self, animation: &str, animation_ms: u32) -> Option<Drawn<'_>> {
-        let animation = self.animations.get(animation)?;
-        let index = animation.frame_at(animation_ms);
+        let (name, animation, local_ms) = self.resolve(animation, animation_ms)?;
+        let index = animation.frame_at(local_ms);
         let art = self.art.get(animation.frames.get(index)?)?;
 
         Some(Drawn {
+            animation: name,
             mask: &art.mask,
             frame_size: animation.frame_size,
             index,
         })
     }
+
+    /// Which Animation actually draws: the one asked for, its optional
+    /// fallback, or — when it anchors a variant ring — whichever member the
+    /// elapsed time has cycled to, with the time already spent in its slot.
+    ///
+    /// Pure in the same sense as `frame_at`: elapsed milliseconds in, art
+    /// out. The engine keeps saying "idle"; that a Character skateboards
+    /// through some of its idling is the art's own business.
+    fn resolve(&self, requested: &str, ms: u32) -> Option<(&str, &Animation, u32)> {
+        let (name, base) = match self.animations.get_key_value(requested) {
+            Some(found) => found,
+            None => {
+                let (_, fallback) = OPTIONAL_FALLBACKS
+                    .iter()
+                    .find(|(optional, _)| *optional == requested)?;
+                self.animations.get_key_value(*fallback)?
+            }
+        };
+        if base.variants.is_empty() {
+            return Some((name.as_str(), base, ms));
+        }
+
+        let members: Vec<(&str, &Animation)> = std::iter::once((name.as_str(), base))
+            .chain(base.variants.iter().filter_map(|variant| {
+                self.animations
+                    .get_key_value(variant)
+                    .map(|(name, animation)| (name.as_str(), animation))
+            }))
+            .collect();
+        let slot = |animation: &Animation| -> u32 {
+            let loop_ms = (animation.frames.len() as u32 * 1000 / animation.fps).max(1);
+            loop_ms * VARIANT_HOLD_MS.div_ceil(loop_ms).max(1)
+        };
+        let total: u32 = members.iter().map(|(_, member)| slot(member)).sum();
+        let mut t = ms % total.max(1);
+        for (member_name, member) in &members {
+            let s = slot(member);
+            if t < s {
+                return Some((member_name, member, t));
+            }
+            t -= s;
+        }
+        unreachable!("the slots sum to the total the time was wrapped to")
+    }
 }
+
+/// Optional Animations, and what draws when a package does not declare them:
+/// used when present, and absent silently, never as a missing sprite.
+const OPTIONAL_FALLBACKS: [(&str, &str); 1] = [("climb", "walk")];
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
 ///
@@ -386,7 +450,17 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     }
 
     let personality = personality(package, &mut errors);
-    let (animations, art) = resolve_animations(package, declared.animations, &mut errors);
+    let variant_pairs = check_variants(&declared.animations, &mut errors);
+    let (mut animations, art) = resolve_animations(package, declared.animations, &mut errors);
+    // Linked after resolution so a variant whose frames failed never joins a
+    // ring; its own declaration errors already say why.
+    for (variant, base) in variant_pairs {
+        if animations.contains_key(&variant) {
+            if let Some(base) = animations.get_mut(&base) {
+                base.variants.push(variant);
+            }
+        }
+    }
     let behaviors = resolve_behaviors(declared.behaviors, &mut errors);
 
     match (errors.is_empty(), declared.name) {
@@ -437,6 +511,7 @@ struct DeclaredAnimation {
     frames: Vec<String>,
     fps: u32,
     looping: bool,
+    variant_of: Option<String>,
 }
 
 struct DeclaredBehavior {
@@ -562,10 +637,19 @@ fn parse_animation(
     let mut frames = None;
     let mut fps = DEFAULT_FPS;
     let mut looping = true;
+    let mut variant_of = None;
 
     for (key, item) in table.iter() {
         match key {
             "frames" => frames = frame_list(name, item, manifest, errors),
+            "variant_of" => match item.as_str() {
+                Some(base) if !base.is_empty() => variant_of = Some(base.to_string()),
+                _ => errors.push(format!(
+                    "variant_of for animation {name:?} is {}, and must name \
+                     an animation, as variant_of = \"idle\"",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
             "fps" => match item.as_integer() {
                 Some(declared) if (1..=i64::from(MAX_FPS)).contains(&declared) => {
                     fps = declared as u32;
@@ -589,7 +673,7 @@ fn parse_animation(
             },
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
-                 an Animation declares frames, fps and loop"
+                 an Animation declares frames, fps, loop and variant_of"
             )),
         }
     }
@@ -604,6 +688,7 @@ fn parse_animation(
         frames,
         fps,
         looping,
+        variant_of,
     })
 }
 
@@ -906,6 +991,7 @@ fn resolve_animations(
                     frame_size,
                     fps: declaration.fps,
                     looping: declaration.looping,
+                    variants: Vec::new(),
                 },
             );
         }
@@ -919,6 +1005,41 @@ fn resolve_animations(
     }
 
     (animations, art)
+}
+
+/// Validate every `variant_of` declaration and hand back the (variant, base)
+/// pairs worth linking.
+///
+/// A variant is more art for an Animation the engine already plays, never a
+/// new Behavior. The renderer cycles a ring by whole loops on its own clock,
+/// so a member that holds its last frame would stall it, and a variant of a
+/// variant would make the ring's order a puzzle: both are rejected.
+fn check_variants(
+    declared: &BTreeMap<String, DeclaredAnimation>,
+    errors: &mut Vec<String>,
+) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for (name, animation) in declared {
+        let Some(base) = &animation.variant_of else {
+            continue;
+        };
+        match declared.get(base) {
+            _ if base == name => errors.push(format!("animation {name:?} is a variant_of itself")),
+            None => errors.push(format!(
+                "animation {name:?} is a variant_of {base:?}, which is not declared"
+            )),
+            Some(target) if target.variant_of.is_some() => errors.push(format!(
+                "animation {name:?} is a variant_of {base:?}, itself a variant; \
+                 variants ring one base"
+            )),
+            Some(target) if !target.looping || !animation.looping => errors.push(format!(
+                "animation {name:?} and its base {base:?} must both loop \"forever\"; \
+                 the renderer cycles a variant ring by whole loops"
+            )),
+            Some(_) => pairs.push((name.clone(), base.clone())),
+        }
+    }
+    pairs
 }
 
 /// One frame's dimensions, from the PNG header alone.
@@ -1090,6 +1211,7 @@ mod tests {
             frame_size: (2, 2),
             fps,
             looping,
+            variants: Vec::new(),
         }
     }
 
@@ -1633,6 +1755,88 @@ mod tests {
         );
     }
 
+    /// The ring is a pure function of elapsed time: the base holds for whole
+    /// loops adding up to at least `VARIANT_HOLD_MS`, then each variant does,
+    /// then it wraps. The engine keeps asking for "idle" throughout.
+    #[test]
+    fn a_variant_ring_cycles_by_whole_loops_and_wraps() {
+        // idle: one frame at the default 8fps, a 125ms loop, so its slot is
+        // exactly 4000ms of whole loops. spin: one frame at 1fps, 1000ms
+        // loops, a 4000ms slot. The ring is 8000ms around.
+        let manifest = format!(
+            "{}[animations.spin]\nframes = [\"idle-0.png\"]\nfps = 1\nvariant_of = \"idle\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("loads");
+
+        let playing = |ms: u32| {
+            character
+                .draw("idle", ms)
+                .expect("draws")
+                .animation
+                .to_string()
+        };
+        assert_eq!(playing(0), "idle");
+        assert_eq!(playing(3999), "idle");
+        assert_eq!(playing(4000), "spin", "the slot ends on a whole loop");
+        assert_eq!(playing(7999), "spin");
+        assert_eq!(playing(8000), "idle", "the ring wraps to its base");
+
+        // Time inside a slot starts at that slot's own zero, so a member
+        // begins at its first frame rather than mid-loop.
+        assert_eq!(character.draw("idle", 4000).expect("draws").index, 0);
+
+        // Asked for directly, a variant is an ordinary Animation.
+        assert_eq!(character.draw("spin", 0).expect("draws").animation, "spin");
+    }
+
+    /// The optional Animation contract: used when present, absent silently —
+    /// a Character without climb art climbs in its walk art, never as a
+    /// missing sprite.
+    #[test]
+    fn climb_is_optional_and_falls_back_to_walk() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(character.draw("climb", 0).expect("draws").animation, "walk");
+
+        let manifest = format!(
+            "{}[animations.climb]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("loads");
+        assert_eq!(
+            character.draw("climb", 0).expect("draws").animation,
+            "climb"
+        );
+
+        // The fallback list is closed: an unknown name still draws nothing.
+        assert!(character.draw("saunter", 0).is_none());
+    }
+
+    #[test]
+    fn a_variant_of_nothing_a_variant_or_a_once_loop_is_rejected_by_name() {
+        let manifest = format!(
+            "{}\
+             [animations.a]\nframes = [\"idle-0.png\"]\nvariant_of = \"dance\"\n\
+             [animations.b]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle\"\n\
+             [animations.c]\nframes = [\"idle-0.png\"]\nvariant_of = \"b\"\n\
+             [animations.d]\nframes = [\"idle-0.png\"]\nloop = \"once\"\nvariant_of = \"walk\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![
+                "animation \"a\" is a variant_of \"dance\", which is not declared".to_string(),
+                "animation \"c\" is a variant_of \"b\", itself a variant; \
+                 variants ring one base"
+                    .to_string(),
+                "animation \"d\" and its base \"walk\" must both loop \"forever\"; \
+                 the renderer cycles a variant ring by whole loops"
+                    .to_string(),
+            ],
+        );
+    }
+
     /// A syntax mistake is one error naming its line, never a cascade: past it
     /// the parser would be guessing, and a guess would report mistakes the
     /// author has not made.
@@ -1864,7 +2068,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps and loop"
+                 frames, fps, loop and variant_of"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
                  as play = [\"react\", \"talk\"]"

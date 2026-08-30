@@ -17,9 +17,31 @@ scale = 1
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png"]
 fps = 3
 
+# A variant is more art for the same life: the renderer cycles the ring —
+# base first, then each variant — holding each for a few seconds of whole
+# loops. Idling, BMO sings, then rides its skateboard; walking, it sometimes
+# dribbles a football the whole way.
+
+[animations.skate]
+frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "frames/skate-2.png"]
+fps = 3
+variant_of = "idle"
+
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-1.png"]
 fps = 8
+
+[animations.ballwalk]
+frames = ["frames/ballwalk-0.png", "frames/ballwalk-1.png"]
+fps = 5
+variant_of = "walk"
+
+# Climbing is the one optional Animation the engine itself asks for, scaling
+# a display edge; a package without it climbs in its walk art.
+
+[animations.climb]
+frames = ["frames/climb-0.png", "frames/climb-1.png", "frames/climb-2.png"]
+fps = 4
 
 [animations.fall]
 frames = ["frames/fall-0.png", "frames/fall-1.png"]

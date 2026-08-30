@@ -100,12 +100,15 @@ struct Drawn {
 /// Pushed every tick rather than fetched, so the webview holds no authoritative
 /// state — it draws what it was last told and remembers nothing.
 #[derive(Clone, Copy, Serialize)]
-struct Placement {
+struct Placement<'a> {
     x: i32,
     y: i32,
     width: i32,
     height: i32,
-    animation: &'static str,
+    /// The Animation whose art to draw — the one `Character::draw` resolved
+    /// (a variant, or an optional Animation's fallback), which is not always
+    /// the name the Engine asked with.
+    animation: &'a str,
     frame_index: usize,
     /// Whether the hide rules have the Character on screen, and how long the
     /// change that decided it was given.
@@ -814,7 +817,7 @@ fn run_frame_loop(
                         y: local.y,
                         width,
                         height,
-                        animation: frame.animation,
+                        animation: drawn.animation,
                         frame_index: drawn.index,
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
