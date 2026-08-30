@@ -16,7 +16,10 @@ use ai_buddy_core::director::{Completer, Context, ModelDirector, Pace, Wake, WAK
 use serde::Serialize;
 
 /// Completer timeout. After this, fall back to `StaticDirector`.
-pub const TIMEOUT: Duration = Duration::from_secs(8);
+///
+/// Longer than a snappy chat-completions hop: xAI's Responses path can
+/// think, and 8s was enough to lose a Grok wake to Static.
+pub const TIMEOUT: Duration = Duration::from_secs(20);
 
 const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
 const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
@@ -99,16 +102,39 @@ pub fn endpoint() -> Option<Endpoint> {
     })
 }
 
-/// Join a provider base onto the chat-completions path without doubling `/v1`.
+/// Join a provider base onto the inference path without doubling `/v1`.
+///
+/// OpenAI, Anthropic's compatibility layer, and Ollama speak
+/// `/v1/chat/completions`. xAI's current path is `/v1/responses`
+/// ([docs](https://docs.x.ai/developers/model-capabilities/text/comparison));
+/// chat-completions there is legacy. An explicit full path wins.
 fn completions_url(base: &str) -> String {
     let base = base.trim_end_matches('/');
-    if base.ends_with("/chat/completions") {
-        base.to_string()
-    } else if base.ends_with("/v1") {
-        format!("{base}/chat/completions")
-    } else {
-        format!("{base}/v1/chat/completions")
+    if base.ends_with("/chat/completions") || base.ends_with("/responses") {
+        return base.to_string();
     }
+    let path = if host_is_xai(base) {
+        "responses"
+    } else {
+        "chat/completions"
+    };
+    if base.ends_with("/v1") {
+        format!("{base}/{path}")
+    } else {
+        format!("{base}/v1/{path}")
+    }
+}
+
+fn host_is_xai(url: &str) -> bool {
+    url.split("://").nth(1).is_some_and(|rest| {
+        rest.split('/')
+            .next()
+            .is_some_and(|host| host == "api.x.ai" || host.ends_with(".api.x.ai"))
+    })
+}
+
+fn uses_responses(url: &str) -> bool {
+    url.contains("/responses")
 }
 
 pub struct Endpoint {
@@ -120,28 +146,67 @@ pub struct Endpoint {
 
 impl Completer for Endpoint {
     fn complete(&self, prompt: &str) -> Result<String, String> {
-        let body = serde_json::json!({
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 80,
-        });
-        let response = ureq::post(&self.url)
-            .set("Authorization", &format!("Bearer {}", self.api_key))
+        let body = request_body(&self.model, prompt, uses_responses(&self.url));
+        let mut request = ureq::post(&self.url)
             .set("Content-Type", "application/json")
-            .timeout(self.timeout)
-            .send_json(body)
-            .map_err(|error| error.to_string())?;
+            .timeout(self.timeout);
+        if !self.api_key.is_empty() {
+            request = request.set("Authorization", &format!("Bearer {}", self.api_key));
+        }
+        // Anthropic's OpenAI layer accepts Bearer; the native Messages path
+        // wants these two. Sending both covers either.
+        if self.url.contains("api.anthropic.com") {
+            request = request.set("anthropic-version", "2023-06-01");
+            if !self.api_key.is_empty() {
+                request = request.set("x-api-key", &self.api_key);
+            }
+        }
+        let response = request.send_json(body).map_err(|error| error.to_string())?;
         let text = response.into_string().map_err(|error| error.to_string())?;
-        content_from_chat(&text)
+        content_from_body(&text)
     }
 }
 
-fn content_from_chat(body: &str) -> Result<String, String> {
+fn request_body(model: &str, prompt: &str, responses: bool) -> serde_json::Value {
+    if responses {
+        serde_json::json!({
+            "model": model,
+            "input": [{"role": "user", "content": prompt}],
+            "max_output_tokens": 80,
+            "store": false,
+        })
+    } else {
+        serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 80,
+        })
+    }
+}
+
+fn content_from_body(body: &str) -> Result<String, String> {
     let value: serde_json::Value = serde_json::from_str(body).map_err(|error| error.to_string())?;
-    value["choices"][0]["message"]["content"]
+    if let Some(text) = value["choices"][0]["message"]["content"].as_str() {
+        return Ok(text.to_string());
+    }
+    if let Some(text) = value["output_text"]
         .as_str()
-        .map(str::to_string)
-        .ok_or_else(|| "chat completion had no message content".to_string())
+        .filter(|text| !text.is_empty())
+    {
+        return Ok(text.to_string());
+    }
+    if let Some(items) = value["output"].as_array() {
+        for item in items {
+            if let Some(parts) = item["content"].as_array() {
+                for part in parts {
+                    if let Some(text) = part["text"].as_str().filter(|text| !text.is_empty()) {
+                        return Ok(text.to_string());
+                    }
+                }
+            }
+        }
+    }
+    Err("model reply had no text content".to_string())
 }
 
 /// One model call in flight. The frame loop starts it and polls `try_take`.
@@ -200,13 +265,33 @@ mod tests {
     #[test]
     fn a_chat_completion_body_yields_the_message_content() {
         let body = r#"{"choices":[{"message":{"content":"stroll\nhey"}}]}"#;
-        assert_eq!(content_from_chat(body).unwrap(), "stroll\nhey");
+        assert_eq!(content_from_body(body).unwrap(), "stroll\nhey");
+    }
+
+    #[test]
+    fn a_responses_body_yields_the_output_text() {
+        let body = r#"{
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": "stroll\nhey"}]
+            }]
+        }"#;
+        assert_eq!(content_from_body(body).unwrap(), "stroll\nhey");
     }
 
     #[test]
     fn a_body_without_content_is_an_error() {
-        assert!(content_from_chat("{}").is_err());
-        assert!(content_from_chat("not json").is_err());
+        assert!(content_from_body("{}").is_err());
+        assert!(content_from_body("not json").is_err());
+    }
+
+    #[test]
+    fn a_responses_request_uses_input_and_does_not_store() {
+        let body = request_body("grok-4.6", "wave", true);
+        assert_eq!(body["input"][0]["content"], "wave");
+        assert_eq!(body["max_output_tokens"], 80);
+        assert_eq!(body["store"], false);
+        assert!(body.get("messages").is_none());
     }
 
     #[test]
@@ -216,12 +301,29 @@ mod tests {
             "https://api.openai.com/v1/chat/completions"
         );
         assert_eq!(
+            completions_url("https://api.anthropic.com"),
+            "https://api.anthropic.com/v1/chat/completions"
+        );
+        assert_eq!(
             completions_url("http://localhost:11434/v1"),
             "http://localhost:11434/v1/chat/completions"
         );
         assert_eq!(
             completions_url("http://localhost:11434/v1/chat/completions"),
             "http://localhost:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            completions_url("https://api.x.ai"),
+            "https://api.x.ai/v1/responses"
+        );
+        assert_eq!(
+            completions_url("https://api.x.ai/v1"),
+            "https://api.x.ai/v1/responses"
+        );
+        assert_eq!(
+            completions_url("https://api.x.ai/v1/chat/completions"),
+            "https://api.x.ai/v1/chat/completions",
+            "an explicit legacy path is honoured"
         );
     }
 }

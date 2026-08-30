@@ -53,17 +53,48 @@ build time.
 With no Director key the sprite still has a life: Static weights pick among
 the Character's declared Behaviors. A key turns on the HTTP stand-in
 ([ADR-0008](./docs/adr/0008-one-harness-session.md) — disposable until a
-Harness attaches). Any OpenAI-compatible `/v1/chat/completions` endpoint works.
+Harness attaches).
+
+OpenAI, Anthropic's compatibility layer, and Ollama use `/v1/chat/completions`.
+[xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses
+`/v1/responses`; `AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai` selects that
+path. An explicit full URL (ending in `/chat/completions` or `/responses`)
+is used as-is.
 
 ```sh
+# OpenAI
 cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY=sk-... cargo run
+AI_BUDDY_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.openai.com \
+AI_BUDDY_DIRECTOR_MODEL=gpt-4o-mini \
+cargo run
+
+# Anthropic (OpenAI-compatible /v1/chat/completions)
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.anthropic.com \
+AI_BUDDY_DIRECTOR_MODEL=claude-haiku-4-5 \
+cargo run
+
+# xAI — get a key at https://console.x.ai
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
+AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+cargo run
+
+# Ollama — the key is required by the stand-in and ignored by Ollama
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY=ollama \
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+AI_BUDDY_DIRECTOR_MODEL=llama3.2 \
+cargo run
 ```
 
 | Variable | What it does |
 |---|---|
 | `AI_BUDDY_DIRECTOR_API_KEY` | Required for the HTTP stand-in. Empty or unset is Static only. |
-| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider base. Default `https://api.openai.com`. Joined onto `/v1/chat/completions`. |
+| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
 | `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
 | `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First ambient wait, in seconds (default 900). Doubles after each unused ambient wake, caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
