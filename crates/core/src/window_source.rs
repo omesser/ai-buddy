@@ -44,11 +44,23 @@ pub struct Rect {
     pub height: f64,
 }
 
-/// One visible window: where it is, who owns it, and how high it stacks.
+/// The window server's handle for one window.
+///
+/// `u32` because that is what a macOS `CGWindowID` is. Nothing above this layer
+/// interprets it: it is an opaque token, only ever compared for equality. #85.
+pub type WindowId = u32;
+
+/// One visible window: which one it is, where it is, who owns it, and how high
+/// it stacks.
 ///
 /// No title. Titles need Screen Recording consent, and v1 asks for nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowRect {
+    /// The window server's own id, carried all the way to the Engine. Geometry
+    /// alone cannot say that the window under the sprite this tick is the one
+    /// it stood on last tick, and guessing that from size and displacement is
+    /// identity by another name. #85.
+    pub id: WindowId,
     pub bounds: Rect,
     /// The owning application's name, as the window server reports it.
     pub owner: String,
@@ -359,8 +371,9 @@ mod tests {
         assert_eq!(usable, rect(0.0, 30.0, 1920.0, 952.0));
     }
 
-    fn window(owner: &str, bounds: Rect) -> WindowRect {
+    fn window(id: WindowId, owner: &str, bounds: Rect) -> WindowRect {
         WindowRect {
+            id,
             bounds,
             owner: owner.to_string(),
             layer: 0,
@@ -377,7 +390,7 @@ mod tests {
             },
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
-                windows: vec![window("Terminal", rect(10.0, 20.0, 800.0, 600.0))],
+                windows: vec![window(1, "Terminal", rect(10.0, 20.0, 800.0, 600.0))],
             },
         };
 
@@ -404,8 +417,8 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![
-                    window("Terminal", rect(10.0, 20.0, 800.0, 600.0)),
-                    window("Finder", rect(30.0, 40.0, 500.0, 400.0)),
+                    window(1, "Terminal", rect(10.0, 20.0, 800.0, 600.0)),
+                    window(2, "Finder", rect(30.0, 40.0, 500.0, 400.0)),
                 ],
             },
         };

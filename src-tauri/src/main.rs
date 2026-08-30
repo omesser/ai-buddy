@@ -607,8 +607,12 @@ fn run_frame_loop(
             // Whole display frames, not the usable ones physics runs in: the
             // reserved strips are the difference between a fullscreen window
             // and a zoomed one, which is the whole of what is being measured.
+            // Rectangles only: whether a window has taken a whole screen is a
+            // question about geometry, and `visibility` has no use for which
+            // window it is.
+            let rects: Vec<_> = world.windows.iter().map(|window| window.rect).collect();
             let desktop = Desktop {
-                fullscreen_frontmost: fullscreen_frontmost(&world.windows, &displays.frames),
+                fullscreen_frontmost: fullscreen_frontmost(&rects, &displays.frames),
             };
 
             let frame = engine.tick(&world);
