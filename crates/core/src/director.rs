@@ -263,8 +263,8 @@ pub fn due(
 ///
 /// Reactive when the user addressed the buddy. Ambient when `since_ambient`
 /// has reached the current `Pace`. Never while the display is asleep. Quiet
-/// under Do Not Disturb: the buddy stays visible and Poke still works, but
-/// the model is not called.
+/// under Do Not Disturb so the Character stays visible and Poke still works;
+/// displays-asleep would drop Poke too.
 pub fn session_due(
     addressed: bool,
     since_ambient: Duration,
