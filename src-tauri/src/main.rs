@@ -32,11 +32,13 @@ use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
 use ai_buddy_core::sensing::{FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
+use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
 /// Nearest-neighbour blow-up, in logical points. ADR-0006 permits integers only.
 const SPRITE_SCALE: i32 = 4;
@@ -96,6 +98,17 @@ struct Placement {
     height: i32,
     animation: &'static str,
     frame_index: usize,
+    /// Whether the hide rules have the Character on screen, and how long the
+    /// change that decided it was given.
+    ///
+    /// Carried on every frame rather than announced on the tick it changes.
+    /// The first tick fires 16ms into setup, before the webview has fetched
+    /// its art and begun listening, and Tauri buffers nothing for a listener
+    /// that is not there yet — so a Character hidden at launch would be told
+    /// to go once, to nobody, and stay on top of the fullscreen application
+    /// all session.
+    visible: bool,
+    fade_ms: u32,
 }
 
 /// Every Animation's frames as `data:` URLs, in play order, keyed by the
@@ -249,6 +262,47 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
     }
 }
 
+/// Register the hotkey that hides and shows the Character.
+///
+/// Three modifiers, because a global shortcut is taken from every application
+/// on the machine and B alone belongs to most of them. Fixed rather than
+/// configurable: ai-buddy has no settings surface until #18, and a value that
+/// never changes is not configuration.
+///
+/// A hotkey another application already holds is reported and let go. Losing it
+/// costs the user one way to hide the Character, which is not worth losing the
+/// Character over.
+fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
+    let shortcut = Shortcut::new(
+        Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER),
+        Code::KeyB,
+    );
+
+    // Spelled out rather than taken from `shortcut.into_string()`, which says
+    // "control+alt+super+KeyB". These are the names on a Mac keyboard, and this
+    // is the one line that tells a user which keys to press. Edit both.
+    const HIDE_HOTKEY: &str = "Control-Option-Command-B";
+
+    let plugin = tauri_plugin_global_shortcut::Builder::new()
+        .with_shortcut(shortcut)
+        .expect("a Shortcut built here converts into itself")
+        .with_handler(move |_app, _shortcut, event| {
+            // Pressed only. The handler is called again on release, and a
+            // toggle that ran twice would hand the Character back before the
+            // user had let go of the key.
+            if event.state() == ShortcutState::Pressed {
+                if let Ok(mut rules) = rules.lock() {
+                    rules.toggle();
+                }
+            }
+        })
+        .build();
+
+    if let Err(why) = app.plugin(plugin) {
+        eprintln!("hotkey: {HIDE_HOTKEY} is unavailable, so the Character cannot be hidden by hand: {why}");
+    }
+}
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -265,6 +319,7 @@ fn run_frame_loop(
     character: Arc<Character>,
     source: impl WindowSource + Send + 'static,
     displays: platform::DisplayCache,
+    rules: Arc<Mutex<HideRules>>,
     start: Point,
     covered: Vec<Rect>,
 ) {
@@ -358,11 +413,18 @@ fn run_frame_loop(
                 cursor_points.y.round() as i32,
             );
 
-            let pressed_sprite = drawn_last.as_ref().is_some_and(|last| {
-                character
-                    .draw(last.animation, last.animation_ms)
-                    .is_some_and(|art| art.mask.hit(&last.rect, cursor_at.0, cursor_at.1))
-            });
+            // Last tick's answer, which is the right one: the art being
+            // hit-tested is the art that was last drawn. A Character nobody can
+            // see is not there to be pressed, so a click where it would have
+            // been reaches the window underneath and pokes nothing.
+            let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
+
+            let pressed_sprite = visible
+                && drawn_last.as_ref().is_some_and(|last| {
+                    character
+                        .draw(last.animation, last.animation_ms)
+                        .is_some_and(|art| art.mask.hit(&last.rect, cursor_at.0, cursor_at.1))
+                });
             let verbs = pointer.update(
                 pressed_sprite,
                 platform::primary_button_down(),
@@ -400,6 +462,14 @@ fn run_frame_loop(
 
             let mut world = assembler.assemble(elapsed_ms, cursor_points, verbs);
             world.proposal = proposal;
+
+            // Whole display frames, not the usable ones physics runs in: the
+            // reserved strips are the difference between a fullscreen window
+            // and a zoomed one, which is the whole of what is being measured.
+            let desktop = Desktop {
+                fullscreen_frontmost: fullscreen_frontmost(&world.windows, &displays.frames),
+            };
+
             let frame = engine.tick(&world);
 
             // What the user has seen is what the Engine played, not what the
@@ -412,6 +482,31 @@ fn run_frame_loop(
                     eprintln!("director: {played}");
                 }
             }
+
+            // The log is what is silent on almost every tick, not the
+            // renderer: only a change is worth a line, and a fullscreen
+            // application held for an hour is one of them rather than one an
+            // Engine tick.
+            let presence = rules
+                .lock()
+                .map(|mut rules| {
+                    if let Some(change) = rules.update(desktop) {
+                        // Unconditional, unlike the traces above, because it is
+                        // rare — a handful of lines in a session — and because
+                        // whether a rule fired is the first thing anyone
+                        // checking hiding by hand needs to know.
+                        eprintln!(
+                            "presence: {} over {}ms",
+                            if change.visible { "shown" } else { "hidden" },
+                            change.fade_ms,
+                        );
+                    }
+                    rules.presence()
+                })
+                .unwrap_or(Change {
+                    visible,
+                    fade_ms: 0,
+                });
 
             // A display can be plugged in, unplugged or rearranged while the
             // app runs, and every display needs its overlay. Posted rather than
@@ -495,11 +590,13 @@ fn run_frame_loop(
                 animation_ms: frame.animation_ms,
             });
 
-            // Click-through returns wherever the sprite is not drawn — except
-            // while it is held. A drag that outruns the art would otherwise put
-            // the cursor over transparent pixels, hand the button to whatever
-            // is underneath, and drop the sprite in the user's hand.
-            let ignore = !(over_sprite || pointer.grabbing());
+            // Click-through returns wherever the sprite is not drawn, and
+            // everywhere while the Character is hidden — a Character nobody can
+            // see must not swallow a click. The exception is a held Character:
+            // a drag that outruns the art would otherwise put the cursor over
+            // transparent pixels, hand the button to whatever is underneath,
+            // and drop the sprite in the user's hand.
+            let ignore = !(presence.visible && (over_sprite || pointer.grabbing()));
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             let mut flipped = false;
@@ -531,6 +628,8 @@ fn run_frame_loop(
                         height,
                         animation: frame.animation,
                         frame_index: drawn.index,
+                        visible: presence.visible,
+                        fade_ms: presence.fade_ms,
                     },
                 );
 
@@ -691,11 +790,18 @@ fn main() {
                 sprite_height as i32 * SPRITE_SCALE,
             );
 
+            // Shared because the hotkey and the frame loop each see half of the
+            // answer: the key is pressed on the main thread and the desktop is
+            // read on the loop's.
+            let rules = Arc::new(Mutex::new(HideRules::default()));
+            register_hide_hotkey(app.handle(), Arc::clone(&rules));
+
             run_frame_loop(
                 app.handle().clone(),
                 character,
                 source,
                 displays,
+                rules,
                 start,
                 covered,
             );

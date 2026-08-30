@@ -299,33 +299,10 @@ STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
 
-# A tight crop around the sprite, with padding, so the edges of the art can be
-# eyeballed against whatever is behind them. A full-desktop grab is too big to
-# judge transparency from.
-#
-# Taken at rest rather than mid-run. It used to have to be mid-run: at rest the
-# sprite sat at the bottom of the screen, where the Dock draws over it. Now it
-# rests on the Dock (#39), so this crop is also the proof of that — the sprite
-# is whole, above the Dock, rather than three quarters buried in it.
-python3 - "$OUT" << 'PY'
-import re, subprocess, sys
-
-out = sys.argv[1]
-log = open(f"{out}/app.log").read()
-size = re.search(r"sprite (\d+)x(\d+)", log)
-# The trace reports the sprite in the space every display shares, which is the
-# space screencapture crops in. No overlay's origin is added back: with one
-# overlay per display there is no single window to add.
-at = re.findall(r"^frame: \S+ Grounded \S+ sprite\((-?\d+),(-?\d+)\)", log, re.M)
-
-if size and at:
-    width, height = (int(g) for g in size.groups())
-    x, y = (int(g) for g in at[-1])
-    pad = 40
-    region = (f"{x - pad},{y - pad},{width + pad * 2},{height + pad * 2}")
-    subprocess.run(["screencapture", "-x", "-R", region, f"{out}/sprite.png"], check=False)
-PY
-
+# No crop of the sprite any more. The overlay refuses every screen capture,
+# and screencapture is one, so the crop this used to take would be a picture
+# of the desktop where the sprite is. The art is eyeballed on screen instead,
+# or in a run started with AI_BUDDY_CAPTURABLE=1.
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
 for i in $(seq 1 "$DISPLAY_COUNT"); do
@@ -381,6 +358,14 @@ if not windows:
 check(all(w["onscreen"] for w in windows), "every overlay is on screen")
 levels = {w["layer"] for w in windows}
 check(levels == {3}, "every overlay is at floating level", f"levels={sorted(levels)}")
+
+# The screen-share half of the hide rules, and the only part of it a machine can
+# check. NSWindowSharingNone is 0, and it is what keeps the Character out of
+# every screen share, screen recording and remote view without anything having
+# to detect one — macOS publishes no way to detect one.
+sharing = {w["sharing"] for w in windows}
+check(sharing == {0}, "every overlay is excluded from screen capture",
+      f"sharing={sorted(sharing)}")
 
 # The origin has to match too — a window covering the right area of the wrong
 # display is the same disappearance.

@@ -12,4 +12,5 @@ pub mod memory;
 pub mod overlay;
 pub mod sensing;
 pub mod snapshot;
+pub mod visibility;
 pub mod window_source;

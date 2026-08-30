@@ -25,7 +25,7 @@ let art = {};
 // round a point apart while it is moving. At rest they cannot, there being
 // nothing to interpolate. The upgrade is to carry the Engine's own timestamp
 // on the frame and solve for it, which needs a per-webview offset between that
-// clock and `performance.now()`; worth it if README item 13 ever shows a
+// clock and `performance.now()`; worth it if README item 19 ever shows a
 // shimmer at the seam under a drag.
 let previous = null;
 let latest = null;
@@ -46,6 +46,14 @@ function draw(now) {
   // Whole pixels, so a sprite drawn at an integer scale is not resampled back
   // onto a fractional grid by the compositor. ADR-0006.
   sprite.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
+
+  // The hide rules, carried on every frame rather than announced when they
+  // change: a change announced while this file was still fetching its art is a
+  // change nobody heard. Writing the same two values again costs nothing and
+  // restarts no transition. A rule sends a duration and the hotkey sends zero,
+  // so one line covers both the fade and the instant answer.
+  sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  sprite.style.opacity = latest.visible ? "1" : "0";
 
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === drawn) {

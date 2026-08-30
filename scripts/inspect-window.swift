@@ -86,6 +86,10 @@ if let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: An
             "owner": owner,
             "layer": layer,
             "alpha": w[kCGWindowAlpha as String] as? Double ?? -1,
+            // 0 is NSWindowSharingNone: the window server will not hand this
+            // window to any capture, which is how the Character stays out of a
+            // screen share without anything having to detect one.
+            "sharing": w[kCGWindowSharingState as String] as? Int ?? -1,
             "onscreen": w[kCGWindowIsOnscreen as String] as? Bool ?? false,
             "x": b["X"] as? Double ?? 0, "y": b["Y"] as? Double ?? 0,
             "w": b["Width"] as? Double ?? 0, "h": b["Height"] as? Double ?? 0,
