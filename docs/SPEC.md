@@ -300,18 +300,27 @@ frames rather than to its bounding rectangle, so the sprite cannot enter gaps be
 non-aligned displays. Backing scale factor is resolved per display at render time, not in
 the Engine.
 
-The overlay window covers one display and follows the sprite to the next. It cannot be
+There is one overlay window per display, each covering that display. No window can be
 sized to the union: macOS gives each display its own Space and draws a window spanning
 two of them on only one, so a union-sized overlay is invisible on every display but the
-one it belongs to. The Engine is unaffected — it works in the space all displays share,
-and the Shell picks the display the sprite's contact point is on, or the nearest when it
-is on none.
+one it belongs to. The set follows the desktop, so a display attached or removed while
+the app runs gains or loses its overlay without a restart.
+
+Every overlay is told where the sprite is, in its own coordinates, and each draws the
+part that falls inside it. A Character straddling a seam is therefore whole: the two
+halves are clipped by the two overlays and meet at the seam. The Engine is unaffected —
+it works in the space all displays share and knows nothing about windows.
 
 ### Overlay and input
 
-One always-on-top overlay window per Character Instance. On macOS: a non-activating panel
-at floating level, joining all Spaces, stationary, excluded from the application switcher,
-never accepting first responder status.
+One always-on-top overlay window per display per Character Instance. On macOS: a
+non-activating panel at floating level, joining all Spaces, stationary, excluded from the
+application switcher, never accepting first responder status. Identical on every overlay,
+which is why one code path builds and configures them all.
+
+Click-through is decided once per tick, in the shared point space, and applied to the
+overlay the cursor is on; every other overlay passes clicks through, so a sprite on one
+display never swallows a click on another.
 
 Click-through is per-window rather than per-pixel in Tauri. The overlay tracks the cursor
 and toggles ignore-mouse-events by hit-testing the sprite's current alpha, so transparent
