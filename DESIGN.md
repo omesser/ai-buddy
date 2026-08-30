@@ -167,8 +167,9 @@ through a package is not theoretical.
 8 animations must work; one with 30 should look better. Eight keeps a hobbyist
 package to an evening's drawing.
 
-**Shipped Characters: two, one faithful Win95 (16-color, hard pixels,
-dithering), one modern pixel art.** Two styles validate the package abstraction
+**Shipped Characters: two, one hard-pixel retro (a small flat palette, no
+anti-aliasing, dithering only where a shade between two of its colours is
+wanted), one modern pixel art.** Two styles validate the package abstraction
 against real variance before the format is published.
 
 The package on disk, as a directory or the same tree inside an archive:
@@ -204,9 +205,18 @@ sprite trapped inside an occluded window, jitter where windows overlap.
 A bottom edge is read for one thing and it is not collision: telling whether a
 window has come to contain a resting sprite — dragged over it, or walked into
 where two windows overlap — in which case the sprite steps up onto that
-window's top edge rather than being left standing inside a rectangle. The floor
-is exempt, because every window behind the Dock hangs below it and a sprite on
-the ground in front of a window is not trapped in anything.
+window's top edge rather than being left standing inside a rectangle. Unless
+that edge is itself nowhere to stand — hidden behind a window in front of it,
+or hanging over no display — and then the sprite falls instead, because
+stepping up would strand it somewhere the user cannot see it. The floor is
+exempt, because every window behind the Dock hangs below it and a sprite on the
+ground in front of a window is not trapped in anything.
+
+Occlusion is a landing rule and never a resting one. An edge hidden behind a
+window in front of it is nowhere to land, but a sprite already standing on one
+stays there: raising a window over a Perch moves nothing, and re-deriving
+visibility every tick drops the sprite through the edge it is sitting on the
+first time the user clicks a maximized window.
 
 The verb set is fixed at five: **Grab**, **Throw**, **Poke**, **Menu**,
 **Summon**. Every verb is a tax on every Character that will ever exist, so
@@ -356,11 +366,15 @@ to being called spyware.
 Physics runs in a single coordinate space, the one every display shares.
 Reconciling per-display physics would be considerably harder.
 
-The overlay window is the exception, and not by choice: macOS gives each display
-its own Space and draws a window spanning two of them on only one, so the window
-covers a single display and the frame loop moves it to whichever display the
-sprite reaches. A sprite straddling the boundary is clipped, which one overlay
-per display would fix and nothing else will.
+The overlays are per display, and not by choice: macOS gives each display its
+own Space and draws a window spanning two of them on only one, so a window sized
+to the union is invisible everywhere but the display it belongs to. Every
+display therefore gets its own overlay covering it, and every overlay is told
+where the sprite is, in its own coordinates. A sprite straddling a boundary is
+drawn by both and clipped by each to its own half, so the halves meet at the
+seam. One code path builds and configures an overlay, because click-through,
+window level, Spaces membership and hide rules have to be identical across all
+of them.
 
 Two real problems to budget for: differing backing scale factors between
 displays, and gaps between non-aligned displays. Clamp to the union of visible
@@ -474,5 +488,5 @@ records it.
 | 20 | Memory | One shared plaintext Markdown file the user owns; chat history session-scoped |
 | 21 | No Harness attached | Fully charming — full Spatial Layer, chat shows a connect nudge |
 | 23 | Art | True pixel art, integer nearest-neighbour — [ADR-0006](./docs/adr/0006-pixel-art-integer-scaling.md) |
-| 24 | Displays | Overlay covers one display and follows the sprite; physics spans them all |
+| 24 | Displays | One overlay per display, each covering it; physics spans them all |
 | 25 | Release staging | v1 is charm, chat, Memory, and Harness attach; voice and Ambient Capture deferred |

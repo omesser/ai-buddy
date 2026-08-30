@@ -1,7 +1,7 @@
-# The placeholder Character. Not art — a stand-in that gives the renderer eight
+# Blip, the stand-in. Not art — it gives the renderer eight
 # visibly different Animations to play, and the hit-test something with
 # transparent regions to test against. Regenerate the frames with
-# scripts/make-placeholder-character.py.
+# scripts/make-blip-character.py.
 
 name = Blip
 
@@ -40,7 +40,7 @@ behavior settle = sit sleep
 behavior walk = walk
 
 # What Blip does with no model configured. The Static Director draws from these
-# by weight, so this is the whole of the placeholder's idle life: greet whoever
+# by weight, so this is the whole of its idle life: greet whoever
 # is at the keyboard, wander once they stop typing, and settle down once they
 # have plainly gone.
 weight greet = 2

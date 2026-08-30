@@ -6,56 +6,53 @@
 //! decision is this module. It is pure arithmetic so it can be tested without a
 //! windowing system.
 //!
-//! Placing the overlay is here for the same reason. Which display the window
-//! covers and where the art lands inside it are two more sums the Shell would
-//! otherwise do by hand beside the window server, where nothing can check them.
+//! Placing the overlays is here for the same reason. There is one overlay per
+//! display, so which one the cursor is on and where the art lands inside each of
+//! them are sums the Shell would otherwise do by hand beside the window server,
+//! where nothing can check them.
+//!
+//! Everything here is in points, the space every display shares and the Engine
+//! works in. Physical pixels stop at `window_source::in_points`.
 
 use crate::window_source::Rect;
 
-/// Convert a global cursor reading into overlay-window coordinates, in points.
+/// The index of the display a point is on, or of the nearest one when it is on
+/// none.
 ///
-/// Both inputs are "physical pixels", but they are not the same physical space.
-/// The windowing layer scales the global cursor by the *primary* display's scale
-/// factor and the window's own origin by the *window's* scale factor. On a
-/// mixed-DPI desktop those differ, so subtracting the two raw readings and
-/// dividing once yields a hit region nowhere near the sprite. Each reading has
-/// to be returned to points using the factor that produced it.
-pub fn cursor_in_window(
-    cursor_physical: (f64, f64),
-    cursor_scale: f64,
-    window_origin_physical: (f64, f64),
-    window_scale: f64,
-) -> (i32, i32) {
-    let cursor_x = cursor_physical.0 / cursor_scale;
-    let cursor_y = cursor_physical.1 / cursor_scale;
-    let origin_x = window_origin_physical.0 / window_scale;
-    let origin_y = window_origin_physical.1 / window_scale;
-
-    (
-        (cursor_x - origin_x).round() as i32,
-        (cursor_y - origin_y).round() as i32,
-    )
-}
-
-/// The display a point is on, or the nearest one when it is on none.
+/// Every display has an overlay, so this names the overlay a point belongs to —
+/// the one whose window a click there would reach.
 ///
-/// The overlay covers one display at a time, so something has to name which.
 /// Containment answers it almost always, and the fallback is for the moments it
 /// cannot: displays need not be flush, so a cursor can sit in the gap between
 /// two of them, and a thrown sprite passes outside the outermost edge before
-/// physics catches it. The nearest display is the answer there because the
-/// point is on its way into or out of that one, and because the alternative —
-/// no display — leaves the overlay nowhere to be and the Character invisible.
+/// physics catches it. The nearest display is the answer there because the point
+/// is on its way into or out of that one.
 ///
-/// A point on a shared edge belongs to the first display that reported it,
-/// which is arbitrary and has to be: both answers are equally true.
+/// Containment is half-open, because a window is: a display 1920 wide at x=0
+/// covers columns 0 to 1919, and column 1920 is the next display's first. The
+/// shared edge has to go to the display whose window is actually there, since
+/// this is what decides which overlay stops being click-through — naming the
+/// neighbour leaves the overlay under the cursor passing clicks through, and a
+/// click on the sprite falls to whatever is beneath it.
 ///
 /// `None` only when no display was reported, which is a machine with no screen.
-pub fn display_for(point: (f64, f64), displays: &[Rect]) -> Option<Rect> {
+pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> {
     displays
         .iter()
-        .min_by(|a, b| outside_by(point, a).total_cmp(&outside_by(point, b)))
-        .copied()
+        .position(|display| covers(point, display))
+        .or_else(|| {
+            displays
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| outside_by(point, a).total_cmp(&outside_by(point, b)))
+                .map(|(index, _)| index)
+        })
+}
+
+/// Whether a display's window has this point, right and bottom edges excluded.
+fn covers(point: (f64, f64), rect: &Rect) -> bool {
+    (rect.x..rect.x + rect.width).contains(&point.0)
+        && (rect.y..rect.y + rect.height).contains(&point.1)
 }
 
 /// How far outside a rectangle a point lies, squared. Zero anywhere inside it.
@@ -76,39 +73,56 @@ fn outside_by(point: (f64, f64), rect: &Rect) -> f64 {
 /// Where to draw the art, given where the Character's feet are.
 ///
 /// A `Frame` reports the contact point: the Character's feet, in the point space
-/// every display shares. The webview draws in points from the overlay's
-/// top-left, and the art hangs above the feet and is centred on them, so the
-/// drawn rectangle sits half a width to the left and a whole height above.
+/// every display shares. The art hangs above the feet and is centred on them, so
+/// the drawn rectangle sits half a width to the left and a whole height above.
 ///
-/// The window origin arrives in physical pixels against the window's own scale
-/// factor, exactly as it does for `cursor_in_window`, and has to be returned to
-/// points before it can be subtracted from a position that is already in them.
-pub fn place_sprite(
-    contact: (f64, f64),
-    window_origin_physical: (f64, f64),
-    window_scale: f64,
-    art_size: (i32, i32),
-    scale: i32,
-) -> SpriteRect {
-    let origin_x = window_origin_physical.0 / window_scale;
-    let origin_y = window_origin_physical.1 / window_scale;
+/// The answer is in that same shared space, which is the space the hit-test asks
+/// its question in. `SpriteRect::in_overlay` is what turns it into one overlay's
+/// own coordinates for drawing.
+pub fn place_sprite(contact: (f64, f64), art_size: (i32, i32), scale: i32) -> SpriteRect {
     let (width, height) = art_size;
 
     SpriteRect {
-        x: (contact.0 - origin_x).round() as i32 - width / 2,
-        y: (contact.1 - origin_y).round() as i32 - height,
+        x: contact.0.round() as i32 - width / 2,
+        y: contact.1.round() as i32 - height,
         scale,
     }
 }
 
-/// Where the sprite sits in the overlay window, and how far its art is blown up.
+/// Where the sprite sits, and how far its art is blown up.
 ///
-/// `x` and `y` are the sprite's top-left corner in window coordinates. `scale` is
-/// the integer nearest-neighbour factor the art is rendered at.
+/// `x` and `y` are the sprite's top-left corner, in whichever space it was
+/// placed in: `place_sprite` works in the shared point space, `in_overlay` moves
+/// a copy into one overlay's own. `scale` is the integer nearest-neighbour
+/// factor the art is rendered at.
+#[derive(Clone, Copy)]
 pub struct SpriteRect {
     pub x: i32,
     pub y: i32,
     pub scale: i32,
+}
+
+impl SpriteRect {
+    /// The same rectangle in one overlay's coordinates: points from the
+    /// top-left corner of the display that overlay covers.
+    ///
+    /// Every overlay is handed the sprite, including the ones it is nowhere
+    /// near, and each draws the part that falls inside it. That is what makes a
+    /// Character on a seam whole: both overlays are given the same rectangle in
+    /// their own coordinates, so the halves they clip meet at the seam instead
+    /// of overlapping or leaving a gap.
+    ///
+    /// No scale factor appears. Two displays with different backing factors
+    /// share one point space, and the overlay's origin is its display's because
+    /// the window is placed to cover that display exactly — which is what
+    /// `scripts/verify-overlay.sh` asserts on a real desktop.
+    pub fn in_overlay(&self, overlay: Rect) -> SpriteRect {
+        SpriteRect {
+            x: self.x - overlay.x.round() as i32,
+            y: self.y - overlay.y.round() as i32,
+            scale: self.scale,
+        }
+    }
 }
 
 /// Which pixels of an Animation frame are drawn, at the art's own resolution.
@@ -281,52 +295,16 @@ mod tests {
         );
     }
 
-    /// Mixed-DPI is the case that matters: a 1x primary display beside a 2x
-    /// built-in. The two inputs arrive in different physical spaces, so each has
-    /// to be undone with the factor that produced it.
-    #[test]
-    fn cursor_and_window_are_converted_with_their_own_scale_factors() {
-        // Cursor sits at 500,300 in points. The primary display is 1x, so its
-        // physical reading is the same numbers.
-        // The overlay's top-left is at 100,50 in points on a 2x display, so its
-        // physical reading is doubled.
-        let (x, y) = cursor_in_window((500.0, 300.0), 1.0, (200.0, 100.0), 2.0);
-
-        assert_eq!((x, y), (400, 250), "500-100 across, 300-50 down, in points");
-    }
-
-    #[test]
-    fn a_single_scale_desktop_still_converts() {
-        let (x, y) = cursor_in_window((800.0, 600.0), 2.0, (200.0, 100.0), 2.0);
-
-        assert_eq!((x, y), (300, 250), "400-100 across, 300-50 down, in points");
-    }
-
     /// The art hangs above the feet and is centred on them, so a Character
     /// standing at a point is drawn above and to the left of it.
     #[test]
     fn the_art_hangs_above_the_contact_point_and_is_centred_on_it() {
-        let sprite = place_sprite((500.0, 300.0), (0.0, 0.0), 1.0, (128, 128), 4);
+        let sprite = place_sprite((500.0, 300.0), (128, 128), 4);
 
         assert_eq!(
             (sprite.x, sprite.y),
             (436, 172),
             "half a width left, a whole height up"
-        );
-    }
-
-    /// The same trap as `cursor_in_window`: the window origin arrives in
-    /// physical pixels against the window's own scale factor, and the Frame
-    /// arrives in points. Subtracting them raw puts the art nowhere near the
-    /// Character on any display that is not 1x.
-    #[test]
-    fn the_window_origin_is_undone_with_the_windows_own_scale() {
-        let sprite = place_sprite((500.0, 300.0), (200.0, 100.0), 2.0, (128, 128), 4);
-
-        assert_eq!(
-            (sprite.x, sprite.y),
-            (336, 122),
-            "origin is 100,50 in points"
         );
     }
 
@@ -342,11 +320,11 @@ mod tests {
     /// Two displays side by side, the second starting where the first ends.
     ///
     /// Literal points, so this runs the same on any machine, including one with
-    /// a single display. `display_for` compares rectangles and never sees a
-    /// scale factor: converting a display into points is `window_source`'s job
-    /// and is tested there. These are the sizes that conversion produces for a
-    /// 1080p display beside a Retina one, which is the arrangement the bug was
-    /// reported on.
+    /// a single display. Nothing here sees a scale factor: converting a display
+    /// into points is `window_source`'s job and is tested there. These are the
+    /// sizes that conversion produces for a 1080p display beside a Retina one,
+    /// which is the arrangement the bug was reported on — 1x beside 2x, sharing
+    /// one point space.
     ///
     /// The seam at 1920 is the point of the fixture. Every case below is about
     /// which side of it a point falls on.
@@ -357,26 +335,85 @@ mod tests {
         ]
     }
 
+    /// The issue this module is here for: a Character standing on the seam is
+    /// drawn by both overlays, and the halves have to meet.
+    #[test]
+    fn a_sprite_on_a_seam_is_two_halves_that_meet() {
+        let displays = two_displays();
+        // Feet on the seam. 128 points of art, so 64 fall on each display.
+        let sprite = place_sprite((1920.0, 700.0), (128, 128), 4);
+
+        let left = sprite.in_overlay(displays[0]);
+        let right = sprite.in_overlay(displays[1]);
+
+        assert_eq!((left.x, left.y), (1856, 572), "overlay 0 draws from 1856");
+        assert_eq!((right.x, right.y), (-64, 572), "overlay 1 draws from -64");
+        assert_eq!(
+            1920 - left.x,
+            -right.x,
+            "the columns overlay 0 runs out of room for are the ones overlay 1 hides \
+             behind its own left edge: no gap and no overlap"
+        );
+    }
+
+    /// Displays stack vertically too, and the origin subtracted is the whole
+    /// origin rather than an x.
+    #[test]
+    fn an_overlay_below_another_subtracts_its_own_top_edge() {
+        let displays = [
+            rect(0.0, 0.0, 1920.0, 1080.0),
+            rect(0.0, 1080.0, 1920.0, 1080.0),
+        ];
+        let sprite = place_sprite((500.0, 1080.0), (128, 128), 4);
+
+        assert_eq!(
+            sprite.in_overlay(displays[0]).y,
+            952,
+            "128 up from the seam"
+        );
+        assert_eq!(sprite.in_overlay(displays[1]).y, -128, "and 128 above it");
+    }
+
+    /// A display whose origin is not a whole number of points, which fractional
+    /// scaling produces. The sprite still lands on the pixel grid.
+    #[test]
+    fn a_fractional_display_origin_is_rounded_to_the_pixel_grid() {
+        let sprite = place_sprite((500.0, 300.0), (128, 128), 4);
+
+        // Both halves round up, so truncating either one is a wrong answer.
+        assert_eq!(
+            sprite.in_overlay(rect(100.6, 50.6, 800.0, 600.0)).x,
+            335,
+            "436 - 101"
+        );
+        assert_eq!(
+            sprite.in_overlay(rect(100.6, 50.6, 800.0, 600.0)).y,
+            121,
+            "172 - 51"
+        );
+    }
+
     #[test]
     fn a_point_on_a_display_belongs_to_that_display() {
         let displays = two_displays();
 
-        assert_eq!(display_for((960.0, 540.0), &displays), Some(displays[0]));
-        assert_eq!(display_for((2600.0, 500.0), &displays), Some(displays[1]));
+        assert_eq!(display_index_for((960.0, 540.0), &displays), Some(0));
+        assert_eq!(display_index_for((2600.0, 500.0), &displays), Some(1));
         assert_eq!(
-            display_for((1920.5, 500.0), &displays),
-            Some(displays[1]),
+            display_index_for((1920.5, 500.0), &displays),
+            Some(1),
             "half a point across the seam is across it"
         );
         assert_eq!(
-            display_for((1920.0, 500.0), &displays),
-            Some(displays[0]),
-            "the seam itself goes to whichever display reported first"
+            display_index_for((1920.0, 500.0), &displays),
+            Some(1),
+            "the seam column is the second display's first column, not the first \
+             display's last: that is where its window starts"
         );
     }
 
     /// Displays are not always flush, and a cursor can sit in the gap between
-    /// two of them. The overlay still has to be somewhere.
+    /// two of them. The click still belongs to one overlay.
     #[test]
     fn a_point_in_the_gap_between_displays_belongs_to_the_nearer_one() {
         let displays = [
@@ -384,8 +421,8 @@ mod tests {
             rect(2000.0, 0.0, 1728.0, 1117.0),
         ];
 
-        assert_eq!(display_for((1930.0, 500.0), &displays), Some(displays[0]));
-        assert_eq!(display_for((1990.0, 500.0), &displays), Some(displays[1]));
+        assert_eq!(display_index_for((1930.0, 500.0), &displays), Some(0));
+        assert_eq!(display_index_for((1990.0, 500.0), &displays), Some(1));
     }
 
     /// A Throw carries the sprite past the outermost edge before physics
@@ -395,19 +432,19 @@ mod tests {
         let displays = two_displays();
 
         assert_eq!(
-            display_for((4000.0, 2000.0), &displays),
-            Some(displays[1]),
+            display_index_for((4000.0, 2000.0), &displays),
+            Some(1),
             "off the bottom-right corner of the desktop"
         );
         assert_eq!(
-            display_for((-500.0, -500.0), &displays),
-            Some(displays[0]),
+            display_index_for((-500.0, -500.0), &displays),
+            Some(0),
             "off the top-left corner of the desktop"
         );
     }
 
     #[test]
-    fn no_displays_is_nowhere_to_put_the_overlay() {
-        assert_eq!(display_for((960.0, 540.0), &[]), None);
+    fn no_displays_is_no_overlay_to_belong_to() {
+        assert_eq!(display_index_for((960.0, 540.0), &[]), None);
     }
 }

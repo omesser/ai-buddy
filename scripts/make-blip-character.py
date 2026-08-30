@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the placeholder Character's art.
+"""Draw Blip's art.
 
 Not art. A stand-in that gives the renderer eight visibly different Animations
 to play and the hit-test something with transparent regions to test against.
@@ -9,9 +9,9 @@ all before anyone has drawn one.
 Pure standard library — zlib and struct write a PNG in a dozen lines, and a
 build step that needs Pillow installed is a build step that stops working.
 
-    python3 scripts/make-placeholder-character.py
+    python3 scripts/make-blip-character.py
 
-It rewrites characters/placeholder/frames/ in place.
+It rewrites characters/blip/frames/ in place.
 """
 
 import pathlib
@@ -19,7 +19,7 @@ import struct
 import zlib
 
 SIZE = 32
-OUT = pathlib.Path(__file__).resolve().parent.parent / "characters" / "placeholder" / "frames"
+OUT = pathlib.Path(__file__).resolve().parent.parent / "characters" / "blip" / "frames"
 
 BODY = (0x4A, 0x90, 0xD9, 255)
 EDGE = (0x1C, 0x3F, 0x66, 255)
