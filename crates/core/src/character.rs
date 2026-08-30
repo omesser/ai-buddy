@@ -446,8 +446,8 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
             // The parser's message can be as terse as "duplicate key", so the
             // offending text is quoted after it when the span has any.
             let offender = match wrote(manifest, error.span()) {
-                "" | "?" => String::new(),
-                text => format!(" ({text})"),
+                Some(text) if !text.is_empty() => format!(" ({text})"),
+                _ => String::new(),
             };
             errors.push(format!(
                 "{CHARACTER_MANIFEST_FILE} is not TOML{at}: {}{offender}",
@@ -464,7 +464,7 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
                 Some(name) => declared.name = Some(name.to_string()),
                 None => errors.push(format!(
                     "\"name\" is {}, and must be text, as name = \"Blip\"",
-                    wrote(manifest, item.span())
+                    wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
             "animations" => match item.as_table_like() {
@@ -536,7 +536,7 @@ fn parse_animation(
                 )),
                 None => errors.push(format!(
                     "fps for animation {name:?} is {}, which is not a whole number",
-                    wrote(manifest, item.span())
+                    wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
             "loop" => match item.as_str() {
@@ -545,7 +545,7 @@ fn parse_animation(
                 _ => errors.push(format!(
                     "loop mode for animation {name:?} is {}, \
                      and must be \"forever\" or \"once\"",
-                    wrote(manifest, item.span())
+                    wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
             other => errors.push(format!(
@@ -555,11 +555,14 @@ fn parse_animation(
         }
     }
 
-    if frames.is_none() && !table.contains_key("frames") {
+    if !table.contains_key("frames") {
         errors.push(format!("animation {name:?} declares no frames"));
     }
+    // No usable frame list — rejected above or by `frame_list` — means no
+    // Animation, however sound its fps and loop mode were.
+    let frames = frames?;
     Some(DeclaredAnimation {
-        frames: frames?,
+        frames,
         fps,
         looping,
     })
@@ -579,7 +582,7 @@ fn frame_list(
         errors.push(format!(
             "frames for animation {name:?} is {}, and must be a list of \
              frame files, as frames = [\"idle-0.png\"]",
-            wrote(manifest, item.span())
+            wrote(manifest, item.span()).unwrap_or("?")
         ));
         return None;
     };
@@ -600,7 +603,7 @@ fn frame_list(
             None => {
                 errors.push(format!(
                     "animation {name:?} declares the frame {}, which is not a file name",
-                    wrote(manifest, frame.span())
+                    wrote(manifest, frame.span()).unwrap_or("?")
                 ));
                 return None;
             }
@@ -641,14 +644,14 @@ fn parse_behavior(
                 _ => errors.push(format!(
                     "then for behavior {name:?} is {}, and must name one Behavior, \
                      as then = \"settle\"",
-                    wrote(manifest, item.span())
+                    wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
             "weight" => match item.as_integer().and_then(|w| u32::try_from(w).ok()) {
                 Some(declared) => weight = declared,
                 None => errors.push(format!(
                     "weight for behavior {name:?} is {}, which is not a whole number",
-                    wrote(manifest, item.span())
+                    wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
             "when" => match item.as_str().and_then(parse_trigger) {
@@ -656,7 +659,7 @@ fn parse_behavior(
                 None => errors.push(format!(
                     "when for behavior {name:?} is {}, which is not a condition; \
                      a condition reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\"",
-                    wrote(manifest, item.span())
+                    wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
             other => errors.push(format!(
@@ -683,7 +686,7 @@ fn play_list(name: &str, item: &Item, manifest: &str, errors: &mut Vec<String>) 
         errors.push(format!(
             "play for behavior {name:?} is {}, and must be a list of \
              Primitives, as play = [\"react\", \"talk\"]",
-            wrote(manifest, item.span())
+            wrote(manifest, item.span()).unwrap_or("?")
         ));
         return Vec::new();
     };
@@ -700,7 +703,7 @@ fn play_list(name: &str, item: &Item, manifest: &str, errors: &mut Vec<String>) 
             None => errors.push(format!(
                 "behavior {name:?} declares {}, which is not a Primitive; \
                  the Primitives are {}",
-                wrote(manifest, word.span()),
+                wrote(manifest, word.span()).unwrap_or("?"),
                 PRIMITIVES
                     .iter()
                     .map(|(name, _)| *name)
@@ -724,11 +727,9 @@ fn line_of(manifest: &str, offset: usize) -> usize {
 
 /// What the author wrote, quoted back at them when its type is wrong. The
 /// manifest's own bytes rather than a re-rendering, so the author sees text
-/// they can search their file for.
-fn wrote(manifest: &str, span: Option<std::ops::Range<usize>>) -> &str {
-    span.and_then(|span| manifest.get(span))
-        .unwrap_or("?")
-        .trim()
+/// they can search their file for. `None` when the parser kept no span.
+fn wrote(manifest: &str, span: Option<std::ops::Range<usize>>) -> Option<&str> {
+    span.and_then(|span| manifest.get(span)).map(str::trim)
 }
 
 /// One trigger condition, or nothing when it is not one.

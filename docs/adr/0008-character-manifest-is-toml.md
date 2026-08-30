@@ -37,6 +37,7 @@ decision — integer scaling of true pixel art — stands as written.
 Manifests gain editor support and a specification someone else maintains, and
 duplicate declarations become the parser's problem rather than this module's.
 Core takes its second dependency after `png`: `toml_edit` and its six
-transitive crates. Rejections name the offending declaration by name rather
+transitive crates — all of which the workspace lock already carried through
+the Tauri shell, so the workspace builds nothing it did not build before. Rejections name the offending declaration by name rather
 than by line; syntax errors still carry the line, because a file that is not
 TOML has no declarations to name.
