@@ -10,6 +10,7 @@ pub mod engine;
 pub mod input;
 pub mod memory;
 pub mod overlay;
+pub mod roster;
 pub mod sensing;
 pub mod snapshot;
 pub mod visibility;
