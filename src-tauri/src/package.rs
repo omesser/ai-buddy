@@ -54,6 +54,14 @@ const MAX_PACKAGE_DEPTH: usize = 8;
 /// verification script; a user never needs it.
 pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
 
+/// The Character a new user meets, when nothing has chosen another.
+///
+/// Name order is not a decision: without this, adding a package that sorts
+/// earlier would silently replace the buddy everybody sees. A preference and
+/// not a requirement — if it will not load, the search carries on behind it.
+/// Settings remembering a choice is #18; until then this is the only answer.
+pub const DEFAULT_CHARACTER: &str = "chip";
+
 /// The environment variable that starts one named Character rather than the
 /// first one found.
 ///
@@ -173,6 +181,18 @@ pub fn named(candidates: Vec<PathBuf>, wanted: Option<&OsStr>) -> Vec<PathBuf> {
         .into_iter()
         .filter(|candidate| candidate.file_stem() == Some(wanted))
         .collect()
+}
+
+/// The candidates with `first` at the front, in the order given otherwise.
+///
+/// Ordering rather than filtering, so a default that turns out to be broken
+/// costs the user the Character they expected and not the app.
+pub fn preferring(candidates: Vec<PathBuf>, first: &str) -> Vec<PathBuf> {
+    let (preferred, rest): (Vec<PathBuf>, Vec<PathBuf>) = candidates
+        .into_iter()
+        .partition(|candidate| candidate.file_stem() == Some(OsStr::new(first)));
+
+    preferred.into_iter().chain(rest).collect()
 }
 
 /// Every Character Package visible in `search_paths`, in the order found.
@@ -729,6 +749,34 @@ mod tests {
             }
             other => panic!("expected Unreadable, got {other:?}"),
         }
+    }
+
+    /// Name order is not a decision. Without a default the Character a new user
+    /// meets is whichever package sorts first, so adding one could silently
+    /// replace the buddy everybody sees.
+    #[test]
+    fn the_default_character_is_met_first_and_is_not_the_only_one() {
+        let candidates = vec![
+            PathBuf::from("/characters/nim"),
+            PathBuf::from("/characters/placeholder"),
+            PathBuf::from("/characters/chip"),
+        ];
+
+        assert_eq!(
+            preferring(candidates.clone(), "chip").first(),
+            Some(&PathBuf::from("/characters/chip")),
+            "the default is met first wherever it sorts"
+        );
+        assert_eq!(
+            preferring(candidates.clone(), "chip").len(),
+            candidates.len(),
+            "and the rest stay behind it, so a default that will not load is not the end"
+        );
+        assert_eq!(
+            preferring(candidates.clone(), "nobody"),
+            candidates,
+            "a default that is not installed leaves the search order alone"
+        );
     }
 
     /// Without this there is no way to start a particular Character: the search

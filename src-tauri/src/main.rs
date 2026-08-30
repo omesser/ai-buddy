@@ -490,7 +490,11 @@ fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
 
     let search_paths = package::search_paths(bundled);
     let wanted = std::env::var_os(package::CHARACTER_VAR);
-    let candidates = package::named(package::installed(&search_paths), wanted.as_deref());
+    let installed = package::installed(&search_paths);
+    let candidates = match &wanted {
+        Some(_) => package::named(installed, wanted.as_deref()),
+        None => package::preferring(installed, package::DEFAULT_CHARACTER),
+    };
 
     for candidate in &candidates {
         let loaded = match package::read(candidate) {

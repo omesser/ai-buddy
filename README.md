@@ -291,9 +291,7 @@ python3 scripts/make-shipped-characters.py
 
 #### Running one of them
 
-Packages are searched in name order and the first that loads is the one you get,
-so `chip` is what you see with nothing chosen. Name a Character to start that one
-instead:
+Name a Character to start that one:
 
 ```sh
 cd src-tauri && AI_BUDDY_CHARACTER=chip cargo run
@@ -304,6 +302,12 @@ cd src-tauri && AI_BUDDY_CHARACTER=placeholder cargo run  # Blip
 The name is the package's directory, without the `.zip` if it is an archive.
 Naming a Character that is not installed starts nothing and says so, rather than
 quietly starting a different one.
+
+With nothing named you get **Chip**, which is `DEFAULT_CHARACTER` in
+`src-tauri/src/package.rs` rather than whichever package happens to sort first —
+otherwise adding one could silently replace the Character everybody meets. It is
+a preference and not a requirement: if Chip will not load, the search carries on
+behind it. Remembering a Character you chose is settings, which is #18.
 
 Either way the app prints what it loaded, which is the quickest way to be sure
 you are looking at the Character you meant:
