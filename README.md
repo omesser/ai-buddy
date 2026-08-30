@@ -202,7 +202,7 @@ can answer it. Run the app, then confirm:
 
 13. **The two shipped Characters are two companions.** Run each in turn (see
     [The shipped Characters](#the-shipped-characters)) and watch it idle. BMO
-    cuts between two poses four times a second, in seven flat colours with
+    cuts between two poses four times a second, in eight flat colours with
     nothing under its feet; Nim eases through six, blinks, and carries a
     translucent shadow. Poke each: BMO's startle is two frames and over, Nim's
     plays through five. What you cannot watch yet is the half that is not
@@ -267,7 +267,7 @@ The format stays internal and undocumented until v2 — see
 Two ship, in deliberately different styles, so that the format is proven against
 real variance rather than against itself:
 
-- **`characters/bmo/` — BMO**, hard-edged flat art. Seven colours, flat fills,
+- **`characters/bmo/` — BMO**, hard-edged flat art. Eight colours, flat fills,
   no anti-aliasing, and dithering only where a shade between two of those
   colours is genuinely wanted. Two or three frames an Animation, cut fast, and
   what changes between them is mostly the face on its screen. BMO never
