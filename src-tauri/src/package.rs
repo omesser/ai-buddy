@@ -451,49 +451,83 @@ mod tests {
     /// than built here. Nothing else checks them, and a manifest that stops
     /// loading is an app that refuses to start.
     ///
-    /// Each idle life is asserted through a Static Director rather than off the
-    /// declarations, because what would break it is not a Behavior going
-    /// missing but the `when` conditions leaving a stretch of the day with
-    /// nothing in it. `weight` is read directly: every Behavior has one, so
-    /// only the number says whether the manifest's balance survived loading.
-    /// Each Character below names one Behavior it deliberately weights away
-    /// from the default, which is what stops a balance silently going flat.
+    /// The three properties asserted are about the arc a Character's `when`
+    /// conditions cut its day into, not about parsing. Every sampled idle
+    /// leaves it something it may do, so no stretch of the day is dead; the
+    /// Behavior that greets an arrival is out of reach once the user has
+    /// plainly gone; and the one that belongs to an empty desk is out of reach
+    /// while they are still typing. A Character that declares weights and no
+    /// triggers passes the first and fails the other two, which is the hole
+    /// this test had for BMO and Nim while everything they own was always
+    /// eligible.
+    ///
+    /// The idles sample inside each declared phase rather than on its seam. A
+    /// seam is one instant of a clock that ticks straight past it, and blip's
+    /// two bands meet at exactly 10s rather than overlapping as the other two
+    /// Characters' do.
+    ///
+    /// `weight` is read directly: every Behavior has one, so only the number
+    /// says whether the manifest's balance survived loading. Each Character
+    /// below names one Behavior it deliberately weights away from the default,
+    /// which is what stops a balance silently going flat.
     #[test]
     fn every_shipped_character_loads_and_has_a_life() {
         let shipped = [
-            ("blip", "Blip", "greet", 2),
-            ("bmo", "BMO", "report", 4),
-            ("nim", "Nim", "doze", 5),
+            ("blip", "Blip", "greet", 2, "settle"),
+            ("bmo", "BMO", "report", 3, "patrol"),
+            ("nim", "Nim", "doze", 5, "doze"),
         ];
 
-        for (directory, name, behavior, weight) in shipped {
+        for (directory, name, behavior, weight, alone) in shipped {
             let character = shipped_character(directory);
-            let behaviors = &character.behaviors;
 
             assert_eq!(character.name, name);
             assert_eq!(
-                behaviors.get(behavior).map(|declared| declared.weight),
+                character
+                    .behaviors
+                    .get(behavior)
+                    .map(|declared| declared.weight),
                 Some(weight),
                 "the declared balance is {name}'s, not the default one"
             );
 
-            let mut director = StaticDirector::new(behaviors.clone(), 1);
-            for idle in [0, 60, 300].map(Duration::from_secs) {
-                let moment = Context {
-                    activity: Activity {
-                        frontmost_application: Some("Terminal".to_string()),
-                        switched: false,
-                        idle,
-                        at: UNIX_EPOCH,
-                    },
-                    recent: Vec::new(),
-                };
+            for idle in [0, 5, 15, 45, 90, 300, 3600].map(Duration::from_secs) {
                 assert!(
-                    director.propose(&moment).is_some(),
+                    !proposable(&character, idle).is_empty(),
                     "{name} has something to do {idle:?} after the user stopped typing"
                 );
             }
+
+            assert!(
+                !proposable(&character, Duration::from_secs(0)).contains(alone),
+                "{name} keeps {alone:?} for an empty desk rather than proposing it \
+                 at somebody who is typing"
+            );
+            assert!(
+                !proposable(&character, Duration::from_secs(1800)).contains("greet"),
+                "{name} does not greet somebody who left half an hour ago"
+            );
         }
+    }
+
+    /// Every Behavior a Character will propose at one idle duration, drawn over
+    /// enough wakes that a weighted one is not missed, with nothing remembered
+    /// so that recency suppression hides none of them.
+    fn proposable(character: &Character, idle: Duration) -> BTreeSet<String> {
+        let mut director = StaticDirector::new(character.behaviors.clone(), 1);
+        let moment = Context {
+            activity: Activity {
+                frontmost_application: Some("Terminal".to_string()),
+                switched: false,
+                idle,
+                at: UNIX_EPOCH,
+            },
+            recent: Vec::new(),
+        };
+
+        (0..64)
+            .filter_map(|_| director.propose(&moment).map(|played| played.behavior))
+            .collect()
     }
 
     /// The files of a minimal valid package: a manifest naming one frame per
