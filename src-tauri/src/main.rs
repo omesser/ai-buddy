@@ -277,7 +277,6 @@ fn run_frame_loop(
             // and a zoomed one, which is the whole of what is being measured.
             let desktop = Desktop {
                 fullscreen_frontmost: fullscreen_frontmost(&snapshot.windows, &displays.frames),
-                do_not_disturb: platform::do_not_disturb(),
             };
 
             let frame = engine.tick(&snapshot);

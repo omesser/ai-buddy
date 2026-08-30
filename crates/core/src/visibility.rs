@@ -39,22 +39,14 @@ const EDGE_TOLERANCE: f64 = 1.0;
 
 /// What the desktop says about whether the Character belongs on screen.
 ///
-/// Every field is a condition somebody else read. A platform that cannot see
-/// one reports `false`, which is the same answer as a desktop where it is not
-/// happening: the Character stays, and the hotkey is still there.
+/// One condition, named rather than passed as a bare bool, because the caller
+/// reads `Desktop { fullscreen_frontmost: true }` and not `update(true)`. A
+/// platform that cannot see it reports `false`, which is the same answer as a
+/// desktop where it is not happening: the Character stays, and the hotkey is
+/// still there.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Desktop {
     pub fullscreen_frontmost: bool,
-    pub do_not_disturb: bool,
-}
-
-impl Desktop {
-    /// Whether any rule wants the Character gone. Which one is not worth
-    /// keeping: they hide it the same way, and a desktop where two are true at
-    /// once must not hide it twice.
-    fn hides(self) -> bool {
-        self.fullscreen_frontmost || self.do_not_disturb
-    }
 }
 
 /// Whether the Character is on screen, and what put it there.
@@ -67,7 +59,7 @@ enum Presence {
     #[default]
     Shown,
     Faded,
-    Dismissed,
+    Away,
 }
 
 impl Presence {
@@ -84,14 +76,14 @@ pub struct Change {
     pub fade_ms: u32,
 }
 
-/// The hide rules, and the hotkey's standing wish over them.
+/// The hide rules, and the user's standing wish over them.
 #[derive(Default)]
 pub struct HideRules {
-    /// The user asked, by hotkey, for the Character to be gone. Kept apart
-    /// from what is on screen because it survives every rule: a fullscreen
-    /// application that comes and goes must not hand back a Character its
-    /// owner dismissed.
-    dismissed: bool,
+    /// The user asked for the Character to go away, by hotkey or by menu. Kept
+    /// apart from what is on screen because it survives every rule: a
+    /// fullscreen application that comes and goes must not hand back a
+    /// Character its owner sent away.
+    away: bool,
     /// What the overlay must be. Asked every tick rather than announced when
     /// it changes, so a webview still loading its art when a rule fired is
     /// told the answer on the first frame it draws.
@@ -102,10 +94,10 @@ pub struct HideRules {
 }
 
 impl HideRules {
-    /// Flip the hotkey's wish. Takes effect on the next `update`, so a press
-    /// and the desktop it lands on are decided together rather than racing.
+    /// Flip the user's wish. Takes effect on the next `update`, so a press and
+    /// the desktop it lands on are decided together rather than racing.
     pub fn toggle(&mut self) {
-        self.dismissed = !self.dismissed;
+        self.away = !self.away;
     }
 
     /// What the overlay must do now, or `None` when nothing the user could see
@@ -116,9 +108,9 @@ impl HideRules {
     /// gave up restacking to avoid.
     pub fn update(&mut self, desktop: Desktop) -> Option<Change> {
         let was = self.presence;
-        self.presence = if self.dismissed {
-            Presence::Dismissed
-        } else if desktop.hides() {
+        self.presence = if self.away {
+            Presence::Away
+        } else if desktop.fullscreen_frontmost {
             Presence::Faded
         } else {
             Presence::Shown
@@ -150,7 +142,7 @@ impl HideRules {
 /// rule fades — including the fade back in, so a Character returning from a
 /// fullscreen application arrives the way it left.
 fn fade_ms(from: Presence, to: Presence) -> u32 {
-    if from == Presence::Dismissed || to == Presence::Dismissed {
+    if from == Presence::Away || to == Presence::Away {
         0
     } else {
         FADE_MS
@@ -197,14 +189,6 @@ mod tests {
     fn fullscreen() -> Desktop {
         Desktop {
             fullscreen_frontmost: true,
-            ..Desktop::default()
-        }
-    }
-
-    fn do_not_disturb() -> Desktop {
-        Desktop {
-            do_not_disturb: true,
-            ..Desktop::default()
         }
     }
 
@@ -246,44 +230,6 @@ mod tests {
         assert!(rules.presence().visible);
     }
 
-    /// Pins the rule, not anything a user can see today: no platform sets this
-    /// field yet, and `platform::do_not_disturb` says so in a `ponytail:`. The
-    /// reading is what is missing; this is what it will find waiting.
-    #[test]
-    fn do_not_disturb_hides_the_character_until_it_is_turned_off() {
-        let mut rules = HideRules::default();
-
-        assert_eq!(rules.update(do_not_disturb()), faded_out());
-        assert_eq!(rules.update(Desktop::default()), faded_in());
-    }
-
-    /// Two rules at once is one hide, and the Character comes back when the
-    /// last of them clears rather than the first. Anything else flickers the
-    /// Character back on screen while Do Not Disturb is still on.
-    #[test]
-    fn overlapping_rules_hide_once_and_release_the_character_together() {
-        let mut rules = HideRules::default();
-
-        assert_eq!(rules.update(do_not_disturb()), faded_out());
-
-        let both = Desktop {
-            fullscreen_frontmost: true,
-            do_not_disturb: true,
-        };
-        assert_eq!(
-            rules.update(both),
-            None,
-            "the second rule hides nothing new"
-        );
-
-        assert_eq!(
-            rules.update(do_not_disturb()),
-            None,
-            "one rule lifting is not the Character coming back"
-        );
-        assert_eq!(rules.update(Desktop::default()), faded_in());
-    }
-
     /// The hotkey is somebody asking, so it is answered on the frame it lands
     /// on rather than faded through.
     #[test]
@@ -309,10 +255,10 @@ mod tests {
         );
     }
 
-    /// A Character the user put away stays away. A fullscreen application
+    /// A Character the user sent away stays away. A fullscreen application
     /// arriving and leaving must not hand it back.
     #[test]
-    fn a_dismissed_character_outlasts_every_rule_that_comes_and_goes() {
+    fn a_character_sent_away_outlasts_every_rule_that_comes_and_goes() {
         let mut rules = HideRules::default();
         rules.toggle();
         rules.update(Desktop::default());
@@ -384,7 +330,7 @@ mod tests {
         let mut rules = HideRules::default();
         assert!(rules.presence().visible);
 
-        rules.update(do_not_disturb());
+        rules.update(fullscreen());
         assert!(!rules.presence().visible);
 
         rules.update(Desktop::default());

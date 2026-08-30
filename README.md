@@ -145,12 +145,6 @@ for, which says whether the sprite was shown or hidden and over how long. It is
 a handful of lines in a session, and it is how to tell a rule that did not fire
 from a fade that did not play.
 
-**Do Not Disturb is not wired to anything yet.** The rule is built and tested,
-and no reading reaches it: macOS keeps the live Focus state behind Full Disk
-Access, and the only public alternative opens a consent dialog on first use,
-which the Spatial Layer does not spend permissions on. Turning Do Not Disturb on
-changes nothing today. The hotkey is what to use meanwhile.
-
 For a live view of what the app is deciding, set `AI_BUDDY_TRACE_HITTEST=1` for
 the click-through decision and `AI_BUDDY_TRACE_FRAMES=1` for the Engine's
 frames — state, position and animation, once per tick. The first line or two of

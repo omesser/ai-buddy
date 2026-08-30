@@ -223,8 +223,14 @@ state produces flicker on every platform. Peeking out from behind windows is
 given up deliberately.
 
 The investment goes into **hide rules** instead: fade out when a fullscreen app
-or screen share is frontmost, under Do Not Disturb, and on a hotkey. A companion
-that knows when to disappear is the difference between a pet and malware.
+is frontmost, and go at once when the user asks. A companion that knows when to
+disappear is the difference between a pet and malware.
+
+Do Not Disturb is not one of them. Being quiet is not being gone: it means the
+Character stops starting things — no proposals, nothing said unprompted — while
+it stays on screen and can still be picked up. That is its own mode. Screen
+capture is not one either: the overlay is excluded from every capture at the
+window level, so there is nothing to fade.
 
 ### 9. Sensing: no permissions until they buy something
 
