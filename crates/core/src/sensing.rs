@@ -19,14 +19,20 @@ pub trait ActivitySource {
     /// How long since the last keyboard, mouse or trackpad input anywhere on the
     /// machine. Zero while the user is typing.
     fn idle(&self) -> Duration;
+
+    /// True when the machine is not showing anything: displays asleep, lid
+    /// closed. A session Director does not wake for this (ADR-0008).
+    fn displays_asleep(&self) -> bool;
 }
 
 /// Wall-clock time, behind a trait so that nothing else reads it directly.
 ///
-/// The Director's context carries the time of day, and tests must never depend
-/// on what time it happens to be when they run.
+/// Time of day is local civil time. Tests must never depend on what time it
+/// happens to be when they run.
 pub trait Clock {
     fn now(&self) -> SystemTime;
+    /// Local civil clock: hour 0–23, minute 0–59.
+    fn local_hm(&self) -> (u8, u8);
 }
 
 /// The system clock. The only implementation that reads the real one.
@@ -36,6 +42,39 @@ impl Clock for SystemClock {
     fn now(&self) -> SystemTime {
         SystemTime::now()
     }
+
+    fn local_hm(&self) -> (u8, u8) {
+        system_local_hm()
+    }
+}
+
+/// Local hour and minute on this machine.
+///
+/// `std` has no civil clock. libc `localtime_r` is the OS answer. Windows is
+/// out of v1 (SPEC); that build reports UTC until a local clock exists there.
+#[cfg(unix)]
+fn system_local_hm() -> (u8, u8) {
+    unsafe {
+        let mut t: libc::time_t = 0;
+        if libc::time(&mut t) == -1 {
+            return (0, 0);
+        }
+        let mut tm = std::mem::zeroed::<libc::tm>();
+        if libc::localtime_r(&t, &mut tm).is_null() {
+            return (0, 0);
+        }
+        (tm.tm_hour as u8, tm.tm_min as u8)
+    }
+}
+
+#[cfg(not(unix))]
+fn system_local_hm() -> (u8, u8) {
+    let secs = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let minutes = (secs / 60) % (24 * 60);
+    ((minutes / 60) as u8, (minutes % 60) as u8)
 }
 
 /// One read of the Free tier.
@@ -52,6 +91,12 @@ pub struct Activity {
     pub idle: Duration,
     /// When this read was taken, from the `Clock`.
     pub at: SystemTime,
+    /// Local civil hour, 0–23. Time of day for the Director, not UTC.
+    pub hour: u8,
+    /// Local civil minute, 0–59.
+    pub minute: u8,
+    /// True when the displays are asleep. Session wakes stay quiet then.
+    pub displays_asleep: bool,
 }
 
 /// Reads the Free tier, and remembers just enough of the previous read to tell a
@@ -72,11 +117,15 @@ impl FreeTier {
         let switched = frontmost_application != self.previous;
         self.previous = frontmost_application.clone();
 
+        let (hour, minute) = clock.local_hm();
         Activity {
             frontmost_application,
             switched,
             idle: source.idle(),
             at: clock.now(),
+            hour,
+            minute,
+            displays_asleep: source.displays_asleep(),
         }
     }
 }
@@ -97,6 +146,10 @@ impl ActivitySource for StubActivitySource {
     fn idle(&self) -> Duration {
         Duration::ZERO
     }
+
+    fn displays_asleep(&self) -> bool {
+        false
+    }
 }
 
 /// Hand-written fake: it reports exactly what it was set to, so a test can
@@ -106,6 +159,7 @@ impl ActivitySource for StubActivitySource {
 pub struct FakeActivitySource {
     pub frontmost_application: Option<String>,
     pub idle: Duration,
+    pub displays_asleep: bool,
 }
 
 #[cfg(test)]
@@ -117,18 +171,28 @@ impl ActivitySource for FakeActivitySource {
     fn idle(&self) -> Duration {
         self.idle
     }
+
+    fn displays_asleep(&self) -> bool {
+        self.displays_asleep
+    }
 }
 
 /// Hand-written fake: the time is whatever the test says it is.
 #[cfg(test)]
 pub struct FakeClock {
     pub now: SystemTime,
+    pub hour: u8,
+    pub minute: u8,
 }
 
 #[cfg(test)]
 impl Clock for FakeClock {
     fn now(&self) -> SystemTime {
         self.now
+    }
+
+    fn local_hm(&self) -> (u8, u8) {
+        (self.hour, self.minute)
     }
 }
 
@@ -141,11 +205,16 @@ mod tests {
         FakeActivitySource {
             frontmost_application: Some(frontmost.to_string()),
             idle: Duration::ZERO,
+            displays_asleep: false,
         }
     }
 
     fn stopped_clock() -> FakeClock {
-        FakeClock { now: UNIX_EPOCH }
+        FakeClock {
+            now: UNIX_EPOCH,
+            hour: 0,
+            minute: 0,
+        }
     }
 
     #[test]
@@ -231,10 +300,28 @@ mod tests {
         // 2023-11-14T22:13:20Z, chosen for being nothing like now.
         let clock = FakeClock {
             now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+            hour: 22,
+            minute: 13,
         };
 
         let read = FreeTier::default().read(&source("Terminal"), &clock);
 
         assert_eq!(read.at, UNIX_EPOCH + Duration::from_secs(1_700_000_000));
+        assert_eq!(
+            (read.hour, read.minute),
+            (22, 13),
+            "local, not derived from `at`"
+        );
+    }
+
+    #[test]
+    fn displays_asleep_is_read_from_the_source() {
+        let mut source = source("Terminal");
+        source.displays_asleep = true;
+        assert!(
+            FreeTier::default()
+                .read(&source, &stopped_clock())
+                .displays_asleep
+        );
     }
 }

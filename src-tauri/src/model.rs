@@ -1,9 +1,10 @@
-//! The model-backed Director's I/O: HTTP, env knobs, and the mailbox.
+//! Completer stand-in, env config, and the in-flight session call.
 //!
-//! `docs/SPEC.md` keeps the Director off the render path. A wake therefore
-//! lives on its own thread, and the frame loop only `try_recv`s. Settings
-//! (#18) will bind the knobs and show `DirectorInspect.last_payload`; until
-//! then they are env vars and the last Character Prompt is held in memory.
+//! ponytail: HTTP chat-completions until #16 attaches a Harness. The
+//! `Completer` trait is the seam; this file is the disposable impl. ADR-0008.
+//!
+//! The Completer runs on a worker thread. The frame loop only `try_recv`s.
+//! #18 binds these settings. Until then they come from the env.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -11,27 +12,23 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ai_buddy_core::director::{
-    Completer, Context, ModelDirector, Wake, MODEL_WAKE_EVERY, WAKE_EVERY,
-};
+use ai_buddy_core::director::{Completer, Context, ModelDirector, Pace, Wake, WAKE_EVERY};
 use serde::Serialize;
 
-/// How long a wake may take before the Static Director takes it instead.
-///
-/// Long enough for a small completion; short enough that a hung endpoint
-/// does not leave the buddy without a life for a noticeable stretch.
+/// Completer timeout. After this, fall back to `StaticDirector`.
 pub const TIMEOUT: Duration = Duration::from_secs(8);
 
 const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
 const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
 const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
 const ENABLED: &str = "AI_BUDDY_DIRECTOR";
+/// First ambient session wait, in seconds. Not a heartbeat.
 const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
-/// What the user can turn and what settings will show.
+/// Last Character Prompt and the config that produced it. #18 displays this.
 #[derive(Clone, Debug, Serialize)]
 pub struct DirectorInspect {
     pub enabled: bool,
@@ -40,40 +37,39 @@ pub struct DirectorInspect {
     pub last_payload: Option<String>,
 }
 
-/// The knobs the frame loop honours. Read once at start; #18 will write them.
+/// Director on/off and the first ambient session wait. Read from the env.
 #[derive(Clone, Debug)]
-pub struct Knobs {
+pub struct DirectorConfig {
     pub enabled: bool,
     pub configured: bool,
+    /// Static Director interval. Free, so it stays short.
     pub wake_every: Duration,
+    /// First ambient session wait. `Pace` doubles from here.
+    pub ambient_first: Duration,
 }
 
-impl Knobs {
+impl DirectorConfig {
     pub fn inspect(&self) -> DirectorInspect {
         DirectorInspect {
             enabled: self.enabled,
             configured: self.configured,
-            wake_secs: self.wake_every.as_secs(),
+            wake_secs: self.ambient_first.as_secs(),
             last_payload: None,
         }
     }
 }
 
-/// Read the env. No key means the Static Director is the whole life.
-pub fn knobs() -> Knobs {
+/// Read Director config from the env. No API key means `StaticDirector` only.
+pub fn config() -> DirectorConfig {
     let configured = std::env::var(API_KEY)
         .ok()
         .is_some_and(|key| !key.is_empty());
     let enabled = configured && !off();
-    let wake_every = if enabled {
-        wake_secs().unwrap_or(MODEL_WAKE_EVERY)
-    } else {
-        WAKE_EVERY
-    };
-    Knobs {
+    DirectorConfig {
         enabled,
         configured,
-        wake_every,
+        wake_every: WAKE_EVERY,
+        ambient_first: wake_secs().unwrap_or(Pace::FIRST),
     }
 }
 
@@ -148,14 +144,14 @@ fn content_from_chat(body: &str) -> Result<String, String> {
         .ok_or_else(|| "chat completion had no message content".to_string())
 }
 
-/// A wake in flight. The frame loop starts one and `try_take`s later.
-pub struct Mail {
+/// One model call in flight. The frame loop starts it and polls `try_take`.
+pub struct InFlight {
     tx: Sender<Wake>,
     rx: Receiver<Wake>,
     busy: Arc<AtomicBool>,
 }
 
-impl Mail {
+impl InFlight {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
@@ -165,7 +161,7 @@ impl Mail {
         }
     }
 
-    pub fn idle(&self) -> bool {
+    pub fn ready(&self) -> bool {
         !self.busy.load(Ordering::SeqCst)
     }
 
@@ -177,8 +173,8 @@ impl Mail {
         self.busy.store(true, Ordering::SeqCst);
         let tx = self.tx.clone();
         thread::spawn(move || {
-            // Always send. A panic here would otherwise leave `busy` set and
-            // the Static Director never asked again.
+            // Always send. A panic here would leave `busy` set and skip
+            // StaticDirector on later ticks.
             let wake =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| director.wake(&context)))
                     .unwrap_or(Wake::Failed);

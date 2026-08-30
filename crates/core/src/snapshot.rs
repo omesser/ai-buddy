@@ -137,9 +137,8 @@ fn world_snapshot(
         elapsed_ms,
         verbs,
         poll_generation,
-        // The assembler does not wake the Director. The frame loop does, and
-        // writes a proposal onto the snapshot after this returns. None here
-        // is a Director that has not spoken this tick.
+        // The frame loop writes `proposal` after assemble(). None means no
+        // proposal this tick.
         ..WorldSnapshot::default()
     }
 }

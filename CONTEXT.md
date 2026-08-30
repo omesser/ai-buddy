@@ -26,13 +26,14 @@ _Avoid_: Manifest on its own — a Memory Manifest is one too
 
 **Personality Prompt**:
 The natural-language description of who a Character is, carried in its package
-and supplied to the Director. Governs demeanour only, never capability.
+and given to the Director. Governs demeanour only, never capability.
 _Avoid_: System prompt — that is the Character Prompt, which carries this and more
 
 **Character Prompt**:
-The whole payload the Director sends to the model on one wake: the Character's
-Personality Prompt, the current sensing context, and recent Behavior identifiers.
-Assembled per wake and inspectable in settings, never authored by hand.
+The payload assembled for one Director wake: Personality Prompt, sensing
+context, and recent Behavior identifiers. When a Harness is attached it
+enters that conversation, not a second model. Inspectable in settings, never
+authored by hand.
 _Avoid_: Persona, preamble, prompt template
 
 **Animation**:
@@ -77,8 +78,9 @@ data in a Character Package. The unit the Director proposes and the engine plays
 _Avoid_: Routine, script, macro
 
 **Director**:
-The occasional model call that observes context and proposes a Behavior. Never
-runs in the frame loop and never drives animation directly.
+The role that proposes a Behavior. Static weights fill it when no Harness is
+attached; an attached Harness fills it from the same conversation as chat.
+Never runs in the frame loop and never drives animation directly.
 _Avoid_: Brain, agent, planner
 
 **Perch**:

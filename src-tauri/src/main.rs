@@ -13,9 +13,9 @@
 //! `SnapshotAssembler` for a `WorldSnapshot`, ticks the Engine, and hands the
 //! resulting `Frame` to the webview and to the hit-test.
 //!
-//! Waking the Director is the loop's too, and for the same reason: `docs/SPEC.md`
-//! has the Shell wake it on a timer and on notable events, and a timer is a
-//! clock. What it proposes is `director`'s; when it is asked is here.
+//! Waking the Director is the loop's too, and for the same reason: a timer
+//! is a clock. Static may wake often. A session wake is reactive or backed
+//! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
 mod model;
 mod package;
@@ -27,11 +27,11 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
-use ai_buddy_core::director::{self, Context, Director, ModelDirector, StaticDirector};
-use ai_buddy_core::engine::{Engine, Point, State};
+use ai_buddy_core::director::{self, Context, Director, ModelDirector, Pace, StaticDirector};
+use ai_buddy_core::engine::{Engine, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
-use ai_buddy_core::sensing::{FreeTier, SystemClock};
+use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
 use ai_buddy_core::window_source::{Rect, WindowSource};
@@ -76,9 +76,9 @@ fn overlay_label(index: usize) -> String {
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
 
-/// What the frame loop needs to wake the Director without blocking a tick.
+/// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
-    knobs: model::Knobs,
+    config: model::DirectorConfig,
     inspect: Arc<Mutex<model::DirectorInspect>>,
 }
 
@@ -171,11 +171,8 @@ fn character(art: tauri::State<'_, ArtUrls>) -> BTreeMap<String, Vec<String>> {
     art.0.clone()
 }
 
-/// The last Character Prompt, and the knobs that produced it.
-///
-/// #18's settings panel shows this. Until that panel exists the value is
-/// still assembled and held, so what settings will display is already the
-/// payload that was sent rather than a reconstruction.
+/// Last Character Prompt and current Director config. #18's settings panel
+/// calls this.
 #[tauri::command]
 fn director_payload(
     inspect: tauri::State<'_, Arc<Mutex<model::DirectorInspect>>>,
@@ -341,9 +338,8 @@ fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
 /// interpolates towards this one, so the hit-test rectangle leads what is on
 /// screen by up to one tick. src/interpolate.js carries the measurements that
 /// make that lag the cheaper half of the trade against a stuttering sprite.
-// One over the clippy cap. The Director's knobs belong on this function,
-// and folding them into the other seven would mix a clock with window
-// geometry.
+// One over the clippy cap. Director config belongs here. Folding it into
+// the other seven would mix a timer with window geometry.
 #[allow(clippy::too_many_arguments)]
 fn run_frame_loop(
     app: tauri::AppHandle,
@@ -360,21 +356,21 @@ fn run_frame_loop(
         let mut assembler = SnapshotAssembler::new(source);
 
         // The Static Director, which is the whole of the buddy's life until a
-        // model is configured: no network, no key, nothing to time out. Seeded
+        // Harness is attached: no network, no key, nothing to time out. Seeded
         // from the wall clock so that two runs are not the same afternoon,
         // which is the one thing the Engine's own purity forbids it to do.
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos() as u64);
-        let DirectorRun { knobs, inspect } = director_run;
+        let DirectorRun { config, inspect } = director_run;
         let mut director = StaticDirector::new(character.behaviors.clone(), seed);
-        let model = knobs.enabled.then(|| {
+        let model = config.enabled.then(|| {
             Arc::new(ModelDirector::new(
                 model::endpoint().expect("enabled means a key was set"),
                 character.behaviors.keys().cloned(),
             ))
         });
-        let mail = model::Mail::new();
+        let pending = model::InFlight::new();
         let mut in_flight: Option<Context> = None;
         let mut free_tier = FreeTier::default();
         let activity_source = platform::activity_source();
@@ -384,6 +380,10 @@ fn run_frame_loop(
         let mut previous_idle = Duration::MAX;
         let mut since_state = Duration::ZERO;
         let mut last_state: Option<State> = None;
+        let mut pace = Pace::with_first(config.ambient_first);
+        let mut since_ambient = Duration::ZERO;
+        let mut last_activity: Option<Activity> = None;
+        let mut addressed = false;
 
         // One click-through flag per overlay, `None` until that overlay's first
         // decision so the first tick always applies.
@@ -483,6 +483,13 @@ fn run_frame_loop(
                 eprintln!("verbs: {verbs:?}");
             }
 
+            if verbs
+                .iter()
+                .any(|verb| matches!(verb, Verb::Poke | Verb::Summon))
+            {
+                addressed = true;
+            }
+
             // The Director's clock is the same elapsed time the Engine is
             // given, so a loop that stalled wakes it once on the way back
             // rather than in a burst. Firing takes one interval off the clock
@@ -493,15 +500,21 @@ fn run_frame_loop(
             since_sense += elapsed;
             since_wake += elapsed;
             since_state += elapsed;
+            if !last_activity
+                .as_ref()
+                .is_some_and(|activity| activity.displays_asleep)
+            {
+                since_ambient += elapsed;
+            }
 
             let mut proposal = None;
-            let arrived = mail.try_take();
+            let arrived = pending.try_take();
             let applied = arrived.is_some();
             if let Some(wake) = arrived {
                 let context = in_flight
                     .take()
-                    .expect("a started wake still has its context");
-                proposal = director::or_static(wake, &mut director, &context);
+                    .expect("a started call still has its context");
+                proposal = director::fallback(wake, &mut director, &context);
             }
 
             if since_sense >= SENSE_INTERVAL {
@@ -509,7 +522,7 @@ fn run_frame_loop(
                 let activity = free_tier.read(&activity_source, &SystemClock);
                 let due = director::due(
                     since_wake,
-                    knobs.wake_every,
+                    config.wake_every,
                     &activity,
                     previous_idle,
                     since_state,
@@ -517,27 +530,46 @@ fn run_frame_loop(
                 previous_idle = activity.idle;
 
                 if due {
+                    since_wake = since_wake.saturating_sub(config.wake_every);
+                    since_state = Duration::ZERO;
+                    // Static keeps the free life going. A session call in
+                    // flight is the one exception: do not stack a weight pick
+                    // on a proposal that is about to land.
+                    if pending.ready() && !applied {
+                        proposal = director.propose(&Context {
+                            activity: activity.clone(),
+                            recent: recent.clone(),
+                            personality: character.personality.clone(),
+                        });
+                    }
+                }
+                last_activity = Some(activity);
+            }
+
+            if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
+                if director::session_due(addressed, since_ambient, &pace, activity.displays_asleep)
+                    && pending.ready()
+                    && !applied
+                {
                     let context = Context {
-                        activity,
+                        activity: activity.clone(),
                         recent: recent.clone(),
                         personality: character.personality.clone(),
                     };
-                    if let Some(model) = &model {
-                        if mail.idle() && !applied {
-                            since_wake = since_wake.saturating_sub(knobs.wake_every);
-                            since_state = Duration::ZERO;
-                            let payload = model.prompt(&context);
-                            if let Ok(mut inspect) = inspect.lock() {
-                                inspect.last_payload = Some(payload);
-                            }
-                            mail.start(Arc::clone(model), context.clone());
-                            in_flight = Some(context);
-                        }
+                    if addressed {
+                        pace.after_reactive();
                     } else {
-                        since_wake = since_wake.saturating_sub(knobs.wake_every);
-                        since_state = Duration::ZERO;
-                        proposal = director.propose(&context);
+                        pace.after_ambient();
                     }
+                    addressed = false;
+                    since_ambient = Duration::ZERO;
+                    let payload = model.prompt(&context);
+                    if let Ok(mut inspect) = inspect.lock() {
+                        inspect.last_payload = Some(payload);
+                        inspect.wake_secs = pace.wait().as_secs();
+                    }
+                    pending.start(Arc::clone(model), context.clone());
+                    in_flight = Some(context);
                 }
             }
 
@@ -886,18 +918,18 @@ fn main() {
             let rules = Arc::new(Mutex::new(HideRules::default()));
             register_hide_hotkey(app.handle(), Arc::clone(&rules));
 
-            let knobs = model::knobs();
-            let inspect = Arc::new(Mutex::new(knobs.inspect()));
+            let config = model::config();
+            let inspect = Arc::new(Mutex::new(config.inspect()));
             app.manage(Arc::clone(&inspect));
-            if knobs.enabled {
+            if config.enabled {
                 eprintln!(
-                    "director: model-backed, wake every {}s",
-                    knobs.wake_every.as_secs()
+                    "director: model, wake every {}s",
+                    config.wake_every.as_secs()
                 );
-            } else if knobs.configured {
-                eprintln!("director: off; Static Director is the life");
+            } else if config.configured {
+                eprintln!("director: off; using StaticDirector");
             }
-            let director_run = DirectorRun { knobs, inspect };
+            let director_run = DirectorRun { config, inspect };
 
             run_frame_loop(
                 app.handle().clone(),
