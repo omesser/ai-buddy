@@ -170,8 +170,12 @@ pub struct Engine {
     /// The Behaviors the Character declares, which a proposal names.
     behaviors: BTreeMap<String, Behavior>,
     /// The windows of the previous tick, to tell a window that has come to
-    /// contain the sprite from one that contained it all along. See `footing`.
+    /// contain the sprite from one that contained it all along. See
+    /// `swallowed_by`.
     previous_windows: Vec<Rect>,
+    /// Where the sprite stood at the end of the previous tick — the other half
+    /// of what says whether a window has come to contain it.
+    previous_position: Point,
     /// The Primitives of the Behavior being played, last first, so the one on
     /// screen is on top.
     ///
@@ -198,6 +202,7 @@ impl Engine {
             animation_ms: 0,
             behaviors: BTreeMap::new(),
             previous_windows: Vec::new(),
+            previous_position: position,
             playing: Vec::new(),
             primitive_ms: 0,
             facing: 1.0,
@@ -215,14 +220,6 @@ impl Engine {
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
 
-        // Where it stood before this tick moved it, which is half of what says
-        // whether a window has come to contain it. See `footing`.
-        let previously = self.position;
-
-        // Set by a sprite that is woken, so the footing it is put back on is
-        // not mistaken for one it arrived at. See the landing below.
-        let mut woke = false;
-
         // Idling is resting untouched. Time spent in the air or in someone's
         // hand does not count towards nodding off.
         if snapshot.verbs.is_empty() {
@@ -234,12 +231,6 @@ impl Engine {
             };
         } else {
             self.idle_ms = 0;
-            if self.state == State::Asleep {
-                // It gets up. Whether it is still standing on anything is
-                // settled by falling, the same as any other loss of footing.
-                self.state = State::Falling;
-                woke = true;
-            }
         }
 
         // Being addressed is not being left alone, so a proposal holds off the
@@ -255,7 +246,10 @@ impl Engine {
         // Primitive begun this tick gets its whole turn rather than losing this
         // tick's milliseconds to the one it replaced.
         let mut started = self.advance(snapshot.elapsed_ms);
-        let mut landed = false;
+
+        // `woke` marks a sprite a verb roused, so the footing it is put back
+        // on is not mistaken for one it arrived at. See the landing below.
+        let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
         // the one input that outranks the world.
@@ -266,14 +260,12 @@ impl Engine {
         // somewhere legal, because falling ends on the usable floor like any
         // other fall — so the reserved strip is somewhere the sprite can be
         // put and not somewhere it can come to rest. #39.
-        if snapshot.verbs.contains(&Verb::Grab) {
-            self.state = State::Dragged;
+        if state == State::Dragged {
             self.position = snapshot.cursor;
             self.velocity = Point::default();
         } else if self.state == State::Dragged {
             // Let go. With velocity that is a Throw; without, it simply drops.
             self.velocity = thrown_velocity(snapshot).unwrap_or_default();
-            self.state = State::Falling;
         }
 
         // Walking is the Engine's, deciding to walk is not: nothing else here
@@ -284,7 +276,7 @@ impl Engine {
         // rather than where it is going. What does stop it is a Primitive that
         // is the sprite standing still: `walk sit` would otherwise slide along
         // the edge it sat down on.
-        if matches!(self.state, State::Grounded | State::Perched) {
+        if matches!(state, State::Grounded | State::Perched) {
             match self.on_screen() {
                 Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
                 Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep) => self.velocity.x = 0.0,
@@ -292,68 +284,13 @@ impl Engine {
             }
         }
 
-        match self.state {
-            State::Falling => {
-                self.velocity.y += GRAVITY * dt;
-                self.position.x += self.velocity.x * dt;
+        let contact = self.integrate(state, dt, snapshot);
 
-                if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot) {
-                    // Arriving at a screen edge sideways is a catch, not a stop.
-                    // It also keeps the sprite inside the displays.
-                    self.position.x = wall;
-                    self.velocity = Point::default();
-                    self.state = State::Climbing;
-                } else {
-                    let next_y = self.position.y + self.velocity.y * dt;
-
-                    match support_below(self.position, snapshot) {
-                        Some(support) if next_y >= support.y => {
-                            self.position.y = support.y;
-                            self.velocity = Point::default();
-                            self.state = support.state;
-                            landed = true;
-                        }
-                        _ => self.position.y = next_y,
-                    }
-                }
-            }
-            State::Climbing => {
-                self.position.y -= CLIMB_SPEED * dt;
-
-                // Off the top of the display there is nothing left to hold, so
-                // it lets go. A sprite over no display at all is already
-                // holding nothing, hence its own y as the fallback ceiling.
-                let ceiling = ceiling_over(self.position.x, snapshot).unwrap_or(self.position.y);
-                if self.position.y <= ceiling {
-                    self.position.y = ceiling;
-                    self.state = State::Falling;
-                }
-            }
-            // Resting is only ever resting on something. When that something
-            // moves, closes or resizes — or when the sprite walks off the end
-            // of it — the sprite is in the air again, carrying whatever speed
-            // it walked off with.
-            State::Grounded | State::Perched | State::Asleep => {
-                self.position.x += self.velocity.x * dt;
-
-                match footing(self.position, previously, snapshot, &self.previous_windows) {
-                    Some(footing) if footing.y < self.position.y => {
-                        self.position.y = footing.y;
-                        self.state = footing.state;
-                    }
-                    Some(footing) if footing.y == self.position.y => {
-                        // Still moving is still awake. A walk proposed just
-                        // before the timer comes due would otherwise leave the
-                        // sprite gliding along the edge playing `sleep`.
-                        if self.idle_ms >= SLEEP_AFTER_MS && self.velocity.x == 0.0 {
-                            self.state = State::Asleep;
-                        }
-                    }
-                    _ => self.state = State::Falling,
-                }
-            }
-            State::Dragged => {}
-        }
+        // Still moving is still awake. A walk proposed just before the timer
+        // comes due would otherwise leave the sprite gliding along the edge
+        // playing `sleep`.
+        let rested = self.idle_ms >= SLEEP_AFTER_MS && self.velocity.x == 0.0;
+        self.state = transition::on_contact(state, contact, rested);
 
         if self.velocity.x != 0.0 {
             self.facing = self.velocity.x.signum();
@@ -375,7 +312,7 @@ impl Engine {
         // that by falling is how the Engine asks what is underneath, and a
         // sprite that answers in the tick it was asked never left the ground.
         // A wake with nothing under it still falls, and still lands, later.
-        if landed && !woke {
+        if matches!(contact, Some(transition::Contact::Landed(_))) && !woke {
             started |= self.play(&[Primitive::Land]);
         }
 
@@ -424,6 +361,7 @@ impl Engine {
         }
 
         self.previous_windows.clone_from(&snapshot.windows);
+        self.previous_position = self.position;
 
         Frame {
             position: self.position,
@@ -437,6 +375,96 @@ impl Engine {
                 .and_then(|proposal| proposal.dialogue.clone()),
             behavior,
         }
+    }
+
+    /// Move the sprite through one tick's worth of `state`'s physics, and
+    /// report what its body met. Position and velocity are settled here; what
+    /// the sprite becomes as a result is `transition`'s to say, so no State is
+    /// read or written past the one this is handed.
+    fn integrate(
+        &mut self,
+        state: State,
+        dt: f64,
+        snapshot: &WorldSnapshot,
+    ) -> Option<transition::Contact> {
+        use transition::Contact;
+
+        match state {
+            State::Falling => {
+                self.velocity.y += GRAVITY * dt;
+                self.position.x += self.velocity.x * dt;
+
+                if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot) {
+                    // Arriving at a screen edge sideways is a catch, not a stop.
+                    // It also keeps the sprite inside the displays.
+                    self.position.x = wall;
+                    self.velocity = Point::default();
+                    Some(Contact::Wall)
+                } else {
+                    let next_y = self.position.y + self.velocity.y * dt;
+
+                    match support_below(self.position, snapshot) {
+                        Some(support) if next_y >= support.y => {
+                            self.position.y = support.y;
+                            self.velocity = Point::default();
+                            Some(Contact::Landed(support.surface))
+                        }
+                        _ => {
+                            self.position.y = next_y;
+                            Some(Contact::Airborne)
+                        }
+                    }
+                }
+            }
+            State::Climbing => {
+                self.position.y -= CLIMB_SPEED * dt;
+
+                // Off the top of the display there is nothing left to hold, so
+                // it lets go. A sprite over no display at all is already
+                // holding nothing, hence its own y as the fallback ceiling.
+                let ceiling = ceiling_over(self.position.x, snapshot).unwrap_or(self.position.y);
+                if self.position.y <= ceiling {
+                    self.position.y = ceiling;
+                    Some(Contact::Ceiling)
+                } else {
+                    None
+                }
+            }
+            // Resting is only ever resting on something. When that something
+            // moves, closes or resizes — or when the sprite walks off the end
+            // of it — the sprite is in the air again, carrying whatever speed
+            // it walked off with.
+            State::Grounded | State::Perched | State::Asleep => {
+                self.position.x += self.velocity.x * dt;
+
+                match footing(self.position, snapshot, |window| self.swallowed_by(window)) {
+                    Some(footing) if footing.y < self.position.y => {
+                        self.position.y = footing.y;
+                        Some(Contact::Lifted(footing.surface))
+                    }
+                    Some(footing) if footing.y == self.position.y => Some(Contact::Standing),
+                    _ => Some(Contact::Airborne),
+                }
+            }
+            State::Dragged => None,
+        }
+    }
+
+    /// Whether `window` has come to contain the sprite this tick: dragged over
+    /// it, or walked into where two windows overlap. One that already had the
+    /// sprite inside it is not swallowing it — a maximized window contains
+    /// every smaller window in front of it, so the sprite is inside one from
+    /// the moment it lands, and raising that window would otherwise fling the
+    /// sprite to the top of the screen and keep it there. #78.
+    ///
+    /// An Engine method rather than part of `footing` because "come to" takes
+    /// the previous tick to judge, and the Engine is what remembers one.
+    fn swallowed_by(&self, window: &Rect) -> bool {
+        swallows(window, self.position)
+            && !self
+                .previous_windows
+                .iter()
+                .any(|before| before == window && swallows(before, self.previous_position))
     }
 
     /// The Primitive being played, if any. Last of `playing`, because `play`
@@ -532,6 +560,74 @@ impl Engine {
     }
 }
 
+/// The State machine, in one place.
+///
+/// The only writer of State in the Engine: verbs move it before physics and
+/// contacts move it after, and `tick` stores nothing but what these two
+/// functions return. Geometry reports Surfaces and `integrate` reports
+/// Contacts precisely so that neither has an opinion on what the sprite
+/// becomes — a transition added anywhere else is the scattering this module
+/// exists to end.
+mod transition {
+    use super::{State, Surface, Verb};
+
+    /// What the sprite's body met while `Engine::integrate` moved it.
+    #[derive(Clone, Copy)]
+    pub enum Contact {
+        /// Nothing underfoot: still in the air, or the footing is gone.
+        Airborne,
+        /// Came down on a surface at the end of a fall.
+        Landed(Surface),
+        /// Put on top of a window that had come to contain it. Not a landing:
+        /// the sprite never left the ground it thought it had.
+        Lifted(Surface),
+        /// Still standing exactly where it stood.
+        Standing,
+        /// Reached a screen edge sideways, mid-air.
+        Wall,
+        /// Climbed off the top of the display.
+        Ceiling,
+    }
+
+    /// Where the user's hand leaves the sprite before any physics runs, and
+    /// whether a verb woke it. The wake is reported rather than left for the
+    /// caller to re-derive, so what waking means is written here once.
+    pub fn on_verbs(state: State, verbs: &[Verb]) -> (State, bool) {
+        let woke = state == State::Asleep && !verbs.is_empty();
+
+        if verbs.contains(&Verb::Grab) {
+            return (State::Dragged, woke);
+        }
+        let state = match state {
+            // Let go. Thrown or simply dropped, what follows is a fall.
+            State::Dragged => State::Falling,
+            // Woken. Whether it is still standing on anything is settled by
+            // falling, the same as any other loss of footing.
+            _ if woke => State::Falling,
+            _ => state,
+        };
+        (state, woke)
+    }
+
+    /// Where this tick's physics leaves the sprite. `rested` is whether it
+    /// has been untouched and still for long enough to nod off.
+    pub fn on_contact(state: State, contact: Option<Contact>, rested: bool) -> State {
+        match contact {
+            // Physics had nothing to report: a held sprite, or a climb still
+            // under way.
+            None => state,
+            Some(Contact::Wall) => State::Climbing,
+            Some(Contact::Airborne | Contact::Ceiling) => State::Falling,
+            Some(Contact::Landed(surface) | Contact::Lifted(surface)) => match surface {
+                Surface::Floor => State::Grounded,
+                Surface::Perch => State::Perched,
+            },
+            Some(Contact::Standing) if rested => State::Asleep,
+            Some(Contact::Standing) => state,
+        }
+    }
+}
+
 /// Which of the Required Animation Set a Primitive plays.
 fn animation_of(primitive: Primitive) -> &'static str {
     match primitive {
@@ -569,11 +665,20 @@ fn thrown_velocity(snapshot: &WorldSnapshot) -> Option<Point> {
     })
 }
 
-/// A surface the sprite can come to rest on, and the State that resting on it
-/// puts it in.
+/// A surface the sprite can come to rest on.
 struct Support {
     y: f64,
-    state: State,
+    surface: Surface,
+}
+
+/// What a Support is made of. The fact geometry reports — what standing on
+/// one turns the sprite into is `transition`'s to say, not geometry's.
+#[derive(Clone, Copy)]
+enum Surface {
+    /// The bottom of a display.
+    Floor,
+    /// A window's top edge.
+    Perch,
 }
 
 /// The first surface at or below `position`: the nearest window top edge, or
@@ -585,7 +690,7 @@ struct Support {
 fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
     let floor = floor_under(position.x, snapshot).map(|y| Support {
         y,
-        state: State::Grounded,
+        surface: Surface::Floor,
     });
 
     snapshot
@@ -595,7 +700,7 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
         .filter(|(index, window)| window.y >= position.y && is_perch(*index, position.x, snapshot))
         .map(|(_, window)| Support {
             y: window.y,
-            state: State::Perched,
+            surface: Surface::Perch,
         })
         .chain(floor)
         .min_by(|a, b| a.y.total_cmp(&b.y))
@@ -632,8 +737,10 @@ fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
             .any(|front| front.spans_x(x) && window.y >= front.y && window.y <= front.bottom())
 }
 
-/// What a resting sprite is standing on: its Perch, unless a window in front of
-/// that Perch has come to contain it.
+/// What a resting sprite is standing on: its Perch, unless a window in front
+/// of that Perch has come to contain it — `swallowing` being the caller's
+/// judgement of which windows those are, since it takes remembering the
+/// previous tick to make. See `Engine::swallowed_by`.
 ///
 /// A window dragged over the sprite, or walked into where it overlaps a lower
 /// Perch, would otherwise leave it inside a rectangle rather than on anything.
@@ -648,9 +755,8 @@ fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
 /// does, contains the ground the sprite stands on.
 fn footing(
     position: Point,
-    previously: Point,
     snapshot: &WorldSnapshot,
-    previous_windows: &[Rect],
+    swallowing: impl Fn(&Rect) -> bool,
 ) -> Option<Support> {
     if floor_under(position.x, snapshot) == Some(position.y) {
         return support_below(position, snapshot);
@@ -665,32 +771,19 @@ fn footing(
         .iter()
         .position(|window| window.spans_x(position.x) && window.y == position.y)?;
 
-    // A window that has *come to* contain the sprite: dragged over it, or
-    // walked into where two windows overlap. One that already had the sprite
-    // inside it is not swallowing it — a maximized window contains every
-    // smaller window in front of it, so the sprite is inside one from the
-    // moment it lands, and raising that window would otherwise fling the
-    // sprite to the top of the screen and keep it there. #78.
+    // Only a window in front of the Perch can swallow the sprite, which is why
+    // the candidates stop at the Perch's own place in the order: what is
+    // behind the Perch is behind the sprite too, so the edge it stands on is
+    // still there to be seen.
     //
-    // Only a window in front of the Perch can, which is why the candidates
-    // stop at the Perch's own place in the order: what is behind the Perch is
-    // behind the sprite too, so the edge it stands on is still there to be
-    // seen.
-    let swallowing = |window: &Rect| {
-        swallows(window, position)
-            && !previous_windows
-                .iter()
-                .any(|before| before == window && swallows(before, previously))
-    };
-
     // With nothing new over it the sprite keeps the edge it is standing on,
     // seen or not. Occlusion decides where the sprite may land, never whether
     // it may stay: a window raised in front of a Perch moves nothing, and a
     // sprite made to re-earn its footing against `is_perch` every tick drops
     // through the edge it was sitting on the moment one is clicked. #5.
-    let held = (!snapshot.windows[..perch].iter().any(swallowing)).then_some(Support {
+    let held = (!snapshot.windows[..perch].iter().any(&swallowing)).then_some(Support {
         y: position.y,
-        state: State::Perched,
+        surface: Surface::Perch,
     });
 
     snapshot.windows[..perch]
@@ -702,7 +795,7 @@ fn footing(
         .filter(|(index, window)| swallowing(window) && is_perch(*index, position.x, snapshot))
         .map(|(_, window)| Support {
             y: window.y,
-            state: State::Perched,
+            surface: Surface::Perch,
         })
         .chain(held)
         .chain(support_below(position, snapshot))

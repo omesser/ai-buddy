@@ -1,6 +1,6 @@
-# BMO, the little living console: a mint shell in seven flat colours, hard
+# BMO, the little living console: a mint shell in eight flat colours, hard
 # pixel edges, no anti-aliasing, and ordered dithering only where a shade
-# between two of those seven is genuinely wanted. Everything it feels shows on
+# between two of those eight is genuinely wanted. Everything it feels shows on
 # the screen in its face. Regenerate the frames with
 # scripts/make-shipped-characters.py.
 

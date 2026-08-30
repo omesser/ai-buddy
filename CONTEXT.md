@@ -89,6 +89,19 @@ of it, or hanging over no display. That governs where the sprite may land. An
 edge it is already standing on it keeps until the edge itself goes.
 _Avoid_: Ledge, platform, surface
 
+**Surface**:
+What the sprite stands on: a display's floor, or a Perch. The umbrella over
+both, not a synonym for Perch — a Perch is one kind of Surface, and "surface"
+as a loose word for a Perch stays on that entry's avoid list.
+_Avoid_: Ground, platform
+
+**Contact**:
+What one tick of physics reports back to the State machine: the sprite landed
+on a Surface, was lifted onto one, stands where it stood, hangs in the air, or
+met a wall or the ceiling. An observation only — what the sprite becomes as a
+result is the State machine's decision, never the Contact's.
+_Avoid_: Collision, hit, event
+
 ### Layers
 
 **Spatial Layer**:
