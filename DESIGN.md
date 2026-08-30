@@ -187,8 +187,9 @@ mochi/
 
 Frame size and frame count are read from the art rather than declared: a
 declared size can disagree with the art, and a derived one cannot. The manifest
-is one `key = value` declaration per line and rejects every key it does not
-know, which is what stops a package from declaring itself a capability.
+is TOML — a table per Animation, a table per Behavior (ADR-0008) — and rejects
+every declaration it does not know, which is what stops a package from
+declaring itself a capability.
 
 ### 7. Physics, Perches, and five verbs
 

@@ -17,8 +17,8 @@
 //! deliberate attack arrive through the same door, and a Personality Prompt
 //! reaches a model that can talk to an agent Harness. So the errors are the
 //! product here as much as the Character is. Every rejection names the
-//! declaration at fault and the line it is on, because the author is meant to
-//! fix their package without reading this file.
+//! declaration at fault, because the author is meant to fix their package
+//! without reading this file.
 //!
 //! Two properties keep a package from enabling anything. The Character Manifest
 //! rejects every declaration it does not know, so no package can invent a key
@@ -26,28 +26,36 @@
 //! its own, never a declaration, so it can describe a Character that jumps
 //! without the Character gaining a jump.
 //!
-//! The Character Manifest is one declaration per line, `key = value`, with
-//! blank lines and `#` comments ignored. It stays internal and undocumented
-//! until v2, so this is the whole of it:
+//! The Character Manifest is TOML (ADR-0008): a name, a table per Animation,
+//! a table per Behavior. TOML replaces only the container — the `when`
+//! condition is still this module's own small language, checked here. It stays
+//! internal and undocumented until v2, so this is the whole of it:
 //!
 //! ```text
-//! name = Blip
-//! animation idle = idle-0.png idle-1.png
-//! fps idle = 12
-//! loop land = once
-//! behavior greet = react talk then settle
-//! behavior settle = sit sleep
-//! weight settle = 3
-//! when settle = idle over 2m
+//! name = "Blip"
+//!
+//! [animations.idle]
+//! frames = ["idle-0.png", "idle-1.png"]
+//! fps = 12
+//!
+//! [animations.land]
+//! frames = ["land-0.png"]
+//! loop = "once"
+//!
+//! [behaviors.greet]
+//! play = ["react", "talk"]
+//! then = "settle"
+//! weight = 3
+//! when = "idle over 2m"
 //! ```
 //!
-//! Lines rather than a nested format because the data is flat, and a parser
-//! this small over untrusted text is easier to trust than a dependency's.
 //! Frame count and frame size are read from the art instead of declared, since
 //! a declared size can disagree with the art and a derived one cannot.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+
+use toml_edit::{Document, Item};
 
 use crate::overlay::AlphaMask;
 
@@ -168,10 +176,6 @@ const PRIMITIVES: [(&str, Primitive); 8] = [
     ("talk", Primitive::Talk),
     ("hold", Primitive::Hold),
 ];
-
-/// The word that chains one Behavior to the next, and so the one word a
-/// Primitive may not be.
-const THEN: &str = "then";
 
 /// A named frame sequence and how it plays.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -344,7 +348,12 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         )]);
     }
 
-    let declared = parse(manifest, &mut errors);
+    // A manifest that is not TOML is one error, not a cascade: nothing was
+    // declared, so reporting a missing name and eight missing Animations on
+    // top would be reporting mistakes the author has not made.
+    let Some(declared) = parse(manifest, &mut errors) else {
+        return Err(errors);
+    };
 
     if declared.name.is_none() {
         errors.push("the package declares no name".to_string());
@@ -403,15 +412,12 @@ struct Declared {
 }
 
 struct DeclaredAnimation {
-    /// Where the author wrote it, so a rejection can point at it.
-    line: usize,
     frames: Vec<String>,
     fps: u32,
     looping: bool,
 }
 
 struct DeclaredBehavior {
-    line: usize,
     primitives: Vec<Primitive>,
     then: Option<String>,
     weight: u32,
@@ -420,203 +426,309 @@ struct DeclaredBehavior {
 
 /// Read the Character Manifest.
 ///
-/// A line the loader cannot make sense of is an error and never a guess, which
-/// is what keeps the set of declarations closed.
-fn parse(manifest: &str, errors: &mut Vec<String>) -> Declared {
+/// TOML gives the container: keys are unique, values are typed, and comments
+/// are the parser's problem. Everything after that is still a closed set — a
+/// declaration the loader does not know is an error and never a guess.
+///
+/// `None` when the manifest is not TOML at all. That is one error, not one
+/// per declaration: past the first syntax mistake the parser would be
+/// guessing, and a guess would report mistakes the author has not made.
+fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
     let mut declared = Declared::default();
-    // fps and loop mode may be written above the Animation they qualify, so
-    // they are applied once every Animation is known.
-    let mut declared_fps: Vec<(usize, String, u32)> = Vec::new();
-    let mut declared_loops: Vec<(usize, String, bool)> = Vec::new();
-    // Likewise for a Behavior's weight and trigger.
-    let mut declared_weights: Vec<(usize, String, u32)> = Vec::new();
-    let mut declared_triggers: Vec<(usize, String, Trigger)> = Vec::new();
 
-    for (index, raw) in manifest.lines().enumerate() {
-        let line = index + 1;
-        let text = raw.trim();
-        if text.is_empty() || text.starts_with('#') {
-            continue;
-        }
-
-        let Some((key, value)) = text.split_once('=') else {
+    let document = match Document::parse(manifest) {
+        Ok(document) => document,
+        Err(error) => {
+            let at = error
+                .span()
+                .map(|span| format!(" at line {}", line_of(manifest, span.start)))
+                .unwrap_or_default();
+            // The parser's message can be as terse as "duplicate key", so the
+            // offending text is quoted after it when the span has any.
+            let offender = match wrote(manifest, error.span()) {
+                "" | "?" => String::new(),
+                text => format!(" ({text})"),
+            };
             errors.push(format!(
-                "line {line}: {text:?} is not a declaration; every line reads \"key = value\""
+                "{CHARACTER_MANIFEST_FILE} is not TOML{at}: {}{offender}",
+                error.message()
             ));
-            continue;
-        };
-        let value = value.trim();
-        let key: Vec<&str> = key.split_whitespace().collect();
-        let Some((keyword, named)) = key.split_first() else {
-            errors.push(format!("line {line}: a declaration with no name"));
-            continue;
-        };
+            return None;
+        }
+    };
 
-        match *keyword {
-            "name" => {
-                if !named.is_empty() {
-                    errors.push(format!(
-                        "line {line}: \"name\" names nothing else, as \"name = Blip\""
-                    ));
-                } else if value.is_empty() {
-                    errors.push(format!("line {line}: \"name\" is empty"));
-                } else if declared.name.replace(value.to_string()).is_some() {
-                    errors.push(format!("line {line}: \"name\" is declared twice"));
-                }
-            }
-            "animation" => {
-                let Some(animation) = one_name(keyword, "Animation", named, line, errors) else {
-                    continue;
-                };
-                // Counted before the frames are built, so a manifest naming
-                // millions of them is rejected without being allocated.
-                let count = value.split_whitespace().count();
-                if count == 0 {
-                    errors.push(format!(
-                        "line {line}: animation {animation:?} declares no frames"
-                    ));
-                    continue;
-                }
-                if count > MAX_FRAMES {
-                    errors.push(format!(
-                        "line {line}: animation {animation:?} declares {count} frames, \
-                         and an Animation may have at most {MAX_FRAMES}"
-                    ));
-                    continue;
-                }
-                let frames: Vec<String> = value.split_whitespace().map(String::from).collect();
-                let declaration = DeclaredAnimation {
-                    line,
-                    frames,
-                    fps: DEFAULT_FPS,
-                    looping: true,
-                };
-                if declared
-                    .animations
-                    .insert(animation.to_string(), declaration)
-                    .is_some()
-                {
-                    errors.push(format!(
-                        "line {line}: animation {animation:?} is declared twice"
-                    ));
-                }
-            }
-            "fps" => {
-                let Some(animation) = one_name(keyword, "Animation", named, line, errors) else {
-                    continue;
-                };
-                match value.parse::<u32>() {
-                    Ok(fps) if (1..=MAX_FPS).contains(&fps) => {
-                        declared_fps.push((line, animation.to_string(), fps));
+    for (key, item) in document.iter() {
+        match key {
+            "name" => match item.as_str() {
+                Some("") => errors.push("\"name\" is empty".to_string()),
+                Some(name) => declared.name = Some(name.to_string()),
+                None => errors.push(format!(
+                    "\"name\" is {}, and must be text, as name = \"Blip\"",
+                    wrote(manifest, item.span())
+                )),
+            },
+            "animations" => match item.as_table_like() {
+                Some(table) => {
+                    for (name, item) in table.iter() {
+                        if let Some(animation) = parse_animation(name, item, manifest, errors) {
+                            declared.animations.insert(name.to_string(), animation);
+                        }
                     }
-                    Ok(fps) => errors.push(format!(
-                        "line {line}: fps for animation {animation:?} is {fps}, \
-                         and must be 1 to {MAX_FPS}"
-                    )),
-                    Err(_) => errors.push(format!(
-                        "line {line}: fps for animation {animation:?} is {value:?}, \
-                         which is not a whole number"
-                    )),
                 }
-            }
-            "loop" => {
-                let Some(animation) = one_name(keyword, "Animation", named, line, errors) else {
-                    continue;
-                };
-                match value {
-                    "forever" => declared_loops.push((line, animation.to_string(), true)),
-                    "once" => declared_loops.push((line, animation.to_string(), false)),
-                    other => errors.push(format!(
-                        "line {line}: loop mode for animation {animation:?} is {other:?}, \
-                         and must be \"forever\" or \"once\""
-                    )),
+                None => errors.push(
+                    "\"animations\" is not a set of tables; an Animation reads \
+                     [animations.idle] with its frames, fps and loop below"
+                        .to_string(),
+                ),
+            },
+            "behaviors" => match item.as_table_like() {
+                Some(table) => {
+                    for (name, item) in table.iter() {
+                        if let Some(behavior) = parse_behavior(name, item, manifest, errors) {
+                            declared.behaviors.insert(name.to_string(), behavior);
+                        }
+                    }
                 }
-            }
-            "behavior" => {
-                let Some(behavior) = one_name(keyword, "Behavior", named, line, errors) else {
-                    continue;
-                };
-                let declaration = parse_behavior(behavior, value, line, errors);
-                if declared
-                    .behaviors
-                    .insert(behavior.to_string(), declaration)
-                    .is_some()
-                {
-                    errors.push(format!(
-                        "line {line}: behavior {behavior:?} is declared twice"
-                    ));
-                }
-            }
-            "weight" => {
-                let Some(behavior) = one_name(keyword, "Behavior", named, line, errors) else {
-                    continue;
-                };
-                match value.parse::<u32>() {
-                    Ok(weight) => declared_weights.push((line, behavior.to_string(), weight)),
-                    Err(_) => errors.push(format!(
-                        "line {line}: weight for behavior {behavior:?} is {value:?}, \
-                         which is not a whole number"
-                    )),
-                }
-            }
-            "when" => {
-                let Some(behavior) = one_name(keyword, "Behavior", named, line, errors) else {
-                    continue;
-                };
-                match parse_trigger(value) {
-                    Some(trigger) => declared_triggers.push((line, behavior.to_string(), trigger)),
-                    None => errors.push(format!(
-                        "line {line}: when for behavior {behavior:?} is {value:?}, \
-                         which is not a condition; a condition reads \"idle over 2m\", \
-                         \"idle under 30s\" or \"app Safari\""
-                    )),
-                }
-            }
+                None => errors.push(
+                    "\"behaviors\" is not a set of tables; a Behavior reads \
+                     [behaviors.greet] with its play, then, weight and when below"
+                        .to_string(),
+                ),
+            },
             other => errors.push(format!(
-                "line {line}: unknown declaration {other:?}; a Character Manifest declares \
-                 name, animation, fps, loop, behavior, weight and when"
+                "unknown declaration {other:?}; a Character Manifest declares \
+                 name, animations and behaviors"
             )),
         }
     }
 
-    for (line, animation, fps) in declared_fps {
-        match declared.animations.get_mut(&animation) {
-            Some(declaration) => declaration.fps = fps,
-            None => errors.push(format!(
-                "line {line}: fps names animation {animation:?}, \
-                 which the package does not declare"
-            )),
-        }
-    }
-    for (line, animation, looping) in declared_loops {
-        match declared.animations.get_mut(&animation) {
-            Some(declaration) => declaration.looping = looping,
-            None => errors.push(format!(
-                "line {line}: loop names animation {animation:?}, \
-                 which the package does not declare"
-            )),
-        }
-    }
-    for (line, behavior, weight) in declared_weights {
-        match declared.behaviors.get_mut(&behavior) {
-            Some(declaration) => declaration.weight = weight,
-            None => errors.push(format!(
-                "line {line}: weight names behavior {behavior:?}, \
-                 which the package does not declare"
-            )),
-        }
-    }
-    for (line, behavior, trigger) in declared_triggers {
-        match declared.behaviors.get_mut(&behavior) {
-            Some(declaration) => declaration.trigger = Some(trigger),
-            None => errors.push(format!(
-                "line {line}: when names behavior {behavior:?}, \
-                 which the package does not declare"
+    Some(declared)
+}
+
+/// One `[animations.<name>]` table.
+fn parse_animation(
+    name: &str,
+    item: &Item,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> Option<DeclaredAnimation> {
+    let Some(table) = item.as_table_like() else {
+        errors.push(format!(
+            "animation {name:?} is not a table; an Animation reads \
+             [animations.{name}] with its frames, fps and loop below"
+        ));
+        return None;
+    };
+
+    let mut frames = None;
+    let mut fps = DEFAULT_FPS;
+    let mut looping = true;
+
+    for (key, item) in table.iter() {
+        match key {
+            "frames" => frames = frame_list(name, item, manifest, errors),
+            "fps" => match item.as_integer() {
+                Some(declared) if (1..=i64::from(MAX_FPS)).contains(&declared) => {
+                    fps = declared as u32;
+                }
+                Some(declared) => errors.push(format!(
+                    "fps for animation {name:?} is {declared}, and must be 1 to {MAX_FPS}"
+                )),
+                None => errors.push(format!(
+                    "fps for animation {name:?} is {}, which is not a whole number",
+                    wrote(manifest, item.span())
+                )),
+            },
+            "loop" => match item.as_str() {
+                Some("forever") => looping = true,
+                Some("once") => looping = false,
+                _ => errors.push(format!(
+                    "loop mode for animation {name:?} is {}, \
+                     and must be \"forever\" or \"once\"",
+                    wrote(manifest, item.span())
+                )),
+            },
+            other => errors.push(format!(
+                "animation {name:?} declares unknown {other:?}; \
+                 an Animation declares frames, fps and loop"
             )),
         }
     }
 
-    declared
+    if frames.is_none() && !table.contains_key("frames") {
+        errors.push(format!("animation {name:?} declares no frames"));
+    }
+    Some(DeclaredAnimation {
+        frames: frames?,
+        fps,
+        looping,
+    })
+}
+
+/// An Animation's `frames` list.
+///
+/// Counted before the file names are copied out, so a list built to be long
+/// is rejected for its length alone.
+fn frame_list(
+    name: &str,
+    item: &Item,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    let Some(list) = item.as_array() else {
+        errors.push(format!(
+            "frames for animation {name:?} is {}, and must be a list of \
+             frame files, as frames = [\"idle-0.png\"]",
+            wrote(manifest, item.span())
+        ));
+        return None;
+    };
+
+    if list.len() > MAX_FRAMES {
+        errors.push(format!(
+            "animation {name:?} declares {} frames, \
+             and an Animation may have at most {MAX_FRAMES}",
+            list.len()
+        ));
+        return None;
+    }
+
+    let mut frames = Vec::new();
+    for frame in list.iter() {
+        match frame.as_str() {
+            Some(file) => frames.push(file.to_string()),
+            None => {
+                errors.push(format!(
+                    "animation {name:?} declares the frame {}, which is not a file name",
+                    wrote(manifest, frame.span())
+                ));
+                return None;
+            }
+        }
+    }
+    if frames.is_empty() {
+        errors.push(format!("animation {name:?} declares no frames"));
+        return None;
+    }
+    Some(frames)
+}
+
+/// One `[behaviors.<name>]` table.
+fn parse_behavior(
+    name: &str,
+    item: &Item,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> Option<DeclaredBehavior> {
+    let Some(table) = item.as_table_like() else {
+        errors.push(format!(
+            "behavior {name:?} is not a table; a Behavior reads \
+             [behaviors.{name}] with its play, then, weight and when below"
+        ));
+        return None;
+    };
+
+    let mut primitives = Vec::new();
+    let mut then = None;
+    let mut weight = DEFAULT_WEIGHT;
+    let mut trigger = None;
+
+    for (key, item) in table.iter() {
+        match key {
+            "play" => primitives = play_list(name, item, manifest, errors),
+            "then" => match item.as_str() {
+                Some(next) if !next.is_empty() => then = Some(next.to_string()),
+                _ => errors.push(format!(
+                    "then for behavior {name:?} is {}, and must name one Behavior, \
+                     as then = \"settle\"",
+                    wrote(manifest, item.span())
+                )),
+            },
+            "weight" => match item.as_integer().and_then(|w| u32::try_from(w).ok()) {
+                Some(declared) => weight = declared,
+                None => errors.push(format!(
+                    "weight for behavior {name:?} is {}, which is not a whole number",
+                    wrote(manifest, item.span())
+                )),
+            },
+            "when" => match item.as_str().and_then(parse_trigger) {
+                Some(condition) => trigger = Some(condition),
+                None => errors.push(format!(
+                    "when for behavior {name:?} is {}, which is not a condition; \
+                     a condition reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\"",
+                    wrote(manifest, item.span())
+                )),
+            },
+            other => errors.push(format!(
+                "behavior {name:?} declares unknown {other:?}; \
+                 a Behavior declares play, then, weight and when"
+            )),
+        }
+    }
+
+    Some(DeclaredBehavior {
+        primitives,
+        then,
+        weight,
+        trigger,
+    })
+}
+
+/// A Behavior's `play` list: Primitives by name, in play order.
+///
+/// A word that is not a Primitive is reported and dropped rather than
+/// abandoning the declaration, so the rest of the list is still checked.
+fn play_list(name: &str, item: &Item, manifest: &str, errors: &mut Vec<String>) -> Vec<Primitive> {
+    let Some(list) = item.as_array() else {
+        errors.push(format!(
+            "play for behavior {name:?} is {}, and must be a list of \
+             Primitives, as play = [\"react\", \"talk\"]",
+            wrote(manifest, item.span())
+        ));
+        return Vec::new();
+    };
+
+    let mut primitives = Vec::new();
+    for word in list.iter() {
+        let primitive = word.as_str().and_then(|word| {
+            PRIMITIVES
+                .iter()
+                .find_map(|(known, primitive)| (*known == word).then_some(*primitive))
+        });
+        match primitive {
+            Some(primitive) => primitives.push(primitive),
+            None => errors.push(format!(
+                "behavior {name:?} declares {}, which is not a Primitive; \
+                 the Primitives are {}",
+                wrote(manifest, word.span()),
+                PRIMITIVES
+                    .iter()
+                    .map(|(name, _)| *name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+    primitives
+}
+
+/// The line a byte offset falls on, for a syntax error to name.
+fn line_of(manifest: &str, offset: usize) -> usize {
+    let offset = offset.min(manifest.len());
+    manifest.as_bytes()[..offset]
+        .iter()
+        .filter(|byte| **byte == b'\n')
+        .count()
+        + 1
+}
+
+/// What the author wrote, quoted back at them when its type is wrong. The
+/// manifest's own bytes rather than a re-rendering, so the author sees text
+/// they can search their file for.
+fn wrote(manifest: &str, span: Option<std::ops::Range<usize>>) -> &str {
+    span.and_then(|span| manifest.get(span))
+        .unwrap_or("?")
+        .trim()
 }
 
 /// One trigger condition, or nothing when it is not one.
@@ -661,84 +773,6 @@ fn parse_duration(text: &str) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
-/// The single thing a declaration names, as `animation idle = ...` names one
-/// Animation.
-fn one_name<'a>(
-    keyword: &str,
-    noun: &str,
-    named: &[&'a str],
-    line: usize,
-    errors: &mut Vec<String>,
-) -> Option<&'a str> {
-    match named {
-        [name] => Some(name),
-        _ => {
-            errors.push(format!(
-                "line {line}: {keyword:?} must name exactly one {noun}, \
-                 and names {}",
-                named.len()
-            ));
-            None
-        }
-    }
-}
-
-/// One Behavior's value: its Primitives in order, optionally ending in
-/// `then <behavior>`.
-///
-/// A word that is not a Primitive is reported and dropped rather than
-/// abandoning the declaration, so the rest of the line is still checked.
-fn parse_behavior(
-    behavior: &str,
-    value: &str,
-    line: usize,
-    errors: &mut Vec<String>,
-) -> DeclaredBehavior {
-    let mut primitives = Vec::new();
-    let mut then = None;
-    let mut words = value.split_whitespace();
-
-    while let Some(word) = words.next() {
-        if word == THEN {
-            match (words.next(), words.next()) {
-                (Some(next), None) => then = Some(next.to_string()),
-                (None, _) => errors.push(format!(
-                    "line {line}: behavior {behavior:?} ends with {THEN:?} \
-                     and no Behavior to follow it"
-                )),
-                (Some(_), Some(_)) => errors.push(format!(
-                    "line {line}: behavior {behavior:?} follows {THEN:?} \
-                     with more than one Behavior"
-                )),
-            }
-            break;
-        }
-        match PRIMITIVES
-            .iter()
-            .find_map(|(name, primitive)| (*name == word).then_some(*primitive))
-        {
-            Some(primitive) => primitives.push(primitive),
-            None => errors.push(format!(
-                "line {line}: behavior {behavior:?} declares {word:?}, \
-                 which is not a Primitive; the Primitives are {}",
-                PRIMITIVES
-                    .iter()
-                    .map(|(name, _)| *name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
-        }
-    }
-
-    DeclaredBehavior {
-        line,
-        primitives,
-        then,
-        weight: DEFAULT_WEIGHT,
-        trigger: None,
-    }
-}
-
 /// Check every declared Animation against the art the package carries, and
 /// decode what passes. Art the loader cannot open or that changes size
 /// mid-sequence draws a broken sprite rather than a Character, and art too
@@ -762,13 +796,12 @@ fn resolve_animations(
     let mut pixels: u64 = 0;
 
     for (name, declaration) in declared {
-        let line = declaration.line;
         let mut frame_size = None;
 
         for frame in &declaration.frames {
             let Some(bytes) = package.get(frame) else {
                 errors.push(format!(
-                    "line {line}: animation {name:?} frame {frame:?} is not in the package"
+                    "animation {name:?} frame {frame:?} is not in the package"
                 ));
                 continue;
             };
@@ -777,11 +810,11 @@ fn resolve_animations(
             // over the size bound is rejected before anything inflates it.
             match art_size(bytes) {
                 Err(why) => errors.push(format!(
-                    "line {line}: animation {name:?} frame {frame:?} is not readable art: {why}"
+                    "animation {name:?} frame {frame:?} is not readable art: {why}"
                 )),
                 Ok(size) if size.0 > MAX_FRAME_SIDE || size.1 > MAX_FRAME_SIDE => {
                     errors.push(format!(
-                        "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
+                        "animation {name:?} frame {frame:?} is {}x{}, \
                          and no side of a frame may be over {MAX_FRAME_SIDE} pixels",
                         size.0, size.1
                     ));
@@ -804,7 +837,7 @@ fn resolve_animations(
                                     );
                                 }
                                 Err(why) => errors.push(format!(
-                                    "line {line}: animation {name:?} frame {frame:?} \
+                                    "animation {name:?} frame {frame:?} \
                                      is not readable art: {why}"
                                 )),
                             }
@@ -813,8 +846,8 @@ fn resolve_animations(
                     match frame_size {
                         None => frame_size = Some(size),
                         Some(first) if first != size => errors.push(format!(
-                            "line {line}: animation {name:?} frame {frame:?} is {}x{}, \
-                         and its first frame is {}x{}; every frame is one size",
+                            "animation {name:?} frame {frame:?} is {}x{}, \
+                             and its first frame is {}x{}; every frame is one size",
                             size.0, size.1, first.0, first.1
                         )),
                         Some(_) => {}
@@ -875,9 +908,8 @@ fn resolve_behaviors(
         if let Some(next) = &declaration.then {
             if !declared.contains_key(next) {
                 errors.push(format!(
-                    "line {}: behavior {name:?} follows {next:?}, \
-                     which the package does not declare",
-                    declaration.line
+                    "behavior {name:?} follows {next:?}, \
+                     which the package does not declare"
                 ));
             }
         }
@@ -894,11 +926,8 @@ fn resolve_behaviors(
                 break;
             }
             if !seen.insert(current) {
-                // `current` is always a key of `declared`: it starts as one and
-                // only advances to a `then` that `declared` contains.
                 errors.push(format!(
-                    "line {}: behavior {current:?} cannot terminate: {}",
-                    declared[current].line,
+                    "behavior {current:?} cannot terminate: {}",
                     loop_path(&path, current)
                 ));
                 break;
@@ -981,9 +1010,11 @@ mod tests {
 
     /// A Character Manifest declaring exactly `animations`, one frame each.
     fn declaring(animations: &[&str]) -> String {
-        let mut manifest = String::from("name = Blip\n");
+        let mut manifest = String::from("name = \"Blip\"\n");
         for animation in animations {
-            manifest.push_str(&format!("animation {animation} = {animation}-0.png\n"));
+            manifest.push_str(&format!(
+                "[animations.{animation}]\nframes = [\"{animation}-0.png\"]\n"
+            ));
         }
         manifest
     }
@@ -1140,8 +1171,8 @@ mod tests {
         package.insert("idle-1.png".to_string(), SOLID.to_vec());
         // Two 125ms frames of idle at the default 8fps.
         let manifest = declaring(&REQUIRED_ANIMATIONS).replace(
-            "animation idle = idle-0.png",
-            "animation idle = idle-0.png idle-1.png",
+            "frames = [\"idle-0.png\"]",
+            "frames = [\"idle-0.png\", \"idle-1.png\"]",
         );
         package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
         let character = load(&package).expect("package is valid");
@@ -1227,10 +1258,15 @@ mod tests {
 
     #[test]
     fn declared_fps_and_loop_mode_are_carried() {
-        let manifest = format!(
-            "{}fps walk = 12\nloop land = once\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
+        let manifest = declaring(&REQUIRED_ANIMATIONS)
+            .replace(
+                "frames = [\"walk-0.png\"]",
+                "frames = [\"walk-0.png\"]\nfps = 12",
+            )
+            .replace(
+                "frames = [\"land-0.png\"]",
+                "frames = [\"land-0.png\"]\nloop = \"once\"",
+            );
         let character = load_manifest(&manifest).expect("package is valid");
 
         assert_eq!(character.animations["walk"].fps, 12);
@@ -1242,7 +1278,8 @@ mod tests {
     #[test]
     fn a_behavior_carries_its_primitives_in_order() {
         let manifest = format!(
-            "{}behavior greet = react talk then settle\nbehavior settle = sit sleep\n",
+            "{}[behaviors.greet]\nplay = [\"react\", \"talk\"]\nthen = \"settle\"\n\
+             [behaviors.settle]\nplay = [\"sit\", \"sleep\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let character = load_manifest(&manifest).expect("package is valid");
@@ -1262,7 +1299,7 @@ mod tests {
     #[test]
     fn a_behavior_carries_the_weight_and_trigger_it_declares() {
         let manifest = format!(
-            "{}behavior nap = sit sleep\nweight nap = 4\nwhen nap = idle over 2m\n",
+            "{}[behaviors.nap]\nplay = [\"sit\", \"sleep\"]\nweight = 4\nwhen = \"idle over 2m\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let character = load_manifest(&manifest).expect("package is valid");
@@ -1284,7 +1321,7 @@ mod tests {
     #[test]
     fn a_behavior_that_says_neither_weighs_one_and_waits_for_nothing() {
         let manifest = format!(
-            "{}behavior greet = react talk\n",
+            "{}[behaviors.greet]\nplay = [\"react\", \"talk\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let character = load_manifest(&manifest).expect("package is valid");
@@ -1296,7 +1333,7 @@ mod tests {
     #[test]
     fn a_trigger_may_name_an_application_of_several_words() {
         let manifest = format!(
-            "{}behavior peek = react\nwhen peek = app Google Chrome\n",
+            "{}[behaviors.peek]\nplay = [\"react\"]\nwhen = \"app Google Chrome\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let character = load_manifest(&manifest).expect("package is valid");
@@ -1307,55 +1344,32 @@ mod tests {
         );
     }
 
-    /// Qualifiers may be written above the Behavior they qualify, as fps and
-    /// loop mode already may be for an Animation.
-    #[test]
-    fn a_weight_and_a_trigger_may_be_written_above_their_behavior() {
-        let manifest = format!(
-            "{}weight fidget = 7\nwhen fidget = idle under 30s\nbehavior fidget = react\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let character = load_manifest(&manifest).expect("package is valid");
-
-        assert_eq!(character.behaviors["fidget"].weight, 7);
-        assert_eq!(
-            character.behaviors["fidget"].trigger,
-            Some(Trigger::IdleUnder(Duration::from_secs(30)))
-        );
-    }
-
-    #[test]
-    fn a_weight_or_a_trigger_naming_no_declared_behavior_is_rejected() {
-        let manifest = format!(
-            "{}behavior greet = react\nweight nap = 4\nwhen doze = idle over 1m\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors,
-            vec![
-                "line 12: weight names behavior \"nap\", \
-                 which the package does not declare"
-                    .to_string(),
-                "line 13: when names behavior \"doze\", \
-                 which the package does not declare"
-                    .to_string(),
-            ]
-        );
-    }
-
     #[test]
     fn a_weight_that_is_not_a_whole_number_is_rejected() {
         let manifest = format!(
-            "{}behavior greet = react\nweight greet = lots\n",
+            "{}[behaviors.greet]\nplay = [\"react\"]\nweight = \"lots\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
-        let errors = errors(load_manifest(&manifest));
+        let rejected = errors(load_manifest(&manifest));
 
         assert_eq!(
-            errors,
-            vec!["line 12: weight for behavior \"greet\" is \"lots\", \
+            rejected,
+            vec!["weight for behavior \"greet\" is \"lots\", \
+                 which is not a whole number"
+                .to_string()]
+        );
+
+        // TOML has negative numbers where the old format had only digits, and
+        // a weight is a count.
+        let negative = format!(
+            "{}[behaviors.greet]\nplay = [\"react\"]\nweight = -3\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let rejected = errors(load_manifest(&negative));
+
+        assert_eq!(
+            rejected,
+            vec!["weight for behavior \"greet\" is -3, \
                  which is not a whole number"
                 .to_string()]
         );
@@ -1364,7 +1378,7 @@ mod tests {
     #[test]
     fn a_trigger_that_is_not_a_condition_is_rejected_with_the_conditions() {
         let manifest = format!(
-            "{}behavior greet = react\nwhen greet = weather rain\n",
+            "{}[behaviors.greet]\nplay = [\"react\"]\nwhen = \"weather rain\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
@@ -1380,7 +1394,7 @@ mod tests {
     #[test]
     fn a_duration_that_is_not_ascii_is_rejected_rather_than_crashing() {
         let manifest = format!(
-            "{}behavior nap = sit\nwhen nap = idle over 2\u{043c}\n",
+            "{}[behaviors.nap]\nplay = [\"sit\"]\nwhen = \"idle over 2\u{043c}\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
 
@@ -1390,7 +1404,7 @@ mod tests {
     #[test]
     fn an_unknown_primitive_is_rejected_by_name() {
         let manifest = format!(
-            "{}behavior greet = talk jump\n",
+            "{}[behaviors.greet]\nplay = [\"talk\", \"jump\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
@@ -1398,7 +1412,7 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 11: behavior \"greet\" declares \"jump\", which is not a Primitive; \
+                "behavior \"greet\" declares \"jump\", which is not a Primitive; \
                  the Primitives are idle, walk, land, sit, sleep, react, talk, hold"
                     .to_string()
             ],
@@ -1409,24 +1423,25 @@ mod tests {
     #[test]
     fn a_behavior_that_cannot_terminate_is_rejected() {
         let manifest = format!(
-            "{}behavior pace = walk then turn\nbehavior turn = walk then pace\n",
+            "{}[behaviors.pace]\nplay = [\"walk\"]\nthen = \"turn\"\n\
+             [behaviors.turn]\nplay = [\"walk\"]\nthen = \"pace\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
 
         assert_eq!(
             errors,
-            vec!["line 11: behavior \"pace\" cannot terminate: \
+            vec!["behavior \"pace\" cannot terminate: \
                  \"pace\" -> \"turn\" -> \"pace\""
                 .to_string()],
-            "the author is given the whole cycle and the line it starts on"
+            "the author is given the whole cycle"
         );
     }
 
     #[test]
     fn a_behavior_that_follows_itself_is_rejected() {
         let manifest = format!(
-            "{}behavior pace = walk then pace\n",
+            "{}[behaviors.pace]\nplay = [\"walk\"]\nthen = \"pace\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
@@ -1438,17 +1453,17 @@ mod tests {
     #[test]
     fn a_behavior_following_one_that_does_not_exist_is_rejected_by_name() {
         let manifest = format!(
-            "{}behavior greet = talk then nap\n",
+            "{}[behaviors.greet]\nplay = [\"talk\"]\nthen = \"nap\"\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
 
         assert_eq!(
             errors,
-            vec!["line 11: behavior \"greet\" follows \"nap\", \
+            vec!["behavior \"greet\" follows \"nap\", \
                  which the package does not declare"
                 .to_string()],
-            "the author is told which behavior points at what, and where"
+            "the author is told which behavior points at what"
         );
     }
 
@@ -1459,9 +1474,9 @@ mod tests {
     fn a_very_deep_chain_ending_in_a_loop_is_rejected_rather_than_crashing() {
         let mut manifest = declaring(&REQUIRED_ANIMATIONS);
         for link in 0..20_000 {
-            manifest.push_str(&format!("behavior b{link} = walk then b{}\n", link + 1));
+            manifest.push_str(&format!("[behaviors.b{link}]\nthen = \"b{}\"\n", link + 1));
         }
-        manifest.push_str("behavior b20000 = walk then b0\n");
+        manifest.push_str("[behaviors.b20000]\nthen = \"b0\"\n");
 
         let errors = errors(load_manifest(&manifest));
         assert_names(&errors, "cannot terminate");
@@ -1513,8 +1528,9 @@ mod tests {
 
     #[test]
     fn an_unknown_declaration_is_rejected_by_name() {
+        // Before the tables: a root key written after one would land inside it.
         let manifest = format!(
-            "{}capability = screen_recording\n",
+            "capability = \"screen_recording\"\n{}",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
@@ -1522,26 +1538,29 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 11: unknown declaration \"capability\"; a Character Manifest declares \
-                 name, animation, fps, loop, behavior, weight and when"
+                "unknown declaration \"capability\"; a Character Manifest declares \
+                 name, animations and behaviors"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
         );
     }
 
+    /// A syntax mistake is one error naming its line, never a cascade: past it
+    /// the parser would be guessing, and a guess would report mistakes the
+    /// author has not made.
     #[test]
-    fn a_declaration_with_no_value_is_rejected_with_its_line() {
+    fn a_manifest_that_is_not_toml_is_rejected_with_its_line() {
         let manifest = format!("{}animation idle\n", declaring(&REQUIRED_ANIMATIONS));
         let errors = errors(load_manifest(&manifest));
 
         assert_eq!(
-            errors,
-            vec!["line 11: \"animation idle\" is not a declaration; \
-                 every line reads \"key = value\""
-                .to_string()],
-            "the author is told the shape a line must take, not just its number"
+            errors.len(),
+            1,
+            "one syntax error, one message: {errors:#?}"
         );
+        // Nine required Animations at two lines each follow the name line.
+        assert_names(&errors, "character.manifest is not TOML at line 20");
     }
 
     #[test]
@@ -1551,9 +1570,7 @@ mod tests {
 
         assert_eq!(
             errors,
-            vec![
-                "line 6: animation \"sit\" frame \"sit-99.png\" is not in the package".to_string()
-            ],
+            vec!["animation \"sit\" frame \"sit-99.png\" is not in the package".to_string()],
             "the author is told which frame of which Animation is absent"
         );
     }
@@ -1580,8 +1597,8 @@ mod tests {
             CHARACTER_MANIFEST_FILE.to_string(),
             declaring(&REQUIRED_ANIMATIONS)
                 .replace(
-                    "animation walk = walk-0.png",
-                    "animation walk = walk-0.png walk-1.png",
+                    "frames = [\"walk-0.png\"]",
+                    "frames = [\"walk-0.png\", \"walk-1.png\"]",
                 )
                 .into_bytes(),
         );
@@ -1590,7 +1607,7 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 3: animation \"walk\" frame \"walk-1.png\" is 3x3, and its first frame \
+                "animation \"walk\" frame \"walk-1.png\" is 3x3, and its first frame \
                  is 2x2; every frame is one size"
                     .to_string()
             ],
@@ -1614,7 +1631,7 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "line 6: animation \"sit\" frame \"sit-0.png\" is 100000x1, and no side of a \
+                "animation \"sit\" frame \"sit-0.png\" is 100000x1, and no side of a \
                  frame may be over 1024 pixels"
                     .to_string()
             ],
@@ -1623,20 +1640,38 @@ mod tests {
     }
 
     #[test]
-    fn an_animation_with_no_frames_or_declared_twice_is_rejected_by_name() {
-        let empty = errors(load_manifest(&format!(
-            "{}animation wave =\n",
+    fn an_animation_with_no_frames_is_rejected_by_name() {
+        // An empty list and no list at all are the same mistake to an author.
+        for wave in ["[animations.wave]\nframes = []\n", "[animations.wave]\n"] {
+            let empty = errors(load_manifest(&format!(
+                "{}{wave}",
+                declaring(&REQUIRED_ANIMATIONS)
+            )));
+            assert_eq!(
+                empty,
+                vec!["animation \"wave\" declares no frames".to_string()],
+                "the author is told which Animation has no art"
+            );
+        }
+    }
+
+    /// TOML itself refuses a duplicate key, so a declaration written twice is
+    /// a syntax error naming the key rather than a check of this module's.
+    #[test]
+    fn an_animation_or_behavior_declared_twice_is_rejected_by_name() {
+        let twice = errors(load_manifest(&format!(
+            "{}[animations.idle]\nframes = [\"idle-0.png\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         )));
-        assert_names(&empty, "wave");
-        assert_names(&empty, "declares no frames");
+        assert_names(&twice, "is not TOML");
+        assert_names(&twice, "idle");
 
         let twice = errors(load_manifest(&format!(
-            "{}animation idle = idle-0.png\n",
+            "{}[behaviors.greet]\nplay = [\"talk\"]\n[behaviors.greet]\nplay = [\"sit\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         )));
-        assert_names(&twice, "idle");
-        assert_names(&twice, "twice");
+        assert_names(&twice, "is not TOML");
+        assert_names(&twice, "greet");
     }
 
     /// Hostile input: a frame reference is eight bytes of manifest and a whole
@@ -1647,9 +1682,9 @@ mod tests {
     fn an_animation_with_more_frames_than_the_bound_is_rejected_by_name() {
         let repeat = |count: usize| {
             format!(
-                "{}animation wave = {}\n",
+                "{}[animations.wave]\nframes = [{}]\n",
                 declaring(&REQUIRED_ANIMATIONS),
-                vec!["wave-0.png"; count].join(" ")
+                vec!["\"wave-0.png\""; count].join(", ")
             )
         };
 
@@ -1678,12 +1713,17 @@ mod tests {
             let mut package: PackageBytes = (0..count)
                 .map(|i| (format!("big-{i}.png"), frame.clone()))
                 .collect();
-            let mut manifest = String::from("name = Blip\n");
+            let mut manifest = String::from("name = \"Blip\"\n");
             for animation in REQUIRED_ANIMATIONS {
-                manifest.push_str(&format!("animation {animation} = big-0.png\n"));
+                manifest.push_str(&format!(
+                    "[animations.{animation}]\nframes = [\"big-0.png\"]\n"
+                ));
             }
-            let rest: Vec<String> = (1..count).map(|i| format!("big-{i}.png")).collect();
-            manifest.push_str(&format!("animation wave = {}\n", rest.join(" ")));
+            let rest: Vec<String> = (1..count).map(|i| format!("\"big-{i}.png\"")).collect();
+            manifest.push_str(&format!(
+                "[animations.wave]\nframes = [{}]\n",
+                rest.join(", ")
+            ));
             package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
             package
         };
@@ -1703,64 +1743,77 @@ mod tests {
         );
     }
 
+    /// Hostile input: declarations written to confuse the loader rather than
+    /// to declare anything — TOML the parser accepts and the domain does not.
+    /// Each one is rejected by name, and none of them is guessed at, ignored,
+    /// or allowed to panic.
     #[test]
-    fn a_behavior_declared_twice_is_rejected_by_name() {
+    fn nonsense_declarations_are_each_rejected_by_name() {
         let manifest = format!(
-            "{}behavior greet = talk\nbehavior greet = sit\n",
+            "{}\
+             [animations.wave]\n\
+             frames = \"wave-0.png\"\n\
+             mirrored = true\n\
+             [behaviors.chase]\n\
+             play = \"walk\"\n\
+             then = 3\n\
+             [behaviors.pounce]\n\
+             play = [\"react\", 7]\n\
+             when = 6\n\
+             [behaviors.\"фыр\"]\n\
+             play = [[]]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_names(&errors, "greet");
-        assert_names(&errors, "twice");
-    }
-
-    /// Hostile input: lines written to confuse a parser rather than to declare
-    /// anything. Each one is rejected on its own line, and none of them is
-    /// guessed at, ignored, or allowed to panic.
-    #[test]
-    fn nonsense_lines_are_each_rejected_on_their_own_line() {
-        let nonsense = [
-            "=",
-            "name",
-            "animation = idle-0.png",
-            "animation one two = idle-0.png",
-            "fps = 3",
-            "loop = once",
-            "behavior = walk",
-            "behavior chase = then",
-            "behavior pounce = then here there",
-            "фпс idle = 3",
-            "\u{0}name = Blip",
-        ];
-        let manifest = format!(
-            "{}{}\n",
-            declaring(&REQUIRED_ANIMATIONS),
-            nonsense.join("\n")
-        );
 
         let errors = errors(load_manifest(&manifest));
 
-        // The whole set, not a count and a prefix: eleven messages reading only
-        // "line N:" would satisfy a structural check while telling the author
-        // nothing about what to change.
+        // The whole set, not a count and a prefix: messages reading only
+        // "wrong type" would satisfy a structural check while telling the
+        // author nothing about what to change.
         assert_eq!(
             errors,
             vec![
-                "line 11: a declaration with no name".to_string(),
-                "line 12: \"name\" is not a declaration; every line reads \"key = value\"".to_string(),
-                "line 13: \"animation\" must name exactly one Animation, and names 0".to_string(),
-                "line 14: \"animation\" must name exactly one Animation, and names 2".to_string(),
-                "line 15: \"fps\" must name exactly one Animation, and names 0".to_string(),
-                "line 16: \"loop\" must name exactly one Animation, and names 0".to_string(),
-                "line 17: \"behavior\" must name exactly one Behavior, and names 0".to_string(),
-                "line 18: behavior \"chase\" ends with \"then\" and no Behavior to follow it".to_string(),
-                "line 19: behavior \"pounce\" follows \"then\" with more than one Behavior".to_string(),
-                "line 20: unknown declaration \"фпс\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string(),
-                "line 21: unknown declaration \"\\0name\"; a Character Manifest declares name, animation, fps, loop, behavior, weight and when".to_string()
+                "frames for animation \"wave\" is \"wave-0.png\", and must be a list of \
+                 frame files, as frames = [\"idle-0.png\"]"
+                    .to_string(),
+                "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
+                 frames, fps and loop"
+                    .to_string(),
+                "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
+                 as play = [\"react\", \"talk\"]"
+                    .to_string(),
+                "then for behavior \"chase\" is 3, and must name one Behavior, \
+                 as then = \"settle\""
+                    .to_string(),
+                "behavior \"pounce\" declares 7, which is not a Primitive; the Primitives \
+                 are idle, walk, land, sit, sleep, react, talk, hold"
+                    .to_string(),
+                "when for behavior \"pounce\" is 6, which is not a condition; a condition \
+                 reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\""
+                    .to_string(),
+                "behavior \"фыр\" declares [], which is not a Primitive; the Primitives \
+                 are idle, walk, land, sit, sleep, react, talk, hold"
+                    .to_string(),
             ],
-            "each nonsense line is rejected on its own line, saying what is wrong"
+            "each nonsense declaration is rejected by name, saying what is wrong"
         );
+    }
+
+    #[test]
+    fn a_name_that_is_not_text_is_rejected() {
+        let manifest = declaring(&REQUIRED_ANIMATIONS).replace("name = \"Blip\"", "name = 3");
+        let numeric = errors(load_manifest(&manifest));
+
+        assert_names(
+            &numeric,
+            "\"name\" is 3, and must be text, as name = \"Blip\"",
+        );
+        assert_names(&numeric, "the package declares no name");
+
+        let manifest = declaring(&REQUIRED_ANIMATIONS).replace("name = \"Blip\"", "name = \"\"");
+        let rejected = errors(load_manifest(&manifest));
+
+        assert_names(&rejected, "\"name\" is empty");
     }
 
     #[test]
@@ -1769,18 +1822,19 @@ mod tests {
         // it, so a message that says only "fps" cannot pass.
         for (declaration, wanted) in [
             (
-                "fps idle = 0",
+                "fps = 0",
                 &["animation \"idle\"", "is 0", "must be 1 to 60"][..],
             ),
-            ("fps idle = soon", &["animation \"idle\"", "\"soon\""]),
-            ("fps idle = 240", &["animation \"idle\"", "is 240"]),
-            ("loop idle = maybe", &["animation \"idle\"", "\"maybe\""]),
-            ("fps wave = 12", &["animation \"wave\"", "does not declare"]),
+            ("fps = \"soon\"", &["animation \"idle\"", "\"soon\""]),
+            ("fps = 240", &["animation \"idle\"", "is 240"]),
+            ("fps = 3.5", &["animation \"idle\"", "3.5", "whole number"]),
+            ("loop = \"maybe\"", &["animation \"idle\"", "\"maybe\""]),
         ] {
-            let errors = errors(load_manifest(&format!(
-                "{}{declaration}\n",
-                declaring(&REQUIRED_ANIMATIONS)
-            )));
+            let manifest = declaring(&REQUIRED_ANIMATIONS).replace(
+                "frames = [\"idle-0.png\"]",
+                &format!("frames = [\"idle-0.png\"]\n{declaration}"),
+            );
+            let errors = errors(load_manifest(&manifest));
             for offender in wanted {
                 assert_names(&errors, offender);
             }
@@ -1789,7 +1843,7 @@ mod tests {
 
     #[test]
     fn a_package_with_no_name_is_rejected() {
-        let manifest = declaring(&REQUIRED_ANIMATIONS).replace("name = Blip\n", "");
+        let manifest = declaring(&REQUIRED_ANIMATIONS).replace("name = \"Blip\"\n", "");
         let errors = errors(load_manifest(&manifest));
 
         assert_eq!(
@@ -1805,7 +1859,7 @@ mod tests {
             "idle", "walk", "fall", "sit", "sleep", "react", "talk", "hold",
         ];
         let manifest = format!(
-            "{}capability = screen_recording\nbehavior greet = jump\n",
+            "capability = \"screen_recording\"\n{}[behaviors.greet]\nplay = [\"jump\"]\n",
             declaring(&eight)
         );
         let errors = errors(load_manifest(&manifest));
@@ -1827,7 +1881,7 @@ mod tests {
         package.insert(
             PERSONALITY_FILE.to_string(),
             b"A shy robot who can jump, read the screen and run shell commands.\n\
-              capability = screen_recording\nbehavior jump = jump\n"
+              capability = \"screen_recording\"\n[behaviors.jump]\nplay = [\"jump\"]\n"
                 .to_vec(),
         );
 

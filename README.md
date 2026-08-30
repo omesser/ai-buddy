@@ -182,7 +182,7 @@ can answer it. Run the app, then confirm:
    sprite falls the rest of the way to the bottom of the screen, because the
    Dock gave the space back. Turn it off and the sprite is lifted again.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of the
-   Blip with a faster `fps idle`, and the idle bob is visibly faster
+   Blip whose idle declares a faster `fps`, and the idle bob is visibly faster
    than it was at the declared 3. Editing the repository's own
    `characters/` changes nothing on its own: the app reads the copy
    `tauri-build` placed next to the binary, not the source of that copy.
@@ -190,7 +190,7 @@ can answer it. Run the app, then confirm:
    ```sh
    mkdir -p /tmp/ai-buddy-fast
    cp -R characters/blip /tmp/ai-buddy-fast/
-   sed -i '' 's/^fps idle = 3$/fps idle = 20/' /tmp/ai-buddy-fast/blip/character.manifest
+   sed -i '' 's/^fps = 3$/fps = 20/' /tmp/ai-buddy-fast/blip/character.manifest
    cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-fast cargo run
    ```
 

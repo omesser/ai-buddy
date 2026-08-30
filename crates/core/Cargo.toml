@@ -8,3 +8,6 @@ license.workspace = true
 
 [dependencies]
 png = "0.18"
+# Parse only: the loader reads manifests and never writes one, and serde would
+# put its error strings where the Character-Manifest ones belong.
+toml_edit = {version = "0.25", default-features = false, features = ["parse"]}
