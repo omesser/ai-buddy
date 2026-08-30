@@ -166,7 +166,15 @@ const WALK_SPEED: f64 = 120.0;
 
 /// Points per second squared. A tuning knob: the number that makes a fall read
 /// as heavy rather than floaty is found by watching it, not by deriving it.
-const GRAVITY: f64 = 1800.0;
+/// 3600 keeps a Throw on the display long enough to see, instead of spending
+/// the flight above the usable frame. #100.
+const GRAVITY: f64 = 3600.0;
+
+/// How far below the usable top the feet must stay so the art hanging above
+/// them stays on screen. The Engine does not know the art's size; 128 is
+/// 32px at 4×, and a perch closer than that is the title bar under the
+/// menu bar that used to show only legs. #100.
+const CEILING_CLEARANCE: f64 = 128.0;
 
 /// Points per second squared. The yank gate is this times `YANK_WINDOW_S`:
 /// a change in Perch speed larger than that, measured against the speed
@@ -492,6 +500,19 @@ impl Engine {
                 } else {
                     let next_y = self.position.y + self.velocity.y * dt;
 
+                    // Rising only: a Grab can put the feet above the ceiling,
+                    // and snapping them down would teleport a drop. #100.
+                    if self.velocity.y < 0.0 {
+                        if let Some(ceiling) = ceiling_over(self.position.x, snapshot) {
+                            let stop_at = self.position.y.min(ceiling);
+                            if next_y < stop_at {
+                                self.position.y = stop_at;
+                                self.velocity.y = 0.0;
+                                return Some(Contact::Ceiling);
+                            }
+                        }
+                    }
+
                     match support_below(self.position, snapshot) {
                         Some(support) if next_y >= support.y => {
                             self.position.y = support.y;
@@ -599,6 +620,18 @@ impl Engine {
         let Some(current) = match_perch(previous, &snapshot.windows) else {
             return PerchCarry::Lost;
         };
+        let Some(index) = snapshot
+            .windows
+            .iter()
+            .position(|window| *window == current)
+        else {
+            return PerchCarry::Lost;
+        };
+        // An edge you cannot see is gone, whether the sprite was landing or
+        // already standing on it. #100.
+        if !is_perch(index, self.position.x, snapshot) {
+            return PerchCarry::Lost;
+        }
         let delta = Point {
             x: current.x - previous.x,
             y: current.y - previous.y,
@@ -793,7 +826,7 @@ mod transition {
         Standing,
         /// Reached a screen edge sideways, mid-air.
         Wall,
-        /// Climbed off the top of the display.
+        /// Met the usable top while rising or climbing. #100.
         Ceiling,
     }
 
@@ -936,7 +969,7 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 /// the window in front of that edge is above the sprite and so no support at
 /// all.
 ///
-/// Two ways an edge is not a Perch, both of them a resting place the user
+/// Three ways an edge is not a Perch, all of them a resting place the user
 /// cannot see:
 ///
 /// - Hidden behind a window drawn in front of it. That is what makes
@@ -948,11 +981,15 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 ///   not to the rectangle bounding them, so a window spanning two displays of
 ///   different heights hangs part of its edge over nothing. A sprite resting
 ///   out there is invisible and unclickable until the window moves.
+/// - Too close to the usable top. The feet are the contact point and the art
+///   hangs above them, so a title bar under the menu bar leaves only legs on
+///   screen. #100.
 fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
     let window = &snapshot.windows[index];
     window.spans_x(x)
-        && displays_spanning(x, snapshot)
-            .any(|display| window.y >= display.y && window.y <= display.bottom())
+        && displays_spanning(x, snapshot).any(|display| {
+            window.y >= display.y + CEILING_CLEARANCE && window.y <= display.bottom()
+        })
         && !snapshot.windows[..index]
             .iter()
             .any(|front| front.spans_x(x) && window.y >= front.y && window.y <= front.bottom())
@@ -997,12 +1034,14 @@ fn footing(
     // behind the Perch is behind the sprite too, so the edge it stands on is
     // still there to be seen.
     //
-    // With nothing new over it the sprite keeps the edge it is standing on,
-    // seen or not. Occlusion decides where the sprite may land, never whether
-    // it may stay: a window raised in front of a Perch moves nothing, and a
-    // sprite made to re-earn its footing against `is_perch` every tick drops
-    // through the edge it was sitting on the moment one is clicked. #5.
-    let held = (!snapshot.windows[..perch].iter().any(&swallowing)).then_some(Support {
+    // An edge you cannot see is gone, including one the sprite is already
+    // standing on. Keeping a hidden Perch left it floating in mid-air
+    // after alt-tab. A window that already contained the sprite still
+    // swallows nothing, so this falls rather than hoisting it under the
+    // menu bar. #100, and #78 still holds.
+    let held = (is_perch(perch, position.x, snapshot)
+        && !snapshot.windows[..perch].iter().any(&swallowing))
+    .then_some(Support {
         y: position.y,
         surface: Surface::Perch,
     });
@@ -1060,10 +1099,11 @@ fn floor_under(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
         .max_by(f64::total_cmp)
 }
 
-/// The top of the display the sprite is against, which is where a climb ends.
+/// The highest the feet may go: the usable top plus the room the art needs
+/// above them. A climb lets go here; a Throw bumps it. #100.
 fn ceiling_over(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
     displays_spanning(x, snapshot)
-        .map(|display| display.y)
+        .map(|display| display.y + CEILING_CLEARANCE)
         .min_by(f64::total_cmp)
 }
 
@@ -1636,8 +1676,9 @@ mod tests {
             .map(|_| engine.tick(&usable()).position.y)
             .fold(f64::INFINITY, f64::min);
         assert_eq!(
-            highest, 30.0,
-            "it lets go under the menu bar, not at the display's own top of 0"
+            highest, 158.0,
+            "it lets go with the art still on the usable frame, not at \
+             the display's own top of 0"
         );
 
         let landed = settle(&mut engine, &usable());
@@ -2677,7 +2718,7 @@ mod tests {
         };
         let perch = Rect {
             x: 1000.0,
-            y: 400.0,
+            y: 500.0,
             width: 600.0,
             height: 200.0,
         };
@@ -2685,7 +2726,7 @@ mod tests {
             x: 1200.0,
             y: 350.0,
         });
-        assert_eq!(settle(&mut engine, &world(vec![perch])).position.y, 400.0);
+        assert_eq!(settle(&mut engine, &world(vec![perch])).position.y, 500.0);
 
         // Dragged over the sprite, with its top edge up where only the taller
         // display reaches.
@@ -2747,17 +2788,16 @@ mod tests {
         assert_eq!(covered.state, State::Perched);
     }
 
-    /// #78 as the overlay harness met it: a maximized window fills the display,
-    /// so the sprite standing on a smaller window in front of it is inside that
-    /// maximized window, and raising it puts the sprite on its top edge, up
-    /// under the menu bar, where it stays for the rest of the session.
+    /// #100: a Perch you cannot see is gone. Alt-tab, or clicking another
+    /// window, puts that window in front and the edge under the sprite
+    /// disappears. Staying there left it floating in mid-air on a title bar
+    /// nobody can see. It falls.
     ///
-    /// The window has swallowed nothing — it contained the sprite before the
-    /// sprite landed — and nothing has moved, so the sprite has lost nothing
-    /// either. Occlusion says where the sprite may land, never whether it may
-    /// stay: the edge under its feet is still an edge at the same height.
+    /// It is not hoisted onto the raised window's own top edge. That window
+    /// contained the sprite before it was raised, so it swallows nothing
+    /// (#78), and that edge sits under the menu bar besides.
     #[test]
-    fn a_window_raised_over_the_perch_leaves_the_sprite_on_it() {
+    fn a_window_raised_over_the_perch_drops_the_sprite() {
         let maximized = Rect {
             // Its top edge under the menu bar, its bottom on the usable floor.
             x: 0.0,
@@ -2787,12 +2827,16 @@ mod tests {
         let raised = world(vec![maximized, perch]);
         let frames: Vec<Frame> = (0..40).map(|_| engine.tick(&raised)).collect();
         assert!(
-            frames
-                .iter()
-                .all(|frame| frame.position == perched.position && frame.state == State::Perched),
-            "neither hoisted to the menu bar nor dropped through the edge it \
-             was standing on: {frames:?}"
+            frames.iter().any(|frame| frame.state == State::Falling),
+            "the hidden edge is gone, so it falls: {frames:?}"
         );
+        assert!(
+            frames.iter().all(|frame| frame.position.y > 30.0),
+            "and is not hoisted under the menu bar: {frames:?}"
+        );
+        let landed = frames.last().expect("forty ticks produce forty frames");
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(landed.position.y, 800.0, "down to the floor: {landed:?}");
     }
 
     /// The same rule met by walking rather than by a window moving: the sprite
@@ -3012,14 +3056,17 @@ mod tests {
 
     #[test]
     fn letting_go_with_velocity_throws_the_sprite_instead_of_dropping_it() {
-        let mut engine = Engine::new(Point { x: 100.0, y: 100.0 });
+        let mut engine = Engine::new(Point { x: 100.0, y: 400.0 });
         engine.tick(&WorldSnapshot {
-            cursor: Point { x: 200.0, y: 100.0 },
+            cursor: Point { x: 200.0, y: 400.0 },
             verbs: vec![Verb::Grab],
             ..snapshot(100)
         });
 
-        // Flung up and to the right at 300 points/s across, 200 points/s up.
+        // A production tick, not the 100 ms the other tests use to settle: on
+        // a long tick gravity wins a 200-point throw in one step and this
+        // would say the sprite never rose. Started below the ceiling so the
+        // rise is not stopped in the same tick. #100.
         let thrown = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
                 velocity: Point {
@@ -3027,16 +3074,80 @@ mod tests {
                     y: -200.0,
                 },
             }],
-            ..snapshot(100)
+            ..snapshot(16)
         });
 
         assert_eq!(thrown.state, State::Falling);
         assert_eq!(thrown.velocity.x, 300.0, "gravity does not slow the arc");
         assert!(thrown.position.x > 200.0, "it travels across: {thrown:?}");
         assert!(
-            thrown.position.y < 100.0,
+            thrown.position.y < 400.0,
             "an upward throw rises before it falls: {thrown:?}"
         );
+    }
+
+    /// #100: a hard upward flick used to spend most of the flight above the
+    /// usable frame. The usable top is a ceiling, and the sprite is heavy
+    /// enough to come back down onto a Surface.
+    #[test]
+    fn a_hard_upward_throw_stays_on_the_display_and_lands() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 500.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: 400.0,
+                    y: -2500.0,
+                },
+            }],
+            ..snapshot(16)
+        });
+
+        let flight: Vec<Frame> = (0..180).map(|_| engine.tick(&snapshot(16))).collect();
+        let highest = flight
+            .iter()
+            .map(|frame| frame.position.y)
+            .min_by(|a, b| a.total_cmp(b))
+            .expect("the flight produces frames");
+        assert!(
+            highest >= 0.0,
+            "left the display at y={highest}, {flight:?}"
+        );
+        assert!(
+            flight.iter().all(|frame| frame.position.y <= 800.0),
+            "fell past the floor: {flight:?}"
+        );
+        let landed = flight.last().expect("the flight produces frames");
+        assert_eq!(landed.state, State::Grounded, "it came to rest: {landed:?}");
+        assert_eq!(landed.position.y, 800.0, "on the floor: {landed:?}");
+    }
+
+    /// #100: a title bar under the menu bar is the usable top, not a Perch.
+    /// Landing there leaves only the feet on screen, and often unclickable.
+    #[test]
+    fn a_window_flush_with_the_usable_top_is_not_a_perch() {
+        let under_the_menu_bar = WorldSnapshot {
+            windows: vec![Rect {
+                x: 0.0,
+                y: 30.0,
+                width: 1000.0,
+                height: 770.0,
+            }],
+            ..snapshot(100)
+        };
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+
+        let landed = settle(&mut engine, &under_the_menu_bar);
+        assert_eq!(
+            landed.state,
+            State::Grounded,
+            "past the title bar: {landed:?}"
+        );
+        assert_eq!(landed.position.y, 800.0, "down to the floor: {landed:?}");
     }
 
     #[test]
@@ -3075,7 +3186,7 @@ mod tests {
         });
         let thrown = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
-                velocity: Point { x: 0.0, y: -1000.0 },
+                velocity: Point { x: 0.0, y: -2500.0 },
             }],
             ..window.clone()
         });
@@ -3084,13 +3195,10 @@ mod tests {
             State::Falling,
             "the edge above it is not a surface from underneath: {thrown:?}"
         );
-
-        let risen = (0..2).map(|_| engine.tick(&window)).last().unwrap();
         assert!(
-            risen.position.y < 400.0,
-            "it rises through the top edge: {risen:?}"
+            thrown.position.y < 400.0,
+            "it rises through the top edge: {thrown:?}"
         );
-        assert_eq!(risen.state, State::Falling);
 
         // The same edge, approached from above, catches it.
         let perched = settle(&mut engine, &window);
