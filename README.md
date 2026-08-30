@@ -225,7 +225,7 @@ can answer it. Run the app, then confirm:
 14. **A fullscreen application takes the screen and the Character leaves it.**
     Put any application into fullscreen — the green button, or
     Control-Command-F. Within about a tenth of a second the sprite fades out
-    over a fifth of a second: it dissolves rather than blinking off. Leave
+    over half a second: it dissolves rather than blinking off. Leave
     fullscreen and it fades back in, carrying on from wherever the Engine got
     to, still falling or still walking rather than restarting. A *zoomed* window
     is not a fullscreen one: Option-click the green button, or double-click a

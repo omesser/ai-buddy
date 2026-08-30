@@ -27,7 +27,9 @@ use crate::window_source::Rect;
 ///
 /// Long enough to read as leaving rather than as a dropped frame, short enough
 /// that a fullscreen application is not presented with a ghost in the corner.
-pub const FADE_MS: u32 = 200;
+/// Watched on a real desktop at 200ms, which read as closer to a blink than to
+/// a departure; half a second is the answer that eye gave.
+pub const FADE_MS: u32 = 500;
 
 /// How far a window's edge may sit from a display's and still count as
 /// covering it, in points.
