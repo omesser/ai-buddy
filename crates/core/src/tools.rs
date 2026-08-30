@@ -191,13 +191,15 @@ pub fn remember(memory: &MemoryManifest, heading: &str, fact: &str) -> io::Resul
 }
 
 /// List Character Instances and their names.
-///
-/// v1: returns an empty list when no Instances exist, which is the correct
-/// behavior before #13 lands. Tools behave sensibly when no Character Instance
-/// exists: empty list, not a crash.
-pub fn list_instances() -> ListInstancesResult {
+pub fn list_instances(instances: &[(String, String)]) -> ListInstancesResult {
     ListInstancesResult {
-        instances: Vec::new(),
+        instances: instances
+            .iter()
+            .map(|(id, name)| InstanceInfo {
+                id: id.clone(),
+                name: name.clone(),
+            })
+            .collect(),
     }
 }
 
@@ -522,9 +524,40 @@ mod tests {
 
     #[test]
     fn list_instances_returns_empty_list_when_no_instances_exist() {
-        let result = list_instances();
+        let result = list_instances(&[]);
 
         assert_eq!(result.instances.len(), 0);
+    }
+
+    #[test]
+    fn list_instances_returns_spawned_instances() {
+        let instances = vec![
+            ("abc-123".to_string(), "Buddy One".to_string()),
+            ("def-456".to_string(), "Buddy Two".to_string()),
+        ];
+
+        let result = list_instances(&instances);
+
+        assert_eq!(result.instances.len(), 2);
+        assert_eq!(result.instances[0].id, "abc-123");
+        assert_eq!(result.instances[0].name, "Buddy One");
+        assert_eq!(result.instances[1].id, "def-456");
+        assert_eq!(result.instances[1].name, "Buddy Two");
+    }
+
+    #[test]
+    fn list_instances_reflects_dismissal() {
+        let instances = vec![("abc-123".to_string(), "Buddy One".to_string())];
+
+        let before = list_instances(&instances);
+        assert_eq!(before.instances.len(), 1);
+
+        let after = list_instances(&[]);
+        assert_eq!(
+            after.instances.len(),
+            0,
+            "after dismissing, the list is empty"
+        );
     }
 
     // No tool posts input events
