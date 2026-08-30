@@ -98,29 +98,34 @@ fps = 6
 # only stretch it still has an audience for. `walk` stays lightest: it is the
 # bare Primitive, and `patrol` is the same walk with BMO looking at something.
 
+# The react art is a wince, and it belongs to being poked or dropped — the
+# engine plays it there on its own. Written into these Behaviors it fired on
+# nearly every Director wake and read as BMO getting hurt mid-walk, so the
+# pauses here are calm ones: standing, talking, or sitting down to a game.
+
 [behaviors.walk]
 play = ["walk"]
 weight = 1
 when = "idle over 30s"
 
 [behaviors.patrol]
-play = ["walk", "react", "walk"]
+play = ["walk", "idle", "walk"]
 then = "walk"
 weight = 3
 when = "idle over 2m"
 
 [behaviors.fidget]
-play = ["react", "idle", "react"]
+play = ["idle", "sit", "idle"]
 weight = 2
 when = "idle over 10s"
 
 [behaviors.report]
-play = ["talk", "react", "talk"]
+play = ["talk", "idle", "talk"]
 weight = 3
 when = "idle under 1m"
 
 [behaviors.greet]
-play = ["react", "talk"]
+play = ["talk"]
 then = "patrol"
 weight = 4
 when = "idle under 10s"
