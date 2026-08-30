@@ -241,14 +241,6 @@ of a second ago rather than the previous frame's, because at 16 ms the window
 server's own jitter reads as a jump. The number is a feel value, tuned against
 a real dragged window rather than derived.
 
-A resize drops the sprite, and a move does not. The window under the sprite is
-matched between polls by its size and nearest position, so changing the size
-makes it a different window and the sprite falls off it as it would off one
-that closed. That falls out of matching on geometry rather than on an identity
-the window server would hand out, and it is kept because it feels right: a
-window growing under the sprite is a bigger change to what it is standing on
-than the same window sliding.
-
 Occlusion is a landing rule and never a resting one. An edge hidden behind a
 window in front of it is nowhere to land, but a sprite already standing on one
 stays there: raising a window over a Perch moves nothing, and re-deriving
