@@ -90,7 +90,10 @@ pub struct DenyList {
 
 impl DenyList {
     fn allows(&self, application: &str) -> bool {
-        !self.excluded_applications.iter().any(|excluded| excluded.eq_ignore_ascii_case(application))
+        !self
+            .excluded_applications
+            .iter()
+            .any(|excluded| excluded.eq_ignore_ascii_case(application))
     }
 }
 
@@ -124,7 +127,7 @@ pub fn play_behavior(behavior: &str) -> PlayBehaviorResult {
 /// result, so they never enter any sensing tool result.
 pub fn list_windows(source: &dyn WindowSource, denylist: &DenyList) -> ListWindowsResult {
     let geometry = source.snapshot();
-    
+
     let windows = geometry
         .windows
         .into_iter()
@@ -148,7 +151,7 @@ pub fn list_windows(source: &dyn WindowSource, denylist: &DenyList) -> ListWindo
 /// excluded applications from the result.
 pub fn describe_screen(source: &dyn WindowSource, denylist: &DenyList) -> DescribeScreenResult {
     let geometry = source.snapshot();
-    
+
     let visible_windows: Vec<_> = geometry
         .windows
         .into_iter()
@@ -212,8 +215,10 @@ mod tests {
         fn new(label: &str) -> Self {
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let unique = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir()
-                .join(format!("ai-buddy-tools-{label}-{}-{unique}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!(
+                "ai-buddy-tools-{label}-{}-{unique}",
+                std::process::id()
+            ));
             fs::create_dir_all(&dir).expect("temp dir is creatable");
             Self(dir)
         }
@@ -231,7 +236,12 @@ mod tests {
 
     fn window(owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
-            bounds: Rect { x, y, width, height },
+            bounds: Rect {
+                x,
+                y,
+                width,
+                height,
+            },
             owner: owner.to_string(),
             layer: 0,
         }
@@ -275,7 +285,12 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
                 windows: vec![
                     window("Terminal", 10.0, 20.0, 800.0, 600.0),
                     window("Safari", 30.0, 40.0, 1200.0, 800.0),
@@ -303,7 +318,12 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
                 windows: vec![
                     window("Terminal", 10.0, 20.0, 800.0, 600.0),
                     window("1Password", 30.0, 40.0, 400.0, 300.0),
@@ -335,7 +355,12 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
                 windows: vec![
                     window("Terminal", 10.0, 20.0, 800.0, 600.0),
                     window("1password", 30.0, 40.0, 400.0, 300.0),
@@ -361,7 +386,12 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
                 windows: vec![
                     window("Terminal", 10.0, 20.0, 800.0, 600.0),
                     window("Safari", 30.0, 40.0, 1200.0, 800.0),
@@ -385,7 +415,12 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
                 windows: vec![
                     window("Terminal", 10.0, 20.0, 800.0, 600.0),
                     window("1Password", 30.0, 40.0, 400.0, 300.0),
@@ -412,7 +447,12 @@ mod tests {
                 absolute_positioning: true,
             },
             geometry: WorldGeometry {
-                usable_frames: vec![Rect { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 }],
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
                 windows: vec![],
             },
         };
@@ -429,7 +469,9 @@ mod tests {
     fn recall_returns_memory_contents() {
         let dir = TempDir::new("recall");
         let memory = MemoryManifest::new(dir.join("memory.md"));
-        memory.remember("Facts", "The user likes coffee").expect("remembering writes");
+        memory
+            .remember("Facts", "The user likes coffee")
+            .expect("remembering writes");
 
         let result = recall(&memory).expect("recall succeeds");
 
@@ -452,7 +494,8 @@ mod tests {
         let dir = TempDir::new("remember");
         let memory = MemoryManifest::new(dir.join("memory.md"));
 
-        let result = remember(&memory, "Facts", "The user's name is Oded").expect("remember succeeds");
+        let result =
+            remember(&memory, "Facts", "The user's name is Oded").expect("remember succeeds");
 
         assert_eq!(result.recorded, "- The user's name is Oded");
         let content = memory.recall().expect("recall reads back");
@@ -480,7 +523,7 @@ mod tests {
     #[test]
     fn list_instances_returns_empty_list_when_no_instances_exist() {
         let result = list_instances();
-        
+
         assert_eq!(result.instances.len(), 0);
     }
 
