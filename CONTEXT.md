@@ -85,10 +85,10 @@ _Avoid_: Brain, agent, planner
 A window's top edge treated as a one-way platform the sprite can land on, walk
 along, and fall off. Window sides and bottoms are not Perches, and neither is
 the length of an edge that cannot be seen: one hidden behind a window in front
-of it, or hanging over no display. That governs where the sprite may land. An
-edge it is already standing on it keeps until the edge itself goes, or until a
-yank accelerates the window past the ride gate. A slow drag is still the same
-edge: the sprite Holds and rides.
+of it, hanging over no display, or so close to the usable top that the art
+would sit behind the menu bar. That governs landing and staying: an unseen
+edge is gone, and the sprite falls. A yank past the ride gate drops it too.
+A slow drag is still the same edge: the sprite Holds and rides.
 _Avoid_: Ledge, platform, surface
 
 **Hold**:
