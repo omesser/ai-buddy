@@ -117,8 +117,9 @@ that adding a character is drawing, not programming.
     does not appear in my video or my presentation.
 26. As a user, I want the buddy to hide during screen sharing, so that I do not have to
     explain it in a meeting.
-27. As a user, I want the buddy to respect Do Not Disturb, so that it is quiet when I have
-    said I want quiet.
+27. As a user, I want the buddy to respect Do Not Disturb (#84), so that it stays visible
+    but quiet — proposals are refused and unprompted dialogue is not spoken — while Poke,
+    Grab, and Throw still work.
 28. As a user, I want a hotkey that hides and shows the buddy instantly, so that I can
     banish it without opening settings.
 
