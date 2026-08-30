@@ -6,17 +6,18 @@
 //! that investment, and none of it needs a window server: the Shell reads the
 //! conditions, and this decides what they mean.
 //!
-//! Two of the rules are the desktop's — a fullscreen application is frontmost,
-//! Do Not Disturb is on — and one is the user's, a hotkey. They differ in more
-//! than their source. A rule fades, because the desktop changed and the
-//! Character will be back; the hotkey is answered at once, because somebody
-//! asked.
+//! One rule is the desktop's — a fullscreen application is frontmost — and one
+//! is the user's, a hotkey. They differ in more than their source. A rule
+//! fades, because the desktop changed and the Character will be back; the
+//! hotkey is answered at once, because somebody asked.
 //!
-//! DESIGN.md decision 8 names a fourth rule, an active screen share, and it is
-//! deliberately not here. macOS publishes no way for an app to learn that its
-//! screen is being shared, but it does let a window say it must never be
-//! captured — so the Shell tells the window server that, and the people on the
-//! call never see the Character while its owner keeps it. See
+//! Two conditions people expect to find here are deliberately not rules. Being
+//! quiet is not being gone, so Do Not Disturb leaves the Character on screen
+//! and stops it starting things, which is #84's and the Director's. And an
+//! active screen share is not one either: macOS publishes no way for an app to
+//! learn that its screen is being shared, but it does let a window say it must
+//! never be captured — so the Shell tells the window server that, and the
+//! people on the call never see the Character while its owner keeps it. See
 //! `platform::macos::overlay_panel`.
 
 use crate::engine::Rect as WindowRect;
@@ -166,7 +167,7 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
 /// Any display counts, including one the Character is not on: what is being
 /// asked is whether the window the user is working in has taken a whole screen,
 /// and a presentation on the second monitor is exactly when a companion should
-/// not be anywhere. Asking per display needs an overlay per display (#62).
+/// not be anywhere.
 pub fn fullscreen_frontmost(windows: &[WindowRect], frames: &[Rect]) -> bool {
     windows
         .first()

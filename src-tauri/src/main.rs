@@ -224,14 +224,15 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
 /// costs the user one way to hide the Character, which is not worth losing the
 /// Character over.
 fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
-    // Named here rather than beside the other constants so the keys and the
-    // words for them cannot drift apart.
-    const HIDE_HOTKEY: &str = "Control-Option-Command-B";
-
     let shortcut = Shortcut::new(
         Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER),
         Code::KeyB,
     );
+
+    // Spelled out rather than taken from `shortcut.into_string()`, which says
+    // "control+alt+super+KeyB". These are the names on a Mac keyboard, and this
+    // is the one line that tells a user which keys to press. Edit both.
+    const HIDE_HOTKEY: &str = "Control-Option-Command-B";
 
     let plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_shortcut(shortcut)
