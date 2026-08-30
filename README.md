@@ -12,8 +12,9 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
-on the top edge of whatever window is under it, and drops when that window moves
-or closes, and it stands on the Dock rather than behind it. It can be clicked,
+on the top edge of whatever window is under it, rides that edge when the window
+is dragged slowly, and drops when the window is yanked or closed, and it stands
+on the Dock rather than behind it. It can be clicked,
 picked up, dragged and thrown. It knows when to get out of the way: it fades out
 while a fullscreen application has the screen, goes away at once on
 Control-Option-Command-B and comes back the same way, and never appears in a
@@ -25,12 +26,12 @@ it is a Summon the Engine accepts and nothing answers, because the chat surface
 it opens arrives with #17, and right-clicking does nothing at all — the menu it
 opens is the tray's, which arrives with #18.
 
-The Engine drives all eight required Animations. `idle`, `fall`, `sit`, `sleep`
+The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
-plays when a fall ends and `react` answers a Poke. Seven of the eight are also
-Primitives a Character can compose into a Behavior — all but `fall`, which is
-what losing your footing looks like rather than something a Behavior can ask
-for. A Behavior plays its Primitives in order and the Behaviors it chains into,
+plays when a fall ends, `hold` when a Perch is ridden, and `react` answers a
+Poke. Eight of the nine are also Primitives a Character can compose into a
+Behavior — all but `fall`, which is what losing your footing looks like rather
+than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into,
 and is refused or abandoned when the State the sprite is in does not permit it.
 Nothing proposes one yet — the Director arrives later — so `talk` waits on a
 proposal to name a Behavior that plays it.
@@ -127,9 +128,9 @@ Then it checks the frame loop against a real desktop. It opens a plain window of
 its own below where the sprite starts, so the sprite has a Perch to aim at, and
 steps that window down the screen before closing it. Reading the app's own frame
 trace against the bounds the window server reports, it asserts that the sprite
-falls under gravity, comes to rest on that window's top edge, follows the edge
-when the window moves, drops when the window closes — each within about one poll
-interval — and comes to rest again on the display below.
+falls under gravity, comes to rest on that window's top edge, rides the edge
+when the window steps down, drops when the window closes — each within about one
+poll interval — and comes to rest again on the display below.
 
 Last it checks the hit-test pipeline: it puts the cursor on the sprite's centre
 and then on its transparent top-left corner, and asserts a hit on the first and

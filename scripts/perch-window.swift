@@ -1,8 +1,8 @@
 // A real window at a chosen rectangle, which then steps down the screen.
 //
 // The frame loop can only be verified against a desktop, and the interesting
-// half of it is Perches: the sprite has to land on a window's top edge, follow
-// that edge when the window moves, and fall when the window goes away. None of
+// half of it is Perches: the sprite has to land on a window's top edge, ride
+// that edge when the window steps slowly, and fall when the window goes away. None of
 // the user's own windows can be used for that — moving another application's
 // window needs an Accessibility grant, which this project asks for nowhere —
 // but opening one of our own is free, and the window server reports it to

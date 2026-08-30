@@ -89,8 +89,8 @@ that adding a character is drawing, not programming.
     that it appears to inhabit my desktop rather than float over it.
 13. As a user, I want the buddy to walk along a window's top edge and fall off the end,
     so that its movement has consequences.
-14. As a user, I want the buddy to fall when I move or close the window it was perched
-    on, so that the world stays consistent.
+14. As a user, I want the buddy to ride a window I drag slowly and fall when I yank
+    it or close it, so that a Perch that is still underfoot stays underfoot.
 15. As a user, I want the buddy to pass upward through a window edge rather than being
     blocked from below, so that it never gets stuck under something.
 16. As a user, I want the buddy never to become trapped inside or behind a window, so
@@ -276,7 +276,8 @@ model, and no waiting.
 ### Platform layer
 
 `WindowSource` is a trait producing `WorldSnapshot` geometry. The macOS implementation
-polls `CGWindowListCopyWindowInfo` at approximately 10Hz, which returns window bounds,
+polls `CGWindowListCopyWindowInfo` at 10Hz while the sprite is still, and at the Engine tick
+(16 ms) while it is riding a moving Perch, which returns window bounds,
 owning application name, and layer with no permission prompt. Window titles require
 Screen Recording consent and are not used in v1.
 
@@ -341,8 +342,8 @@ declared as data. Behaviors are validated on load: unknown Primitives, missing r
 animations, and cyclic or unbounded sequences are rejected with a specific error naming
 the offending declaration.
 
-Required Animation Set is exactly eight: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`,
-`react`, `talk`. A declared optional set is used when present and silently absent
+Required Animation Set is exactly nine: `idle`, `walk`, `fall`, `land`, `sit`, `sleep`,
+`react`, `talk`, `hold`. A declared optional set is used when present and silently absent
 otherwise.
 
 A Personality Prompt influences Director output only. It cannot reference Primitives that
@@ -463,11 +464,13 @@ waiting. Coverage:
   sprite comes to rest; it never leaves the union of visible display frames; it never
   enters a gap between non-aligned displays.
 - **Perch collision** — the sprite lands on a window's top edge; walks along it; falls off
-  either end; passes upward through an edge from below; falls when the window moves out
-  from under it; falls when the window disappears; behaves correctly when two windows
-  overlap; is never left inside a window that has come to contain it; never lands on an
-  edge hidden behind a window in front of it, or on one no display covers; stays on the
-  edge it is standing on when a window is raised in front of it.
+  either end; passes upward through an edge from below; rides a Perch dragged under the
+  ride-acceleration gate and Holds while it does; falls when the window is yanked, closed,
+  or resized; is not Lifted onto a Perch it just lost; falls when the window disappears;
+  behaves correctly when two windows overlap; is never left inside a window that has come
+  to contain it; never lands on an edge hidden behind a window in front of it, or on one
+  no display covers; stays on the edge it is standing on when a window is raised in front
+  of it.
 - **State machine** — every transition reachable from every State; no State is a dead end;
   Grab overrides any State; releasing a Grab with velocity enters Throw and without
   velocity enters fall.
@@ -481,7 +484,7 @@ waiting. Coverage:
 - **Director proposals** — a valid proposal is applied on the next tick; an unknown
   Behavior identifier is refused without disrupting current play; a proposal arriving
   during a Grab is deferred or dropped rather than yanking the sprite.
-- **Character validation** — the eight required animations are enforced; optional
+- **Character validation** — the nine required animations are enforced; optional
   animations are used when present and absent silently when not; unknown Primitives are
   rejected by name; a Behavior that cannot terminate is rejected; every rejection produces
   an error message naming the offending declaration.

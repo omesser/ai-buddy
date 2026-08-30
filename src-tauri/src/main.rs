@@ -47,8 +47,8 @@ const SPRITE_SCALE: i32 = 4;
 /// step with `bundle.resources` in `tauri.conf.json`.
 const BUNDLED_CHARACTERS: &str = "characters";
 
-/// One turn of the frame loop: roughly 60Hz, six times the rate the desktop's
-/// geometry is read at.
+/// One turn of the frame loop: roughly 60Hz. The desktop is read at 10Hz
+/// while the sprite is still, and at this rate only while it is riding.
 ///
 /// It is a poll rather than an event stream for two reasons. A click-through
 /// window receives no mouse events at all, so the webview cannot tell us when
@@ -471,6 +471,7 @@ fn run_frame_loop(
             };
 
             let frame = engine.tick(&world);
+            assembler.poll_fast(frame.riding);
 
             // What the user has seen is what the Engine played, not what the
             // Director asked for: a proposal the State refuses never reaches

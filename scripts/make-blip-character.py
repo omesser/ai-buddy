@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Draw Blip's art.
 
-Not art. A stand-in that gives the renderer eight visibly different Animations
+Not art. A stand-in that gives the renderer nine visibly different Animations
 to play and the hit-test something with transparent regions to test against.
 Real Characters are drawn by hand; this exists so the engine has a Character at
 all before anyone has drawn one.
@@ -155,6 +155,13 @@ def animations():
     out["sit"] = [
         body(bob=3, squash=2, spread=7),
         body(bob=3, squash=2, spread=7, look=(0, 1)),
+    ]
+
+    # Holding on: lower and wider than a sit, so riding a Perch is not the
+    # same pose as resting on one.
+    out["hold"] = [
+        body(bob=5, squash=4, spread=8, look=(0, 1)),
+        body(bob=5, squash=3, spread=8, look=(0, 1)),
     ]
 
     sleep = []

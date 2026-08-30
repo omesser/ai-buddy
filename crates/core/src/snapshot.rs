@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use crate::engine::{Point, Rect, Verb, WorldSnapshot};
-use crate::window_source::{WindowSource, WorldGeometry, POLL_INTERVAL};
+use crate::window_source::{WindowSource, WorldGeometry, POLL_INTERVAL, RIDE_POLL_INTERVAL};
 
 /// The longest step of the world the Engine is ever told about, whatever the
 /// wall clock says.
@@ -29,16 +29,21 @@ const MAX_ELAPSED_MS: u32 = POLL_INTERVAL.as_millis() as u32;
 
 /// Reads the platform at its own cadence and assembles a snapshot per tick.
 ///
-/// The two cadences are the point of this type. Enumerating every window on the
-/// desktop ten times a second is cheap; sixty times a second is not, and the
-/// windows have not moved in between. So geometry is read at `POLL_INTERVAL`
-/// and reused on the ticks between reads, which is what lets the Engine tick as
-/// fast as the renderer wants.
+/// The two cadences are the point of this type. Geometry is read at the idle
+/// poll, or at the ride poll when the sprite is holding a moving Perch, and
+/// reused on any tick that arrives sooner. #98.
 pub struct SnapshotAssembler<S> {
     source: S,
     /// The last geometry read, reused until the next read replaces it.
     geometry: WorldGeometry,
     since_poll: Duration,
+    /// How many times the window list has actually been read. Carried on the
+    /// snapshot so the Engine can tell a reused rectangle from a new sample
+    /// and coast a ride between polls. #98.
+    poll_generation: u64,
+    /// A ride needs the frame rate; sitting and sleeping do not. The Shell
+    /// flips this from the last Frame. #98.
+    fast: bool,
 }
 
 impl<S: WindowSource> SnapshotAssembler<S> {
@@ -50,6 +55,28 @@ impl<S: WindowSource> SnapshotAssembler<S> {
             source,
             geometry: WorldGeometry::default(),
             since_poll: POLL_INTERVAL,
+            poll_generation: 0,
+            fast: false,
+        }
+    }
+
+    /// Read at the ride cadence for as long as the sprite is holding on.
+    /// Idle is the default so a sleeping buddy does not enumerate the
+    /// desktop sixty times a second. #98.
+    pub fn poll_fast(&mut self, ride: bool) {
+        if ride && !self.fast {
+            // One immediate read, not a burst of whatever the idle clock
+            // had left — that remainder is many ride intervals at once.
+            self.since_poll = RIDE_POLL_INTERVAL;
+        }
+        self.fast = ride;
+    }
+
+    fn interval(&self) -> Duration {
+        if self.fast {
+            RIDE_POLL_INTERVAL
+        } else {
+            POLL_INTERVAL
         }
     }
 
@@ -57,18 +84,26 @@ impl<S: WindowSource> SnapshotAssembler<S> {
     /// cursor in the Engine's coordinate space.
     pub fn assemble(&mut self, elapsed_ms: u32, cursor: Point, verbs: Vec<Verb>) -> WorldSnapshot {
         let elapsed_ms = elapsed_ms.min(MAX_ELAPSED_MS);
+        let interval = self.interval();
 
         // The due check comes before the tick's own time is added, and a read
         // takes one interval off the clock rather than zeroing it. Zeroing
-        // throws away the overshoot, which on 16ms ticks is 12ms every read:
-        // the desktop would be read every 112ms while claiming 100.
-        if self.since_poll >= POLL_INTERVAL {
-            self.since_poll = self.since_poll.saturating_sub(POLL_INTERVAL);
+        // throws away the overshoot, which on a faster tick than the poll
+        // would make every read late by that remainder.
+        if self.since_poll >= interval {
+            self.since_poll = self.since_poll.saturating_sub(interval);
             self.geometry = self.source.snapshot();
+            self.poll_generation = self.poll_generation.saturating_add(1);
         }
         self.since_poll += Duration::from_millis(u64::from(elapsed_ms));
 
-        world_snapshot(&self.geometry, cursor, elapsed_ms, verbs)
+        world_snapshot(
+            &self.geometry,
+            cursor,
+            elapsed_ms,
+            verbs,
+            self.poll_generation,
+        )
     }
 }
 
@@ -88,6 +123,7 @@ fn world_snapshot(
     cursor: Point,
     elapsed_ms: u32,
     verbs: Vec<Verb>,
+    poll_generation: u64,
 ) -> WorldSnapshot {
     WorldSnapshot {
         displays: geometry.usable_frames.iter().copied().map(rect).collect(),
@@ -100,6 +136,7 @@ fn world_snapshot(
         cursor,
         elapsed_ms,
         verbs,
+        poll_generation,
         // Proposals arrive with the Director (#11). Nothing produces one yet,
         // so an empty one is not a stub: it is the truth about a Director that
         // has not spoken.
@@ -298,7 +335,7 @@ mod tests {
             1000.0, 2000.0, 3000.0,
         ]));
 
-        // 20ms ticks against a 100ms poll interval: five ticks per read.
+        // 20ms ticks against a 100ms idle poll: five ticks per read.
         let widths: Vec<f64> = (0..15)
             .map(|_| {
                 assembler
@@ -315,6 +352,42 @@ mod tests {
                 3000.0, 3000.0, 3000.0, 3000.0, 3000.0
             ],
             "the Engine ticks faster than the desktop is read"
+        );
+
+        let mut generations = SnapshotAssembler::new(ChangingDesktop::of_display_widths(&[
+            1000.0, 2000.0, 3000.0,
+        ]));
+        let gens: Vec<u64> = (0..15)
+            .map(|_| {
+                generations
+                    .assemble(20, Point::default(), Vec::new())
+                    .poll_generation
+            })
+            .collect();
+        assert_eq!(
+            gens,
+            vec![1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3],
+            "a reused generation is a tick between polls"
+        );
+    }
+
+    /// #98: a ride is the only time the window list is worth reading at
+    /// the frame rate. Sitting and sleeping stay on the idle poll.
+    #[test]
+    fn a_ride_reads_the_desktop_at_the_frame_rate() {
+        let mut assembler = SnapshotAssembler::new(ChangingDesktop::of_display_widths(&[
+            1000.0, 2000.0, 3000.0,
+        ]));
+        assembler.poll_fast(true);
+
+        // 8ms ticks against a 16ms ride poll: two ticks per read.
+        let widths: Vec<f64> = (0..6)
+            .map(|_| assembler.assemble(8, Point::default(), Vec::new()).displays[0].width)
+            .collect();
+        assert_eq!(
+            widths,
+            vec![1000.0, 1000.0, 2000.0, 2000.0, 3000.0, 3000.0],
+            "a ride polls as often as the Engine ticks"
         );
     }
 
