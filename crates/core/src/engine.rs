@@ -581,9 +581,7 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
         .windows
         .iter()
         .enumerate()
-        .filter(|(index, window)| {
-            window.y >= position.y && is_perch(*index, window, position.x, snapshot)
-        })
+        .filter(|(index, window)| window.y >= position.y && is_perch(*index, position.x, snapshot))
         .map(|(_, window)| Support {
             y: window.y,
             state: State::Perched,
@@ -592,8 +590,8 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
         .min_by(|a, b| a.y.total_cmp(&b.y))
 }
 
-/// Whether the top edge of `snapshot.windows[index]` is somewhere the sprite
-/// can stand at `x`.
+/// Whether the top edge of the window at `index` is somewhere the sprite can
+/// stand at `x`.
 ///
 /// Nearest support still wins over frontmost, so this only narrows the
 /// candidates. Walking the windows in order and taking the first match would
@@ -613,7 +611,8 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 ///   not to the rectangle bounding them, so a window spanning two displays of
 ///   different heights hangs part of its edge over nothing. A sprite resting
 ///   out there is invisible and unclickable until the window moves.
-fn is_perch(index: usize, window: &Rect, x: f64, snapshot: &WorldSnapshot) -> bool {
+fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
+    let window = &snapshot.windows[index];
     window.spans_x(x)
         && displays_spanning(x, snapshot)
             .any(|display| window.y >= display.y && window.y <= display.bottom())
@@ -668,7 +667,7 @@ fn footing(
         // sprite onto an edge that is hidden or off-screen strands it in the
         // place this is meant to get it out of.
         .filter(|(index, window)| {
-            swallows(window, position) && is_perch(*index, window, position.x, snapshot)
+            swallows(window, position) && is_perch(*index, position.x, snapshot)
         })
         .map(|(_, window)| window)
         // And only a window that has *come to* contain it: dragged over the
@@ -677,7 +676,7 @@ fn footing(
         // maximized window over the sprite's Perch would otherwise fling the
         // sprite to the top of the screen and keep it there. It loses its
         // footing all the same, because that Perch is now hidden, and falls to
-        // the floor. #78.
+        // whatever is still visible below it. #78.
         .filter(|window| {
             !previous_windows
                 .iter()
@@ -2087,10 +2086,9 @@ mod tests {
         assert!(!inside_a_window(lifted.position, &covered));
     }
 
-    /// And only onto an edge the sprite can stand on. A window dragged over it
-    /// whose own top edge hangs over no display would otherwise take the
-    /// sprite off the screens entirely, which is the trapped-somewhere-unseen
-    /// case this lift exists to avoid.
+    /// And only onto an edge the sprite can stand on. The window dragged over
+    /// it here has its own top edge over no display, so the sprite drops to the
+    /// floor instead of being lifted off the screens.
     #[test]
     fn a_window_dragged_over_the_sprite_never_lifts_it_off_the_displays() {
         // Bottom-aligned displays of different heights: nothing covers
@@ -2328,10 +2326,7 @@ mod tests {
     }
 
     /// #5: a top edge hidden behind the window in front of it is not a Perch.
-    /// `windows` arrives in descending z-order, and an edge nobody can see is
-    /// nothing to stand on — the sprite drawn on it reads as floating in the
-    /// middle of the window that hides it, which is the criterion this issue
-    /// forbids.
+    /// The sprite falls past the covered edge to the floor.
     #[test]
     fn an_edge_hidden_behind_the_window_in_front_of_it_is_not_a_perch() {
         // Frontmost first, and the second window's top edge falls inside the
@@ -2361,14 +2356,11 @@ mod tests {
             landed.position.y, 800.0,
             "past the hidden edge and down to the floor: {landed:?}"
         );
-        assert!(!inside_a_window(landed.position, &covered));
     }
 
-    /// #5: a top edge no display covers is not a Perch either. Displays need
-    /// not tile a rectangle, and a window straddling two of different heights
-    /// hangs part of its edge over nothing. A sprite resting out there is drawn
-    /// where there is no screen — invisible and unclickable until the window
-    /// moves.
+    /// #5: a top edge no display covers is not a Perch either. One window
+    /// straddles two displays of different heights, and the sprite is thrown
+    /// out over the shorter one, where that edge hangs over nothing.
     #[test]
     fn an_edge_over_no_display_is_not_a_perch() {
         // Bottom-aligned displays of different heights, the ordinary

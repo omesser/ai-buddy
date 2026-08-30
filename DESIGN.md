@@ -204,9 +204,12 @@ sprite trapped inside an occluded window, jitter where windows overlap.
 A bottom edge is read for one thing and it is not collision: telling whether a
 window has come to contain a resting sprite — dragged over it, or walked into
 where two windows overlap — in which case the sprite steps up onto that
-window's top edge rather than being left standing inside a rectangle. The floor
-is exempt, because every window behind the Dock hangs below it and a sprite on
-the ground in front of a window is not trapped in anything.
+window's top edge rather than being left standing inside a rectangle. Unless
+that edge is itself nowhere to stand — hidden behind a window in front of it,
+or hanging over no display — and then the sprite falls instead, because
+stepping up would strand it somewhere the user cannot see it. The floor is
+exempt, because every window behind the Dock hangs below it and a sprite on the
+ground in front of a window is not trapped in anything.
 
 The verb set is fixed at five: **Grab**, **Throw**, **Poke**, **Menu**,
 **Summon**. Every verb is a tax on every Character that will ever exist, so
