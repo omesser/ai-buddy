@@ -1,11 +1,11 @@
 //! ai-buddy's overlay shell.
 //!
-//! One transparent, always-on-top window renders the Character. Click-through on
-//! macOS is per-window rather than per-pixel, so a screen-sized transparent
-//! window would swallow every click. The shell therefore tracks the cursor and
-//! toggles ignore-mouse-events by hit-testing the sprite's alpha, which is what
-//! makes the overlay feel like a sprite on the desktop instead of a sheet of
-//! glass over it.
+//! One transparent, always-on-top window per display renders the Character.
+//! Click-through on macOS is per-window rather than per-pixel, so a screen-sized
+//! transparent window would swallow every click. The shell therefore tracks the
+//! cursor and toggles ignore-mouse-events by hit-testing the sprite's alpha,
+//! which is what makes the overlay feel like a sprite on the desktop instead of
+//! a sheet of glass over it.
 //!
 //! It also owns the frame loop, which is the only thing that can: the Engine is
 //! pure and cannot read a clock, and `WindowSource` reports geometry and nothing
@@ -24,7 +24,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::engine::{Engine, Point};
 use ai_buddy_core::input::Pointer;
-use ai_buddy_core::overlay::{cursor_in_window, display_for, place_sprite, SpriteRect};
+use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use serde::Serialize;
@@ -51,7 +51,17 @@ const ALPHA_THRESHOLD: u8 = 128;
 /// And the Engine advances on elapsed time, so something has to advance it.
 const ENGINE_TICK: Duration = Duration::from_millis(16);
 
-const OVERLAY_LABEL: &str = "overlay";
+/// Every overlay's label: this and the index of the display it covers.
+///
+/// One window per display, so the index is both the name and the way the frame
+/// loop finds the overlay belonging to a display. `capabilities/overlay.json`
+/// grants the same permissions to `overlay-*`.
+const OVERLAY_LABEL: &str = "overlay-";
+
+/// The label of the overlay covering the display at `index`.
+fn overlay_label(index: usize) -> String {
+    format!("{OVERLAY_LABEL}{index}")
+}
 
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
@@ -100,6 +110,89 @@ fn cover_display(window: &tauri::WebviewWindow, display: Rect) -> Result<(), tau
     window.set_position(LogicalPosition::new(display.x, display.y))
 }
 
+/// Build one overlay, configure it, and put it over its display.
+///
+/// The only place an overlay is made. Click-through, window level, Spaces
+/// membership and hide rules have to be identical on every overlay, and a
+/// second window is a second place for them to disagree; one function called
+/// once per display is what keeps them one set of rules instead of two.
+///
+/// Main thread only: it builds a window and calls AppKit.
+fn build_overlay(
+    app: &tauri::AppHandle,
+    label: &str,
+    display: Rect,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
+        .title("ai-buddy")
+        .transparent(true)
+        .decorations(false)
+        .shadow(false)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .accept_first_mouse(true)
+        .focused(false)
+        .resizable(false)
+        .skip_taskbar(true)
+        .visible(false)
+        .build()?;
+
+    // Click-through until the cursor is proven to be over the sprite. The wrong
+    // default swallows a click; this one loses nothing.
+    window.set_ignore_cursor_events(true)?;
+    cover_display(&window, display)?;
+    platform::configure_overlay(&window)?;
+    window.show()?;
+
+    eprintln!(
+        "overlay: {label} covers {:.0}x{:.0} at ({:.0},{:.0})",
+        display.width, display.height, display.x, display.y,
+    );
+
+    Ok(())
+}
+
+/// One overlay per display, each covering that display.
+///
+/// This is what keeps a Character on a seam whole: both overlays draw it, each
+/// clipping its own half, and the halves meet. One window cannot do it, because
+/// macOS gives each display its own Space and draws a window spanning two of
+/// them on only one — a window sized to the display union is invisible
+/// everywhere but the display it happens to belong to.
+///
+/// Idempotent, because the desktop changes while the app runs: a display that
+/// already has its overlay keeps it and is only re-covered, which is what a
+/// display that moved or changed resolution needs. Overlays past the end of the
+/// list belong to displays that have been unplugged.
+///
+/// Main thread only; see `build_overlay`.
+fn place_overlays(
+    app: &tauri::AppHandle,
+    displays: &[Rect],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (index, display) in displays.iter().enumerate() {
+        let label = overlay_label(index);
+        match app.get_webview_window(&label) {
+            Some(window) => cover_display(&window, *display)?,
+            None => build_overlay(app, &label, *display)?,
+        }
+    }
+
+    // Labels are handed out in order, so the first missing one ends the set.
+    for index in displays.len().. {
+        let Some(window) = app.get_webview_window(&overlay_label(index)) else {
+            break;
+        };
+        eprintln!(
+            "overlay: {} has no display left to cover",
+            overlay_label(index)
+        );
+        window.close()?;
+    }
+
+    Ok(())
+}
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -117,17 +210,18 @@ fn run_frame_loop(
     source: impl WindowSource + Send + 'static,
     displays: platform::DisplayCache,
     start: Point,
-    home: Rect,
+    covered: Vec<Rect>,
 ) {
     thread::spawn(move || {
         let mut engine = Engine::new(start).with_behaviors(cast.behaviors().clone());
         let mut assembler = SnapshotAssembler::new(source);
 
-        // The display the overlay is currently over, as setup left it.
-        let mut home = home;
+        // The displays the overlays cover, as setup left them.
+        let mut covered = covered;
 
-        // `None` until the first decision, so the first tick always applies.
-        let mut ignoring: Option<bool> = None;
+        // One click-through flag per overlay, `None` until that overlay's first
+        // decision so the first tick always applies.
+        let mut ignoring: Vec<Option<bool>> = vec![None; covered.len()];
 
         let mut pointer = Pointer::default();
 
@@ -151,26 +245,20 @@ fn run_frame_loop(
         loop {
             thread::sleep(ENGINE_TICK);
 
-            let Some(window) = app.get_webview_window(OVERLAY_LABEL) else {
-                return; // window is gone; so is the reason to tick
-            };
-
-            let (Ok(cursor), Ok(origin), Ok(scale)) = (
-                app.cursor_position(),
-                window.outer_position(),
-                window.scale_factor(),
-            ) else {
+            let Ok(cursor) = app.cursor_position() else {
                 continue;
             };
 
             // The windowing layer reports the global cursor against the primary
-            // display's scale factor but the window's origin against the
-            // window's own, so each needs undoing with its own factor. The
-            // primary's arrives from the cache rather than from a monitor here:
-            // asking a monitor its scale means asking `NSScreen`, and only the
-            // main thread may do that.
+            // display's scale factor, whichever display it is actually over, so
+            // that factor is what undoes it. It arrives from the cache rather
+            // than from a monitor here: asking a monitor its scale means asking
+            // `NSScreen`, and only the main thread may do that.
             let displays = displays.read();
             let cursor_scale = displays.cursor_scale;
+
+            // One flag per overlay, and the desktop can gain or lose one.
+            ignoring.resize(displays.frames.len(), None);
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -181,24 +269,27 @@ fn run_frame_loop(
             let elapsed_ms = u32::try_from(last_tick.elapsed().as_millis()).unwrap_or(u32::MAX);
             last_tick = Instant::now();
 
-            let (local_x, local_y) = cursor_in_window(
-                (cursor.x, cursor.y),
-                cursor_scale,
-                (origin.x as f64, origin.y as f64),
-                scale,
-            );
-
-            let pressed_sprite = drawn_last.as_ref().is_some_and(|last| {
-                cast.draw(last.animation, last.animation_ms)
-                    .is_some_and(|art| art.mask.hit(&last.rect, local_x, local_y))
-            });
-
             // The Engine works in points across every display, which is the
             // space the cursor reading becomes once its own scale is undone.
             let cursor_points = ai_buddy_core::engine::Point {
                 x: cursor.x / cursor_scale,
                 y: cursor.y / cursor_scale,
             };
+
+            // The hit-test asks its question in that shared space rather than
+            // in an overlay's. Every overlay is handed the same sprite in its
+            // own coordinates, so the answer is the same whichever overlay it
+            // is asked of, and asking once is one answer instead of one per
+            // window that could disagree.
+            let cursor_at = (
+                cursor_points.x.round() as i32,
+                cursor_points.y.round() as i32,
+            );
+
+            let pressed_sprite = drawn_last.as_ref().is_some_and(|last| {
+                cast.draw(last.animation, last.animation_ms)
+                    .is_some_and(|art| art.mask.hit(&last.rect, cursor_at.0, cursor_at.1))
+            });
             let verbs = pointer.update(
                 pressed_sprite,
                 platform::primary_button_down(),
@@ -211,27 +302,27 @@ fn run_frame_loop(
             }
             let frame = engine.tick(&assembler.assemble(elapsed_ms, cursor_points, verbs));
 
-            // The overlay covers one display and follows the Character to the
-            // next. macOS gives each display its own Space and draws a window
-            // that spans two of them on only one, so a window sized to the
-            // display union is invisible everywhere but the display it happens
-            // to belong to — which is how a Character dragged across a boundary
-            // was lost while the Engine still had it in hand.
+            // A display can be plugged in, unplugged or rearranged while the
+            // app runs, and every display needs its overlay. Posted rather than
+            // done here: only the main thread may build a window. Recorded once
+            // the post is accepted, so a rejected one is retried next tick
+            // rather than latched as done.
             //
-            // The feet decide rather than the cursor, because a Throw crosses
-            // with nobody holding it.
-            //
-            // ponytail: the sprite is clipped while it straddles the seam,
-            // because one window cannot be on two displays. One overlay per
-            // display would draw both halves; that is the upgrade if the pop
-            // reads badly.
-            if let Some(display) =
-                display_for((frame.position.x, frame.position.y), &displays.frames)
-            {
-                // Recorded only once the move is accepted, so a refused one is
-                // retried next tick rather than latched as done.
-                if display != home && cover_display(&window, display).is_ok() {
-                    home = display;
+            // An empty read is ignored rather than obeyed. It is what a failed
+            // read of the desktop looks like as well as a machine with no
+            // screen, and tearing every overlay down costs two webviews and
+            // their art to rebuild — for a desktop that has nothing to draw on
+            // either way.
+            if !displays.frames.is_empty() && displays.frames != covered {
+                let handle = app.clone();
+                let frames = displays.frames.clone();
+                let posted = app.run_on_main_thread(move || {
+                    if let Err(why) = place_overlays(&handle, &frames) {
+                        eprintln!("overlay: {why}");
+                    }
+                });
+                if posted.is_ok() {
+                    covered = displays.frames.clone();
                 }
             }
 
@@ -247,24 +338,12 @@ fn run_frame_loop(
                 drawn.art_size.1 * SPRITE_SCALE,
             );
 
+            // Placed once, in the space every display shares. Each overlay is
+            // handed it in its own coordinates below.
             let sprite = place_sprite(
                 (frame.position.x, frame.position.y),
-                (origin.x as f64, origin.y as f64),
-                scale,
                 (width, height),
                 SPRITE_SCALE,
-            );
-
-            let _ = window.emit(
-                FRAME_EVENT,
-                Placement {
-                    x: sprite.x,
-                    y: sprite.y,
-                    width,
-                    height,
-                    animation: frame.animation,
-                    frame_index: drawn.index,
-                },
             );
 
             if tracing_frames {
@@ -294,7 +373,7 @@ fn run_frame_loop(
             // reach us is a question about where the art is going to be. A
             // cursor that has just arrived over it must not spend a frame
             // passing clicks to the application underneath.
-            let over_sprite = drawn.mask.hit(&sprite, local_x, local_y);
+            let over_sprite = drawn.mask.hit(&sprite, cursor_at.0, cursor_at.1);
             drawn_last = Some(Drawn {
                 rect: sprite,
                 animation: frame.animation,
@@ -306,26 +385,68 @@ fn run_frame_loop(
             // the cursor over transparent pixels, hand the button to whatever
             // is underneath, and drop the sprite in the user's hand.
             let ignore = !(over_sprite || pointer.grabbing());
-            let flipped = ignoring != Some(ignore);
+            let on_overlay =
+                display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
+            let mut flipped = false;
 
-            // Only record the new state once the platform accepted it. Recording
-            // it regardless would latch a failed toggle forever, leaving
-            // click-through stuck in whichever mode it happened to be in.
-            if flipped && window.set_ignore_cursor_events(ignore).is_ok() {
-                ignoring = Some(ignore);
+            for (index, display) in displays.frames.iter().enumerate() {
+                let label = overlay_label(index);
+                let Some(window) = app.get_webview_window(&label) else {
+                    continue; // a display whose overlay has not been built yet
+                };
+                let local = sprite.in_overlay(*display);
+
+                // Every overlay is told, including the ones the sprite is
+                // nowhere near: each draws the part that falls inside it, which
+                // is what leaves a Character on a seam whole instead of clipped
+                // to one display.
+                //
+                // Addressed rather than broadcast, because each overlay is told
+                // a different rectangle. src/main.js listens for its own label
+                // to match: a webview listening for nothing in particular hears
+                // broadcasts only.
+                let _ = window.emit_to(
+                    label,
+                    FRAME_EVENT,
+                    Placement {
+                        x: local.x,
+                        y: local.y,
+                        width,
+                        height,
+                        animation: frame.animation,
+                        frame_index: drawn.index,
+                    },
+                );
+
+                // Click-through is per-window, and a click only ever lands on
+                // the overlay the cursor is on. Every other overlay passes
+                // clicks through whatever the sprite is doing, so a click on
+                // one display is never swallowed by a sprite on another.
+                let ignore = ignore || on_overlay != Some(index);
+
+                // Only record the new state once the platform accepted it.
+                // Recording it regardless would latch a failed toggle forever,
+                // leaving click-through stuck in whichever mode it happened to
+                // be in.
+                if ignoring[index] != Some(ignore) {
+                    flipped = true;
+                    if window.set_ignore_cursor_events(ignore).is_ok() {
+                        ignoring[index] = Some(ignore);
+                    }
+                }
             }
 
             ticks = ticks.wrapping_add(1);
             if tracing && (flipped || ticks % 120 == 0) {
                 eprintln!(
-                    "hit-test: cursor({:.0},{:.0}) scale(cursor {:.1}, window {:.1}) \
-                     -> local({},{}) {} click-through {}{}",
+                    "hit-test: cursor({:.0},{:.0}) scale {:.1} -> point({},{}) \
+                     on overlay {} {} click-through {}{}",
                     cursor.x,
                     cursor.y,
                     cursor_scale,
-                    scale,
-                    local_x,
-                    local_y,
+                    cursor_at.0,
+                    cursor_at.1,
+                    on_overlay.map_or(-1, |index| index as i32),
                     if over_sprite { "HIT " } else { "miss" },
                     if ignore { "on" } else { "OFF" },
                     if flipped { "  <- flipped" } else { "" },
@@ -412,35 +533,20 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let window = WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::default())
-                .title("ai-buddy")
-                .transparent(true)
-                .decorations(false)
-                .shadow(false)
-                .always_on_top(true)
-                .visible_on_all_workspaces(true)
-                .accept_first_mouse(true)
-                .focused(false)
-                .resizable(false)
-                .skip_taskbar(true)
-                .visible(false)
-                .build()?;
-
-            // Click-through until the cursor is proven to be over the sprite. The
-            // wrong default swallows a click; this one loses nothing.
-            window.set_ignore_cursor_events(true)?;
-
-            // Built before the window is placed rather than after the loop
+            // Read before the overlays are built rather than after the loop
             // starts: reading which part of a display is usable means asking
             // AppKit, and only the main thread may do that.
             let (source, displays) = platform::window_source(app.handle().clone());
             let start = starting_position(&source.snapshot());
 
-            // The overlay covers the display the Character starts on, and the
-            // frame loop moves it to whichever display the Character reaches.
-            let home = display_for((start.x, start.y), &displays.read().frames)
-                .ok_or("no displays reported")?;
-            cover_display(&window, home)?;
+            // One overlay per display, so a Character straddling a seam is
+            // drawn whole. The frame loop keeps the set in step with a desktop
+            // that gains or loses a display.
+            let covered = displays.read().frames;
+            if covered.is_empty() {
+                return Err("no displays reported".into());
+            }
+            place_overlays(app.handle(), &covered)?;
 
             // The sprite size is the idle Animation's, blown up. Animations may
             // declare different frame sizes, so this is what the Character is
@@ -450,21 +556,14 @@ fn main() {
                 cast.draw("idle", 0).map_or((0, 0), |drawn| drawn.art_size);
 
             eprintln!(
-                "overlay: display {:.0}x{:.0} at ({:.0},{:.0}) of {}; character {}; sprite {}x{}",
-                home.width,
-                home.height,
-                home.x,
-                home.y,
-                displays.read().frames.len(),
+                "overlay: {} display(s); character {}; sprite {}x{}",
+                covered.len(),
                 cast.name(),
                 sprite_width * SPRITE_SCALE,
                 sprite_height * SPRITE_SCALE,
             );
 
-            platform::configure_overlay(&window)?;
-            window.show()?;
-
-            run_frame_loop(app.handle().clone(), cast, source, displays, start, home);
+            run_frame_loop(app.handle().clone(), cast, source, displays, start, covered);
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -59,10 +59,20 @@ function draw(now) {
 async function start() {
   art = await window.__TAURI__.core.invoke("character");
 
-  await window.__TAURI__.event.listen("frame", ({ payload }) => {
-    previous = latest;
-    latest = { ...payload, at: performance.now() };
-  });
+  // There is one overlay per display and each is told where the sprite is in
+  // its own coordinates, so this asks for the frames addressed to this window
+  // and no others. Not optional: a listener registered with no target hears
+  // only broadcasts, and every frame is addressed.
+  const overlay = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
+
+  await window.__TAURI__.event.listen(
+    "frame",
+    ({ payload }) => {
+      previous = latest;
+      latest = { ...payload, at: performance.now() };
+    },
+    { target: overlay.label },
+  );
 
   requestAnimationFrame(draw);
 }

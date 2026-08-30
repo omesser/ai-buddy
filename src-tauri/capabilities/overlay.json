@@ -1,9 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "overlay",
-  "description": "Tauri denies the webview every core command unless a capability grants it, and with no capability at all the overlay could not hear the Frame the Shell pushes it each tick - it drew nothing, silently. Listening for events is the only thing it needs: it holds no state, reads no files, and calls no command of its own.",
+  "description": "Tauri denies the webview every core command unless a capability grants it, and with no capability at all the overlay could not hear the Frame the Shell pushes it each tick - it drew nothing, silently. Listening for events is the only thing it needs: it holds no state, reads no files, and calls no command of its own. The glob covers every overlay: there is one per display, labelled overlay-0, overlay-1 and so on, and they all draw the same Character under the same rules.",
   "windows": [
-    "overlay"
+    "overlay-*"
   ],
   "permissions": [
     "core:event:allow-listen",

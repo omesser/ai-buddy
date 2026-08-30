@@ -356,11 +356,15 @@ to being called spyware.
 Physics runs in a single coordinate space, the one every display shares.
 Reconciling per-display physics would be considerably harder.
 
-The overlay window is the exception, and not by choice: macOS gives each display
-its own Space and draws a window spanning two of them on only one, so the window
-covers a single display and the frame loop moves it to whichever display the
-sprite reaches. A sprite straddling the boundary is clipped, which one overlay
-per display would fix and nothing else will.
+The overlays are per display, and not by choice: macOS gives each display its
+own Space and draws a window spanning two of them on only one, so a window sized
+to the union is invisible everywhere but the display it belongs to. Every
+display therefore gets its own overlay covering it, and every overlay is told
+where the sprite is, in its own coordinates. A sprite straddling a boundary is
+drawn by both and clipped by each to its own half, so the halves meet at the
+seam. One code path builds and configures an overlay, because click-through,
+window level, Spaces membership and hide rules have to be identical across all
+of them.
 
 Two real problems to budget for: differing backing scale factors between
 displays, and gaps between non-aligned displays. Clamp to the union of visible
@@ -474,5 +478,5 @@ records it.
 | 20 | Memory | One shared plaintext Markdown file the user owns; chat history session-scoped |
 | 21 | No Harness attached | Fully charming — full Spatial Layer, chat shows a connect nudge |
 | 23 | Art | True pixel art, integer nearest-neighbour — [ADR-0006](./docs/adr/0006-pixel-art-integer-scaling.md) |
-| 24 | Displays | Overlay covers one display and follows the sprite; physics spans them all |
+| 24 | Displays | One overlay per display, each covering it; physics spans them all |
 | 25 | Release staging | v1 is charm, chat, Memory, and Harness attach; voice and Ambient Capture deferred |

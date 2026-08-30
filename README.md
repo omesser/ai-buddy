@@ -114,9 +114,10 @@ it when the overlay, the platform layer or the frame loop changes.
 scripts/verify-overlay.sh          # or --keep to leave the app running
 ```
 
-It checks that exactly one overlay window exists at floating level, that its
-bounds match one whole display — the one the Character is on — and that the app
-is an accessory with no Dock tile or switcher entry.
+It checks that there is one overlay window per display, that every one of them
+is on screen at floating level, that each display is covered whole by one of
+them and none of them covers anything else, and that the app is an accessory
+with no Dock tile or switcher entry.
 
 Then it checks the frame loop against a real desktop. It opens a plain window of
 its own below where the sprite starts, so the sprite has a Perch to aim at, and
@@ -136,9 +137,13 @@ Keep hands off the mouse while it runs.
 
 For a live view of what the app is deciding, set `AI_BUDDY_TRACE_HITTEST=1` for
 the click-through decision and `AI_BUDDY_TRACE_FRAMES=1` for the Engine's
-frames — state, position and animation, once per tick. The first line or two of
-the hit-test trace are emitted before the window frame settles and report a
-stale origin; read the later ones.
+frames — state, position and animation, once per tick. Both trace in the point
+space every display shares, so the positions they report are comparable with
+what the window server says about any display.
+
+There is one overlay per display and every one of them is told where the
+sprite is, so the trace is one line per tick rather than one per overlay. Which
+overlay the cursor is on is on the hit-test line.
 
 **A human** is still needed for the last step, because only the window server
 can answer it. Run the app, then confirm:
@@ -194,6 +199,22 @@ can answer it. Run the app, then confirm:
     over the Dock — it follows the cursor the whole way, because a held sprite
     goes where your hand goes. Let go and it settles back onto the Dock's top
     edge, fully visible.
+
+The last three need a second display, and only a window server can answer them:
+
+13. **A Character on a seam is whole.** Drag the sprite slowly across the
+    boundary between two displays and stop with it half on each. Both halves
+    are drawn, and they meet — no gap between them, nothing drawn twice, and
+    the art is not doubled or offset at the seam. Two displays with different
+    scale factors is the case worth doing this on.
+14. **Either half can be clicked.** With the sprite straddling, click the half
+    on each display in turn. Both pick it up, and clicking beside it on either
+    display still reaches whatever is underneath.
+15. **A display can come and go.** With the app running, unplug a display, or
+    turn one off in System Settings > Displays. The sprite carries on, and the
+    remaining display still passes clicks through where the sprite is not.
+    Plug it back in: the sprite can be dragged onto it again within a second
+    or so, without restarting the app.
 
 The sprite starts in the middle of the first display and goes wherever gravity
 and your windows take it from there, or wherever you put it. To watch it fall
