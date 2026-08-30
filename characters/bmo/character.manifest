@@ -10,8 +10,8 @@ name = "BMO"
 render_mode = "smooth"
 scale = 1
 
-# The idle is the pack's singing loop — a BMO with nothing to do hums to
-# itself — and the sit is its self-play set: four games on its own screen.
+# The idle is a calm stand; the singing and the skateboard ride its ring as
+# variants. The sit is the pack's self-play set: four games on its own screen.
 
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
