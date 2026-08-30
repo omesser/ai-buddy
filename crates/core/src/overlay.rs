@@ -126,7 +126,10 @@ impl SpriteRect {
 }
 
 /// Which pixels of an Animation frame are drawn, at the art's own resolution.
-#[derive(Debug)]
+///
+/// Comparable and clonable because a validated `character::Character` carries
+/// one per distinct frame, and derives both.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlphaMask {
     width: i32,
     height: i32,

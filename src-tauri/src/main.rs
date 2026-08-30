@@ -17,7 +17,6 @@
 //! has the Shell wake it on a timer and on notable events, and a timer is a
 //! clock. What it proposes is `director`'s; when it is asked is here.
 
-mod cast;
 mod package;
 mod platform;
 
@@ -26,6 +25,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ai_buddy_core::character::Character;
 use ai_buddy_core::director::{self, Context, Director, StaticDirector};
 use ai_buddy_core::engine::{Engine, Point};
 use ai_buddy_core::input::Pointer;
@@ -33,10 +33,10 @@ use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
 use ai_buddy_core::sensing::{FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::window_source::{Rect, WindowSource};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
-
-use cast::Cast;
 
 /// Nearest-neighbour blow-up, in logical points. ADR-0006 permits integers only.
 const SPRITE_SCALE: i32 = 4;
@@ -44,9 +44,6 @@ const SPRITE_SCALE: i32 = 4;
 /// Where the shipped Character Packages sit inside the app's resources. Kept in
 /// step with `bundle.resources` in `tauri.conf.json`.
 const BUNDLED_CHARACTERS: &str = "characters";
-
-/// Alpha at or above this counts as drawn. See `AlphaMask::from_png`.
-const ALPHA_THRESHOLD: u8 = 128;
 
 /// One turn of the frame loop: roughly 60Hz, six times the rate the desktop's
 /// geometry is read at.
@@ -101,13 +98,49 @@ struct Placement {
     frame_index: usize,
 }
 
+/// Every Animation's frames as `data:` URLs, in play order, keyed by the
+/// Animation's name.
+///
+/// URLs rather than file paths because a Character Package lives outside the
+/// front end's own directory — in the user's Application Support, or wherever
+/// they put it — so there is no URL the webview could fetch a frame from.
+/// Handing over the bytes avoids granting the webview a filesystem scope for
+/// the sake of drawing a sprite.
+///
+/// The webview picks a frame out of each list by the index the frame loop
+/// sends, so the order here has to be the play order `Character::draw` indexes
+/// — both walk `Animation::frames` as declared. Indexing `art` cannot miss: a
+/// validated Character carries art for every frame its Animations name.
+fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
+    // A frame two Animations share is encoded once and named twice.
+    let urls: BTreeMap<&String, String> = character
+        .art
+        .iter()
+        .map(|(frame, art)| {
+            let url = format!("data:image/png;base64,{}", STANDARD.encode(&art.png));
+            (frame, url)
+        })
+        .collect();
+
+    character
+        .animations
+        .iter()
+        .map(|(name, animation)| {
+            let frames = animation.frames.iter().map(|frame| urls[frame].clone());
+            (name.clone(), frames.collect())
+        })
+        .collect()
+}
+
 /// The Character's art, fetched once by the webview when it loads.
 ///
 /// A command rather than an event: an event emitted during setup would race the
 /// webview's own listener, and the art does not change while the app runs.
 #[tauri::command]
-fn character(cast: tauri::State<'_, Arc<Cast>>) -> BTreeMap<String, Vec<String>> {
-    cast.art().clone()
+fn character(
+    art: tauri::State<'_, BTreeMap<String, Vec<String>>>,
+) -> BTreeMap<String, Vec<String>> {
+    art.inner().clone()
 }
 
 /// Put the overlay over one display, covering it exactly.
@@ -226,14 +259,14 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
 /// make that lag the cheaper half of the trade against a stuttering sprite.
 fn run_frame_loop(
     app: tauri::AppHandle,
-    cast: Arc<Cast>,
+    character: Arc<Character>,
     source: impl WindowSource + Send + 'static,
     displays: platform::DisplayCache,
     start: Point,
     covered: Vec<Rect>,
 ) {
     thread::spawn(move || {
-        let mut engine = Engine::new(start).with_behaviors(cast.behaviors().clone());
+        let mut engine = Engine::new(start).with_behaviors(character.behaviors.clone());
         let mut assembler = SnapshotAssembler::new(source);
 
         // The Static Director, which is the whole of the buddy's life until a
@@ -243,7 +276,7 @@ fn run_frame_loop(
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos() as u64);
-        let mut director = StaticDirector::new(cast.behaviors().clone(), seed);
+        let mut director = StaticDirector::new(character.behaviors.clone(), seed);
         let mut free_tier = FreeTier::default();
         let activity_source = platform::activity_source();
         let mut recent: Vec<String> = Vec::new();
@@ -323,7 +356,8 @@ fn run_frame_loop(
             );
 
             let pressed_sprite = drawn_last.as_ref().is_some_and(|last| {
-                cast.draw(last.animation, last.animation_ms)
+                character
+                    .draw(last.animation, last.animation_ms)
                     .is_some_and(|art| art.mask.hit(&last.rect, cursor_at.0, cursor_at.1))
             });
             let verbs = pointer.update(
@@ -408,12 +442,12 @@ fn run_frame_loop(
             // the Character Manifest says what that means in frames. Resolving
             // it here rather than in the webview keeps the frame the hit-test
             // measures and the frame the user sees the same one.
-            let Some(drawn) = cast.draw(frame.animation, frame.animation_ms) else {
+            let Some(drawn) = character.draw(frame.animation, frame.animation_ms) else {
                 continue; // a Character with no drawable Animation at all
             };
             let (width, height) = (
-                drawn.art_size.0 * SPRITE_SCALE,
-                drawn.art_size.1 * SPRITE_SCALE,
+                drawn.frame_size.0 as i32 * SPRITE_SCALE,
+                drawn.frame_size.1 as i32 * SPRITE_SCALE,
             );
 
             // Placed once, in the space every display shares. Each overlay is
@@ -544,7 +578,7 @@ fn run_frame_loop(
 ///
 /// Finding none stops startup, so the failure names every directory that was
 /// searched: that list is the whole of what the reader has to go on.
-fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
+fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
     // The shipped Characters are an app resource, which `tauri-build` copies
     // next to the binary for `cargo run` as well as into a bundle.
     let bundled = app
@@ -562,8 +596,8 @@ fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
     };
 
     for candidate in &candidates {
-        let loaded = match package::read(candidate) {
-            Ok(loaded) => loaded,
+        let files = match package::read(candidate) {
+            Ok(files) => files,
             Err(package::ReadError::NotAPackage(_)) => continue,
             Err(why) => {
                 eprintln!("character: {why}");
@@ -571,18 +605,17 @@ fn load_character(app: &tauri::AppHandle) -> Result<Cast, String> {
             }
         };
 
-        let name = loaded.character.name.clone();
-        match Cast::new(loaded, ALPHA_THRESHOLD) {
-            Ok(cast) => {
-                eprintln!("character: {name} from {}", candidate.display());
-                return Ok(cast);
+        match ai_buddy_core::character::load(&files) {
+            Ok(character) => {
+                eprintln!("character: {} from {}", character.name, candidate.display());
+                return Ok(character);
             }
-            // Art the loader accepted and this could not resolve. A rejection
-            // like any other: one package with an unreadable frame should not
-            // cost the user every Character behind it in the search.
-            Err(why) => eprintln!(
-                "character: {} could not be drawn: {why}",
-                candidate.display()
+            // A rejection like any other: one broken package should not cost
+            // the user every Character behind it in the search.
+            Err(errors) => eprintln!(
+                "character: {} is not a valid Character Package:\n  - {}",
+                candidate.display(),
+                errors.join("\n  - ")
             ),
         }
     }
@@ -613,11 +646,11 @@ fn main() {
             // setup error: Tauri turns that into a panic the event loop cannot
             // unwind, which buries the one line worth reading under a
             // backtrace.
-            let cast = Arc::new(load_character(&app.handle().clone()).unwrap_or_else(|why| {
+            let character = Arc::new(load_character(&app.handle().clone()).unwrap_or_else(|why| {
                 eprintln!("character: {why}");
                 std::process::exit(1);
             }));
-            app.manage(Arc::clone(&cast));
+            app.manage(art_urls(&character));
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.
@@ -643,20 +676,108 @@ fn main() {
             // declare different frame sizes, so this is what the Character is
             // usually drawn at rather than what it is always drawn at; it is
             // here because scripts/verify-overlay.sh crops a screenshot to it.
-            let (sprite_width, sprite_height) =
-                cast.draw("idle", 0).map_or((0, 0), |drawn| drawn.art_size);
+            let (sprite_width, sprite_height) = character
+                .draw("idle", 0)
+                .map_or((0, 0), |drawn| drawn.frame_size);
 
             eprintln!(
                 "overlay: {} display(s); character {}; sprite {}x{}",
                 covered.len(),
-                cast.name(),
-                sprite_width * SPRITE_SCALE,
-                sprite_height * SPRITE_SCALE,
+                character.name,
+                sprite_width as i32 * SPRITE_SCALE,
+                sprite_height as i32 * SPRITE_SCALE,
             );
 
-            run_frame_loop(app.handle().clone(), cast, source, displays, start, covered);
+            run_frame_loop(
+                app.handle().clone(),
+                character,
+                source,
+                displays,
+                start,
+                covered,
+            );
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("ai-buddy failed to start");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
+
+    /// A 2x2 RGBA frame whose top-left pixel is transparent.
+    const PATCHY: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
+
+    /// A 2x2 RGBA frame with every pixel drawn, so its URL is told apart from
+    /// `PATCHY`'s.
+    const SOLID: &[u8] = include_bytes!("../../crates/core/tests/fixtures/opaque-2x2.png");
+
+    /// One Animation as these tests declare it: its name, then each frame as a
+    /// file name and the bytes behind it.
+    type Declared<'a> = (&'a str, &'a [(&'a str, &'a [u8])]);
+
+    /// A Character whose Animations are `animations`, plus one frame each for
+    /// every required Animation they do not name.
+    fn character_declaring(animations: &[Declared<'_>]) -> Character {
+        let mut manifest = String::from("name = Blip\n");
+        let mut files = PackageBytes::new();
+
+        let mut declare = |name: &str, frames: &[(&str, &[u8])]| {
+            let names: Vec<&str> = frames.iter().map(|(file, _)| *file).collect();
+            manifest.push_str(&format!("animation {name} = {}\n", names.join(" ")));
+            for (file, bytes) in frames {
+                files.insert((*file).to_string(), bytes.to_vec());
+            }
+        };
+
+        for required in REQUIRED_ANIMATIONS {
+            if !animations.iter().any(|(name, _)| *name == required) {
+                declare(required, &[(&format!("{required}.png"), PATCHY)]);
+            }
+        }
+        for (name, frames) in animations {
+            declare(name, frames);
+        }
+
+        files.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
+        ai_buddy_core::character::load(&files).expect("the package is valid")
+    }
+
+    /// The `data:` URL the art should carry for a frame of these bytes.
+    fn url(bytes: &[u8]) -> String {
+        format!("data:image/png;base64,{}", STANDARD.encode(bytes))
+    }
+
+    /// The invariant `art_urls` exists to hold: the webview indexes this list
+    /// by the index the frame loop computed over `Animation::frames`, so a
+    /// dropped or reordered URL would put a different frame on screen from the
+    /// one the hit-test measured.
+    #[test]
+    fn an_animations_urls_stand_in_the_order_its_frames_do() {
+        let character = character_declaring(&[(
+            "walk",
+            &[("a.png", PATCHY), ("b.png", SOLID), ("c.png", PATCHY)],
+        )]);
+        let art = art_urls(&character);
+
+        assert_eq!(art["walk"], vec![url(PATCHY), url(SOLID), url(PATCHY)]);
+        assert_eq!(art["walk"].len(), character.animations["walk"].frames.len());
+    }
+
+    /// The frame two Animations share is encoded once and named twice, at each
+    /// Animation's own index: a shared URL that only appeared once would shift
+    /// every later frame of the second Animation.
+    #[test]
+    fn a_frame_two_animations_share_stands_at_each_animations_own_index() {
+        let character = character_declaring(&[
+            ("idle", &[("shared.png", PATCHY), ("bob.png", SOLID)]),
+            ("sit", &[("down.png", SOLID), ("shared.png", PATCHY)]),
+        ]);
+        let art = art_urls(&character);
+
+        assert_eq!(art["idle"], vec![url(PATCHY), url(SOLID)]);
+        assert_eq!(art["sit"], vec![url(SOLID), url(PATCHY)]);
+    }
 }

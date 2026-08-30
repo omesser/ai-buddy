@@ -1,6 +1,13 @@
 //! The Character Package loader: bytes in, either a validated Character or the
 //! list of mistakes its author has to fix.
 //!
+//! The one validator on the load path. A loaded Character carries everything
+//! rendering needs — each distinct frame's PNG and its alpha mask, decoded
+//! here — so nothing downstream reopens the art, and nothing downstream can
+//! refuse a Character this module declared valid. Every content bound lives in
+//! the constants below; the reader's own limits (bytes, files, depth) guard
+//! the I/O before these bytes exist and live with it in the Shell.
+//!
 //! Pure and synchronous, like the rest of the Engine seam. Every byte is handed
 //! to it, so it opens nothing, reaches no platform and cannot be slowed down by
 //! a disk. That is also what lets a hostile package be tested as a map of file
@@ -41,6 +48,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
+
+use crate::overlay::AlphaMask;
 
 /// A Character Package as bytes: file name to contents, as a directory walk or
 /// an archive reader would produce it. The Shell does the reading; the loader
@@ -120,6 +129,12 @@ pub const MAX_CHARACTER_PIXELS: u64 = 256 * (MAX_FRAME_SIDE as u64) * (MAX_FRAME
 /// are never seen, and a four-figure fps is either a mistake or an attempt to
 /// make the renderer thrash.
 pub const MAX_FPS: u32 = 60;
+
+/// Alpha at or above this counts as drawn, when a frame's mask is built.
+///
+/// A threshold rather than "alpha > 0" so anti-aliased edges on hand-drawn art
+/// do not grow an invisible one-pixel border that swallows clicks.
+pub const ALPHA_THRESHOLD: u8 = 128;
 
 /// A unit of motion or expression the Engine owns. A Character composes these
 /// into Behaviors and can never define one (ADR-0002).
@@ -232,8 +247,22 @@ pub struct Behavior {
     pub trigger: Option<Trigger>,
 }
 
+/// One distinct frame's art, decoded once at load.
+///
+/// Two readers need the pixels and neither can afford to open a file per tick:
+/// the hit-test asks the mask whether the cursor is over a drawn pixel, and
+/// the webview draws the PNG. A frame two Animations share is one `Art`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Art {
+    /// The frame as the package shipped it, for whatever encoding the
+    /// renderer hands its webview.
+    pub png: Vec<u8>,
+    pub mask: AlphaMask,
+}
+
 /// A Character that has been validated: every required Animation is present,
-/// every frame is art a renderer can open, and every Behavior is playable.
+/// every frame is art the renderer holds decoded, and every Behavior is
+/// playable.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Character {
     pub name: String,
@@ -241,6 +270,43 @@ pub struct Character {
     pub personality: String,
     pub animations: BTreeMap<String, Animation>,
     pub behaviors: BTreeMap<String, Behavior>,
+    /// Every distinct frame any Animation names, by the name it is named.
+    pub art: BTreeMap<String, Art>,
+}
+
+/// What the renderer needs to draw one tick.
+pub struct Drawn<'a> {
+    pub mask: &'a AlphaMask,
+    /// The frame's size in pixels, before any scaling.
+    pub frame_size: (u32, u32),
+    /// Which frame of the Animation is on screen.
+    pub index: usize,
+}
+
+impl Character {
+    /// Which frame of `animation` is on screen `animation_ms` after it
+    /// started, and the mask that outlines it.
+    ///
+    /// The arithmetic is `Animation::frame_at`, which is where fps and loop
+    /// mode come from the Character Manifest rather than a constant. This only
+    /// looks up the Animation and the art the index lands on.
+    ///
+    /// `None` only for an Animation this Character does not have, which a
+    /// validated Character cannot be asked for: the Engine names one of the
+    /// eight required Animations, and a package missing one was rejected.
+    /// Substituting a different Animation would be worse than drawing nothing,
+    /// because the webview would still be told the name it asked for.
+    pub fn draw(&self, animation: &str, animation_ms: u32) -> Option<Drawn<'_>> {
+        let animation = self.animations.get(animation)?;
+        let index = animation.frame_at(animation_ms);
+        let art = self.art.get(animation.frames.get(index)?)?;
+
+        Some(Drawn {
+            mask: &art.mask,
+            frame_size: animation.frame_size,
+            index,
+        })
+    }
 }
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
@@ -289,7 +355,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     }
 
     let personality = personality(package, &mut errors);
-    let animations = resolve_animations(package, declared.animations, &mut errors);
+    let (animations, art) = resolve_animations(package, declared.animations, &mut errors);
     let behaviors = resolve_behaviors(declared.behaviors, &mut errors);
 
     match (errors.is_empty(), declared.name) {
@@ -298,6 +364,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             personality,
             animations,
             behaviors,
+            art,
         }),
         _ => Err(errors),
     }
@@ -668,17 +735,23 @@ fn parse_behavior(
     }
 }
 
-/// Check every declared Animation against the art the package carries. Art the
-/// loader cannot open or that changes size mid-sequence draws a broken sprite
-/// rather than a Character, and art too large to be a sprite, or too much of
-/// it, asks the renderer for memory no Character needs. All of them are
-/// rejections.
+/// Check every declared Animation against the art the package carries, and
+/// decode what passes. Art the loader cannot open or that changes size
+/// mid-sequence draws a broken sprite rather than a Character, and art too
+/// large to be a sprite, or too much of it, asks the renderer for memory no
+/// Character needs. All of them are rejections.
+///
+/// Decoding here rather than in the renderer is what makes a loaded Character
+/// renderable by construction: art the mask cannot be built from is one more
+/// rejection naming its frame, instead of a Character the loader declared
+/// valid and the renderer then refused.
 fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
     errors: &mut Vec<String>,
-) -> BTreeMap<String, Animation> {
+) -> (BTreeMap<String, Animation>, BTreeMap<String, Art>) {
     let mut animations = BTreeMap::new();
+    let mut art: BTreeMap<String, Art> = BTreeMap::new();
     // One mask per distinct frame, exactly as the renderer holds them: a frame
     // two Animations share is charged once.
     let mut charged: BTreeSet<String> = BTreeSet::new();
@@ -695,6 +768,9 @@ fn resolve_animations(
                 ));
                 continue;
             };
+            // Header first, pixels second: the header says how big the frame
+            // claims to be for a few dozen bytes of bounded work, so a frame
+            // over the size bound is rejected before anything inflates it.
             match art_size(bytes) {
                 Err(why) => errors.push(format!(
                     "line {line}: animation {name:?} frame {frame:?} is not readable art: {why}"
@@ -707,8 +783,28 @@ fn resolve_animations(
                     ));
                 }
                 Ok(size) => {
+                    // Decoded only while the pixel budget holds: past it the
+                    // package is rejected anyway, and decoding on regardless
+                    // would build the very masks the bound exists to refuse.
                     if charged.insert(frame.clone()) {
                         pixels += u64::from(size.0) * u64::from(size.1);
+                        if pixels <= MAX_CHARACTER_PIXELS {
+                            match AlphaMask::from_png(bytes, ALPHA_THRESHOLD) {
+                                Ok(mask) => {
+                                    art.insert(
+                                        frame.clone(),
+                                        Art {
+                                            png: bytes.clone(),
+                                            mask,
+                                        },
+                                    );
+                                }
+                                Err(why) => errors.push(format!(
+                                    "line {line}: animation {name:?} frame {frame:?} \
+                                     is not readable art: {why}"
+                                )),
+                            }
+                        }
                     }
                     match frame_size {
                         None => frame_size = Some(size),
@@ -745,15 +841,14 @@ fn resolve_animations(
         ));
     }
 
-    animations
+    (animations, art)
 }
 
 /// One frame's dimensions, from the PNG header alone.
 ///
-/// Header only: it is all the loader needs, it is bounded work whatever the
-/// file claims, and it never inflates a compressed image. The renderer decodes
-/// the pixels later, which `overlay::AlphaMask::from_png` already treats as
-/// untrusted.
+/// Header only: it is bounded work whatever the file claims, and it never
+/// inflates a compressed image, so the size bounds are checked before
+/// `AlphaMask::from_png` decodes a pixel.
 fn art_size(bytes: &[u8]) -> Result<(u32, u32), String> {
     let reader = png::Decoder::new(std::io::Cursor::new(bytes))
         .read_info()
@@ -857,10 +952,18 @@ fn loop_path(path: &[&str], closes_at: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::overlay::SpriteRect;
 
-    /// A 2x2 RGBA PNG. Art a renderer can open is all the loader asks of a
-    /// frame.
+    /// A 2x2 RGBA PNG whose top-left pixel is transparent. Art a renderer can
+    /// open is all the loader asks of a frame.
     const FRAME: &[u8] = include_bytes!("../tests/fixtures/alpha-2x2.png");
+
+    /// A 2x2 RGBA frame with every pixel drawn, so one lookup tells a mask
+    /// built from it apart from one built from `FRAME`.
+    const SOLID: &[u8] = include_bytes!("../tests/fixtures/opaque-2x2.png");
+
+    /// A 2x2 greyscale frame: a readable header with no alpha to mask.
+    const GREYSCALE: &[u8] = include_bytes!("../tests/fixtures/greyscale-2x2.png");
 
     /// One frame file per required Animation, plus a `wave` no manifest has to
     /// declare. Art nothing declares is ignored, the same as a README would be.
@@ -999,6 +1102,87 @@ mod tests {
             idle.looping,
             "an Animation repeats unless it says otherwise"
         );
+    }
+
+    #[test]
+    fn a_loaded_character_carries_exactly_the_art_its_animations_name() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("package is valid");
+
+        assert_eq!(character.art["idle-0.png"].png, FRAME, "the PNG as shipped");
+        assert!(
+            !character.art.contains_key("wave-0.png"),
+            "art nothing declares is not decoded or carried"
+        );
+    }
+
+    /// Whether the mask says the frame's top-left pixel is drawn. `SOLID`'s is
+    /// and `FRAME`'s is not, which is how one frame's mask is told from the
+    /// other's.
+    fn corner_drawn(drawn: &Drawn<'_>) -> bool {
+        drawn.mask.hit(
+            &SpriteRect {
+                x: 0,
+                y: 0,
+                scale: 1,
+            },
+            0,
+            0,
+        )
+    }
+
+    #[test]
+    fn draw_returns_the_frame_the_declared_cadence_has_reached() {
+        let mut package = art();
+        package.insert("idle-1.png".to_string(), SOLID.to_vec());
+        // Two 125ms frames of idle at the default 8fps.
+        let manifest = declaring(&REQUIRED_ANIMATIONS).replace(
+            "animation idle = idle-0.png",
+            "animation idle = idle-0.png idle-1.png",
+        );
+        package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
+        let character = load(&package).expect("package is valid");
+
+        let first = character.draw("idle", 124).expect("idle is declared");
+        assert_eq!(first.index, 0, "still inside the first of two 125ms frames");
+        assert_eq!(first.frame_size, (2, 2));
+        assert!(!corner_drawn(&first), "the mask is the one FRAME makes");
+
+        let second = character.draw("idle", 125).expect("idle is declared");
+        assert_eq!(second.index, 1);
+        assert!(
+            corner_drawn(&second),
+            "and the mask moves to the frame the index landed on"
+        );
+
+        let wrapped = character.draw("idle", 250).expect("idle is declared");
+        assert_eq!(wrapped.index, 0, "a looping strip comes back round");
+        assert!(!corner_drawn(&wrapped));
+    }
+
+    /// Nothing rather than a substitute: the webview was told the name it asked
+    /// for, so drawing a different Animation under it would be a lie the
+    /// hit-test also believed.
+    #[test]
+    fn an_animation_the_character_does_not_have_draws_nothing() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("package is valid");
+        assert!(character.draw("cartwheel", 0).is_none());
+    }
+
+    /// A readable header with no alpha behind it. Rejected here, naming the
+    /// frame, because nothing downstream reopens the art to discover it —
+    /// this loader is the last thing that can refuse a Character.
+    #[test]
+    fn a_frame_no_mask_can_be_built_from_is_rejected_by_name() {
+        let mut package = art();
+        package.insert("sit-0.png".to_string(), GREYSCALE.to_vec());
+        package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            declaring(&REQUIRED_ANIMATIONS).into_bytes(),
+        );
+
+        let errors = errors(load(&package));
+        assert_names(&errors, "sit-0.png");
+        assert_names(&errors, "RGBA");
     }
 
     #[test]
