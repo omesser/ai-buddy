@@ -83,7 +83,9 @@ _Avoid_: Brain, agent, planner
 
 **Perch**:
 A window's top edge treated as a one-way platform the sprite can land on, walk
-along, and fall off. Window sides and bottoms are not Perches.
+along, and fall off. Window sides and bottoms are not Perches, and neither is
+the length of an edge that cannot be seen: one hidden behind a window in front
+of it, or hanging over no display.
 _Avoid_: Ledge, platform, surface
 
 ### Layers
