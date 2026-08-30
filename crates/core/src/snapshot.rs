@@ -137,9 +137,9 @@ fn world_snapshot(
         elapsed_ms,
         verbs,
         poll_generation,
-        // Proposals arrive with the Director (#11). Nothing produces one yet,
-        // so an empty one is not a stub: it is the truth about a Director that
-        // has not spoken.
+        // The assembler does not wake the Director. The frame loop does, and
+        // writes a proposal onto the snapshot after this returns. None here
+        // is a Director that has not spoken this tick.
         ..WorldSnapshot::default()
     }
 }

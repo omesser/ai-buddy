@@ -1,16 +1,23 @@
-//! The Static Director: the buddy's life with no model and no network.
+//! The Director: what the buddy does next, as a proposal the Engine may refuse.
 //!
-//! What wakes it and what it is told are the Shell's; what it picks is here,
-//! and it is a pure function of the context and a seed. DESIGN.md decision 5
-//! keeps it as the configurable fallback for exactly the moments a model-backed
-//! Director cannot serve: none configured, turned off in settings, offline, or
-//! answering too slowly to wait for.
+//! Two implementations, per DESIGN.md decision 5. The Static Director is a
+//! pure function of the context and a seed — no model, no network — and is
+//! the fallback whenever a model-backed wake cannot serve: none configured,
+//! turned off, offline, or answering too slowly to wait for. The model-backed
+//! Director asks a `Completer` and reads a Behavior out of the reply. The
+//! Completer is the I/O; this module stays a function of the prompt and the
+//! text that comes back.
 //!
-//! Determinism is the point. A pet that surprises its owner is not a pet that
-//! surprises its tests, so the randomness arrives as a seed rather than from a
-//! clock or an operating system. Every test below fixes the seed, including the
-//! one about distribution: it counts what a known seed actually drew, so it
-//! cannot flake however tight the band around it is drawn.
+//! What wakes it and what it is told are the Shell's. The Director is never
+//! awaited on the render path: a pending proposal is applied on the next tick
+//! or discarded.
+//!
+//! Determinism is the point of the Static path. A pet that surprises its
+//! owner is not a pet that surprises its tests, so the randomness arrives as
+//! a seed rather than from a clock or an operating system. Every Static test
+//! below fixes the seed, including the one about distribution: it counts what
+//! a known seed actually drew, so it cannot flake however tight the band
+//! around it is drawn.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -26,6 +33,17 @@ use crate::sensing::Activity;
 /// something. The model-backed Director will want its own, far longer, number:
 /// this one costs nothing to wake.
 pub const WAKE_EVERY: Duration = Duration::from_secs(20);
+
+/// How long the model-backed Director goes unwoken when nothing notable
+/// happens. Longer than `WAKE_EVERY` because a wake costs tokens.
+pub const MODEL_WAKE_EVERY: Duration = Duration::from_secs(120);
+
+/// Idle duration that counts as the user having walked away. Crossing it
+/// is news; sitting past it is not, or every later read would re-wake.
+pub const IDLE_OVER: Duration = Duration::from_secs(5 * 60);
+
+/// How long the buddy may stay in one State before that itself is news.
+pub const STATE_BOUND: Duration = Duration::from_secs(90);
 
 /// How many Behaviors back the Director is asked to remember.
 ///
@@ -44,12 +62,76 @@ pub struct Context {
     pub activity: Activity,
     /// Behavior identifiers played recently, most recent first.
     pub recent: Vec<String>,
+    /// The active Character's Personality Prompt. Empty when the package
+    /// shipped none.
+    pub personality: String,
 }
 
 /// Whatever decides what the buddy does next.
 pub trait Director {
     /// A Behavior to play, or nothing when this moment suits none.
     fn propose(&mut self, context: &Context) -> Option<BehaviorProposal>;
+}
+
+/// Someone who can complete a Character Prompt. The model call itself —
+/// HTTP, a subprocess, a timeout — lives behind this so the Director stays
+/// a function of the prompt and the reply.
+pub trait Completer {
+    fn complete(&self, prompt: &str) -> Result<String, String>;
+}
+
+/// How one model-backed wake ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Wake {
+    Proposed(BehaviorProposal),
+    /// Completer error, timeout, or a reply that was not a Behavior. The
+    /// Static Director takes this wake.
+    Failed,
+}
+
+/// A Director that asks a Completer and reads a Behavior out of the reply.
+pub struct ModelDirector<C> {
+    completer: C,
+    behaviors: Vec<String>,
+}
+
+impl<C> ModelDirector<C> {
+    pub fn new(completer: C, behaviors: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            completer,
+            behaviors: behaviors.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl<C: Completer> ModelDirector<C> {
+    /// The Character Prompt this wake would send. Settings shows this.
+    pub fn prompt(&self, context: &Context) -> String {
+        character_prompt(context, self.behaviors.iter())
+    }
+
+    pub fn wake(&self, context: &Context) -> Wake {
+        match self.completer.complete(&self.prompt(context)) {
+            Ok(reply) => match parse_proposal(&reply) {
+                Ok(proposal) => Wake::Proposed(proposal),
+                Err(_) => Wake::Failed,
+            },
+            Err(_) => Wake::Failed,
+        }
+    }
+}
+
+/// Use the model-backed wake when it proposed something; otherwise ask the
+/// Static Director, which is the fallback DESIGN.md decision 5 keeps.
+pub fn or_static(
+    wake: Wake,
+    fallback: &mut StaticDirector,
+    context: &Context,
+) -> Option<BehaviorProposal> {
+    match wake {
+        Wake::Proposed(proposal) => Some(proposal),
+        Wake::Failed => fallback.propose(context),
+    }
 }
 
 /// Record a Behavior as just played, forgetting whatever fell off the end.
@@ -66,9 +148,138 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
 ///
 /// A switch of application is the one thing the user will notice being ignored:
 /// they moved to another window and the buddy carried on as though nothing
-/// happened. Everything else is the timer.
-pub fn due(since_wake: Duration, activity: &Activity) -> bool {
-    activity.switched || since_wake >= WAKE_EVERY
+/// happened. Walking away (`IDLE_OVER`) and sitting in one State (`STATE_BOUND`)
+/// are the other two notable events. Everything else is the timer.
+pub fn due(
+    since_wake: Duration,
+    every: Duration,
+    activity: &Activity,
+    previous_idle: Duration,
+    since_state: Duration,
+) -> bool {
+    activity.switched
+        || (previous_idle < IDLE_OVER && activity.idle >= IDLE_OVER)
+        || since_state >= STATE_BOUND
+        || since_wake >= every
+}
+
+/// The Character Prompt: what one wake sends the model, and what settings
+/// will show. Assembled here so the inspectable string and the sent string
+/// cannot drift.
+pub fn character_prompt(
+    context: &Context,
+    behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+) -> String {
+    let frontmost = context
+        .activity
+        .frontmost_application
+        .as_deref()
+        .unwrap_or("(none)");
+    let idle = format_idle(context.activity.idle);
+    let clock = format_clock(context.activity.at);
+    let recent = if context.recent.is_empty() {
+        "(none)".to_string()
+    } else {
+        context.recent.join(", ")
+    };
+    let names: Vec<String> = behaviors
+        .into_iter()
+        .map(|name| name.as_ref().to_string())
+        .collect();
+    let declared = if names.is_empty() {
+        "(none)".to_string()
+    } else {
+        names.join(", ")
+    };
+    let personality = if context.personality.is_empty() {
+        "(no personality)"
+    } else {
+        context.personality.as_str()
+    };
+
+    format!(
+        "{personality}\n\
+         \n\
+         Frontmost application: {frontmost}\n\
+         Idle: {idle}\n\
+         Time of day: {clock}\n\
+         Recent behaviors: {recent}\n\
+         \n\
+         You may propose one of these behaviors: {declared}\n\
+         \n\
+         Reply with the behavior name on the first line.\n\
+         An optional spoken line may follow on the next line.\n\
+         Propose nothing else.\n"
+    )
+}
+
+/// What a model reply that is not a Behavior looks like. The Shell falls
+/// back to the Static Director on this; guessing a name would play a
+/// Behavior nobody asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParseError;
+
+/// Read a model reply as a Behavior proposal.
+///
+/// The Character Prompt asks for a name on the first line and an optional
+/// spoken line after. Anything else — prose, punctuation, silence — is an
+/// error so the Static Director can take the wake rather than a guess.
+pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
+    let mut lines = reply.lines().map(str::trim).filter(|line| !line.is_empty());
+    let first = lines.next().ok_or(ParseError)?;
+    let (name, inline) = match first.split_once('|') {
+        Some((name, line)) => (name.trim(), Some(line.trim())),
+        None => (first, None),
+    };
+    if name.is_empty() || !identifier(name) {
+        return Err(ParseError);
+    }
+
+    let dialogue = match inline {
+        Some(line) if !line.is_empty() => Some(line.to_string()),
+        _ => {
+            let rest: Vec<&str> = lines.collect();
+            (!rest.is_empty()).then(|| rest.join(" "))
+        }
+    };
+
+    Ok(BehaviorProposal {
+        behavior: name.to_string(),
+        dialogue,
+    })
+}
+
+/// A Behavior identifier is a token, not a sentence. The Engine still
+/// refuses a name the Character does not declare; this only keeps prose
+/// from arriving as one.
+fn identifier(name: &str) -> bool {
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Idle as a short duration, so settings is readable at a glance.
+fn format_idle(idle: Duration) -> String {
+    let secs = idle.as_secs();
+    if secs >= 60 && secs % 60 == 0 {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+/// Time of day from the Free-tier clock.
+///
+/// ponytail: UTC rather than a civil local time. The Clock hands us a
+/// `SystemTime`, and a timezone crate would arrive only so this line could
+/// say "late" in the user's own evening. UTC still shifts with the hour,
+/// which is what story 35 needs.
+fn format_clock(at: std::time::SystemTime) -> String {
+    let secs = at
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let minutes = (secs / 60) % (24 * 60);
+    format!("{:02}:{:02}", minutes / 60, minutes % 60)
 }
 
 /// Weighted selection over a Character's declared Behaviors. No model, no
@@ -224,6 +435,7 @@ mod tests {
         Context {
             activity,
             recent: recent.iter().map(|name| name.to_string()).collect(),
+            personality: "a shy robot.".to_string(),
         }
     }
 
@@ -414,6 +626,17 @@ mod tests {
         assert_eq!(recent.len(), REMEMBERED);
     }
 
+    /// Timer and switch only: idle has not crossed and the State is fresh.
+    fn on_timer(since_wake: Duration, activity: &Activity) -> bool {
+        due(
+            since_wake,
+            WAKE_EVERY,
+            activity,
+            Duration::MAX,
+            Duration::ZERO,
+        )
+    }
+
     #[test]
     fn the_director_wakes_on_a_switch_and_otherwise_on_the_timer() {
         let switched = Activity {
@@ -421,9 +644,257 @@ mod tests {
             ..working()
         };
 
-        assert!(due(Duration::ZERO, &switched), "a new application is news");
-        assert!(!due(Duration::ZERO, &working()), "nothing has happened");
-        assert!(!due(WAKE_EVERY - Duration::from_millis(1), &working()));
-        assert!(due(WAKE_EVERY, &working()), "the timer comes due");
+        assert!(
+            on_timer(Duration::ZERO, &switched),
+            "a new application is news"
+        );
+        assert!(
+            !on_timer(Duration::ZERO, &working()),
+            "nothing has happened"
+        );
+        assert!(!on_timer(WAKE_EVERY - Duration::from_millis(1), &working()));
+        assert!(on_timer(WAKE_EVERY, &working()), "the timer comes due");
+    }
+
+    #[test]
+    fn the_director_wakes_when_idle_crosses_the_threshold_and_not_while_past_it() {
+        let away = Activity {
+            idle: IDLE_OVER,
+            ..working()
+        };
+        let still = Activity {
+            idle: IDLE_OVER + Duration::from_secs(30),
+            ..working()
+        };
+
+        assert!(
+            due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &away,
+                Duration::ZERO,
+                Duration::ZERO
+            ),
+            "walking away is news"
+        );
+        assert!(
+            !due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &still,
+                IDLE_OVER,
+                Duration::ZERO
+            ),
+            "staying away is not another event"
+        );
+        assert!(
+            !due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &working(),
+                Duration::ZERO,
+                Duration::ZERO
+            ),
+            "still at the machine is not a crossing"
+        );
+    }
+
+    #[test]
+    fn the_director_wakes_when_one_state_outlasts_its_bound() {
+        assert!(
+            due(
+                Duration::ZERO,
+                WAKE_EVERY,
+                &working(),
+                Duration::MAX,
+                STATE_BOUND
+            ),
+            "the same State for this long is news"
+        );
+        assert!(!due(
+            Duration::ZERO,
+            WAKE_EVERY,
+            &working(),
+            Duration::MAX,
+            STATE_BOUND - Duration::from_millis(1)
+        ));
+    }
+
+    #[test]
+    fn wake_frequency_is_the_interval_the_caller_hands_in() {
+        let longer = Duration::from_secs(180);
+        assert!(!due(
+            WAKE_EVERY,
+            longer,
+            &working(),
+            Duration::MAX,
+            Duration::ZERO
+        ));
+        assert!(due(
+            longer,
+            longer,
+            &working(),
+            Duration::MAX,
+            Duration::ZERO
+        ));
+    }
+
+    #[test]
+    fn a_clean_reply_is_a_behavior_and_optional_dialogue() {
+        let spoken = parse_proposal("stroll\nhey there").expect("a named Behavior");
+        assert_eq!(spoken.behavior, "stroll");
+        assert_eq!(spoken.dialogue.as_deref(), Some("hey there"));
+
+        let quiet = parse_proposal("wave").expect("dialogue is optional");
+        assert_eq!(quiet.behavior, "wave");
+        assert_eq!(quiet.dialogue, None);
+
+        let inline = parse_proposal("nap | sleepy").expect("one-line form");
+        assert_eq!(inline.behavior, "nap");
+        assert_eq!(inline.dialogue.as_deref(), Some("sleepy"));
+    }
+
+    /// A Completer that returns one scripted reply, and remembers the prompt
+    /// it was given so the test can see that settings would show the same
+    /// string the model was sent.
+    struct Scripted {
+        reply: Result<String, String>,
+        seen: std::sync::Mutex<Option<String>>,
+    }
+
+    impl Scripted {
+        fn says(reply: &str) -> Self {
+            Self {
+                reply: Ok(reply.to_string()),
+                seen: std::sync::Mutex::new(None),
+            }
+        }
+
+        fn fails() -> Self {
+            Self {
+                reply: Err("timeout".to_string()),
+                seen: std::sync::Mutex::new(None),
+            }
+        }
+    }
+
+    impl Completer for Scripted {
+        fn complete(&self, prompt: &str) -> Result<String, String> {
+            *self.seen.lock().expect("the lock is not poisoned") = Some(prompt.to_string());
+            self.reply.clone()
+        }
+    }
+
+    #[test]
+    fn a_model_director_proposes_what_the_completer_replies() {
+        let director = ModelDirector::new(Scripted::says("stroll\nhey"), ["stroll", "wave"]);
+        let moment = context(working(), &[]);
+
+        match director.wake(&moment) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "stroll");
+                assert_eq!(proposal.dialogue.as_deref(), Some("hey"));
+            }
+            other => panic!("the reply was a proposal, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_completer_is_sent_the_character_prompt() {
+        let director = ModelDirector::new(Scripted::says("wave"), ["wave"]);
+        let moment = context(working(), &["nap"]);
+        let expected = character_prompt(&moment, ["wave"]);
+
+        director.wake(&moment);
+
+        assert_eq!(
+            director
+                .completer
+                .seen
+                .lock()
+                .expect("the lock is not poisoned")
+                .as_deref(),
+            Some(expected.as_str()),
+            "the inspectable payload and the sent payload are one string"
+        );
+    }
+
+    #[test]
+    fn a_director_error_falls_back_to_the_static_director() {
+        let model = ModelDirector::new(Scripted::fails(), ["nap"]);
+        let mut fallback = StaticDirector::new(declaring(&[("nap", 1, None)]), 1);
+        let moment = context(working(), &[]);
+
+        let proposal = or_static(model.wake(&moment), &mut fallback, &moment)
+            .expect("the Static Director still has a life");
+
+        assert_eq!(proposal.behavior, "nap");
+        assert_eq!(proposal.dialogue, None, "the fallback does not speak");
+    }
+
+    #[test]
+    fn a_valid_model_proposal_is_kept_and_the_static_director_is_not_asked() {
+        let model = ModelDirector::new(Scripted::says("wave"), ["wave", "nap"]);
+        let mut fallback = StaticDirector::new(declaring(&[("nap", 1, None)]), 1);
+        let moment = context(working(), &[]);
+
+        let proposal = or_static(model.wake(&moment), &mut fallback, &moment)
+            .expect("the model named a Behavior");
+
+        assert_eq!(
+            proposal.behavior, "wave",
+            "a Behavior the Static Director does not even declare"
+        );
+    }
+
+    #[test]
+    fn a_garbled_reply_is_an_error_not_a_guess() {
+        assert!(parse_proposal("").is_err(), "silence is not a Behavior");
+        assert!(
+            parse_proposal("Sure, a stroll would be nice!").is_err(),
+            "prose is not an identifier"
+        );
+        assert!(
+            parse_proposal("***").is_err(),
+            "punctuation is not an identifier"
+        );
+    }
+
+    /// The Character Prompt is the inspectable payload: what settings will
+    /// show is what the model is sent, so every Free-tier fact has to be in
+    /// the string rather than reconstructed beside it.
+    #[test]
+    fn the_character_prompt_is_the_payload_the_model_is_sent() {
+        let moment = Context {
+            activity: Activity {
+                frontmost_application: Some("Terminal".to_string()),
+                switched: false,
+                idle: Duration::from_secs(12),
+                at: UNIX_EPOCH + Duration::from_secs(14 * 3600 + 30 * 60),
+            },
+            recent: vec!["stroll".to_string(), "nap".to_string()],
+            personality: "Blip is cheerful.".to_string(),
+        };
+
+        let payload = character_prompt(&moment, ["greet", "stroll", "wave"]);
+
+        assert!(
+            payload.contains("Blip is cheerful."),
+            "the Personality Prompt is the Character's, not a wrapper: {payload}"
+        );
+        assert!(
+            payload.contains("Terminal"),
+            "frontmost application: {payload}"
+        );
+        assert!(payload.contains("12s"), "idle duration: {payload}");
+        assert!(payload.contains("14:30"), "time of day: {payload}");
+        assert!(
+            payload.contains("stroll") && payload.contains("nap"),
+            "recent Behavior identifiers: {payload}"
+        );
+        assert!(
+            payload.contains("greet") && payload.contains("wave"),
+            "declared Behaviors, so the model cannot invent a capability: {payload}"
+        );
     }
 }

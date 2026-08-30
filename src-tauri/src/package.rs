@@ -523,6 +523,7 @@ mod tests {
                 at: UNIX_EPOCH,
             },
             recent: Vec::new(),
+            personality: character.personality.clone(),
         };
 
         (0..64)
