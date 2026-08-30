@@ -19,6 +19,14 @@ let art = {};
 // The hit-test runs against the unlagged position, so the click-through
 // rectangle leads what is on screen by one sample — a pixel or two at walking
 // speed, and always in the direction of travel.
+//
+// ponytail: every overlay interpolates on its own clock — its own arrival
+// times and its own frame phase — so the two halves of a sprite on a seam can
+// round a point apart while it is moving. At rest they cannot, there being
+// nothing to interpolate. The upgrade is to carry the Engine's own timestamp
+// on the frame and solve for it, which needs a per-webview offset between that
+// clock and `performance.now()`; worth it if README item 13 ever shows a
+// shimmer at the seam under a drag.
 let previous = null;
 let latest = null;
 
@@ -61,8 +69,11 @@ async function start() {
 
   // There is one overlay per display and each is told where the sprite is in
   // its own coordinates, so this asks for the frames addressed to this window
-  // and no others. Not optional: a listener registered with no target hears
-  // only broadcasts, and every frame is addressed.
+  // and no others. Not optional, and not for the reason it looks like: a
+  // listener registered with no target is an `Any` listener, and tauri hands an
+  // `Any` listener every emit, addressed elsewhere or not. Without this each
+  // overlay would also hear its neighbours' rectangles and draw whichever
+  // arrived last, so every display would show the same display's half.
   const overlay = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 
   await window.__TAURI__.event.listen(

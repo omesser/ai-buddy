@@ -28,17 +28,31 @@ use crate::window_source::Rect;
 /// physics catches it. The nearest display is the answer there because the point
 /// is on its way into or out of that one.
 ///
-/// A point on a shared edge belongs to the first display that reported it, which
-/// is arbitrary and has to be: both answers are equally true. It costs nothing
-/// here, because both overlays are drawing the same sprite anyway.
+/// Containment is half-open, because a window is: a display 1920 wide at x=0
+/// covers columns 0 to 1919, and column 1920 is the next display's first. The
+/// shared edge has to go to the display whose window is actually there, since
+/// this is what decides which overlay stops being click-through — naming the
+/// neighbour leaves the overlay under the cursor passing clicks through, and a
+/// click on the sprite falls to whatever is beneath it.
 ///
 /// `None` only when no display was reported, which is a machine with no screen.
 pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> {
     displays
         .iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| outside_by(point, a).total_cmp(&outside_by(point, b)))
-        .map(|(index, _)| index)
+        .position(|display| covers(point, display))
+        .or_else(|| {
+            displays
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| outside_by(point, a).total_cmp(&outside_by(point, b)))
+                .map(|(index, _)| index)
+        })
+}
+
+/// Whether a display's window has this point, right and bottom edges excluded.
+fn covers(point: (f64, f64), rect: &Rect) -> bool {
+    (rect.x..rect.x + rect.width).contains(&point.0)
+        && (rect.y..rect.y + rect.height).contains(&point.1)
 }
 
 /// How far outside a rectangle a point lies, squared. Zero anywhere inside it.
@@ -366,13 +380,14 @@ mod tests {
     fn a_fractional_display_origin_is_rounded_to_the_pixel_grid() {
         let sprite = place_sprite((500.0, 300.0), (128, 128), 4);
 
+        // Both halves round up, so truncating either one is a wrong answer.
         assert_eq!(
-            sprite.in_overlay(rect(100.4, 50.6, 800.0, 600.0)).x,
-            336,
-            "436 - 100"
+            sprite.in_overlay(rect(100.6, 50.6, 800.0, 600.0)).x,
+            335,
+            "436 - 101"
         );
         assert_eq!(
-            sprite.in_overlay(rect(100.4, 50.6, 800.0, 600.0)).y,
+            sprite.in_overlay(rect(100.6, 50.6, 800.0, 600.0)).y,
             121,
             "172 - 51"
         );
@@ -391,8 +406,9 @@ mod tests {
         );
         assert_eq!(
             display_index_for((1920.0, 500.0), &displays),
-            Some(0),
-            "the seam itself goes to whichever display reported first"
+            Some(1),
+            "the seam column is the second display's first column, not the first \
+             display's last: that is where its window starts"
         );
     }
 

@@ -350,15 +350,28 @@ print("\nDisplays:")
 for d in displays:
     print(f"  {d['w']:.0f}x{d['h']:.0f} at ({d['x']:.0f},{d['y']:.0f})")
 
+
+def bounds(r):
+    return (r["x"], r["y"], r["w"], r["h"])
+
+
 print("\nChecks:")
 # One overlay per display, each covering its own: a Character straddling a seam
 # is drawn by the overlay on each side, so both halves are on screen. One window
 # could not do it — macOS gives each display its own Space and draws a window
 # spanning two of them on only one, so an overlay wider than a display is
 # invisible on every display but that one.
-check(len(windows) == len(displays),
+#
+# Counted over distinct rectangles rather than raw entries, because the two
+# sides are enumerated differently: displays here come from
+# CGGetActiveDisplayList and the overlays from NSScreen, and a mirrored pair is
+# two of the first and one of the second. One overlay is the right answer for a
+# mirrored pair, so counting the rectangles is what asks the question the app
+# can actually answer.
+screens = {bounds(d) for d in displays}
+check(len(windows) == len(screens),
       "one overlay window per display",
-      f"{len(windows)} windows, {len(displays)} displays")
+      f"{len(windows)} windows, {len(screens)} distinct displays")
 if not windows:
     sys.exit(1)
 
@@ -368,11 +381,6 @@ if not windows:
 check(all(w["onscreen"] for w in windows), "every overlay is on screen")
 levels = {w["layer"] for w in windows}
 check(levels == {3}, "every overlay is at floating level", f"levels={sorted(levels)}")
-
-
-def bounds(r):
-    return (r["x"], r["y"], r["w"], r["h"])
-
 
 # The origin has to match too — a window covering the right area of the wrong
 # display is the same disappearance.

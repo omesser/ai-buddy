@@ -18,7 +18,7 @@ mod package;
 mod platform;
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -51,16 +51,13 @@ const ALPHA_THRESHOLD: u8 = 128;
 /// And the Engine advances on elapsed time, so something has to advance it.
 const ENGINE_TICK: Duration = Duration::from_millis(16);
 
-/// Every overlay's label: this and the index of the display it covers.
+/// The label of the overlay covering the display at `index`.
 ///
 /// One window per display, so the index is both the name and the way the frame
 /// loop finds the overlay belonging to a display. `capabilities/overlay.json`
-/// grants the same permissions to `overlay-*`.
-const OVERLAY_LABEL: &str = "overlay-";
-
-/// The label of the overlay covering the display at `index`.
+/// grants the same permissions to every `overlay-*`.
 fn overlay_label(index: usize) -> String {
-    format!("{OVERLAY_LABEL}{index}")
+    format!("overlay-{index}")
 }
 
 /// The event carrying each `Frame` to the webview.
@@ -165,32 +162,42 @@ fn build_overlay(
 /// display that moved or changed resolution needs. Overlays past the end of the
 /// list belong to displays that have been unplugged.
 ///
+/// Every display is attempted even after one fails, and the failures are
+/// returned together. Stopping at the first would leave every display after it
+/// without an overlay, which is a worse desktop than the one bad display.
+///
 /// Main thread only; see `build_overlay`.
-fn place_overlays(
-    app: &tauri::AppHandle,
-    displays: &[Rect],
-) -> Result<(), Box<dyn std::error::Error>> {
+fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), String> {
+    let mut failed = Vec::new();
+
     for (index, display) in displays.iter().enumerate() {
         let label = overlay_label(index);
-        match app.get_webview_window(&label) {
-            Some(window) => cover_display(&window, *display)?,
-            None => build_overlay(app, &label, *display)?,
+        let placed = match app.get_webview_window(&label) {
+            Some(window) => cover_display(&window, *display).map_err(|why| why.to_string()),
+            None => build_overlay(app, &label, *display).map_err(|why| why.to_string()),
+        };
+        if let Err(why) = placed {
+            failed.push(format!("{label}: {why}"));
         }
     }
 
     // Labels are handed out in order, so the first missing one ends the set.
     for index in displays.len().. {
-        let Some(window) = app.get_webview_window(&overlay_label(index)) else {
+        let label = overlay_label(index);
+        let Some(window) = app.get_webview_window(&label) else {
             break;
         };
-        eprintln!(
-            "overlay: {} has no display left to cover",
-            overlay_label(index)
-        );
-        window.close()?;
+        eprintln!("overlay: {label} has no display left to cover");
+        if let Err(why) = window.close() {
+            failed.push(format!("{label}: {why}"));
+        }
     }
 
-    Ok(())
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("; "))
+    }
 }
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
@@ -216,12 +223,14 @@ fn run_frame_loop(
         let mut engine = Engine::new(start).with_behaviors(cast.behaviors().clone());
         let mut assembler = SnapshotAssembler::new(source);
 
-        // The displays the overlays cover, as setup left them.
-        let mut covered = covered;
-
         // One click-through flag per overlay, `None` until that overlay's first
         // decision so the first tick always applies.
         let mut ignoring: Vec<Option<bool>> = vec![None; covered.len()];
+
+        // The displays the overlays cover, as setup left them. Shared with the
+        // main thread, which is the only place that can change what they cover
+        // and so the only place that knows when this is true again.
+        let covered = Arc::new(Mutex::new(covered));
 
         let mut pointer = Pointer::default();
 
@@ -304,26 +313,30 @@ fn run_frame_loop(
 
             // A display can be plugged in, unplugged or rearranged while the
             // app runs, and every display needs its overlay. Posted rather than
-            // done here: only the main thread may build a window. Recorded once
-            // the post is accepted, so a rejected one is retried next tick
-            // rather than latched as done.
+            // done here: only the main thread may build a window.
+            //
+            // Recorded by the closure, on success, rather than here once the
+            // post is accepted. An accepted post only means the work is queued,
+            // and every failure inside `place_overlays` is a log line rather
+            // than a refusal; recording it here would latch a desktop the
+            // overlays never reached and leave a hot-plugged display with no
+            // overlay until the display list changed again. The price is that a
+            // reconcile that keeps failing is posted again every tick, which is
+            // what retrying it means.
             //
             // An empty read is ignored rather than obeyed. It is what a failed
             // read of the desktop looks like as well as a machine with no
             // screen, and tearing every overlay down costs two webviews and
             // their art to rebuild — for a desktop that has nothing to draw on
             // either way.
-            if !displays.frames.is_empty() && displays.frames != covered {
+            if !displays.frames.is_empty() && *covered.lock().unwrap() != displays.frames {
                 let handle = app.clone();
                 let frames = displays.frames.clone();
-                let posted = app.run_on_main_thread(move || {
-                    if let Err(why) = place_overlays(&handle, &frames) {
-                        eprintln!("overlay: {why}");
-                    }
+                let placed = Arc::clone(&covered);
+                let _ = app.run_on_main_thread(move || match place_overlays(&handle, &frames) {
+                    Ok(()) => *placed.lock().unwrap() = frames,
+                    Err(why) => eprintln!("overlay: {why}"),
                 });
-                if posted.is_ok() {
-                    covered = displays.frames.clone();
-                }
             }
 
             // The Engine names an Animation and how long it has been playing;
@@ -401,10 +414,11 @@ fn run_frame_loop(
                 // is what leaves a Character on a seam whole instead of clipped
                 // to one display.
                 //
-                // Addressed rather than broadcast, because each overlay is told
-                // a different rectangle. src/main.js listens for its own label
-                // to match: a webview listening for nothing in particular hears
-                // broadcasts only.
+                // Addressed rather than emitted to all, because each overlay
+                // is told a different rectangle. src/main.js has to name its
+                // own label to match: an untargeted listener hears every emit,
+                // addressed elsewhere or not, and would draw whichever
+                // rectangle arrived last.
                 let _ = window.emit_to(
                     label,
                     FRAME_EVENT,

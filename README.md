@@ -203,10 +203,13 @@ can answer it. Run the app, then confirm:
 The last three need a second display, and only a window server can answer them:
 
 13. **A Character on a seam is whole.** Drag the sprite slowly across the
-    boundary between two displays and stop with it half on each. Both halves
+    boundary between two displays and hold it there, half on each. Both halves
     are drawn, and they meet — no gap between them, nothing drawn twice, and
-    the art is not doubled or offset at the seam. Two displays with different
-    scale factors is the case worth doing this on.
+    the art is not doubled or offset at the seam. Watch them while your hand is
+    still moving, not only once it stops: each overlay interpolates between the
+    Engine's ticks on its own clock, so a moving sprite is the only thing that
+    can catch two overlays disagreeing about where it is. Two displays with
+    different scale factors or refresh rates is the case worth doing this on.
 14. **Either half can be clicked.** With the sprite straddling, click the half
     on each display in turn. Both pick it up, and clicking beside it on either
     display still reaches whatever is underneath.
