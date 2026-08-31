@@ -27,7 +27,7 @@ const TRACE: &str = "AI_BUDDY_TRACE_DIRECTOR";
 /// a paragraph, and printing it sixty times a minute would bury everything
 /// else. Same gate as the hit-test and frame traces.
 pub fn tracing() -> bool {
-    std::env::var_os(TRACE).is_some()
+    crate::env_util::env_flag_is_on(TRACE)
 }
 
 fn trace_block(which: &str, text: &str) {
