@@ -634,9 +634,10 @@ def emit(pet, out, validate=True):
         [f"License: {pet['license']}."]
         if pet["license"]
         else [
-            "License: not declared by the source package; accepted at import",
-            "with --accept-license. A development asset unless its license",
-            "says otherwise.",
+            "License: none declared anywhere in the source ecosystem;",
+            "accepted at import with --accept-license. A development asset",
+            "unless a license surfaces — this repository's license claims",
+            "do not cover the art.",
         ]
     )
     manifest = manifest_text(pet["name"], mode, scale, header, animations)
@@ -716,9 +717,16 @@ def main():
         # from the path the user gave, not from where it landed.
         pet = read_shimeji(source, pathlib.Path(args.source).expanduser().stem)
 
-    print(f"license: {pet['license'] or 'not declared by the source package'}")
-    if not pet["license"] and not args.accept_license:
-        sys.exit("unknown license; re-run with --accept-license to proceed")
+    if pet["license"]:
+        print(f"license: {pet['license']}")
+    else:
+        print("license: none declared — not in the pack, and the source "
+              "ecosystem publishes no license metadata at all. Desktop-pet "
+              "packs are typically fan art of third-party characters, so an "
+              "import is a development asset: used locally, never shipped or "
+              "redistributed.")
+        if not args.accept_license:
+            sys.exit("--accept-license records that judgment and proceeds")
 
     if args.out.exists():
         if not args.force:
