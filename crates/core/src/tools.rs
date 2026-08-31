@@ -199,7 +199,9 @@ pub fn list_instances(instances: &[InstanceInfo]) -> ListInstancesResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::window_source::{Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry};
+    use crate::window_source::{
+        Capabilities, FakeWindowSource, Rect, WindowId, WindowRect, WorldGeometry,
+    };
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -229,8 +231,9 @@ mod tests {
         }
     }
 
-    fn window(owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
+    fn window(id: WindowId, owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
+            id,
             bounds: Rect {
                 x,
                 y,
@@ -287,8 +290,8 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("Safari", 30.0, 40.0, 1200.0, 800.0),
+                    window(1, "Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window(2, "Safari", 30.0, 40.0, 1200.0, 800.0),
                 ],
             },
         };
@@ -320,9 +323,9 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("1Password", 30.0, 40.0, 400.0, 300.0),
-                    window("Safari", 50.0, 60.0, 1200.0, 800.0),
+                    window(3, "Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window(4, "1Password", 30.0, 40.0, 400.0, 300.0),
+                    window(5, "Safari", 50.0, 60.0, 1200.0, 800.0),
                 ],
             },
         };
@@ -357,8 +360,8 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("1password", 30.0, 40.0, 400.0, 300.0),
+                    window(6, "Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window(7, "1password", 30.0, 40.0, 400.0, 300.0),
                 ],
             },
         };
@@ -388,8 +391,8 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("Safari", 30.0, 40.0, 1200.0, 800.0),
+                    window(8, "Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window(9, "Safari", 30.0, 40.0, 1200.0, 800.0),
                 ],
             },
         };
@@ -417,8 +420,8 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows: vec![
-                    window("Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window("1Password", 30.0, 40.0, 400.0, 300.0),
+                    window(10, "Terminal", 10.0, 20.0, 800.0, 600.0),
+                    window(11, "1Password", 30.0, 40.0, 400.0, 300.0),
                 ],
             },
         };

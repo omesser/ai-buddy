@@ -104,6 +104,12 @@ fn window(entry: &NSDictionary<NSString, AnyObject>, own_pid: i32) -> Option<Win
     }
 
     Some(WindowRect {
+        // The window server's own id, and the one key here that costs nothing
+        // extra: same dictionary, same call, no permission. A `CGWindowID` is
+        // 32-bit and `WindowId` is the platform-free 64-bit token, so widening
+        // is where this platform meets the core, and `from` rather than `as`
+        // says the direction can never truncate. #85.
+        id: u64::from(number(entry, ns_string!("kCGWindowNumber"))?.as_u32()),
         bounds: rect(cg_rect),
         owner: entry
             .objectForKey(ns_string!("kCGWindowOwnerName"))?
@@ -191,8 +197,14 @@ mod tests {
                 );
                 for w in &geometry.windows {
                     println!(
-                        "  layer {:>3}  {:>7.0},{:<7.0} {:>6.0}x{:<6.0}  {}",
-                        w.layer, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height, w.owner
+                        "  #{:<6} layer {:>3}  {:>7.0},{:<7.0} {:>6.0}x{:<6.0}  {}",
+                        w.id,
+                        w.layer,
+                        w.bounds.x,
+                        w.bounds.y,
+                        w.bounds.width,
+                        w.bounds.height,
+                        w.owner
                     );
                 }
                 previous = Some(geometry);
