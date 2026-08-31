@@ -217,8 +217,9 @@ window's top edge rather than being left standing inside a rectangle. Unless
 that edge is itself nowhere to stand — hidden behind a window in front of it,
 or hanging over no display — and then the sprite falls instead, because
 stepping up would strand it somewhere the user cannot see it. The floor is
-exempt, because every window behind the Dock hangs below it and a sprite on the
-ground in front of a window is not trapped in anything.
+exempt, because it sits at the foot of the usable frame and windows reach below
+that, and a sprite on the ground in front of a window is not trapped in
+anything.
 
 **A moving Perch carries the sprite.** Standing on a platform that moves means
 moving with it, so a window dragged down, up or sideways takes the sprite along
@@ -243,8 +244,9 @@ a real dragged window rather than derived.
 
 A resize is a move like any other. Dragging a window's top border down carries
 the sprite and yanking it drops it, under the same gate, because the Perch is
-matched between polls by the id the window server hands out rather than by its
-geometry — a window that changes size is still the same window.
+matched between polls by the id the platform gives each window rather than by
+its geometry — an opaque token the Engine only compares for equality, and one
+a resize does not change.
 
 Occlusion is a landing rule and never a resting one. An edge hidden behind a
 window in front of it is nowhere to land, but a sprite already standing on one
