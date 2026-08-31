@@ -11,6 +11,28 @@
 //! The AX symbols are declared by hand rather than through a binding crate:
 //! four functions is fewer lines than a dependency, which is the trade the
 //! Cargo manifest already names for CoreGraphics.
+//!
+//! Every other route was measured before settling here, so the next hunt can
+//! start from its results instead of repeating them (macOS 26, against the
+//! AX rect as ground truth):
+//!
+//! - **Every Dock-owned window in `CGWindowListCopyWindowInfo`**: three, all
+//!   options included — the layer-20 window at exactly the display's frame
+//!   and two wallpaper backstops. No window carries the island's rectangle;
+//!   the magnification lens exists only mid-hover.
+//! - **Estimating from consent-free inputs** (`com.apple.dock` defaults,
+//!   running applications, Trash): 44–100 points short on the very desktop
+//!   the spacing constants were tuned against, before recents tiles,
+//!   minimized windows, spacers or magnification move them again. An
+//!   estimate that is wrong by an icon or two puts the fall line mid-icon.
+//! - **`CoreDockGetRect` (private CoreDock SPI in ApplicationServices)**:
+//!   exact — the reserved strip, within a point of the AX rect's span — and
+//!   it answers without any permission. Rejected as private: unversioned,
+//!   removable in any release, and the kind of dependency this repository
+//!   refuses quietly. If AX-gating ever proves too costly, this is the one
+//!   documented alternative worth the argument.
+//! - **`AXUIElementCopyElementAtPosition`, screen capture**: the same trust
+//!   gate as this module, or the Screen Recording consent the SPEC refuses.
 
 use std::ffi::c_void;
 
