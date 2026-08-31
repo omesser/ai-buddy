@@ -110,11 +110,34 @@ function machineHarness() {
   let nextId = 1;
   const timers = new Map();
   const calls = [];
+  // Speech strictly wins: at no step of any test may both be visible. Pinned
+  // in the harness itself so every scenario asserts it for free.
+  let speechVisible = false;
+  let thinkingVisible = false;
+  const exclusive = () =>
+    assert.ok(
+      !(speechVisible && thinkingVisible),
+      "speech and thinking visible together",
+    );
   const machine = createBubbleMachine({
-    showSpeech: (text) => calls.push(`showSpeech:${text}`),
-    hideSpeech: () => calls.push("hideSpeech"),
-    showThinking: () => calls.push("showThinking"),
-    hideThinking: () => calls.push("hideThinking"),
+    showSpeech(text) {
+      speechVisible = true;
+      calls.push(`showSpeech:${text}`);
+      exclusive();
+    },
+    hideSpeech() {
+      speechVisible = false;
+      calls.push("hideSpeech");
+    },
+    showThinking() {
+      thinkingVisible = true;
+      calls.push("showThinking");
+      exclusive();
+    },
+    hideThinking() {
+      thinkingVisible = false;
+      calls.push("hideThinking");
+    },
     schedule(fn, ms) {
       const id = nextId++;
       timers.set(id, { fn, at: now + ms });
@@ -229,4 +252,49 @@ test("the speech bubble hides itself after its reading time", () => {
   advance(bubbleDuration("hi"));
 
   assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech"]);
+});
+
+test("a new turn waits behind a displayed reply, indicator only after it hides", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const reply = placement({ dialogue: "hi" });
+  machine.event(reply);
+  machine.frame(reply);
+  assert.deepEqual(calls, ["showSpeech:hi"]);
+
+  // A second poke starts a new turn while the reply is still on screen: the
+  // indicator must not appear over it, however long the turn runs.
+  machine.frame(placement({ thinking: true }));
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+  assert.deepEqual(calls, ["showSpeech:hi"], "nothing shows over the reply");
+
+  // Reading time up: the reply hides, and the still-running turn starts its
+  // grace from this moment.
+  advance(bubbleDuration("hi") - THINKING_GRACE_MS - THINKING_MIN_HOLD_MS);
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech"]);
+
+  advance(THINKING_GRACE_MS);
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech", "showThinking"]);
+});
+
+test("a reply landing in the post-speech grace never flashes the indicator", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const first = placement({ dialogue: "hi" });
+  machine.event(first);
+  machine.frame(first);
+  machine.frame(placement({ thinking: true }));
+  advance(bubbleDuration("hi"));
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech"], "grace just restarted");
+
+  const second = placement({ dialogue: "again" });
+  machine.event(second);
+  machine.frame(second);
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+
+  assert.deepEqual(
+    calls,
+    ["showSpeech:hi", "hideSpeech", "showSpeech:again"],
+    "the indicator never appeared",
+  );
 });

@@ -55,7 +55,7 @@ export const THINKING_MIN_HOLD_MS = 600;
 
 // The bubble decisions, apart from the DOM that displays them, so node can
 // drive the machine through tick orderings a display never reproduces on
-// demand. Two rules the shape of the transport forces:
+// demand. Three rules the transport and the reader force:
 //
 // - `dialogue` rides exactly one Engine tick, and the renderer keeps only the
 //   newest placement while it waits for its next animation frame. The Engine
@@ -66,12 +66,18 @@ export const THINKING_MIN_HOLD_MS = 600;
 // - A response ends the thinking indicator the same frame it shows, min-hold
 //   notwithstanding: the hold exists to keep a briefly-shown indicator from
 //   flickering when a turn ends *silently*, never to sit beside an answer.
+// - Speech and the indicator are mutually exclusive, and speech wins: while
+//   a line is displayed — its whole reading window — the indicator never
+//   shows, whatever a new turn does. When the line hides, a turn still in
+//   flight starts its grace from that moment, so a reply landing right then
+//   never flashes the indicator.
 export function createBubbleMachine(io) {
   const schedule = io.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
 
   let pendingDialogue = null;
   let speechTimer = null;
+  let speechShowing = false;
   let graceTimer = null;
   let minHoldTimer = null;
   let thinkingShown = false;
@@ -92,6 +98,19 @@ export function createBubbleMachine(io) {
     }
   }
 
+  function armGrace() {
+    graceTimer = schedule(() => {
+      graceTimer = null;
+      if (!thinking || speechShowing) return;
+      thinkingShown = true;
+      io.showThinking();
+      minHoldTimer = schedule(() => {
+        minHoldTimer = null;
+        if (!thinking) hideThinkingNow();
+      }, THINKING_MIN_HOLD_MS);
+    }, THINKING_GRACE_MS);
+  }
+
   return {
     // Every delivered placement, straight from the event listener.
     event(placement) {
@@ -108,26 +127,21 @@ export function createBubbleMachine(io) {
       if (dialogue && placement.visible) {
         hideThinkingNow();
         if (speechTimer !== null) cancel(speechTimer);
+        speechShowing = true;
         io.showSpeech(dialogue);
         speechTimer = schedule(() => {
           speechTimer = null;
+          speechShowing = false;
           io.hideSpeech();
+          // Only now may a turn still in flight surface its indicator.
+          if (thinking && graceTimer === null && !thinkingShown) armGrace();
         }, bubbleDuration(dialogue));
       }
 
       thinking = Boolean(placement.thinking && placement.visible);
       if (thinking) {
-        if (!thinkingShown && graceTimer === null) {
-          graceTimer = schedule(() => {
-            graceTimer = null;
-            if (!thinking) return;
-            thinkingShown = true;
-            io.showThinking();
-            minHoldTimer = schedule(() => {
-              minHoldTimer = null;
-              if (!thinking) hideThinkingNow();
-            }, THINKING_MIN_HOLD_MS);
-          }, THINKING_GRACE_MS);
+        if (!thinkingShown && graceTimer === null && !speechShowing) {
+          armGrace();
         }
       } else if (graceTimer !== null) {
         cancel(graceTimer);
@@ -144,6 +158,7 @@ export function createBubbleMachine(io) {
         cancel(speechTimer);
         speechTimer = null;
       }
+      speechShowing = false;
       pendingDialogue = null;
       io.hideSpeech();
     },
