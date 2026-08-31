@@ -73,6 +73,38 @@ PETSCODEX_MAP = (
     ("sit", "review", None, "forever", None),
 )
 
+# Row number to (frame count, loop duration), for --map overrides that name
+# rows by the number a person counts on the sheet.
+PETSCODEX_ROW_TABLE = {
+    row: (count, duration) for row, count, duration in PETSCODEX_ROWS.values()
+}
+
+
+def parse_mapping(text):
+    """One --map value, `animation=row[:i,j,...]`, into (animation, row,
+    indices or None). petdex's row semantics are labels each generated pet
+    interprets loosely — one pet's "jumping" row is a sword lunge — so the
+    reviewer remaps animations to the rows this pet actually drew."""
+    animation, eq, source = text.partition("=")
+    row_text, _, index_text = source.partition(":")
+    allowed = {name for name, *_ in PETSCODEX_MAP} | {"sleep"}
+    if not eq or animation not in allowed:
+        sys.exit(f"--map {text}: the animation is one of {', '.join(sorted(allowed))}")
+    if not row_text.isdigit() or int(row_text) not in PETSCODEX_ROW_TABLE:
+        sys.exit(f"--map {text}: the source is a sheet row, 0-8")
+    row = int(row_text)
+    indices = None
+    if index_text:
+        try:
+            indices = tuple(int(i) for i in index_text.split(","))
+        except ValueError:
+            sys.exit(f"--map {text}: frame indices are integers, comma-separated")
+        count = PETSCODEX_ROW_TABLE[row][0]
+        if any(i < 0 or i >= count for i in indices):
+            sys.exit(f"--map {text}: row {row} declares frames 0-{count - 1}")
+    return animation, row, indices
+
+
 # Shimeji-ee pose durations count scheduler ticks, ~40ms each.
 SHIMEJI_TICK_MS = 40
 
@@ -171,11 +203,43 @@ def fps_for(frames, duration_ms):
 
 def animation_offset(union, canvas):
     """The uniform shift that centers an animation's union bbox horizontally
-    and lands its collective baseline on the canvas bottom. Uniform per
-    animation, never per frame — per-frame alignment would flatten a jump."""
+    and lands its collective baseline on the canvas bottom — the placement
+    for a `registered` spec, whose frames' relative positions are meaningful
+    (the synthesized sleep and its one-pixel breath)."""
     left, _, right, bottom = union
     width, height = canvas
     return (width - (right - left)) // 2 - left, height - bottom
+
+
+def solid_mask(frame):
+    """The pixels the loader itself will count as drawn: alpha at or above
+    the hit-test threshold (`character::ALPHA_THRESHOLD` is 128). Alignment
+    measures these rather than the anti-aliased halo."""
+    return frame.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+
+
+def x_offsets(frames):
+    """Per-frame horizontal shifts registering every frame to the first, by
+    maximum overlap of solid pixels. Generated sheets place the character a
+    few pixels differently in every cell, which plays back as sideways
+    drift; bbox or centroid centering would instead swing the body whenever
+    a limb extends, so overlap does the registering."""
+    from PIL import ImageChops
+
+    anchor = solid_mask(frames[0])
+    width, height = anchor.size
+    reach = max(8, width // 4)
+
+    def registered(mask):
+        def overlap(shift):
+            slid = mask.crop((shift, 0, shift + width, height))
+            return ImageChops.darker(anchor, slid).histogram()[255]
+
+        # The best shift, nearest to zero on a tie; drawing at its negation
+        # moves this frame's art onto the anchor's.
+        return -max(range(-reach, reach + 1), key=lambda s: (overlap(s), -abs(s)))
+
+    return [0] + [registered(solid_mask(frame)) for frame in frames[1:]]
 
 
 def import_scale(stand_height):
@@ -253,13 +317,15 @@ def lifted(frame):
 
 def synthesized_sleep(idle_frames):
     """A sleep for sources that have none: idle's stillest frame, twice, the
-    second lifted a pixel — BMO's breath, made a rule."""
+    second lifted a pixel — BMO's breath, made a rule. `registered` keeps
+    the per-frame grounding pass from flattening that pixel."""
     still = stillest(idle_frames)
     return {
         "frames": [still, lifted(still)],
         "fps": 1,
         "loop": "forever",
         "variant_of": None,
+        "registered": True,
     }
 
 
@@ -284,7 +350,7 @@ def manifest_text(name, mode, scale, header, animations):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def read_petscodex(source, walk_row=2, mirror_walk=False):
+def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
     """A petscodex pet directory (`npx petscodex install <id>` lands one at
     ~/.codex/pets/<id>/) into the importer's common shape.
 
@@ -312,12 +378,16 @@ def read_petscodex(source, walk_row=2, mirror_walk=False):
             for c in range(count)
         ]
 
+    overrides = overrides or {}
     walk_state = "running-right" if walk_row == 1 else "running-left"
     animations = {}
     for animation, state, indices, loop, variant_of in PETSCODEX_MAP:
         if animation == "walk":
             state = walk_state
         row, count, duration = PETSCODEX_ROWS[state]
+        if animation in overrides:
+            row, indices = overrides[animation]
+            count, duration = PETSCODEX_ROW_TABLE[row]
         frames = row_frames(row, count)
         if indices:
             frames = [frames[i] for i in indices]
@@ -330,7 +400,18 @@ def read_petscodex(source, walk_row=2, mirror_walk=False):
             "variant_of": variant_of,
         }
 
-    animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
+    if "sleep" in overrides:
+        row, indices = overrides["sleep"]
+        count, duration = PETSCODEX_ROW_TABLE[row]
+        frames = row_frames(row, count)
+        animations["sleep"] = {
+            "frames": [frames[i] for i in indices] if indices else frames,
+            "fps": 1,
+            "loop": "forever",
+            "variant_of": None,
+        }
+    else:
+        animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
     mirrored = ", mirrored to head right" if mirror_walk else ""
     header = [
@@ -343,6 +424,13 @@ def read_petscodex(source, walk_row=2, mirror_walk=False):
         "with a one-pixel breath. The other walk row (the engine mirrors",
         "instead) and row 7 (running in place) go unused.",
     ]
+    if overrides:
+        remapped = ", ".join(
+            f"{animation}<-row {row}"
+            + (f"[{','.join(map(str, indices))}]" if indices else "")
+            for animation, (row, indices) in sorted(overrides.items())
+        )
+        header.append(f"Remapped for this pet's art (--map): {remapped}.")
     license_line = pet.get("pet_license") or pet.get("license")
     return {
         "name": pet["displayName"],
@@ -497,21 +585,49 @@ def emit(pet, out, validate=True):
                 ]
         unions = {a: union_bbox(spec["frames"]) for a, spec in animations.items()}
 
-    # A uniform per-Character canvas sized by the largest animation, each
-    # animation shifted as a unit: collective baseline to the canvas bottom
-    # (the shell anchors art there — the #96 floating-sit lesson), union
-    # centered horizontally so the sprite never swims between frames.
+    # A uniform per-Character canvas, and per-frame placement on it: every
+    # frame plants its lowest pixels on the canvas bottom (the shell anchors
+    # art there — the #96 floating-sit lesson, applied to every frame the
+    # way #96's hand pass did) and is registered horizontally to its
+    # animation's first frame. Baked-in offsets are never kept, because the
+    # Engine owns all motion — a fall descends by the contact point moving,
+    # not by the art sinking in its cell — and generated sheets jitter
+    # per-frame besides. The exception is a spec marked `registered`, whose
+    # relative frame positions are deliberate: it shifts as a unit.
+    metrics = {}
+    for animation, spec in animations.items():
+        boxes = [frame.getchannel("A").getbbox() for frame in spec["frames"]]
+        if None in boxes:
+            sys.exit(f"{animation}: frame {boxes.index(None)} is fully transparent")
+        offsets = (
+            [0] * len(boxes) if spec.get("registered") else x_offsets(spec["frames"])
+        )
+        left = min(box[0] + off for box, off in zip(boxes, offsets))
+        right = max(box[2] + off for box, off in zip(boxes, offsets))
+        union = unions[animation]
+        height = (
+            union[3] - union[1]
+            if spec.get("registered")
+            else max(box[3] - box[1] for box in boxes)
+        )
+        metrics[animation] = (boxes, offsets, right - left, left, height)
+
     canvas = (
-        max(u[2] - u[0] for u in unions.values()),
-        max(u[3] - u[1] for u in unions.values()),
+        max(width for _, _, width, _, _ in metrics.values()),
+        max(height for _, _, _, _, height in metrics.values()),
     )
     frames_dir = out / "frames"
     frames_dir.mkdir(parents=True)
     for animation, spec in animations.items():
-        dx, dy = animation_offset(unions[animation], canvas)
+        boxes, offsets, width, left, _ = metrics[animation]
+        centering = (canvas[0] - width) // 2 - left
+        anchored = animation_offset(unions[animation], canvas)
         for i, frame in enumerate(spec["frames"]):
             page = Image.new("RGBA", canvas, (0, 0, 0, 0))
-            page.paste(frame, (dx, dy))
+            if spec.get("registered"):
+                page.paste(frame, anchored)
+            else:
+                page.paste(frame, (centering + offsets[i], canvas[1] - boxes[i][3]))
             page.save(frames_dir / f"{animation}-{i}.png")
 
     header = pet["header"] + (
@@ -568,6 +684,12 @@ def main():
     parser.add_argument("--mirror-walk", action="store_true",
                         help="petscodex: flip the chosen walk row, for the pet "
                              "whose only clean walk heads left")
+    parser.add_argument("--map", action="append", default=[], dest="mappings",
+                        metavar="ANIM=ROW[:I,J,...]",
+                        help="petscodex: cut an animation from another sheet "
+                             "row (optionally naming its frames), for the pet "
+                             "whose art strays from petdex's row semantics — "
+                             "e.g. --map sleep=6:3 --map react=7")
     parser.add_argument("--force", action="store_true",
                         help="replace an existing output directory")
     parser.add_argument("--self-test", action="store_true")
@@ -584,7 +706,11 @@ def main():
         zipfile.ZipFile(source).extractall(unpacked)
         source = pathlib.Path(unpacked)
     if args.ecosystem == "petscodex":
-        pet = read_petscodex(source, args.walk_row, args.mirror_walk)
+        overrides = {}
+        for text in args.mappings:
+            animation, row, indices = parse_mapping(text)
+            overrides[animation] = (row, indices)
+        pet = read_petscodex(source, args.walk_row, args.mirror_walk, overrides)
     else:
         # A zip unpacks to a temp directory, so the pack's own name comes
         # from the path the user gave, not from where it landed.
@@ -599,9 +725,13 @@ def main():
             sys.exit(f"{args.out} exists; --force replaces it")
         shutil.rmtree(args.out)
     emit(pet, args.out)
-    hint = (" (--walk-row picks the other row; --mirror-walk flips it)"
-            if args.ecosystem == "petscodex" else "")
-    print(f"review the output before shipping it — walk must head right{hint}")
+    if args.ecosystem == "petscodex":
+        print("review the output before shipping it: walk must head right "
+              "(--walk-row picks the other row; --mirror-walk flips it), and "
+              "every animation must read as its name — a pet whose art "
+              "strays from the row semantics is recut with --map")
+    else:
+        print("review the output before shipping it — walk must head right")
 
 
 def self_test():
@@ -634,13 +764,18 @@ def self_test():
     assert render_mode(4097, 0.3) == "smooth"
     assert render_mode(16, 0.0) == "pixelated"
 
-    # A synthetic v1 sheet, 8x8 cells: each declared frame is a 2x2 dot at a
-    # row-dependent height, so alignment and slicing are observable.
+    assert parse_mapping("sleep=6:3") == ("sleep", 6, (3,))
+    assert parse_mapping("react=7") == ("react", 7, None)
+
+    # A synthetic v1 sheet, 8x8 cells: each declared frame is a 2x2 dot,
+    # deliberately jittered per frame the way generated sheets are, so the
+    # grounding and registration passes have something to undo.
     cell = 8
     sheet = Image.new("RGBA", (ATLAS_COLUMNS * cell, 9 * cell), (0, 0, 0, 0))
     for state, (row, count, _) in PETSCODEX_ROWS.items():
         for c in range(count):
-            x, y = c * cell + 3, row * cell + 2 + (row % 3)
+            x = c * cell + 3 + (c % 3)
+            y = row * cell + 2 + (row % 3) + (c % 2)
             for dx in range(2):
                 for dy in range(2):
                     sheet.putpixel((x + dx, y + dy), (200, 10 + row, 10, 255))
@@ -684,14 +819,29 @@ def self_test():
             assert f"[animations.{required}]" in manifest
         assert (out / "personality.txt").read_text().strip() == "a test dot"
 
-        # Every animation's collective baseline touches the canvas bottom.
-        for animation in ("idle", "sit", "walk"):
+        # Grounding and registration: every frame of every animation lands
+        # its dot on the canvas bottom at one x — the jitter baked into the
+        # sheet is gone, so nothing drifts inside a cycle.
+        for animation in set(pet["animations"]) - {"sleep"}:
+            placed = {
+                Image.open(path).getchannel("A").getbbox()
+                for path in sorted(out.glob(f"frames/{animation}-*.png"))
+            }
+            assert len(placed) == 1, f"{animation} drifts: {placed}"
             frame = Image.open(out / "frames" / f"{animation}-0.png")
             assert frame.getchannel("A").getbbox()[3] == frame.height, animation
-        # The sleep breath: frame 1 sits one pixel above frame 0.
+        # The sleep breath survives the grounding pass: frame 1 keeps its
+        # deliberate one-pixel lift over a planted frame 0.
         sleep0 = Image.open(out / "frames" / "sleep-0.png").getchannel("A").getbbox()
         sleep1 = Image.open(out / "frames" / "sleep-1.png").getchannel("A").getbbox()
         assert sleep0[3] - sleep1[3] == 1
+
+        # --map cuts an animation from the named row: row 5's dots carry
+        # row 5's color.
+        remapped = read_petscodex(source, overrides={"hold": (5, (0, 1))})
+        hold = remapped["animations"]["hold"]["frames"][0]
+        assert (200, 15, 10, 255) in {color for _, color in hold.getcolors()}
+        assert len(remapped["animations"]["hold"]["frames"]) == 2
 
     # A synthetic shimeji pack: three 8x8 frames with one marker pixel near
     # the left edge, and an actions.xml with no lie-down and no wave, so the
