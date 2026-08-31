@@ -12,18 +12,6 @@ use crate::memory::MemoryManifest;
 use crate::tools::{self, DenyList, InstanceInfo};
 use crate::window_source::WindowSource;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ToolResult {
-    Speak(tools::SpeakResult),
-    PlayBehavior(tools::PlayBehaviorResult),
-    ListWindows(tools::ListWindowsResult),
-    DescribeScreen(tools::DescribeScreenResult),
-    Recall(tools::RecallResult),
-    Remember(tools::RememberResult),
-    ListInstances(tools::ListInstancesResult),
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DispatchError {
     pub code: ErrorCode,
@@ -59,7 +47,7 @@ pub fn dispatch(
     tool_name: &str,
     arguments: Value,
     context: &DispatchContext,
-) -> Result<ToolResult, DispatchError> {
+) -> Result<Value, DispatchError> {
     match tool_name {
         "speak" => {
             #[derive(Deserialize)]
@@ -68,7 +56,10 @@ pub fn dispatch(
             }
             let args: Args = parse_args(arguments, tool_name)?;
             let result = tools::speak(&args.message);
-            Ok(ToolResult::Speak(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         "play_behavior" => {
             #[derive(Deserialize)]
@@ -77,15 +68,24 @@ pub fn dispatch(
             }
             let args: Args = parse_args(arguments, tool_name)?;
             let result = tools::play_behavior(&args.behavior);
-            Ok(ToolResult::PlayBehavior(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         "list_windows" => {
             let result = tools::list_windows(context.window_source, &context.denylist);
-            Ok(ToolResult::ListWindows(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         "describe_screen" => {
             let result = tools::describe_screen(context.window_source, &context.denylist);
-            Ok(ToolResult::DescribeScreen(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         "recall" => {
             let memory = MemoryManifest::new(&context.memory_path);
@@ -93,7 +93,10 @@ pub fn dispatch(
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to recall: {}", e),
             })?;
-            Ok(ToolResult::Recall(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         "remember" => {
             #[derive(Deserialize)]
@@ -108,11 +111,17 @@ pub fn dispatch(
                     code: ErrorCode::ExecutionFailed,
                     message: format!("Failed to remember: {}", e),
                 })?;
-            Ok(ToolResult::Remember(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         "list_instances" => {
             let result = tools::list_instances(context.roster);
-            Ok(ToolResult::ListInstances(result))
+            serde_json::to_value(&result).map_err(|e| DispatchError {
+                code: ErrorCode::ExecutionFailed,
+                message: format!("Failed to serialize result: {}", e),
+            })
         }
         _ => Err(DispatchError {
             code: ErrorCode::UnknownTool,
@@ -299,13 +308,8 @@ mod tests {
         let args = json!({"message": "Hello, world"});
         let result = dispatch("speak", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::Speak(r) => {
-                assert!(r.success);
-                assert_eq!(r.message, "Hello, world");
-            }
-            _ => panic!("expected SpeakResult"),
-        }
+        assert_eq!(result["success"], true);
+        assert_eq!(result["message"], "Hello, world");
     }
 
     #[test]
@@ -317,13 +321,8 @@ mod tests {
         let args = json!({"behavior": "wave"});
         let result = dispatch("play_behavior", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::PlayBehavior(r) => {
-                assert!(r.success);
-                assert_eq!(r.behavior, "wave");
-            }
-            _ => panic!("expected PlayBehaviorResult"),
-        }
+        assert_eq!(result["success"], true);
+        assert_eq!(result["behavior"], "wave");
     }
 
     #[test]
@@ -335,13 +334,9 @@ mod tests {
         let args = json!({});
         let result = dispatch("list_windows", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::ListWindows(r) => {
-                assert_eq!(r.windows.len(), 1);
-                assert_eq!(r.windows[0].owner, "Terminal");
-            }
-            _ => panic!("expected ListWindowsResult"),
-        }
+        let windows = result["windows"].as_array().expect("windows is array");
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0]["owner"], "Terminal");
     }
 
     #[test]
@@ -353,13 +348,11 @@ mod tests {
         let args = json!({});
         let result = dispatch("describe_screen", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::DescribeScreen(r) => {
-                assert!(r.description.contains("1 visible window"));
-                assert!(r.description.contains("Safari"));
-            }
-            _ => panic!("expected DescribeScreenResult"),
-        }
+        let description = result["description"]
+            .as_str()
+            .expect("description is string");
+        assert!(description.contains("1 visible window"));
+        assert!(description.contains("Safari"));
     }
 
     #[test]
@@ -376,12 +369,8 @@ mod tests {
         let args = json!({});
         let result = dispatch("recall", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::Recall(r) => {
-                assert!(r.content.contains("The user likes coffee"));
-            }
-            _ => panic!("expected RecallResult"),
-        }
+        let content = result["content"].as_str().expect("content is string");
+        assert!(content.contains("The user likes coffee"));
     }
 
     #[test]
@@ -393,12 +382,7 @@ mod tests {
         let args = json!({"heading": "Facts", "fact": "The user's name is Oded"});
         let result = dispatch("remember", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::Remember(r) => {
-                assert_eq!(r.recorded, "- The user's name is Oded");
-            }
-            _ => panic!("expected RememberResult"),
-        }
+        assert_eq!(result["recorded"], "- The user's name is Oded");
     }
 
     #[test]
@@ -420,14 +404,10 @@ mod tests {
         let args = json!({});
         let result = dispatch("list_instances", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::ListInstances(r) => {
-                assert_eq!(r.instances.len(), 2);
-                assert_eq!(r.instances[0].id, "inst-1");
-                assert_eq!(r.instances[0].name, "Clippy");
-            }
-            _ => panic!("expected ListInstancesResult"),
-        }
+        let instances = result["instances"].as_array().expect("instances is array");
+        assert_eq!(instances.len(), 2);
+        assert_eq!(instances[0]["id"], "inst-1");
+        assert_eq!(instances[0]["name"], "Clippy");
     }
 
     #[test]
@@ -508,13 +488,9 @@ mod tests {
         let args = json!({});
         let result = dispatch("list_windows", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::ListWindows(r) => {
-                assert_eq!(r.windows.len(), 1);
-                assert_eq!(r.windows[0].owner, "Terminal");
-            }
-            _ => panic!("expected ListWindowsResult"),
-        }
+        let windows = result["windows"].as_array().expect("windows is array");
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0]["owner"], "Terminal");
     }
 
     #[test]
@@ -534,13 +510,11 @@ mod tests {
         let args = json!({});
         let result = dispatch("describe_screen", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::DescribeScreen(r) => {
-                assert!(r.description.contains("Terminal"));
-                assert!(!r.description.contains("1Password"));
-            }
-            _ => panic!("expected DescribeScreenResult"),
-        }
+        let description = result["description"]
+            .as_str()
+            .expect("description is string");
+        assert!(description.contains("Terminal"));
+        assert!(!description.contains("1Password"));
     }
 
     #[test]
@@ -552,11 +526,7 @@ mod tests {
         let args = json!({});
         let result = dispatch("list_instances", args, &context).expect("dispatch succeeds");
 
-        match result {
-            ToolResult::ListInstances(r) => {
-                assert_eq!(r.instances.len(), 0);
-            }
-            _ => panic!("expected ListInstancesResult"),
-        }
+        let instances = result["instances"].as_array().expect("instances is array");
+        assert_eq!(instances.len(), 0);
     }
 }
