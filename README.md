@@ -129,7 +129,7 @@ Three, and each earns its place:
 | Toolchain | Needed for | Needed to build? |
 |---|---|---|
 | **Rust** | everything: the core crate, the Tauri shell | yes |
-| **Python** | `pre-commit`, and the Characters' frame generators | no |
+| **Python** | `pre-commit`, the Characters' frame generators, and the pet importer (the one script that needs Pillow) | no |
 | **Node** | the renderer's unit tests, and nothing else | no |
 
 Node is the newest and the least obvious, so: the webview front end has been
@@ -491,6 +491,89 @@ python3 scripts/make-blip-character.py
 Standard library only, so there is nothing to install, which is the same reason
 Nim is generated the same way.
 
+### Importing a pet
+
+`scripts/import-pet.py` translates a pet from another desktop-pet ecosystem
+into a Character Package, once. An authoring tool rather than a build step: the
+output lands in a directory you review, hand-tune, and own — not a runtime
+dependency and not a live bridge (#112). It is the one script allowed to need
+Pillow, because petscodex ships webp sprite sheets and decoding webp rules out
+the standard library.
+
+Two formats have adapters:
+
+- **petscodex** — [petscodex.com](https://petscodex.com/)'s fixed-grid sprite
+  sheets. `npx petscodex install <id>` lands a pack at `~/.codex/pets/<id>/`;
+  the importer slices it by petdex's row semantics and builds the whole
+  Required Animation Set, with `waiting` as an idle `variant_of` ring member.
+- **shimeji** — Shimeji-ee packs: per-pose PNGs plus the pack's `actions.xml`
+  naming pose sequences, every frame mirrored to head right. A pack of bare
+  `shime*.png` files with no conf (shimejishop distributes these) rides
+  Shimeji-ee's standard conf instead.
+
+Pillow lives in a [uv](https://docs.astral.sh/uv/)-managed virtual
+environment, never in a system Python:
+
+```sh
+uv venv
+uv pip install pillow
+
+npx petscodex list
+npx petscodex install labubu
+.venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
+    -o characters/labubu --accept-license
+cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
+```
+
+The first run after an import rebuilds, which refreshes the shipped-character
+copy beside the binary; `AI_BUDDY_CHARACTERS=/path/to/characters` skips the
+rebuild by searching the directory itself.
+
+The importer notices a missing Pillow and says exactly this rather than
+tracing back.
+
+A `.zip` works as a source wherever a directory does, `--force` replaces an
+existing output directory, and `--stand` names the on-screen height in
+logical pixels when the default band (100–130, where a shimeji stands) is
+not the right size for the pet. The importer prints the pet's license and
+refuses a silently-unknown one without `--accept-license`; an import is a
+development asset unless its license says otherwise, and one that ships gets a
+line in [Prior art and attribution](#prior-art-and-attribution). Success is
+declared only after `character::load` accepts the output, through a validator
+that is also useful on its own:
+
+```sh
+cargo run -p ai-buddy-core --example validate -- characters/labubu
+```
+
+Then look at the frames — the tool says so at the end of every run, because
+two things are the reviewer's to judge, not code's:
+
+- **Walk must head right**; the Engine's facing mirrors it for leftward
+  travel. Every petscodex pet sampled so far draws petdex's "running-right"
+  row heading left, so the importer cuts walk from the other row by default.
+  `--walk-row 1` picks the first row anyway, and `--mirror-walk` flips
+  whichever row is chosen, for the pet whose only clean walk heads left.
+- **Sleep must read as sleep.** petscodex has no sleep row, so the importer
+  synthesizes one: idle's stillest frame, twice, the second lifted a pixel as
+  the breath. Swap in a better pose when the sheet has one.
+- **Every animation must read as its name.** The row semantics are labels
+  each generated pet interprets loosely — one pet's "jumping" row is a sword
+  lunge, and its sleeping art lives in the "waiting" row. `--map` recuts an
+  animation from the row the pet actually drew: `--map sleep=6:2,3` takes
+  frames 2 and 3 of row 6, `--map react=7` takes all of row 7. Remaps are
+  recorded in the manifest header.
+- **A personality is authored, never derived.** The importer writes no
+  `personality.txt` — the pet's own description is provenance, not a voice.
+  Write one that fits the art, the way the shipped characters' read.
+
+`characters/cat/` is the first shipped import — petscodex's `cat`, with the
+defaults. The importer's self-test runs with no pet installed:
+
+```sh
+.venv/bin/python scripts/import-pet.py --self-test
+```
+
 ## Prior art and attribution
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) is the reference for a
@@ -510,6 +593,12 @@ BMO's frames are cut from the free
 flipped to head right, with a one-pixel breathing shift added for sleep. BMO
 is Cartoon Network IP and the pack is fan art; the character is a development
 asset, and none of this repository's license claims cover that art.
+
+Cat's frames are cut from the [petscodex](https://petscodex.com/pets/cat) pet
+`cat` by `scripts/import-pet.py` (#112). The installed package declares no
+license, so the import was accepted with `--accept-license`; the character is
+a development asset, and none of this repository's license claims cover that
+art.
 
 ## License
 
