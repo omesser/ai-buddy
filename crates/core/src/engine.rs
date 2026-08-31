@@ -632,13 +632,25 @@ impl Engine {
                     self.coast_s += dt;
                     let t = self.coast_s;
                     if let Some(origin) = self.last_perch.map(|perch| perch.rect) {
-                        self.position.x = origin.x
-                            + self.hold_offset_x
-                            + self.perch_velocity.x * t
-                            + 0.5 * self.perch_acceleration.x * t * t;
-                        self.position.y = origin.y
-                            + self.perch_velocity.y * t
-                            + 0.5 * self.perch_acceleration.y * t * t;
+                        let coasted = Point {
+                            x: origin.x
+                                + self.hold_offset_x
+                                + self.perch_velocity.x * t
+                                + 0.5 * self.perch_acceleration.x * t * t,
+                            y: origin.y
+                                + self.perch_velocity.y * t
+                                + 0.5 * self.perch_acceleration.y * t * t,
+                        };
+                        // A coast places the sprite with no sample to approve
+                        // it, and it runs on every tick the poll is late
+                        // rather than on one — so an extrapolation off the
+                        // displays is a long absence, not a frame of one. It
+                        // lets go instead. #128.
+                        if !on_a_display(coasted, snapshot) {
+                            self.rest_perch();
+                            return Some(Contact::Airborne);
+                        }
+                        self.position = coasted;
                     }
                     self.riding = true;
                     return Some(Contact::Standing);
@@ -674,8 +686,10 @@ impl Engine {
         };
         let current = snapshot.windows[index];
         // An edge you cannot see is gone, whether the sprite was landing or
-        // already standing on it. #100.
-        if !is_perch(index, self.position.x, snapshot) {
+        // already standing on it. #100. Asked at the arrival x, because both
+        // answers below place the sprite and a sideways ride carries it as
+        // far as the window went. #128.
+        if !is_perch(index, self.arrival_x(current), snapshot) {
             return PerchCarry::Lost;
         }
         let delta = Point {
@@ -731,9 +745,15 @@ impl Engine {
             || self.perch_acceleration.y != 0.0
     }
 
+    /// Where `place_on` will put the feet, which is what a ride has to ask
+    /// its questions about rather than about where they are. #128.
+    fn arrival_x(&self, window: Window) -> f64 {
+        window.rect.x + self.hold_offset_x
+    }
+
     /// Put the sprite back on `window` at the offset it was holding.
     fn place_on(&mut self, window: Window) {
-        self.position.x = window.rect.x + self.hold_offset_x;
+        self.position.x = self.arrival_x(window);
         self.position.y = window.rect.y;
     }
 
@@ -1036,12 +1056,20 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
     let window = &snapshot.windows[index].rect;
     window.spans_x(x)
-        && displays_spanning(x, snapshot).any(|display| {
-            window.y >= display.y + CEILING_CLEARANCE && window.y <= display.bottom()
-        })
+        && on_a_display(Point { x, y: window.y }, snapshot)
         && !snapshot.windows[..index].iter().any(|front| {
             front.rect.spans_x(x) && window.y >= front.rect.y && window.y <= front.rect.bottom()
         })
+}
+
+/// Whether the feet can be put down at `position`: some display covers it,
+/// with the room the art needs above. The second of `is_perch`'s three
+/// questions, on its own because a ride between polls has no window sample to
+/// ask the other two of and still must not place the sprite out there. #128.
+fn on_a_display(position: Point, snapshot: &WorldSnapshot) -> bool {
+    displays_spanning(position.x, snapshot).any(|display| {
+        position.y >= display.y + CEILING_CLEARANCE && position.y <= display.bottom()
+    })
 }
 
 /// What a resting sprite is standing on: its Perch, unless a window in front
@@ -1236,6 +1264,42 @@ mod tests {
     /// come to rest, and returns the last frame.
     fn settle(engine: &mut Engine, snapshot: &WorldSnapshot) -> Frame {
         (0..40).map(|_| engine.tick(snapshot)).last().unwrap()
+    }
+
+    /// Whether a display covers `position` — the invariant #5 and #85
+    /// criterion 9 are about, asked of a point rather than of a resting place.
+    fn covered(position: Point, snapshot: &WorldSnapshot) -> bool {
+        snapshot.displays.iter().any(|display| {
+            display.spans_x(position.x) && position.y >= display.y && position.y <= display.bottom()
+        })
+    }
+
+    /// A Perch on a second display too short to hold it, `x` points along.
+    /// Nothing covers x 1000..2000 outside y 300..500, and nothing at all
+    /// covers past x 2000, so a window dragged right runs its edge out of the
+    /// displays while still spanning the sprite.
+    fn strip_perch(x: f64) -> WorldSnapshot {
+        WorldSnapshot {
+            displays: vec![
+                one_display(),
+                Rect {
+                    x: 1000.0,
+                    y: 300.0,
+                    width: 1000.0,
+                    height: 200.0,
+                },
+            ],
+            windows: vec![window(
+                1,
+                Rect {
+                    x,
+                    y: 450.0,
+                    width: 600.0,
+                    height: 200.0,
+                },
+            )],
+            ..snapshot(100)
+        }
     }
 
     /// A day in the life, as snapshots: the sprite falls onto a window, the
@@ -2936,6 +3000,77 @@ mod tests {
         );
     }
 
+    /// #128: the sideways half of the same criterion. Vertically the Perch is
+    /// what moves, so asking where the sprite stands asks where it will be;
+    /// sideways the sprite moves with the edge, and the x it is leaving
+    /// answers for a point the ride is about to abandon. It has to be off the
+    /// displays on the tick it is drawn there, which is why this watches every
+    /// tick rather than settling first.
+    #[test]
+    fn a_sideways_ride_never_carries_the_sprite_where_no_display_covers() {
+        let mut engine = Engine::new(Point {
+            x: 1950.0,
+            y: 350.0,
+        });
+        let perched = settle(&mut engine, &strip_perch(1400.0));
+        assert_eq!(
+            perched.position,
+            Point {
+                x: 1950.0,
+                y: 450.0
+            }
+        );
+
+        // 20 points a poll — 200 pt/s, well under the gate — dragged right
+        // until the sprite's hold on the edge is past x 2000, which the third
+        // step is: 1460 plus the 550 it holds at.
+        for x in [1420.0, 1440.0, 1460.0, 1480.0] {
+            let frame = engine.tick(&strip_perch(x));
+            assert!(
+                covered(frame.position, &strip_perch(x)),
+                "carried off the displays with the window at {x}: {frame:?}"
+            );
+        }
+
+        // And it stays on a display for every tick of the fall that follows.
+        for _ in 0..40 {
+            let frame = engine.tick(&strip_perch(1480.0));
+            assert!(
+                covered(frame.position, &strip_perch(1480.0)),
+                "fell off the displays after letting go: {frame:?}"
+            );
+        }
+    }
+
+    /// #128 again, on the other way a ride places the sprite. Between polls
+    /// the window list is stale and the sprite coasts on the last Perch
+    /// velocity (#98), which no sample gets to approve — so a coast runs off
+    /// the displays for as many ticks as the poll is late rather than for one.
+    #[test]
+    fn a_coast_never_carries_the_sprite_where_no_display_covers() {
+        let mut engine = Engine::new(Point {
+            x: 1950.0,
+            y: 350.0,
+        });
+        settle(&mut engine, &strip_perch(1400.0));
+
+        // One fresh sample 20 points to the right: 200 pt/s of ride to coast
+        // on, and 1990 is the last hold this side of the union's edge.
+        let mut sample = strip_perch(1420.0);
+        sample.poll_generation = 1;
+        assert_eq!(engine.tick(&sample).position.x, 1970.0);
+
+        // The same generation from here on: the assembler has not read again,
+        // and 200 pt/s of coast crosses x 2000 on the second tick.
+        for _ in 0..8 {
+            let frame = engine.tick(&sample);
+            assert!(
+                covered(frame.position, &sample),
+                "coasted off the displays: {frame:?}"
+            );
+        }
+    }
+
     /// #85 criterion 8: maximizing moves the top edge a long way in one step,
     /// which is a yank by definition. The new edge is perfectly good to stand
     /// on — only the gate catches this — so a naive implementation snaps the
@@ -3531,12 +3666,7 @@ mod tests {
         let landed = settle(&mut engine, &world);
         assert_eq!(landed.state, State::Grounded);
         assert!(
-            world
-                .displays
-                .iter()
-                .any(|display| display.spans_x(landed.position.x)
-                    && landed.position.y >= display.y
-                    && landed.position.y <= display.bottom()),
+            covered(landed.position, &world),
             "it came to rest somewhere a display covers: {landed:?}"
         );
     }
