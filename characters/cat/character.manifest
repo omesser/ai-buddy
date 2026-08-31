@@ -1,0 +1,86 @@
+# Cat imported from petscodex (petdex) by scripts/import-pet.py.
+# Source pet id: cat — https://petscodex.com/pets/cat
+# Mapping: idle<-row 0, walk<-running-left row 2 (the one
+# drawn heading right), talk<-waving row 3, fall/land/hold<-jumping
+# row 4, react<-failed row 5, waiting<-row 6 (idle variant),
+# sit<-review row 8; sleep is idle's stillest frame with a one-pixel
+# breath. The other walk row (the engine mirrors instead) and row 7
+# (running in place) go unused.
+# License: not declared by the source package; accepted at import
+# with --accept-license. A development asset unless its license
+# says otherwise.
+
+name = "Cat"
+render_mode = "smooth"
+scale = 1
+
+[animations.idle]
+frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
+fps = 5
+
+[animations.waiting]
+frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
+fps = 6
+variant_of = "idle"
+
+[animations.walk]
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
+fps = 8
+
+[animations.talk]
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png"]
+fps = 6
+
+[animations.fall]
+frames = ["frames/fall-0.png", "frames/fall-1.png"]
+fps = 6
+
+[animations.land]
+frames = ["frames/land-0.png", "frames/land-1.png"]
+fps = 6
+loop = "once"
+
+[animations.hold]
+frames = ["frames/hold-0.png", "frames/hold-1.png"]
+fps = 6
+
+[animations.react]
+frames = ["frames/react-0.png", "frames/react-1.png", "frames/react-2.png", "frames/react-3.png", "frames/react-4.png", "frames/react-5.png", "frames/react-6.png", "frames/react-7.png"]
+fps = 7
+loop = "once"
+
+[animations.sit]
+frames = ["frames/sit-0.png", "frames/sit-1.png", "frames/sit-2.png", "frames/sit-3.png", "frames/sit-4.png", "frames/sit-5.png"]
+fps = 6
+
+[animations.sleep]
+frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
+fps = 1
+
+# A starter life, copied from BMO's — tune it to the pet.
+[behaviors.walk]
+play = ["walk"]
+weight = 1
+when = "idle over 30s"
+
+[behaviors.patrol]
+play = ["walk", "idle", "walk"]
+then = "walk"
+weight = 3
+when = "idle over 2m"
+
+[behaviors.fidget]
+play = ["idle"]
+weight = 2
+when = "idle over 10s"
+
+[behaviors.report]
+play = ["talk", "idle", "talk"]
+weight = 3
+when = "idle under 1m"
+
+[behaviors.greet]
+play = ["talk"]
+then = "patrol"
+weight = 4
+when = "idle under 10s"

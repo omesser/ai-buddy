@@ -511,6 +511,12 @@ flipped to head right, with a one-pixel breathing shift added for sleep. BMO
 is Cartoon Network IP and the pack is fan art; the character is a development
 asset, and none of this repository's license claims cover that art.
 
+Cat's frames are cut from the [petscodex](https://petscodex.com/pets/cat) pet
+`cat` by `scripts/import-pet.py` (#112). The installed package declares no
+license, so the import was accepted with `--accept-license`; the character is
+a development asset, and none of this repository's license claims cover that
+art.
+
 ## License
 
 MIT.

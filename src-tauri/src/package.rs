@@ -476,6 +476,7 @@ mod tests {
             ("black-mage", "Black Mage", "ponder", 4, "meditate"),
             ("blip", "Blip", "greet", 2, "settle"),
             ("bmo", "BMO", "report", 3, "patrol"),
+            ("cat", "Cat", "report", 3, "patrol"),
             ("nim", "Nim", "doze", 5, "doze"),
         ];
 
