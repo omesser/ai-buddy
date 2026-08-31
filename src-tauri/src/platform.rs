@@ -29,7 +29,14 @@ pub struct Displays {
     /// stopped at the usable edge would clip it there.
     pub frames: Vec<Rect>,
     /// The part of each display a sprite may occupy, in logical points.
+    ///
+    /// When the Dock's true bounds are known, the floor of its display drops
+    /// to the display's own bottom edge (`floor_under_dock`): the strip the
+    /// work area reserved is the Dock itself, which arrives as `dock`.
     pub usable_frames: Vec<Rect>,
+    /// The Dock's true bounds and which source produced them; see
+    /// `macos::dock_bounds` for the chain. `None` keeps the full-width strip.
+    pub dock: Option<(Rect, DockSource)>,
     /// The scale factor the windowing layer measures the global cursor
     /// against.
     ///
@@ -46,9 +53,19 @@ impl Default for Displays {
         Self {
             frames: Vec::new(),
             usable_frames: Vec::new(),
+            dock: None,
             cursor_scale: 1.0,
         }
     }
+}
+
+/// Which rung of the Dock-geometry chain answered; see `macos::dock_bounds`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockSource {
+    /// `CoreDockGetRect`, the private SPI: exact, no grant needed.
+    CoreDock,
+    /// The Accessibility API, where trust was already granted.
+    Accessibility,
 }
 
 /// The last read of the displays, shared between the refresh and its readers.
@@ -158,7 +175,11 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
                 });
             }
 
-            cache.read().usable_frames
+            let displays = cache.read();
+            (
+                displays.usable_frames,
+                displays.dock.map(|(bounds, _)| bounds),
+            )
         }
     });
 
@@ -211,6 +232,14 @@ impl WindowSource for DisplayOnlySource {
         ai_buddy_core::window_source::WorldGeometry {
             usable_frames: self.0.read().usable_frames,
             windows: Vec::new(),
+            // Not a gap in Dock sensing but in the platform underneath it:
+            // there is no window source here at all yet. When an X11 one
+            // lands, its taskbar counterpart is `_NET_WM_STRUT_PARTIAL` on
+            // windows of `_NET_WM_WINDOW_TYPE_DOCK` — exact per-edge extents
+            // with start and end, the very thing macOS needed a private SPI
+            // for — behind the same `plausible_dock` gate. Wayland offers
+            // nothing global, which is the degraded mode already described.
+            dock: None,
         }
     }
 }
@@ -233,7 +262,7 @@ impl WindowSource for DisplayOnlySource {
 /// `window_source::usable_frame`, where it is tested; this only asks the
 /// windowing layer what it can see.
 fn read_displays(app: &tauri::AppHandle) -> Displays {
-    use ai_buddy_core::window_source::{in_points, usable_frame};
+    use ai_buddy_core::window_source::{floor_under_dock, in_points, plausible_dock, usable_frame};
 
     let Ok(monitors) = app.available_monitors() else {
         return Displays::default();
@@ -271,5 +300,35 @@ fn read_displays(app: &tauri::AppHandle) -> Displays {
             .push(usable_frame(frame, work, monitor.scale_factor()));
     }
 
+    // With the Dock's true bounds in hand, the strip its work area reserved
+    // is the Dock itself: the floor of that display drops to the display's
+    // own bottom edge, and the Dock rides along as a Perch. The claim comes
+    // from an unversioned source, so it is believed only when some display's
+    // work area agrees it is shaped and placed like a Dock.
+    displays.dock = exact_dock().filter(|(bounds, _)| {
+        displays
+            .frames
+            .iter()
+            .zip(&displays.usable_frames)
+            .any(|(frame, usable)| plausible_dock(bounds, *frame, *usable))
+    });
+    if let Some((dock, _)) = &displays.dock {
+        for (usable, frame) in displays.usable_frames.iter_mut().zip(&displays.frames) {
+            *usable = floor_under_dock(*usable, *frame, dock);
+        }
+    }
+
     displays
+}
+
+/// The Dock's true bounds — macOS, over the SPI-then-Accessibility chain,
+/// and nothing anywhere else. Never prompts; see `macos::dock_bounds`.
+#[cfg(target_os = "macos")]
+fn exact_dock() -> Option<(Rect, DockSource)> {
+    macos::dock_bounds()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_dock() -> Option<(Rect, DockSource)> {
+    None
 }

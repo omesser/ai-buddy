@@ -114,8 +114,15 @@ impl<S: WindowSource> SnapshotAssembler<S> {
 }
 
 /// Name the surface under `feet`. A Perch is a window (owner, not title);
-/// the usable floor is the Dock's top; a display's left or right is an edge.
+/// the usable floor is the Dock's top — or, when the Dock's true bounds are
+/// known, the Dock is its own surface and the floor runs beside it; a
+/// display's left or right is an edge.
 pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
+    if let Some(dock) = &geometry.dock {
+        if feet.y == dock.y && feet.x >= dock.x && feet.x <= dock.x + dock.width {
+            return "the top of the Dock".to_string();
+        }
+    }
     for window in geometry
         .windows
         .iter()
@@ -135,7 +142,16 @@ pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
         let right = display.x + display.width;
         let bottom = display.y + display.height;
         if feet.y == bottom && feet.x >= display.x && feet.x <= right {
-            return "the display floor, above the Dock".to_string();
+            // With the Dock's bounds known the floor reaches the display's
+            // own bottom edge, so "above the Dock" would name the wrong
+            // side — and only on the display that actually holds the Dock.
+            return match &geometry.dock {
+                Some(dock) if crate::window_source::centered_in(dock, *display) => {
+                    "the display floor, beside the Dock".to_string()
+                }
+                Some(_) => "the display floor".to_string(),
+                None => "the display floor, above the Dock".to_string(),
+            };
         }
         if feet.y >= display.y && feet.y <= bottom && (feet.x == display.x || feet.x == right) {
             return "the screen edge".to_string();
@@ -162,17 +178,30 @@ fn world_snapshot(
     verbs: Vec<Verb>,
     poll_generation: u64,
 ) -> WorldSnapshot {
+    let mut windows: Vec<Window> = geometry
+        .windows
+        .iter()
+        .filter(|w| perch_eligible(w.layer))
+        .map(|w| Window {
+            id: w.id,
+            rect: rect(w.bounds),
+        })
+        .collect();
+    if let Some(dock) = &geometry.dock {
+        // Frontmost, because the Dock draws above every application window:
+        // a fall over the Dock lands on the Dock, never on a window hiding
+        // underneath it.
+        windows.insert(
+            0,
+            Window {
+                id: DOCK_PERCH_ID,
+                rect: rect(*dock),
+            },
+        );
+    }
     WorldSnapshot {
         displays: geometry.usable_frames.iter().copied().map(rect).collect(),
-        windows: geometry
-            .windows
-            .iter()
-            .filter(|w| perch_eligible(w.layer))
-            .map(|w| Window {
-                id: w.id,
-                rect: rect(w.bounds),
-            })
-            .collect(),
+        windows,
         cursor,
         elapsed_ms,
         verbs,
@@ -183,6 +212,15 @@ fn world_snapshot(
     }
 }
 
+/// The Perch id the Dock stands behind when its true bounds are known.
+///
+/// The Dock is not an application window, so the window server never hands it
+/// a place in the id space this could collide with: every macOS `CGWindowID`
+/// is 32-bit and widens into the low half of `WindowId`. A constant id keeps
+/// the Dock the same Perch across polls, which is what lets a sprite ride a
+/// Dock that resizes (#109).
+pub const DOCK_PERCH_ID: crate::window_source::WindowId = crate::window_source::WindowId::MAX;
+
 /// Whether a window at this level is somewhere the sprite may stand.
 ///
 /// Only the ordinary application level is. Everything above it is the desktop's
@@ -191,6 +229,9 @@ fn world_snapshot(
 /// sprite that treats furniture as a Perch lands on the menu bar the moment it
 /// is let go and never falls again. Everything below it is the desktop picture
 /// and its notifications, which are behind the sprite rather than under it.
+/// The one piece of furniture worth standing on — the Dock — arrives with its
+/// true bounds as `WorldGeometry::dock` when the platform can see them, and
+/// becomes a Perch above, not through this filter.
 fn perch_eligible(layer: i32) -> bool {
     layer == 0
 }
@@ -286,6 +327,7 @@ mod tests {
                     .map(|&width| WorldGeometry {
                         usable_frames: vec![rect(0.0, 0.0, width, 800.0)],
                         windows: Vec::new(),
+                        dock: None,
                     })
                     .collect(),
             ))
@@ -308,6 +350,7 @@ mod tests {
             WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, self.0.get(), 800.0)],
                 windows: Vec::new(),
+                dock: None,
             }
         }
     }
@@ -337,6 +380,7 @@ mod tests {
                     window(1, "Terminal", rect(10.0, 20.0, 800.0, 600.0)),
                     window(2, "Finder", rect(30.0, 40.0, 500.0, 400.0)),
                 ],
+                dock: None,
             },
         };
 
@@ -464,6 +508,7 @@ mod tests {
                         -2_147_483_601,
                     ),
                 ],
+                dock: None,
             },
         };
 
@@ -499,6 +544,7 @@ mod tests {
                     rect(0.0, 0.0, 1920.0, 30.0),
                     24,
                 )],
+                dock: None,
             },
         });
         let mut engine = Engine::new(Point { x: 960.0, y: 0.0 });
@@ -531,6 +577,7 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 30.0, 1920.0, 952.0)],
                 windows: Vec::new(),
+                dock: None,
             },
         });
         let mut engine = Engine::new(Point { x: 960.0, y: 40.0 });
@@ -547,6 +594,100 @@ mod tests {
         );
     }
 
+    /// The world the Shell hands over once the Dock's true bounds are known
+    /// (Accessibility already granted): the floor runs to the display's own
+    /// bottom edge and the Dock is a Perch. Values read off the desktop the
+    /// bug was reported on — a 1920x1080 display, the Dock's island 234
+    /// points in from either side.
+    fn dock_aware_desktop() -> WorldGeometry {
+        WorldGeometry {
+            usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
+            windows: Vec::new(),
+            dock: Some(rect(234.0, 978.0, 1452.0, 92.0)),
+        }
+    }
+
+    /// Over the Dock, the Dock is still what the sprite rests on — #39's
+    /// guarantee, now carried by a Perch instead of a full-width floor.
+    #[test]
+    fn a_sprite_over_the_dock_rests_on_the_dock() {
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: dock_aware_desktop(),
+        });
+        let mut engine = Engine::new(Point { x: 960.0, y: 40.0 });
+
+        let landed = (0..100)
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
+            .last()
+            .expect("a hundred ticks produce a hundred frames");
+
+        assert_eq!(landed.state, State::Perched, "the Dock is a Perch now");
+        assert_eq!(
+            landed.position.y, 978.0,
+            "the Dock's own top edge, where the island actually is"
+        );
+    }
+
+    /// The bug this world model fixes: the Dock does not stretch to the sides
+    /// of the display, and a sprite beyond its real end used to stand on the
+    /// full-width strip — walking on air. Beside the Dock the floor is the
+    /// display's own bottom edge.
+    #[test]
+    fn a_sprite_beside_the_dock_falls_to_the_display_bottom() {
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: dock_aware_desktop(),
+        });
+        let mut engine = Engine::new(Point { x: 100.0, y: 40.0 });
+
+        let landed = (0..100)
+            .map(|_| engine.tick(&assembler.assemble(20, Point::default(), Vec::new())))
+            .last()
+            .expect("a hundred ticks produce a hundred frames");
+
+        assert_eq!(landed.state, State::Grounded);
+        assert_eq!(
+            landed.position.y, 1080.0,
+            "the display's bottom edge, not the Dock-top strip hanging in air"
+        );
+    }
+
+    /// The Director hears the difference too — and only on the display that
+    /// actually holds the Dock. A second display's floor is nowhere near it.
+    #[test]
+    fn standing_names_the_dock_and_the_floor_beside_it() {
+        let mut desktop = dock_aware_desktop();
+        desktop
+            .usable_frames
+            .push(rect(1920.0, 33.0, 1728.0, 1084.0));
+
+        assert_eq!(
+            describe_standing(Point { x: 960.0, y: 978.0 }, &desktop),
+            "the top of the Dock"
+        );
+        assert_eq!(
+            describe_standing(
+                Point {
+                    x: 100.0,
+                    y: 1080.0
+                },
+                &desktop
+            ),
+            "the display floor, beside the Dock"
+        );
+        assert_eq!(
+            describe_standing(
+                Point {
+                    x: 2500.0,
+                    y: 1117.0
+                },
+                &desktop
+            ),
+            "the display floor"
+        );
+    }
+
     /// #39 asked for this to be asserted rather than assumed: a Dock that hides
     /// gives its strip back, and the sprite resting on it is standing on
     /// nothing. Nothing new was needed to make it work — resting is only ever
@@ -558,6 +699,7 @@ mod tests {
         let dock = || WorldGeometry {
             usable_frames: vec![rect(0.0, 30.0, 1920.0, 952.0)],
             windows: Vec::new(),
+            dock: None,
         };
         let mut assembler = SnapshotAssembler::new(FakeWindowSource {
             capabilities: seeing_everything(),
@@ -578,6 +720,7 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
                 windows: Vec::new(),
+                dock: None,
             },
         });
 
@@ -607,6 +750,7 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
                 windows: Vec::new(),
+                dock: None,
             },
         });
         let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
@@ -662,6 +806,7 @@ mod tests {
                 rect(1920.0, 33.0, 1728.0, 1084.0),
             ],
             windows: Vec::new(),
+            dock: None,
         };
 
         assert_eq!(
@@ -679,6 +824,7 @@ mod tests {
             usable_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
             // Spans the middle of the display, so the sprite starts above it.
             windows: vec![window(1, "Terminal", rect(400.0, 500.0, 300.0, 200.0))],
+            dock: None,
         };
         let start = starting_position(&desktop);
         assert_eq!(
@@ -707,6 +853,7 @@ mod tests {
         let desktop = WorldGeometry {
             usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
             windows: vec![window(1, "Cursor", rect(100.0, 200.0, 800.0, 600.0))],
+            dock: None,
         };
         assert_eq!(
             describe_standing(Point { x: 140.0, y: 200.0 }, &desktop),
@@ -733,6 +880,7 @@ mod tests {
         let desktop = WorldGeometry {
             usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
             windows: vec![elevated(1, "Dock", rect(0.0, 1050.0, 1920.0, 80.0), 20)],
+            dock: None,
         };
         assert_eq!(
             describe_standing(

@@ -22,19 +22,22 @@ pub struct MacosWindowSource {
     /// covers the whole display the sprite is on, so a sprite allowed to see it
     /// would find a Perch under its own feet and never fall again.
     own_pid: i32,
-    /// Where the usable part of each display comes from.
+    /// Where the usable part of each display comes from, and the Dock's true
+    /// bounds when Accessibility lets the Shell read them.
     ///
     /// Supplied rather than read here, because the reserved strips are the
     /// window manager's answer and this module only speaks to the window
     /// server.
-    read_usable_frames: Box<dyn Fn() -> Vec<Rect> + Send + Sync>,
+    read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
 }
 
 impl MacosWindowSource {
-    pub fn new(read_usable_frames: impl Fn() -> Vec<Rect> + Send + Sync + 'static) -> Self {
+    pub fn new(
+        read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
+    ) -> Self {
         Self {
             own_pid: std::process::id() as i32,
-            read_usable_frames: Box::new(read_usable_frames),
+            read_displays: Box::new(read_displays),
         }
     }
 }
@@ -48,9 +51,11 @@ impl WindowSource for MacosWindowSource {
     }
 
     fn read(&self) -> WorldGeometry {
+        let (usable_frames, dock) = (self.read_displays)();
         WorldGeometry {
-            usable_frames: (self.read_usable_frames)(),
+            usable_frames,
             windows: visible_windows(self.own_pid),
+            dock,
         }
     }
 }
@@ -161,12 +166,15 @@ mod tests {
         // Displays are the window manager's answer and arrive from the Shell,
         // so this stands one in. Windows are what this test watches.
         let source = MacosWindowSource::new(|| {
-            vec![Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 1920.0,
-                height: 1080.0,
-            }]
+            (
+                vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                None,
+            )
         });
         let start = std::time::Instant::now();
         let deadline = start + std::time::Duration::from_secs(5);

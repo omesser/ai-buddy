@@ -296,6 +296,7 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows,
+                dock: None,
             },
         }
     }

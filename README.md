@@ -274,6 +274,14 @@ can answer it. Run the app, then confirm:
    visible. Then turn on Dock auto-hiding in System Settings: within a poll the
    sprite falls the rest of the way to the bottom of the screen, because the
    Dock gave the space back. Turn it off and the sprite is lifted again.
+
+   The Dock does not stretch to the sides of the screen, and the sprite knows
+   it: a walk past the Dock's real end falls to the true bottom of the screen,
+   and standing on the Dock is standing on the island the screen actually
+   shows. The exact rectangle comes from a chain the startup log names —
+   a private SPI that needs no consent, then the Accessibility API where that
+   trust was already granted (never prompted for), then the full-width
+   work-area strip as the fallback where neither answers.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of the
    Blip whose idle declares a faster `fps`, and the idle bob is visibly faster
    than it was at the declared 3. Editing the repository's own
