@@ -64,8 +64,11 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds, ceilingCleara
     flipped = true;
   }
 
+  const unclamped = x;
   x = Math.max(displayBounds.x, Math.min(x, displayBounds.x + displayBounds.width - bubbleSize.width));
   y = Math.max(displayBounds.y, Math.min(y, displayBounds.y + displayBounds.height - bubbleSize.height));
 
-  return { x, y, flipped };
+  const tailOffset = spriteCenterX - (x + bubbleSize.width / 2);
+
+  return { x, y, flipped, tailOffset };
 }

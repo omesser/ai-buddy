@@ -40,7 +40,7 @@ body {
   position: absolute;
   bottom: -10px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% + var(--tail-offset, 0px)));
   width: 0;
   height: 0;
   border-left: 10px solid transparent;

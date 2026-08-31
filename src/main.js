@@ -45,6 +45,8 @@ let speechTimeout = null;
 let thinkingGraceTimeout = null;
 let thinkingMinHoldTimeout = null;
 let thinkingShown = false;
+let lastLatchedDialogue = null;
+let lastLatchedThinking = false;
 const THINKING_GRACE_MS = 250;
 const THINKING_MIN_HOLD_MS = 600;
 
@@ -84,6 +86,9 @@ function draw(now) {
       clearThinkingBubble();
     }
   } else {
+    bubble.style.opacity = "";
+    thinkingBubble.style.opacity = "";
+
     // Reposition visible bubbles to follow walking sprite
     const spriteRect = {
       x: spriteX,
@@ -107,6 +112,8 @@ function draw(now) {
     }
   }
 
+  latchBubbles();
+
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === drawn) {
     return;
@@ -122,8 +129,6 @@ function draw(now) {
   sprite.dataset.animation = latest.animation;
   sprite.dataset.frameIndex = latest.frame_index;
   sprite.style.visibility = "visible";
-
-  updateBubbles();
 }
 
 function positionBubble(element, spriteRect, displayBounds) {
@@ -135,10 +140,21 @@ function positionBubble(element, spriteRect, displayBounds) {
   element.style.left = `${pos.x}px`;
   element.style.top = `${pos.y}px`;
   element.classList.toggle("flipped", pos.flipped);
+  element.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
 }
 
-function updateBubbles() {
+function latchBubbles() {
   if (!latest) return;
+
+  const dialogueChanged = latest.dialogue !== lastLatchedDialogue;
+  const thinkingChanged = latest.thinking !== lastLatchedThinking;
+
+  if (!dialogueChanged && !thinkingChanged) {
+    return;
+  }
+
+  lastLatchedDialogue = latest.dialogue;
+  lastLatchedThinking = latest.thinking;
 
   const spriteRect = {
     x: latest.x,
@@ -169,9 +185,10 @@ function updateBubbles() {
     positionBubble(bubble, spriteRect, displayBounds);
 
     const duration = bubbleDuration(latest.dialogue);
+    const fadeMs = latest.fade_ms || 0;
     speechTimeout = setTimeout(() => {
       bubble.classList.remove("visible");
-      setTimeout(() => bubble.classList.add("hidden"), 300);
+      setTimeout(() => bubble.classList.add("hidden"), fadeMs);
     }, duration);
 
     clearThinkingBubble();
@@ -221,7 +238,8 @@ function clearThinkingBubble() {
     thinkingMinHoldTimeout = null;
   }
   thinkingBubble.classList.remove("visible");
-  setTimeout(() => thinkingBubble.classList.add("hidden"), 300);
+  const fadeMs = latest?.fade_ms || 0;
+  setTimeout(() => thinkingBubble.classList.add("hidden"), fadeMs);
   thinkingShown = false;
 }
 

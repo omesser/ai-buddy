@@ -54,6 +54,7 @@ test("bubble placement stays above sprite by default", () => {
   assert.ok(pos.x >= displayBounds.x, "bubble is within display left");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble is within display right");
   assert.equal(pos.flipped, false, "not flipped when above");
+  assert.equal(pos.tailOffset, 0, "tail centered when bubble not clamped");
 });
 
 test("bubble flips below sprite when near ceiling", () => {
@@ -77,6 +78,9 @@ test("bubble slides horizontally at display edges", () => {
   assert.ok(pos.x >= displayBounds.x, "bubble clamped to left edge");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble within right bound");
   assert.equal(typeof pos.flipped, "boolean", "flipped flag is present");
+  const spriteCenterX = spriteNearLeftEdge.x + spriteNearLeftEdge.width / 2;
+  const bubbleCenterX = pos.x + bubbleSize.width / 2;
+  assert.equal(pos.tailOffset, spriteCenterX - bubbleCenterX, "tail offset points to sprite");
 });
 
 test("bubble stays whole across display seam", () => {
