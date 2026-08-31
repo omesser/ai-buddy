@@ -9,6 +9,13 @@ decoding webp rules out the standard library. It is the one script allowed to.
     python3 scripts/import-pet.py ~/.codex/pets/cat --format petscodex -o characters/cat
     python3 scripts/import-pet.py --self-test
 
+A pack from an ecosystem with no machine-readable convention has no adapter
+and cannot have one, so `--format frames` runs in two passes instead: the
+first sheets and numbers every PNG and writes a skeleton Character Manifest,
+a human reads the sheet and fills the frame lists, and the second pass turns
+that worksheet into a package. Only the second pass aligns anything — see
+`write_skeleton`.
+
 The importer prints the pet's license, and warns when it is undeclared or not
 one of the permissive ones in KNOWN_LICENSES. It warns rather than refuses:
 whoever imports a pet is who ships it. Success is declared only after the
@@ -19,6 +26,7 @@ output passes
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -782,7 +790,250 @@ def read_shimeji(source, name=None):
     }
 
 
-FORMATS = ("petscodex", "shimeji")
+# The Required Animation Set (character::REQUIRED_ANIMATIONS) and the fps an
+# Animation plays at when it declares none (character::DEFAULT_FPS). A
+# skeleton declares all nine so the human fills in a form rather than
+# remembers a list; `once` is the loop the other two adapters chose for the
+# two animations that hold their last frame.
+REQUIRED_ANIMATIONS = ("idle", "walk", "fall", "land", "sit", "sleep",
+                       "react", "talk", "hold")
+DEFAULT_FPS = 8
+PLAY_ONCE = ("land", "react")
+
+MANIFEST_FILE = "character.manifest"
+CONTACT_SHEET_FILE = "contact-sheet.png"
+
+# The contact sheet: eight thumbnails to a row on a mid grey, which is the one
+# backing that shows both dark and light art through a frame's transparency.
+CONTACT_COLUMNS = 8
+CONTACT_THUMB = 96
+CONTACT_LABEL = 14
+CONTACT_BACKING = (0x99, 0x99, 0x99, 255)
+
+# What the frame index opens with, and so the cut the finishing pass makes in
+# a worksheet's comment header: everything below indexed the source pack, and
+# the package being finished has animations instead.
+FRAME_INDEX_HEADING = "Frame index"
+
+
+def natural_key(name):
+    """A frame's place in the contact sheet's numbering. Packs number frames
+    without padding (shime2.png, shime10.png), which sorts wrong as text and
+    would hand the human an index its own filenames contradict."""
+    return [
+        int(part) if part.isdigit() else part
+        for part in re.split(r"(\d+)", name.lower())
+    ]
+
+
+def pack_pngs(source):
+    """Every PNG in a pack, contact-sheet order, as (frame file name, image).
+
+    The name flattens the pack's own directories: a pack may hold both
+    img/shime1.png and img2/shime1.png, and a frame the manifest names has to
+    be one file."""
+    from PIL import Image
+
+    paths = sorted(
+        (p for p in source.rglob("*") if p.suffix.lower() == ".png"),
+        key=lambda p: natural_key(p.relative_to(source).as_posix()),
+    )
+    if not paths:
+        sys.exit(f"{source}: no PNGs anywhere — there is nothing to sheet")
+    return [
+        (path.relative_to(source).as_posix().replace("/", "-"),
+         Image.open(path).convert("RGBA"))
+        for path in paths
+    ]
+
+
+def contact_sheet(frames):
+    """The pack as a numbered grid, one labeled cell per source frame.
+
+    The whole of what the frames mode offers a human: no convention names
+    these poses, so somebody with eyes reads the sheet and writes the frame
+    files into the skeleton's lists. Thumbnails are for telling poses apart
+    and nothing else — facing and detail are judged at full size."""
+    from PIL import Image, ImageDraw, ImageOps
+
+    labels = [f"{i}  {name}" for i, (name, _) in enumerate(frames)]
+    ruler = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    width = max(CONTACT_THUMB,
+                max(round(ruler.textlength(label)) for label in labels) + 8)
+    height = CONTACT_THUMB + CONTACT_LABEL
+    rows = -(-len(frames) // CONTACT_COLUMNS)
+    sheet = Image.new(
+        "RGBA", (width * CONTACT_COLUMNS, height * rows), (255, 255, 255, 255)
+    )
+    draw = ImageDraw.Draw(sheet)
+    for i, ((_, frame), label) in enumerate(zip(frames, labels)):
+        x = (i % CONTACT_COLUMNS) * width
+        y = (i // CONTACT_COLUMNS) * height
+        draw.rectangle((x, y, x + width - 1, y + CONTACT_THUMB - 1), CONTACT_BACKING)
+        thumb = ImageOps.contain(
+            frame,
+            (CONTACT_THUMB, CONTACT_THUMB),
+            Image.NEAREST if frame.height < CONTACT_THUMB else Image.LANCZOS,
+        )
+        sheet.paste(
+            thumb,
+            (x + (width - thumb.width) // 2,
+             y + (CONTACT_THUMB - thumb.height) // 2),
+            thumb,
+        )
+        draw.text((x + 4, y + CONTACT_THUMB + 2), label, fill=(0, 0, 0, 255))
+    return sheet
+
+
+def write_skeleton(source, out, name):
+    """The first pass over a pack no convention can read: a numbered contact
+    sheet, the frames as they arrived, and a Character Manifest with the
+    Required Animation Set declared and every frame list empty.
+
+    Not a Character Package, and `character::load` says so — an Animation
+    with no frames is rejected. It is a worksheet, and the frames go in
+    untouched because a skeleton cannot know which of them form an animation:
+    every alignment decision `emit` makes is per animation, and the
+    collective baseline of frames nobody has grouped yet is not a thing that
+    exists. `read_frames` does that work on the second pass, once the human
+    has answered the only question the tool cannot."""
+    frames = pack_pngs(source)
+    frames_dir = out / "frames"
+    frames_dir.mkdir(parents=True)
+    for path, frame in frames:
+        frame.save(frames_dir / path)
+    contact_sheet(frames).save(out / CONTACT_SHEET_FILE)
+
+    # Everything above the cut outlives the worksheet: it is the provenance
+    # the finished package carries, so it says what is true of both files.
+    header = [
+        f"{name}: imported from a pack with no machine-readable convention,",
+        "by scripts/import-pet.py. Nothing in the pack names a pose, so every",
+        "frame list here was categorized by hand from a contact sheet.",
+        f"Source: {source}",
+        "",
+        f"{FRAME_INDEX_HEADING}: this pack's frames, numbered as",
+        f"{CONTACT_SHEET_FILE} numbers them. Every frames list below is",
+        "still empty; fill each one from this index, then re-run the importer",
+        "over this directory to align, scale and finish the package. That",
+        "pass drops this block, and rewrites the render_mode and scale under",
+        "it — both are placeholders until there are animations to measure.",
+        "",
+    ]
+    header += [f"frame {i}: frames/{path}" for i, (path, _) in enumerate(frames)]
+    animations = {
+        animation: {
+            "frames": [],
+            "fps": DEFAULT_FPS,
+            "loop": "once" if animation in PLAY_ONCE else "forever",
+            "variant_of": None,
+        }
+        for animation in REQUIRED_ANIMATIONS
+    }
+    mode = render_mode(*measure(frames[0][1]))
+    (out / MANIFEST_FILE).write_text(
+        manifest_text(name, mode, 1, header + license_header(None), animations)
+    )
+
+    print(f"{name}: {len(frames)} frames, a contact sheet and a skeleton "
+          f"manifest in {out}")
+    print("the skeleton is a worksheet, not a Character Package: every "
+          "animation declares no frames, and character::load rejects that")
+    print(f"read {out / CONTACT_SHEET_FILE}, write each animation's frames "
+          f"list into {out / MANIFEST_FILE} from the index at its top, then "
+          "finish the import:")
+    print(f"  {sys.argv[0]} {out} --format frames -o characters/<id>")
+
+
+def read_frames(source, name=None):
+    """A filled worksheet back into the importer's common shape — the second
+    half of the frames mode, and where a frames import finally gets the
+    defringe, resample, registration and baseline planting `emit` gives the
+    other two adapters on their first pass.
+
+    Reading the manifest with `tomllib` rather than a regex is ADR-0008 taken
+    at its word: the Character Manifest is TOML, and a hand-filled one is
+    written however TOML lets a person write it."""
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        sys.exit("the frames finishing pass parses TOML, which needs Python "
+                 "3.11 or newer:\n"
+                 "  uv venv --python 3.12 && uv pip install pillow")
+    from PIL import Image
+
+    text = (source / MANIFEST_FILE).read_text()
+    try:
+        declared = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as why:
+        sys.exit(f"{source / MANIFEST_FILE}: {why}")
+    name = declared.get("name") or name or source.name
+
+    tables = declared.get("animations") or {}
+    empty = [a for a in REQUIRED_ANIMATIONS if not tables.get(a, {}).get("frames")]
+    if empty:
+        sys.exit(f"{source / MANIFEST_FILE} still declares no frames for "
+                 + ", ".join(empty)
+                 + f"; fill every list from {CONTACT_SHEET_FILE} first")
+
+    cache = {}
+
+    def art(path):
+        if path not in cache:
+            file = source / path
+            if not file.is_file():
+                sys.exit(f"{MANIFEST_FILE} names the frame {path!r}, "
+                         f"which is not in {source}")
+            cache[path] = Image.open(file).convert("RGBA")
+        return cache[path]
+
+    animations = {}
+    for animation, table in tables.items():
+        paths = table.get("frames")
+        if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+            sys.exit(f"animation {animation!r}: frames is a list of frame "
+                     'files, as frames = ["frames/pose1.png"]')
+        # A pose sequence may name a frame twice (a walk is often 1,2,1,3);
+        # write each distinct frame once and let the manifest repeat the path.
+        unique = list(dict.fromkeys(paths))
+        animations[animation] = {
+            "frames": [art(path) for path in unique],
+            "order": [unique.index(path) for path in paths],
+            "fps": table.get("fps", DEFAULT_FPS),
+            "loop": table.get("loop", "forever"),
+            "variant_of": table.get("variant_of"),
+        }
+
+    # The worksheet's comment header, minus its worksheet half: the frame
+    # index numbered a pack that no longer describes this package, and the
+    # license paragraph is `emit`'s to append. Whatever the human wrote above
+    # the cut is provenance, and survives.
+    header = []
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            break
+        line = line[2:] if line.startswith("# ") else line[1:]
+        if line.startswith(FRAME_INDEX_HEADING):
+            break
+        header.append(line)
+    while header and not header[-1]:
+        header.pop()
+    if not header:
+        header = [f"{name} imported from a pack with no machine-readable "
+                  "convention, by scripts/import-pet.py."]
+
+    return {
+        "name": name,
+        # An unknown ecosystem is an unknown license on both passes. Nothing
+        # in a bare pack of PNGs declares one, and the importer will not
+        # infer one from a filename.
+        "license": None,
+        "header": header,
+        "animations": animations,
+    }
+
+
+FORMATS = ("petscodex", "shimeji", "frames")
 
 
 def emit(pet, out, validate=True, stand=None):
@@ -909,10 +1160,23 @@ def require_pillow():
         )
 
 
+def replace_out(out, force):
+    """Clear the output directory, or stop rather than overwrite one nobody
+    said to."""
+    if out.exists():
+        if not force:
+            sys.exit(f"{out} exists; --force replaces it")
+        shutil.rmtree(out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("source", nargs="?", help="pet directory or zip")
-    parser.add_argument("--format", choices=FORMATS, dest="ecosystem")
+    parser.add_argument("--format", choices=FORMATS, dest="ecosystem",
+                        help="the source ecosystem, or 'frames' for a pack "
+                             "with no convention to read: that mode sheets "
+                             "the frames for a human, then finishes the "
+                             "package from what they wrote")
     parser.add_argument("-o", "--out", type=pathlib.Path)
     parser.add_argument("--walk-row", type=int, choices=(1, 2), default=2,
                         help="petscodex: the sheet row to cut walk from. Row 2 "
@@ -946,34 +1210,49 @@ def main():
         unpacked = tempfile.mkdtemp(prefix="import-pet-")
         zipfile.ZipFile(source).extractall(unpacked)
         source = pathlib.Path(unpacked)
+    # A zip unpacks to a temp directory, so the pack's own name comes from
+    # the path the user gave, not from where it landed.
+    stem = pathlib.Path(args.source).expanduser().stem
+
+    if args.ecosystem == "frames" and not (source / MANIFEST_FILE).is_file():
+        # A manifest in the source is what tells the two frames passes apart:
+        # a bare pack has never been categorized, so a worksheet is all there
+        # is to write, and a worksheet is not a package to validate.
+        print("license: none declared")
+        print(license_warning(None), file=sys.stderr)
+        replace_out(args.out, args.force)
+        write_skeleton(source, args.out, stem)
+        return
+
     if args.ecosystem == "petscodex":
         overrides = {}
         for text in args.mappings:
             animation, row, indices = parse_mapping(text)
             overrides[animation] = (row, indices)
         pet = read_petscodex(source, args.walk_row, args.mirror_walk, overrides)
+    elif args.ecosystem == "shimeji":
+        pet = read_shimeji(source, stem)
     else:
-        # A zip unpacks to a temp directory, so the pack's own name comes
-        # from the path the user gave, not from where it landed.
-        pet = read_shimeji(source, pathlib.Path(args.source).expanduser().stem)
+        pet = read_frames(source, stem)
 
     print(f"license: {pet['license'] or 'none declared'}")
     warning = license_warning(pet["license"])
     if warning:
         print(warning, file=sys.stderr)
 
-    if args.out.exists():
-        if not args.force:
-            sys.exit(f"{args.out} exists; --force replaces it")
-        shutil.rmtree(args.out)
+    replace_out(args.out, args.force)
     emit(pet, args.out, stand=args.stand)
     if args.ecosystem == "petscodex":
         print("review the output before shipping it: walk must head right "
               "(--walk-row picks the other row; --mirror-walk flips it), and "
               "every animation must read as its name — a pet whose art "
               "strays from the row semantics is recut with --map")
-    else:
+    elif args.ecosystem == "shimeji":
         print("review the output before shipping it — walk must head right")
+    else:
+        print("review the output before shipping it — walk must head right, "
+              "and the frames mode mirrors nothing: art that heads left "
+              "stays that way")
     print("no personality.txt is written: author one to fit the art, the way "
           "the shipped characters' read")
     print(f"run it: AI_BUDDY_CHARACTER={args.out.name} cargo run — the next "
@@ -1206,6 +1485,76 @@ def self_test():
         assert len(pack["animations"]["hold"]["frames"]) == len(
             {image for image, _ in SHIMEJI_DEFAULT_ACTIONS["Pinched"]}
         )
+
+    # A convention-less pack: PNGs in a subdirectory whose names carry no
+    # pose semantics and do not sort numerically as text.
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = pathlib.Path(tmp)
+        pack = tmp / "mystery"
+        (pack / "img").mkdir(parents=True)
+        for n in (1, 2, 10):
+            art = Image.new("RGBA", (12, 12), (0, 0, 0, 0))
+            for y in range(3, 9 + n % 3):
+                art.putpixel((4, y), (20 * n, 40, 50, 255))
+            art.save(pack / "img" / f"pose{n}.png")
+
+        out = tmp / "skeleton"
+        write_skeleton(pack, out, "Mystery")
+        skeleton = (out / MANIFEST_FILE).read_text()
+        # Nine required animations, every one of them awaiting a human.
+        for required in REQUIRED_ANIMATIONS:
+            assert f"[animations.{required}]" in skeleton, required
+        assert skeleton.count("frames = []") == len(REQUIRED_ANIMATIONS)
+        assert f"fps = {DEFAULT_FPS}" in skeleton
+        # The frame index is numbered in the contact sheet's order, which is
+        # natural: pose10 comes after pose2, not after pose1.
+        assert "# frame 1: frames/img-pose2.png" in skeleton
+        assert "# frame 2: frames/img-pose10.png" in skeleton
+        # An unknown ecosystem is an unknown license, every time.
+        assert "none declared" in skeleton
+        assert (out / "frames" / "img-pose1.png").exists()
+        sheet = Image.open(out / CONTACT_SHEET_FILE)
+        assert sheet.width >= CONTACT_THUMB and sheet.height > CONTACT_THUMB
+
+        # An unfilled skeleton stops with instructions, not a traceback.
+        try:
+            read_frames(out)
+        except SystemExit as stopped:
+            assert "idle" in str(stopped), stopped
+        else:
+            assert False, "an unfilled skeleton must stop"
+
+        # The human's half of the work, done here by hand: every animation
+        # gets the same two frames, which is enough to exercise the pass.
+        (out / MANIFEST_FILE).write_text(skeleton.replace(
+            "frames = []",
+            'frames = ["frames/img-pose1.png", "frames/img-pose2.png"]',
+        ))
+        pet = read_frames(out)
+        assert set(pet["animations"]) == set(REQUIRED_ANIMATIONS)
+        assert pet["name"] == "Mystery"
+        assert pet["license"] is None
+        # Provenance survives the second pass; the frame index does not — it
+        # indexed the pack, and this manifest names animations now.
+        assert any("Source:" in line for line in pet["header"]), pet["header"]
+        assert not any(line.startswith(FRAME_INDEX_HEADING) for line in pet["header"])
+        assert not any(re.match(r"frame \d+:", line) for line in pet["header"])
+
+        package = tmp / "package"
+        emit(pet, package, validate=False)
+        manifest = (package / MANIFEST_FILE).read_text()
+        assert '"frames/idle-0.png"' in manifest
+        # The license paragraph is written once, not once per pass.
+        assert manifest.count("License:") == 1
+        # The frames path owns no alignment until here: this is where every
+        # animation's collective baseline finally lands on the canvas bottom.
+        for animation in REQUIRED_ANIMATIONS:
+            placed = [
+                Image.open(path)
+                for path in sorted((package / "frames").glob(f"{animation}-*.png"))
+            ]
+            ground = max(f.getchannel("A").getbbox()[3] for f in placed)
+            assert ground == placed[0].height, animation
 
     print("self-test: ok")
 

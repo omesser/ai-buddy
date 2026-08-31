@@ -515,11 +515,25 @@ Two formats have adapters:
   `shime*.png` files with no conf (shimejishop distributes these) rides
   Shimeji-ee's standard conf instead.
 
+Everything else gets `--format frames`, which reads no convention because
+there is none to read. It runs in two passes with a human in the middle. The
+first numbers every PNG in the pack onto a contact sheet and writes a skeleton
+Character Manifest whose nine required animations declare no frames; somebody
+reads the sheet and fills those lists in; the second pass turns that worksheet
+into a package. A skeleton is not a Character Package — `character::load`
+rejects an Animation with no frames, and should. Alignment and scaling belong
+to the second pass for the same reason the frame lists do: every decision the
+importer makes about a baseline is per Animation, and a frame nobody has
+assigned to one has no baseline to plant. An unknown ecosystem is also an
+unknown license, so a frames import always carries the undeclared-license
+warning.
+
 Pillow lives in a [uv](https://docs.astral.sh/uv/)-managed virtual
-environment, never in a system Python:
+environment, never in a system Python. Python 3.11 or newer, because the
+frames mode reads the filled manifest back with `tomllib`:
 
 ```sh
-uv venv
+uv venv --python 3.12
 uv pip install pillow
 
 npx petscodex list
@@ -527,6 +541,17 @@ npx petscodex install labubu
 .venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
     -o characters/labubu
 cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
+```
+
+A pack with no convention takes the long way round:
+
+```sh
+.venv/bin/python scripts/import-pet.py ~/Downloads/some-pack --format frames \
+    -o /tmp/some-pack-worksheet
+# read /tmp/some-pack-worksheet/contact-sheet.png, then fill every frames list
+# in /tmp/some-pack-worksheet/character.manifest from the index at its top
+.venv/bin/python scripts/import-pet.py /tmp/some-pack-worksheet --format frames \
+    -o characters/some-pack
 ```
 
 The first run after an import rebuilds, which refreshes the shipped-character
