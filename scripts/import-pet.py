@@ -208,6 +208,97 @@ def solid_mask(frame):
     return frame.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
 
 
+def defringe(frame):
+    """Strip the matte halo a generator leaves around the silhouette. The
+    halo is painted, not mixed — the cat's sheet keeps its fringe and even
+    a one-pixel rim matte green at every alpha, so un-matting math cannot
+    recover art from it. Instead, when a frame's fringe is dominated by one
+    color channel, every matte-colored pixel adopts the color of its
+    nearest normal opaque pixel, alpha kept, so the halo reads as more fur.
+    Matte-colored art with no body nearby (a deliberate whisker tip) stays,
+    and a frame with an unremarkable fringe (a hand-drawn shimeji pack, or
+    one this pass already cleaned) is untouched. Colored garbage hiding
+    under alpha zero is cleared on the way."""
+    pixels = frame.load()
+    width, height = frame.size
+    fringe = [0, 0, 0, 0]
+    body = [0, 0, 0, 0]
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            if 0 < a < 255:
+                fringe[0] += r; fringe[1] += g; fringe[2] += b; fringe[3] += 1
+            elif a == 255:
+                body[0] += r; body[1] += g; body[2] += b; body[3] += 1
+    if fringe[3] < 50 or body[3] == 0:
+        return frame
+    average = [channel / fringe[3] for channel in fringe[:3]]
+    dominant = average.index(max(average))
+    others = [i for i in range(3) if i != dominant]
+    if not all(average[dominant] > 1.6 * average[i] + 1 for i in others):
+        return frame
+    # A pet that is simply green wears the fringe of its own body; only a
+    # tint the opaque art does not share is a matte.
+    body_average = [channel / body[3] for channel in body[:3]]
+    if all(body_average[dominant] > 1.3 * body_average[i] for i in others):
+        return frame
+
+    def tinted(color):
+        # 1.3 catches the half-mixed matte left where fringe met art; only
+        # the frame's one matte channel is ever tested, so art tinted on
+        # any other channel is out of reach by construction.
+        return all(color[dominant] > 1.3 * color[i] for i in others) and (
+            color[dominant] > 0
+        )
+
+    def matte_like(color):
+        # The floor splits the halo's bright half (recolored from a donor)
+        # from its dark half (just clamped); true black outlines have no
+        # dominant channel and match neither.
+        return color[dominant] > 25 and tinted(color)
+
+    ring = sorted(
+        ((dx, dy) for dx in range(-4, 5) for dy in range(-4, 5) if dx or dy),
+        key=lambda step: step[0] ** 2 + step[1] ** 2,
+    )
+
+    def neutralized(color, alpha):
+        flat = list(color)
+        flat[dominant] = max(color[i] for i in others)
+        return tuple(flat) + (alpha,)
+
+    # Writes wait until the scan ends, so a recolored pixel never donates.
+    changes = []
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            if a == 0:
+                if r or g or b:
+                    changes.append((x, y, (0, 0, 0, 0)))
+                continue
+            color = (r, g, b)
+            if not matte_like(color):
+                # A near-black pixel with the matte's tint: too dark for a
+                # donor to matter, so just clamp the tint away.
+                if tinted(color):
+                    changes.append((x, y, neutralized(color, a)))
+                continue
+            for dx, dy in ring:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < width and 0 <= ny < height:
+                    nr, ng, nb, na = pixels[nx, ny]
+                    if na == 255 and not tinted((nr, ng, nb)):
+                        changes.append((x, y, (nr, ng, nb, a)))
+                        break
+            else:
+                # No body within reach — an outer fringe wisp or a whisker
+                # stroke. Keep its shape, drop its tint.
+                changes.append((x, y, neutralized(color, a)))
+    for x, y, value in changes:
+        pixels[x, y] = value
+    return frame
+
+
 def strip_edge_bleed(frame):
     """Remove solid fragments glued to a cell's left or right edge — the
     neighboring frame's art, inherited where a pose crosses the sheet's grid
@@ -611,6 +702,8 @@ def emit(pet, out, validate=True):
     from PIL import Image
 
     animations = pet["animations"]
+    for spec in animations.values():
+        spec["frames"] = [defringe(frame) for frame in spec["frames"]]
     unions = {}
     for animation, spec in animations.items():
         union = union_bbox(spec["frames"])
@@ -624,15 +717,19 @@ def emit(pet, out, validate=True):
     factor, scale = import_scale(idle[3] - idle[1])
     mode = render_mode(*measure(animations["idle"]["frames"][0]))
     if factor != 1.0:
-        resample = Image.LANCZOS if mode == "smooth" else Image.NEAREST
         for spec in animations.values():
-            spec["frames"] = [
-                frame.resize(
-                    (round(frame.width * factor), round(frame.height * factor)),
-                    resample,
-                )
-                for frame in spec["frames"]
-            ]
+            resized = []
+            for frame in spec["frames"]:
+                size = (round(frame.width * factor), round(frame.height * factor))
+                if mode == "smooth":
+                    # Resample premultiplied: with straight alpha, the RGB
+                    # of invisible pixels bleeds into the resampled edge.
+                    resized.append(
+                        frame.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")
+                    )
+                else:
+                    resized.append(frame.resize(size, Image.NEAREST))
+            spec["frames"] = resized
         if mode == "pixelated":
             # The ADR-0006 quantisation pass: a resample drifts the palette,
             # so pin it back down. Untouched pixel art keeps its own.
@@ -834,6 +931,36 @@ def self_test():
 
     assert parse_mapping("sleep=6:3") == ("sleep", 6, (3,))
     assert parse_mapping("react=7") == ("react", 7, None)
+
+    # Defringe: a red square wearing a green halo — the halo adopts the
+    # body's red, a far green wisp survives, hidden matte is cleared.
+    matted = Image.new("RGBA", (30, 30), (0, 255, 0, 0))
+    for y in range(8, 22):
+        for x in range(8, 22):
+            matted.putpixel((x, y), (200, 0, 0, 255))
+    for i in range(8, 22):
+        for edge in ((i, 7), (i, 22), (7, i), (22, i)):
+            matted.putpixel(edge, (20, 110, 20, 128))
+    matted.putpixel((2, 2), (20, 110, 20, 200))
+    matted.putpixel((26, 26), (0, 20, 0, 255))
+    cleaned = defringe(matted)
+    assert cleaned.getpixel((5, 5)) == (0, 0, 0, 0)
+    assert cleaned.getpixel((10, 7)) == (200, 0, 0, 128)
+    # A wisp too far from the body keeps its shape and loses its tint.
+    assert cleaned.getpixel((2, 2)) == (20, 20, 20, 200)
+    assert cleaned.getpixel((26, 26)) == (0, 0, 0, 255)
+
+    # A pet that is simply green keeps its own colors: the fringe shares the
+    # body's hue, so nothing reads as a matte.
+    frog = Image.new("RGBA", (30, 30), (0, 0, 0, 0))
+    for y in range(8, 22):
+        for x in range(8, 22):
+            frog.putpixel((x, y), (30, 180, 40, 255))
+    for i in range(8, 22):
+        for edge in ((i, 7), (i, 22), (7, i), (22, i)):
+            frog.putpixel(edge, (25, 140, 30, 128))
+    kept = defringe(frog)
+    assert kept.getpixel((10, 7)) == (25, 140, 30, 128)
 
     # A synthetic v1 sheet, 8x8 cells: each declared frame is a 2x2 dot,
     # deliberately jittered per frame the way generated sheets are, so the
