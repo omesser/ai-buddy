@@ -29,7 +29,7 @@ variant_of = "idle"
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png", "frames/walk-8.png", "frames/walk-9.png", "frames/walk-10.png", "frames/walk-11.png"]
-fps = 8
+fps = 12
 
 [animations.talk]
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png", "frames/talk-4.png", "frames/talk-5.png"]
