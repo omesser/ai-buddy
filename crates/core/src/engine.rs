@@ -3961,7 +3961,7 @@ mod tests {
     }
 
     #[test]
-    fn a_character_standing_at_the_left_edge_faces_right() {
+    fn a_sprite_standing_at_the_left_edge_faces_right() {
         let mut engine = Engine::new(Point { x: 0.0, y: 400.0 });
 
         engine.tick(&WorldSnapshot {
@@ -3989,7 +3989,7 @@ mod tests {
     }
 
     #[test]
-    fn a_character_standing_at_the_right_edge_faces_left() {
+    fn a_sprite_standing_at_the_right_edge_faces_left() {
         let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
 
         engine.tick(&WorldSnapshot {
@@ -4017,7 +4017,7 @@ mod tests {
     }
 
     #[test]
-    fn a_character_at_left_edge_is_fully_on_screen() {
+    fn a_sprite_at_left_edge_is_fully_on_screen() {
         let mut engine = Engine::new(Point { x: 50.0, y: 400.0 });
 
         engine.tick(&WorldSnapshot {
@@ -4040,7 +4040,7 @@ mod tests {
     }
 
     #[test]
-    fn a_character_at_right_edge_is_fully_on_screen() {
+    fn a_sprite_at_right_edge_is_fully_on_screen() {
         let mut engine = Engine::new(Point { x: 950.0, y: 400.0 });
 
         engine.tick(&WorldSnapshot {
