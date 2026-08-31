@@ -20,9 +20,9 @@ _Avoid_: Skin, theme, mod, plugin
 
 **Character Manifest**:
 The declaration at the root of a Character Package: the frames, fps and loop
-mode of each Animation, the Behaviors the Character declares, and how unused
-model calls space themselves. Frame size and frame count are read from the art
-rather than declared.
+mode of each Animation, the Behaviors the Character declares, and how
+proactive model calls space themselves. Frame size and frame count are read
+from the art rather than declared.
 _Avoid_: Manifest on its own — a Memory Manifest is one too
 
 **Personality Prompt**:
@@ -83,6 +83,11 @@ The role that proposes a Behavior. Static weights fill it when no Harness is
 attached; an attached Harness fills it from the same conversation as chat.
 Never runs in the frame loop and never drives animation directly.
 _Avoid_: Brain, agent, planner
+
+**Proactive model call**:
+A Director session wake that fires because the buddy was left alone long
+enough, not because the user addressed it.
+_Avoid_: Unused model call, unused wake, active prompting
 
 **Perch**:
 A window's top edge treated as a one-way platform the sprite can land on, walk
@@ -186,5 +191,5 @@ _Avoid_: Chat bubble, message, tooltip
 **Thinking ellipsis**:
 Three animated dots in a bubble above the sprite, shown while a reactive
 Director turn is in flight (Poke, Summon, Throw). Appears after 250ms grace,
-held ≥600ms once shown. Ambient wakes stay invisible. #119.
+held ≥600ms once shown. Proactive wakes stay invisible. #119.
 _Avoid_: Loading, spinner, progress

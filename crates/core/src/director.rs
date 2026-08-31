@@ -195,8 +195,8 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
     recent.truncate(REMEMBERED);
 }
 
-/// Wait between unused model calls. Grows by `model_base.pow(model_power)`
-/// after each unused call, resets when the user addresses the buddy.
+/// Wait between proactive model calls. Grows by `model_base.pow(model_power)`
+/// after each proactive call, resets when the user addresses the buddy.
 /// The Character Manifest names those two. ADR-0008.
 #[derive(Clone, Debug)]
 pub struct Pace {
@@ -207,9 +207,9 @@ pub struct Pace {
 }
 
 impl Pace {
-    /// First ambient wait, and the value a reactive wake resets to.
+    /// First proactive wait, and the value a reactive wake resets to.
     pub const FIRST: Duration = Duration::from_secs(2 * 60);
-    /// Ceiling after repeated ambient wakes with no one addressing the buddy.
+    /// Ceiling after repeated proactive wakes with no one addressing the buddy.
     pub const CAP: Duration = Duration::from_secs(2 * 60 * 60);
 
     pub fn new() -> Self {
@@ -220,7 +220,7 @@ impl Pace {
         Self::with_growth(first, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER)
     }
 
-    /// `first` is the opening wait. After each unused model call,
+    /// `first` is the opening wait. After each proactive model call,
     /// the wait becomes `wait * base.pow(power)`, capped at `CAP`.
     pub fn with_growth(first: Duration, base: u32, power: u32) -> Self {
         let first = first.clamp(Duration::from_secs(1), Self::CAP);
@@ -276,7 +276,7 @@ pub fn due(
 
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
 ///
-/// Reactive when the user addressed the buddy. Ambient when `since_ambient`
+/// Reactive when the user addressed the buddy. Proactive when `since_ambient`
 /// has reached the current `Pace`. Never while the display is asleep. Quiet
 /// under Do Not Disturb so the Character stays visible and Poke still works;
 /// displays-asleep would drop Poke too.

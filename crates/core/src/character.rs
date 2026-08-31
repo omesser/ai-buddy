@@ -27,7 +27,7 @@
 //! without the Character gaining a jump.
 //!
 //! The Character Manifest is TOML (ADR-0008): a name, a table per Animation,
-//! a table per Behavior, and an optional `[director]` for how unused model
+//! a table per Behavior, and an optional `[director]` for how proactive model
 //! calls space themselves. TOML replaces only the container — the `when`
 //! condition is still this module's own small language, checked here. It stays
 //! internal and undocumented until v2, so this is the whole of it:
@@ -113,9 +113,9 @@ pub const DEFAULT_WEIGHT: u32 = 1;
 /// a package written before `scale` existed renders exactly as it did.
 pub const DEFAULT_SCALE: u32 = 4;
 
-/// How unused model-call waits grow when a Character does not say.
+/// How proactive model-call waits grow when no one addresses the buddy.
 ///
-/// `wait * model_base.pow(model_power)` after each unused model call.
+/// `wait * model_base.pow(model_power)` after each proactive model call.
 /// Two and one is the doubling Pace already had, so a package written
 /// before `[director]` existed backs off exactly as it did.
 pub const DEFAULT_MODEL_BASE: u32 = 2;
@@ -318,7 +318,7 @@ pub struct Character {
     pub smooth: bool,
     /// The integer factor the renderer draws the art at.
     pub scale: u32,
-    /// Unused model-call wait grows by `model_base.pow(model_power)`.
+    /// Proactive model-call wait grows by `model_base.pow(model_power)`.
     pub model_base: u32,
     pub model_power: u32,
 }
@@ -650,7 +650,7 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
     Some(declared)
 }
 
-/// `[director]`: how unused model calls space themselves.
+/// `[director]`: how proactive model calls space themselves.
 fn parse_director(item: &Item, manifest: &str, declared: &mut Declared, errors: &mut Vec<String>) {
     let Some(table) = item.as_table_like() else {
         errors.push(

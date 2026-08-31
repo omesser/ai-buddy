@@ -17,8 +17,8 @@ name = "Cat"
 render_mode = "smooth"
 scale = 1
 
-# Unused model calls: after each one nobody answered, the wait becomes
-# wait * model_base ^ model_power. Two and one doubles.
+# Proactive model calls: after each one with no one addressing the buddy,
+# the wait becomes wait * model_base ^ model_power. Two and one doubles.
 
 [director]
 model_base = 2
