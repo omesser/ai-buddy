@@ -13,14 +13,14 @@
 # do not cover the art.
 #
 # Hand-tuned after import: sit and sleep were adjacent cells of the
-# failed row, so each cycle mixed two poses. Sit keeps the desk-hunch
-# and breathes it. That same hunch is the start of sleep — he nods
-# off, then the face-down nap holds (`loop = "once"`). Land ends on
-# idle's rest frame — the jump row's last cell is a yellow burst, and
-# `loop = "once"` would hold it. Cycles slowed so the idle ring and
-# the wave read as motion, not a twitch. Walk stood shorter than idle;
-# it is scaled to the same height, then every frame is resampled to
-# 85% so he sits a bit smaller on the desk.
+# failed row, so each cycle mixed two poses. The desk-hunch is
+# sleep-0/1 — sit loops it, sleep plays it once and holds sleep-2
+# (the face-down nap). Land ends on idle's rest frame — the jump
+# row's last cell is a yellow burst, and `loop = "once"` would hold
+# it. Cycles slowed so the idle ring and the wave read as motion,
+# not a twitch. Walk stood shorter than idle; it is scaled to the
+# same height, then every frame is resampled to 85% so he sits a
+# bit smaller on the desk.
 
 name = "Trump"
 render_mode = "smooth"
@@ -68,13 +68,12 @@ frames = ["frames/react-0.png", "frames/react-1.png", "frames/react-2.png", "fra
 fps = 4
 loop = "once"
 
+# The desk-hunch is sleep's first two frames. Sit loops them; sleep
+# plays them once and holds the face-down nap.
 [animations.sit]
-frames = ["frames/sit-0.png", "frames/sit-1.png"]
+frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 2
 
-# Nod off on the sit, then stay face-down. `loop = "once"` holds the
-# last frame, which is the only way this sequence reads as sleep
-# rather than as a sit that keeps collapsing.
 [animations.sleep]
 frames = ["frames/sleep-0.png", "frames/sleep-1.png", "frames/sleep-2.png"]
 fps = 2
