@@ -38,8 +38,16 @@ fps = 6
 frames = ["frames/fall-0.png", "frames/fall-1.png"]
 fps = 6
 
+# Land ends on idle's rest frame, which the jump row does not provide: its
+# last frame is a yellow electric burst, and `loop = "once"` holds an
+# animation's last frame — so the row alone leaves the cat wreathed in
+# lightning for 430 of the Land Primitive's 600ms, which reads as damage
+# rather than as impact. Ending on the pose idle opens with keeps the row's
+# own drop-and-flash, leaves the burst a 170ms beat, and hands over to idle
+# without a step. A hand edit `--map` cannot express, since the rest frame
+# is row 0: a re-import drops it. #122.
 [animations.land]
-frames = ["frames/land-0.png", "frames/land-1.png"]
+frames = ["frames/land-0.png", "frames/land-1.png", "frames/idle-0.png"]
 fps = 6
 loop = "once"
 
