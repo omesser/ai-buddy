@@ -161,6 +161,42 @@ pub struct WorldGeometry {
     pub usable_frames: Vec<Rect>,
     /// Visible windows in descending z-order: frontmost first.
     pub windows: Vec<WindowRect>,
+    /// The Dock's true bounds, when the platform can see them.
+    ///
+    /// The work area only says the Dock's edge and thickness — a full-width
+    /// strip — while the Dock itself does not stretch to the sides of its
+    /// display. A platform that can read the real rectangle reports it here,
+    /// the Dock becomes a Perch (`snapshot`), and `floor_under_dock` gives the
+    /// floor beside it back to the sprite. `None` means unknown, and the
+    /// full-width strip stands in, as it always has.
+    pub dock: Option<Rect>,
+}
+
+/// The usable frame of the display that holds the Dock, once the Dock's true
+/// bounds are known.
+///
+/// The work area reserves a full-width strip because that is all the window
+/// manager will say. With the Dock's real rectangle in hand the reservation is
+/// the Dock itself — a Perch — and the floor drops to the display's own bottom
+/// edge, so a sprite walking off the Dock's end falls instead of standing on
+/// air. A display the Dock is not on keeps its work area unchanged, and so do
+/// the menu bar's strip and the side edges.
+pub fn floor_under_dock(usable: Rect, frame: Rect, dock: &Rect) -> Rect {
+    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
+    let holds_dock = center.0 >= frame.x
+        && center.0 <= frame.x + frame.width
+        && center.1 >= frame.y
+        && center.1 <= frame.y + frame.height;
+    if !holds_dock {
+        return usable;
+    }
+
+    Rect {
+        x: usable.x,
+        y: usable.y,
+        width: usable.width,
+        height: (frame.y + frame.height) - usable.y,
+    }
 }
 
 /// A platform's view of the desktop.
@@ -389,6 +425,47 @@ mod tests {
         }
     }
 
+    /// Literal values read off a running macOS 26 desktop: a 1920x1080 display,
+    /// a 30-point menu bar, the Dock's strip from 982 down, and the Dock's real
+    /// rectangle — 234 points in from either side — read over Accessibility.
+    #[test]
+    fn a_known_dock_gives_the_floor_beside_it_back() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+        let usable = rect(0.0, 30.0, 1920.0, 952.0);
+        let dock = rect(234.0, 978.0, 1452.0, 92.0);
+
+        let floor = floor_under_dock(usable, frame, &dock);
+
+        assert_eq!(
+            floor.y + floor.height,
+            1080.0,
+            "the floor drops to the display's own bottom edge"
+        );
+        assert_eq!(floor.y, 30.0, "the menu bar's strip is not touched");
+        assert_eq!((floor.x, floor.width), (0.0, 1920.0), "nor the sides");
+    }
+
+    /// The display beside it has no Dock, and must keep its own work area.
+    #[test]
+    fn a_display_without_the_dock_keeps_its_work_area() {
+        let frame = rect(1920.0, 0.0, 1728.0, 1117.0);
+        let usable = rect(1920.0, 33.0, 1728.0, 1084.0);
+        let dock = rect(234.0, 978.0, 1452.0, 92.0);
+
+        assert_eq!(floor_under_dock(usable, frame, &dock), usable);
+    }
+
+    /// A work area with no bottom strip — the Dock hidden, or on another
+    /// edge — has nothing to give back.
+    #[test]
+    fn a_floor_already_at_the_bottom_stays_where_it_is() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+        let usable = rect(0.0, 30.0, 1920.0, 1050.0);
+        let dock = rect(234.0, 978.0, 1452.0, 92.0);
+
+        assert_eq!(floor_under_dock(usable, frame, &dock), usable);
+    }
+
     /// The Wayland case: displays are known, windows are not.
     #[test]
     fn a_platform_without_window_geometry_yields_usable_frames_and_no_windows() {
@@ -400,6 +477,7 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![window(1, "Terminal", rect(10.0, 20.0, 800.0, 600.0))],
+                dock: None,
             },
         };
 
@@ -429,6 +507,7 @@ mod tests {
                     window(1, "Terminal", rect(10.0, 20.0, 800.0, 600.0)),
                     window(2, "Finder", rect(30.0, 40.0, 500.0, 400.0)),
                 ],
+                dock: None,
             },
         };
 

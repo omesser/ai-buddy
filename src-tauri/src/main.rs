@@ -999,6 +999,23 @@ fn main() {
             let (source, displays) = platform::window_source(app.handle().clone());
             let start = starting_position(&source.snapshot());
 
+            // Which Dock the physics got: the true rectangle, or the
+            // full-width strip the work area reserves. Printed because the
+            // difference is invisible until a sprite walks past the Dock's
+            // real end, and granting Accessibility is the only way to change
+            // it — the app never prompts (DESIGN.md decision 9).
+            if cfg!(target_os = "macos") {
+                match displays.read().dock {
+                    Some(dock) => eprintln!(
+                        "dock: true bounds via Accessibility, {}x{} at {},{}",
+                        dock.width, dock.height, dock.x, dock.y
+                    ),
+                    None => eprintln!(
+                        "dock: full-width floor; grant ai-buddy Accessibility for the Dock's true bounds"
+                    ),
+                }
+            }
+
             // One overlay per display, so a Character straddling a seam is
             // drawn whole. The frame loop keeps the set in step with a desktop
             // that gains or loses a display.

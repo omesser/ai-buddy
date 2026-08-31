@@ -29,7 +29,14 @@ pub struct Displays {
     /// stopped at the usable edge would clip it there.
     pub frames: Vec<Rect>,
     /// The part of each display a sprite may occupy, in logical points.
+    ///
+    /// When the Dock's true bounds are known, the floor of its display drops
+    /// to the display's own bottom edge (`floor_under_dock`): the strip the
+    /// work area reserved is the Dock itself, which arrives as `dock`.
     pub usable_frames: Vec<Rect>,
+    /// The Dock's true bounds, when Accessibility is granted; see
+    /// `macos::dock_bounds`. `None` keeps the full-width strip.
+    pub dock: Option<Rect>,
     /// The scale factor the windowing layer measures the global cursor
     /// against.
     ///
@@ -46,6 +53,7 @@ impl Default for Displays {
         Self {
             frames: Vec::new(),
             usable_frames: Vec::new(),
+            dock: None,
             cursor_scale: 1.0,
         }
     }
@@ -158,7 +166,8 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
                 });
             }
 
-            cache.read().usable_frames
+            let displays = cache.read();
+            (displays.usable_frames, displays.dock)
         }
     });
 
@@ -211,6 +220,7 @@ impl WindowSource for DisplayOnlySource {
         ai_buddy_core::window_source::WorldGeometry {
             usable_frames: self.0.read().usable_frames,
             windows: Vec::new(),
+            dock: None,
         }
     }
 }
@@ -233,7 +243,7 @@ impl WindowSource for DisplayOnlySource {
 /// `window_source::usable_frame`, where it is tested; this only asks the
 /// windowing layer what it can see.
 fn read_displays(app: &tauri::AppHandle) -> Displays {
-    use ai_buddy_core::window_source::{in_points, usable_frame};
+    use ai_buddy_core::window_source::{floor_under_dock, in_points, usable_frame};
 
     let Ok(monitors) = app.available_monitors() else {
         return Displays::default();
@@ -271,5 +281,27 @@ fn read_displays(app: &tauri::AppHandle) -> Displays {
             .push(usable_frame(frame, work, monitor.scale_factor()));
     }
 
+    // With the Dock's true bounds in hand, the strip its work area reserved
+    // is the Dock itself: the floor of that display drops to the display's
+    // own bottom edge, and the Dock rides along as a Perch.
+    displays.dock = exact_dock();
+    if let Some(dock) = &displays.dock {
+        for (usable, frame) in displays.usable_frames.iter_mut().zip(&displays.frames) {
+            *usable = floor_under_dock(*usable, *frame, dock);
+        }
+    }
+
     displays
+}
+
+/// The Dock's true bounds — macOS with Accessibility already granted, and
+/// nothing anywhere else. Never prompts; see `macos::dock_bounds`.
+#[cfg(target_os = "macos")]
+fn exact_dock() -> Option<Rect> {
+    macos::dock_bounds()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_dock() -> Option<Rect> {
+    None
 }
