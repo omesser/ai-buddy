@@ -10,6 +10,12 @@ Issues live in GitHub Issues on `omesser/ai-buddy`, via the `gh` CLI. See `docs/
 
 The five canonical triage roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
 
+### Contact-sheet import
+
+How to drive `scripts/import-pet.py --format frames` into a Character Package,
+when the pack comes from an ecosystem no adapter reads. See
+`docs/agents/contact-sheet-import.md`.
+
 ### Domain docs
 
 Single-context. Vocabulary is `CONTEXT.md`. v1 scope and requirements are

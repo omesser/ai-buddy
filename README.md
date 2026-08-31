@@ -570,6 +570,12 @@ A pack with no convention takes the long way round:
     -o characters/some-pack
 ```
 
+The categorizing in the middle is meant to be an agent's work, and
+`docs/agents/contact-sheet-import.md` is the step-by-step it follows —
+including what the mode will not do for you. Whether an agent can in fact
+drive it is the open question in
+[ADR-0009](docs/adr/0009-contact-sheet-on-ramp-is-agent-driven.md).
+
 The first run after an import rebuilds, which refreshes the shipped-character
 copy beside the binary; `AI_BUDDY_CHARACTERS=/path/to/characters` skips the
 rebuild by searching the directory itself.
