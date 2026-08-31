@@ -28,13 +28,11 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation",
- "rmcp",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-global-shortcut",
- "tokio",
  "ureq",
  "zip",
 ]
@@ -56,7 +54,11 @@ name = "ai-buddy-mcp-server"
 version = "0.1.0"
 dependencies = [
  "ai-buddy-core",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

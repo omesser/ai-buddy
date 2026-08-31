@@ -17,8 +17,6 @@ tauri-build = {version = "2", features = []}
 tauri = {version = "2", features = ["macos-private-api"]}
 ai-buddy-core = {path = "../crates/core"}
 serde = {version = "1", features = ["derive"]}
-rmcp = {version = "3", features = ["server", "macros", "transport-io"]}
-tokio = {version = "1", features = ["rt-multi-thread", "macros"]}
 # Character Package art reaches the webview as `data:` URLs; `src/cast.rs` says
 # why.
 base64 = "0.22"
