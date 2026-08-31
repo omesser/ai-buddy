@@ -5,6 +5,13 @@
 
 name = "Nim"
 
+# Unused model calls: after each one nobody answered, the wait becomes
+# wait * model_base ^ model_power. Two and one doubles.
+
+[director]
+model_base = 2
+model_power = 1
+
 # Twice BMO's frames everywhere, played fast enough that the in-betweens are
 # seen rather than sat through. Sleep is the exception: a breath that slow is
 # the point of it.

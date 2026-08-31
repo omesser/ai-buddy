@@ -397,8 +397,8 @@ fn run_frame_loop(
         let mut last_state: Option<State> = None;
         let mut pace = Pace::with_growth(
             config.ambient_first,
-            character.ambient_base,
-            character.ambient_power,
+            character.model_base,
+            character.model_power,
         );
         let mut since_ambient = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;

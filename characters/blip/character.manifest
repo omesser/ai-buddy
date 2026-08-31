@@ -5,6 +5,13 @@
 
 name = "Blip"
 
+# Unused model calls: after each one nobody answered, the wait becomes
+# wait * model_base ^ model_power. Two and one doubles.
+
+[director]
+model_base = 2
+model_power = 1
+
 # Cadence per Animation, which is the point of declaring it: a slow idle and a
 # fast walk are the same eight frame counts playing at different speeds.
 

@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::character::{Behavior, Trigger, DEFAULT_AMBIENT_BASE, DEFAULT_AMBIENT_POWER};
+use crate::character::{Behavior, Trigger, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER};
 use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
@@ -195,9 +195,9 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
     recent.truncate(REMEMBERED);
 }
 
-/// Ambient wait between session wakes. Grows by `base.pow(power)` after
-/// each unused ambient call, resets when the user addresses the buddy.
-/// The Character Manifest names base and power. ADR-0008.
+/// Wait between unused model calls. Grows by `model_base.pow(model_power)`
+/// after each unused call, resets when the user addresses the buddy.
+/// The Character Manifest names those two. ADR-0008.
 #[derive(Clone, Debug)]
 pub struct Pace {
     first: Duration,
@@ -217,10 +217,10 @@ impl Pace {
     }
 
     pub fn with_first(first: Duration) -> Self {
-        Self::with_growth(first, DEFAULT_AMBIENT_BASE, DEFAULT_AMBIENT_POWER)
+        Self::with_growth(first, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER)
     }
 
-    /// `first` is the opening wait. After each unused ambient wake,
+    /// `first` is the opening wait. After each unused model call,
     /// the wait becomes `wait * base.pow(power)`, capped at `CAP`.
     pub fn with_growth(first: Duration, base: u32, power: u32) -> Self {
         let first = first.clamp(Duration::from_secs(1), Self::CAP);

@@ -17,6 +17,13 @@ name = "Cat"
 render_mode = "smooth"
 scale = 1
 
+# Unused model calls: after each one nobody answered, the wait becomes
+# wait * model_base ^ model_power. Two and one doubles.
+
+[director]
+model_base = 2
+model_power = 1
+
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 5

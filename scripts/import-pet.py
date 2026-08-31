@@ -483,7 +483,16 @@ def manifest_text(name, mode, scale, header, animations):
     """The Character Manifest, provenance as comments — the loader's key set
     is closed, so provenance lives in `#` lines like BMO's."""
     lines = [f"# {line}".rstrip() for line in header]
-    lines += ["", f'name = "{name}"', f'render_mode = "{mode}"', f"scale = {scale}"]
+    lines += [
+        "",
+        f'name = "{name}"',
+        f'render_mode = "{mode}"',
+        f"scale = {scale}",
+        "",
+        "[director]",
+        "model_base = 2",
+        "model_power = 1",
+    ]
     for animation, spec in animations.items():
         lines += ["", f"[animations.{animation}]"]
         # "order" repeats written frames the way the source sequenced them
@@ -1026,6 +1035,9 @@ def self_test():
         for required in ("idle", "walk", "fall", "land", "sit", "sleep",
                          "react", "talk", "hold"):
             assert f"[animations.{required}]" in manifest
+        assert "[director]" in manifest
+        assert "model_base = 2" in manifest
+        assert "model_power = 1" in manifest
         # A personality is authored, never derived from the pet description.
         assert not (out / "personality.txt").exists()
         assert "Source description: a test dot" in manifest
