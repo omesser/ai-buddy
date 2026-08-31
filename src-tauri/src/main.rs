@@ -690,12 +690,9 @@ fn run_frame_loop(
 
             let thinking = !pending.ready()
                 && (reactive_wake
-                    || in_flight.as_ref().map_or(false, |ctx| {
-                        matches!(
-                            ctx.happened,
-                            Happened::Poke | Happened::Summon | Happened::Throw
-                        )
-                    }))
+                    || in_flight
+                        .as_ref()
+                        .map_or(false, |ctx| ctx.happened != Happened::Ambient))
                 && !engine.do_not_disturb();
 
             // What the user has seen is what the Engine played, not what the

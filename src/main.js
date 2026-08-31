@@ -4,7 +4,7 @@
 // interpolated across.
 
 import { interpolate } from "./interpolate.js";
-import { bubbleDuration, wrapText, placeBubble } from "./bubble.js";
+import { bubbleDuration, wrapText, placeBubble, CEILING_CLEARANCE } from "./bubble.js";
 
 const sprite = document.getElementById("sprite");
 const bubble = document.getElementById("bubble");
@@ -99,25 +99,11 @@ function draw(now) {
     };
 
     if (bubble.classList.contains("visible")) {
-      const bubbleSize = {
-        width: bubble.offsetWidth,
-        height: bubble.offsetHeight,
-      };
-      const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
-      bubble.style.left = `${pos.x}px`;
-      bubble.style.top = `${pos.y}px`;
-      bubble.classList.toggle("flipped", pos.flipped);
+      positionBubble(bubble, spriteRect, displayBounds);
     }
 
     if (thinkingBubble.classList.contains("visible")) {
-      const bubbleSize = {
-        width: thinkingBubble.offsetWidth,
-        height: thinkingBubble.offsetHeight,
-      };
-      const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
-      thinkingBubble.style.left = `${pos.x}px`;
-      thinkingBubble.style.top = `${pos.y}px`;
-      thinkingBubble.classList.toggle("flipped", pos.flipped);
+      positionBubble(thinkingBubble, spriteRect, displayBounds);
     }
   }
 
@@ -140,6 +126,17 @@ function draw(now) {
   updateBubbles();
 }
 
+function positionBubble(element, spriteRect, displayBounds) {
+  const bubbleSize = {
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  };
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  element.style.left = `${pos.x}px`;
+  element.style.top = `${pos.y}px`;
+  element.classList.toggle("flipped", pos.flipped);
+}
+
 function updateBubbles() {
   if (!latest) return;
 
@@ -157,7 +154,6 @@ function updateBubbles() {
     height: window.innerHeight,
   };
 
-  // Speech bubble: latch dialogue and show for reading time
   if (latest.dialogue && latest.visible) {
     if (speechTimeout) clearTimeout(speechTimeout);
 
@@ -170,15 +166,7 @@ function updateBubbles() {
     bubble.classList.remove("hidden");
     bubble.classList.add("visible");
 
-    const bubbleSize = {
-      width: bubble.offsetWidth,
-      height: bubble.offsetHeight,
-    };
-
-    const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
-    bubble.style.left = `${pos.x}px`;
-    bubble.style.top = `${pos.y}px`;
-    bubble.classList.toggle("flipped", pos.flipped);
+    positionBubble(bubble, spriteRect, displayBounds);
 
     const duration = bubbleDuration(latest.dialogue);
     speechTimeout = setTimeout(() => {
@@ -189,7 +177,6 @@ function updateBubbles() {
     clearThinkingBubble();
   }
 
-  // Thinking bubble: grace period, min hold, cleared by speech or turn end
   if (latest.thinking && latest.visible) {
     if (!thinkingShown && !thinkingGraceTimeout) {
       thinkingGraceTimeout = setTimeout(() => {
@@ -200,12 +187,10 @@ function updateBubbles() {
       }, THINKING_GRACE_MS);
     }
   } else if (thinkingShown || thinkingGraceTimeout) {
-    if (thinkingMinHoldTimeout) {
-      // Still in min-hold: clear after it expires
-    } else if (thinkingGraceTimeout) {
+    if (thinkingGraceTimeout) {
       clearTimeout(thinkingGraceTimeout);
       thinkingGraceTimeout = null;
-    } else {
+    } else if (thinkingShown && !thinkingMinHoldTimeout) {
       clearThinkingBubble();
     }
   }
@@ -216,15 +201,7 @@ function showThinkingBubble(spriteRect, displayBounds) {
   thinkingBubble.classList.add("visible");
   thinkingShown = true;
 
-  const bubbleSize = {
-    width: thinkingBubble.offsetWidth,
-    height: thinkingBubble.offsetHeight,
-  };
-
-  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
-  thinkingBubble.style.left = `${pos.x}px`;
-  thinkingBubble.style.top = `${pos.y}px`;
-  thinkingBubble.classList.toggle("flipped", pos.flipped);
+  positionBubble(thinkingBubble, spriteRect, displayBounds);
 
   thinkingMinHoldTimeout = setTimeout(() => {
     thinkingMinHoldTimeout = null;

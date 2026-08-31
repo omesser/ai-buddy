@@ -181,3 +181,9 @@ A bubble above the sprite showing Frame.dialogue, held for reading time (900ms
 + 55ms per character, clamped to 2–8 s). A new line replaces the old one.
 Implemented in #119.
 _Avoid_: Chat bubble, message, tooltip
+
+**Thinking ellipsis**:
+Three animated dots in a bubble above the sprite, shown while a reactive
+Director turn is in flight (Poke, Summon, Throw). Appears after 250ms grace,
+held ≥600ms once shown. Ambient wakes stay invisible. #119.
+_Avoid_: Loading, spinner, progress
