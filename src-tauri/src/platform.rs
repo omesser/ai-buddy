@@ -10,10 +10,12 @@
 //! one edit in one file.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
+
+#[cfg(target_os = "macos")]
+use std::time::{Duration, Instant};
 
 /// The displays as the frame loop needs to see them, from one read.
 ///

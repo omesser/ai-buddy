@@ -17,6 +17,7 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+mod env_util;
 mod model;
 mod package;
 mod platform;
@@ -408,12 +409,12 @@ fn run_frame_loop(
         // is currently swallowing clicks or passing them on. This trace is the
         // only way to watch the decision without a human clicking. Off unless
         // asked for; see scripts/verify-overlay.sh.
-        let tracing = std::env::var_os("AI_BUDDY_TRACE_HITTEST").is_some();
+        let tracing = env_util::env_flag_is_on("AI_BUDDY_TRACE_HITTEST");
 
         // Likewise for the Frame: where the sprite is and what it is doing is
         // the loop's only output, and a screenshot cannot say whether it got
         // there by falling.
-        let tracing_frames = std::env::var_os("AI_BUDDY_TRACE_FRAMES").is_some();
+        let tracing_frames = env_util::env_flag_is_on("AI_BUDDY_TRACE_FRAMES");
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
 

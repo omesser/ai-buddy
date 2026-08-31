@@ -55,7 +55,7 @@ fn overlay_panel_class() -> &'static AnyClass {
 /// recording, screen share and remote view while its owner keeps it on screen.
 ///
 /// The price is that the Character cannot be screenshotted either: the system's
-/// own capture goes down the same path. `AI_BUDDY_CAPTURABLE` gives the
+/// own capture goes down the same path. `AI_BUDDY_CAPTURABLE=1` gives the
 /// exclusion up for one run, which is how to photograph your own Character, and
 /// how anyone drawing one looks at its art against a real desktop.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -103,7 +103,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// Whether this run lets itself be captured. See `configure_overlay`.
 fn sharing_type() -> NSWindowSharingType {
-    if std::env::var_os("AI_BUDDY_CAPTURABLE").is_some() {
+    if crate::env_util::env_flag_is_on("AI_BUDDY_CAPTURABLE") {
         NSWindowSharingType::ReadOnly
     } else {
         NSWindowSharingType::None
