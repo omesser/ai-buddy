@@ -46,9 +46,18 @@ pub struct Rect {
 
 /// The window server's handle for one window.
 ///
-/// `u32` because that is what a macOS `CGWindowID` is. Nothing above this layer
-/// interprets it: it is an opaque token, only ever compared for equality. #85.
-pub type WindowId = u32;
+/// An opaque token. Nothing above this layer interprets one, orders them or
+/// reads meaning into the number: they are only ever compared for equality,
+/// which is all the Engine needs to say two snapshots describe the same
+/// window. #85.
+///
+/// `u64` because it has to be wide enough for any platform's window handle
+/// without a lossy conversion, and pointer width is the widest one on offer: a
+/// macOS `CGWindowID` is 32-bit, a Windows `HWND` is a handle and so pointer
+/// width, and an X11 `Window` is an `XID`, an `unsigned long`. Each of those
+/// widens into this. A platform converts at its own boundary; the core never
+/// learns which one it came from.
+pub type WindowId = u64;
 
 /// One visible window: which one it is, where it is, who owns it, and how high
 /// it stacks.

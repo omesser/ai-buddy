@@ -204,7 +204,9 @@ pub fn list_instances() -> ListInstancesResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::window_source::{Capabilities, FakeWindowSource, Rect, WindowRect, WorldGeometry};
+    use crate::window_source::{
+        Capabilities, FakeWindowSource, Rect, WindowId, WindowRect, WorldGeometry,
+    };
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -234,7 +236,7 @@ mod tests {
         }
     }
 
-    fn window(id: u32, owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
+    fn window(id: WindowId, owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
             id,
             bounds: Rect {

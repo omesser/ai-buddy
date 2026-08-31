@@ -227,7 +227,7 @@ mod tests {
 
     use super::*;
     use crate::engine::{Engine, State, Window};
-    use crate::window_source::{Capabilities, FakeWindowSource, WindowRect};
+    use crate::window_source::{Capabilities, FakeWindowSource, WindowId, WindowRect};
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> crate::window_source::Rect {
         crate::window_source::Rect {
@@ -238,7 +238,7 @@ mod tests {
         }
     }
 
-    fn window(id: u32, owner: &str, bounds: crate::window_source::Rect) -> WindowRect {
+    fn window(id: WindowId, owner: &str, bounds: crate::window_source::Rect) -> WindowRect {
         WindowRect {
             id,
             bounds,
@@ -252,7 +252,7 @@ mod tests {
     /// 25 for the status items, and a large negative one for Notification
     /// Centre.
     fn elevated(
-        id: u32,
+        id: WindowId,
         owner: &str,
         bounds: crate::window_source::Rect,
         layer: i32,
