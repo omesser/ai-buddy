@@ -7,10 +7,6 @@
 # with a one-pixel breath. The other walk row (the engine mirrors
 # instead) and row 7 (running in place) go unused.
 # Remapped for this pet's art (--map): react<-row 6, sit<-row 5[2,3], sleep<-row 5[5,6], waiting<-row 7.
-# License: none declared anywhere in the source ecosystem;
-# accepted at import with --accept-license. A development asset
-# unless a license surfaces — this repository's license claims
-# do not cover the art.
 #
 # Hand-tuned after import: sit and sleep were adjacent cells of the
 # failed row, so each cycle mixed two poses. The desk-hunch is
