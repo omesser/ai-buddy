@@ -908,6 +908,9 @@ def main():
         print("review the output before shipping it — walk must head right")
     print("no personality.txt is written: author one to fit the art, the way "
           "the shipped characters' read")
+    print(f"run it: AI_BUDDY_CHARACTER={args.out.name} cargo run — the next "
+          "build refreshes the copy beside the binary; "
+          f"AI_BUDDY_CHARACTERS={args.out.parent.resolve()} skips the rebuild")
 
 
 def self_test():

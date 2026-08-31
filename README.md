@@ -525,6 +525,10 @@ npx petscodex install labubu
 cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
 ```
 
+The first run after an import rebuilds, which refreshes the shipped-character
+copy beside the binary; `AI_BUDDY_CHARACTERS=/path/to/characters` skips the
+rebuild by searching the directory itself.
+
 The importer notices a missing Pillow and says exactly this rather than
 tracing back.
 
