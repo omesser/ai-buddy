@@ -15,7 +15,7 @@ test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
   // Longer text that exceeds min
   const medium = "a".repeat(30);
   assert.equal(bubbleDuration(medium), 900 + 55 * 30, "base + per-char, no clamp");
-  
+
   const long = "a".repeat(200);
   assert.equal(bubbleDuration(long), 8000, "max clamp");
 });
