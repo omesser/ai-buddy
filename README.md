@@ -203,6 +203,11 @@ falls under gravity, comes to rest on that window's top edge, rides the edge
 when the window steps down, drops when the window closes — each within about one
 poll interval — and comes to rest again on the display below.
 
+Then it falls again, onto a window that covers the same ground in one jump
+rather than three steps. That one is faster than the sprite can hold on to, so
+the assertions invert: it must not be carried, and it has to reach the new edge
+by falling onto it.
+
 Last it checks the hit-test pipeline: it puts the cursor on the sprite's centre
 and then on its transparent top-left corner, and asserts a hit on the first and
 a miss on the second. The cursor goes back where you left it. It also saves a
@@ -287,7 +292,22 @@ can answer it. Run the app, then confirm:
     over the Dock — it follows the cursor the whole way, because a held sprite
     goes where your hand goes. Let go and it settles back onto the Dock's top
     edge, fully visible.
-13. **The two shipped Characters are two companions.** Run each in turn (see
+13. **A window you drag slowly carries it.** Let the sprite settle on a
+    window's top edge, then drag that window by its title bar — down, up and
+    sideways, slowly. The sprite rides the edge and keeps its place along it,
+    playing its hold animation while the window moves rather than standing
+    idle. It is carried, not launched: stop the drag and it stops with the
+    window rather than sliding on.
+14. **A window you fling leaves it behind.** With the sprite perched, throw the
+    same window: grab the title bar and move fast, or zoom the window by
+    double-clicking it. The sprite stays where it stood, in the air, and falls
+    — onto the same edge again when the window is still under it, past it to
+    whatever is below when it is not. Fling the window upwards and the sprite
+    is passed through rather than lifted. Where the line between this and the
+    step above falls is a tuned number rather than a computed one: a drag that
+    looks slow should ride and one that looks like a yank should not, and a
+    disagreement about a drag in between is that number wanting a tune.
+15. **The two shipped Characters are two companions.** Run each in turn (see
     [The shipped Characters](#the-shipped-characters)) and watch it idle. BMO
     hums to itself through a four-frame singing loop, in soft drawn lines at
     its authored size; Nim eases through six, blinks, and carries a
@@ -298,7 +318,7 @@ can answer it. Run the app, then confirm:
     Then judge the drawing itself, which no test can: the frames are generated
     by a script and nobody has claimed they are good.
 
-14. **A fullscreen application takes the screen and the Character leaves it.**
+16. **A fullscreen application takes the screen and the Character leaves it.**
     Put any application into fullscreen — the green button, or
     Control-Command-F. Within about a tenth of a second the sprite fades out
     over half a second: it dissolves rather than blinking off. Leave
@@ -312,20 +332,20 @@ can answer it. Run the app, then confirm:
     start it again: the sprite never appears at all, because what it must be
     rides on every frame rather than being announced once, before the window
     that draws it was listening.
-15. **Ordinary window switching changes nothing.** Command-Tab between
+17. **Ordinary window switching changes nothing.** Command-Tab between
     applications, open and close windows, drag them around, switch Spaces. The
     sprite never blinks, never changes what it is in front of, and never
     disappears. Only a fullscreen application takes it away.
-16. **The hotkey puts it away and brings it back at once.** Press
+18. **The hotkey puts it away and brings it back at once.** Press
     Control-Option-Command-B. The sprite is gone on the keystroke, with no
     fade. Press it again and it is back, instantly, wherever it had got to.
     While it is away, click where it was: the click reaches the window
     underneath, and the sprite does not react to it when it returns.
-17. **The hotkey outranks the rules.** Press the hotkey to put the sprite away,
+19. **The hotkey outranks the rules.** Press the hotkey to put the sprite away,
     then enter a fullscreen application and leave it again. The sprite stays
     away — a fullscreen application quitting must not hand back a Character you
     put away yourself. Press the hotkey again to get it back.
-18. **It is absent from a real screen share.** Start a real share — Zoom, Meet,
+20. **It is absent from a real screen share.** Start a real share — Zoom, Meet,
     Teams — sharing your whole screen, and look at what the other end sees,
     either on a second machine or in the meeting's own preview of your share.
     The sprite is on your screen and not in theirs. Then check the system's own
@@ -339,7 +359,7 @@ can answer it. Run the app, then confirm:
 
 The last three need a second display, and only a window server can answer them:
 
-19. **A Character on a seam is whole.** Drag the sprite slowly across the
+21. **A Character on a seam is whole.** Drag the sprite slowly across the
     boundary between two displays and hold it there, half on each. Both halves
     are drawn, and they meet — no gap between them, nothing drawn twice, and
     the art is not doubled or offset at the seam. Watch them while your hand is
@@ -347,10 +367,10 @@ The last three need a second display, and only a window server can answer them:
     Engine's ticks on its own clock, so a moving sprite is the only thing that
     can catch two overlays disagreeing about where it is. Two displays with
     different scale factors or refresh rates is the case worth doing this on.
-20. **Either half can be clicked.** With the sprite straddling, click the half
+22. **Either half can be clicked.** With the sprite straddling, click the half
     on each display in turn. Both pick it up, and clicking beside it on either
     display still reaches whatever is underneath.
-21. **A display can come and go.** With the app running, unplug a display, or
+23. **A display can come and go.** With the app running, unplug a display, or
     turn one off in System Settings > Displays. The sprite carries on, and the
     remaining display still passes clicks through where the sprite is not.
     Plug it back in: the sprite can be dragged onto it again within a second
