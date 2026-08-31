@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use crate::engine::{Point, Rect, Verb, WorldSnapshot};
+use crate::engine::{Point, Rect, Verb, Window, WorldSnapshot};
 use crate::window_source::{WindowSource, WorldGeometry, POLL_INTERVAL, RIDE_POLL_INTERVAL};
 
 /// The longest step of the world the Engine is ever told about, whatever the
@@ -168,7 +168,10 @@ fn world_snapshot(
             .windows
             .iter()
             .filter(|w| perch_eligible(w.layer))
-            .map(|w| rect(w.bounds))
+            .map(|w| Window {
+                id: w.id,
+                rect: rect(w.bounds),
+            })
             .collect(),
         cursor,
         elapsed_ms,
@@ -223,8 +226,8 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
-    use crate::engine::{Engine, State};
-    use crate::window_source::{Capabilities, FakeWindowSource, WindowRect};
+    use crate::engine::{Engine, State, Window};
+    use crate::window_source::{Capabilities, FakeWindowSource, WindowId, WindowRect};
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> crate::window_source::Rect {
         crate::window_source::Rect {
@@ -235,8 +238,9 @@ mod tests {
         }
     }
 
-    fn window(owner: &str, bounds: crate::window_source::Rect) -> WindowRect {
+    fn window(id: WindowId, owner: &str, bounds: crate::window_source::Rect) -> WindowRect {
         WindowRect {
+            id,
             bounds,
             owner: owner.to_string(),
             layer: 0,
@@ -247,8 +251,14 @@ mod tests {
     /// ones a real macOS desktop reports: 20 for the Dock, 24 for the menu bar,
     /// 25 for the status items, and a large negative one for Notification
     /// Centre.
-    fn elevated(owner: &str, bounds: crate::window_source::Rect, layer: i32) -> WindowRect {
+    fn elevated(
+        id: WindowId,
+        owner: &str,
+        bounds: crate::window_source::Rect,
+        layer: i32,
+    ) -> WindowRect {
         WindowRect {
+            id,
             bounds,
             owner: owner.to_string(),
             layer,
@@ -324,8 +334,8 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![
-                    window("Terminal", rect(10.0, 20.0, 800.0, 600.0)),
-                    window("Finder", rect(30.0, 40.0, 500.0, 400.0)),
+                    window(1, "Terminal", rect(10.0, 20.0, 800.0, 600.0)),
+                    window(2, "Finder", rect(30.0, 40.0, 500.0, 400.0)),
                 ],
             },
         };
@@ -345,20 +355,27 @@ mod tests {
         assert_eq!(
             snapshot.windows,
             vec![
-                Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    width: 800.0,
-                    height: 600.0
+                Window {
+                    id: 1,
+                    rect: Rect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 800.0,
+                        height: 600.0
+                    }
                 },
-                Rect {
-                    x: 30.0,
-                    y: 40.0,
-                    width: 500.0,
-                    height: 400.0
+                Window {
+                    id: 2,
+                    rect: Rect {
+                        x: 30.0,
+                        y: 40.0,
+                        width: 500.0,
+                        height: 400.0
+                    }
                 },
             ],
-            "frontmost first, in the order the platform reported"
+            "frontmost first, with the window server's own ids, in the order \
+             the platform reported"
         );
         assert_eq!(snapshot.cursor, Point { x: 7.0, y: 9.0 });
         assert_eq!(snapshot.elapsed_ms, 16);
@@ -436,11 +453,12 @@ mod tests {
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
                 windows: vec![
-                    elevated("Control Center", rect(1264.0, 0.0, 39.0, 30.0), 25),
-                    elevated("Window Server", rect(0.0, 0.0, 1920.0, 30.0), 24),
-                    elevated("Dock", rect(0.0, 0.0, 1920.0, 1080.0), 20),
-                    window("Terminal", rect(0.0, 30.0, 1920.0, 952.0)),
+                    elevated(1, "Control Center", rect(1264.0, 0.0, 39.0, 30.0), 25),
+                    elevated(2, "Window Server", rect(0.0, 0.0, 1920.0, 30.0), 24),
+                    elevated(3, "Dock", rect(0.0, 0.0, 1920.0, 1080.0), 20),
+                    window(4, "Terminal", rect(0.0, 30.0, 1920.0, 952.0)),
                     elevated(
+                        5,
                         "Notification Center",
                         rect(8.0, 38.0, 180.0, 180.0),
                         -2_147_483_601,
@@ -453,11 +471,14 @@ mod tests {
 
         assert_eq!(
             snapshot.windows,
-            vec![Rect {
-                x: 0.0,
-                y: 30.0,
-                width: 1920.0,
-                height: 952.0
+            vec![Window {
+                id: 4,
+                rect: Rect {
+                    x: 0.0,
+                    y: 30.0,
+                    width: 1920.0,
+                    height: 952.0
+                }
             }],
             "the menu bar, the Dock and the status items are not Perches"
         );
@@ -472,7 +493,12 @@ mod tests {
             capabilities: seeing_everything(),
             geometry: WorldGeometry {
                 usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
-                windows: vec![elevated("Window Server", rect(0.0, 0.0, 1920.0, 30.0), 24)],
+                windows: vec![elevated(
+                    2,
+                    "Window Server",
+                    rect(0.0, 0.0, 1920.0, 30.0),
+                    24,
+                )],
             },
         });
         let mut engine = Engine::new(Point { x: 960.0, y: 0.0 });
@@ -652,7 +678,7 @@ mod tests {
         let desktop = WorldGeometry {
             usable_frames: vec![rect(0.0, 0.0, 1000.0, 800.0)],
             // Spans the middle of the display, so the sprite starts above it.
-            windows: vec![window("Terminal", rect(400.0, 500.0, 300.0, 200.0))],
+            windows: vec![window(1, "Terminal", rect(400.0, 500.0, 300.0, 200.0))],
         };
         let start = starting_position(&desktop);
         assert_eq!(
@@ -680,7 +706,7 @@ mod tests {
     fn standing_names_the_window_owner_not_a_title() {
         let desktop = WorldGeometry {
             usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
-            windows: vec![window("Cursor", rect(100.0, 200.0, 800.0, 600.0))],
+            windows: vec![window(1, "Cursor", rect(100.0, 200.0, 800.0, 600.0))],
         };
         assert_eq!(
             describe_standing(Point { x: 140.0, y: 200.0 }, &desktop),
@@ -706,7 +732,7 @@ mod tests {
     fn furniture_is_not_named_as_a_perch() {
         let desktop = WorldGeometry {
             usable_frames: vec![rect(0.0, 30.0, 1920.0, 1050.0)],
-            windows: vec![elevated("Dock", rect(0.0, 1050.0, 1920.0, 80.0), 20)],
+            windows: vec![elevated(1, "Dock", rect(0.0, 1050.0, 1920.0, 80.0), 20)],
         };
         assert_eq!(
             describe_standing(

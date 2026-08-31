@@ -6,6 +6,7 @@
 //! asserting frames, with no windowing system, no model and no waiting.
 
 use crate::character::{Behavior, Primitive};
+pub use crate::window_source::WindowId;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A point in the one coordinate space the Engine works in: points, y growing
@@ -33,6 +34,17 @@ impl Rect {
     fn spans_x(&self, x: f64) -> bool {
         x >= self.x && x <= self.x + self.width
     }
+}
+
+/// One visible window: which one it is, and where.
+///
+/// The id is opaque here and only ever compared for equality. That comparison
+/// is the whole point: it is what says the window under the sprite this tick is
+/// the one it was standing on last tick, which geometry cannot say. #85.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Window {
+    pub id: WindowId,
+    pub rect: Rect,
 }
 
 /// Where the sprite is anchored and which physics apply.
@@ -91,8 +103,8 @@ pub struct WorldSnapshot {
     /// all be derived from these rectangles without the Engine knowing a Dock
     /// exists.
     pub displays: Vec<Rect>,
-    /// Visible window rectangles in descending z-order.
-    pub windows: Vec<Rect>,
+    /// Visible windows in descending z-order.
+    pub windows: Vec<Window>,
     pub cursor: Point,
     /// Interaction verbs pending since the previous tick.
     pub verbs: Vec<Verb>,
@@ -211,7 +223,7 @@ pub struct Engine {
     /// The windows of the previous tick, to tell a window that has come to
     /// contain the sprite from one that contained it all along. See
     /// `swallowed_by`.
-    previous_windows: Vec<Rect>,
+    previous_windows: Vec<Window>,
     /// Where the sprite stood at the end of the previous tick — the other half
     /// of what says whether a window has come to contain it.
     previous_position: Point,
@@ -245,7 +257,9 @@ pub struct Engine {
     last_poll_generation: u64,
     /// The Perch the sprite last stood on, remembered so a coast that has
     /// left the stale rectangle can still match the window when it updates.
-    last_perch: Option<Rect>,
+    /// The id is what matches it in the next sample; the rectangle is the
+    /// origin a coast integrates from. #85.
+    last_perch: Option<Window>,
     /// How far along that Perch the sprite stands, so a snap back onto a
     /// fresh sample keeps the place it was holding.
     hold_offset_x: f64,
@@ -498,7 +512,7 @@ impl Engine {
         if matches!(self.state, State::Perched | State::Asleep) {
             if let Some(perch) = perch_at(self.position, &snapshot.windows) {
                 self.last_perch = Some(perch);
-                self.hold_offset_x = self.position.x - perch.x;
+                self.hold_offset_x = self.position.x - perch.rect.x;
             }
         } else {
             self.rest_perch();
@@ -594,9 +608,10 @@ impl Engine {
                 }
             }
             // Resting is only ever resting on something. When that something
-            // moves slowly the sprite Holds and rides it (#98). A yank, a
-            // close, a resize, or walking off the end leaves it in the air,
-            // carrying whatever speed it walked off with.
+            // moves slowly the sprite Holds and rides it (#98). A resize is
+            // a move of the top edge and rides the same way (#85). A yank, a
+            // close, or walking off the end leaves it in the air, carrying
+            // whatever speed it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
                 self.position.x += self.velocity.x * dt;
                 if self.last_perch.is_some() {
@@ -636,7 +651,7 @@ impl Engine {
                     // been told yet. Stale rectangles would call this a fall.
                     self.coast_s += dt;
                     let t = self.coast_s;
-                    if let Some(origin) = self.last_perch {
+                    if let Some(origin) = self.last_perch.map(|perch| perch.rect) {
                         self.position.x = origin.x
                             + self.hold_offset_x
                             + self.perch_velocity.x * t
@@ -670,24 +685,22 @@ impl Engine {
         else {
             return PerchCarry::Lost;
         };
-        let Some(current) = match_perch(previous, &snapshot.windows) else {
-            return PerchCarry::Lost;
-        };
         let Some(index) = snapshot
             .windows
             .iter()
-            .position(|window| *window == current)
+            .position(|window| window.id == previous.id)
         else {
             return PerchCarry::Lost;
         };
+        let current = snapshot.windows[index];
         // An edge you cannot see is gone, whether the sprite was landing or
         // already standing on it. #100.
         if !is_perch(index, self.position.x, snapshot) {
             return PerchCarry::Lost;
         }
         let delta = Point {
-            x: current.x - previous.x,
-            y: current.y - previous.y,
+            x: current.rect.x - previous.rect.x,
+            y: current.rect.y - previous.rect.y,
         };
         if delta.x == 0.0 && delta.y == 0.0 {
             return PerchCarry::Still(current);
@@ -739,9 +752,9 @@ impl Engine {
     }
 
     /// Put the sprite back on `window` at the offset it was holding.
-    fn place_on(&mut self, window: Rect) {
-        self.position.x = window.x + self.hold_offset_x;
-        self.position.y = window.y;
+    fn place_on(&mut self, window: Window) {
+        self.position.x = window.rect.x + self.hold_offset_x;
+        self.position.y = window.rect.y;
     }
 
     /// Whether `window` has come to contain the sprite this tick: dragged over
@@ -753,12 +766,11 @@ impl Engine {
     ///
     /// An Engine method rather than part of `footing` because "come to" takes
     /// the previous tick to judge, and the Engine is what remembers one.
-    fn swallowed_by(&self, window: &Rect) -> bool {
-        swallows(window, self.position)
-            && !self
-                .previous_windows
-                .iter()
-                .any(|before| before == window && swallows(before, self.previous_position))
+    fn swallowed_by(&self, window: &Window) -> bool {
+        swallows(&window.rect, self.position)
+            && !self.previous_windows.iter().any(|before| {
+                before.id == window.id && swallows(&before.rect, self.previous_position)
+            })
     }
 
     /// The Primitive being played, if any. Last of `playing`, because `play`
@@ -965,12 +977,12 @@ fn thrown_velocity(snapshot: &WorldSnapshot) -> Option<Point> {
 /// What a fresh window sample says about the Perch the sprite was standing on.
 enum PerchCarry {
     /// Dragged slowly: snap onto the new edge and coast until the next sample.
-    Ride(Rect),
+    Ride(Window),
     /// Same edge as last time: snap back if a coast overshot, then sit.
-    Still(Rect),
+    Still(Window),
     /// Dragged hard enough to lose footing.
     Yank,
-    /// Closed, resized, or never a Perch.
+    /// Closed, minimized, or no longer somewhere the sprite can stand.
     Lost,
 }
 
@@ -1006,9 +1018,11 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
         .windows
         .iter()
         .enumerate()
-        .filter(|(index, window)| window.y >= position.y && is_perch(*index, position.x, snapshot))
+        .filter(|(index, window)| {
+            window.rect.y >= position.y && is_perch(*index, position.x, snapshot)
+        })
         .map(|(_, window)| Support {
-            y: window.y,
+            y: window.rect.y,
             surface: Surface::Perch,
         })
         .chain(floor)
@@ -1040,14 +1054,14 @@ fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
 ///   hangs above them, so a title bar under the menu bar leaves only legs on
 ///   screen. #100.
 fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
-    let window = &snapshot.windows[index];
+    let window = &snapshot.windows[index].rect;
     window.spans_x(x)
         && displays_spanning(x, snapshot).any(|display| {
             window.y >= display.y + CEILING_CLEARANCE && window.y <= display.bottom()
         })
-        && !snapshot.windows[..index]
-            .iter()
-            .any(|front| front.spans_x(x) && window.y >= front.y && window.y <= front.bottom())
+        && !snapshot.windows[..index].iter().any(|front| {
+            front.rect.spans_x(x) && window.y >= front.rect.y && window.y <= front.rect.bottom()
+        })
 }
 
 /// What a resting sprite is standing on: its Perch, unless a window in front
@@ -1069,7 +1083,7 @@ fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
 fn footing(
     position: Point,
     snapshot: &WorldSnapshot,
-    swallowing: impl Fn(&Rect) -> bool,
+    swallowing: impl Fn(&Window) -> bool,
 ) -> Option<Support> {
     if floor_under(position.x, snapshot) == Some(position.y) {
         return support_below(position, snapshot);
@@ -1082,7 +1096,7 @@ fn footing(
     let perch = snapshot
         .windows
         .iter()
-        .position(|window| window.spans_x(position.x) && window.y == position.y)?;
+        .position(|window| window.rect.spans_x(position.x) && window.rect.y == position.y)?;
 
     // Only a window in front of the Perch can swallow the sprite, which is why
     // the candidates stop at the Perch's own place in the order: what is
@@ -1109,7 +1123,7 @@ fn footing(
         // the place this is meant to get it out of.
         .filter(|(index, window)| swallowing(window) && is_perch(*index, position.x, snapshot))
         .map(|(_, window)| Support {
-            y: window.y,
+            y: window.rect.y,
             surface: Surface::Perch,
         })
         .chain(held)
@@ -1118,26 +1132,11 @@ fn footing(
 }
 
 /// The window whose top edge the sprite is standing on, if any.
-fn perch_at(position: Point, windows: &[Rect]) -> Option<Rect> {
+fn perch_at(position: Point, windows: &[Window]) -> Option<Window> {
     windows
         .iter()
         .copied()
-        .find(|window| window.spans_x(position.x) && window.y == position.y)
-}
-
-/// The same window in a later snapshot: same size, nearest origin. Snapshots
-/// carry rectangles, not ids, so a pair of identical windows can swap and
-/// this will pick the nearer one. A close or a resize has no match. #98.
-fn match_perch(previous: Rect, windows: &[Rect]) -> Option<Rect> {
-    windows
-        .iter()
-        .copied()
-        .filter(|window| window.width == previous.width && window.height == previous.height)
-        .min_by(|a, b| {
-            let da = (a.x - previous.x).hypot(a.y - previous.y);
-            let db = (b.x - previous.x).hypot(b.y - previous.y);
-            da.total_cmp(&db)
-        })
+        .find(|window| window.rect.spans_x(position.x) && window.rect.y == position.y)
 }
 
 /// Whether the sprite is inside `window` rather than on top of it. A top edge
@@ -1266,6 +1265,12 @@ mod tests {
         }
     }
 
+    /// A window in a snapshot. Ids only have to differ, except in the tests
+    /// that are about identity, which say so.
+    fn window(id: WindowId, rect: Rect) -> Window {
+        Window { id, rect }
+    }
+
     fn snapshot(elapsed_ms: u32) -> WorldSnapshot {
         WorldSnapshot {
             displays: vec![one_display()],
@@ -1286,12 +1291,15 @@ mod tests {
     /// the screen edge, which it climbs.
     fn a_day_in_the_life() -> Vec<WorldSnapshot> {
         let on_a_window = WorldSnapshot {
-            windows: vec![Rect {
-                x: 50.0,
-                y: 400.0,
-                width: 300.0,
-                height: 200.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 50.0,
+                    y: 400.0,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            )],
             ..snapshot(100)
         };
 
@@ -1486,12 +1494,15 @@ mod tests {
     /// and sitting in mid-air is not a thing the sprite can be doing.
     #[test]
     fn a_behavior_that_becomes_invalid_mid_play_is_abandoned() {
-        let window = Rect {
-            x: 50.0,
-            y: 400.0,
-            width: 300.0,
-            height: 200.0,
-        };
+        let window = window(
+            1,
+            Rect {
+                x: 50.0,
+                y: 400.0,
+                width: 300.0,
+                height: 200.0,
+            },
+        );
         let on_a_window = WorldSnapshot {
             windows: vec![window],
             ..snapshot(100)
@@ -1902,12 +1913,15 @@ mod tests {
     /// else, and the landing at the end of the fall is a real one.
     #[test]
     fn a_sprite_woken_with_its_perch_gone_still_lands() {
-        let perch = Rect {
-            x: 0.0,
-            y: 400.0,
-            width: 1000.0,
-            height: 200.0,
-        };
+        let perch = window(
+            2,
+            Rect {
+                x: 0.0,
+                y: 400.0,
+                width: 1000.0,
+                height: 200.0,
+            },
+        );
         let resting = WorldSnapshot {
             windows: vec![perch],
             ..snapshot(100)
@@ -2139,12 +2153,15 @@ mod tests {
     /// A window wide enough to walk along, with its top edge at y=400.
     fn a_long_perch() -> WorldSnapshot {
         WorldSnapshot {
-            windows: vec![Rect {
-                x: 100.0,
-                y: 400.0,
-                width: 800.0,
-                height: 200.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 100.0,
+                    y: 400.0,
+                    width: 800.0,
+                    height: 200.0,
+                },
+            )],
             ..snapshot(100)
         }
     }
@@ -2453,12 +2470,15 @@ mod tests {
 
         // A window is dragged over it, hanging below the usable floor.
         let covered = WorldSnapshot {
-            windows: vec![Rect {
-                x: 0.0,
-                y: 100.0,
-                width: 1000.0,
-                height: 800.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 0.0,
+                    y: 100.0,
+                    width: 1000.0,
+                    height: 800.0,
+                },
+            )],
             ..snapshot(100)
         };
         let frames: Vec<Frame> = (0..10).map(|_| engine.tick(&covered)).collect();
@@ -2477,18 +2497,24 @@ mod tests {
     fn a_window_floating_above_the_perch_is_not_footing() {
         let world = || WorldSnapshot {
             windows: vec![
-                Rect {
-                    x: 0.0,
-                    y: 100.0,
-                    width: 1000.0,
-                    height: 150.0,
-                },
-                Rect {
-                    x: 0.0,
-                    y: 400.0,
-                    width: 1000.0,
-                    height: 200.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x: 0.0,
+                        y: 100.0,
+                        width: 1000.0,
+                        height: 150.0,
+                    },
+                ),
+                window(
+                    2,
+                    Rect {
+                        x: 0.0,
+                        y: 400.0,
+                        width: 1000.0,
+                        height: 200.0,
+                    },
+                ),
             ],
             ..snapshot(100)
         };
@@ -2508,12 +2534,15 @@ mod tests {
     #[test]
     fn the_sprite_perches_on_a_window_top_edge_and_falls_when_the_window_goes() {
         let window = WorldSnapshot {
-            windows: vec![Rect {
-                x: 50.0,
-                y: 400.0,
-                width: 300.0,
-                height: 200.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 50.0,
+                    y: 400.0,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            )],
             ..snapshot(100)
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -2538,12 +2567,15 @@ mod tests {
     #[test]
     fn the_sprite_falls_when_its_perch_moves_out_from_under_it() {
         let window = |x: f64| WorldSnapshot {
-            windows: vec![Rect {
-                x,
-                y: 400.0,
-                width: 300.0,
-                height: 200.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x,
+                    y: 400.0,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            )],
             ..snapshot(100)
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
@@ -2564,12 +2596,15 @@ mod tests {
     /// A window the sprite can stand on, moved without changing size.
     fn perch(x: f64, y: f64) -> WorldSnapshot {
         WorldSnapshot {
-            windows: vec![Rect {
-                x,
-                y,
-                width: 300.0,
-                height: 200.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x,
+                    y,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            )],
             ..snapshot(100)
         }
     }
@@ -2689,6 +2724,132 @@ mod tests {
         assert!(!still.riding);
     }
 
+    /// #85: what the window server's id buys, and geometry could not. The
+    /// Perch closes, and a window of the same size — the same app's second
+    /// document, say — is sitting a few points away. Matching by size and
+    /// displacement called that the same window and slid the sprite onto it.
+    /// The ids differ, so the Perch is gone and the sprite falls.
+    #[test]
+    fn a_perch_that_closes_is_not_the_same_window_as_one_of_its_size_nearby() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        assert_eq!(
+            settle(&mut engine, &perch(50.0, 400.0)).state,
+            State::Perched
+        );
+
+        let twin = WorldSnapshot {
+            windows: vec![window(
+                2,
+                Rect {
+                    x: 70.0,
+                    y: 380.0,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            )],
+            ..snapshot(100)
+        };
+
+        let dropped = engine.tick(&twin);
+        assert_eq!(dropped.state, State::Falling, "{dropped:?}");
+        assert_eq!(
+            settle(&mut engine, &twin).position.y,
+            800.0,
+            "and down to the floor, not carried onto a window it never stood on"
+        );
+    }
+
+    /// #85, the other half: a second window of the same size that ends up
+    /// nearer the Perch's old origin than the Perch itself. Geometry had no
+    /// way to tell them apart and took the nearer one, which put the sprite on
+    /// the wrong window at the wrong offset. The id picks the window it was
+    /// actually standing on.
+    #[test]
+    fn a_twin_window_nearer_the_old_origin_does_not_steal_the_ride() {
+        // Frontmost first: the sprite lands on the Perch, and the twin behind
+        // it is the same size and overlaps it.
+        let twins = |perch_x: f64, twin_x: f64| WorldSnapshot {
+            windows: vec![
+                window(
+                    1,
+                    Rect {
+                        x: perch_x,
+                        y: 400.0,
+                        width: 300.0,
+                        height: 200.0,
+                    },
+                ),
+                window(
+                    2,
+                    Rect {
+                        x: twin_x,
+                        y: 400.0,
+                        width: 300.0,
+                        height: 200.0,
+                    },
+                ),
+            ],
+            ..snapshot(100)
+        };
+
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let perched = settle(&mut engine, &twins(50.0, 60.0));
+        assert_eq!(perched.position.y, 400.0);
+        let offset_x = perched.position.x - 50.0;
+
+        // Both are nudged right. The Perch moves 40 points, the twin 10, so
+        // the twin is now the nearer match to where the Perch was.
+        let ridden = engine.tick(&twins(90.0, 70.0));
+        assert_eq!(ridden.state, State::Perched, "{ridden:?}");
+        assert_eq!(
+            ridden.position,
+            Point {
+                x: 90.0 + offset_x,
+                y: 400.0
+            },
+            "carried by window 1, not snapped onto window 2"
+        );
+    }
+
+    /// #85: a resize moves the top edge, so it is a move. Matching the Perch
+    /// by size ruled every resize out and dropped the sprite off a window
+    /// that was still under it; matching by id carries it, and the grip gate
+    /// still governs how fast the edge may go.
+    #[test]
+    fn a_perch_resized_from_its_top_edge_is_ridden_like_one_that_moved() {
+        let sized = |y: f64, height: f64| WorldSnapshot {
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 50.0,
+                    y,
+                    width: 300.0,
+                    height,
+                },
+            )],
+            ..snapshot(100)
+        };
+
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        let perched = settle(&mut engine, &sized(400.0, 200.0));
+        assert_eq!(perched.position.y, 400.0);
+
+        // The top border dragged up 20 points: the window grows, the edge
+        // moves, and the sprite goes with it.
+        let taller = engine.tick(&sized(380.0, 220.0));
+        assert_eq!(taller.state, State::Perched, "{taller:?}");
+        assert_eq!(taller.position.y, 380.0);
+        assert!(taller.riding);
+
+        // The same border yanked 200 points: over the grip, so the sprite is
+        // left behind rather than snapped onto the new edge.
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &sized(400.0, 200.0));
+        let yanked = engine.tick(&sized(200.0, 400.0));
+        assert_eq!(yanked.state, State::Falling, "{yanked:?}");
+        assert_eq!(yanked.position.y, 400.0, "left where it stood");
+    }
+
     /// #98: ride poll is 16 ms so the sprite can track, but the yank gate
     /// looks back ~100 ms. Six points in 16 ms after a 200 pt/s ride is
     /// 10_937 pt/s² — over `RIDE_ACCELERATION` — and 175 pt/s against the
@@ -2735,18 +2896,24 @@ mod tests {
         // Frontmost first: the window that arrives is in front of the Perch.
         let world = |cover_x: f64, perch_x: f64| WorldSnapshot {
             windows: vec![
-                Rect {
-                    x: cover_x,
-                    y: 100.0,
-                    width: 900.0,
-                    height: 500.0,
-                },
-                Rect {
-                    x: perch_x,
-                    y: 400.0,
-                    width: 300.0,
-                    height: 200.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x: cover_x,
+                        y: 100.0,
+                        width: 900.0,
+                        height: 500.0,
+                    },
+                ),
+                window(
+                    2,
+                    Rect {
+                        x: perch_x,
+                        y: 400.0,
+                        width: 300.0,
+                        height: 200.0,
+                    },
+                ),
             ],
             ..snapshot(100)
         };
@@ -2774,10 +2941,10 @@ mod tests {
     /// sprite has been swallowed.
     fn inside_a_window(position: Point, snapshot: &WorldSnapshot) -> bool {
         snapshot.windows.iter().any(|window| {
-            position.x > window.x
-                && position.x < window.x + window.width
-                && position.y > window.y
-                && position.y < window.bottom()
+            position.x > window.rect.x
+                && position.x < window.rect.x + window.rect.width
+                && position.y > window.rect.y
+                && position.y < window.rect.y + window.rect.height
         })
     }
 
@@ -2786,12 +2953,15 @@ mod tests {
     /// is drawn floating in the middle of the window, sitting on nothing.
     #[test]
     fn a_window_dragged_over_the_sprite_lifts_it_onto_its_edge() {
-        let perch = Rect {
-            x: 0.0,
-            y: 400.0,
-            width: 1000.0,
-            height: 200.0,
-        };
+        let perch = window(
+            2,
+            Rect {
+                x: 0.0,
+                y: 400.0,
+                width: 1000.0,
+                height: 200.0,
+            },
+        );
         let resting = WorldSnapshot {
             windows: vec![perch],
             ..snapshot(100)
@@ -2802,12 +2972,15 @@ mod tests {
         // A second window is dragged over it, swallowing the edge it stands on.
         let covered = WorldSnapshot {
             windows: vec![
-                Rect {
-                    x: 200.0,
-                    y: 200.0,
-                    width: 800.0,
-                    height: 400.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x: 200.0,
+                        y: 200.0,
+                        width: 800.0,
+                        height: 400.0,
+                    },
+                ),
                 perch,
             ],
             ..snapshot(100)
@@ -2828,7 +3001,7 @@ mod tests {
     fn a_window_dragged_over_the_sprite_never_lifts_it_off_the_displays() {
         // Bottom-aligned displays of different heights: nothing covers
         // x 1000..2000 above y=300.
-        let world = |windows: Vec<Rect>| WorldSnapshot {
+        let world = |windows: Vec<Window>| WorldSnapshot {
             displays: vec![
                 one_display(),
                 Rect {
@@ -2841,12 +3014,15 @@ mod tests {
             windows,
             ..snapshot(100)
         };
-        let perch = Rect {
-            x: 1000.0,
-            y: 500.0,
-            width: 600.0,
-            height: 200.0,
-        };
+        let perch = window(
+            1,
+            Rect {
+                x: 1000.0,
+                y: 500.0,
+                width: 600.0,
+                height: 200.0,
+            },
+        );
         let mut engine = Engine::new(Point {
             x: 1200.0,
             y: 350.0,
@@ -2855,12 +3031,15 @@ mod tests {
 
         // Dragged over the sprite, with its top edge up where only the taller
         // display reaches.
-        let dragged = Rect {
-            x: 1100.0,
-            y: 100.0,
-            width: 800.0,
-            height: 500.0,
-        };
+        let dragged = window(
+            2,
+            Rect {
+                x: 1100.0,
+                y: 100.0,
+                width: 800.0,
+                height: 500.0,
+            },
+        );
         let frames: Vec<Frame> = (0..40)
             .map(|_| engine.tick(&world(vec![dragged, perch])))
             .collect();
@@ -2879,22 +3058,28 @@ mod tests {
     /// the sprite stays in plain sight and the sprite stays on it.
     #[test]
     fn a_window_behind_the_perch_does_not_swallow_the_sprite() {
-        let perch = Rect {
-            x: 200.0,
-            y: 400.0,
-            width: 400.0,
-            height: 200.0,
-        };
+        let perch = window(
+            2,
+            Rect {
+                x: 200.0,
+                y: 400.0,
+                width: 400.0,
+                height: 200.0,
+            },
+        );
         // Frontmost first: the Perch is in front, the dragged window behind it.
         let world = |x: f64| WorldSnapshot {
             windows: vec![
                 perch,
-                Rect {
-                    x,
-                    y: 100.0,
-                    width: 900.0,
-                    height: 500.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x,
+                        y: 100.0,
+                        width: 900.0,
+                        height: 500.0,
+                    },
+                ),
             ],
             ..snapshot(100)
         };
@@ -2923,22 +3108,29 @@ mod tests {
     /// (#78), and that edge sits under the menu bar besides.
     #[test]
     fn a_window_raised_over_the_perch_drops_the_sprite() {
-        let maximized = Rect {
-            // Its top edge under the menu bar, its bottom on the usable floor.
-            x: 0.0,
-            y: 30.0,
-            width: 1000.0,
-            height: 770.0,
-        };
-        let perch = Rect {
-            x: 200.0,
-            y: 400.0,
-            width: 400.0,
-            height: 200.0,
-        };
+        let maximized = window(
+            1,
+            Rect {
+                // Its top edge under the menu bar, its bottom on the usable
+                // floor.
+                x: 0.0,
+                y: 30.0,
+                width: 1000.0,
+                height: 770.0,
+            },
+        );
+        let perch = window(
+            2,
+            Rect {
+                x: 200.0,
+                y: 400.0,
+                width: 400.0,
+                height: 200.0,
+            },
+        );
         // Frontmost first, so the sprite lands on the Perch in front of the
         // maximized window and is inside that window from the moment it does.
-        let world = |windows: Vec<Rect>| WorldSnapshot {
+        let world = |windows: Vec<Window>| WorldSnapshot {
             windows,
             ..snapshot(100)
         };
@@ -2970,18 +3162,24 @@ mod tests {
     fn a_walk_under_an_overlapping_window_steps_up_onto_it() {
         let overlapping = || WorldSnapshot {
             windows: vec![
-                Rect {
-                    x: 500.0,
-                    y: 250.0,
-                    width: 500.0,
-                    height: 400.0,
-                },
-                Rect {
-                    x: 0.0,
-                    y: 400.0,
-                    width: 1000.0,
-                    height: 200.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x: 500.0,
+                        y: 250.0,
+                        width: 500.0,
+                        height: 400.0,
+                    },
+                ),
+                window(
+                    2,
+                    Rect {
+                        x: 0.0,
+                        y: 400.0,
+                        width: 1000.0,
+                        height: 200.0,
+                    },
+                ),
             ],
             ..snapshot(100)
         };
@@ -3015,18 +3213,24 @@ mod tests {
     fn overlapping_windows() -> WorldSnapshot {
         WorldSnapshot {
             windows: vec![
-                Rect {
-                    x: 0.0,
-                    y: 300.0,
-                    width: 600.0,
-                    height: 600.0,
-                },
-                Rect {
-                    x: 200.0,
-                    y: 500.0,
-                    width: 600.0,
-                    height: 300.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x: 0.0,
+                        y: 300.0,
+                        width: 600.0,
+                        height: 600.0,
+                    },
+                ),
+                window(
+                    2,
+                    Rect {
+                        x: 200.0,
+                        y: 500.0,
+                        width: 600.0,
+                        height: 300.0,
+                    },
+                ),
             ],
             ..snapshot(100)
         }
@@ -3072,18 +3276,24 @@ mod tests {
         // first: only its lower half is anywhere on screen.
         let covered = WorldSnapshot {
             windows: vec![
-                Rect {
-                    x: 100.0,
-                    y: 300.0,
-                    width: 800.0,
-                    height: 500.0,
-                },
-                Rect {
-                    x: 100.0,
-                    y: 600.0,
-                    width: 800.0,
-                    height: 200.0,
-                },
+                window(
+                    1,
+                    Rect {
+                        x: 100.0,
+                        y: 300.0,
+                        width: 800.0,
+                        height: 500.0,
+                    },
+                ),
+                window(
+                    2,
+                    Rect {
+                        x: 100.0,
+                        y: 600.0,
+                        width: 800.0,
+                        height: 200.0,
+                    },
+                ),
             ],
             ..snapshot(100)
         };
@@ -3114,12 +3324,15 @@ mod tests {
                     height: 500.0,
                 },
             ],
-            windows: vec![Rect {
-                x: 700.0,
-                y: 100.0,
-                width: 1000.0,
-                height: 400.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 700.0,
+                    y: 100.0,
+                    width: 1000.0,
+                    height: 400.0,
+                },
+            )],
             ..snapshot(100)
         };
         let mut engine = Engine::new(Point { x: 900.0, y: 50.0 });
@@ -3256,12 +3469,15 @@ mod tests {
     #[test]
     fn a_window_flush_with_the_usable_top_is_not_a_perch() {
         let under_the_menu_bar = WorldSnapshot {
-            windows: vec![Rect {
-                x: 0.0,
-                y: 30.0,
-                width: 1000.0,
-                height: 770.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 0.0,
+                    y: 30.0,
+                    width: 1000.0,
+                    height: 770.0,
+                },
+            )],
             ..snapshot(100)
         };
         let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
@@ -3293,12 +3509,15 @@ mod tests {
     #[test]
     fn a_window_is_passed_through_from_below_and_landed_on_from_above() {
         let window = WorldSnapshot {
-            windows: vec![Rect {
-                x: 50.0,
-                y: 400.0,
-                width: 300.0,
-                height: 200.0,
-            }],
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 50.0,
+                    y: 400.0,
+                    width: 300.0,
+                    height: 200.0,
+                },
+            )],
             ..snapshot(100)
         };
         let mut engine = Engine::new(Point { x: 100.0, y: 550.0 });

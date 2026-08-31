@@ -90,7 +90,12 @@ sprite_y = u["y"] + u["h"] / 2
 # Perch to step down 80 points and stay on screen, which needs a usable height
 # of roughly 350 points. Every display macOS runs on clears that.
 room = u["h"] / 2
-width = min(400.0, u["w"])
+
+# Wide enough that a Character which wanders while it waits is still on the
+# window when the window moves. The sprite walks a couple of hundred points in
+# the few seconds before the first step, and walking off the end is a fall like
+# any other — one that would read as a ride the sprite failed to keep.
+width = min(1200.0, u["w"])
 left = int(sprite_x - width / 2)
 
 # The Perch: halfway from the sprite to the floor, and wide enough around the
@@ -497,6 +502,113 @@ else
 fi
 
 [ "$HIT_FAILED" = "1" ] && STATUS=1
+
+# ---------------------------------------------------------------------------
+# The other side of the grip.
+#
+# A Perch that moves slower than the sprite can hold on to is ridden, and one
+# that outruns it leaves the sprite behind to fall (#85). The run above checks
+# the riding half, on the prop that stepped down the screen. This checks the
+# other half, and it needs an app run of its own: the sprite is on the floor by
+# now, and nothing puts it back on a window — one that opens under a resting
+# sprite is above it, which is not a surface from below.
+# ---------------------------------------------------------------------------
+echo ""
+echo "Grip:"
+# shellcheck disable=SC2086  # four separate arguments, deliberately
+swift scripts/perch-window.swift --fast $PERCH_RECT > "$OUT/fling.log" 2>&1 &
+FLING_PID=$!
+await "$OUT/fling.log" '^\{' 40 || {
+  echo "FAIL: the flinging prop window never reported its bounds"
+  cat "$OUT/fling.log"
+  exit 1
+}
+
+pkill -f 'target/debug/ai-buddy' 2> /dev/null
+AI_BUDDY_TRACE_FRAMES=1 ./target/debug/ai-buddy > "$OUT/grip.log" 2>&1 &
+APP_PID=$!
+await "$OUT/grip.log" '^frame: [0-9]+ Perched' 60 ||
+  echo "  (the sprite never perched - the checks below will say so)"
+
+# The fling is one move rather than a series, so this waits for the one report
+# that follows it: the prop's second line.
+for _ in $(seq 1 80); do
+  [ "$(grep -c '^{' "$OUT/fling.log")" -ge 2 ] && break
+  perl -e 'select(undef,undef,undef,0.25)'
+done
+perl -e 'select(undef,undef,undef,2.5)' # long enough to be left behind, fall and settle
+kill "$FLING_PID" 2> /dev/null
+
+python3 - "$OUT" << 'GRIP'
+import json, re, sys
+
+out = sys.argv[1]
+
+# The sprite is perched and its Perch is still when the fling comes, so the
+# window list is read at the idle poll. Same slack as the riding half.
+POLL_MS, SLACK_MS = 100, 150
+
+frames = [
+    (int(m[1]), m[2], float(m[3]), float(m[4]))
+    for m in (
+        re.match(r"frame: (\d+) (\w+) pos\((-?\d+),(-?\d+)\)", line)
+        for line in open(f"{out}/grip.log")
+    )
+    if m
+]
+moves = [json.loads(line) for line in open(f"{out}/fling.log") if line.startswith("{")]
+
+fails = []
+
+def check(ok, label, detail=""):
+    print(f"  {'PASS' if ok else 'FAIL'}  {label}{'  ' + detail if detail else ''}")
+    if not ok:
+        fails.append(label)
+
+def first(predicate):
+    return next((f for f in frames if predicate(f)), None)
+
+if not frames or len(moves) < 2:
+    print("  FAIL  the app traced no frames" if not frames
+          else "  FAIL  the prop window never flung itself")
+    sys.exit(1)
+
+# The frame before the fling rather than any landing at all. Everything below is
+# about a sprite that was standing on this window when it moved, and a Character
+# wanders: one that walked off the end before the fling fell for its own reasons
+# and would read as a grip that let go.
+fling = moves[1]
+standing = next((f for f in reversed(frames) if f[0] < fling["at_ms"]), None)
+landed = standing if standing and standing[1] == "Perched" \
+    and abs(standing[3] - moves[0]["y"]) <= 1 else None
+check(landed is not None,
+      "the sprite is standing on the prop when it is flung",
+      f"window top y={moves[0]['y']:.0f}" if landed
+      else f"{standing[1]} at ({standing[2]:.0f},{standing[3]:.0f})" if standing
+      else "no frame before the fling")
+
+left = first(lambda f: landed and f[0] >= fling["at_ms"] and f[1] == "Falling")
+check(left is not None and left[0] - fling["at_ms"] <= POLL_MS + SLACK_MS,
+      "a window moved faster than the grip is not ridden",
+      f"{left[0] - fling['at_ms']:.0f}ms" if left else "never let go")
+
+# Falling on its own would also describe a sprite that rode the fling down and
+# lost its footing afterwards. What says it was left behind is that it reached
+# the new edge by falling to it rather than being carried there.
+carried = first(lambda f: f[0] >= fling["at_ms"] and f[1] == "Perched"
+                and abs(f[3] - fling["y"]) <= 1 and (left is None or f[0] < left[0]))
+caught = first(lambda f: left and f[0] > left[0] and f[1] == "Perched"
+               and abs(f[3] - fling["y"]) <= 1)
+check(carried is None and caught is not None,
+      "and falls onto the edge that outran it rather than riding to it",
+      f"carried there {carried[0] - fling['at_ms']:.0f}ms after the fling" if carried
+      else f"landed again at y={fling['y']:.0f}" if caught else "never landed again")
+
+print(f"\n{'FAILED: ' + ', '.join(fails) if fails else 'Grip checks passed.'}")
+sys.exit(1 if fails else 0)
+GRIP
+GRIP_STATUS=$?
+[ "$GRIP_STATUS" -ne 0 ] && STATUS=1
 
 echo ""
 echo "Still needs a human (README > Verifying the overlay by hand):"

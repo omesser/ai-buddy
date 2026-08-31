@@ -1,4 +1,5 @@
-// A real window at a chosen rectangle, which then steps down the screen.
+// A real window at a chosen rectangle, which then steps or flings itself down
+// the screen.
 //
 // The frame loop can only be verified against a desktop, and the interesting
 // half of it is Perches: the sprite has to land on a window's top edge, ride
@@ -7,6 +8,12 @@
 // window needs an Accessibility grant, which this project asks for nowhere —
 // but opening one of our own is free, and the window server reports it to
 // WindowSource exactly like any other window.
+//
+// --fast covers the same ground in one jump instead of three steps, which is
+// the other side of the grip: a Perch that moves slower than the sprite can
+// hold on is ridden, and one that outruns it leaves it behind to fall (#85).
+// Both sides need a window that moves on its own, because moving somebody
+// else's is the grant this project does not ask for.
 //
 // Each event prints one JSON line: when it happened, in Unix milliseconds, the
 // bounds the window server actually settled on, in the top-left-origin points
@@ -33,17 +40,26 @@
 // all has its top edge at the top of the screen, where a falling sprite never
 // meets it.
 //
-// Usage: swift scripts/perch-window.swift x y width height [level]
+// Usage: swift scripts/perch-window.swift [--fast] x y width height [level]
 
 import AppKit
 
 /// How far down the screen each step moves the window, and how long between
 /// steps. Slow enough that the sprite is settled before the next one, and
 /// repeated so the check can use whichever step happened once the sprite was
-/// already perched, rather than racing the app's startup.
+/// already perched, rather than racing the app's startup. The fling waits the
+/// same interval, which is long enough for the sprite to have landed and short
+/// enough that it is still standing there: a Character wanders along an edge
+/// while it waits, and one that has walked off the end was never flung.
 let stepPoints = 80.0
 let stepInterval = 5.0
 let steps = 3
+
+/// The whole of that travel in one move. One jump rather than a fast burst of
+/// small ones because the app reads the window list about ten times a second,
+/// and a burst can fall either side of a read with neither half fast enough to
+/// be a yank; a single jump is one delta however the reads land.
+let flingPoints = stepPoints * Double(steps)
 
 /// How often the prop re-asserts its place at the front of its level. Faster
 /// than the app's ~10Hz window poll, so a burial cannot survive a whole tick and
@@ -54,15 +70,17 @@ let reassertInterval = 0.05
 /// with it, and this is what happens if the script never gets the chance.
 let quitAfter = 45.0
 
-let args = CommandLine.arguments
-guard args.count == 5 || args.count == 6, let x = Double(args[1]), let y = Double(args[2]),
-    let width = Double(args[3]), let height = Double(args[4])
+var args = Array(CommandLine.arguments.dropFirst())
+let fast = args.first == "--fast"
+if fast { args.removeFirst() }
+guard args.count == 4 || args.count == 5, let x = Double(args[0]), let y = Double(args[1]),
+    let width = Double(args[2]), let height = Double(args[3])
 else {
     FileHandle.standardError.write(
-        Data("usage: perch-window.swift x y width height [level]\n".utf8))
+        Data("usage: perch-window.swift [--fast] x y width height [level]\n".utf8))
     exit(2)
 }
-let level = args.count == 6 ? Int(args[5]) ?? 0 : 0
+let level = args.count == 5 ? Int(args[4]) ?? 0 : 0
 
 let app = NSApplication.shared
 // No Dock tile, no switcher entry, no stolen focus: this is a prop, not an app.
@@ -135,10 +153,17 @@ let settle = 0.3
 RunLoop.current.run(until: Date().addingTimeInterval(settle))
 report(at: Date())
 
-for step in 1...steps {
-    DispatchQueue.main.asyncAfter(deadline: .now() + stepInterval * Double(step)) {
+/// When each move happens, and where it puts the top edge. The two variants
+/// differ in nothing else: same window, same travel, same reports.
+let moves: [(after: Double, top: Double)] =
+    fast
+    ? [(stepInterval, y + flingPoints)]
+    : (1...steps).map { (stepInterval * Double($0), y + stepPoints * Double($0)) }
+
+for move in moves {
+    DispatchQueue.main.asyncAfter(deadline: .now() + move.after) {
         let moved = Date()
-        window.setFrame(appKitRect(top: y + stepPoints * Double(step)), display: true)
+        window.setFrame(appKitRect(top: move.top), display: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + settle) { report(at: moved) }
     }
 }
