@@ -387,10 +387,15 @@ def registration_offsets(frames):
     return [(0, 0)] + [registered(solid_mask(frame)) for frame in frames[1:]]
 
 
-def import_scale(stand_height):
+def import_scale(stand_height, target=None):
     """(resample factor, manifest scale) landing the sprite in the shimeji
-    band. Art already in the band ships untouched at scale 1; taller art is
-    resampled down; small pixel art keeps its pixels and scales up."""
+    band — or at `target` logical pixels when the operator names one. Art
+    already at home ships untouched at scale 1; taller art is resampled
+    down; small pixel art keeps its pixels and scales up."""
+    if target is not None:
+        if stand_height > target:
+            return target / stand_height, 1
+        return 1.0, max(1, min(4, round(target / stand_height)))
     low, high = STAND_BAND
     if stand_height > high:
         return TARGET_STAND / stand_height, 1
@@ -566,6 +571,7 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
     header = [
         f"{pet['displayName']} imported from petscodex (petdex) by scripts/import-pet.py.",
         f"Source pet id: {pet['id']} — https://petscodex.com/pets/{pet['id']}",
+        f"Source description: {pet.get('description', '').strip()}",
         f"Mapping: idle<-row 0, walk<-{walk_state} row {walk_row}{mirrored}",
         "(the row drawn heading right), talk<-waving row 3,",
         "fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6",
@@ -583,7 +589,6 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
     license_line = pet.get("pet_license") or pet.get("license")
     return {
         "name": pet["displayName"],
-        "personality": pet.get("description", ""),
         "license": license_line,
         "header": header,
         "animations": animations,
@@ -686,7 +691,6 @@ def read_shimeji(source, name=None):
     ]
     return {
         "name": name,
-        "personality": "",
         "license": None,
         "header": header,
         "animations": animations,
@@ -696,7 +700,7 @@ def read_shimeji(source, name=None):
 FORMATS = ("petscodex", "shimeji")
 
 
-def emit(pet, out, validate=True):
+def emit(pet, out, validate=True, stand=None):
     """Write the Character Package: frames aligned per animation, manifest,
     personality — then prove it with `character::load`."""
     from PIL import Image
@@ -714,7 +718,7 @@ def emit(pet, out, validate=True):
     # One resample factor for the whole character, from how tall it stands
     # idle, so every animation keeps the same proportions.
     idle = unions["idle"]
-    factor, scale = import_scale(idle[3] - idle[1])
+    factor, scale = import_scale(idle[3] - idle[1], stand)
     mode = render_mode(*measure(animations["idle"]["frames"][0]))
     if factor != 1.0:
         for spec in animations.values():
@@ -802,8 +806,6 @@ def emit(pet, out, validate=True):
     )
     manifest = manifest_text(pet["name"], mode, scale, header, animations)
     (out / "character.manifest").write_text(manifest)
-    if pet["personality"]:
-        (out / "personality.txt").write_text(pet["personality"].strip() + "\n")
 
     print(f"{pet['name']}: {sum(len(s['frames']) for s in animations.values())} "
           f"frames on a {canvas[0]}x{canvas[1]} canvas, {mode} at scale {scale}")
@@ -851,6 +853,10 @@ def main():
                              "row (optionally naming its frames), for the pet "
                              "whose art strays from petdex's row semantics — "
                              "e.g. --map sleep=6:3 --map react=7")
+    parser.add_argument("--stand", type=int,
+                        help="how tall the sprite stands on screen, in "
+                             "logical pixels (default: the shimeji band, "
+                             "100-130)")
     parser.add_argument("--force", action="store_true",
                         help="replace an existing output directory")
     parser.add_argument("--self-test", action="store_true")
@@ -892,7 +898,7 @@ def main():
         if not args.force:
             sys.exit(f"{args.out} exists; --force replaces it")
         shutil.rmtree(args.out)
-    emit(pet, args.out)
+    emit(pet, args.out, stand=args.stand)
     if args.ecosystem == "petscodex":
         print("review the output before shipping it: walk must head right "
               "(--walk-row picks the other row; --mirror-walk flips it), and "
@@ -900,6 +906,8 @@ def main():
               "strays from the row semantics is recut with --map")
     else:
         print("review the output before shipping it — walk must head right")
+    print("no personality.txt is written: author one to fit the art, the way "
+          "the shipped characters' read")
 
 
 def self_test():
@@ -925,6 +933,9 @@ def self_test():
     assert import_scale(128) == (1.0, 1)
     assert import_scale(32) == (1.0, 4)
     assert import_scale(60) == (1.0, 2)
+    factor, scale = import_scale(174, 100)
+    assert scale == 1 and abs(factor - 100 / 174) < 1e-9
+    assert import_scale(32, 100) == (1.0, 3)
 
     assert render_mode(4097, 0.3) == "smooth"
     assert render_mode(16, 0.0) == "pixelated"
@@ -1012,7 +1023,9 @@ def self_test():
         for required in ("idle", "walk", "fall", "land", "sit", "sleep",
                          "react", "talk", "hold"):
             assert f"[animations.{required}]" in manifest
-        assert (out / "personality.txt").read_text().strip() == "a test dot"
+        # A personality is authored, never derived from the pet description.
+        assert not (out / "personality.txt").exists()
+        assert "Source description: a test dot" in manifest
 
         # Grounding and registration: every frame of every animation lands
         # its dot on the canvas bottom at one x — the jitter baked into the

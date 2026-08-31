@@ -1,11 +1,13 @@
 # Cat imported from petscodex (petdex) by scripts/import-pet.py.
 # Source pet id: cat — https://petscodex.com/pets/cat
+# Source description: A chibi gray-and-white Scottish Fold cat Codex pet based on the reference photo.
 # Mapping: idle<-row 0, walk<-running-left row 2
 # (the row drawn heading right), talk<-waving row 3,
 # fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6
 # (idle variant), sit<-review row 8; sleep is idle's stillest frame
 # with a one-pixel breath. The other walk row (the engine mirrors
 # instead) and row 7 (running in place) go unused.
+# Remapped for this pet's art (--map): sleep<-row 5[2].
 # License: none declared anywhere in the source ecosystem;
 # accepted at import with --accept-license. A development asset
 # unless a license surfaces — this repository's license claims
@@ -55,7 +57,7 @@ frames = ["frames/sit-0.png", "frames/sit-1.png", "frames/sit-2.png", "frames/si
 fps = 6
 
 [animations.sleep]
-frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
+frames = ["frames/sleep-0.png"]
 fps = 1
 
 # A starter life, copied from BMO's — tune it to the pet.

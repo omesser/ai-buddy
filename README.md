@@ -528,8 +528,10 @@ cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
 The importer notices a missing Pillow and says exactly this rather than
 tracing back.
 
-A `.zip` works as a source wherever a directory does, and `--force` replaces
-an existing output directory. The importer prints the pet's license and
+A `.zip` works as a source wherever a directory does, `--force` replaces an
+existing output directory, and `--stand` names the on-screen height in
+logical pixels when the default band (100–130, where a shimeji stands) is
+not the right size for the pet. The importer prints the pet's license and
 refuses a silently-unknown one without `--accept-license`; an import is a
 development asset unless its license says otherwise, and one that ships gets a
 line in [Prior art and attribution](#prior-art-and-attribution). Success is
@@ -557,6 +559,9 @@ two things are the reviewer's to judge, not code's:
   animation from the row the pet actually drew: `--map sleep=6:2,3` takes
   frames 2 and 3 of row 6, `--map react=7` takes all of row 7. Remaps are
   recorded in the manifest header.
+- **A personality is authored, never derived.** The importer writes no
+  `personality.txt` — the pet's own description is provenance, not a voice.
+  Write one that fits the art, the way the shipped characters' read.
 
 `characters/cat/` is the first shipped import — petscodex's `cat`, with the
 defaults. The importer's self-test runs with no pet installed:
