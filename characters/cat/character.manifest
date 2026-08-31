@@ -17,11 +17,11 @@ name = "Cat"
 render_mode = "smooth"
 scale = 1
 
-# Proactive model calls: after each one with no one addressing the buddy,
-# the wait becomes wait * model_base ^ model_power. Two and one doubles.
+# Proactive model calls: Cat supervises the desk, so the wait does not grow.
+# One and one keeps every two minutes.
 
 [director]
-model_base = 2
+model_base = 1
 model_power = 1
 
 [animations.idle]
