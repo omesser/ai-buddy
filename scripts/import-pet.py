@@ -547,13 +547,10 @@ def require_pillow():
         import PIL  # noqa: F401 -- the import is itself the check
     except ModuleNotFoundError:
         sys.exit(
-            "Pillow is not importable from this Python. Set up a venv and "
+            "Pillow is not importable from this Python. Set up the venv and "
             "run the importer with it:\n"
-            "  python3 -m venv .venv\n"
-            "  .venv/bin/python -m pip install pillow\n"
-            "  .venv/bin/python scripts/import-pet.py ...\n"
-            "(with uv: uv venv && uv pip install pillow — a uv venv has no "
-            "pip of its own)"
+            "  uv venv && uv pip install pillow\n"
+            "  .venv/bin/python scripts/import-pet.py ..."
         )
 
 
