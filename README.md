@@ -551,6 +551,12 @@ two things are the reviewer's to judge, not code's:
 - **Sleep must read as sleep.** petscodex has no sleep row, so the importer
   synthesizes one: idle's stillest frame, twice, the second lifted a pixel as
   the breath. Swap in a better pose when the sheet has one.
+- **Every animation must read as its name.** The row semantics are labels
+  each generated pet interprets loosely — one pet's "jumping" row is a sword
+  lunge, and its sleeping art lives in the "waiting" row. `--map` recuts an
+  animation from the row the pet actually drew: `--map sleep=6:2,3` takes
+  frames 2 and 3 of row 6, `--map react=7` takes all of row 7. Remaps are
+  recorded in the manifest header.
 
 `characters/cat/` is the first shipped import — petscodex's `cat`, with the
 defaults. The importer's self-test runs with no pet installed:
