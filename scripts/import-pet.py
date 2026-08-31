@@ -840,11 +840,18 @@ def pack_pngs(source):
     )
     if not paths:
         sys.exit(f"{source}: no PNGs anywhere — there is nothing to sheet")
-    return [
-        (path.relative_to(source).as_posix().replace("/", "-"),
-         Image.open(path).convert("RGBA"))
-        for path in paths
-    ]
+    # Flattening can collide — img/a.png and img-a.png land on the same name —
+    # and the loser would be numbered on the contact sheet, indexed in the
+    # skeleton, and absent from frames/, so the human categorizes a frame that
+    # the finishing pass can never load. Rare enough to stop for rather than
+    # invent a disambiguating suffix nobody reading the sheet could predict.
+    frames = {}
+    for path in paths:
+        name = path.relative_to(source).as_posix().replace("/", "-")
+        if name in frames:
+            sys.exit(f"{source}: two frames flatten to {name}; rename one")
+        frames[name] = Image.open(path).convert("RGBA")
+    return list(frames.items())
 
 
 def contact_sheet(frames):
@@ -970,7 +977,12 @@ def read_frames(source, name=None):
     name = declared.get("name") or name or source.name
 
     tables = declared.get("animations") or {}
-    empty = [a for a in REQUIRED_ANIMATIONS if not tables.get(a, {}).get("frames")]
+    # Every animation the worksheet declares, not only the required nine: an
+    # optional one left empty otherwise reaches `emit` and is reported as art
+    # whose every frame is transparent, which sends the human looking for a
+    # bug in the pack instead of at the list they have not filled in yet.
+    empty = [a for a in dict.fromkeys(REQUIRED_ANIMATIONS + tuple(tables))
+             if not tables.get(a, {}).get("frames")]
     if empty:
         sys.exit(f"{source / MANIFEST_FILE} still declares no frames for "
                  + ", ".join(empty)
@@ -1523,6 +1535,32 @@ def self_test():
             assert "idle" in str(stopped), stopped
         else:
             assert False, "an unfilled skeleton must stop"
+
+        # An optional animation left empty is the same unfilled list, and is
+        # named as one rather than reaching `emit` as transparent art.
+        (out / MANIFEST_FILE).write_text(
+            skeleton.replace("frames = []",
+                             'frames = ["frames/img-pose1.png"]')
+            + '\n[animations.wave]\nframes = []\n'
+        )
+        try:
+            read_frames(out)
+        except SystemExit as stopped:
+            assert "wave" in str(stopped), stopped
+        else:
+            assert False, "an empty optional animation must stop"
+        (out / MANIFEST_FILE).write_text(skeleton)
+
+        # Two frames that flatten to one name would leave the human
+        # categorizing a frame the finishing pass can never load.
+        (pack / "img-pose1.png").write_bytes((pack / "img" / "pose1.png").read_bytes())
+        try:
+            pack_pngs(pack)
+        except SystemExit as stopped:
+            assert "img-pose1.png" in str(stopped), stopped
+        else:
+            assert False, "a flattened-name collision must stop"
+        (pack / "img-pose1.png").unlink()
 
         # The human's half of the work, done here by hand: every animation
         # gets the same two frames, which is enough to exercise the pass.
