@@ -4,9 +4,9 @@
 # Hand-tuned after import based on actual spritesheet art (petscodex labels
 # do not match this pet's frames). Spritesheet: 8x9 grid of 192x208 cells.
 # Final mapping: idle+waiting<-row 0[0,1] at fps=2 (blink, destrobed from 6),
-# walk<-row 2[0-7]+row 3[0-3] mirrored to head right (12-frame full stride),
-# sit<-row 7[2-5] (cross-legged sit, 4 frames), sleep<-row 6[0-5] (doze to
-# lie down, 6 frames), land<-row 6[0,1] (crouch), talk<-row 8 (gestures, 6),
+# walk<-row 2[0-7] mirrored to head right (8-frame two-step cycle),
+# sit<-row 7[2-5] (cross-legged sit, 4 frames), sleep<-row 6[4,5] (lying
+# down, 2 frames), land<-row 6[0,1] (crouch), talk<-row 8 (gestures, 6),
 # react<-row 5 (Stand aura, 8), fall/hold<-row 4 (run/lunge).
 # All frames: 1px silhouette erode + re-ground to remove green chroma halo.
 # License: none declared anywhere in the source ecosystem;
@@ -28,8 +28,8 @@ fps = 2
 variant_of = "idle"
 
 [animations.walk]
-frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png", "frames/walk-8.png", "frames/walk-9.png", "frames/walk-10.png", "frames/walk-11.png"]
-fps = 12
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
+fps = 8
 
 [animations.talk]
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png", "frames/talk-4.png", "frames/talk-5.png"]
