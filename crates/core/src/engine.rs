@@ -414,8 +414,14 @@ impl Engine {
         // Falling must reach the wall to trigger Contact::Wall. Riding and
         // coasting have their own display-edge logic (#128); edge correction
         // must not fight them. Climb frames assume the wall is in the middle,
-        // so clipping is intentional.
+        // so clipping is intentional. A held walk is excluded the same way:
+        // it drives at the edge on purpose — that is how the wall is reached
+        // and climbed — and correcting it mid-travel set the sprite back a
+        // step each time it closed the gap, a visible stutter, because the
+        // held velocity re-derives `facing` every tick and the flip below
+        // never survived to turn the walk around.
         let stationary = matches!(self.state, State::Grounded | State::Perched | State::Asleep)
+            && self.velocity.x == 0.0
             && !self.riding
             && self.coast_s == 0.0;
         if stationary {
@@ -1501,6 +1507,49 @@ mod tests {
     /// A sprite dropped at `position` with those Behaviors to play.
     fn a_character_at(position: Point) -> Engine {
         Engine::new(position).with_behaviors(declared_behaviors())
+    }
+
+    /// A held walk drives the sprite at the display edge on purpose: that is
+    /// how it reaches the wall and climbs. The edge correction is for coming
+    /// to rest (#123) and must not fight the travel — correcting a moving
+    /// sprite teleports it back a step each time it closes the gap, a visible
+    /// stutter, and the wall becomes unreachable.
+    #[test]
+    fn a_walk_reaches_the_display_edge_without_being_set_back() {
+        let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
+        settle(&mut engine, &snapshot(16));
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 300.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(16)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: -200.0, y: 0.0 },
+            }],
+            ..snapshot(16)
+        });
+        settle(&mut engine, &snapshot(16));
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..snapshot(16)
+        });
+
+        let mut previous = engine.tick(&snapshot(16));
+        for _ in 0..400 {
+            let frame = engine.tick(&snapshot(16));
+            if frame.state == State::Climbing {
+                return; // the wall was reached, which is what a walk is for
+            }
+            assert!(
+                frame.position.x <= previous.position.x,
+                "walking left never moves the sprite back right: {} -> {}",
+                previous.position.x,
+                frame.position.x
+            );
+            previous = frame;
+        }
+        panic!("the walk never reached the display edge: {previous:?}");
     }
 
     /// A sprite standing on the floor of one display, with those Behaviors to
