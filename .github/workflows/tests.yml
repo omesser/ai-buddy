@@ -212,7 +212,7 @@ jobs:
         # no platform key, and naming them here would hide that from anyone
         # running the hooks locally.
         env:
-          SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy-core,cargo-clippy-shell,shfmt,shellcheck' || '' }}
+          SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy-core,cargo-clippy-mcp-server,cargo-clippy-shell,shfmt,shellcheck' || '' }}
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
