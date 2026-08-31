@@ -521,7 +521,7 @@ uv pip install pillow
 npx petscodex list
 npx petscodex install labubu
 .venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
-    -o characters/labubu --accept-license
+    -o characters/labubu
 cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
 ```
 
@@ -535,10 +535,14 @@ tracing back.
 A `.zip` works as a source wherever a directory does, `--force` replaces an
 existing output directory, and `--stand` names the on-screen height in
 logical pixels when the default band (100–130, where a shimeji stands) is
-not the right size for the pet. The importer prints the pet's license and
-refuses a silently-unknown one without `--accept-license`; an import is a
-development asset unless its license says otherwise, and one that ships gets a
-line in [Prior art and attribution](#prior-art-and-attribution). Success is
+not the right size for the pet. The importer prints the pet's license, and
+warns when it is undeclared or not one of the permissive ones it recognizes —
+MIT, CC0, CC-BY-4.0, Apache-2.0, BSD-3-Clause. It warns rather than refuses:
+whoever imports a pet is who ships it, and a tool cannot read a license on
+their behalf. The manifest header keeps that record after the terminal is
+gone. An import is a development asset unless its license says otherwise, and
+one that ships gets a line in
+[Prior art and attribution](#prior-art-and-attribution). Success is
 declared only after `character::load` accepts the output, through a validator
 that is also useful on its own:
 
@@ -596,9 +600,8 @@ asset, and none of this repository's license claims cover that art.
 
 Cat's frames are cut from the [petscodex](https://petscodex.com/pets/cat) pet
 `cat` by `scripts/import-pet.py` (#112). The installed package declares no
-license, so the import was accepted with `--accept-license`; the character is
-a development asset, and none of this repository's license claims cover that
-art.
+license, which the importer warns about; the character is a development asset,
+and none of this repository's license claims cover that art.
 
 ## License
 

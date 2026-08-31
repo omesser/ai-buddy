@@ -8,10 +8,10 @@
 # with a one-pixel breath. The other walk row (the engine mirrors
 # instead) and row 7 (running in place) go unused.
 # Remapped for this pet's art (--map): sleep<-row 5[2].
-# License: none declared anywhere in the source ecosystem;
-# accepted at import with --accept-license. A development asset
-# unless a license surfaces — this repository's license claims
-# do not cover the art.
+# License: none declared anywhere in the source ecosystem, and
+# the importer warned so. A development asset unless a license
+# surfaces — this repository's license claims do not cover the
+# art.
 
 name = "Cat"
 render_mode = "smooth"

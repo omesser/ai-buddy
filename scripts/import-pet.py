@@ -9,8 +9,10 @@ decoding webp rules out the standard library. It is the one script allowed to.
     python3 scripts/import-pet.py ~/.codex/pets/cat --format petscodex -o characters/cat
     python3 scripts/import-pet.py --self-test
 
-The importer prints the pet's license and refuses a silently-unknown one
-without --accept-license. Success is declared only after the output passes
+The importer prints the pet's license, and warns when it is undeclared or not
+one of the permissive ones in KNOWN_LICENSES. It warns rather than refuses:
+whoever imports a pet is who ships it. Success is declared only after the
+output passes
 `character::load`, through the core crate's `validate` example.
 """
 
@@ -31,6 +33,87 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 TARGET_STAND = 120
 STAND_BAND = (100, 130)
 MAX_FPS = 60
+
+# Licenses an import may proceed on without a human weighing in: permissive
+# enough that recording the license in the manifest header discharges what
+# they ask of us. SPDX identifiers, plus the vernacular spellings the
+# ecosystems print — petdex's submit flow offers "CC0" on its own, and case
+# and spacing vary everywhere. Free-form prose ("The MIT License (MIT)") is
+# not recognized and is not meant to be.
+#
+# The list is short on purpose: a license nobody here has read is a license
+# the importer must not accept on somebody's behalf.
+KNOWN_LICENSES = (
+    "MIT",
+    "CC0-1.0",
+    "CC0",
+    "CC-BY-4.0",
+    "Apache-2.0",
+    "BSD-3-Clause",
+)
+
+
+def normalize_license(text):
+    """A declared license flattened for comparison, and for nothing else.
+
+    Case and spacing are how one license differs between packs. The
+    identifier itself is not ours to guess at, so nothing else is rewritten
+    and an unrecognized spelling stops for a human rather than being read
+    charitably.
+    """
+    return "-".join(text.upper().replace("-", " ").replace("_", " ").split())
+
+
+KNOWN_NORMALIZED = frozenset(normalize_license(name) for name in KNOWN_LICENSES)
+
+
+def license_warning(license_line):
+    """What the importer must say about this license, or `None` when the
+    allowlist recognizes it and there is nothing to say.
+
+    A warning rather than a gate. The importer cannot read a license for
+    somebody, and refusing to run does not make the judgement any better
+    informed — it only teaches whoever is importing to reach for the flag
+    that turns the check off. Whoever imports a pet is who ships it, and the
+    warning is what makes that theirs knowingly.
+    """
+    if not normalize_license(license_line or ""):
+        return ("warning: this pack declares no license, and the source "
+                "ecosystem publishes no license metadata at all. Desktop-pet "
+                "packs are typically fan art of third-party characters. "
+                "Shipping this art is your call to make, and yours to answer "
+                "for")
+    if normalize_license(license_line) not in KNOWN_NORMALIZED:
+        return (f"warning: {license_line} is not one of the licenses this "
+                f"importer recognizes ({', '.join(KNOWN_LICENSES)}). Read it "
+                "before shipping the art — what it asks of you is yours to "
+                "answer for")
+    return None
+
+
+def license_header(license_line):
+    """The manifest header's account of the license the art arrived under.
+
+    The one durable record: the import prints its warning once, into a
+    terminal nobody keeps, and this is what the next reader of the package
+    finds instead.
+    """
+    declared = normalize_license(license_line or "")
+    if not declared:
+        return [
+            "License: none declared anywhere in the source ecosystem, and",
+            "the importer warned so. A development asset unless a license",
+            "surfaces — this repository's license claims do not cover the",
+            "art.",
+        ]
+    if declared not in KNOWN_NORMALIZED:
+        return [
+            f"License: {license_line}, which the importer does not",
+            "recognize and warned about. Read it before shipping the art —",
+            "this repository's license claims do not cover it.",
+        ]
+    return [f"License: {license_line}."]
+
 
 # petscodex (petdex) sheets are a fixed grid of 8 columns, 192x208 cells, in
 # two published layouts; integer-scaled variants are accepted. Mirrors
@@ -586,10 +669,12 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
             for animation, (row, indices) in sorted(overrides.items())
         )
         header.append(f"Remapped for this pet's art (--map): {remapped}.")
-    license_line = pet.get("pet_license") or pet.get("license")
+    # A pet.json may carry the key with nothing in it, which is the same
+    # as not carrying it: one meaning of "undeclared" for every reader.
+    license_line = (pet.get("pet_license") or pet.get("license") or "").strip()
     return {
         "name": pet["displayName"],
-        "license": license_line,
+        "license": license_line or None,
         "header": header,
         "animations": animations,
     }
@@ -794,16 +879,7 @@ def emit(pet, out, validate=True, stand=None):
             page.paste(frame, (dx, dy))
             page.save(frames_dir / f"{animation}-{i}.png")
 
-    header = pet["header"] + (
-        [f"License: {pet['license']}."]
-        if pet["license"]
-        else [
-            "License: none declared anywhere in the source ecosystem;",
-            "accepted at import with --accept-license. A development asset",
-            "unless a license surfaces — this repository's license claims",
-            "do not cover the art.",
-        ]
-    )
+    header = pet["header"] + license_header(pet["license"])
     manifest = manifest_text(pet["name"], mode, scale, header, animations)
     (out / "character.manifest").write_text(manifest)
 
@@ -838,8 +914,6 @@ def main():
     parser.add_argument("source", nargs="?", help="pet directory or zip")
     parser.add_argument("--format", choices=FORMATS, dest="ecosystem")
     parser.add_argument("-o", "--out", type=pathlib.Path)
-    parser.add_argument("--accept-license", action="store_true",
-                        help="proceed although the pet's license is unknown")
     parser.add_argument("--walk-row", type=int, choices=(1, 2), default=2,
                         help="petscodex: the sheet row to cut walk from. Row 2 "
                              "(petdex's running-left) is drawn heading right in "
@@ -883,16 +957,10 @@ def main():
         # from the path the user gave, not from where it landed.
         pet = read_shimeji(source, pathlib.Path(args.source).expanduser().stem)
 
-    if pet["license"]:
-        print(f"license: {pet['license']}")
-    else:
-        print("license: none declared — not in the pack, and the source "
-              "ecosystem publishes no license metadata at all. Desktop-pet "
-              "packs are typically fan art of third-party characters, so an "
-              "import is a development asset: used locally, never shipped or "
-              "redistributed.")
-        if not args.accept_license:
-            sys.exit("--accept-license records that judgment and proceeds")
+    print(f"license: {pet['license'] or 'none declared'}")
+    warning = license_warning(pet["license"])
+    if warning:
+        print(warning, file=sys.stderr)
 
     if args.out.exists():
         if not args.force:
@@ -922,6 +990,20 @@ def self_test():
     assert detect_atlas(1536, 2288) == (2, 11, 192, 208)
     assert detect_atlas(1537, 1872) is None
     assert detect_atlas(100, 100) is None
+
+    # The license check, which warns and never stops: the only thing that
+    # reaches the person importing is what it returns.
+    assert license_warning("CC0-1.0") is None
+    assert license_warning("cc by 4.0") is None, "spelling varies"
+    assert license_warning("MIT") is None
+    assert "All Rights Reserved" in license_warning("All Rights Reserved")
+    assert license_warning(None) == license_warning(""), "blank is undeclared"
+    assert license_warning("   ") == license_warning(None)
+
+    assert license_header("CC0-1.0") == ["License: CC0-1.0."]
+    assert "none declared" in " ".join(license_header(None))
+    assert "All Rights Reserved" in " ".join(license_header("All Rights Reserved"))
+    assert license_header("   ") == license_header(None)
 
     assert fps_for(6, 1100) == 5
     assert fps_for(8, 1060) == 8
