@@ -201,16 +201,6 @@ def fps_for(frames, duration_ms):
     return max(1, min(MAX_FPS, round(frames * 1000 / duration_ms)))
 
 
-def animation_offset(union, canvas):
-    """The uniform shift that centers an animation's union bbox horizontally
-    and lands its collective baseline on the canvas bottom — the placement
-    for a `registered` spec, whose frames' relative positions are meaningful
-    (the synthesized sleep and its one-pixel breath)."""
-    left, _, right, bottom = union
-    width, height = canvas
-    return (width - (right - left)) // 2 - left, height - bottom
-
-
 def solid_mask(frame):
     """The pixels the loader itself will count as drawn: alpha at or above
     the hit-test threshold (`character::ALPHA_THRESHOLD` is 128). Alignment
@@ -218,28 +208,92 @@ def solid_mask(frame):
     return frame.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
 
 
-def x_offsets(frames):
-    """Per-frame horizontal shifts registering every frame to the first, by
-    maximum overlap of solid pixels. Generated sheets place the character a
-    few pixels differently in every cell, which plays back as sideways
-    drift; bbox or centroid centering would instead swing the body whenever
-    a limb extends, so overlap does the registering."""
+def strip_edge_bleed(frame):
+    """Remove solid fragments glued to a cell's left or right edge — the
+    neighboring frame's art, inherited where a pose crosses the sheet's grid
+    line. Only fragments go: a tiny share of the solid pixels, touching a
+    vertical edge, disconnected from the body. A pose that itself reaches
+    the edge is the largest component and stays whole."""
+    from PIL import Image
+
+    mask = solid_mask(frame)
+    width, height = mask.size
+    data = list(mask.getdata())
+    seen = bytearray(len(data))
+    components = []
+    for start in range(len(data)):
+        if data[start] and not seen[start]:
+            seen[start] = 1
+            stack = [start]
+            pixels = []
+            while stack:
+                index = stack.pop()
+                pixels.append(index)
+                x, y = index % width, index // width
+                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                    if 0 <= nx < width and 0 <= ny < height:
+                        neighbor = ny * width + nx
+                        if data[neighbor] and not seen[neighbor]:
+                            seen[neighbor] = 1
+                            stack.append(neighbor)
+            components.append(pixels)
+    if len(components) < 2:
+        return frame
+    largest = max(len(pixels) for pixels in components)
+    for pixels in components:
+        columns = [index % width for index in pixels]
+        if len(pixels) >= largest * 0.05:
+            continue
+        if 0 not in columns and width - 1 not in columns:
+            continue
+        # Clear a padded box around the fragment, taking its soft halo too.
+        rows = [index // width for index in pixels]
+        box = (
+            max(0, min(columns) - 2),
+            max(0, min(rows) - 2),
+            min(width, max(columns) + 3),
+            min(height, max(rows) + 3),
+        )
+        frame.paste(Image.new("RGBA", (box[2] - box[0], box[3] - box[1])), box[:2])
+    return frame
+
+
+def registration_offsets(frames):
+    """Per-frame (dx, dy) drawing shifts registering every frame to the
+    first, by maximum overlap of solid pixels. Generated sheets place the
+    character a little differently in every cell, which plays back as
+    sideways drift and vertical jitter; bbox or centroid centering would
+    instead swing the body whenever a limb extends, so overlap does the
+    registering — the body mass stays put and the limbs animate. The search
+    is separable (best x, then y, then x again) rather than exhaustive; on
+    a blob-shaped sprite the passes converge."""
     from PIL import ImageChops
 
     anchor = solid_mask(frames[0])
     width, height = anchor.size
-    reach = max(8, width // 4)
+    reach_x, reach_y = max(8, width // 4), max(8, height // 4)
 
     def registered(mask):
-        def overlap(shift):
-            slid = mask.crop((shift, 0, shift + width, height))
+        def overlap(dx, dy):
+            slid = mask.crop((dx, dy, dx + width, dy + height))
             return ImageChops.darker(anchor, slid).histogram()[255]
 
-        # The best shift, nearest to zero on a tie; drawing at its negation
-        # moves this frame's art onto the anchor's.
-        return -max(range(-reach, reach + 1), key=lambda s: (overlap(s), -abs(s)))
+        best_x, best_y = 0, 0
+        for axis in ("x", "y", "x"):
+            if axis == "x":
+                best_x = max(
+                    range(-reach_x, reach_x + 1),
+                    key=lambda s: (overlap(s, best_y), -abs(s)),
+                )
+            else:
+                best_y = max(
+                    range(-reach_y, reach_y + 1),
+                    key=lambda s: (overlap(best_x, s), -abs(s)),
+                )
+        # Drawing at the negation moves this frame's art onto the anchor's.
+        return -best_x, -best_y
 
-    return [0] + [registered(solid_mask(frame)) for frame in frames[1:]]
+    return [(0, 0)] + [registered(solid_mask(frame)) for frame in frames[1:]]
 
 
 def import_scale(stand_height):
@@ -374,7 +428,11 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
 
     def row_frames(row, count):
         return [
-            sheet.crop((c * cell_w, row * cell_h, (c + 1) * cell_w, (row + 1) * cell_h))
+            strip_edge_bleed(
+                sheet.crop(
+                    (c * cell_w, row * cell_h, (c + 1) * cell_w, (row + 1) * cell_h)
+                )
+            )
             for c in range(count)
         ]
 
@@ -585,49 +643,54 @@ def emit(pet, out, validate=True):
                 ]
         unions = {a: union_bbox(spec["frames"]) for a, spec in animations.items()}
 
-    # A uniform per-Character canvas, and per-frame placement on it: every
-    # frame plants its lowest pixels on the canvas bottom (the shell anchors
-    # art there — the #96 floating-sit lesson, applied to every frame the
-    # way #96's hand pass did) and is registered horizontally to its
-    # animation's first frame. Baked-in offsets are never kept, because the
-    # Engine owns all motion — a fall descends by the contact point moving,
-    # not by the art sinking in its cell — and generated sheets jitter
-    # per-frame besides. The exception is a spec marked `registered`, whose
-    # relative frame positions are deliberate: it shifts as a unit.
+    # A uniform per-Character canvas, and placement that keeps a cycle
+    # smooth while keeping every pose on the ground. Frames register to
+    # their animation's first frame in both axes (the per-cell jitter a
+    # generated sheet bakes in becomes body wobble if kept), then the
+    # animation plants its collective baseline on the canvas bottom, where
+    # the shell anchors art — the #96 floating-sit lesson. Per-frame
+    # planting would be firmer but jerks the body every time the feet tuck
+    # mid-stride, so only an outlier — a frame registration left floating
+    # visibly, a curled-up pose in a row of sitting ones — grounds itself.
+    # A spec marked `registered` (the synthesized sleep and its one-pixel
+    # breath) trusts its own relative positions and skips registration.
+    FLOAT_TOLERANCE = 6
     metrics = {}
     for animation, spec in animations.items():
         boxes = [frame.getchannel("A").getbbox() for frame in spec["frames"]]
         if None in boxes:
             sys.exit(f"{animation}: frame {boxes.index(None)} is fully transparent")
         offsets = (
-            [0] * len(boxes) if spec.get("registered") else x_offsets(spec["frames"])
-        )
-        left = min(box[0] + off for box, off in zip(boxes, offsets))
-        right = max(box[2] + off for box, off in zip(boxes, offsets))
-        union = unions[animation]
-        height = (
-            union[3] - union[1]
+            [(0, 0)] * len(boxes)
             if spec.get("registered")
-            else max(box[3] - box[1] for box in boxes)
+            else registration_offsets(spec["frames"])
         )
-        metrics[animation] = (boxes, offsets, right - left, left, height)
+        ground = max(box[3] + dy for box, (_, dy) in zip(boxes, offsets))
+        lifts = []
+        for box, (_, dy) in zip(boxes, offsets):
+            lift = ground - (box[3] + dy)
+            lifts.append(lift if lift <= FLOAT_TOLERANCE else 0)
+        left = min(box[0] + dx for box, (dx, _) in zip(boxes, offsets))
+        right = max(box[2] + dx for box, (dx, _) in zip(boxes, offsets))
+        height = max(
+            box[3] - box[1] + lift for box, lift in zip(boxes, lifts)
+        )
+        metrics[animation] = (boxes, offsets, lifts, right - left, left, height)
 
     canvas = (
-        max(width for _, _, width, _, _ in metrics.values()),
-        max(height for _, _, _, _, height in metrics.values()),
+        max(width for *_, width, _, _ in metrics.values()),
+        max(height for *_, height in metrics.values()),
     )
     frames_dir = out / "frames"
     frames_dir.mkdir(parents=True)
     for animation, spec in animations.items():
-        boxes, offsets, width, left, _ = metrics[animation]
+        boxes, offsets, lifts, width, left, _ = metrics[animation]
         centering = (canvas[0] - width) // 2 - left
-        anchored = animation_offset(unions[animation], canvas)
         for i, frame in enumerate(spec["frames"]):
             page = Image.new("RGBA", canvas, (0, 0, 0, 0))
-            if spec.get("registered"):
-                page.paste(frame, anchored)
-            else:
-                page.paste(frame, (centering + offsets[i], canvas[1] - boxes[i][3]))
+            dx = centering + offsets[i][0]
+            dy = canvas[1] - boxes[i][3] - lifts[i]
+            page.paste(frame, (dx, dy))
             page.save(frames_dir / f"{animation}-{i}.png")
 
     header = pet["header"] + (
@@ -759,9 +822,6 @@ def self_test():
     assert fps_for(8, 1220) == 7
     assert fps_for(1000, 1000) == MAX_FPS
     assert fps_for(1, 100000) == 1
-
-    assert animation_offset((10, 20, 50, 90), (60, 100)) == (0, 10)
-    assert animation_offset((0, 0, 60, 100), (60, 100)) == (0, 0)
 
     factor, scale = import_scale(174)
     assert scale == 1 and abs(factor - 120 / 174) < 1e-9
