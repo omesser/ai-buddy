@@ -89,17 +89,19 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds, ceilingCleara
 
   let x = spriteCenterX - bubbleSize.width / 2;
   let y = spriteHeadY - bubbleSize.height - 10;
+  let flipped = false;
 
   // Flip below sprite when near ceiling
   if (spriteHeadY < ceilingClearance) {
     y = spriteBottomY + 10;
+    flipped = true;
   }
 
   // Clamp horizontally to display bounds
   x = Math.max(displayBounds.x, Math.min(x, displayBounds.x + displayBounds.width - bubbleSize.width));
-  
+
   // Clamp vertically to display bounds
   y = Math.max(displayBounds.y, Math.min(y, displayBounds.y + displayBounds.height - bubbleSize.height));
 
-  return { x, y };
+  return { x, y, flipped };
 }

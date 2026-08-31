@@ -457,10 +457,11 @@ impl Engine {
                         started = true;
                         behavior = Some(proposal.behavior.clone());
                     }
-                } else if proposal.behavior.is_empty() && proposal.dialogue.is_some() {
-                    if self.play(&[Primitive::Talk]) {
-                        started = true;
-                    }
+                } else if proposal.behavior.is_empty()
+                    && proposal.dialogue.is_some()
+                    && self.play(&[Primitive::Talk])
+                {
+                    started = true;
                 }
             }
         }
@@ -3992,10 +3993,7 @@ mod tests {
             ..snapshot(100)
         });
 
-        assert_eq!(
-            silent.animation, "react",
-            "greet plays its own animation"
-        );
+        assert_eq!(silent.animation, "react", "greet plays its own animation");
         assert_eq!(silent.dialogue, None);
         assert_eq!(silent.behavior, Some("greet".to_string()));
     }

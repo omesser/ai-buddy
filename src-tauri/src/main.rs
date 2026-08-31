@@ -645,52 +645,57 @@ fn run_frame_loop(
             }
 
             // After the tick so a Throw is already Falling, not still Dragged.
-            let reactive_wake = if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
-                if director::session_due(
-                    addressed,
-                    since_ambient,
-                    &pace,
-                    activity.displays_asleep,
-                    engine.do_not_disturb(),
-                ) && pending.ready()
-                    && !applied
-                {
-                    let context = Context {
-                        activity: activity.clone(),
-                        recent: recent.clone(),
-                        personality: character.personality.clone(),
-                        state: frame.state,
-                        happened,
-                        standing: assembler.standing_on(frame.position),
-                    };
-                    let was_addressed = addressed;
-                    if addressed {
-                        pace.after_reactive();
+            let reactive_wake =
+                if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
+                    if director::session_due(
+                        addressed,
+                        since_ambient,
+                        &pace,
+                        activity.displays_asleep,
+                        engine.do_not_disturb(),
+                    ) && pending.ready()
+                        && !applied
+                    {
+                        let context = Context {
+                            activity: activity.clone(),
+                            recent: recent.clone(),
+                            personality: character.personality.clone(),
+                            state: frame.state,
+                            happened,
+                            standing: assembler.standing_on(frame.position),
+                        };
+                        let was_addressed = addressed;
+                        if addressed {
+                            pace.after_reactive();
+                        } else {
+                            pace.after_ambient();
+                        }
+                        addressed = false;
+                        happened = Happened::Ambient;
+                        since_ambient = Duration::ZERO;
+                        let payload = model.prompt(&context);
+                        if let Ok(mut inspect) = inspect.lock() {
+                            inspect.last_payload = Some(payload);
+                            inspect.wake_secs = pace.wait().as_secs();
+                        }
+                        pending.start(Arc::clone(model), context.clone());
+                        in_flight = Some(context);
+                        was_addressed
                     } else {
-                        pace.after_ambient();
+                        false
                     }
-                    addressed = false;
-                    happened = Happened::Ambient;
-                    since_ambient = Duration::ZERO;
-                    let payload = model.prompt(&context);
-                    if let Ok(mut inspect) = inspect.lock() {
-                        inspect.last_payload = Some(payload);
-                        inspect.wake_secs = pace.wait().as_secs();
-                    }
-                    pending.start(Arc::clone(model), context.clone());
-                    in_flight = Some(context);
-                    was_addressed
                 } else {
                     false
-                }
-            } else {
-                false
-            };
+                };
 
-            let thinking = !pending.ready() 
-                && (reactive_wake || in_flight.as_ref().map_or(false, |ctx| {
-                    matches!(ctx.happened, Happened::Poke | Happened::Summon | Happened::Throw | Happened::Grab | Happened::Perch)
-                }))
+            let thinking = !pending.ready()
+                && (reactive_wake
+                    || in_flight.as_ref().map_or(false, |ctx| {
+                        matches!(
+                            ctx.happened,
+                            Happened::Poke | Happened::Summon | Happened::Throw
+                        )
+                    }))
                 && !engine.do_not_disturb();
 
             // What the user has seen is what the Engine played, not what the

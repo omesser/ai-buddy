@@ -35,6 +35,26 @@ body {
   z-index: 1;
 }
 
+.bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid #333;
+}
+
+.bubble.flipped::after {
+  bottom: auto;
+  top: -10px;
+  border-top: none;
+  border-bottom: 10px solid #333;
+}
+
 .bubble.visible {
   opacity: 1;
 }

@@ -159,7 +159,7 @@ impl<C: Completer> ModelDirector<C> {
 }
 
 /// A reply that is not a declared Behavior. Empty name: the Engine speaks
-/// and starts nothing. #119 shows this in a bubble.
+/// and plays `talk`. #119 shows this in a bubble.
 fn as_speech(reply: &str) -> Option<BehaviorProposal> {
     let text = reply.trim();
     let text = text

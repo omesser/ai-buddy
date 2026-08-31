@@ -55,11 +55,14 @@ function draw(now) {
   }
 
   const at = previous ? interpolate(previous, latest, now) : latest;
+  const spriteX = Math.round(at.x);
+  const spriteY = Math.round(at.y);
+
   // Whole pixels, so a sprite drawn at an integer scale is not resampled back
   // onto a fractional grid by the compositor. ADR-0006. The art is authored
   // heading right; `scaleX(-1)` mirrors it in place when the Engine says the
   // sprite faces left. main.css sets the center origin that makes it in-place.
-  sprite.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px) scaleX(${latest.facing})`;
+  sprite.style.transform = `translate(${spriteX}px, ${spriteY}px) scaleX(${latest.facing})`;
 
   // The hide rules, carried on every frame rather than announced when they
   // change: a change announced while this file was still fetching its art is a
@@ -69,12 +72,53 @@ function draw(now) {
   sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
   sprite.style.opacity = latest.visible ? "1" : "0";
 
-  // Bubble visibility follows sprite visibility
+  // Bubble visibility follows sprite visibility with same fade
   bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
   thinkingBubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
   if (!latest.visible) {
-    bubble.classList.add("hidden");
-    thinkingBubble.classList.add("hidden");
+    bubble.style.opacity = "0";
+    thinkingBubble.style.opacity = "0";
+    if (latest.fade_ms === 0) {
+      bubble.classList.add("hidden");
+      thinkingBubble.classList.add("hidden");
+      clearThinkingBubble();
+    }
+  } else {
+    // Reposition visible bubbles to follow walking sprite
+    const spriteRect = {
+      x: spriteX,
+      y: spriteY,
+      width: latest.width,
+      height: latest.height,
+    };
+    const displayBounds = {
+      x: 0,
+      y: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+
+    if (bubble.classList.contains("visible")) {
+      const bubbleSize = {
+        width: bubble.offsetWidth,
+        height: bubble.offsetHeight,
+      };
+      const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
+      bubble.style.left = `${pos.x}px`;
+      bubble.style.top = `${pos.y}px`;
+      bubble.classList.toggle("flipped", pos.flipped);
+    }
+
+    if (thinkingBubble.classList.contains("visible")) {
+      const bubbleSize = {
+        width: thinkingBubble.offsetWidth,
+        height: thinkingBubble.offsetHeight,
+      };
+      const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
+      thinkingBubble.style.left = `${pos.x}px`;
+      thinkingBubble.style.top = `${pos.y}px`;
+      thinkingBubble.classList.toggle("flipped", pos.flipped);
+    }
   }
 
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
@@ -106,14 +150,23 @@ function updateBubbles() {
     height: latest.height,
   };
 
+  const displayBounds = {
+    x: 0,
+    y: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+
   // Speech bubble: latch dialogue and show for reading time
   if (latest.dialogue && latest.visible) {
     if (speechTimeout) clearTimeout(speechTimeout);
 
-    const lines = wrapText(latest.dialogue, 260);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = "14px system-ui, sans-serif";
+    const lines = wrapText(latest.dialogue, 260, ctx.measureText.bind(ctx));
     bubbleContent.textContent = lines.join("\n");
 
-    // Measure bubble after content is set
     bubble.classList.remove("hidden");
     bubble.classList.add("visible");
 
@@ -122,24 +175,17 @@ function updateBubbles() {
       height: bubble.offsetHeight,
     };
 
-    const displayBounds = {
-      x: 0,
-      y: 0,
-      width: window.innerWidth,
-      height: window.innerHeight,
-    };
-
     const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
     bubble.style.left = `${pos.x}px`;
     bubble.style.top = `${pos.y}px`;
+    bubble.classList.toggle("flipped", pos.flipped);
 
     const duration = bubbleDuration(latest.dialogue);
     speechTimeout = setTimeout(() => {
       bubble.classList.remove("visible");
-      bubble.classList.add("hidden");
+      setTimeout(() => bubble.classList.add("hidden"), 300);
     }, duration);
 
-    // Clear thinking bubble when speech arrives
     clearThinkingBubble();
   }
 
@@ -178,6 +224,7 @@ function showThinkingBubble(spriteRect, displayBounds) {
   const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
   thinkingBubble.style.left = `${pos.x}px`;
   thinkingBubble.style.top = `${pos.y}px`;
+  thinkingBubble.classList.toggle("flipped", pos.flipped);
 
   thinkingMinHoldTimeout = setTimeout(() => {
     thinkingMinHoldTimeout = null;
@@ -197,7 +244,7 @@ function clearThinkingBubble() {
     thinkingMinHoldTimeout = null;
   }
   thinkingBubble.classList.remove("visible");
-  thinkingBubble.classList.add("hidden");
+  setTimeout(() => thinkingBubble.classList.add("hidden"), 300);
   thinkingShown = false;
 }
 
