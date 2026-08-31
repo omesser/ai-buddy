@@ -364,7 +364,7 @@ pub fn follow_up(context: &Context) -> String {
          recent: {recent}\n\
          time: {clock}\n\
          state: {state}\n\
-         perch: {standing}\n\
+         standing on: {standing}\n\
          open: {open}\n",
         standing = if context.standing.is_empty() {
             "nothing"
@@ -1173,7 +1173,7 @@ mod tests {
             "this moment: {payload}"
         );
         assert!(
-            payload.contains("perch: the display floor, above the Dock"),
+            payload.contains("standing on: the display floor, above the Dock"),
             "standing: {payload}"
         );
     }
@@ -1231,7 +1231,7 @@ mod tests {
         };
         let sent = follow_up(&placed);
         assert!(sent.contains("what just happened: placed on a perch"));
-        assert!(sent.contains("perch: a Cursor window"), "{sent}");
+        assert!(sent.contains("standing on: a Cursor window"), "{sent}");
     }
 
     #[test]
