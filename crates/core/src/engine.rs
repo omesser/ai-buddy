@@ -395,11 +395,13 @@ impl Engine {
             self.facing = self.velocity.x.signum();
         }
 
-        // When at a horizontal display edge and NOT climbing, ensure the full
-        // sprite is on-screen and face away from the edge. Climb frames assume
-        // the wall is in the middle of the frame, so clipping is intentional
-        // during climb.
-        if self.state != State::Climbing {
+        // When standing at a horizontal display edge, ensure the full sprite
+        // is on-screen and face away from the edge. Only applies to standing
+        // states: a held sprite follows the cursor including over edges (#39),
+        // and a falling sprite must reach the wall to trigger Contact::Wall.
+        // Climb frames assume the wall is in the middle of the frame, so
+        // clipping is intentional during climb.
+        if matches!(self.state, State::Grounded | State::Perched | State::Asleep) {
             if let Some((edge_x, face_direction)) = at_horizontal_edge(self.position.x, snapshot) {
                 self.position.x = edge_x;
                 self.facing = face_direction;
@@ -3827,10 +3829,9 @@ mod tests {
         });
 
         let at_left_edge = settle(&mut engine, &snapshot(100));
-        assert!(
-            at_left_edge.position.x > 0.0,
-            "sprite position must be inset from left edge, got x={}",
-            at_left_edge.position.x
+        assert_eq!(
+            at_left_edge.position.x, EDGE_CLEARANCE,
+            "sprite position must be inset by EDGE_CLEARANCE from left edge"
         );
     }
 
@@ -3854,10 +3855,11 @@ mod tests {
         });
 
         let at_right_edge = settle(&mut engine, &snapshot(100));
-        assert!(
-            at_right_edge.position.x < 1000.0,
-            "sprite position must be inset from right edge, got x={}",
-            at_right_edge.position.x
+        let right_edge = one_display().x + one_display().width;
+        assert_eq!(
+            at_right_edge.position.x,
+            right_edge - EDGE_CLEARANCE,
+            "sprite position must be inset by EDGE_CLEARANCE from right edge"
         );
     }
 
@@ -3881,6 +3883,59 @@ mod tests {
         assert_eq!(
             climbing.position.x, 1000.0,
             "during climb, position stays at the wall edge for wall-centered frames"
+        );
+    }
+
+    #[test]
+    fn dragging_to_the_edge_does_not_snap_position_or_facing() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let dragged = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 10.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+
+        assert_eq!(dragged.state, State::Dragged);
+        assert_eq!(
+            dragged.position.x, 10.0,
+            "dragged sprite follows cursor exactly, even near edge"
+        );
+        assert_eq!(
+            dragged.facing, 1.0,
+            "facing unchanged while dragged; no snap to face away"
+        );
+    }
+
+    #[test]
+    fn after_climb_ends_at_edge_standing_is_inset_and_faces_away() {
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+
+        let landed = settle(&mut engine, &snapshot(100));
+        assert_eq!(landed.state, State::Grounded);
+
+        let right_edge = one_display().x + one_display().width;
+        assert_eq!(
+            landed.position.x,
+            right_edge - EDGE_CLEARANCE,
+            "after climb ends, standing position is inset from edge"
+        );
+        assert_eq!(
+            landed.facing, -1.0,
+            "after climb ends, sprite faces away from right edge"
         );
     }
 }
