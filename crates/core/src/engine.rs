@@ -411,9 +411,14 @@ impl Engine {
 
         // Standing at an edge: inset to keep the full sprite on-screen and
         // face away. Dragged follows the cursor including over edges (#39);
-        // Falling must reach the wall to trigger Contact::Wall. Climb frames
-        // assume the wall is in the middle, so clipping is intentional.
-        if matches!(self.state, State::Grounded | State::Perched | State::Asleep) {
+        // Falling must reach the wall to trigger Contact::Wall. Riding and
+        // coasting have their own display-edge logic (#128); edge correction
+        // must not fight them. Climb frames assume the wall is in the middle,
+        // so clipping is intentional.
+        let stationary = matches!(self.state, State::Grounded | State::Perched | State::Asleep)
+            && !self.riding
+            && self.coast_s == 0.0;
+        if stationary {
             if let Some((edge_x, face_direction)) = at_horizontal_edge(self.position.x, snapshot) {
                 // For Perched, only apply position inset if the adjusted position
                 // would still be on the current perch. Otherwise skip the position
@@ -1276,9 +1281,13 @@ fn at_horizontal_edge(x: f64, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
         .map(|display| display.x + display.width)
         .max_by(f64::total_cmp)?;
 
-    if x <= left + EDGE_CLEARANCE {
+    // Only correct when very close to the boundary. Sprites that settled
+    // naturally within EDGE_CLEARANCE but not AT the edge should stay put.
+    const SNAP_THRESHOLD: f64 = EDGE_CLEARANCE / 2.0;
+
+    if x <= left + SNAP_THRESHOLD {
         Some((left + EDGE_CLEARANCE, 1.0))
-    } else if x >= right - EDGE_CLEARANCE {
+    } else if x >= right - SNAP_THRESHOLD {
         Some((right - EDGE_CLEARANCE, -1.0))
     } else {
         None
