@@ -999,15 +999,15 @@ fn main() {
             let (source, displays) = platform::window_source(app.handle().clone());
             let start = starting_position(&source.snapshot());
 
-            // Which Dock the physics got: the true rectangle, or the
-            // full-width strip the work area reserves. Printed because the
-            // difference is invisible until a sprite walks past the Dock's
-            // real end, and granting Accessibility is the only way to change
-            // it — the app never prompts (DESIGN.md decision 9).
+            // Which Dock the physics got: the true rectangle over the SPI,
+            // the true rectangle over Accessibility, or the full-width strip
+            // the work area reserves. Printed because the difference is
+            // invisible until a sprite walks past the Dock's real end, and
+            // the app never prompts to change it (DESIGN.md decision 9).
             if cfg!(target_os = "macos") {
                 match displays.read().dock {
-                    Some(dock) => eprintln!(
-                        "dock: true bounds via Accessibility, {}x{} at {},{}",
+                    Some((dock, source)) => eprintln!(
+                        "dock: true bounds via {source:?}, {}x{} at {},{}",
                         dock.width, dock.height, dock.x, dock.y
                     ),
                     None => eprintln!(

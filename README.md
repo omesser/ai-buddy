@@ -267,13 +267,13 @@ can answer it. Run the app, then confirm:
    sprite falls the rest of the way to the bottom of the screen, because the
    Dock gave the space back. Turn it off and the sprite is lifted again.
 
-   The Dock does not stretch to the sides of the screen, but the work area —
-   the only thing readable without consent — reserves a full-width strip, so
-   by default the sprite treats that whole line as the Dock's top and walks on
-   air past the Dock's real end. Grant ai-buddy Accessibility (never prompted
-   for; the startup log says which mode you got) and the Dock becomes exactly
-   itself: a walk past its end falls to the true bottom of the screen, and
-   standing on it is standing on the island the screen actually shows.
+   The Dock does not stretch to the sides of the screen, and the sprite knows
+   it: a walk past the Dock's real end falls to the true bottom of the screen,
+   and standing on the Dock is standing on the island the screen actually
+   shows. The exact rectangle comes from a chain the startup log names —
+   a private SPI that needs no consent, then the Accessibility API where that
+   trust was already granted (never prompted for), then the full-width
+   work-area strip as the fallback where neither answers.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of the
    Blip whose idle declares a faster `fps`, and the idle bob is visibly faster
    than it was at the declared 3. Editing the repository's own

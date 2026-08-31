@@ -181,6 +181,28 @@ pub struct WorldGeometry {
 /// edge, so a sprite walking off the Dock's end falls instead of standing on
 /// air. A display the Dock is not on keeps its work area unchanged, and so do
 /// the menu bar's strip and the side edges.
+/// Whether a rectangle claiming to be the Dock can be believed against one
+/// display.
+///
+/// The claim comes from outside the type system — a private SPI or an
+/// Accessibility read — so it is trusted only when it is shaped like a
+/// bottom Dock: a thin horizontal strip, standing in the margin the work
+/// area reserved (its center below the usable floor, inside the frame). A
+/// full-display rectangle, an empty one, a bar floating mid-screen, or any
+/// rect on a display whose work area reserved nothing all fail, and the
+/// caller keeps the full-width strip instead of building a floor from a lie.
+pub fn plausible_dock(dock: &Rect, frame: Rect, usable: Rect) -> bool {
+    let thin = dock.height > 0.0 && dock.height <= frame.height * 0.3;
+    let horizontal = dock.width > dock.height;
+    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
+    let inside_frame = center.0 >= frame.x
+        && center.0 <= frame.x + frame.width
+        && center.1 >= frame.y
+        && center.1 <= frame.y + frame.height;
+    let in_reserved_margin = center.1 > usable.y + usable.height;
+    thin && horizontal && inside_frame && in_reserved_margin
+}
+
 pub fn floor_under_dock(usable: Rect, frame: Rect, dock: &Rect) -> Rect {
     let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
     let holds_dock = center.0 >= frame.x
@@ -464,6 +486,47 @@ mod tests {
         let dock = rect(234.0, 978.0, 1452.0, 92.0);
 
         assert_eq!(floor_under_dock(usable, frame, &dock), usable);
+    }
+
+    /// The gate between an unversioned source and the physics. The believed
+    /// rectangles are the two shapes measured on a real desktop: the SPI's
+    /// reserved strip and the Accessibility island.
+    #[test]
+    fn a_dock_claim_is_believed_only_when_it_is_shaped_like_one() {
+        let frame = rect(0.0, 0.0, 1920.0, 1080.0);
+        let usable = rect(0.0, 30.0, 1920.0, 952.0);
+
+        for measured in [
+            rect(233.0, 982.0, 1453.0, 98.0),
+            rect(234.0, 978.0, 1452.0, 92.0),
+        ] {
+            assert!(plausible_dock(&measured, frame, usable), "{measured:?}");
+        }
+
+        for (why, lie) in [
+            ("the full display", frame),
+            ("an empty rect", rect(234.0, 978.0, 0.0, 0.0)),
+            (
+                "a bar floating mid-screen",
+                rect(234.0, 500.0, 1452.0, 92.0),
+            ),
+            ("a side Dock's shape", rect(0.0, 100.0, 92.0, 900.0)),
+            (
+                "a rect off every display",
+                rect(5000.0, 978.0, 1452.0, 92.0),
+            ),
+        ] {
+            assert!(!plausible_dock(&lie, frame, usable), "{why}");
+        }
+
+        // A display whose work area reserved nothing has no margin for a
+        // Dock to stand in, so no claim on it is believable.
+        let flush = rect(0.0, 30.0, 1920.0, 1050.0);
+        assert!(!plausible_dock(
+            &rect(233.0, 982.0, 1453.0, 98.0),
+            frame,
+            flush
+        ));
     }
 
     /// The Wayland case: displays are known, windows are not.
