@@ -57,13 +57,14 @@ PETSCODEX_ROWS = {
 # The Required Animation Set, from petdex rows: (animation, source row,
 # frame indices or None for all, loop, variant_of). Jumping's five frames
 # read anticipation, lift, peak, descent, settle — fall takes peak/descent,
-# land descent/settle, hold the lift pair. Rows 2 (running-left, the engine
-# mirrors) and 7 (running in place) go unused; sleep is synthesized because
-# petdex has no sleep row.
+# land descent/settle, hold the lift pair. Walk's entry is a placeholder:
+# read_petscodex picks the row (see its doc — the drawn facing contradicts
+# petdex's row labels). The unchosen walk row and row 7 (running in place)
+# go unused; sleep is synthesized because petdex has no sleep row.
 PETSCODEX_MAP = (
     ("idle", "idle", None, "forever", None),
     ("waiting", "waiting", None, "forever", "idle"),
-    ("walk", "running-right", None, "forever", None),
+    ("walk", "running-left", None, "forever", None),
     ("talk", "waving", None, "forever", None),
     ("fall", "jumping", (2, 3), "forever", None),
     ("land", "jumping", (3, 4), "once", None),
@@ -283,14 +284,18 @@ def manifest_text(name, mode, scale, header, animations):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def read_petscodex(source, walk_state="running-right"):
+def read_petscodex(source, walk_row=2, mirror_walk=False):
     """A petscodex pet directory (`npx petscodex install <id>` lands one at
-    ~/.codex/pets/<id>/) into the importer's common shape. `walk_state` picks
-    the walk row: petdex row semantics say row 1 heads right, but the rows
-    render as drawn and some pets draw them the other way around — no code
-    can see which, so a human eyeballs the output and re-runs with
-    --walk-faces-left when the buddy would moonwalk."""
-    from PIL import Image
+    ~/.codex/pets/<id>/) into the importer's common shape.
+
+    `walk_row` picks the walk art. Petdex's semantics say row 1 heads right,
+    but the rows render as drawn and every pet sampled so far (cat, labubu,
+    tiga, hachiware) draws row 1 heading left — so row 2 is the default. No
+    code can see facing, and row quality varies per pet (hachiware's row 2
+    mixes camera angles and only its row 1 walks cleanly), so a human
+    eyeballs the output and re-runs with --walk-row 1 and, when neither row
+    heads right, --mirror-walk."""
+    from PIL import Image, ImageOps
 
     pet = json.loads((source / "pet.json").read_text())
     sheet = Image.open(source / pet["spritesheetPath"]).convert("RGBA")
@@ -307,6 +312,7 @@ def read_petscodex(source, walk_state="running-right"):
             for c in range(count)
         ]
 
+    walk_state = "running-right" if walk_row == 1 else "running-left"
     animations = {}
     for animation, state, indices, loop, variant_of in PETSCODEX_MAP:
         if animation == "walk":
@@ -315,6 +321,8 @@ def read_petscodex(source, walk_state="running-right"):
         frames = row_frames(row, count)
         if indices:
             frames = [frames[i] for i in indices]
+        if animation == "walk" and mirror_walk:
+            frames = [ImageOps.mirror(frame) for frame in frames]
         animations[animation] = {
             "frames": frames,
             "fps": fps_for(count, duration),
@@ -324,16 +332,16 @@ def read_petscodex(source, walk_state="running-right"):
 
     animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
-    walk_row = PETSCODEX_ROWS[walk_state][0]
+    mirrored = ", mirrored to head right" if mirror_walk else ""
     header = [
         f"{pet['displayName']} imported from petscodex (petdex) by scripts/import-pet.py.",
         f"Source pet id: {pet['id']} — https://petscodex.com/pets/{pet['id']}",
-        f"Mapping: idle<-row 0, walk<-{walk_state} row {walk_row} (the one",
-        "drawn heading right), talk<-waving row 3, fall/land/hold<-jumping",
-        "row 4, react<-failed row 5, waiting<-row 6 (idle variant),",
-        "sit<-review row 8; sleep is idle's stillest frame with a one-pixel",
-        "breath. The other walk row (the engine mirrors instead) and row 7",
-        "(running in place) go unused.",
+        f"Mapping: idle<-row 0, walk<-{walk_state} row {walk_row}{mirrored}",
+        "(the row drawn heading right), talk<-waving row 3,",
+        "fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6",
+        "(idle variant), sit<-review row 8; sleep is idle's stillest frame",
+        "with a one-pixel breath. The other walk row (the engine mirrors",
+        "instead) and row 7 (running in place) go unused.",
     ]
     license_line = pet.get("pet_license") or pet.get("license")
     return {
@@ -539,9 +547,13 @@ def main():
     parser.add_argument("-o", "--out", type=pathlib.Path)
     parser.add_argument("--accept-license", action="store_true",
                         help="proceed although the pet's license is unknown")
-    parser.add_argument("--walk-faces-left", action="store_true",
-                        help="petscodex: this pet drew its running-right row "
-                             "heading left, take the running-left row instead")
+    parser.add_argument("--walk-row", type=int, choices=(1, 2), default=2,
+                        help="petscodex: the sheet row to cut walk from. Row 2 "
+                             "(petdex's running-left) is drawn heading right in "
+                             "every pet sampled, so it is the default")
+    parser.add_argument("--mirror-walk", action="store_true",
+                        help="petscodex: flip the chosen walk row, for the pet "
+                             "whose only clean walk heads left")
     parser.add_argument("--force", action="store_true",
                         help="replace an existing output directory")
     parser.add_argument("--self-test", action="store_true")
@@ -557,8 +569,7 @@ def main():
         zipfile.ZipFile(source).extractall(unpacked)
         source = pathlib.Path(unpacked)
     if args.ecosystem == "petscodex":
-        walk_state = "running-left" if args.walk_faces_left else "running-right"
-        pet = read_petscodex(source, walk_state)
+        pet = read_petscodex(source, args.walk_row, args.mirror_walk)
     else:
         # A zip unpacks to a temp directory, so the pack's own name comes
         # from the path the user gave, not from where it landed.
@@ -573,7 +584,7 @@ def main():
             sys.exit(f"{args.out} exists; --force replaces it")
         shutil.rmtree(args.out)
     emit(pet, args.out)
-    hint = (" (--walk-faces-left swaps the row when it does not)"
+    hint = (" (--walk-row picks the other row; --mirror-walk flips it)"
             if args.ecosystem == "petscodex" else "")
     print(f"review the output before shipping it — walk must head right{hint}")
 
@@ -639,12 +650,16 @@ def self_test():
         assert pet["animations"]["waiting"]["variant_of"] == "idle"
         assert pet["license"] is None
 
-        # --walk-faces-left swaps the walk source row; the synthetic sheet
-        # colors each row differently, so the swap shows in the pixels.
-        flipped = read_petscodex(source, "running-left")
+        # --walk-row swaps the walk source row (the synthetic sheet colors
+        # each row differently, so the swap shows in the pixels), and
+        # --mirror-walk flips the chosen row.
+        other = read_petscodex(source, walk_row=1)
         walk = pet["animations"]["walk"]["frames"][0]
-        other = flipped["animations"]["walk"]["frames"][0]
-        assert walk.tobytes() != other.tobytes()
+        assert walk.tobytes() != other["animations"]["walk"]["frames"][0].tobytes()
+        mirrored = read_petscodex(source, mirror_walk=True)
+        from PIL import ImageOps
+        flipped_back = ImageOps.mirror(mirrored["animations"]["walk"]["frames"][0])
+        assert walk.tobytes() == flipped_back.tobytes()
 
         out = tmp / "character"
         emit(pet, out, validate=False)
