@@ -540,6 +540,23 @@ def emit(pet, out, validate=True):
             sys.exit("character::load rejected the output; kept for inspection")
 
 
+def require_pillow():
+    """A missing Pillow is a setup problem, and gets setup instructions
+    rather than a traceback."""
+    try:
+        import PIL  # noqa: F401 -- the import is itself the check
+    except ModuleNotFoundError:
+        sys.exit(
+            "Pillow is not importable from this Python. Set up a venv and "
+            "run the importer with it:\n"
+            "  python3 -m venv .venv\n"
+            "  .venv/bin/python -m pip install pillow\n"
+            "  .venv/bin/python scripts/import-pet.py ...\n"
+            "(with uv: uv venv && uv pip install pillow — a uv venv has no "
+            "pip of its own)"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("source", nargs="?", help="pet directory or zip")
@@ -558,6 +575,7 @@ def main():
                         help="replace an existing output directory")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    require_pillow()
     if args.self_test:
         return self_test()
     if not (args.source and args.ecosystem and args.out):

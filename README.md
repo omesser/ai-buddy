@@ -511,15 +511,23 @@ Two formats have adapters:
   `shime*.png` files with no conf (shimejishop distributes these) rides
   Shimeji-ee's standard conf instead.
 
+Pillow lives in a virtual environment, never in a system Python:
+
 ```sh
-python3 -m pip install pillow
+python3 -m venv .venv
+.venv/bin/python -m pip install pillow
 
 npx petscodex list
 npx petscodex install labubu
-python3 scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
+.venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
     -o characters/labubu --accept-license
 cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
 ```
+
+Any environment manager does the same job — with uv it is `uv venv &&
+uv pip install pillow` (a uv venv carries no pip of its own, so
+`python -m pip` inside one fails; use `uv pip`). The importer notices a
+missing Pillow and says exactly this rather than tracing back.
 
 A `.zip` works as a source wherever a directory does, and `--force` replaces
 an existing output directory. The importer prints the pet's license and
@@ -549,7 +557,7 @@ two things are the reviewer's to judge, not code's:
 defaults. The importer's self-test runs with no pet installed:
 
 ```sh
-python3 scripts/import-pet.py --self-test
+.venv/bin/python scripts/import-pet.py --self-test
 ```
 
 ## Prior art and attribution
