@@ -9,6 +9,13 @@
 name = "Black Mage"
 scale = 3
 
+# Proactive model calls: after each one with no one addressing the buddy,
+# the wait becomes wait * model_base ^ model_power. Two and one doubles.
+
+[director]
+model_base = 2
+model_power = 1
+
 [animations.idle]
 frames = [
   "frames/idle-0.png",

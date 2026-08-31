@@ -101,7 +101,15 @@ cargo run
 | `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
 | `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
 | `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. |
-| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First ambient wait, in seconds (default 900). Doubles after each unused ambient wake, caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+
+A Character that should grow faster or slower than doubling says so:
+
+```toml
+[director]
+model_base = 3
+model_power = 1
+```
 
 Session calls stay quiet while the main display is asleep. #18 will bind these
 in settings.

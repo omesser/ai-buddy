@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::character::{Behavior, Trigger};
+use crate::character::{Behavior, Trigger, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER};
 use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
@@ -195,18 +195,21 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
     recent.truncate(REMEMBERED);
 }
 
-/// Ambient wait between session wakes. Doubles after each ambient call,
-/// resets when the user addresses the buddy. ADR-0008.
+/// Wait between proactive model calls. Grows by `model_base.pow(model_power)`
+/// after each proactive call, resets when the user addresses the buddy.
+/// The Character Manifest names those two. ADR-0008.
 #[derive(Clone, Debug)]
 pub struct Pace {
     first: Duration,
     wait: Duration,
+    base: u32,
+    power: u32,
 }
 
 impl Pace {
-    /// First ambient wait, and the value a reactive wake resets to.
-    pub const FIRST: Duration = Duration::from_secs(15 * 60);
-    /// Ceiling after repeated ambient wakes with no one addressing the buddy.
+    /// First proactive wait, and the value a reactive wake resets to.
+    pub const FIRST: Duration = Duration::from_secs(2 * 60);
+    /// Ceiling after repeated proactive wakes with no one addressing the buddy.
     pub const CAP: Duration = Duration::from_secs(2 * 60 * 60);
 
     pub fn new() -> Self {
@@ -214,8 +217,19 @@ impl Pace {
     }
 
     pub fn with_first(first: Duration) -> Self {
+        Self::with_growth(first, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER)
+    }
+
+    /// `first` is the opening wait. After each proactive model call,
+    /// the wait becomes `wait * base.pow(power)`, capped at `CAP`.
+    pub fn with_growth(first: Duration, base: u32, power: u32) -> Self {
         let first = first.clamp(Duration::from_secs(1), Self::CAP);
-        Self { first, wait: first }
+        Self {
+            first,
+            wait: first,
+            base: base.max(1),
+            power,
+        }
     }
 
     pub fn wait(&self) -> Duration {
@@ -223,7 +237,8 @@ impl Pace {
     }
 
     pub fn after_ambient(&mut self) {
-        self.wait = self.wait.saturating_mul(2).min(Self::CAP);
+        let factor = self.base.saturating_pow(self.power).max(1);
+        self.wait = self.wait.saturating_mul(factor).min(Self::CAP);
     }
 
     pub fn after_reactive(&mut self) {
@@ -261,7 +276,7 @@ pub fn due(
 
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
 ///
-/// Reactive when the user addressed the buddy. Ambient when `since_ambient`
+/// Reactive when the user addressed the buddy. Proactive when `since_ambient`
 /// has reached the current `Pace`. Never while the display is asleep. Quiet
 /// under Do Not Disturb so the Character stays visible and Poke still works;
 /// displays-asleep would drop Poke too.
@@ -916,6 +931,25 @@ mod tests {
         let mut pace = Pace::with_first(Pace::CAP);
         pace.after_ambient();
         assert_eq!(pace.wait(), Pace::CAP);
+    }
+
+    #[test]
+    fn the_first_ambient_wait_is_two_minutes() {
+        assert_eq!(Pace::FIRST, Duration::from_secs(2 * 60));
+    }
+
+    #[test]
+    fn a_character_sets_how_ambient_session_waits_grow() {
+        let mut pace = Pace::with_growth(Duration::from_secs(60), 3, 1);
+        assert_eq!(pace.wait(), Duration::from_secs(60));
+        pace.after_ambient();
+        assert_eq!(pace.wait(), Duration::from_secs(180), "60 * 3^1");
+        pace.after_ambient();
+        assert_eq!(pace.wait(), Duration::from_secs(540), "180 * 3^1");
+
+        let mut steep = Pace::with_growth(Duration::from_secs(60), 2, 2);
+        steep.after_ambient();
+        assert_eq!(steep.wait(), Duration::from_secs(240), "60 * 2^2");
     }
 
     #[test]
