@@ -388,8 +388,9 @@ Two implementations ship:
 
 A session wake is reactive (the user addressed the buddy: Poke, Throw, Grab
 start, landing on a Perch, Summon, a chat turn) or ambient (exponential
-backoff). It does not run on a fixed interval, and it does not run while the
-display is asleep.
+backoff whose base and power the Character Manifest names). It does not run
+on a fixed interval, and it does not run while the display is asleep. The
+first ambient wait is two minutes.
 
 A proposal is advisory. The Engine may refuse it if the proposed Behavior is unknown,
 disallowed in the current State, or would repeat a recently played Behavior. Recent

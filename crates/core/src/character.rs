@@ -27,7 +27,8 @@
 //! without the Character gaining a jump.
 //!
 //! The Character Manifest is TOML (ADR-0008): a name, a table per Animation,
-//! a table per Behavior. TOML replaces only the container — the `when`
+//! a table per Behavior, and an optional `[director]` for how unused ambient
+//! session waits grow. TOML replaces only the container — the `when`
 //! condition is still this module's own small language, checked here. It stays
 //! internal and undocumented until v2, so this is the whole of it:
 //!
@@ -111,6 +112,14 @@ pub const DEFAULT_WEIGHT: u32 = 1;
 /// Four is what the shipped pixel-art Characters have always been drawn at;
 /// a package written before `scale` existed renders exactly as it did.
 pub const DEFAULT_SCALE: u32 = 4;
+
+/// How an unused ambient session wait grows when a Character does not say.
+///
+/// `wait * base.pow(power)` after each unused ambient wake. Two and one
+/// is the doubling Pace already had, so a package written before
+/// `[director]` existed backs off exactly as it did.
+pub const DEFAULT_AMBIENT_BASE: u32 = 2;
+pub const DEFAULT_AMBIENT_POWER: u32 = 1;
 
 /// The largest integer factor a Character may ask to be drawn at.
 ///
@@ -309,6 +318,9 @@ pub struct Character {
     pub smooth: bool,
     /// The integer factor the renderer draws the art at.
     pub scale: u32,
+    /// Ambient session wait grows by `base.pow(power)` after each unused wake.
+    pub ambient_base: u32,
+    pub ambient_power: u32,
 }
 
 /// What the renderer needs to draw one tick.
@@ -486,6 +498,8 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             art,
             smooth: declared.smooth.unwrap_or(false),
             scale: declared.scale.unwrap_or(DEFAULT_SCALE),
+            ambient_base: declared.ambient_base.unwrap_or(DEFAULT_AMBIENT_BASE),
+            ambient_power: declared.ambient_power.unwrap_or(DEFAULT_AMBIENT_POWER),
         }),
         _ => Err(errors),
     }
@@ -517,6 +531,8 @@ struct Declared {
     name: Option<String>,
     smooth: Option<bool>,
     scale: Option<u32>,
+    ambient_base: Option<u32>,
+    ambient_power: Option<u32>,
     animations: BTreeMap<String, DeclaredAnimation>,
     behaviors: BTreeMap<String, DeclaredBehavior>,
 }
@@ -623,14 +639,52 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
+            "director" => parse_director(item, manifest, &mut declared, errors),
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
-                 name, render_mode, scale, animations and behaviors"
+                 name, render_mode, scale, animations, behaviors and director"
             )),
         }
     }
 
     Some(declared)
+}
+
+/// `[director]`: how unused ambient session waits grow.
+fn parse_director(item: &Item, manifest: &str, declared: &mut Declared, errors: &mut Vec<String>) {
+    let Some(table) = item.as_table_like() else {
+        errors.push(
+            "\"director\" is not a table; it reads [director] with base and power below"
+                .to_string(),
+        );
+        return;
+    };
+
+    for (key, item) in table.iter() {
+        match key {
+            "base" => match item.as_integer() {
+                Some(base) if base >= 1 && u32::try_from(base).is_ok() => {
+                    declared.ambient_base = Some(base as u32)
+                }
+                _ => errors.push(format!(
+                    "\"director.base\" is {}, and must be a whole number from 1",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "power" => match item.as_integer() {
+                Some(power) if u32::try_from(power).is_ok() => {
+                    declared.ambient_power = Some(power as u32)
+                }
+                _ => errors.push(format!(
+                    "\"director.power\" is {}, and must be a whole number from 0",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            other => errors.push(format!(
+                "unknown declaration director.{other:?}; [director] declares base and power"
+            )),
+        }
+    }
 }
 
 /// One `[animations.<name>]` table.
@@ -1716,7 +1770,7 @@ mod tests {
             errors,
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, render_mode, scale, animations and behaviors"
+                 name, render_mode, scale, animations, behaviors and director"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
@@ -1726,6 +1780,31 @@ mod tests {
     /// The render_mode ADR-0006 reserved: undeclared stays pixelated at the
     /// default scale, so every package written before the fields existed
     /// renders exactly as it did.
+    #[test]
+    fn director_backoff_is_declared_or_defaulted() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(character.ambient_base, DEFAULT_AMBIENT_BASE);
+        assert_eq!(character.ambient_power, DEFAULT_AMBIENT_POWER);
+
+        let manifest = format!(
+            "{}\n[director]\nbase = 3\npower = 2\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("loads");
+        assert_eq!(character.ambient_base, 3);
+        assert_eq!(character.ambient_power, 2);
+    }
+
+    #[test]
+    fn a_director_backoff_that_is_not_a_whole_number_from_one_is_rejected() {
+        let manifest = format!(
+            "{}\n[director]\nbase = 0\npower = 1\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_names(&errors, "base");
+    }
+
     #[test]
     fn render_mode_and_scale_are_declared_or_defaulted() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");

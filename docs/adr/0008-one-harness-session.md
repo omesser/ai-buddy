@@ -25,7 +25,8 @@ chatty. A session wake spends tokens, so it is not a heartbeat.
 
 A session wake is either **reactive** — the user addressed the buddy (Poke,
 Throw, picking it up, placing it on a Perch, Summon, a chat turn) — or
-**ambient**, on an exponential backoff, paused
+**ambient**, on an exponential backoff the Character Manifest names
+(`base` and `power` under `[director]`), paused
 while every display is asleep. The Engine and Static Director keep the
 sprite moving between those calls. ADR-0004 still holds: the model is never
 in the frame loop.

@@ -100,7 +100,9 @@ impl Roster {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::character::{Animation, Behavior, Character, Primitive};
+    use crate::character::{
+        Animation, Behavior, Character, Primitive, DEFAULT_AMBIENT_BASE, DEFAULT_AMBIENT_POWER,
+    };
     use crate::engine::{Point, Rect, Verb};
     use crate::memory::MemoryManifest;
     use std::collections::BTreeMap;
@@ -152,6 +154,8 @@ mod tests {
             art: BTreeMap::new(),
             smooth: false,
             scale: 1,
+            ambient_base: DEFAULT_AMBIENT_BASE,
+            ambient_power: DEFAULT_AMBIENT_POWER,
         }
     }
 
