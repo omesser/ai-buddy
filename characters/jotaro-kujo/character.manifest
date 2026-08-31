@@ -7,7 +7,7 @@
 # (idle variant), sit<-review row 8; sleep is idle's stillest frame
 # with a one-pixel breath. The other walk row (the engine mirrors
 # instead) and row 7 (running in place) go unused.
-# Remapped for this pet's art (--map): sit<-row 6[2], sleep<-row 6[5], talk<-row 8, waiting<-row 0[0,1,2,3,4,5], walk<-row 2[1,4].
+# Remapped for this pet's art (--map): idle<-row 0[0,1], land<-row 6[0,1], sit<-row 6[2], sleep<-row 6[5], talk<-row 8, waiting<-row 0[0,1], walk<-row 2[1,5].
 # License: none declared anywhere in the source ecosystem;
 # accepted at import with --accept-license. A development asset
 # unless a license surfaces — this repository's license claims
@@ -18,17 +18,17 @@ render_mode = "smooth"
 scale = 1
 
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
-fps = 5
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 2
 
 [animations.waiting]
-frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
-fps = 5
+frames = ["frames/waiting-0.png", "frames/waiting-1.png"]
+fps = 2
 variant_of = "idle"
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png"]
-fps = 8
+fps = 4
 
 [animations.talk]
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png", "frames/talk-4.png", "frames/talk-5.png"]
@@ -54,7 +54,7 @@ loop = "once"
 
 [animations.sit]
 frames = ["frames/sit-0.png"]
-fps = 6
+fps = 1
 
 [animations.sleep]
 frames = ["frames/sleep-0.png"]
