@@ -10,6 +10,13 @@ name = "BMO"
 render_mode = "smooth"
 scale = 1
 
+# Proactive model calls: BMO offers to help before being asked, so the wait
+# does not grow. One and one keeps every two minutes.
+
+[director]
+model_base = 1
+model_power = 1
+
 # The idle is a calm stand; the singing and the skateboard ride its ring as
 # variants. The sit is the pack's self-play set: four games on its own screen.
 

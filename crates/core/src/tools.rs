@@ -293,6 +293,7 @@ mod tests {
                     window(1, "Terminal", 10.0, 20.0, 800.0, 600.0),
                     window(2, "Safari", 30.0, 40.0, 1200.0, 800.0),
                 ],
+                dock: None,
             },
         };
         let denylist = DenyList::default();
@@ -327,6 +328,7 @@ mod tests {
                     window(4, "1Password", 30.0, 40.0, 400.0, 300.0),
                     window(5, "Safari", 50.0, 60.0, 1200.0, 800.0),
                 ],
+                dock: None,
             },
         };
         let denylist = DenyList {
@@ -363,6 +365,7 @@ mod tests {
                     window(6, "Terminal", 10.0, 20.0, 800.0, 600.0),
                     window(7, "1password", 30.0, 40.0, 400.0, 300.0),
                 ],
+                dock: None,
             },
         };
         let denylist = DenyList {
@@ -394,6 +397,7 @@ mod tests {
                     window(8, "Terminal", 10.0, 20.0, 800.0, 600.0),
                     window(9, "Safari", 30.0, 40.0, 1200.0, 800.0),
                 ],
+                dock: None,
             },
         };
         let denylist = DenyList::default();
@@ -423,6 +427,7 @@ mod tests {
                     window(10, "Terminal", 10.0, 20.0, 800.0, 600.0),
                     window(11, "1Password", 30.0, 40.0, 400.0, 300.0),
                 ],
+                dock: None,
             },
         };
         let denylist = DenyList {
@@ -452,6 +457,7 @@ mod tests {
                     height: 1080.0,
                 }],
                 windows: vec![],
+                dock: None,
             },
         };
         let denylist = DenyList::default();

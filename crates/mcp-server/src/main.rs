@@ -29,6 +29,7 @@ impl WindowSource for StubWindowSource {
         WorldGeometry {
             usable_frames: vec![],
             windows: vec![],
+            dock: None,
         }
     }
 }

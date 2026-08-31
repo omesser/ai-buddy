@@ -110,32 +110,27 @@ function machineHarness() {
   let nextId = 1;
   const timers = new Map();
   const calls = [];
-  // Speech strictly wins: at no step of any test may both be visible. Pinned
-  // in the harness itself so every scenario asserts it for free.
-  let speechVisible = false;
-  let thinkingVisible = false;
-  const exclusive = () =>
-    assert.ok(
-      !(speechVisible && thinkingVisible),
-      "speech and thinking visible together",
-    );
+  // main.js draws both bubbles into one element in one of two modes, so the
+  // harness models that element rather than two booleans: speech strictly
+  // wins, and on one surface the two cannot coincide at all. What one surface
+  // does make possible is a hide landing after the show that replaced it,
+  // which reads here as a surface that went blank.
+  let surface = null;
   const machine = createBubbleMachine({
     showSpeech(text) {
-      speechVisible = true;
+      surface = "speech";
       calls.push(`showSpeech:${text}`);
-      exclusive();
     },
     hideSpeech() {
-      speechVisible = false;
+      surface = null;
       calls.push("hideSpeech");
     },
     showThinking() {
-      thinkingVisible = true;
+      surface = "thinking";
       calls.push("showThinking");
-      exclusive();
     },
     hideThinking() {
-      thinkingVisible = false;
+      surface = null;
       calls.push("hideThinking");
     },
     schedule(fn, ms) {
@@ -169,8 +164,33 @@ function machineHarness() {
     visible: true,
     ...overrides,
   });
-  return { machine, calls, advance, placement };
+  return { machine, calls, advance, placement, surface: () => surface };
 }
+
+test("the bubble's one surface is never taken back off the wrong one", () => {
+  const { machine, advance, placement, surface } = machineHarness();
+
+  machine.frame(placement({ thinking: true }));
+  advance(THINKING_GRACE_MS);
+  assert.equal(surface(), "thinking", "grace elapsed, indicator up");
+
+  const reply = placement({ dialogue: "hello" });
+  machine.event(reply);
+  machine.frame(reply);
+  assert.equal(surface(), "speech", "the indicator's hide lands before the reply's show");
+
+  // A second turn starts while the reply is still being read. It may not take
+  // the surface, and the hide that ends it may not arrive early.
+  machine.frame(placement({ thinking: true }));
+  advance(bubbleDuration("hello") - 1);
+  assert.equal(surface(), "speech", "the reply holds the surface for its reading time");
+
+  advance(1);
+  assert.equal(surface(), null, "reading time up");
+
+  advance(THINKING_GRACE_MS);
+  assert.equal(surface(), "thinking", "the turn still in flight gets the surface back");
+});
 
 test("a reply hides the thinking indicator the same frame its bubble shows", () => {
   const { machine, calls, advance, placement } = machineHarness();

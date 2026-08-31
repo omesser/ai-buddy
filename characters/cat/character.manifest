@@ -17,6 +17,13 @@ name = "Cat"
 render_mode = "smooth"
 scale = 1
 
+# Proactive model calls: Cat supervises the desk, so the wait does not grow.
+# One and one keeps every two minutes.
+
+[director]
+model_base = 1
+model_power = 1
+
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 5

@@ -395,7 +395,11 @@ fn run_frame_loop(
         let mut previous_idle = Duration::MAX;
         let mut since_state = Duration::ZERO;
         let mut last_state: Option<State> = None;
-        let mut pace = Pace::with_first(config.ambient_first);
+        let mut pace = Pace::with_growth(
+            config.ambient_first,
+            character.model_base,
+            character.model_power,
+        );
         let mut since_ambient = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;
         let mut addressed = false;
@@ -998,6 +1002,25 @@ fn main() {
             // AppKit, and only the main thread may do that.
             let (source, displays) = platform::window_source(app.handle().clone());
             let start = starting_position(&source.snapshot());
+
+            // Which Dock the physics got: the true rectangle over the SPI,
+            // the true rectangle over Accessibility, or the full-width strip
+            // the work area reserves. Printed because the difference is
+            // invisible until a sprite walks past the Dock's real end, and
+            // the app never prompts to change it (DESIGN.md decision 9).
+            if cfg!(target_os = "macos") {
+                match displays.read().dock {
+                    Some((dock, source)) => eprintln!(
+                        "dock: true bounds via {source:?}, {}x{} at {},{}",
+                        dock.width, dock.height, dock.x, dock.y
+                    ),
+                    None => eprintln!(
+                        "dock: full-width floor; no source reported a bottom Dock — \
+                         a side or hidden Dock has nothing to report, and granting \
+                         ai-buddy Accessibility only helps where one exists"
+                    ),
+                }
+            }
 
             // One overlay per display, so a Character straddling a seam is
             // drawn whole. The frame loop keeps the set in step with a desktop

@@ -6,11 +6,13 @@
 
 #![cfg(target_os = "macos")]
 
+mod dock;
 mod overlay_panel;
 mod pointer;
 mod sensing;
 mod window_source;
 
+pub use dock::dock_bounds;
 pub use overlay_panel::configure_overlay;
 pub use pointer::primary_button_down;
 pub use sensing::MacosActivitySource;
