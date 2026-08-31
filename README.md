@@ -61,6 +61,10 @@ OpenAI, Anthropic's compatibility layer, and Ollama use `/v1/chat/completions`.
 path. An explicit full URL (ending in `/chat/completions` or `/responses`)
 is used as-is.
 
+Cursor's `CURSOR_API_KEY` is for the Cloud Agents API and SDKs, not a
+Completer. `https://api.cursor.com` has no `/v1/chat/completions`; a POST
+there is a 404 and Static takes over.
+
 ```sh
 # OpenAI
 cd src-tauri
