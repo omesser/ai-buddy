@@ -692,7 +692,7 @@ fn run_frame_loop(
                 && (reactive_wake
                     || in_flight
                         .as_ref()
-                        .map_or(false, |ctx| ctx.happened != Happened::Ambient))
+                        .is_some_and(|ctx| ctx.happened != Happened::Ambient))
                 && !engine.do_not_disturb();
 
             // What the user has seen is what the Engine played, not what the
