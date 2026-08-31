@@ -10,8 +10,21 @@ name = "Black Mage"
 scale = 3
 
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-0.png", "frames/idle-2.png"]
-fps = 2
+frames = [
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-0.png",
+  "frames/idle-2.png",
+]
+fps = 1
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
