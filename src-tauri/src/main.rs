@@ -99,7 +99,7 @@ struct Drawn {
 ///
 /// Pushed every tick rather than fetched, so the webview holds no authoritative
 /// state — it draws what it was last told and remembers nothing.
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Serialize)]
 struct Placement<'a> {
     x: i32,
     y: i32,
@@ -123,6 +123,13 @@ struct Placement<'a> {
     fade_ms: u32,
     /// -1 to mirror the art (heading left), 1 to draw it as authored.
     facing: i8,
+    /// A line to speak on this tick only. Dialogue is an event, not a state.
+    /// #119: the webview latches it and owns display duration.
+    dialogue: Option<String>,
+    /// Whether to show the thinking ellipsis. Derived from InFlight state and
+    /// addressed. #119: grace and min-hold are in the webview so the Engine
+    /// stays tick-pure.
+    thinking: bool,
 }
 
 /// Every Animation's frames as `data:` URLs, in play order, keyed by the
@@ -638,7 +645,7 @@ fn run_frame_loop(
             }
 
             // After the tick so a Throw is already Falling, not still Dragged.
-            if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
+            let reactive_wake = if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
                 if director::session_due(
                     addressed,
                     since_ambient,
@@ -656,6 +663,7 @@ fn run_frame_loop(
                         happened,
                         standing: assembler.standing_on(frame.position),
                     };
+                    let was_addressed = addressed;
                     if addressed {
                         pace.after_reactive();
                     } else {
@@ -671,8 +679,19 @@ fn run_frame_loop(
                     }
                     pending.start(Arc::clone(model), context.clone());
                     in_flight = Some(context);
+                    was_addressed
+                } else {
+                    false
                 }
-            }
+            } else {
+                false
+            };
+
+            let thinking = !pending.ready() 
+                && (reactive_wake || in_flight.as_ref().map_or(false, |ctx| {
+                    matches!(ctx.happened, Happened::Poke | Happened::Summon | Happened::Throw | Happened::Grab | Happened::Perch)
+                }))
+                && !engine.do_not_disturb();
 
             // What the user has seen is what the Engine played, not what the
             // Director asked for: a proposal the State refuses never reaches
@@ -832,6 +851,8 @@ fn run_frame_loop(
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
                         facing: frame.facing as i8,
+                        dialogue: frame.dialogue.clone(),
+                        thinking,
                     },
                 );
 

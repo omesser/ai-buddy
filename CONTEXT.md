@@ -173,3 +173,11 @@ Right-click on the sprite — character switching, settings, quit.
 **Summon**:
 The deliberate act that opens the Functional Layer.
 _Avoid_: Invoke, activate, wake
+
+### Expression
+
+**Speech bubble**:
+A bubble above the sprite showing Frame.dialogue, held for reading time (900ms
++ 55ms per character, clamped to 2–8 s). A new line replaces the old one.
+Implemented in #119.
+_Avoid_: Chat bubble, message, tooltip

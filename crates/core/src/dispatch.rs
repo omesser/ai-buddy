@@ -257,6 +257,7 @@ mod tests {
 
     fn window(owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
+            id: 0,
             bounds: Rect {
                 x,
                 y,

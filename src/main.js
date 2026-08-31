@@ -4,8 +4,12 @@
 // interpolated across.
 
 import { interpolate } from "./interpolate.js";
+import { bubbleDuration, wrapText, placeBubble } from "./bubble.js";
 
 const sprite = document.getElementById("sprite");
+const bubble = document.getElementById("bubble");
+const thinkingBubble = document.getElementById("thinking-bubble");
+const bubbleContent = bubble.querySelector(".bubble-content");
 
 // Every Animation's frames as data: URLs, fetched once. Art, not state.
 let art = {};
@@ -36,6 +40,14 @@ let latest = null;
 // ask the loader for art it already has.
 let drawn = null;
 
+// Bubble state: latched dialogue and timers for grace/min-hold.
+let speechTimeout = null;
+let thinkingGraceTimeout = null;
+let thinkingMinHoldTimeout = null;
+let thinkingShown = false;
+const THINKING_GRACE_MS = 250;
+const THINKING_MIN_HOLD_MS = 600;
+
 function draw(now) {
   requestAnimationFrame(draw);
   if (!latest) {
@@ -57,6 +69,14 @@ function draw(now) {
   sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
   sprite.style.opacity = latest.visible ? "1" : "0";
 
+  // Bubble visibility follows sprite visibility
+  bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  thinkingBubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  if (!latest.visible) {
+    bubble.classList.add("hidden");
+    thinkingBubble.classList.add("hidden");
+  }
+
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === drawn) {
     return;
@@ -72,6 +92,113 @@ function draw(now) {
   sprite.dataset.animation = latest.animation;
   sprite.dataset.frameIndex = latest.frame_index;
   sprite.style.visibility = "visible";
+
+  updateBubbles();
+}
+
+function updateBubbles() {
+  if (!latest) return;
+
+  const spriteRect = {
+    x: latest.x,
+    y: latest.y,
+    width: latest.width,
+    height: latest.height,
+  };
+
+  // Speech bubble: latch dialogue and show for reading time
+  if (latest.dialogue && latest.visible) {
+    if (speechTimeout) clearTimeout(speechTimeout);
+
+    const lines = wrapText(latest.dialogue, 260);
+    bubbleContent.textContent = lines.join("\n");
+
+    // Measure bubble after content is set
+    bubble.classList.remove("hidden");
+    bubble.classList.add("visible");
+
+    const bubbleSize = {
+      width: bubble.offsetWidth,
+      height: bubble.offsetHeight,
+    };
+
+    const displayBounds = {
+      x: 0,
+      y: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+
+    const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
+    bubble.style.left = `${pos.x}px`;
+    bubble.style.top = `${pos.y}px`;
+
+    const duration = bubbleDuration(latest.dialogue);
+    speechTimeout = setTimeout(() => {
+      bubble.classList.remove("visible");
+      bubble.classList.add("hidden");
+    }, duration);
+
+    // Clear thinking bubble when speech arrives
+    clearThinkingBubble();
+  }
+
+  // Thinking bubble: grace period, min hold, cleared by speech or turn end
+  if (latest.thinking && latest.visible) {
+    if (!thinkingShown && !thinkingGraceTimeout) {
+      thinkingGraceTimeout = setTimeout(() => {
+        thinkingGraceTimeout = null;
+        if (latest?.thinking && latest?.visible) {
+          showThinkingBubble(spriteRect, displayBounds);
+        }
+      }, THINKING_GRACE_MS);
+    }
+  } else if (thinkingShown || thinkingGraceTimeout) {
+    if (thinkingMinHoldTimeout) {
+      // Still in min-hold: clear after it expires
+    } else if (thinkingGraceTimeout) {
+      clearTimeout(thinkingGraceTimeout);
+      thinkingGraceTimeout = null;
+    } else {
+      clearThinkingBubble();
+    }
+  }
+}
+
+function showThinkingBubble(spriteRect, displayBounds) {
+  thinkingBubble.classList.remove("hidden");
+  thinkingBubble.classList.add("visible");
+  thinkingShown = true;
+
+  const bubbleSize = {
+    width: thinkingBubble.offsetWidth,
+    height: thinkingBubble.offsetHeight,
+  };
+
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, 128);
+  thinkingBubble.style.left = `${pos.x}px`;
+  thinkingBubble.style.top = `${pos.y}px`;
+
+  thinkingMinHoldTimeout = setTimeout(() => {
+    thinkingMinHoldTimeout = null;
+    if (!latest?.thinking) {
+      clearThinkingBubble();
+    }
+  }, THINKING_MIN_HOLD_MS);
+}
+
+function clearThinkingBubble() {
+  if (thinkingGraceTimeout) {
+    clearTimeout(thinkingGraceTimeout);
+    thinkingGraceTimeout = null;
+  }
+  if (thinkingMinHoldTimeout) {
+    clearTimeout(thinkingMinHoldTimeout);
+    thinkingMinHoldTimeout = null;
+  }
+  thinkingBubble.classList.remove("visible");
+  thinkingBubble.classList.add("hidden");
+  thinkingShown = false;
 }
 
 async function start() {

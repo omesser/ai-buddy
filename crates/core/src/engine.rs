@@ -446,6 +446,9 @@ impl Engine {
         //
         // #84: Do Not Disturb refuses proposals before they reach the State
         // gate, so the Character stops starting things while staying visible.
+        //
+        // #119: dialogue with an empty behavior plays `talk`. Duration is
+        // PRIMITIVE_MS, independent of bubble reading time.
         let mut behavior = None;
         if let Some(proposal) = &snapshot.proposal {
             if !self.do_not_disturb {
@@ -453,6 +456,10 @@ impl Engine {
                     if self.play(&primitives) {
                         started = true;
                         behavior = Some(proposal.behavior.clone());
+                    }
+                } else if proposal.behavior.is_empty() && proposal.dialogue.is_some() {
+                    if self.play(&[Primitive::Talk]) {
+                        started = true;
                     }
                 }
             }
@@ -3917,5 +3924,79 @@ mod tests {
             State::Asleep,
             "the sprite settles to sleep without Director proposals waking it"
         );
+    }
+
+    /// #119: dialogue with an empty behavior plays `talk` for PRIMITIVE_MS,
+    /// independent of bubble duration.
+    #[test]
+    fn dialogue_with_empty_behavior_plays_talk() {
+        let mut engine = a_resting_sprite();
+
+        let spoken = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: String::new(),
+                dialogue: Some("hello there".to_string()),
+            }),
+            ..snapshot(100)
+        });
+
+        assert_eq!(
+            spoken.animation, "talk",
+            "dialogue with no Behavior plays talk"
+        );
+        assert_eq!(spoken.dialogue.as_deref(), Some("hello there"));
+
+        let playing: Vec<&'static str> = (0..10)
+            .map(|_| engine.tick(&snapshot(100)).animation)
+            .collect();
+
+        let talk_ticks = playing.iter().filter(|&&anim| anim == "talk").count();
+        assert!(
+            talk_ticks == 5,
+            "talk holds for PRIMITIVE_MS (600ms = 5 more ticks after the first): {playing:?}"
+        );
+    }
+
+    /// #119: dialogue with a playable Behavior plays both — the Behavior and
+    /// its dialogue are independent.
+    #[test]
+    fn dialogue_with_a_playable_behavior_plays_the_behavior_not_talk() {
+        let mut engine = a_resting_sprite();
+
+        let spoken = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "greet".to_string(),
+                dialogue: Some("hi".to_string()),
+            }),
+            ..snapshot(100)
+        });
+
+        assert_eq!(
+            spoken.animation, "react",
+            "greet plays its own animation, not talk"
+        );
+        assert_eq!(spoken.dialogue.as_deref(), Some("hi"));
+        assert_eq!(spoken.behavior, Some("greet".to_string()));
+    }
+
+    /// #119: a Behavior with no dialogue does not play talk.
+    #[test]
+    fn a_behavior_without_dialogue_does_not_play_talk() {
+        let mut engine = a_resting_sprite();
+
+        let silent = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "greet".to_string(),
+                dialogue: None,
+            }),
+            ..snapshot(100)
+        });
+
+        assert_eq!(
+            silent.animation, "react",
+            "greet plays its own animation"
+        );
+        assert_eq!(silent.dialogue, None);
+        assert_eq!(silent.behavior, Some("greet".to_string()));
     }
 }
