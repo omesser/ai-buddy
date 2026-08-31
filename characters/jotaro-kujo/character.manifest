@@ -7,7 +7,7 @@
 # (idle variant), sit<-review row 8; sleep is idle's stillest frame
 # with a one-pixel breath. The other walk row (the engine mirrors
 # instead) and row 7 (running in place) go unused.
-# Remapped for this pet's art (--map): sit<-row 6[0,1,2], sleep<-row 6[3,4,5], talk<-row 8.
+# Remapped for this pet's art (--map): sit<-row 6[2], sleep<-row 6[5], walk<-row 2[0,4].
 # License: none declared anywhere in the source ecosystem;
 # accepted at import with --accept-license. A development asset
 # unless a license surfaces — this repository's license claims
@@ -27,11 +27,11 @@ fps = 6
 variant_of = "idle"
 
 [animations.walk]
-frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
+frames = ["frames/walk-0.png", "frames/walk-1.png"]
 fps = 8
 
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png", "frames/talk-4.png", "frames/talk-5.png"]
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png"]
 fps = 6
 
 [animations.fall]
@@ -53,11 +53,11 @@ fps = 7
 loop = "once"
 
 [animations.sit]
-frames = ["frames/sit-0.png", "frames/sit-1.png", "frames/sit-2.png"]
+frames = ["frames/sit-0.png"]
 fps = 6
 
 [animations.sleep]
-frames = ["frames/sleep-0.png", "frames/sleep-1.png", "frames/sleep-2.png"]
+frames = ["frames/sleep-0.png"]
 fps = 1
 
 # A starter life, copied from BMO's — tune it to the pet.
