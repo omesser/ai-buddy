@@ -232,6 +232,13 @@ impl WindowSource for DisplayOnlySource {
         ai_buddy_core::window_source::WorldGeometry {
             usable_frames: self.0.read().usable_frames,
             windows: Vec::new(),
+            // Not a gap in Dock sensing but in the platform underneath it:
+            // there is no window source here at all yet. When an X11 one
+            // lands, its taskbar counterpart is `_NET_WM_STRUT_PARTIAL` on
+            // windows of `_NET_WM_WINDOW_TYPE_DOCK` — exact per-edge extents
+            // with start and end, the very thing macOS needed a private SPI
+            // for — behind the same `plausible_dock` gate. Wayland offers
+            // nothing global, which is the degraded mode already described.
             dock: None,
         }
     }
