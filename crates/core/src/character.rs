@@ -1779,9 +1779,6 @@ mod tests {
         );
     }
 
-    /// The render_mode ADR-0006 reserved: undeclared stays pixelated at the
-    /// default scale, so every package written before the fields existed
-    /// renders exactly as it did.
     #[test]
     fn director_backoff_is_declared_or_defaulted() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
@@ -1807,6 +1804,9 @@ mod tests {
         assert_names(&errors, "model_base");
     }
 
+    /// The render_mode ADR-0006 reserved: undeclared stays pixelated at the
+    /// default scale, so every package written before the fields existed
+    /// renders exactly as it did.
     #[test]
     fn render_mode_and_scale_are_declared_or_defaulted() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
