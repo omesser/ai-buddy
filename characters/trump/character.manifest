@@ -46,8 +46,9 @@ variant_of = "idle"
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
 fps = 8
 
+# talk-3 is the same wave drawn smaller; keeping it pops the loop.
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png"]
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
 [animations.fall]
