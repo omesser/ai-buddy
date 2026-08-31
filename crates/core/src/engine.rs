@@ -409,12 +409,10 @@ impl Engine {
             self.facing = self.velocity.x.signum();
         }
 
-        // When standing at a horizontal display edge, ensure the full sprite
-        // is on-screen and face away from the edge. Only applies to standing
-        // states: a held sprite follows the cursor including over edges (#39),
-        // and a falling sprite must reach the wall to trigger Contact::Wall.
-        // Climb frames assume the wall is in the middle of the frame, so
-        // clipping is intentional during climb.
+        // Standing at an edge: inset to keep the full sprite on-screen and
+        // face away. Dragged follows the cursor including over edges (#39);
+        // Falling must reach the wall to trigger Contact::Wall. Climb frames
+        // assume the wall is in the middle, so clipping is intentional.
         if matches!(self.state, State::Grounded | State::Perched | State::Asleep) {
             if let Some((edge_x, face_direction)) = at_horizontal_edge(self.position.x, snapshot) {
                 self.position.x = edge_x;
@@ -1210,12 +1208,8 @@ fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64
     }
 }
 
-/// Whether the sprite is at a horizontal display edge and needs edge correction.
-/// Returns the adjusted position and facing direction when at an edge.
-///
-/// When at the left edge, returns (EDGE_CLEARANCE, 1.0) to inset and face right.
-/// When at the right edge, returns (right - EDGE_CLEARANCE, -1.0) to inset and face left.
-/// Otherwise returns None.
+/// Adjusted position and facing when at a horizontal display edge, so the full
+/// sprite stays on-screen and faces away from the wall.
 fn at_horizontal_edge(x: f64, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
     let left = snapshot
         .displays
