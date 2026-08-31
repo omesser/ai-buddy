@@ -415,7 +415,25 @@ impl Engine {
         // assume the wall is in the middle, so clipping is intentional.
         if matches!(self.state, State::Grounded | State::Perched | State::Asleep) {
             if let Some((edge_x, face_direction)) = at_horizontal_edge(self.position.x, snapshot) {
-                self.position.x = edge_x;
+                // For Perched, only apply position inset if the adjusted position
+                // would still be on the current perch. Otherwise skip the position
+                // write to avoid shoving the sprite off its ledge.
+                let can_inset = if self.state == State::Perched {
+                    perch_at(
+                        Point {
+                            x: edge_x,
+                            y: self.position.y,
+                        },
+                        &snapshot.windows,
+                    )
+                    .is_some()
+                } else {
+                    true
+                };
+
+                if can_inset {
+                    self.position.x = edge_x;
+                }
                 self.facing = face_direction;
             }
         }
@@ -4089,9 +4107,27 @@ mod tests {
 
     #[test]
     fn dragging_to_the_edge_does_not_snap_position_or_facing() {
-        let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
-        settle(&mut engine, &snapshot(100));
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
 
+        // Establish facing -1.0 by throwing left and settling at the right edge
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 500.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+        let at_right = settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            at_right.facing, -1.0,
+            "facing left after settling at right edge"
+        );
+
+        // Now drag to the left edge
         let dragged = engine.tick(&WorldSnapshot {
             cursor: Point { x: 10.0, y: 400.0 },
             verbs: vec![Verb::Grab],
@@ -4104,7 +4140,7 @@ mod tests {
             "dragged sprite follows cursor exactly, even near edge"
         );
         assert_eq!(
-            dragged.facing, 1.0,
+            dragged.facing, -1.0,
             "facing unchanged while dragged; no snap to face away"
         );
     }
@@ -4138,5 +4174,45 @@ mod tests {
             landed.facing, -1.0,
             "after climb ends, sprite faces away from right edge"
         );
+    }
+
+    #[test]
+    fn a_perched_sprite_near_the_edge_is_not_shoved_off_its_ledge() {
+        // Window near right edge that does NOT include the edge snap position.
+        // Right edge snap would be at x=936. Window spans x=950 to x=990.
+        let narrow_perch = WorldSnapshot {
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 950.0,
+                    y: 200.0,
+                    width: 40.0,
+                    height: 100.0,
+                },
+            )],
+            ..snapshot(100)
+        };
+
+        // Start the sprite on the window, away from edges, so no correction yet
+        let mut engine = Engine::new(Point { x: 500.0, y: 0.0 });
+        settle(&mut engine, &snapshot(100));
+
+        // Grab and place on the narrow perch near right edge
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 970.0, y: 200.0 },
+            verbs: vec![Verb::Grab],
+            ..narrow_perch.clone()
+        });
+        let placed = engine.tick(&WorldSnapshot {
+            verbs: vec![],
+            ..narrow_perch.clone()
+        });
+
+        assert_eq!(placed.state, State::Perched, "sprite is on the perch");
+        assert!(
+            placed.position.x >= 950.0 && placed.position.x <= 990.0,
+            "sprite stays on perch span [950, 990], not moved to x=936"
+        );
+        assert_eq!(placed.facing, -1.0, "sprite faces away from right edge");
     }
 }
