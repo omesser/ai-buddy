@@ -623,6 +623,11 @@ Cat's frames are cut from the [petscodex](https://petscodex.com/pets/cat) pet
 license, which the importer warns about; the character is a development asset,
 and none of this repository's license claims cover that art.
 
+Trump's frames are cut from the [petscodex](https://petscodex.com/pets/trump)
+pet `trump` by the same importer. The installed package declares no license,
+accepted at import with `--accept-license`; the character is a development
+asset, and none of this repository's license claims cover that art.
+
 ## License
 
 MIT.

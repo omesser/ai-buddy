@@ -1,0 +1,116 @@
+# Trump imported from petscodex (petdex) by scripts/import-pet.py.
+# Source pet id: trump — https://petscodex.com/pets/trump
+# Mapping: idle<-row 0, walk<-running-right row 1
+# (the row drawn heading right), talk<-waving row 3,
+# fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6
+# (idle variant), sit<-review row 8; sleep is idle's stillest frame
+# with a one-pixel breath. The other walk row (the engine mirrors
+# instead) and row 7 (running in place) go unused.
+# Remapped for this pet's art (--map): react<-row 6, sit<-row 5[2,3], sleep<-row 5[5,6], waiting<-row 7.
+# License: none declared anywhere in the source ecosystem;
+# accepted at import with --accept-license. A development asset
+# unless a license surfaces — this repository's license claims
+# do not cover the art.
+#
+# Hand-tuned after import: sit and sleep were adjacent cells of the
+# failed row, so each cycle mixed two poses. Sit keeps the desk-hunch
+# and breathes it; sleep keeps the face-down nap and breathes it.
+# Land ends on idle's rest frame — the jump row's last cell is a
+# yellow burst, and `loop = "once"` would hold it. Cycles slowed so
+# the idle ring and the wave read as motion, not a twitch.
+
+name = "Trump"
+render_mode = "smooth"
+scale = 1
+
+# Proactive model calls: Trump treats the desk as a rally, so the wait
+# does not grow. One and one keeps every two minutes.
+
+[director]
+model_base = 1
+model_power = 1
+
+[animations.idle]
+frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
+fps = 4
+
+[animations.waiting]
+frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
+fps = 4
+variant_of = "idle"
+
+[animations.walk]
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
+fps = 8
+
+[animations.talk]
+frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png", "frames/talk-3.png"]
+fps = 4
+
+[animations.fall]
+frames = ["frames/fall-0.png", "frames/fall-1.png"]
+fps = 6
+
+[animations.land]
+frames = ["frames/land-0.png", "frames/land-1.png", "frames/idle-0.png"]
+fps = 6
+loop = "once"
+
+[animations.hold]
+frames = ["frames/hold-0.png", "frames/hold-1.png"]
+fps = 4
+
+[animations.react]
+frames = ["frames/react-0.png", "frames/react-1.png", "frames/react-2.png", "frames/react-3.png", "frames/react-4.png", "frames/react-5.png"]
+fps = 4
+loop = "once"
+
+[animations.sit]
+frames = ["frames/sit-0.png", "frames/sit-1.png"]
+fps = 2
+
+[animations.sleep]
+frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
+fps = 1
+
+# A rally on the desk. Greets whoever is at the keyboard, keeps talking
+# for a minute, sits once they have gone, and sleeps when the room is
+# quiet. Walk stays light: he would rather speak than patrol.
+
+[behaviors.greet]
+play = ["talk"]
+then = "report"
+weight = 4
+when = "idle under 10s"
+
+[behaviors.report]
+play = ["talk", "idle", "talk"]
+weight = 4
+when = "idle under 1m"
+
+[behaviors.fidget]
+play = ["idle"]
+weight = 2
+when = "idle over 10s"
+
+[behaviors.settle]
+play = ["sit"]
+then = "doze"
+weight = 3
+when = "idle over 1m"
+
+[behaviors.doze]
+play = ["sit", "sleep"]
+weight = 5
+when = "idle over 2m"
+
+[behaviors.walk]
+play = ["walk"]
+weight = 1
+when = "idle over 30s"
+
+[behaviors.patrol]
+play = ["walk", "talk", "walk"]
+then = "walk"
+weight = 2
+when = "idle over 2m"

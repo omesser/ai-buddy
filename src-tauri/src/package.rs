@@ -478,6 +478,7 @@ mod tests {
             ("bmo", "BMO", "report", 3, "patrol"),
             ("cat", "Cat", "report", 3, "patrol"),
             ("nim", "Nim", "doze", 5, "doze"),
+            ("trump", "Trump", "report", 4, "doze"),
         ];
 
         for (directory, name, behavior, weight, alone) in shipped {
