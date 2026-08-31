@@ -477,6 +477,7 @@ mod tests {
             ("blip", "Blip", "greet", 2, "settle"),
             ("bmo", "BMO", "report", 3, "patrol"),
             ("cat", "Cat", "report", 3, "patrol"),
+            ("jotaro-kujo", "Jotaro Kujo", "report", 3, "patrol"),
             ("nim", "Nim", "doze", 5, "doze"),
         ];
 
