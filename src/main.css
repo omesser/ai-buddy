@@ -35,7 +35,24 @@ body {
   z-index: 1;
 }
 
-.bubble::after {
+.bubble.visible {
+  opacity: 1;
+}
+
+/* One element, two modes: the Character is either saying something or waiting
+   to say something. Only the child the mode names is drawn, so the two can
+   never be on screen together — which as two elements anchored to the same
+   head they were, for as long as their fades overlapped. */
+.bubble:not([data-mode="speech"]) .bubble-content,
+.bubble:not([data-mode="thinking"]) .thinking-dots {
+  display: none;
+}
+
+.bubble-content {
+  white-space: pre-wrap;
+}
+
+.bubble[data-mode="speech"]::after {
   content: "";
   position: absolute;
   bottom: -10px;
@@ -48,56 +65,94 @@ body {
   border-top: 10px solid #333;
 }
 
-.bubble.flipped::after {
+.bubble[data-mode="speech"].flipped::after {
   bottom: auto;
   top: -10px;
   border-top: none;
   border-bottom: 10px solid #333;
 }
 
-.bubble.visible {
-  opacity: 1;
+/* A thought bubble rather than a speech bubble: a round silhouette, and a
+   trail of shrinking dots where speech has a pointed tail. The idiom is what
+   tells a reader at a glance which of the two they are looking at, and it does
+   the telling before the dots inside have moved at all. */
+.bubble[data-mode="thinking"] {
+  padding: 9px 13px;
+  border-radius: 999px;
 }
 
-.bubble.hidden {
-  opacity: 0;
-  visibility: hidden;
+.bubble[data-mode="thinking"]::before,
+.bubble[data-mode="thinking"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  box-sizing: border-box;
+  background: white;
+  border: 2px solid #333;
+  border-radius: 50%;
 }
 
-.bubble-content {
-  white-space: pre-wrap;
+/* placeBubble leaves a 10px gap over the sprite's head, which the speech tail
+   fills exactly. The trail needs more, so the far dot sits a few pixels into
+   the top of the art — where a thought trail belongs anyway. */
+.bubble[data-mode="thinking"]::before {
+  width: 9px;
+  height: 9px;
+  bottom: -10px;
+  transform: translateX(calc(-50% + var(--tail-offset, 0px) - 5px));
 }
 
-.thinking-bubble .thinking-dots {
+.bubble[data-mode="thinking"]::after {
+  width: 6px;
+  height: 6px;
+  bottom: -18px;
+  transform: translateX(calc(-50% + var(--tail-offset, 0px) + 3px));
+}
+
+.bubble[data-mode="thinking"].flipped::before {
+  bottom: auto;
+  top: -10px;
+}
+
+.bubble[data-mode="thinking"].flipped::after {
+  bottom: auto;
+  top: -18px;
+}
+
+.thinking-dots {
   display: flex;
-  gap: 6px;
-  justify-content: center;
+  gap: 5px;
   align-items: center;
-  padding: 4px 0;
 }
 
-.thinking-bubble .thinking-dots span {
-  width: 8px;
-  height: 8px;
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
   background: #333;
   border-radius: 50%;
-  animation: thinking-bounce 1.4s infinite ease-in-out both;
+  animation: thinking-bounce 1.2s infinite ease-in-out both;
 }
 
-.thinking-bubble .thinking-dots span:nth-child(1) {
-  animation-delay: -0.32s;
+.thinking-dots span:nth-child(1) {
+  animation-delay: -0.24s;
 }
 
-.thinking-bubble .thinking-dots span:nth-child(2) {
-  animation-delay: -0.16s;
+.thinking-dots span:nth-child(2) {
+  animation-delay: -0.12s;
 }
 
+/* A dip and a lift, never `scale(0)`: a dot that leaves reads as art failing
+   to load, where a dot that dims and rises reads as waiting. Opacity and
+   transform only, so this composites without repainting — the overlay sits on
+   top of everything the user is doing. */
 @keyframes thinking-bounce {
-  0%, 80%, 100% {
-    transform: scale(0);
+  0%, 60%, 100% {
+    opacity: 0.35;
+    transform: translateY(0);
   }
-  40% {
-    transform: scale(1);
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 

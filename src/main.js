@@ -13,7 +13,6 @@ import {
 
 const sprite = document.getElementById("sprite");
 const bubble = document.getElementById("bubble");
-const thinkingBubble = document.getElementById("thinking-bubble");
 const bubbleContent = bubble.querySelector(".bubble-content");
 
 // Every Animation's frames as data: URLs, fetched once. Art, not state.
@@ -57,16 +56,23 @@ function currentDisplayBounds() {
   return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
 }
 
-function show(element) {
-  element.classList.remove("hidden");
-  element.classList.add("visible");
-  positionBubble(element, currentSpriteRect(), currentDisplayBounds());
+// bubble.js decides that speech and the indicator never coincide; one element
+// in one of two modes is what makes that true of the pixels rather than only of
+// the decision, so a hand-off is a content swap and not a race between fades.
+//
+// Nothing but opacity gates it, and a second class latched by a timer is the
+// trap to avoid: the only duration to hand is `fade_ms`, which measures the
+// Character's presence fade and rides every frame long after the rule that set
+// it. Keying a bubble's exit on that kept a dismissed one painted for half a
+// second — longer than the grace before the indicator arrives.
+function show(mode) {
+  bubble.dataset.mode = mode;
+  bubble.classList.add("visible");
+  positionBubble(currentSpriteRect(), currentDisplayBounds());
 }
 
-function hide(element) {
-  element.classList.remove("visible");
-  const fadeMs = latest?.fade_ms || 0;
-  setTimeout(() => element.classList.add("hidden"), fadeMs);
+function hide() {
+  bubble.classList.remove("visible");
 }
 
 const bubbles = createBubbleMachine({
@@ -75,17 +81,13 @@ const bubbles = createBubbleMachine({
     const ctx = canvas.getContext("2d");
     ctx.font = "14px system-ui, sans-serif";
     bubbleContent.textContent = wrapText(text, 260, ctx.measureText.bind(ctx)).join("\n");
-    show(bubble);
+    show("speech");
   },
-  hideSpeech() {
-    hide(bubble);
-  },
+  hideSpeech: hide,
   showThinking() {
-    show(thinkingBubble);
+    show("thinking");
   },
-  hideThinking() {
-    hide(thinkingBubble);
-  },
+  hideThinking: hide,
 });
 
 function draw(now) {
@@ -114,37 +116,20 @@ function draw(now) {
 
   // Bubble visibility follows sprite visibility with same fade
   bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
-  thinkingBubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
   if (!latest.visible) {
     bubble.style.opacity = "0";
-    thinkingBubble.style.opacity = "0";
     if (latest.fade_ms === 0) {
       bubbles.hideAllNow();
     }
   } else {
     bubble.style.opacity = "";
-    thinkingBubble.style.opacity = "";
 
-    // Reposition visible bubbles to follow walking sprite
-    const spriteRect = {
-      x: spriteX,
-      y: spriteY,
-      width: latest.width,
-      height: latest.height,
-    };
-    const displayBounds = {
-      x: 0,
-      y: 0,
-      width: window.innerWidth,
-      height: window.innerHeight,
-    };
-
+    // Reposition a visible bubble to follow walking sprite
     if (bubble.classList.contains("visible")) {
-      positionBubble(bubble, spriteRect, displayBounds);
-    }
-
-    if (thinkingBubble.classList.contains("visible")) {
-      positionBubble(thinkingBubble, spriteRect, displayBounds);
+      positionBubble(
+        { x: spriteX, y: spriteY, width: latest.width, height: latest.height },
+        { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+      );
     }
   }
 
@@ -167,16 +152,13 @@ function draw(now) {
   sprite.style.visibility = "visible";
 }
 
-function positionBubble(element, spriteRect, displayBounds) {
-  const bubbleSize = {
-    width: element.offsetWidth,
-    height: element.offsetHeight,
-  };
+function positionBubble(spriteRect, displayBounds) {
+  const bubbleSize = { width: bubble.offsetWidth, height: bubble.offsetHeight };
   const pos = placeBubble(spriteRect, bubbleSize, displayBounds, CEILING_CLEARANCE);
-  element.style.left = `${pos.x}px`;
-  element.style.top = `${pos.y}px`;
-  element.classList.toggle("flipped", pos.flipped);
-  element.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
+  bubble.style.left = `${pos.x}px`;
+  bubble.style.top = `${pos.y}px`;
+  bubble.classList.toggle("flipped", pos.flipped);
+  bubble.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
 }
 
 async function start() {
