@@ -2,8 +2,9 @@
 # Resource asset 17261, contributed by GigaGuy). White background made
 # transparent, padded to 37x33 with feet on the bottom, flipped to face right
 # for engine mirroring. Where the sheet lacks a required pose, the closest
-# existing pose is reused: hold from item-out, sit/land from crouch, sleep and
-# fall-end from KO/down. Pixel art at scale 3 for desktop readability.
+# existing pose is reused: fall is tuck/crouch, not lying down; sleep uses the
+# KO/down pose; talk alternates stand and cast; hold shows the holditem pose.
+# Pixel art at scale 3 for desktop readability.
 
 name = "Black Mage"
 scale = 3
@@ -31,7 +32,7 @@ fps = 2
 
 [animations.hold]
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
-fps = 4
+fps = 2
 
 [animations.sleep]
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
@@ -39,12 +40,12 @@ fps = 1
 
 [animations.react]
 frames = ["frames/react-0.png", "frames/react-1.png"]
-fps = 10
+fps = 8
 loop = "once"
 
 [animations.talk]
-frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
-fps = 4
+frames = ["frames/talk-0.png", "frames/talk-1.png"]
+fps = 3
 
 # A mage who casts from safety. Greets briefly, settles into contemplation,
 # rarely wanders. The arc: acknowledge presence, stand idle most of the time,
