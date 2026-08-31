@@ -16,7 +16,11 @@
 //! 2. **The Accessibility API** — public and trust-gated. `DESIGN.md`
 //!    decision 9 refuses to prompt, so this rung pays out only where trust
 //!    was already granted, and `AXIsProcessTrusted` is asked before anything
-//!    that could prompt.
+//!    that could prompt. In practice that makes this rung unreachable
+//!    today: the app never asks, and nothing but a startup log line even
+//!    mentions the grant, so no one grants it. Until a consent surface
+//!    exists (#148) it serves only the macOS release that removes the SPI,
+//!    and only the rare user who trusted ai-buddy for reasons of their own.
 //! 3. **Nothing** — the caller keeps the full-width work-area strip, which is
 //!    the behavior this module exists to improve and the one it degrades back
 //!    to, never a crash.
