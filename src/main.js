@@ -4,8 +4,12 @@
 // interpolated across.
 
 import { interpolate } from "./interpolate.js";
+import { bubbleDuration, wrapText, placeBubble, CEILING_CLEARANCE } from "./bubble.js";
 
 const sprite = document.getElementById("sprite");
+const bubble = document.getElementById("bubble");
+const thinkingBubble = document.getElementById("thinking-bubble");
+const bubbleContent = bubble.querySelector(".bubble-content");
 
 // Every Animation's frames as data: URLs, fetched once. Art, not state.
 let art = {};
@@ -36,6 +40,16 @@ let latest = null;
 // ask the loader for art it already has.
 let drawn = null;
 
+// Bubble state: latched dialogue and timers for grace/min-hold.
+let speechTimeout = null;
+let thinkingGraceTimeout = null;
+let thinkingMinHoldTimeout = null;
+let thinkingShown = false;
+let lastLatchedDialogue = null;
+let lastLatchedThinking = false;
+const THINKING_GRACE_MS = 250;
+const THINKING_MIN_HOLD_MS = 600;
+
 function draw(now) {
   requestAnimationFrame(draw);
   if (!latest) {
@@ -43,11 +57,14 @@ function draw(now) {
   }
 
   const at = previous ? interpolate(previous, latest, now) : latest;
+  const spriteX = Math.round(at.x);
+  const spriteY = Math.round(at.y);
+
   // Whole pixels, so a sprite drawn at an integer scale is not resampled back
   // onto a fractional grid by the compositor. ADR-0006. The art is authored
   // heading right; `scaleX(-1)` mirrors it in place when the Engine says the
   // sprite faces left. main.css sets the center origin that makes it in-place.
-  sprite.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px) scaleX(${latest.facing})`;
+  sprite.style.transform = `translate(${spriteX}px, ${spriteY}px) scaleX(${latest.facing})`;
 
   // The hide rules, carried on every frame rather than announced when they
   // change: a change announced while this file was still fetching its art is a
@@ -56,6 +73,46 @@ function draw(now) {
   // so one line covers both the fade and the instant answer.
   sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
   sprite.style.opacity = latest.visible ? "1" : "0";
+
+  // Bubble visibility follows sprite visibility with same fade
+  bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  thinkingBubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
+  if (!latest.visible) {
+    bubble.style.opacity = "0";
+    thinkingBubble.style.opacity = "0";
+    if (latest.fade_ms === 0) {
+      bubble.classList.add("hidden");
+      thinkingBubble.classList.add("hidden");
+      clearThinkingBubble();
+    }
+  } else {
+    bubble.style.opacity = "";
+    thinkingBubble.style.opacity = "";
+
+    // Reposition visible bubbles to follow walking sprite
+    const spriteRect = {
+      x: spriteX,
+      y: spriteY,
+      width: latest.width,
+      height: latest.height,
+    };
+    const displayBounds = {
+      x: 0,
+      y: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+
+    if (bubble.classList.contains("visible")) {
+      positionBubble(bubble, spriteRect, displayBounds);
+    }
+
+    if (thinkingBubble.classList.contains("visible")) {
+      positionBubble(thinkingBubble, spriteRect, displayBounds);
+    }
+  }
+
+  latchBubbles();
 
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === drawn) {
@@ -72,6 +129,118 @@ function draw(now) {
   sprite.dataset.animation = latest.animation;
   sprite.dataset.frameIndex = latest.frame_index;
   sprite.style.visibility = "visible";
+}
+
+function positionBubble(element, spriteRect, displayBounds) {
+  const bubbleSize = {
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  };
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  element.style.left = `${pos.x}px`;
+  element.style.top = `${pos.y}px`;
+  element.classList.toggle("flipped", pos.flipped);
+  element.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
+}
+
+function latchBubbles() {
+  if (!latest) return;
+
+  const dialogueChanged = latest.dialogue !== lastLatchedDialogue;
+  const thinkingChanged = latest.thinking !== lastLatchedThinking;
+
+  if (!dialogueChanged && !thinkingChanged) {
+    return;
+  }
+
+  lastLatchedDialogue = latest.dialogue;
+  lastLatchedThinking = latest.thinking;
+
+  const spriteRect = {
+    x: latest.x,
+    y: latest.y,
+    width: latest.width,
+    height: latest.height,
+  };
+
+  const displayBounds = {
+    x: 0,
+    y: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+
+  if (latest.dialogue && latest.visible) {
+    if (speechTimeout) clearTimeout(speechTimeout);
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = "14px system-ui, sans-serif";
+    const lines = wrapText(latest.dialogue, 260, ctx.measureText.bind(ctx));
+    bubbleContent.textContent = lines.join("\n");
+
+    bubble.classList.remove("hidden");
+    bubble.classList.add("visible");
+
+    positionBubble(bubble, spriteRect, displayBounds);
+
+    const duration = bubbleDuration(latest.dialogue);
+    const fadeMs = latest.fade_ms || 0;
+    speechTimeout = setTimeout(() => {
+      bubble.classList.remove("visible");
+      setTimeout(() => bubble.classList.add("hidden"), fadeMs);
+    }, duration);
+
+    clearThinkingBubble();
+  }
+
+  if (latest.thinking && latest.visible) {
+    if (!thinkingShown && !thinkingGraceTimeout) {
+      thinkingGraceTimeout = setTimeout(() => {
+        thinkingGraceTimeout = null;
+        if (latest?.thinking && latest?.visible) {
+          showThinkingBubble(spriteRect, displayBounds);
+        }
+      }, THINKING_GRACE_MS);
+    }
+  } else if (thinkingShown || thinkingGraceTimeout) {
+    if (thinkingGraceTimeout) {
+      clearTimeout(thinkingGraceTimeout);
+      thinkingGraceTimeout = null;
+    } else if (thinkingShown && !thinkingMinHoldTimeout) {
+      clearThinkingBubble();
+    }
+  }
+}
+
+function showThinkingBubble(spriteRect, displayBounds) {
+  thinkingBubble.classList.remove("hidden");
+  thinkingBubble.classList.add("visible");
+  thinkingShown = true;
+
+  positionBubble(thinkingBubble, spriteRect, displayBounds);
+
+  thinkingMinHoldTimeout = setTimeout(() => {
+    thinkingMinHoldTimeout = null;
+    if (!latest?.thinking) {
+      clearThinkingBubble();
+    }
+  }, THINKING_MIN_HOLD_MS);
+}
+
+function clearThinkingBubble() {
+  if (thinkingGraceTimeout) {
+    clearTimeout(thinkingGraceTimeout);
+    thinkingGraceTimeout = null;
+  }
+  if (thinkingMinHoldTimeout) {
+    clearTimeout(thinkingMinHoldTimeout);
+    thinkingMinHoldTimeout = null;
+  }
+  thinkingBubble.classList.remove("visible");
+  const fadeMs = latest?.fade_ms || 0;
+  setTimeout(() => thinkingBubble.classList.add("hidden"), fadeMs);
+  thinkingShown = false;
 }
 
 async function start() {

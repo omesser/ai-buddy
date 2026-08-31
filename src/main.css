@@ -16,6 +16,91 @@ body {
   user-select: none;
 }
 
+.bubble {
+  position: absolute;
+  max-width: 260px;
+  padding: 12px 16px;
+  background: white;
+  border: 2px solid #333;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #333;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  word-wrap: break-word;
+  z-index: 1;
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(calc(-50% + var(--tail-offset, 0px)));
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid #333;
+}
+
+.bubble.flipped::after {
+  bottom: auto;
+  top: -10px;
+  border-top: none;
+  border-bottom: 10px solid #333;
+}
+
+.bubble.visible {
+  opacity: 1;
+}
+
+.bubble.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.bubble-content {
+  white-space: pre-wrap;
+}
+
+.thinking-bubble .thinking-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.thinking-bubble .thinking-dots span {
+  width: 8px;
+  height: 8px;
+  background: #333;
+  border-radius: 50%;
+  animation: thinking-bounce 1.4s infinite ease-in-out both;
+}
+
+.thinking-bubble .thinking-dots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.thinking-bubble .thinking-dots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
 #sprite {
   position: absolute;
   /* Positioned by transform rather than by left/top: the renderer moves the

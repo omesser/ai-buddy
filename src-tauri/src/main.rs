@@ -17,6 +17,7 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+mod env_util;
 mod model;
 mod package;
 mod platform;
@@ -99,7 +100,7 @@ struct Drawn {
 ///
 /// Pushed every tick rather than fetched, so the webview holds no authoritative
 /// state — it draws what it was last told and remembers nothing.
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Serialize)]
 struct Placement<'a> {
     x: i32,
     y: i32,
@@ -123,6 +124,13 @@ struct Placement<'a> {
     fade_ms: u32,
     /// -1 to mirror the art (heading left), 1 to draw it as authored.
     facing: i8,
+    /// A line to speak on this tick only. Dialogue is an event, not a state.
+    /// #119: the webview latches it and owns display duration.
+    dialogue: Option<String>,
+    /// Whether to show the thinking ellipsis. Derived from InFlight state and
+    /// addressed. #119: grace and min-hold are in the webview so the Engine
+    /// stays tick-pure.
+    thinking: bool,
 }
 
 /// Every Animation's frames as `data:` URLs, in play order, keyed by the
@@ -408,12 +416,12 @@ fn run_frame_loop(
         // is currently swallowing clicks or passing them on. This trace is the
         // only way to watch the decision without a human clicking. Off unless
         // asked for; see scripts/verify-overlay.sh.
-        let tracing = std::env::var_os("AI_BUDDY_TRACE_HITTEST").is_some();
+        let tracing = env_util::env_flag_is_on("AI_BUDDY_TRACE_HITTEST");
 
         // Likewise for the Frame: where the sprite is and what it is doing is
         // the loop's only output, and a screenshot cannot say whether it got
         // there by falling.
-        let tracing_frames = std::env::var_os("AI_BUDDY_TRACE_FRAMES").is_some();
+        let tracing_frames = env_util::env_flag_is_on("AI_BUDDY_TRACE_FRAMES");
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
 
@@ -638,41 +646,55 @@ fn run_frame_loop(
             }
 
             // After the tick so a Throw is already Falling, not still Dragged.
-            if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
-                if director::session_due(
-                    addressed,
-                    since_ambient,
-                    &pace,
-                    activity.displays_asleep,
-                    engine.do_not_disturb(),
-                ) && pending.ready()
-                    && !applied
-                {
-                    let context = Context {
-                        activity: activity.clone(),
-                        recent: recent.clone(),
-                        personality: character.personality.clone(),
-                        state: frame.state,
-                        happened,
-                        standing: assembler.standing_on(frame.position),
-                    };
-                    if addressed {
-                        pace.after_reactive();
+            let reactive_wake =
+                if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
+                    if director::session_due(
+                        addressed,
+                        since_ambient,
+                        &pace,
+                        activity.displays_asleep,
+                        engine.do_not_disturb(),
+                    ) && pending.ready()
+                        && !applied
+                    {
+                        let context = Context {
+                            activity: activity.clone(),
+                            recent: recent.clone(),
+                            personality: character.personality.clone(),
+                            state: frame.state,
+                            happened,
+                            standing: assembler.standing_on(frame.position),
+                        };
+                        let was_addressed = addressed;
+                        if addressed {
+                            pace.after_reactive();
+                        } else {
+                            pace.after_ambient();
+                        }
+                        addressed = false;
+                        happened = Happened::Ambient;
+                        since_ambient = Duration::ZERO;
+                        let payload = model.prompt(&context);
+                        if let Ok(mut inspect) = inspect.lock() {
+                            inspect.last_payload = Some(payload);
+                            inspect.wake_secs = pace.wait().as_secs();
+                        }
+                        pending.start(Arc::clone(model), context.clone());
+                        in_flight = Some(context);
+                        was_addressed
                     } else {
-                        pace.after_ambient();
+                        false
                     }
-                    addressed = false;
-                    happened = Happened::Ambient;
-                    since_ambient = Duration::ZERO;
-                    let payload = model.prompt(&context);
-                    if let Ok(mut inspect) = inspect.lock() {
-                        inspect.last_payload = Some(payload);
-                        inspect.wake_secs = pace.wait().as_secs();
-                    }
-                    pending.start(Arc::clone(model), context.clone());
-                    in_flight = Some(context);
-                }
-            }
+                } else {
+                    false
+                };
+
+            let thinking = !pending.ready()
+                && (reactive_wake
+                    || in_flight
+                        .as_ref()
+                        .is_some_and(|ctx| ctx.happened != Happened::Ambient))
+                && !engine.do_not_disturb();
 
             // What the user has seen is what the Engine played, not what the
             // Director asked for: a proposal the State refuses never reaches
@@ -832,6 +854,8 @@ fn run_frame_loop(
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
                         facing: frame.facing as i8,
+                        dialogue: frame.dialogue.clone(),
+                        thinking,
                     },
                 );
 
