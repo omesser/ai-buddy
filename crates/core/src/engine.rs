@@ -180,6 +180,13 @@ const GRAVITY: f64 = 3600.0;
 /// menu bar that used to show only legs. #100.
 const CEILING_CLEARANCE: f64 = 128.0;
 
+/// How far from a horizontal display edge the feet must stay so the full
+/// sprite is on-screen when standing (not climbing). The Engine does not know
+/// the art's size; 64 is 16px at 4×, enough for a character of typical width.
+/// Climb frames assume the wall is in the middle of the frame, so this inset
+/// applies only to non-climb states.
+const EDGE_CLEARANCE: f64 = 64.0;
+
 /// Points per second squared. The yank gate is this times `YANK_WINDOW_S`:
 /// a change in Perch speed larger than that, measured against the speed
 /// from about one idle poll ago, drops the sprite. The last 16 ms slope
@@ -386,6 +393,17 @@ impl Engine {
 
         if self.velocity.x != 0.0 {
             self.facing = self.velocity.x.signum();
+        }
+
+        // When at a horizontal display edge and NOT climbing, ensure the full
+        // sprite is on-screen and face away from the edge. Climb frames assume
+        // the wall is in the middle of the frame, so clipping is intentional
+        // during climb.
+        if self.state != State::Climbing {
+            if let Some((edge_x, face_direction)) = at_horizontal_edge(self.position.x, snapshot) {
+                self.position.x = edge_x;
+                self.facing = face_direction;
+            }
         }
 
         // Losing its footing abandons the rest of a Behavior: what the sprite
@@ -1186,6 +1204,33 @@ fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64
         Some(right)
     } else if velocity_x < 0.0 && x <= left {
         Some(left)
+    } else {
+        None
+    }
+}
+
+/// Whether the sprite is at a horizontal display edge and needs edge correction.
+/// Returns the adjusted position and facing direction when at an edge.
+///
+/// When at the left edge, returns (EDGE_CLEARANCE, 1.0) to inset and face right.
+/// When at the right edge, returns (right - EDGE_CLEARANCE, -1.0) to inset and face left.
+/// Otherwise returns None.
+fn at_horizontal_edge(x: f64, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
+    let left = snapshot
+        .displays
+        .iter()
+        .map(|display| display.x)
+        .min_by(f64::total_cmp)?;
+    let right = snapshot
+        .displays
+        .iter()
+        .map(|display| display.x + display.width)
+        .max_by(f64::total_cmp)?;
+
+    if x <= left + EDGE_CLEARANCE {
+        Some((left + EDGE_CLEARANCE, 1.0))
+    } else if x >= right - EDGE_CLEARANCE {
+        Some((right - EDGE_CLEARANCE, -1.0))
     } else {
         None
     }
@@ -3699,4 +3744,144 @@ mod tests {
             "the sprite settles to sleep without Director proposals waking it"
         );
     }
+
+    #[test]
+    fn a_character_standing_at_the_left_edge_faces_right() {
+        let mut engine = Engine::new(Point { x: 0.0, y: 400.0 });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 0.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        let _thrown_left = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: -500.0,
+                    y: 0.0,
+                },
+            }],
+            ..snapshot(100)
+        });
+
+        let at_left_edge = settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            at_left_edge.state,
+            State::Grounded,
+            "sprite lands on the floor after hitting left edge"
+        );
+        assert_eq!(
+            at_left_edge.facing, 1.0,
+            "sprite at left edge must face right (away from edge)"
+        );
+    }
+
+    #[test]
+    fn a_character_standing_at_the_right_edge_faces_left() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 400.0 });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 500.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        let _thrown_right = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: 2000.0,
+                    y: 0.0,
+                },
+            }],
+            ..snapshot(100)
+        });
+
+        let at_right_edge = settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            at_right_edge.state,
+            State::Grounded,
+            "sprite lands on the floor after hitting right edge"
+        );
+        assert_eq!(
+            at_right_edge.facing, -1.0,
+            "sprite at right edge must face left (away from edge)"
+        );
+    }
+
+    #[test]
+    fn a_character_at_left_edge_is_fully_on_screen() {
+        let mut engine = Engine::new(Point { x: 50.0, y: 400.0 });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 50.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: -500.0,
+                    y: 0.0,
+                },
+            }],
+            ..snapshot(100)
+        });
+
+        let at_left_edge = settle(&mut engine, &snapshot(100));
+        assert!(
+            at_left_edge.position.x > 0.0,
+            "sprite position must be inset from left edge, got x={}",
+            at_left_edge.position.x
+        );
+    }
+
+    #[test]
+    fn a_character_at_right_edge_is_fully_on_screen() {
+        let mut engine = Engine::new(Point { x: 950.0, y: 400.0 });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 950.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point {
+                    x: 500.0,
+                    y: 0.0,
+                },
+            }],
+            ..snapshot(100)
+        });
+
+        let at_right_edge = settle(&mut engine, &snapshot(100));
+        assert!(
+            at_right_edge.position.x < 1000.0,
+            "sprite position must be inset from right edge, got x={}",
+            at_right_edge.position.x
+        );
+    }
+
+    #[test]
+    fn climbing_preserves_wall_centered_frames_and_may_clip() {
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        let climbing = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+
+        assert_eq!(climbing.state, State::Climbing);
+        assert_eq!(
+            climbing.position.x, 1000.0,
+            "during climb, position stays at the wall edge for wall-centered frames"
+        );
+    }
 }
+
