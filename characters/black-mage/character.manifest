@@ -10,7 +10,7 @@ name = "Black Mage"
 scale = 3
 
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-1.png"]
+frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-0.png", "frames/idle-2.png"]
 fps = 2
 
 [animations.walk]
@@ -22,7 +22,7 @@ frames = ["frames/fall-0.png", "frames/fall-1.png"]
 fps = 6
 
 [animations.land]
-frames = ["frames/land-0.png", "frames/land-1.png"]
+frames = ["frames/land-0.png", "frames/land-1.png", "frames/land-2.png", "frames/land-3.png"]
 fps = 10
 loop = "once"
 
