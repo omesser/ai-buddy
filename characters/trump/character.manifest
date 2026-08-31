@@ -14,12 +14,13 @@
 #
 # Hand-tuned after import: sit and sleep were adjacent cells of the
 # failed row, so each cycle mixed two poses. Sit keeps the desk-hunch
-# and breathes it; sleep keeps the face-down nap and breathes it.
-# Land ends on idle's rest frame — the jump row's last cell is a
-# yellow burst, and `loop = "once"` would hold it. Cycles slowed so
-# the idle ring and the wave read as motion, not a twitch. Walk stood
-# shorter than idle; it is scaled to the same height, then every frame
-# is resampled to 85% so he sits a bit smaller on the desk.
+# and breathes it. That same hunch is the start of sleep — he nods
+# off, then the face-down nap holds (`loop = "once"`). Land ends on
+# idle's rest frame — the jump row's last cell is a yellow burst, and
+# `loop = "once"` would hold it. Cycles slowed so the idle ring and
+# the wave read as motion, not a twitch. Walk stood shorter than idle;
+# it is scaled to the same height, then every frame is resampled to
+# 85% so he sits a bit smaller on the desk.
 
 name = "Trump"
 render_mode = "smooth"
@@ -71,9 +72,13 @@ loop = "once"
 frames = ["frames/sit-0.png", "frames/sit-1.png"]
 fps = 2
 
+# Nod off on the sit, then stay face-down. `loop = "once"` holds the
+# last frame, which is the only way this sequence reads as sleep
+# rather than as a sit that keeps collapsing.
 [animations.sleep]
-frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
-fps = 1
+frames = ["frames/sleep-0.png", "frames/sleep-1.png", "frames/sleep-2.png"]
+fps = 2
+loop = "once"
 
 # A rally on the desk. Greets whoever is at the keyboard, keeps talking
 # for a minute, sits once they have gone, and sleeps when the room is
@@ -102,7 +107,7 @@ weight = 3
 when = "idle over 1m"
 
 [behaviors.doze]
-play = ["sit", "sleep"]
+play = ["sleep"]
 weight = 5
 when = "idle over 2m"
 
