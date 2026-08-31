@@ -4,7 +4,12 @@
 // interpolated across.
 
 import { interpolate } from "./interpolate.js";
-import { bubbleDuration, wrapText, placeBubble, CEILING_CLEARANCE } from "./bubble.js";
+import {
+  createBubbleMachine,
+  wrapText,
+  placeBubble,
+  CEILING_CLEARANCE,
+} from "./bubble.js";
 
 const sprite = document.getElementById("sprite");
 const bubble = document.getElementById("bubble");
@@ -40,15 +45,48 @@ let latest = null;
 // ask the loader for art it already has.
 let drawn = null;
 
-// Bubble state: latched dialogue and timers for grace/min-hold.
-let speechTimeout = null;
-let thinkingGraceTimeout = null;
-let thinkingMinHoldTimeout = null;
-let thinkingShown = false;
-let lastLatchedDialogue = null;
-let lastLatchedThinking = false;
-const THINKING_GRACE_MS = 250;
-const THINKING_MIN_HOLD_MS = 600;
+// The bubble decisions live in bubble.js where node can test them; this file
+// only supplies the DOM they act on. Showing positions against the newest
+// placement; the per-frame follow below keeps a visible bubble tracking a
+// walking sprite afterwards.
+function currentSpriteRect() {
+  return { x: latest.x, y: latest.y, width: latest.width, height: latest.height };
+}
+
+function currentDisplayBounds() {
+  return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+}
+
+function show(element) {
+  element.classList.remove("hidden");
+  element.classList.add("visible");
+  positionBubble(element, currentSpriteRect(), currentDisplayBounds());
+}
+
+function hide(element) {
+  element.classList.remove("visible");
+  const fadeMs = latest?.fade_ms || 0;
+  setTimeout(() => element.classList.add("hidden"), fadeMs);
+}
+
+const bubbles = createBubbleMachine({
+  showSpeech(text) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = "14px system-ui, sans-serif";
+    bubbleContent.textContent = wrapText(text, 260, ctx.measureText.bind(ctx)).join("\n");
+    show(bubble);
+  },
+  hideSpeech() {
+    hide(bubble);
+  },
+  showThinking() {
+    show(thinkingBubble);
+  },
+  hideThinking() {
+    hide(thinkingBubble);
+  },
+});
 
 function draw(now) {
   requestAnimationFrame(draw);
@@ -81,9 +119,7 @@ function draw(now) {
     bubble.style.opacity = "0";
     thinkingBubble.style.opacity = "0";
     if (latest.fade_ms === 0) {
-      bubble.classList.add("hidden");
-      thinkingBubble.classList.add("hidden");
-      clearThinkingBubble();
+      bubbles.hideAllNow();
     }
   } else {
     bubble.style.opacity = "";
@@ -112,7 +148,7 @@ function draw(now) {
     }
   }
 
-  latchBubbles();
+  bubbles.frame(latest);
 
   const placement = `${latest.animation}#${latest.frame_index} ${latest.width}x${latest.height}`;
   if (placement === drawn) {
@@ -143,106 +179,6 @@ function positionBubble(element, spriteRect, displayBounds) {
   element.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
 }
 
-function latchBubbles() {
-  if (!latest) return;
-
-  const dialogueChanged = latest.dialogue !== lastLatchedDialogue;
-  const thinkingChanged = latest.thinking !== lastLatchedThinking;
-
-  if (!dialogueChanged && !thinkingChanged) {
-    return;
-  }
-
-  lastLatchedDialogue = latest.dialogue;
-  lastLatchedThinking = latest.thinking;
-
-  const spriteRect = {
-    x: latest.x,
-    y: latest.y,
-    width: latest.width,
-    height: latest.height,
-  };
-
-  const displayBounds = {
-    x: 0,
-    y: 0,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  };
-
-  if (latest.dialogue && latest.visible) {
-    if (speechTimeout) clearTimeout(speechTimeout);
-
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    ctx.font = "14px system-ui, sans-serif";
-    const lines = wrapText(latest.dialogue, 260, ctx.measureText.bind(ctx));
-    bubbleContent.textContent = lines.join("\n");
-
-    bubble.classList.remove("hidden");
-    bubble.classList.add("visible");
-
-    positionBubble(bubble, spriteRect, displayBounds);
-
-    const duration = bubbleDuration(latest.dialogue);
-    const fadeMs = latest.fade_ms || 0;
-    speechTimeout = setTimeout(() => {
-      bubble.classList.remove("visible");
-      setTimeout(() => bubble.classList.add("hidden"), fadeMs);
-    }, duration);
-
-    clearThinkingBubble();
-  }
-
-  if (latest.thinking && latest.visible) {
-    if (!thinkingShown && !thinkingGraceTimeout) {
-      thinkingGraceTimeout = setTimeout(() => {
-        thinkingGraceTimeout = null;
-        if (latest?.thinking && latest?.visible) {
-          showThinkingBubble(spriteRect, displayBounds);
-        }
-      }, THINKING_GRACE_MS);
-    }
-  } else if (thinkingShown || thinkingGraceTimeout) {
-    if (thinkingGraceTimeout) {
-      clearTimeout(thinkingGraceTimeout);
-      thinkingGraceTimeout = null;
-    } else if (thinkingShown && !thinkingMinHoldTimeout) {
-      clearThinkingBubble();
-    }
-  }
-}
-
-function showThinkingBubble(spriteRect, displayBounds) {
-  thinkingBubble.classList.remove("hidden");
-  thinkingBubble.classList.add("visible");
-  thinkingShown = true;
-
-  positionBubble(thinkingBubble, spriteRect, displayBounds);
-
-  thinkingMinHoldTimeout = setTimeout(() => {
-    thinkingMinHoldTimeout = null;
-    if (!latest?.thinking) {
-      clearThinkingBubble();
-    }
-  }, THINKING_MIN_HOLD_MS);
-}
-
-function clearThinkingBubble() {
-  if (thinkingGraceTimeout) {
-    clearTimeout(thinkingGraceTimeout);
-    thinkingGraceTimeout = null;
-  }
-  if (thinkingMinHoldTimeout) {
-    clearTimeout(thinkingMinHoldTimeout);
-    thinkingMinHoldTimeout = null;
-  }
-  thinkingBubble.classList.remove("visible");
-  const fadeMs = latest?.fade_ms || 0;
-  setTimeout(() => thinkingBubble.classList.add("hidden"), fadeMs);
-  thinkingShown = false;
-}
-
 async function start() {
   const character = await window.__TAURI__.core.invoke("character");
   art = character.art;
@@ -264,6 +200,11 @@ async function start() {
     ({ payload }) => {
       previous = latest;
       latest = { ...payload, at: performance.now() };
+      // Dialogue rides exactly one tick, and `latest` keeps only the newest
+      // placement: an Engine that ticks faster than the display refreshes
+      // overwrites some placements before `draw` ever reads them. The machine
+      // latches the pulse here, where every delivery is seen.
+      bubbles.event(payload);
     },
     { target: overlay.label },
   );
