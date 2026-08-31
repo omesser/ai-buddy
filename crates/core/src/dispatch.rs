@@ -257,6 +257,8 @@ mod tests {
 
     fn window(owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
+            // Any id: these tests read geometry and owner, never identity.
+            id: 0,
             bounds: Rect {
                 x,
                 y,
