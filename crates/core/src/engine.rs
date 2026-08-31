@@ -3758,10 +3758,7 @@ mod tests {
         });
         let _thrown_left = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
-                velocity: Point {
-                    x: -500.0,
-                    y: 0.0,
-                },
+                velocity: Point { x: -500.0, y: 0.0 },
             }],
             ..snapshot(100)
         });
@@ -3789,10 +3786,7 @@ mod tests {
         });
         let _thrown_right = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
-                velocity: Point {
-                    x: 2000.0,
-                    y: 0.0,
-                },
+                velocity: Point { x: 2000.0, y: 0.0 },
             }],
             ..snapshot(100)
         });
@@ -3820,10 +3814,7 @@ mod tests {
         });
         engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
-                velocity: Point {
-                    x: -500.0,
-                    y: 0.0,
-                },
+                velocity: Point { x: -500.0, y: 0.0 },
             }],
             ..snapshot(100)
         });
@@ -3846,10 +3837,7 @@ mod tests {
         });
         engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {
-                velocity: Point {
-                    x: 500.0,
-                    y: 0.0,
-                },
+                velocity: Point { x: 500.0, y: 0.0 },
             }],
             ..snapshot(100)
         });
@@ -3939,4 +3927,3 @@ mod tests {
         );
     }
 }
-
