@@ -95,6 +95,14 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      - id: cargo-clippy-mcp-server
+        name: cargo clippy (mcp-server)
+        entry: cargo clippy -p ai-buddy-mcp-server --all-targets --
+        args: [-D, warnings]
+        language: system
+        types: [rust]
+        pass_filenames: false
+
       # The shell is AppKit and Tauri, so it only compiles on macOS. The hook
       # says so itself rather than leaving CI to remember: pre-commit has no
       # platform key, and a SKIP list in a workflow puts that knowledge in the
