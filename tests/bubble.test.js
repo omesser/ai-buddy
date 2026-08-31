@@ -3,7 +3,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bubbleDuration, wrapText, placeBubble, CEILING_CLEARANCE } from "../src/bubble.js";
+import {
+  bubbleDuration,
+  wrapText,
+  placeBubble,
+  createBubbleMachine,
+  CEILING_CLEARANCE,
+  THINKING_GRACE_MS,
+  THINKING_MIN_HOLD_MS,
+} from "../src/bubble.js";
 
 const testMeasureFn = (text) => ({ width: text.length * 8 });
 
@@ -93,4 +101,200 @@ test("bubble stays whole across display seam", () => {
   assert.ok(pos.x >= displayBounds.x, "bubble not past left edge");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble not past right edge");
   assert.equal(typeof pos.flipped, "boolean", "flipped flag is present");
+});
+
+// --- The bubble machine: what shows and hides, driven by fake timers. ---
+
+function machineHarness() {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  const calls = [];
+  // Speech strictly wins: at no step of any test may both be visible. Pinned
+  // in the harness itself so every scenario asserts it for free.
+  let speechVisible = false;
+  let thinkingVisible = false;
+  const exclusive = () =>
+    assert.ok(
+      !(speechVisible && thinkingVisible),
+      "speech and thinking visible together",
+    );
+  const machine = createBubbleMachine({
+    showSpeech(text) {
+      speechVisible = true;
+      calls.push(`showSpeech:${text}`);
+      exclusive();
+    },
+    hideSpeech() {
+      speechVisible = false;
+      calls.push("hideSpeech");
+    },
+    showThinking() {
+      thinkingVisible = true;
+      calls.push("showThinking");
+      exclusive();
+    },
+    hideThinking() {
+      thinkingVisible = false;
+      calls.push("hideThinking");
+    },
+    schedule(fn, ms) {
+      const id = nextId++;
+      timers.set(id, { fn, at: now + ms });
+      return id;
+    },
+    cancel(id) {
+      timers.delete(id);
+    },
+  });
+  // Steps timer by timer so a callback that schedules (the grace arming the
+  // min-hold) sees the clock at its own fire time, the way real timers do.
+  const advance = (ms) => {
+    const target = now + ms;
+    for (;;) {
+      const due = [...timers.entries()]
+        .filter(([, timer]) => timer.at <= target)
+        .sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      const [id, timer] = due;
+      timers.delete(id);
+      now = timer.at;
+      timer.fn();
+    }
+    now = target;
+  };
+  const placement = (overrides) => ({
+    dialogue: null,
+    thinking: false,
+    visible: true,
+    ...overrides,
+  });
+  return { machine, calls, advance, placement };
+}
+
+test("a reply hides the thinking indicator the same frame its bubble shows", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const thinkingTick = placement({ thinking: true });
+  machine.event(thinkingTick);
+  machine.frame(thinkingTick);
+  advance(THINKING_GRACE_MS);
+  assert.deepEqual(calls, ["showThinking"], "grace elapsed, indicator up");
+
+  // The reply lands while the min-hold is still pending: the hold is for
+  // silent endings and must not delay the answer.
+  const reply = placement({ dialogue: "hello" });
+  machine.event(reply);
+  machine.frame(reply);
+  assert.deepEqual(
+    calls,
+    ["showThinking", "hideThinking", "showSpeech:hello"],
+    "indicator gone before the speech bubble shows, no timers involved",
+  );
+});
+
+test("a dialogue pulse overwritten before the next drawn frame still shows", () => {
+  const { machine, calls, placement } = machineHarness();
+
+  // The Engine ticks faster than the display refreshes: the dialogue tick
+  // and its successor both arrive before draw samples the newest placement.
+  machine.event(placement({ dialogue: "missed me?" }));
+  machine.event(placement({}));
+  machine.frame(placement({}));
+
+  assert.deepEqual(calls, ["showSpeech:missed me?"], "the pulse was latched");
+});
+
+test("a silent ending within the min-hold clears at the hold, not before", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const thinkingTick = placement({ thinking: true });
+  machine.frame(thinkingTick);
+  advance(THINKING_GRACE_MS);
+  assert.deepEqual(calls, ["showThinking"]);
+
+  machine.frame(placement({}));
+  assert.deepEqual(calls, ["showThinking"], "held: no flicker on a fast silent end");
+
+  advance(THINKING_MIN_HOLD_MS);
+  assert.deepEqual(calls, ["showThinking", "hideThinking"], "cleared at the hold");
+});
+
+test("a silent ending after the min-hold clears immediately", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  machine.frame(placement({ thinking: true }));
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+  assert.deepEqual(calls, ["showThinking"], "still thinking at hold expiry");
+
+  machine.frame(placement({}));
+  assert.deepEqual(calls, ["showThinking", "hideThinking"]);
+});
+
+test("a reply faster than the grace never shows the indicator", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  machine.frame(placement({ thinking: true }));
+  const reply = placement({ dialogue: "quick" });
+  machine.event(reply);
+  machine.frame(reply);
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+
+  assert.deepEqual(calls, ["showSpeech:quick"], "no flash of the indicator");
+});
+
+test("the speech bubble hides itself after its reading time", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const reply = placement({ dialogue: "hi" });
+  machine.event(reply);
+  machine.frame(reply);
+  advance(bubbleDuration("hi"));
+
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech"]);
+});
+
+test("a new turn waits behind a displayed reply, indicator only after it hides", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const reply = placement({ dialogue: "hi" });
+  machine.event(reply);
+  machine.frame(reply);
+  assert.deepEqual(calls, ["showSpeech:hi"]);
+
+  // A second poke starts a new turn while the reply is still on screen: the
+  // indicator must not appear over it, however long the turn runs.
+  machine.frame(placement({ thinking: true }));
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+  assert.deepEqual(calls, ["showSpeech:hi"], "nothing shows over the reply");
+
+  // Reading time up: the reply hides, and the still-running turn starts its
+  // grace from this moment.
+  advance(bubbleDuration("hi") - THINKING_GRACE_MS - THINKING_MIN_HOLD_MS);
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech"]);
+
+  advance(THINKING_GRACE_MS);
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech", "showThinking"]);
+});
+
+test("a reply landing in the post-speech grace never flashes the indicator", () => {
+  const { machine, calls, advance, placement } = machineHarness();
+
+  const first = placement({ dialogue: "hi" });
+  machine.event(first);
+  machine.frame(first);
+  machine.frame(placement({ thinking: true }));
+  advance(bubbleDuration("hi"));
+  assert.deepEqual(calls, ["showSpeech:hi", "hideSpeech"], "grace just restarted");
+
+  const second = placement({ dialogue: "again" });
+  machine.event(second);
+  machine.frame(second);
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+
+  assert.deepEqual(
+    calls,
+    ["showSpeech:hi", "hideSpeech", "showSpeech:again"],
+    "the indicator never appeared",
+  );
 });
