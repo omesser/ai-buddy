@@ -129,7 +129,7 @@ Three, and each earns its place:
 | Toolchain | Needed for | Needed to build? |
 |---|---|---|
 | **Rust** | everything: the core crate, the Tauri shell | yes |
-| **Python** | `pre-commit`, and the Characters' frame generators | no |
+| **Python** | `pre-commit`, the Characters' frame generators, and the pet importer (the one script that needs Pillow) | no |
 | **Node** | the renderer's unit tests, and nothing else | no |
 
 Node is the newest and the least obvious, so: the webview front end has been
@@ -490,6 +490,67 @@ python3 scripts/make-blip-character.py
 
 Standard library only, so there is nothing to install, which is the same reason
 Nim is generated the same way.
+
+### Importing a pet
+
+`scripts/import-pet.py` translates a pet from another desktop-pet ecosystem
+into a Character Package, once. An authoring tool rather than a build step: the
+output lands in a directory you review, hand-tune, and own — not a runtime
+dependency and not a live bridge (#112). It is the one script allowed to need
+Pillow, because petscodex ships webp sprite sheets and decoding webp rules out
+the standard library.
+
+Two formats have adapters:
+
+- **petscodex** — [petscodex.com](https://petscodex.com/)'s fixed-grid sprite
+  sheets. `npx petscodex install <id>` lands a pack at `~/.codex/pets/<id>/`;
+  the importer slices it by petdex's row semantics and builds the whole
+  Required Animation Set, with `waiting` as an idle `variant_of` ring member.
+- **shimeji** — Shimeji-ee packs: per-pose PNGs plus the pack's `actions.xml`
+  naming pose sequences, every frame mirrored to head right. A pack of bare
+  `shime*.png` files with no conf (shimejishop distributes these) rides
+  Shimeji-ee's standard conf instead.
+
+```sh
+python3 -m pip install pillow
+
+npx petscodex list
+npx petscodex install labubu
+python3 scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
+    -o characters/labubu --accept-license
+cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
+```
+
+A `.zip` works as a source wherever a directory does, and `--force` replaces
+an existing output directory. The importer prints the pet's license and
+refuses a silently-unknown one without `--accept-license`; an import is a
+development asset unless its license says otherwise, and one that ships gets a
+line in [Prior art and attribution](#prior-art-and-attribution). Success is
+declared only after `character::load` accepts the output, through a validator
+that is also useful on its own:
+
+```sh
+cargo run -p ai-buddy-core --example validate -- characters/labubu
+```
+
+Then look at the frames — the tool says so at the end of every run, because
+two things are the reviewer's to judge, not code's:
+
+- **Walk must head right**; the Engine's facing mirrors it for leftward
+  travel. Every petscodex pet sampled so far draws petdex's "running-right"
+  row heading left, so the importer cuts walk from the other row by default.
+  `--walk-row 1` picks the first row anyway, and `--mirror-walk` flips
+  whichever row is chosen, for the pet whose only clean walk heads left.
+- **Sleep must read as sleep.** petscodex has no sleep row, so the importer
+  synthesizes one: idle's stillest frame, twice, the second lifted a pixel as
+  the breath. Swap in a better pose when the sheet has one.
+
+`characters/cat/` is the first shipped import — petscodex's `cat`, with the
+defaults. The importer's self-test runs with no pet installed:
+
+```sh
+python3 scripts/import-pet.py --self-test
+```
 
 ## Prior art and attribution
 
