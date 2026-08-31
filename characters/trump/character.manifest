@@ -17,7 +17,9 @@
 # and breathes it; sleep keeps the face-down nap and breathes it.
 # Land ends on idle's rest frame — the jump row's last cell is a
 # yellow burst, and `loop = "once"` would hold it. Cycles slowed so
-# the idle ring and the wave read as motion, not a twitch.
+# the idle ring and the wave read as motion, not a twitch. Walk stood
+# shorter than idle; it is scaled to the same height, then every frame
+# is resampled to 85% so he sits a bit smaller on the desk.
 
 name = "Trump"
 render_mode = "smooth"
