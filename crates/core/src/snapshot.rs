@@ -143,11 +143,14 @@ pub fn describe_standing(feet: Point, geometry: &WorldGeometry) -> String {
         let bottom = display.y + display.height;
         if feet.y == bottom && feet.x >= display.x && feet.x <= right {
             // With the Dock's bounds known the floor reaches the display's
-            // own bottom edge, so "above the Dock" would name the wrong side.
-            return if geometry.dock.is_some() {
-                "the display floor, beside the Dock".to_string()
-            } else {
-                "the display floor, above the Dock".to_string()
+            // own bottom edge, so "above the Dock" would name the wrong
+            // side — and only on the display that actually holds the Dock.
+            return match &geometry.dock {
+                Some(dock) if crate::window_source::centered_in(dock, *display) => {
+                    "the display floor, beside the Dock".to_string()
+                }
+                Some(_) => "the display floor".to_string(),
+                None => "the display floor, above the Dock".to_string(),
             };
         }
         if feet.y >= display.y && feet.y <= bottom && (feet.x == display.x || feet.x == right) {
@@ -650,10 +653,14 @@ mod tests {
         );
     }
 
-    /// The Director hears the difference too.
+    /// The Director hears the difference too — and only on the display that
+    /// actually holds the Dock. A second display's floor is nowhere near it.
     #[test]
     fn standing_names_the_dock_and_the_floor_beside_it() {
-        let desktop = dock_aware_desktop();
+        let mut desktop = dock_aware_desktop();
+        desktop
+            .usable_frames
+            .push(rect(1920.0, 33.0, 1728.0, 1084.0));
 
         assert_eq!(
             describe_standing(Point { x: 960.0, y: 978.0 }, &desktop),
@@ -668,6 +675,16 @@ mod tests {
                 &desktop
             ),
             "the display floor, beside the Dock"
+        );
+        assert_eq!(
+            describe_standing(
+                Point {
+                    x: 2500.0,
+                    y: 1117.0
+                },
+                &desktop
+            ),
+            "the display floor"
         );
     }
 

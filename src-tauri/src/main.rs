@@ -1011,7 +1011,9 @@ fn main() {
                         dock.width, dock.height, dock.x, dock.y
                     ),
                     None => eprintln!(
-                        "dock: full-width floor; grant ai-buddy Accessibility for the Dock's true bounds"
+                        "dock: full-width floor; no source reported a bottom Dock — \
+                         a side or hidden Dock has nothing to report, and granting \
+                         ai-buddy Accessibility only helps where one exists"
                     ),
                 }
             }

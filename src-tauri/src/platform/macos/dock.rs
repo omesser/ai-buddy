@@ -130,8 +130,12 @@ fn core_dock_rect() -> Option<Rect> {
         return None;
     }
     let mut rect = objc2_core_foundation::CGRect::ZERO;
-    // SAFETY: the signature above is the one the probe called successfully;
-    // the out-pointer lives for the call.
+    // SAFETY: dlsym proves the name resolves, never the arity or the ABI.
+    // The signature is the SPI's long-known shape — out-pointer in, nothing
+    // back — and a release that reshaped it would smash here, during the
+    // call: the plausibility gate downstream can reject wrong values, never
+    // a wrong ABI. That residual risk is the one the module doc records as
+    // accepted knowingly. The out-pointer lives for the call.
     unsafe {
         let get_rect: CoreDockGetRect = std::mem::transmute(symbol);
         get_rect(&raw mut rect);

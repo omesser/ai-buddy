@@ -172,15 +172,17 @@ pub struct WorldGeometry {
     pub dock: Option<Rect>,
 }
 
-/// The usable frame of the display that holds the Dock, once the Dock's true
-/// bounds are known.
-///
-/// The work area reserves a full-width strip because that is all the window
-/// manager will say. With the Dock's real rectangle in hand the reservation is
-/// the Dock itself — a Perch — and the floor drops to the display's own bottom
-/// edge, so a sprite walking off the Dock's end falls instead of standing on
-/// air. A display the Dock is not on keeps its work area unchanged, and so do
-/// the menu bar's strip and the side edges.
+/// Whether this rectangle's center lies inside `frame` — which display, if
+/// any, a claimed Dock belongs to. The center rather than containment,
+/// because a Dock legitimately touches its display's edges.
+pub(crate) fn centered_in(dock: &Rect, frame: Rect) -> bool {
+    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
+    center.0 >= frame.x
+        && center.0 <= frame.x + frame.width
+        && center.1 >= frame.y
+        && center.1 <= frame.y + frame.height
+}
+
 /// Whether a rectangle claiming to be the Dock can be believed against one
 /// display.
 ///
@@ -194,22 +196,21 @@ pub struct WorldGeometry {
 pub fn plausible_dock(dock: &Rect, frame: Rect, usable: Rect) -> bool {
     let thin = dock.height > 0.0 && dock.height <= frame.height * 0.3;
     let horizontal = dock.width > dock.height;
-    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
-    let inside_frame = center.0 >= frame.x
-        && center.0 <= frame.x + frame.width
-        && center.1 >= frame.y
-        && center.1 <= frame.y + frame.height;
-    let in_reserved_margin = center.1 > usable.y + usable.height;
-    thin && horizontal && inside_frame && in_reserved_margin
+    let in_reserved_margin = dock.y + dock.height / 2.0 > usable.y + usable.height;
+    thin && horizontal && centered_in(dock, frame) && in_reserved_margin
 }
 
+/// The usable frame of the display that holds the Dock, once the Dock's true
+/// bounds are known.
+///
+/// The work area reserves a full-width strip because that is all the window
+/// manager will say. With the Dock's real rectangle in hand the reservation is
+/// the Dock itself — a Perch — and the floor drops to the display's own bottom
+/// edge, so a sprite walking off the Dock's end falls instead of standing on
+/// air. A display the Dock is not on keeps its work area unchanged, and so do
+/// the menu bar's strip and the side edges.
 pub fn floor_under_dock(usable: Rect, frame: Rect, dock: &Rect) -> Rect {
-    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
-    let holds_dock = center.0 >= frame.x
-        && center.0 <= frame.x + frame.width
-        && center.1 >= frame.y
-        && center.1 <= frame.y + frame.height;
-    if !holds_dock {
+    if !centered_in(dock, frame) {
         return usable;
     }
 
