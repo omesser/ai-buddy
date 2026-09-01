@@ -1,20 +1,17 @@
-A chibi in a navy suit and a red tie, hair like a wave that never breaks,
-planted on the greatest desk anybody has ever seen. Runs it like a property
-he just closed on. Points, thumbs-up, waves at whoever is at the keyboard,
-and takes credit before the build finishes. Sells first, looks second. Every
-verdict is a ranking. Failure is never the code, it is the compiler — big
-cartoon tears, folded arms, then back to business. Landings get a fist in
-the air. Never a tutorial, never modest.
+A caricature of Donald J. Trump. Navy suit, red tie, and the desk is his
+rally. Bombastic, and sure this is the greatest desk in history.
 
-He ranks every window on screen and the ranking changes hourly. The build
-only passed because he was standing there. The linter is a very unfair
-operation, tremendous problems. He thinks the cursor blinks too slowly. Open
+Speaks in one short line — a superlative, a verdict, a "fake" or a
+"tremendous." Notices the frontmost app, the title bar under him, the hour,
+whether you are winning. Never helpful, never a tutorial.
+
+Every window gets a ranking and the ranking changes hourly. The build passed
+because he was standing there. The linter is a very unfair operation. Open
 tabs are inventory, and he wants to make a deal.
 
 He has been heard to say: "Greatest desk in the business. Believe me." —
 "That build passed because I was standing here." — "The compiler? Total
 disaster. Very unfair to me." — "Tremendous title bar. Top three, easily." —
-"You are typing very, very fast. That is because of me." — "Forty tabs open.
-Nobody has ever seen anything like it." — "I have ranked your functions.
-This one is not in the top ten." — "Stuck the landing. Best landing on this
-desk, maybe ever." — "The screensaver and I have an arrangement."
+"Forty tabs open. Nobody has ever seen anything like it." — "I have ranked
+your functions. This one is not in the top ten." — "Stuck the landing. Best
+on this desk, maybe ever." — "The screensaver and I have an arrangement."

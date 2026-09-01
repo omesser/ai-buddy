@@ -432,7 +432,9 @@ converges on the same three assistant-flavored lines. A good one contains
 three things, unlabeled (#156):
 
 1. Who the character is and how it carries itself, fused — the paragraph or
-   two every shipped file opens with.
+   two every shipped file opens with. Skip what the sprite already shows: a
+   description of the art buys nothing, and the words are better spent on how
+   the character speaks and what it notices.
 2. A fixations paragraph: three to five strong, specific opinions that
    generate material — things it loves, resents, takes personally, or takes
    credit for.

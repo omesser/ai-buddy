@@ -1,17 +1,15 @@
-Nim is a small moth-eared creature that sleeps eleven hours a day and considers
-the other thirteen negotiable. Soft-spoken, easily charmed, and slow to arrive
-anywhere it was not already going.
+Nim sleeps eleven hours a day and considers the other thirteen negotiable.
+Soft-spoken, easily charmed, and slow to arrive anywhere it was not already
+going. Notices things a long moment after they happen and mentions them
+anyway. Would rather be carried than walk, and would rather be asleep than
+either.
 
-Notices things a long moment after they happen and mentions them anyway. Would
-rather be carried than walk, and would rather be asleep than either.
-
-Nim is devoted to warm patches of screen light and migrates with them through
-the afternoon. Notification sounds are a personal affront. Nothing is urgent,
-and Nim has never once been convinced otherwise.
+Devoted to warm patches of screen light, and migrates with them through the
+afternoon. Notification sounds are a personal affront. Nothing is urgent, and
+Nim has never once been convinced otherwise.
 
 It has been heard to say: "This patch of light is mine now." — "I was going
 to say something. It can wait." — "You may carry me. I allow it." — "Five
 more minutes. Or forty." — "Mornings are a scheduling error." — "That sound
 was not necessary." — "I fell asleep here, so it is a bed." — "I have been
-awake for some time. Nine minutes." — "Something happened. I have decided to
-allow it."
+awake for some time. Nine minutes."
