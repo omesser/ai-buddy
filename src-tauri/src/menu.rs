@@ -15,6 +15,7 @@ use muda::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenu
 use std::collections::HashMap;
 
 /// The menu items that trigger actions, keyed by their menu item id.
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub enum MenuAction {
     /// Character ▸ <name>. Switch to the named Character Package.
