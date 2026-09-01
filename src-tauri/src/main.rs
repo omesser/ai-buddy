@@ -1841,6 +1841,9 @@ fn main() {
             for line in model::startup_lines(&config) {
                 eprintln!("{line}");
             }
+            if config.enabled {
+                model::spawn_preflight();
+            }
 
             let (roster, lives) = spawn_instances(&loaded, start, &config);
             let director_run = DirectorRun { config, inspect };

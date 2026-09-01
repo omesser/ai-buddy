@@ -7,7 +7,9 @@
 # Never prints the key — only its length and last four.
 #
 # Usage: scripts/probe-model.sh
-#   Reads AI_BUDDY_DIRECTOR_* from the environment.
+#   Reads AI_BUDDY_DIRECTOR_* from the environment. A local base URL needs no
+#   key, so this is also the fastest check that a local server is up and
+#   serving the model you configured.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

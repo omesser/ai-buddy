@@ -46,8 +46,27 @@ const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// First ambient session wait, in seconds. Not a heartbeat.
 const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
+/// Completer timeout, in seconds, and the reply cap, in tokens. Both have a
+/// local default that differs from the hosted one; these override either.
+const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
+const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
+
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
+
+/// A cold local server loads weights on the first call, which can outlast a
+/// hosted request several times over. Losing that one wake would leave the
+/// buddy quietly Static for the rest of the session.
+const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Hosted replies are two lines. A local reasoning model (Qwen3, gpt-oss)
+/// thinks in the same budget on chat-completions, so 80 tokens can be spent
+/// before it writes anything, and the empty reply parses as garbage. Raising
+/// the cap is the portable half of that fix: `reasoning_effort` is not a
+/// field every one of these servers accepts, and a strict one rejects the
+/// whole request over it.
+const LOCAL_MAX_TOKENS: u32 = 512;
+const HOSTED_MAX_TOKENS: u32 = 80;
 
 /// Last Character Prompt and the config that produced it. #18 displays this.
 #[derive(Clone, Debug, Serialize)]
@@ -91,10 +110,12 @@ enum KeyRead {
     Present(String),
 }
 
-/// Read Director config from the env. No API key means `StaticDirector` only.
+/// Read Director config from the env. No API key means `StaticDirector`
+/// only — unless the server is on this machine or this LAN, which needs no
+/// key to talk to.
 pub fn config() -> DirectorConfig {
     let key = key_from_env();
-    let configured = matches!(key, KeyRead::Present(_));
+    let configured = matches!(key, KeyRead::Present(_)) || is_local(&base_url());
     let key_invalid = matches!(key, KeyRead::Invalid);
     let enabled = configured && !off();
     DirectorConfig {
@@ -102,7 +123,7 @@ pub fn config() -> DirectorConfig {
         configured,
         key_invalid,
         wake_every: WAKE_EVERY,
-        ambient_first: wake_secs().unwrap_or(Pace::FIRST),
+        ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
     }
 }
 
@@ -172,22 +193,89 @@ fn off() -> bool {
     )
 }
 
-fn wake_secs() -> Option<Duration> {
-    let raw = std::env::var(WAKE_SECS).ok()?;
-    let secs: u64 = raw.parse().ok()?;
+/// A positive number of seconds from `var`, or nothing when it is unset,
+/// unparsable, or zero.
+fn env_secs(var: &str) -> Option<Duration> {
+    let secs: u64 = std::env::var(var).ok()?.parse().ok()?;
     (secs > 0).then_some(Duration::from_secs(secs))
 }
 
-/// An OpenAI-compatible chat Completer, or `None` when no key is set.
+fn base_url() -> String {
+    std::env::var(BASE_URL).unwrap_or_else(|_| DEFAULT_BASE.to_string())
+}
+
+/// Is this base URL served from this machine or this LAN?
+///
+/// Ollama, llama.cpp, LM Studio, vLLM and MLX all ship with no auth, so
+/// demanding a key for them means inventing one. A remote host still needs a
+/// real key: sending an unauthenticated request to a cloud provider is a
+/// worse answer than saying the key is missing.
+fn is_local(base: &str) -> bool {
+    let host = base.split("://").nth(1).unwrap_or(base);
+    let host = host.split('/').next().unwrap_or(host);
+    let host = match host.strip_prefix('[') {
+        // An IPv6 literal is bracketed, so the colons inside are not a port.
+        Some(rest) => rest.split(']').next().unwrap_or(rest),
+        None => host.rsplit_once(':').map_or(host, |(host, _)| host),
+    };
+    if host == "localhost" || host == "::1" || host.ends_with(".local") {
+        return true;
+    }
+    let octets: Vec<u8> = host
+        .split('.')
+        .filter_map(|part| part.parse().ok())
+        .collect();
+    match octets[..] {
+        [127, _, _, _] | [10, _, _, _] | [192, 168, _, _] => true,
+        [172, second, _, _] => (16..=31).contains(&second),
+        _ => false,
+    }
+}
+
+fn timeout_for(local: bool) -> Duration {
+    if let Some(secs) = env_secs(TIMEOUT_SECS) {
+        return secs;
+    }
+    if local {
+        LOCAL_TIMEOUT
+    } else {
+        TIMEOUT
+    }
+}
+
+fn max_tokens_for(local: bool) -> u32 {
+    if let Some(cap) = std::env::var(MAX_TOKENS)
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+    {
+        return cap;
+    }
+    if local {
+        LOCAL_MAX_TOKENS
+    } else {
+        HOSTED_MAX_TOKENS
+    }
+}
+
+/// An OpenAI-compatible chat Completer, or `None` when a remote host has no
+/// key set.
 pub fn endpoint() -> Option<Endpoint> {
-    let api_key = secret_key()?;
-    let base = std::env::var(BASE_URL).unwrap_or_else(|_| DEFAULT_BASE.to_string());
+    let base = base_url();
+    let local = is_local(&base);
+    let api_key = match secret_key() {
+        Some(key) => key,
+        // `headers` omits Authorization when the key is empty, so a local
+        // server sees a plain request rather than a made-up Bearer token.
+        None if local => String::new(),
+        None => return None,
+    };
     let model = std::env::var(MODEL).unwrap_or_else(|_| DEFAULT_MODEL.to_string());
     Some(Endpoint {
         api_key,
         url: completions_url(&base),
         model,
-        timeout: TIMEOUT,
+        timeout: timeout_for(local),
+        max_tokens: max_tokens_for(local),
         session: Mutex::new(Vec::new()),
     })
 }
@@ -238,6 +326,7 @@ pub struct Endpoint {
     url: String,
     model: String,
     timeout: Duration,
+    max_tokens: u32,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
     session: Mutex<Vec<Message>>,
 }
@@ -300,7 +389,7 @@ impl Endpoint {
             });
             session.clone()
         };
-        let body = request_body(&self.model, &snapshot, uses_responses(url));
+        let body = request_body(&self.model, &snapshot, uses_responses(url), self.max_tokens);
         let request = self
             .headers(ureq::post(url))
             .set("Content-Type", "application/json");
@@ -462,6 +551,79 @@ fn clip_body(body: &str) -> String {
     }
 }
 
+/// Does a served model id name the model that was asked for?
+///
+/// Ollama reports `llama3.2:latest` for the `llama3.2` a user types, so an
+/// exact comparison would report a served model as missing.
+fn model_matches(served: &str, wanted: &str) -> bool {
+    served == wanted || served.trim_end_matches(":latest") == wanted.trim_end_matches(":latest")
+}
+
+/// Read a `/v1/models` answer. Pure, so the decision is testable without a
+/// server: the caller does the HTTP and the naming.
+///
+/// A server that lists nothing recognisable gets the benefit of the doubt.
+/// MLX and some llama.cpp builds answer with an empty or unfamiliar list, and
+/// claiming their model is absent would be worse than saying nothing.
+fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Result<(), String> {
+    let (code, body) = models.map_err(|error| format!("unreachable: {error}"))?;
+    if !(200..300).contains(&code) {
+        return Err(format!("/v1/models answered {code}"));
+    }
+    let served: Vec<String> = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| {
+            value["data"].as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+        })
+        .unwrap_or_default();
+    if served.is_empty() || served.iter().any(|id| model_matches(id, model)) {
+        return Ok(());
+    }
+    Err(format!(
+        "model {model:?} is not served; it has {}",
+        served.join(", ")
+    ))
+}
+
+/// Say once, in the background, whether the configured server is actually
+/// there. Diagnostic only: a wake that fails already falls to
+/// `StaticDirector` per turn, so this changes no behaviour — it exists
+/// because "the buddy went quiet" is otherwise unexplained.
+///
+/// Spawned rather than awaited. ADR-0004 keeps the model off the frame loop,
+/// and a stopped server would otherwise hold up startup for the timeout.
+pub fn spawn_preflight() {
+    thread::spawn(|| {
+        let Some(endpoint) = endpoint() else {
+            return;
+        };
+        let origin = endpoint.origin();
+        let models = endpoint.get(&format!("{origin}/v1/models"));
+        match preflight_verdict(models, endpoint.model()) {
+            Ok(()) => {
+                if tracing() {
+                    eprintln!("director: {origin} answered, model {}", endpoint.model());
+                }
+            }
+            // A transport error already quotes the URL it failed to reach;
+            // naming the origin again would say it twice.
+            Err(why) => {
+                let reason = if why.contains(&origin) {
+                    why
+                } else {
+                    format!("{origin} {why}")
+                };
+                eprintln!("director: {reason}; staying on StaticDirector until it answers");
+            }
+        }
+    });
+}
+
 const PING: &str = "Reply with the single word pong and nothing else.";
 
 /// Same Completer the overlay uses, without starting the overlay.
@@ -470,18 +632,31 @@ const PING: &str = "Reply with the single word pong and nothing else.";
 /// (#16) can share the command: same env, same exit codes, a second hop.
 pub fn run_probe() -> i32 {
     let Some(endpoint) = endpoint() else {
-        eprintln!("probe-model: no AI_BUDDY_DIRECTOR_API_KEY");
+        eprintln!(
+            "probe-model: no AI_BUDDY_DIRECTOR_API_KEY, and \
+             AI_BUDDY_DIRECTOR_BASE_URL is not a local server"
+        );
         return 2;
     };
 
     println!("probe-model");
     println!("  url    {}", endpoint.url());
     println!("  model  {}", endpoint.model());
-    println!("  key    {}", endpoint.key_fingerprint());
+    if endpoint.api_key.is_empty() {
+        println!("  key    none (local server)");
+    } else {
+        println!("  key    {}", endpoint.key_fingerprint());
+    }
     println!();
 
     let origin = endpoint.origin();
-    probe_get(&endpoint, &format!("{origin}/v1/models"));
+    let models = endpoint.get(&format!("{origin}/v1/models"));
+    probe_result(&format!("{origin}/v1/models"), &models);
+    match preflight_verdict(models, endpoint.model()) {
+        Ok(()) => println!("  model {} is served", endpoint.model()),
+        Err(why) => println!("  {why}"),
+    }
+    println!();
     if endpoint.is_xai() {
         probe_get(&endpoint, &format!("{origin}/v1/api-key"));
     }
@@ -505,12 +680,17 @@ pub fn run_probe() -> i32 {
 }
 
 fn probe_get(endpoint: &Endpoint, url: &str) {
+    let answer = endpoint.get(url);
+    probe_result(url, &answer);
+    println!();
+}
+
+fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
     println!("GET {url}");
-    match endpoint.get(url) {
-        Ok((code, body)) => println!("  {code} {}", clip_body(&body)),
+    match answer {
+        Ok((code, body)) => println!("  {code} {}", clip_body(body)),
         Err(error) => println!("  transport {error}"),
     }
-    println!();
 }
 
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
@@ -529,7 +709,12 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     }
 }
 
-fn request_body(model: &str, session: &[Message], responses: bool) -> serde_json::Value {
+fn request_body(
+    model: &str,
+    session: &[Message],
+    responses: bool,
+    max_tokens: u32,
+) -> serde_json::Value {
     let input = if responses && session.len() == 1 {
         // xAI's first-request example is `input` as a string. Later turns
         // use the role/content array so the opening is not sent again as
@@ -552,7 +737,7 @@ fn request_body(model: &str, session: &[Message], responses: bool) -> serde_json
         serde_json::json!({
             "model": model,
             "input": input,
-            "max_output_tokens": 80,
+            "max_output_tokens": max_tokens,
             "store": false,
             // grok-4.6 defaults to high: 16s and hundreds of think tokens
             // for a two-line Behavior pick.
@@ -562,7 +747,7 @@ fn request_body(model: &str, session: &[Message], responses: bool) -> serde_json
         serde_json::json!({
             "model": model,
             "messages": input,
-            "max_tokens": 80,
+            "max_tokens": max_tokens,
         })
     }
 }
@@ -674,7 +859,7 @@ mod tests {
             role: "user",
             content: "wave".to_string(),
         }];
-        let body = request_body("grok-4.6", &session, true);
+        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS);
         assert_eq!(body["input"], "wave");
         assert_eq!(body["max_output_tokens"], 80);
         assert_eq!(body["store"], false);
@@ -698,7 +883,7 @@ mod tests {
                 content: "what just happened: thrown".to_string(),
             },
         ];
-        let body = request_body("grok-4.6", &session, true);
+        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS);
         assert_eq!(body["input"][2]["content"], "what just happened: thrown");
         assert!(body["input"].is_array());
     }
@@ -826,6 +1011,69 @@ mod tests {
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 404").is_some());
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 401").is_none());
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 400").is_none());
+    }
+
+    #[test]
+    fn a_loopback_or_private_base_is_served_from_here() {
+        assert!(is_local("http://localhost:11434"), "Ollama");
+        assert!(is_local("http://127.0.0.1:8080"), "llama.cpp");
+        assert!(is_local("http://[::1]:1234"), "LM Studio over IPv6");
+        assert!(is_local("http://192.168.1.50:8000"), "a box on the LAN");
+        assert!(is_local("http://10.0.0.5:8000"));
+        assert!(is_local("http://172.16.4.2:8080"));
+        assert!(is_local("http://studio.local:1234"), "mDNS");
+        assert!(!is_local("https://api.openai.com"));
+        assert!(!is_local("https://api.x.ai"));
+        assert!(
+            !is_local("http://172.32.0.1:8080"),
+            "just outside the private range"
+        );
+        assert!(
+            !is_local("https://localhost.example.com"),
+            "a hostname that merely starts with localhost"
+        );
+    }
+
+    #[test]
+    fn a_cold_local_model_gets_room_a_hosted_one_does_not_need() {
+        assert!(timeout_for(true) > timeout_for(false));
+        assert!(max_tokens_for(true) > max_tokens_for(false));
+    }
+
+    #[test]
+    fn the_preflight_passes_when_the_server_lists_the_model() {
+        let body = r#"{"data":[{"id":"llama3.2:latest"},{"id":"qwen3:8b"}]}"#;
+        let ok = Ok((200, body.to_string()));
+        assert!(preflight_verdict(ok.clone(), "qwen3:8b").is_ok());
+        assert!(
+            preflight_verdict(ok, "llama3.2").is_ok(),
+            "Ollama reports a :latest tag the user does not type"
+        );
+    }
+
+    #[test]
+    fn the_preflight_names_why_it_did_not_pass() {
+        let down = preflight_verdict(Err("connection refused".to_string()), "llama3.2");
+        assert!(down.unwrap_err().contains("connection refused"));
+
+        let refused = preflight_verdict(Ok((404, String::new())), "llama3.2");
+        assert!(refused.unwrap_err().contains("404"));
+
+        let missing = preflight_verdict(
+            Ok((200, r#"{"data":[{"id":"qwen3:8b"}]}"#.to_string())),
+            "llama3.2",
+        );
+        let missing = missing.unwrap_err();
+        assert!(missing.contains("llama3.2"), "{missing}");
+        assert!(missing.contains("qwen3:8b"), "names what is served");
+    }
+
+    #[test]
+    fn a_server_that_lists_nothing_is_left_alone() {
+        // MLX and some llama.cpp builds answer with an empty or unfamiliar
+        // list. A probe that cannot see the model must not claim it is absent.
+        assert!(preflight_verdict(Ok((200, r#"{"data":[]}"#.to_string())), "any").is_ok());
+        assert!(preflight_verdict(Ok((200, "not json".to_string())), "any").is_ok());
     }
 
     #[test]
