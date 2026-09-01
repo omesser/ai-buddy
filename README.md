@@ -532,6 +532,11 @@ Two formats have adapters:
   `shime*.png` files with no conf (shimejishop distributes these) rides
   Shimeji-ee's standard conf instead.
 
+An ecosystem without an adapter needs one written — the importer reads a
+machine-readable convention or it reads nothing. There is deliberately no
+generic fallback for a bare pile of frames
+([ADR-0009](./docs/adr/0009-no-generic-import-on-ramp.md)).
+
 Pillow lives in a [uv](https://docs.astral.sh/uv/)-managed virtual
 environment, never in a system Python:
 
