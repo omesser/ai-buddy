@@ -34,7 +34,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
 use ai_buddy_core::director::{Context, Happened, ModelDirector, Pace, Seeded, StaticDirector};
@@ -138,6 +138,9 @@ struct InstanceState {
     addressed: bool,
     happened: Happened,
     pointer: Pointer,
+    /// The last line spoken and which overlay showed it, so a crossing
+    /// carries it (#178). See `carry_line`.
+    spoken: Option<Spoken>,
     drawn_last: Option<Drawn>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
@@ -233,6 +236,8 @@ struct SpritePlacement<'a> {
     /// addressed. #119: grace and min-hold are in the webview so the Engine
     /// stays tick-pure.
     thinking: bool,
+    /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
+    bubble: bool,
 }
 
 /// One tick's instruction to the renderer: every Instance's sprite, and whether
@@ -269,6 +274,49 @@ struct Placement<'a> {
 /// placement is worked out once here and turned into each overlay's rectangle
 /// below — and the art names are owned rather than borrowed so that this
 /// outlives the borrow of the Character it came from.
+/// A spoken line, when, and the overlay that was showing it.
+struct Spoken {
+    line: String,
+    at: Instant,
+    owner: Option<usize>,
+}
+
+/// The longest the renderer keeps a line up — `bubbleDuration`'s clamp in
+/// `src/bubble.js`. A line older than this cannot still be showing anywhere,
+/// so it is never carried.
+const CARRY_WINDOW: Duration = Duration::from_secs(8);
+
+/// The dialogue this tick's placement carries: the line the Engine just said,
+/// or the last one re-pulsed to a new owner.
+///
+/// Dialogue is a one-tick pulse, and only the overlay that owns the bubble on
+/// that tick latches it. A sprite that crosses a seam mid-line would otherwise
+/// lose the line: the old owner hides on the change, and the new one never saw
+/// the pulse (#178). So an owner change within the reading window says the
+/// line again to the new owner. Its reading time restarts there, which is
+/// the cheaper of the two honest answers — the renderer owns that clock.
+fn carry_line(
+    spoken: &mut Option<Spoken>,
+    said: Option<&str>,
+    owner: Option<usize>,
+    now: Instant,
+) -> Option<String> {
+    if let Some(line) = said {
+        *spoken = Some(Spoken {
+            line: line.to_string(),
+            at: now,
+            owner,
+        });
+        return Some(line.to_string());
+    }
+    let carried = spoken.as_mut()?;
+    if carried.owner == owner || now.duration_since(carried.at) > CARRY_WINDOW {
+        return None;
+    }
+    carried.owner = owner;
+    Some(carried.line.clone())
+}
+
 struct Placed {
     id: InstanceId,
     character: String,
@@ -280,6 +328,9 @@ struct Placed {
     facing: i8,
     dialogue: Option<String>,
     thinking: bool,
+    /// The overlay that draws the bubble, decided once from the feet
+    /// (#178, `bubble_owner`); `None` while the feet are on no display.
+    owner: Option<usize>,
     #[allow(dead_code)]
     mask: ai_buddy_core::overlay::AlphaMask,
 }
@@ -849,6 +900,7 @@ fn spawn_live(
         addressed: false,
         happened: Happened::Ambient,
         pointer: Pointer::default(),
+        spoken: None,
         drawn_last: None,
         verbs: Vec::new(),
         menu_hold: None,
@@ -1108,6 +1160,7 @@ fn spawn_instances(
             addressed: false,
             happened: Happened::Ambient,
             pointer: Pointer::default(),
+            spoken: None,
             drawn_last: None,
             verbs: Vec::new(),
             menu_hold: None,
@@ -1784,6 +1837,65 @@ mod tests {
         assert!(
             gaps.windows(2).any(|pair| pair[0] != pair[1]),
             "the spacing is not a fixed step: {gaps:?}"
+        );
+    }
+
+    /// #178: a line said on one display and carried across the seam is said
+    /// again to the new owner, once, while it could still be showing — and
+    /// never to the owner that already heard it.
+    #[test]
+    fn a_line_crosses_the_seam_with_the_sprite_once_and_only_while_fresh() {
+        let t0 = Instant::now();
+        let mut spoken = None;
+
+        assert_eq!(
+            carry_line(&mut spoken, Some("Yare yare daze."), Some(0), t0).as_deref(),
+            Some("Yare yare daze."),
+            "the pulse itself goes to the owner of the tick"
+        );
+        assert_eq!(
+            carry_line(&mut spoken, None, Some(0), t0 + Duration::from_secs(1)),
+            None,
+            "the same owner is not told twice"
+        );
+        assert_eq!(
+            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
+            Some("Yare yare daze."),
+            "mid-reading, the new owner is told the line"
+        );
+        assert_eq!(
+            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(3)),
+            None,
+            "and then not again while it stays there"
+        );
+        assert_eq!(
+            carry_line(
+                &mut spoken,
+                None,
+                Some(0),
+                t0 + CARRY_WINDOW + Duration::from_secs(1)
+            ),
+            None,
+            "a line older than any reading window is not resurrected by a crossing"
+        );
+
+        let mut spoken = None;
+        carry_line(&mut spoken, Some("first"), Some(0), t0);
+        assert_eq!(
+            carry_line(
+                &mut spoken,
+                Some("second"),
+                Some(0),
+                t0 + Duration::from_secs(1)
+            )
+            .as_deref(),
+            Some("second"),
+            "a new line replaces the remembered one"
+        );
+        assert_eq!(
+            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
+            Some("second"),
+            "and it is the new line that crosses"
         );
     }
 }

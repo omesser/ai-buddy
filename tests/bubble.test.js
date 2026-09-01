@@ -343,3 +343,24 @@ test("a losing overlay never arms the indicator off a thinking it does not own",
   advance(THINKING_GRACE_MS);
   assert.equal(surface(), "thinking", "the same frame, owned, arms it");
 });
+
+test("a line crossing the seam hides on the old display before it shows on the new", () => {
+  // Two overlays, two machines: the shell hands the line to the owner, and on a
+  // crossing says it again to the new one (`carry_line`), while the old one
+  // hides on the tick it loses ownership — the way main.js does on `!bubble`.
+  const a = machineHarness();
+  const b = machineHarness();
+
+  a.machine.event(forOverlay(a.placement({ dialogue: "hi", bubble: true })));
+  a.machine.frame(forOverlay(a.placement({ bubble: true })));
+  b.machine.event(forOverlay(b.placement({ dialogue: "hi", bubble: false })));
+  assert.equal(a.surface(), "speech", "the owner shows the line");
+  assert.equal(b.surface(), null, "the other display never latched it");
+
+  // Mid-reading, ownership flips: the shell re-pulses to b and stops naming a.
+  a.machine.hideAllNow();
+  b.machine.event(forOverlay(b.placement({ dialogue: "hi", bubble: true })));
+  b.machine.frame(forOverlay(b.placement({ bubble: true })));
+  assert.equal(a.surface(), null, "the old display is already clear");
+  assert.equal(b.surface(), "speech", "and the new one shows the same line");
+});

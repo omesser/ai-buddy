@@ -278,13 +278,12 @@ async function start() {
         view.bubble.style.zIndex = `${index * 2}`;
         view.sprite.style.zIndex = `${index * 2 + 1}`;
 
-        // One overlay owns each Instance's bubble (#178); elsewhere the
-        // bubble would clamp back inside this display and show beside no
-        // sprite. Speech hides on its reading timer, not on the next frame,
-        // so a losing overlay drops its bubble now rather than holding a
-        // stale one — and latches nothing, since `owned` carries no bubble.
+        // One overlay owns each Instance's bubble (#178, `bubble_owner`).
+        // Speech hides on its reading timer, not on the next frame, so the
+        // overlay that just lost ownership drops its bubble the tick it
+        // learns so — once, on the change, not every tick after.
         const owned = forOverlay(sprite);
-        if (!sprite.bubble) view.bubbles.hideAllNow();
+        if (!sprite.bubble && view.latest?.bubble !== false) view.bubbles.hideAllNow();
 
         view.previous = view.latest;
         view.latest = {
