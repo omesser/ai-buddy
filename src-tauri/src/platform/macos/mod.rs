@@ -14,6 +14,6 @@ mod window_source;
 
 pub use dock::dock_bounds;
 pub use overlay_panel::configure_overlay;
-pub use pointer::primary_button_down;
+pub use pointer::{primary_button_down, secondary_button_down};
 pub use sensing::MacosActivitySource;
 pub use window_source::MacosWindowSource;

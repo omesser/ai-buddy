@@ -18,11 +18,13 @@
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
 mod env_util;
+mod menu;
 mod model;
 mod package;
 mod platform;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -134,7 +136,53 @@ struct InstanceState {
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
     verbs: Vec<Verb>,
+    /// The menu this Instance has open, and `None` when it has none. While it is
+    /// `Some`, the frame loop re-injects `Verb::Menu` every tick, which is what
+    /// holds the Instance still under the popup.
+    menu_hold: Option<MenuHold>,
 }
+
+/// One open menu, from the frame loop's side.
+struct MenuHold {
+    /// What the rows of the menu on screen mean.
+    ///
+    /// Kept rather than looked up again when the click arrives, because the menu
+    /// on screen is the menu that was described: a package installed while it is
+    /// open must not change what its rows do.
+    actions: HashMap<String, menu::MenuAction>,
+    /// How long it has been open, against `MENU_HOLD_TIMEOUT`.
+    elapsed: Duration,
+}
+
+/// What the main thread tells the frame loop about the menu it was asked to pop.
+///
+/// Two messages rather than one because a menu can close without choosing
+/// anything, and that has to end the hold too. Nothing arrives on the event
+/// channel when the user presses Escape.
+enum MenuSignal {
+    /// A row was chosen, by the id the description gave it.
+    Chose(String),
+    /// The popup is gone, whether or not anything was chosen.
+    Closed,
+}
+
+/// Both ends of the menu's channel, handed to the frame loop together.
+///
+/// The sender goes to the main thread with each popup and the receiver is
+/// drained every tick. They travel as a pair because the app's menu event hook
+/// is registered before the frame loop starts and needs a sender of its own.
+struct MenuChannel {
+    sender: mpsc::Sender<MenuSignal>,
+    receiver: mpsc::Receiver<MenuSignal>,
+}
+
+/// How long a hold survives without hearing anything before it is dropped.
+///
+/// A backstop, not a mechanism. `Closed` ends the hold; this only matters if it
+/// never comes, and the failure it prevents is the one that cannot be
+/// recovered from — an Instance frozen under a menu that is no longer there,
+/// for as long as the app runs.
+const MENU_HOLD_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Where one Instance is to be drawn in one overlay, in logical points from
 /// that overlay's top-left, and which Animation frame to draw.
@@ -439,6 +487,37 @@ fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
     }
 }
 
+/// Apply a menu action to the roster and hide rules.
+fn apply_menu_action(
+    action: menu::MenuAction,
+    roster: &mut Roster,
+    instance_id: &InstanceId,
+    rules: &Arc<Mutex<HideRules>>,
+) {
+    match action {
+        menu::MenuAction::SwitchCharacter(name) => {
+            eprintln!("menu: switching to {name}");
+            // ponytail: character switching lands with
+            // #18's settings. The menu builds and the
+            // action is recognized; persistence and the
+            // actual switch are deferred.
+        }
+        menu::MenuAction::ToggleDnd => {
+            if let Some(instance) = roster.get_mut(instance_id) {
+                let new_state = !instance.do_not_disturb();
+                instance.set_do_not_disturb(new_state);
+                eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
+            }
+        }
+        menu::MenuAction::Hide => {
+            if let Ok(mut r) = rules.lock() {
+                r.toggle();
+                eprintln!("menu: hiding");
+            }
+        }
+    }
+}
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -462,7 +541,12 @@ fn run_frame_loop(
     rules: Arc<Mutex<HideRules>>,
     covered: Vec<Rect>,
     director_run: DirectorRun,
+    menu_channel: MenuChannel,
 ) {
+    let MenuChannel {
+        sender: menu_sender,
+        receiver: menu_signals,
+    } = menu_channel;
     thread::spawn(move || {
         let mut assembler = SnapshotAssembler::new(source);
         let DirectorRun { config, inspect } = director_run;
@@ -581,18 +665,168 @@ fn run_frame_loop(
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
             let held = platform::primary_button_down();
+            let secondary_held = platform::secondary_button_down();
+
+            // What the main thread has said about the open menu since the last
+            // tick. Drained in full rather than one message a tick: a click and
+            // the close that follows it arrive together, and taking one per
+            // frame would leave the Instance held for a tick after the menu was
+            // already gone.
+            let mut chosen: Vec<String> = Vec::new();
+            let mut menu_closed = false;
+            loop {
+                match menu_signals.try_recv() {
+                    Ok(MenuSignal::Chose(id)) => chosen.push(id),
+                    Ok(MenuSignal::Closed) => menu_closed = true,
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    // Nobody left to pop a menu, so no menu can still be on
+                    // screen. Ending the hold matters more than the reason: an
+                    // Instance handed Verb::Menu every tick forever never moves
+                    // again, and that outlives whatever went wrong.
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        menu_closed = true;
+                        break;
+                    }
+                }
+            }
+
+            // Which Instance a click belongs to is decided by which one's menu
+            // carries the id, not by which one the cursor is over: the sprite is
+            // free to have walked out from under its own menu.
+            let picked: Vec<(InstanceId, menu::MenuAction)> = chosen
+                .iter()
+                .filter_map(|id| {
+                    lives.iter().find_map(|live| {
+                        live.menu_hold
+                            .as_ref()
+                            .and_then(|hold| hold.actions.get(id))
+                            .map(|action| (live.id.clone(), action.clone()))
+                    })
+                })
+                .collect();
+
+            for (id, action) in picked {
+                apply_menu_action(action, &mut roster, &id, &rules);
+            }
+
+            if menu_closed {
+                for live in lives.iter_mut() {
+                    live.menu_hold = None;
+                }
+            }
 
             for (index, live) in lives.iter_mut().enumerate() {
                 // Only the Instance the press belongs to is told the cursor is
                 // over it. The rest are still updated: a pointer that stopped
                 // being told the time would measure the next gesture's velocity
                 // over the gap.
-                live.verbs =
-                    live.pointer
-                        .update(target == Some(index), held, cursor_points, elapsed_ms);
+                live.verbs = live.pointer.update(
+                    target == Some(index),
+                    held,
+                    secondary_held,
+                    cursor_points,
+                    elapsed_ms,
+                );
 
                 if tracing_frames && !live.verbs.is_empty() {
                     eprintln!("verbs: {} {:?}", live.id, live.verbs);
+                }
+
+                // A menu already open holds the Instance still: Verb::Menu is
+                // re-injected every tick, which closes the Engine's not-now
+                // gates the same way a Poke does. Nothing here waits — the
+                // frame loop cannot block, or every other Instance stops too.
+                if let Some(hold) = live.menu_hold.as_mut() {
+                    hold.elapsed += Duration::from_millis(u64::from(elapsed_ms));
+                    if hold.elapsed >= MENU_HOLD_TIMEOUT {
+                        eprintln!("menu: hold expired without a close, releasing {}", live.id);
+                        live.menu_hold = None;
+                    } else if !live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
+                        live.verbs.push(Verb::Menu);
+                    }
+                } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
+                    let bundled = app
+                        .path()
+                        .resource_dir()
+                        .ok()
+                        .map(|dir| dir.join(BUNDLED_CHARACTERS));
+                    let search_paths = package::search_paths(bundled);
+                    let installed = package::installed(&search_paths)
+                        .iter()
+                        .filter_map(|path| {
+                            path.file_stem()
+                                .and_then(|name| name.to_str())
+                                .map(|name| name.to_string())
+                        })
+                        .collect::<Vec<_>>();
+
+                    // The Engine's own answer rather than a copy of it, so the
+                    // checkbox cannot disagree with what the buddy is doing.
+                    let do_not_disturb = roster
+                        .get(&live.id)
+                        .map(|instance| instance.do_not_disturb())
+                        .unwrap_or(false);
+
+                    let description =
+                        menu::describe(&installed, &live.character.name, do_not_disturb);
+
+                    // The overlay the cursor is on, and where in it the cursor
+                    // is. A menu is positioned in a window's coordinates, and
+                    // there is one window per display.
+                    let on_display =
+                        display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
+
+                    match on_display.and_then(|index| {
+                        displays
+                            .frames
+                            .get(index)
+                            .map(|frame| (overlay_label(index), *frame))
+                    }) {
+                        Some((label, frame)) => {
+                            let at = tauri::LogicalPosition::new(
+                                cursor_points.x - frame.x,
+                                cursor_points.y - frame.y,
+                            );
+
+                            // The description is owned Strings and bools, which
+                            // is what lets it cross to the main thread. The menu
+                            // itself is built over there: its native objects are
+                            // reference-counted without a lock and cannot be
+                            // sent, so there is no version of this that builds
+                            // the menu here and hands it over.
+                            // Kept on this side before the description crosses:
+                            // the click comes back as an id, and the id means
+                            // what the menu on screen said it meant.
+                            let description_actions = description.actions.clone();
+                            let handle = app.clone();
+                            let signals = menu_sender.clone();
+                            let posted = app.run_on_main_thread(move || {
+                                if let Err(why) = menu::show(&handle, &description, &label, at) {
+                                    eprintln!("menu: {why}");
+                                }
+                                // Sent whether or not the menu drew, and after
+                                // it has closed if the platform's popup is
+                                // modal. Either way it is what ends the hold,
+                                // because a menu dismissed without a choice
+                                // reports nothing anywhere else.
+                                let _ = signals.send(MenuSignal::Closed);
+                            });
+
+                            match posted {
+                                Ok(()) => {
+                                    live.menu_hold = Some(MenuHold {
+                                        actions: description_actions,
+                                        elapsed: Duration::ZERO,
+                                    })
+                                }
+                                // Never held on a menu that was never asked for.
+                                Err(why) => {
+                                    eprintln!("menu: could not reach the main thread: {why}")
+                                }
+                            }
+                        }
+                        None => eprintln!("menu: the cursor is on no known display"),
+                    }
                 }
 
                 // Grab is on every held tick. Only the first tick of a hold is a
@@ -600,11 +834,12 @@ fn run_frame_loop(
                 // dragging.
                 let grab_started = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab))
                     && live.last_state != Some(State::Dragged);
-                if live
-                    .verbs
-                    .iter()
-                    .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Throw { .. }))
-                    || grab_started
+                if live.verbs.iter().any(|verb| {
+                    matches!(
+                        verb,
+                        Verb::Poke | Verb::Summon | Verb::Menu | Verb::Throw { .. }
+                    )
+                }) || grab_started
                 {
                     live.addressed = true;
                     live.happened = if live
@@ -615,7 +850,11 @@ fn run_frame_loop(
                         Happened::Throw
                     } else if grab_started {
                         Happened::Grab
-                    } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
+                    } else if live
+                        .verbs
+                        .iter()
+                        .any(|verb| matches!(verb, Verb::Menu | Verb::Poke))
+                    {
                         Happened::Poke
                     } else {
                         Happened::Summon
@@ -1247,6 +1486,7 @@ fn spawn_instances(
             pointer: Pointer::default(),
             drawn_last: None,
             verbs: Vec::new(),
+            menu_hold: None,
         });
     }
 
@@ -1511,6 +1751,17 @@ fn main() {
             let (roster, lives) = spawn_instances(&loaded, start, &config);
             let director_run = DirectorRun { config, inspect };
 
+            // Selections do not come back from the popup: it returns once the
+            // menu is on screen, and the click arrives here, later, on the app's
+            // own channel. The hook forwards ids to the frame loop, which is the
+            // only place that knows which Instance's menu is open and what its
+            // rows meant.
+            let (menu_sender, menu_receiver) = mpsc::channel();
+            let hook_sender = menu_sender.clone();
+            app.handle().on_menu_event(move |_app, event| {
+                let _ = hook_sender.send(MenuSignal::Chose(event.id().0.clone()));
+            });
+
             run_frame_loop(
                 app.handle().clone(),
                 roster,
@@ -1520,6 +1771,10 @@ fn main() {
                 rules,
                 covered,
                 director_run,
+                MenuChannel {
+                    sender: menu_sender,
+                    receiver: menu_receiver,
+                },
             );
             Ok(())
         })

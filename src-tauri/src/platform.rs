@@ -10,6 +10,7 @@
 //! one edit in one file.
 
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
@@ -119,6 +120,17 @@ pub fn primary_button_down() -> bool {
 /// missing window geometry beside it.
 #[cfg(not(target_os = "macos"))]
 pub fn primary_button_down() -> bool {
+    false
+}
+
+/// Whether the secondary mouse button (right-click) is down.
+#[cfg(target_os = "macos")]
+pub fn secondary_button_down() -> bool {
+    macos::secondary_button_down()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn secondary_button_down() -> bool {
     false
 }
 

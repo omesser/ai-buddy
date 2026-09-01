@@ -24,3 +24,11 @@ pub fn primary_button_down() -> bool {
         CGMouseButton::Left,
     )
 }
+
+/// Whether the secondary mouse button (right-click) is down.
+pub fn secondary_button_down() -> bool {
+    CGEventSource::button_state(
+        CGEventSourceStateID::CombinedSessionState,
+        CGMouseButton::Right,
+    )
+}

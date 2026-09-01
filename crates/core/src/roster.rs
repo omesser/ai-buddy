@@ -89,6 +89,11 @@ impl Instance {
     pub fn do_not_disturb(&self) -> bool {
         self.engine.do_not_disturb()
     }
+
+    /// Toggle Do Not Disturb for this Instance.
+    pub fn set_do_not_disturb(&mut self, enabled: bool) {
+        self.engine.set_do_not_disturb(enabled)
+    }
 }
 
 /// The roster of Character Instances.
