@@ -63,6 +63,9 @@ pub struct DirectorInspect {
 pub struct DirectorConfig {
     pub enabled: bool,
     pub configured: bool,
+    /// The env var is set, but trim left nothing usable — `$XAI_API_KEY`
+    /// expanding to empty used to look like the key was never offered.
+    pub key_invalid: bool,
     /// Static Director interval. Free, so it stays short.
     pub wake_every: Duration,
     /// First ambient session wait. `Pace` doubles from here.
@@ -80,16 +83,51 @@ impl DirectorConfig {
     }
 }
 
+/// What `AI_BUDDY_DIRECTOR_API_KEY` held, after quotes and whitespace.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum KeyRead {
+    Unset,
+    Invalid,
+    Present(String),
+}
+
 /// Read Director config from the env. No API key means `StaticDirector` only.
 pub fn config() -> DirectorConfig {
-    let configured = secret_key().is_some();
+    let key = key_from_env();
+    let configured = matches!(key, KeyRead::Present(_));
+    let key_invalid = matches!(key, KeyRead::Invalid);
     let enabled = configured && !off();
     DirectorConfig {
         enabled,
         configured,
+        key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: wake_secs().unwrap_or(Pace::FIRST),
     }
+}
+
+/// One line for the mode, and a warning when a key was offered but unusable.
+///
+/// Unset and empty used to be silent Static. The empty case is almost always
+/// a `$VAR` that expanded to nothing, which is a mistake, not a choice.
+pub fn startup_lines(config: &DirectorConfig) -> Vec<String> {
+    let mut lines = Vec::new();
+    if config.key_invalid {
+        lines.push(format!(
+            "director: warning: {API_KEY} is set but not a usable key; using StaticDirector"
+        ));
+    }
+    if config.enabled {
+        lines.push(format!(
+            "director: model, ambient first {}s",
+            config.ambient_first.as_secs()
+        ));
+    } else if config.configured {
+        lines.push("director: off; using StaticDirector".to_string());
+    } else {
+        lines.push("director: StaticDirector".to_string());
+    }
+    lines
 }
 
 /// Strip wrapping quotes and whitespace. `.env` files quote keys; a
@@ -102,8 +140,29 @@ fn trim_key(raw: &str) -> Option<String> {
     (!key.is_empty()).then_some(key)
 }
 
+fn key_from_raw(raw: Option<&str>) -> KeyRead {
+    match raw {
+        None => KeyRead::Unset,
+        Some(value) => match trim_key(value) {
+            Some(key) => KeyRead::Present(key),
+            None => KeyRead::Invalid,
+        },
+    }
+}
+
+fn key_from_env() -> KeyRead {
+    match std::env::var(API_KEY) {
+        Err(std::env::VarError::NotPresent) => KeyRead::Unset,
+        Err(std::env::VarError::NotUnicode(_)) => KeyRead::Invalid,
+        Ok(raw) => key_from_raw(Some(&raw)),
+    }
+}
+
 fn secret_key() -> Option<String> {
-    std::env::var(API_KEY).ok().and_then(|raw| trim_key(&raw))
+    match key_from_env() {
+        KeyRead::Present(key) => Some(key),
+        KeyRead::Unset | KeyRead::Invalid => None,
+    }
 }
 
 fn off() -> bool {
@@ -686,6 +745,66 @@ mod tests {
         assert_eq!(trim_key("  sk-abc\n").as_deref(), Some("sk-abc"));
         assert_eq!(trim_key("\"sk-abc\"").as_deref(), Some("sk-abc"));
         assert_eq!(trim_key("   ").as_deref(), None);
+    }
+
+    /// Unset is a choice. `$XAI_API_KEY` expanding to nothing is a mistake
+    /// that used to look the same. The log has to tell them apart.
+    #[test]
+    fn a_blank_provided_key_is_invalid_and_unset_is_not() {
+        assert_eq!(key_from_raw(None), KeyRead::Unset);
+        assert_eq!(key_from_raw(Some("")), KeyRead::Invalid);
+        assert_eq!(key_from_raw(Some("  \n")), KeyRead::Invalid);
+        assert_eq!(key_from_raw(Some("\"\"")), KeyRead::Invalid);
+        assert!(matches!(key_from_raw(Some("sk-abc")), KeyRead::Present(_)));
+    }
+
+    #[test]
+    fn startup_always_names_the_director_mode() {
+        let static_only = DirectorConfig {
+            enabled: false,
+            configured: false,
+            key_invalid: false,
+            wake_every: WAKE_EVERY,
+            ambient_first: Pace::FIRST,
+        };
+        assert_eq!(startup_lines(&static_only), ["director: StaticDirector"]);
+
+        let blank = DirectorConfig {
+            key_invalid: true,
+            ..static_only.clone()
+        };
+        let warned = startup_lines(&blank);
+        assert!(
+            warned.iter().any(|line| line.contains("warning")
+                && line.contains(API_KEY)
+                && line.contains("StaticDirector")),
+            "{warned:?}"
+        );
+        assert!(
+            warned.iter().any(|line| line == "director: StaticDirector"),
+            "{warned:?}"
+        );
+
+        let model = DirectorConfig {
+            enabled: true,
+            configured: true,
+            key_invalid: false,
+            wake_every: WAKE_EVERY,
+            ambient_first: Duration::from_secs(45),
+        };
+        assert_eq!(
+            startup_lines(&model),
+            ["director: model, ambient first 45s"]
+        );
+
+        let off = DirectorConfig {
+            enabled: false,
+            configured: true,
+            key_invalid: false,
+            wake_every: WAKE_EVERY,
+            ambient_first: Pace::FIRST,
+        };
+        assert_eq!(startup_lines(&off), ["director: off; using StaticDirector"]);
     }
 
     #[test]

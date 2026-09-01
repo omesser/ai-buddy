@@ -343,6 +343,13 @@ fn director_payload(
         .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
 }
 
+/// The overlay heard the primary button. The frame loop polls a session
+/// query that can miss a click on this window; this is the other witness.
+#[tauri::command]
+fn overlay_primary(down: bool) {
+    platform::set_overlay_primary(down);
+}
+
 /// Put the overlay over one display, covering it exactly.
 ///
 /// Sized before it is moved. Growing a window anchors its bottom-left corner,
@@ -578,6 +585,13 @@ fn run_frame_loop(
         // the loop's only output, and a screenshot cannot say whether it got
         // there by falling.
         let tracing_frames = env_util::env_flag_is_on("AI_BUDDY_TRACE_FRAMES");
+        // A click is two edges. The periodic hit-test line only prints on a
+        // click-through flip or every two seconds, so a press that did not
+        // flip — already over the sprite, or never over it — left no record
+        // of whether the button was seen or the hit-test agreed.
+        let tracing_director = model::tracing();
+        let tracing_clicks = tracing || tracing_frames || tracing_director;
+        let mut button_was_down = false;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
 
@@ -664,8 +678,55 @@ fn run_frame_loop(
             // up by one press.
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
+
+            // Last tick's click-through is the one that decided whether the
+            // overlay could hear this press. Passing through means it cannot
+            // still be holding a button, so a lost pointerup is dropped here
+            // rather than gluing the sprite to a hand that has gone. The
+            // session poll is not consulted: it is the one that misses a
+            // press our own window swallowed, which is when this latch is
+            // the only witness.
+            let on_overlay =
+                display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
+            if !visible {
+                platform::overlay_passes_clicks_through();
+            } else if let Some(index) = on_overlay {
+                if ignoring.get(index).copied().flatten() == Some(true) {
+                    platform::overlay_passes_clicks_through();
+                }
+            } else {
+                platform::overlay_passes_clicks_through();
+            }
             let held = platform::primary_button_down();
             let secondary_held = platform::secondary_button_down();
+            let button_edge = match (button_was_down, held) {
+                (false, true) => Some("down"),
+                (true, false) => Some("up"),
+                _ => None,
+            };
+            button_was_down = held;
+            if tracing_clicks {
+                if let Some(edge) = button_edge {
+                    let sprite = target
+                        .and_then(|index| lives.get(index))
+                        .and_then(|live| live.drawn_last.as_ref())
+                        .map(|last| format!("({},{})", last.rect.x, last.rect.y))
+                        .or_else(|| {
+                            lives.first().and_then(|live| {
+                                live.drawn_last.as_ref().map(|last| {
+                                    format!("untargeted({},{})", last.rect.x, last.rect.y)
+                                })
+                            })
+                        })
+                        .unwrap_or_else(|| "none".to_string());
+                    eprintln!(
+                        "click: {edge} hits={pressed:?} target={target:?} \
+                         cursor=({:.0},{:.0})->({},{}) scale={:.1} \
+                         visible={visible} sprite={sprite}",
+                        cursor.x, cursor.y, cursor_at.0, cursor_at.1, cursor_scale,
+                    );
+                }
+            }
 
             // What the main thread has said about the open menu since the last
             // tick. Drained in full rather than one message a tick: a click and
@@ -728,7 +789,7 @@ fn run_frame_loop(
                     elapsed_ms,
                 );
 
-                if tracing_frames && !live.verbs.is_empty() {
+                if tracing_clicks && !live.verbs.is_empty() {
                     eprintln!("verbs: {} {:?}", live.id, live.verbs);
                 }
 
@@ -1019,6 +1080,14 @@ fn run_frame_loop(
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
 
+                // Engine names a Poke and a Dwell. The pointer loop also
+                // marks verbs so the wake can say `happened: poked`; this
+                // is the bit that must not be dropped or a click never
+                // reaches the session.
+                if frame.addressed {
+                    live.addressed = true;
+                }
+
                 let became_perched = live.last_state.is_some()
                     && frame.state == State::Perched
                     && live.last_state != Some(State::Perched);
@@ -1033,6 +1102,7 @@ fn run_frame_loop(
                 }
 
                 // After the tick so a Throw is already Falling, not still Dragged.
+                let happened = live.happened;
                 let reactive_wake =
                     if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
                         if director::session_due(
@@ -1080,6 +1150,33 @@ fn run_frame_loop(
                     } else {
                         false
                     };
+
+                if tracing_clicks && (frame.addressed || reactive_wake || !world.verbs.is_empty()) {
+                    let skip = if reactive_wake {
+                        "started"
+                    } else if live.model.is_none() {
+                        "no-model"
+                    } else if last_activity.is_none() {
+                        "no-activity-yet"
+                    } else if instance.do_not_disturb() {
+                        "dnd"
+                    } else if last_activity
+                        .as_ref()
+                        .is_some_and(|activity| activity.displays_asleep)
+                    {
+                        "asleep"
+                    } else if !live.pending.ready() {
+                        "pending"
+                    } else if applied {
+                        "just-applied"
+                    } else {
+                        "not-due"
+                    };
+                    eprintln!(
+                        "session: {} addressed={} happened={happened:?} {skip}",
+                        live.id, live.addressed,
+                    );
+                }
 
                 let thinking = !live.pending.ready()
                     && (reactive_wake
@@ -1243,8 +1340,6 @@ fn run_frame_loop(
             // and drop the sprite in the user's hand.
             let holding = lives.iter().any(|live| live.pointer.grabbing());
             let ignore = !(presence.visible && (over_sprite || holding));
-            let on_overlay =
-                display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             let mut flipped = false;
 
             for (index, display) in displays.frames.iter().enumerate() {
@@ -1631,7 +1726,11 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![character, director_payload])
+        .invoke_handler(tauri::generate_handler![
+            character,
+            director_payload,
+            overlay_primary
+        ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
             // means no overlay. Reported and exited rather than returned as a
@@ -1739,13 +1838,8 @@ fn main() {
             let config = model::config();
             let inspect = Arc::new(Mutex::new(config.inspect()));
             app.manage(Arc::clone(&inspect));
-            if config.enabled {
-                eprintln!(
-                    "director: model, ambient first {}s",
-                    config.ambient_first.as_secs()
-                );
-            } else if config.configured {
-                eprintln!("director: off; using StaticDirector");
+            for line in model::startup_lines(&config) {
+                eprintln!("{line}");
             }
 
             let (roster, lives) = spawn_instances(&loaded, start, &config);

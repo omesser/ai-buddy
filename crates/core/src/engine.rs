@@ -153,8 +153,8 @@ pub struct Frame {
     /// horizontal travel turns it, so a stop keeps the last heading and the
     /// renderer can mirror the art by it without flicker at rest.
     pub facing: f64,
-    /// Whether the user addressed the buddy this tick. True when Dwell
-    /// threshold is reached. The Director wakes reactively on this.
+    /// Whether the user addressed the buddy this tick. A Poke or a Dwell.
+    /// The Shell wakes the session Director from this bit.
     pub addressed: bool,
 }
 
@@ -764,6 +764,9 @@ impl Engine {
         // its own reaction: prodded again, it reacts again from the beginning.
         if snapshot.verbs.contains(&Verb::Poke) {
             started |= self.play(&[Primitive::React]);
+            // A click is how the user tests the Director. Dwell sets the
+            // same bit; the Shell reads one field for both.
+            addressed = true;
         }
 
         // A Behavior is drawn over whatever the sprite is doing, so a Poke shows
@@ -2596,6 +2599,26 @@ mod tests {
         );
     }
 
+    /// #6: a click is a Poke, and a Poke addresses the Director. That is how
+    /// the user tests the session: react on screen, and a reactive wake with
+    /// `happened: poked`. Dwell (#152) is the other addressing path; a click
+    /// must not wait for it.
+    #[test]
+    fn a_poke_addresses_the_director() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert!(
+            poked.addressed,
+            "the Shell wakes the session from Frame.addressed"
+        );
+        assert_eq!(poked.animation, "react");
+    }
+
     #[test]
     fn a_sprite_thrown_at_the_screen_edge_climbs_it_and_lets_go_at_the_top() {
         let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
@@ -2840,6 +2863,10 @@ mod tests {
             ..a_long_perch()
         });
         assert_eq!(poked.animation, "react");
+        assert!(
+            poked.addressed,
+            "a click mid-stroll still tests the Director"
+        );
 
         let strolling: Vec<Frame> = (0..12).map(|_| engine.tick(&a_long_perch())).collect();
         assert!(
@@ -5157,6 +5184,10 @@ mod tests {
         });
         assert_eq!(near.animation, "walk", "toward reaction starts a walk");
         assert_eq!(near.facing, 1.0, "walks toward the cursor");
+        assert_eq!(
+            near.velocity.x, WALK_SPEED,
+            "toward must move right when the cursor is to the right, not merely face it"
+        );
     }
 
     /// #152: Near reaction with away walks away from the cursor.
@@ -5175,6 +5206,10 @@ mod tests {
         });
         assert_eq!(near.animation, "walk", "away reaction starts a walk");
         assert_eq!(near.facing, -1.0, "walks away from the cursor");
+        assert_eq!(
+            near.velocity.x, -WALK_SPEED,
+            "away must move left when the cursor is to the right"
+        );
     }
 
     /// #152: Near reaction with react plays react.
@@ -5228,6 +5263,38 @@ mod tests {
             }
         }
         panic!("Rush reaction was not triggered");
+    }
+
+    /// #152: Rush `toward` walks at the cursor, not away from it. Facing
+    /// alone is not enough — the art can face one way and the feet the other.
+    #[test]
+    fn rush_toward_walks_at_the_cursor_not_away() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Indifferent, CursorReaction::Toward);
+
+        let start_x = engine.position.x;
+        // High-velocity approach from the right, ending still to the right.
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: start_x + 300.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        let rushed = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: start_x + 80.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+
+        assert_eq!(rushed.animation, "walk", "rush toward starts a walk");
+        assert_eq!(rushed.facing, 1.0, "faces the cursor on the right");
+        assert_eq!(
+            rushed.velocity.x, WALK_SPEED,
+            "feet travel toward the cursor, not away from it"
+        );
     }
 
     /// #153: Chase steers toward cursor's x, swats on arrival, disengages.
