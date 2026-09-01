@@ -173,6 +173,12 @@ pub struct Frame {
 /// its own duration when a Character's art needs to outlast this one.
 const PRIMITIVE_MS: u32 = 600;
 
+/// How long a poked sprite stands still after reacting, before it may move
+/// again. A tuning knob. `PRIMITIVE_MS` is the length of the `react` art, not
+/// of a pause that reads as the character noticing you; 2.5 s is long enough
+/// to register and short enough that a click never feels like a freeze. #177.
+const SETTLE_MS: u32 = 2_500;
+
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
 /// knob: long enough not to nod off mid-conversation, short enough that a sprite
 /// on an unattended desktop settles down.
@@ -330,6 +336,10 @@ pub struct Engine {
     rush_reported: bool,
     /// Milliseconds since the chase Primitive started (#153).
     chase_ms: u32,
+    /// Milliseconds left of standing still after a Poke. While it runs, a
+    /// proposal that would move the sprite is refused; a Grab, a Throw or
+    /// losing the ground ends it at once. #177.
+    settle_ms: u32,
 }
 
 impl Engine {
@@ -368,6 +378,7 @@ impl Engine {
             cursor_velocity: Point::default(),
             rush_reported: false,
             chase_ms: 0,
+            settle_ms: 0,
         }
     }
 
@@ -469,6 +480,14 @@ impl Engine {
         // `woke` marks a sprite a verb roused, so the footing it is put back
         // on is not mistaken for one it arrived at. See the landing below.
         let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
+
+        // The settle is a thing the sprite does on its feet. Being picked up
+        // or losing the ground ends it, because a hold that outlived the
+        // ground would refuse the first walk after the landing.
+        self.settle_ms = match state {
+            State::Grounded | State::Perched => self.settle_ms.saturating_sub(snapshot.elapsed_ms),
+            _ => 0,
+        };
 
         // Any Verb aborts chase like it aborts walk (#153).
         if !snapshot.verbs.is_empty() && self.on_screen() == Some(Primitive::Chase) {
@@ -631,11 +650,11 @@ impl Engine {
         // Walking is the Engine's, deciding to walk is not: nothing else here
         // moves the sprite of its own accord. A walk needs no ending — it lasts
         // until the sprite runs out of Perch, which is the whole point of it —
-        // so the velocity holds when the Behavior that started it is over, and
-        // through a Poke's reaction, which interrupts what the sprite is doing
-        // rather than where it is going. What does stop it is a Primitive that
-        // is the sprite standing still: `walk sit` would otherwise slide along
-        // the edge it sat down on.
+        // so the velocity holds when the Behavior that started it is over.
+        // What does stop it is a Primitive that is the sprite standing still
+        // (`walk sit` would otherwise slide along the edge it sat down on),
+        // and a Poke, which stops the feet below and holds them for
+        // SETTLE_MS (#177).
         //
         // Chase (#153): steer walk velocity toward the cursor's x along the ground.
         if matches!(state, State::Grounded | State::Perched) {
@@ -778,7 +797,15 @@ impl Engine {
         if let Some(proposal) = &snapshot.proposal {
             if !self.do_not_disturb {
                 if let Some(primitives) = self.chain(&proposal.behavior) {
-                    if self.play(&primitives) {
+                    // #177: the settle after a Poke refuses what would move the
+                    // sprite and lets it answer — a line or a gesture is what
+                    // being addressed should produce, a stroll is not. What it
+                    // does once the hold is over is the Director's fresh call,
+                    // not the interrupted walk resuming.
+                    let moves = primitives
+                        .iter()
+                        .any(|primitive| matches!(primitive, Primitive::Walk | Primitive::Chase));
+                    if !(self.settle_ms > 0 && moves) && self.play(&primitives) {
                         started = true;
                         behavior = Some(proposal.behavior.clone());
                     }
@@ -796,6 +823,14 @@ impl Engine {
         // exactly because it interrupts — including a Behavior, and including
         // its own reaction: prodded again, it reacts again from the beginning.
         if snapshot.verbs.contains(&Verb::Poke) {
+            // On its feet, a Poke also stops them: the reaction is the
+            // character noticing you, and a character that notices you does
+            // not keep strolling past. Mid-air it changes nothing about the
+            // flight. #177.
+            if matches!(self.state, State::Grounded | State::Perched) {
+                self.velocity.x = 0.0;
+                self.settle_ms = SETTLE_MS;
+            }
             started |= self.play(&[Primitive::React]);
             // A click is how the user tests the Director. Dwell sets the
             // same bit; the Shell reads one field for both.
@@ -2536,12 +2571,11 @@ mod tests {
         );
     }
 
-    /// The other half of that rule: a Primitive that is not the sprite standing
-    /// still leaves the walk running. A Poke interrupts what the sprite is
-    /// doing, not where it is going, so the stroll it was on carries the
-    /// reaction along rather than ending under it.
+    /// #177: a Poke stops the stroll. Reacting while carrying on walking read
+    /// as something that happened to the animation rather than to the
+    /// character, so the sprite stands for a beat and only then may move.
     #[test]
-    fn a_poke_mid_stroll_is_reacted_to_without_stopping_the_walk() {
+    fn a_poke_mid_stroll_stops_the_walk_for_a_beat() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
         engine.tick(&WorldSnapshot {
@@ -2560,12 +2594,162 @@ mod tests {
             poked.addressed,
             "a click mid-stroll still tests the Director"
         );
+        assert_eq!(poked.velocity.x, 0.0, "the click stops the feet");
 
-        let strolling: Vec<Frame> = (0..12).map(|_| engine.tick(&a_long_perch())).collect();
+        let held: Vec<Frame> = (0..24).map(|_| engine.tick(&a_long_perch())).collect();
         assert!(
-            strolling.iter().all(|frame| frame.velocity.x == WALK_SPEED),
-            "it goes on walking through the reaction and out the other side: {strolling:?}"
+            held.iter()
+                .all(|frame| frame.position.x == poked.position.x),
+            "it stays put through the hold: {held:?}"
         );
+        assert_eq!(
+            held.last().unwrap().animation,
+            animation_for(State::Perched),
+            "and rests the way a perched sprite does once the reaction is over"
+        );
+    }
+
+    /// The hold is a pause the Director cannot walk through: a proposal that
+    /// moves the sprite is refused until it is over, while one that only
+    /// speaks is not — the buddy was just addressed, and answering is fine.
+    #[test]
+    fn a_walk_proposed_mid_settle_waits_and_one_after_it_does_not() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        });
+        for _ in 0..10 {
+            engine.tick(&a_long_perch());
+        }
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let refused = engine.tick(&a_long_perch());
+        assert_eq!(
+            refused.velocity.x, 0.0,
+            "a walk mid-settle waits: {refused:?}"
+        );
+        assert_eq!(refused.position.x, poked.position.x);
+
+        let greeted = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "greet".to_string(),
+                dialogue: None,
+            }),
+            ..a_long_perch()
+        });
+        assert_eq!(greeted.animation, "react", "speaking mid-settle is fine");
+
+        for _ in 0..30 {
+            engine.tick(&a_long_perch());
+        }
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let resumed = engine.tick(&a_long_perch());
+        assert_eq!(
+            resumed.velocity.x, WALK_SPEED,
+            "after the hold a walk is taken up: {resumed:?}"
+        );
+    }
+
+    /// The hand outranks standing still: a Grab mid-settle picks the sprite up
+    /// at once, and once it is thrown and lands, nothing of the hold is left
+    /// to refuse the next walk.
+    #[test]
+    fn a_grab_mid_settle_takes_over_at_once_and_clears_the_hold() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        });
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 300.0, y: 200.0 },
+            verbs: vec![Verb::Grab],
+            ..a_long_perch()
+        });
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(grabbed.position, Point { x: 300.0, y: 200.0 });
+
+        let thrown = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 0.0, y: 0.0 },
+            }],
+            ..a_long_perch()
+        });
+        assert_eq!(thrown.state, State::Falling);
+        settle(&mut engine, &a_long_perch());
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let walking = engine.tick(&a_long_perch());
+        assert_eq!(
+            walking.velocity.x, WALK_SPEED,
+            "the hand ended the hold, not the clock: {walking:?}"
+        );
+    }
+
+    /// Losing the ground mid-settle is a fall like any other.
+    #[test]
+    fn losing_the_ground_mid_settle_falls_at_once() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        });
+
+        let dropped = engine.tick(&snapshot(100));
+        assert_eq!(dropped.state, State::Falling, "{dropped:?}");
+    }
+
+    /// A second Poke restarts the hold rather than queuing another one.
+    #[test]
+    fn a_second_poke_mid_settle_restarts_the_hold() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        let poke = || WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        };
+
+        engine.tick(&poke());
+        for _ in 0..20 {
+            engine.tick(&a_long_perch());
+        }
+        engine.tick(&poke());
+        for _ in 0..20 {
+            engine.tick(&a_long_perch());
+        }
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let still_held = engine.tick(&a_long_perch());
+        assert_eq!(
+            still_held.velocity.x, 0.0,
+            "the second Poke started the hold over: {still_held:?}"
+        );
+
+        for _ in 0..6 {
+            engine.tick(&a_long_perch());
+        }
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let released = engine.tick(&a_long_perch());
+        assert_eq!(released.velocity.x, WALK_SPEED, "{released:?}");
     }
 
     #[test]
