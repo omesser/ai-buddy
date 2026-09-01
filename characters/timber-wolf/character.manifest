@@ -1,0 +1,91 @@
+# Timber Wolf (Mad Cat) OmniMech from Battletech, generated pixel art.
+# Inner Sphere designation Mad Cat; Clan designation Timber Wolf.
+# Charcoal gray frame with orange stripes, cyan cockpit, digitigrade legs,
+# shoulder-mounted LRM pods, arm-mounted weapon barrels.
+# License: development asset. Battletech IP; this repository's license
+# does not cover the art. Generated for ai-buddy Character Package
+# development.
+
+name = "Timber Wolf"
+render_mode = "smooth"
+scale = 3
+
+# Proactive model calls: a combat mech patrols and reports. One and one
+# keeps every two minutes.
+
+[director]
+model_base = 1
+model_power = 1
+
+[animations.idle]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 2
+
+[animations.walk]
+frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
+fps = 6
+
+[animations.fall]
+frames = ["frames/fall-0.png", "frames/fall-1.png"]
+fps = 6
+
+[animations.land]
+frames = ["frames/land-0.png", "frames/land-1.png"]
+fps = 8
+loop = "once"
+
+[animations.sit]
+frames = ["frames/sit-0.png"]
+fps = 2
+
+[animations.hold]
+frames = ["frames/hold-0.png", "frames/hold-1.png"]
+fps = 4
+
+[animations.sleep]
+frames = ["frames/sleep-0.png"]
+fps = 1
+
+[animations.react]
+frames = ["frames/react-0.png", "frames/react-1.png"]
+fps = 8
+loop = "once"
+
+[animations.talk]
+frames = ["frames/talk-0.png", "frames/talk-1.png"]
+fps = 4
+
+# A heavy assault mech's life: patrol the perimeter, report status, hold
+# position, engage threats. The shooting behavior composes react (muzzle
+# flash) with idle for a mech emote without adding engine Primitives.
+
+[behaviors.patrol]
+play = ["walk", "idle", "walk"]
+weight = 3
+when = "idle over 1m"
+
+[behaviors.scan]
+play = ["idle"]
+weight = 2
+when = "idle over 30s"
+
+[behaviors.report]
+play = ["talk", "idle"]
+weight = 3
+when = "idle under 2m"
+
+[behaviors.engage]
+play = ["react", "idle", "react"]
+weight = 2
+when = "idle over 2m"
+
+[behaviors.standby]
+play = ["sit"]
+then = "power_down"
+weight = 2
+when = "idle over 3m"
+
+[behaviors.power_down]
+play = ["sit", "sleep"]
+weight = 4
+when = "idle over 5m"
