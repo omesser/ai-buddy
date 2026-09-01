@@ -461,10 +461,9 @@ mod tests {
     /// this test had for BMO and Nim while everything they own was always
     /// eligible.
     ///
-    /// The idles sample inside each declared phase rather than on its seam. A
-    /// seam is one instant of a clock that ticks straight past it, and blip's
-    /// two bands meet at exactly 10s rather than overlapping as the other two
-    /// Characters' do.
+    /// The idles sample inside each declared phase rather than on its seam,
+    /// so that a phase boundary at exactly one of the sample durations does
+    /// not skip checking that phase.
     ///
     /// `weight` is read directly: every Behavior has one, so only the number
     /// says whether the manifest's balance survived loading. Each Character
@@ -474,7 +473,6 @@ mod tests {
     fn every_shipped_character_loads_and_has_a_life() {
         let shipped = [
             ("black-mage", "Black Mage", "ponder", 4, "meditate"),
-            ("blip", "Blip", "greet", 2, "settle"),
             ("bmo", "BMO", "report", 3, "patrol"),
             ("cat", "Cat", "report", 3, "patrol"),
             ("jotaro-kujo", "Jotaro Kujo", "report", 3, "patrol"),

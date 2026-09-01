@@ -282,16 +282,16 @@ can answer it. Run the app, then confirm:
    a private SPI that needs no consent, then the Accessibility API where that
    trust was already granted (never prompted for), then the full-width
    work-area strip as the fallback where neither answers.
-8. **Declared cadence is honoured.** Point ai-buddy at a copy of the
-   Blip whose idle declares a faster `fps`, and the idle bob is visibly faster
-   than it was at the declared 3. Editing the repository's own
+8. **Declared cadence is honoured.** Point ai-buddy at a copy of
+   Black Mage whose idle declares a faster `fps`, and the idle is visibly faster
+   than it was at the declared 1. Editing the repository's own
    `characters/` changes nothing on its own: the app reads the copy
    `tauri-build` placed next to the binary, not the source of that copy.
 
    ```sh
    mkdir -p /tmp/ai-buddy-fast
-   cp -R characters/blip /tmp/ai-buddy-fast/
-   sed -i '' 's/^fps = 3$/fps = 20/' /tmp/ai-buddy-fast/blip/character.manifest
+   cp -R characters/black-mage /tmp/ai-buddy-fast/
+   sed -i '' 's/^fps = 1$/fps = 20/' /tmp/ai-buddy-fast/black-mage/character.manifest
    cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-fast cargo run
    ```
 
@@ -469,7 +469,6 @@ Name a Character to start that one:
 ```sh
 cd src-tauri && AI_BUDDY_CHARACTER=bmo cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
-cd src-tauri && AI_BUDDY_CHARACTER=blip cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=jotaro-kujo cargo run
 ```
 
@@ -497,20 +496,6 @@ somewhere else instead:
 ```sh
 cd src-tauri && AI_BUDDY_CHARACTERS=/path/to/my-packages cargo run
 ```
-
-### Blip, the stand-in
-
-`characters/blip/` is a generated stand-in rather than art. It shipped before
-BMO and Nim did, so that the Engine had a Character to drive and click-through
-had something with transparent regions to hit-test against, and it stays for
-both. Regenerate its frames with:
-
-```sh
-python3 scripts/make-blip-character.py
-```
-
-Standard library only, so there is nothing to install, which is the same reason
-Nim is generated the same way.
 
 ### Importing a pet
 
