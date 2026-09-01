@@ -135,6 +135,9 @@ struct InstanceState {
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
     verbs: Vec<Verb>,
+    /// Channel receiver for async menu result. None when no menu is outstanding.
+    /// While Some, the frame loop keeps feeding Verb::Menu to hold the instance.
+    menu_pending: Option<std::sync::mpsc::Receiver<Option<menu::MenuAction>>>,
 }
 
 /// Where one Instance is to be drawn in one overlay, in logical points from
@@ -440,6 +443,37 @@ fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
     }
 }
 
+/// Apply a menu action to the roster and hide rules.
+fn apply_menu_action(
+    action: menu::MenuAction,
+    roster: &mut Roster,
+    instance_id: &InstanceId,
+    rules: &Arc<Mutex<HideRules>>,
+) {
+    match action {
+        menu::MenuAction::SwitchCharacter(name) => {
+            eprintln!("menu: switching to {name}");
+            // ponytail: character switching lands with
+            // #18's settings. The menu builds and the
+            // action is recognized; persistence and the
+            // actual switch are deferred.
+        }
+        menu::MenuAction::ToggleDnd => {
+            if let Some(instance) = roster.get_mut(instance_id) {
+                let new_state = !instance.do_not_disturb();
+                instance.set_do_not_disturb(new_state);
+                eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
+            }
+        }
+        menu::MenuAction::Hide => {
+            if let Ok(mut r) = rules.lock() {
+                r.toggle();
+                eprintln!("menu: hiding");
+            }
+        }
+    }
+}
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -601,10 +635,29 @@ fn run_frame_loop(
                     eprintln!("verbs: {} {:?}", live.id, live.verbs);
                 }
 
-                // Menu blocks until dismissed, so it is handled outside the
-                // tick: building the menu, showing it, and executing its action
-                // all happen here. The blocking wait is what pauses the sprite.
-                if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
+                // Menu is async: first Verb::Menu starts the popup on main thread,
+                // subsequent ticks poll the channel and keep feeding Verb::Menu
+                // to hold the instance. When result arrives, apply action.
+                if let Some(ref receiver) = live.menu_pending {
+                    // Poll the channel for menu result.
+                    if let Ok(action_opt) = receiver.try_recv() {
+                        live.menu_pending = None;
+                        if let Some(action) = action_opt {
+                            apply_menu_action(
+                                action,
+                                &mut roster,
+                                &live.id,
+                                &Arc::clone(&rules),
+                            );
+                        }
+                    } else {
+                        // Menu still outstanding: inject Menu verb to keep hold.
+                        if !live.verbs.iter().any(|v| matches!(v, Verb::Menu)) {
+                            live.verbs.push(Verb::Menu);
+                        }
+                    }
+                } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
+                    // First Menu verb: start async popup on main thread.
                     let bundled = app
                         .path()
                         .resource_dir()
@@ -627,34 +680,19 @@ fn run_frame_loop(
 
                     let built = menu::build(&installed, &live.character.name, do_not_disturb);
 
-                    if let Some(action) = menu::show_and_wait(&built) {
-                        match action {
-                            menu::MenuAction::SwitchCharacter(name) => {
-                                eprintln!("menu: switching to {name}");
-                                // ponytail: character switching lands with
-                                // #18's settings. The menu builds and the
-                                // action is recognized; persistence and the
-                                // actual switch are deferred.
-                            }
-                            menu::MenuAction::ToggleDnd => {
-                                if let Some(instance) = roster.get_mut(&live.id) {
-                                    let new_state = !instance.do_not_disturb();
-                                    instance.set_do_not_disturb(new_state);
-                                    eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
-                                }
-                            }
-                            menu::MenuAction::Hide => {
-                                if let Ok(mut rules) = rules.lock() {
-                                    rules.toggle();
-                                    eprintln!("menu: hiding");
-                                }
-                            }
-                            menu::MenuAction::Quit => {
-                                eprintln!("menu: quit");
-                                std::process::exit(0);
-                            }
-                        }
-                    }
+                    // Create channel for async result.
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    live.menu_pending = Some(rx);
+
+                    // Post menu popup to main thread.
+                    let app_clone = app.clone();
+                    app.run_on_main_thread(move || {
+                        let result = menu::show_and_wait(&built);
+                        // Result may fail if receiver is dropped (instance dismissed),
+                        // which is fine: menu closes, result discarded.
+                        let _ = tx.send(result);
+                    })
+                    .ok();
                 }
 
                 // Grab is on every held tick. Only the first tick of a hold is a
@@ -1314,6 +1352,7 @@ fn spawn_instances(
             pointer: Pointer::default(),
             drawn_last: None,
             verbs: Vec::new(),
+            menu_pending: None,
         });
     }
 
