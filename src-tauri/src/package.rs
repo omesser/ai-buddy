@@ -474,7 +474,6 @@ mod tests {
     fn every_shipped_character_loads_and_has_a_life() {
         let shipped = [
             ("black-mage", "Black Mage", "ponder", 4, "meditate"),
-            ("blip", "Blip", "greet", 2, "settle"),
             ("bmo", "BMO", "report", 3, "patrol"),
             ("cat", "Cat", "report", 3, "patrol"),
             ("jotaro-kujo", "Jotaro Kujo", "report", 3, "patrol"),

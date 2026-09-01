@@ -8,10 +8,8 @@ a game sprite sheet and quantised to a fixed palette (see
 characters/bmo/character.manifest), so the two shipped Characters still prove
 the format against real variance — one generated, one drawn by hand elsewhere.
 
-Pure standard library, as `make-blip-character.py` is and for the same
-reason: a build step that needs Pillow installed is a build step that stops
-working. The PNG writer is copied from there rather than shared, because a
-third file to import would cost more than the twelve lines it saves.
+Pure standard library: a build step that needs Pillow installed is a build step
+that stops working.
 
     python3 scripts/make-shipped-characters.py
 
