@@ -7,8 +7,7 @@
 # Pixel art at scale 3 for desktop readability.
 #
 # Character voice: Black Mage Evilwizardington from Brian Clevinger's 8-Bit
-# Theater (Nuklear Power), not a silent FF1 class. The sprite is GigaGuy's
-# FF1 custom.
+# Theater (Nuklear Power), not a silent FF1 class.
 
 name = "Black Mage"
 scale = 3
