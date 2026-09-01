@@ -156,7 +156,7 @@ body {
   }
 }
 
-#sprite {
+.sprite {
   position: absolute;
   /* Positioned by transform rather than by left/top: the renderer moves the
      sprite every display frame, and a transform is composited rather than

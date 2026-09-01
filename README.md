@@ -396,9 +396,62 @@ The last three need a second display, and only a window server can answer them:
     Plug it back in: the sprite can be dragged onto it again within a second
     or so, without restarting the app.
 
+24. **Several buddies run at once.** Start with
+    `AI_BUDDY_INSTANCES="bmo:One,bmo:Two,nim:Nim"` (see [Running several
+    buddies](#running-several-buddies)). Three sprites come into the world side
+    by side rather than in a stack, and each falls and lands on its own. The
+    startup line names all three. Nothing stutters: the frame rate with three
+    is the frame rate with one, because they share one reading of the desktop
+    and one window-list poll.
+
+25. **Each buddy is its own.** Watch the three idle for a minute. They do not
+    move in lockstep — the two running the same Character pick their own
+    Behaviors at their own moments, because each has its own Director and its
+    own seed. Drag one somewhere and let it go: only that one moves, the others
+    carry on. Poke one: only that one reacts.
+
+26. **A press finds the buddy under the cursor, even when they overlap.** Drag
+    two buddies until their art overlaps, then press where both are. The one
+    drawn in front is the one that lifts, and only one lifts. Drag it faster
+    than it can follow so the cursor leaves the art and crosses the other
+    buddy: the drag keeps hold of the one you picked up and does not hand over.
+    Release, and clicking where no sprite is drawn still reaches the
+    application underneath.
+
+27. **A second buddy already knows what the first was told.** Memory is one
+    file for every Instance —
+    `$TMPDIR/ai-buddy-mcp/memory.md`. Write a fact into it, or have a Harness
+    write one through the MCP server, and it is the same Memory every buddy
+    reads. Dismissing a buddy leaves the file untouched. Nothing in the app
+    reads Memory into the Character Prompt yet, so this is a check on the file
+    being shared rather than on a buddy reciting it.
+
 The sprite starts in the middle of the first display and goes wherever gravity
 and your windows take it from there, or wherever you put it. To watch it fall
 without touching it, move or close the window it is sitting on.
+
+### Running several buddies
+
+`AI_BUDDY_INSTANCES` names the buddies to run, as `character:name` separated by
+commas:
+
+```sh
+cd src-tauri && AI_BUDDY_INSTANCES="bmo:One,bmo:Two,nim:Nim" cargo run
+```
+
+The Character is a package name, the same one `AI_BUDDY_CHARACTER` takes. The
+name is yours and is what the buddy is called; give the Character alone —
+`AI_BUDDY_INSTANCES="bmo,nim"` — and each is named after its package. Naming the
+same Character twice runs two of it, which is the point: they share the art and
+the Memory, and differ in position and in what they are doing.
+
+Setting nothing runs the one buddy ai-buddy has always run, and
+`AI_BUDDY_CHARACTER` still picks its Character.
+
+Spawning and dismissing a buddy while the app runs needs somewhere to type a
+name, which arrives with the menu in
+[#18](https://github.com/omesser/ai-buddy/issues/18). Until then the set is
+settled at launch.
 
 ## Character Packages
 

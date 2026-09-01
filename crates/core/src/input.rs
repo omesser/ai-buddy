@@ -212,6 +212,18 @@ impl Pointer {
         self.phase == Phase::Grabbing
     }
 
+    /// Whether this pointer is in the middle of a gesture at all, held or not
+    /// yet decided.
+    ///
+    /// What `press_target` arbitrates on, and wider than `grabbing` on purpose:
+    /// a press that has not yet become a Grab still belongs to the Instance it
+    /// landed on. Asking only about a held Grab would let the cursor slide off
+    /// a pressed sprite onto its neighbour and start a second gesture there,
+    /// leaving one press picking up two Instances.
+    pub fn gesturing(&self) -> bool {
+        self.phase != Phase::Idle
+    }
+
     fn dragging_yet(&self) -> bool {
         let travelled = self.cursor.is_some_and(|cursor| {
             (cursor.x - self.pressed_at.x).hypot(cursor.y - self.pressed_at.y) >= DRAG_THRESHOLD
@@ -248,6 +260,36 @@ impl Pointer {
             y: (self.travel.y + self.prior.y) / seconds,
         }
     }
+}
+
+/// Which Instance the pointer is acting on, given what the cursor is over and
+/// which Instance is already being held.
+///
+/// One cursor and several sprites need an arbiter, and every Instance holding
+/// its own `Pointer` is not one: fed the same hit-test, two overlapping sprites
+/// would both be picked up by one press. This decides first and each `Pointer`
+/// is then told whether the press was its own, so at most one Instance is ever
+/// in a gesture.
+///
+/// `hits` is the alpha hit-test per Instance, in the order they are drawn, and
+/// `holding` is the index of the Instance in the middle of a Grab.
+pub fn press_target(hits: &[bool], holding: Option<usize>) -> Option<usize> {
+    // A held Instance keeps the press wherever the cursor goes. This is #6's
+    // rule — a drag that outruns the art must not be dropped — and with
+    // several sprites it says something more: the drag must not pass to a
+    // sprite the cursor happened to cross on its way.
+    //
+    // An index past the end is an Instance dismissed mid-drag. The press falls
+    // back to the cursor rather than to whichever Instance shuffled into that
+    // position.
+    if holding.is_some_and(|index| index < hits.len()) {
+        return holding;
+    }
+
+    // The last hit, not the first: sprites are drawn in roster order, so the
+    // last one drawn is the one on top, and the one on top is the one the user
+    // sees under the cursor.
+    hits.iter().rposition(|hit| *hit)
 }
 
 #[cfg(test)]
@@ -537,5 +579,49 @@ mod tests {
                 vec![Verb::Grab]
             );
         }
+    }
+
+    /// Nothing under the cursor is nobody's press, which is what leaves a click
+    /// on the desktop to the desktop.
+    #[test]
+    fn a_press_over_no_sprite_belongs_to_nobody() {
+        assert_eq!(press_target(&[false, false], None), None);
+        assert_eq!(press_target(&[], None), None);
+    }
+
+    #[test]
+    fn a_press_over_one_sprite_belongs_to_it() {
+        assert_eq!(press_target(&[false, true, false], None), Some(1));
+    }
+
+    /// Two sprites overlap and only the top one is the one the user can see
+    /// under the cursor. Drawn in roster order, so the last is the top.
+    #[test]
+    fn a_press_where_two_sprites_overlap_belongs_to_the_top_one() {
+        assert_eq!(press_target(&[true, true], None), Some(1));
+        assert_eq!(press_target(&[true, true, true], None), Some(2));
+    }
+
+    /// The whole point of the holder: a drag that outruns the art leaves the
+    /// cursor over no sprite at all, and the Instance being dragged must not
+    /// change or be dropped because of it. #6 fixed this for one sprite; with
+    /// several, it also must not pass to whichever sprite the cursor crossed.
+    #[test]
+    fn the_instance_being_held_keeps_the_press_wherever_the_cursor_goes() {
+        assert_eq!(press_target(&[false, false], Some(0)), Some(0));
+        assert_eq!(
+            press_target(&[true, false], Some(1)),
+            Some(1),
+            "crossing another sprite does not hand it over"
+        );
+    }
+
+    /// An Instance dismissed mid-drag leaves a holder that is no longer there.
+    /// The press falls back to what is under the cursor rather than to an index
+    /// that would panic or point at somebody else's Instance.
+    #[test]
+    fn a_holder_that_is_gone_gives_the_press_back_to_the_cursor() {
+        assert_eq!(press_target(&[false, true], Some(5)), Some(1));
+        assert_eq!(press_target(&[false, false], Some(5)), None);
     }
 }

@@ -15,6 +15,52 @@ use std::sync::Arc;
 /// restarts (#13).
 pub type InstanceId = String;
 
+/// One Instance asked for at launch: which Character to run, and what to call
+/// it.
+///
+/// A request rather than an Instance. The id and the Engine arrive at `spawn`,
+/// and nothing here knows whether the Character named can actually be loaded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstanceSpec {
+    pub character: String,
+    pub name: String,
+}
+
+/// Read a list of Instances to run out of one configuration string.
+///
+/// The grammar is `character:name`, comma separated, with the name optional.
+/// It is small because it is temporary: naming an Instance belongs in #18's
+/// menu, and this is what stands in until there is somewhere to type a name.
+///
+/// Naming nothing is not a failure. An unset variable, an empty one and a
+/// stray comma are all the same request — run the default single Instance —
+/// because refusing to start over punctuation is a worse answer than starting.
+pub fn parse_specs(raw: &str) -> Result<Vec<InstanceSpec>, String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            // A colon the user typed is a name they meant to give, so an empty
+            // half is a typo to report rather than a default to guess at. No
+            // colon at all is the shorthand: the package name is the name.
+            let (character, name) = match entry.split_once(':') {
+                Some((character, name)) => (character.trim(), name.trim()),
+                None => (entry, entry),
+            };
+            if character.is_empty() || name.is_empty() {
+                return Err(format!(
+                    "{entry:?} is not a Character and a name. Write character:name, \
+                     or the Character alone to name it after its package"
+                ));
+            }
+            Ok(InstanceSpec {
+                character: character.to_string(),
+                name: name.to_string(),
+            })
+        })
+        .collect()
+}
+
 /// One spawned buddy: a Character plus a user-given name and a stable id.
 pub struct Instance {
     pub id: InstanceId,
@@ -32,6 +78,16 @@ impl Instance {
     /// The Character this Instance is running.
     pub fn character_name(&self) -> &str {
         &self.character_name
+    }
+
+    /// Whether this Instance is in Do Not Disturb, and so refusing to start
+    /// things of its own.
+    ///
+    /// Per Instance rather than per app: the mode says whether *this* buddy
+    /// should sit quietly, and silencing every buddy because one was told to
+    /// would make the setting mean something else. #84 owns what it does.
+    pub fn do_not_disturb(&self) -> bool {
+        self.engine.do_not_disturb()
     }
 }
 
@@ -53,7 +109,12 @@ impl Roster {
     /// Spawn a Character Instance with the given name at the given position.
     ///
     /// Returns the generated stable id.
-    pub fn spawn(&mut self, character: Character, name: String, position: Point) -> InstanceId {
+    ///
+    /// Borrowed rather than owned, because the art is the heaviest thing a
+    /// Character carries and an Instance needs none of it: taking it by value
+    /// would copy every frame of every Animation per buddy, which is the cost
+    /// running several of one Character exists to avoid.
+    pub fn spawn(&mut self, character: &Character, name: String, position: Point) -> InstanceId {
         let id = uuid::Uuid::new_v4().to_string();
         let engine = Engine::new(position).with_behaviors(character.behaviors.clone());
         let instance = Instance {
@@ -183,7 +244,7 @@ mod tests {
         let character = test_character("Blip");
 
         let id = roster.spawn(
-            character,
+            &character,
             "Buddy One".to_string(),
             Point { x: 100.0, y: 100.0 },
         );
@@ -203,7 +264,7 @@ mod tests {
         let character = test_character("Blip");
 
         let id_a = roster.spawn(
-            character.clone(),
+            &character,
             "Buddy A".to_string(),
             Point {
                 x: 100.0,
@@ -211,7 +272,7 @@ mod tests {
             },
         );
         let id_b = roster.spawn(
-            character,
+            &character,
             "Buddy B".to_string(),
             Point {
                 x: 500.0,
@@ -275,12 +336,12 @@ mod tests {
         let character = test_character("Blip");
 
         let id_a = roster.spawn(
-            character.clone(),
+            &character,
             "Buddy A".to_string(),
             Point { x: 100.0, y: 200.0 },
         );
         let id_b = roster.spawn(
-            character,
+            &character,
             "Buddy B".to_string(),
             Point { x: 500.0, y: 600.0 },
         );
@@ -317,12 +378,12 @@ mod tests {
         let character = test_character("Blip");
 
         let id_a = roster.spawn(
-            character.clone(),
+            &character,
             "Buddy A".to_string(),
             Point { x: 100.0, y: 100.0 },
         );
         let id_b = roster.spawn(
-            character,
+            &character,
             "Buddy B".to_string(),
             Point { x: 500.0, y: 100.0 },
         );
@@ -392,7 +453,11 @@ mod tests {
             .remember("Facts", "Oded lives in Tel Aviv")
             .expect("remembering writes");
 
-        let id = roster.spawn(character, "Buddy".to_string(), Point { x: 100.0, y: 100.0 });
+        let id = roster.spawn(
+            &character,
+            "Buddy".to_string(),
+            Point { x: 100.0, y: 100.0 },
+        );
         roster.dismiss(&id);
 
         let recalled = roster.memory().recall().expect("recall still works");
@@ -402,5 +467,101 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&memory_path);
+    }
+
+    /// The launch configuration is the only way to name Instances until #18's
+    /// menu exists, so what it accepts is the whole of what a user can ask for.
+    #[test]
+    fn one_spec_names_a_character_and_what_to_call_it() {
+        assert_eq!(
+            parse_specs("bmo:Blip"),
+            Ok(vec![InstanceSpec {
+                character: "bmo".to_string(),
+                name: "Blip".to_string(),
+            }])
+        );
+    }
+
+    /// Whitespace around either half is a user typing a list, not a Character
+    /// whose name begins with a space.
+    #[test]
+    fn several_specs_are_read_in_order_and_whitespace_is_trimmed() {
+        assert_eq!(
+            parse_specs(" bmo:Blip ,  jotaro:Jo "),
+            Ok(vec![
+                InstanceSpec {
+                    character: "bmo".to_string(),
+                    name: "Blip".to_string(),
+                },
+                InstanceSpec {
+                    character: "jotaro".to_string(),
+                    name: "Jo".to_string(),
+                },
+            ])
+        );
+    }
+
+    /// A Character named alone is the common case — one of each, called what
+    /// the package is called — and demanding `bmo:bmo` for it would be a tax on
+    /// the shortest thing anyone will write.
+    #[test]
+    fn a_character_named_alone_is_called_after_its_package() {
+        assert_eq!(
+            parse_specs("bmo,jotaro:Jo"),
+            Ok(vec![
+                InstanceSpec {
+                    character: "bmo".to_string(),
+                    name: "bmo".to_string(),
+                },
+                InstanceSpec {
+                    character: "jotaro".to_string(),
+                    name: "Jo".to_string(),
+                },
+            ])
+        );
+    }
+
+    /// Two Instances of one Character is the case #13 exists for, and they are
+    /// told apart by their names rather than by their Characters.
+    #[test]
+    fn the_same_character_twice_is_two_specs() {
+        let specs = parse_specs("bmo:One,bmo:Two").expect("both parse");
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0].character, specs[1].character);
+        assert_ne!(specs[0].name, specs[1].name);
+    }
+
+    /// Nothing named is not an error. An unset variable and one set to a
+    /// trailing comma are the same request — run the default single Instance —
+    /// and refusing to start over a stray comma would be a poor trade.
+    #[test]
+    fn nothing_named_asks_for_no_instances_rather_than_failing() {
+        assert_eq!(parse_specs(""), Ok(Vec::new()));
+        assert_eq!(parse_specs("   "), Ok(Vec::new()));
+        assert_eq!(parse_specs(",,"), Ok(Vec::new()));
+        assert_eq!(
+            parse_specs("bmo:Blip,"),
+            Ok(vec![InstanceSpec {
+                character: "bmo".to_string(),
+                name: "Blip".to_string(),
+            }])
+        );
+    }
+
+    /// A colon the user typed is a name they meant to give, so an empty half is
+    /// a typo to report rather than a default to guess at.
+    #[test]
+    fn a_colon_with_either_half_missing_is_reported() {
+        assert!(parse_specs("bmo:").is_err(), "no name after the colon");
+        assert!(parse_specs(":Blip").is_err(), "no Character before it");
+        assert!(parse_specs("bmo:Blip,:Jo").is_err(), "the second is bad");
+    }
+
+    /// The message names the offending entry. A list of several is read back by
+    /// finding which one is wrong, and "invalid" alone does not say.
+    #[test]
+    fn the_error_quotes_the_entry_that_could_not_be_read() {
+        let why = parse_specs("bmo:Blip,nope:").expect_err("the second is bad");
+        assert!(why.contains("nope:"), "the entry is quoted: {why}");
     }
 }

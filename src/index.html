@@ -6,17 +6,11 @@
     <link rel="stylesheet" href="main.css" />
   </head>
   <body>
-    <!-- One bubble carries both: main.css draws the child that `data-mode`
-         names, and main.js says why there is only one element. -->
-    <div id="bubble" class="bubble">
-      <div class="bubble-content"></div>
-      <div class="thinking-dots">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-    </div>
-    <img id="sprite" alt="" />
+    <!-- Empty: main.js builds one sprite and one bubble per Character Instance
+         as the Rust side names them, and takes them away again when an Instance
+         is dismissed. The markup cannot be static because how many buddies are
+         running is not known until launch. -->
+    <div id="stage"></div>
     <script type="module" src="main.js"></script>
   </body>
 </html>
