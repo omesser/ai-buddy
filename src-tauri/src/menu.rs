@@ -127,18 +127,26 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
     BuiltMenu { actions }
 }
 
-/// Block until the user dismisses the menu, returning the action they selected
-/// if any. The menu is shown at the given cursor position.
+/// Show the context menu at the cursor position on the given view and wait
+/// for the user's selection.
 ///
-/// Blocking is deliberate: the sprite pauses while the menu is open, which is
-/// what Menu holding the Engine's not-now gates means. A menu that returned
-/// immediately would let the sprite keep moving underneath it.
+/// `position` is logical points (x, y) from the view's top-left corner. `view`
+/// is the NSView to attach the menu to (the overlay window's content view).
+///
+/// This function blocks until the menu is dismissed, which is how the sprite
+/// pauses: the frame loop called run_on_main_thread with this function, and
+/// polls the channel for the result.
 #[cfg(target_os = "macos")]
-pub fn show_and_wait(built: &BuiltMenu) -> Option<MenuAction> {
+pub fn show_and_wait(
+    built: &BuiltMenu,
+    position: Option<(f64, f64)>,
+    view: *mut std::ffi::c_void,
+) -> Option<MenuAction> {
+    let muda_position = position.map(|(x, y)| muda::LogicalPosition { x, y });
     unsafe {
         built
             .menu
-            .show_context_menu_for_nsview(std::ptr::null_mut(), None);
+            .show_context_menu_for_nsview(view, muda_position);
     }
 
     MenuEvent::receiver()
@@ -149,7 +157,11 @@ pub fn show_and_wait(built: &BuiltMenu) -> Option<MenuAction> {
 
 /// Stub show_and_wait for non-macOS platforms where muda is unavailable.
 #[cfg(not(target_os = "macos"))]
-pub fn show_and_wait(_built: &BuiltMenu) -> Option<MenuAction> {
+pub fn show_and_wait(
+    _built: &BuiltMenu,
+    _position: Option<(f64, f64)>,
+    _view: *mut std::ffi::c_void,
+) -> Option<MenuAction> {
     None
 }
 
