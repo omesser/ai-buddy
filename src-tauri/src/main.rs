@@ -685,8 +685,11 @@ fn run_frame_loop(
                     live.menu_pending = Some(rx);
 
                     // Post menu popup to main thread.
+                    // ponytail: cursor position and overlay NSView should be captured
+                    // and passed here. For now, None and null_mut() show menu at
+                    // cursor on default view.
                     app.run_on_main_thread(move || {
-                        let result = menu::show_and_wait(&built);
+                        let result = menu::show_and_wait(&built, None, std::ptr::null_mut());
                         // Result may fail if receiver is dropped (instance dismissed),
                         // which is fine: menu closes, result discarded.
                         let _ = tx.send(result);
