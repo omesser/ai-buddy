@@ -59,6 +59,17 @@ pub struct Rect {
 /// learns which one it came from.
 pub type WindowId = u64;
 
+/// The Perch id the Dock stands behind when its true bounds are known.
+///
+/// The Dock is not an application window, so the window server never hands it
+/// a place in the id space this could collide with: every macOS `CGWindowID`
+/// is 32-bit and widens into the low half of `WindowId`. A constant id keeps
+/// the Dock the same Perch across polls, which is what lets a sprite ride a
+/// Dock that resizes (#109). It lives here beside `WindowId` rather than with
+/// the snapshot assembler that stamps it, because the Engine reads it too and
+/// nothing below it should have to depend on the layer above.
+pub const DOCK_PERCH_ID: WindowId = WindowId::MAX;
+
 /// One visible window: which one it is, where it is, who owns it, and how high
 /// it stacks.
 ///

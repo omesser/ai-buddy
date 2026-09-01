@@ -21,7 +21,8 @@ pub enum Contact {
     Lifted(Surface),
     /// Still standing exactly where it stood.
     Standing,
-    /// Reached a screen edge sideways, mid-air.
+    /// Ran into something the sprite cannot pass sideways: a screen edge, in
+    /// the air or on the ground, or the side of the Dock (#176).
     Wall,
     /// Met the usable top while rising or climbing. #100.
     Ceiling,

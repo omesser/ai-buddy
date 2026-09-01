@@ -103,8 +103,9 @@ pub struct WorldSnapshot {
     /// Not the whole display: a screen reserves strips of itself for furniture
     /// the sprite must not go behind, and the Shell takes those off before the
     /// Engine sees them. That is why the floor, the ceiling and both walls can
-    /// all be derived from these rectangles without the Engine knowing a Dock
-    /// exists.
+    /// all be derived from these rectangles. The only thing the Engine knows
+    /// about the Dock is its Perch's reserved id, which makes its side a wall
+    /// (#176).
     pub displays: Vec<Rect>,
     /// Visible windows in descending z-order.
     pub windows: Vec<Window>,
@@ -875,9 +876,13 @@ impl Engine {
                 self.velocity.y += GRAVITY * dt;
                 self.position.x += self.velocity.x * dt;
 
-                if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot) {
+                if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot)
+                    .or_else(|| dock_side_reached(self.position, snapshot))
+                {
                     // Arriving at a screen edge sideways is a catch, not a stop.
-                    // It also keeps the sprite inside the displays.
+                    // It also keeps the sprite inside the displays. The Dock's
+                    // side catches the same way: a low throw or a drop under
+                    // the Dock climbs out instead of resting behind it.
                     self.position.x = wall;
                     self.velocity = Point::default();
                     Some(Contact::Wall)
@@ -911,7 +916,22 @@ impl Engine {
                 }
             }
             State::Climbing => {
-                self.position.y -= CLIMB_SPEED * dt;
+                let next_y = self.position.y - CLIMB_SPEED * dt;
+
+                // Climbing the Dock's side ends on its top: the Dock is a
+                // Perch, and the feet reaching its top edge is a landing, not
+                // a ceiling. The step inward is what the climb was for — a
+                // sprite that stopped clear of the side is standing beside the
+                // Dock, not on it. #176.
+                if let Some(dock) = dock_in(snapshot) {
+                    if self.position.y > dock.y && next_y <= dock.y {
+                        if let Some(x) = dock_top_at(self.position.x, dock) {
+                            self.position = Point { x, y: dock.y };
+                            return Some(Contact::Landed(Surface::Perch));
+                        }
+                    }
+                }
+                self.position.y = next_y;
 
                 // Off the top of the display there is nothing left to hold, so
                 // it lets go. A sprite over no display at all is already
@@ -933,6 +953,20 @@ impl Engine {
                 self.position.x += self.velocity.x * dt;
                 if self.last_perch.is_some() {
                     self.hold_offset_x += self.velocity.x * dt;
+                }
+
+                // A walk on the floor beside the Dock stops clear of its
+                // side and climbs it (#176). Placed there once rather than
+                // corrected back a step each tick: the held walk would
+                // re-close the gap and stutter, the way the edge inset did
+                // before #141. The Engine does not clamp `dt`, so a step
+                // longer than the Dock is wide would cross it unseen; the
+                // snapshot assembler caps `elapsed_ms` at one poll interval,
+                // which is what keeps a step small.
+                if let Some(side) = dock_side_reached(self.position, snapshot) {
+                    self.position.x = side;
+                    self.velocity = Point::default();
+                    return Some(Contact::Wall);
                 }
 
                 let fresh = snapshot.poll_generation == 0
@@ -1268,6 +1302,7 @@ enum PerchCarry {
 mod tests {
     use super::*;
     use crate::character::DEFAULT_WEIGHT;
+    use crate::window_source::DOCK_PERCH_ID;
 
     /// One 1000x800 display with its top-left at the origin.
     fn one_display() -> Rect {
@@ -1501,6 +1536,187 @@ mod tests {
             previous = frame;
         }
         panic!("the walk never reached the display edge: {previous:?}");
+    }
+
+    /// The Dock on `one_display`, as the snapshot assembler adds it: frontmost,
+    /// wearing the reserved id, reaching down to the floor.
+    fn dock() -> Rect {
+        Rect {
+            x: 400.0,
+            y: 700.0,
+            width: 200.0,
+            height: 100.0,
+        }
+    }
+
+    fn dock_snapshot(elapsed_ms: u32) -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![window(DOCK_PERCH_ID, dock())],
+            ..snapshot(elapsed_ms)
+        }
+    }
+
+    /// Where a climb up the Dock's left side comes to rest, and where one up
+    /// its right side does: a half sprite in from the corner, on the top.
+    fn on_the_dock_from_the_left() -> Point {
+        Point {
+            x: dock().x + EDGE_CLEARANCE,
+            y: dock().y,
+        }
+    }
+
+    fn on_the_dock_from_the_right() -> Point {
+        Point {
+            x: dock().x + dock().width - EDGE_CLEARANCE,
+            y: dock().y,
+        }
+    }
+
+    /// The Dock is the one thing on screen drawn in front of the sprite, so a
+    /// walk that carries on under it puts the sprite where nobody can see or
+    /// grab it. Its side is a wall: the walk stops short of it without being
+    /// set back a step (the #141 stutter), and climbs onto the top — a Perch
+    /// the sprite already knows how to stand on. #176.
+    #[test]
+    fn a_walk_into_the_dock_climbs_onto_it_rather_than_behind_it() {
+        let dock = dock();
+        let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
+        settle(&mut engine, &dock_snapshot(100));
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..dock_snapshot(16)
+        });
+
+        let mut previous = engine.tick(&dock_snapshot(16));
+        let mut climbed = false;
+        for _ in 0..400 {
+            let frame = engine.tick(&dock_snapshot(16));
+            let behind = frame.position.y > dock.y
+                && frame.position.x > dock.x
+                && frame.position.x < dock.x + dock.width;
+            assert!(!behind, "behind the Dock: {:?}", frame.position);
+            if frame.state == State::Grounded {
+                assert!(
+                    frame.position.x >= previous.position.x,
+                    "walking right never sets the sprite back: {} -> {}",
+                    previous.position.x,
+                    frame.position.x
+                );
+            }
+            climbed |= frame.state == State::Climbing;
+            if frame.state == State::Perched {
+                assert!(climbed, "on the Dock's top without climbing its side");
+                assert_eq!(frame.position, on_the_dock_from_the_left(), "{frame:?}");
+                return;
+            }
+            previous = frame;
+        }
+        panic!("the walk never reached the Dock's top: {previous:?}");
+    }
+
+    /// Standing on the Dock's top is standing above its side, not behind it:
+    /// a walk along the top meets no wall.
+    #[test]
+    fn a_walk_along_the_dock_top_meets_no_wall() {
+        let mut engine = a_character_at(Point { x: 500.0, y: 0.0 });
+        let landed = settle(&mut engine, &dock_snapshot(100));
+        assert_eq!(
+            (landed.state, landed.position.y),
+            (State::Perched, dock().y)
+        );
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..dock_snapshot(16)
+        });
+
+        for _ in 0..20 {
+            let frame = engine.tick(&dock_snapshot(16));
+            assert_ne!(frame.state, State::Climbing, "{frame:?}");
+            assert_eq!(frame.position.y, dock().y, "{frame:?}");
+        }
+    }
+
+    /// Let go with the cursor over the Dock and the sprite falls behind it. It
+    /// does not come to rest there: it climbs the nearer side out, however far
+    /// out that is — a real Dock is wide, and the way out from the middle of
+    /// one is a long way sideways.
+    #[test]
+    fn a_sprite_dropped_behind_the_dock_climbs_out_onto_it() {
+        let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
+        settle(&mut engine, &dock_snapshot(100));
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 480.0, y: 760.0 },
+            verbs: vec![Verb::Grab],
+            ..dock_snapshot(16)
+        });
+
+        let frame = settle(&mut engine, &dock_snapshot(16));
+        assert_eq!(frame.state, State::Perched, "{frame:?}");
+        assert_eq!(frame.position, on_the_dock_from_the_left());
+    }
+
+    /// The nearer side is whichever one it is. Dropped in the right-hand half,
+    /// the sprite climbs out to the right, not back across everything it was
+    /// hidden behind.
+    #[test]
+    fn a_sprite_dropped_near_the_docks_right_end_climbs_out_that_side() {
+        let mut engine = a_character_at(Point { x: 300.0, y: 0.0 });
+        settle(&mut engine, &dock_snapshot(100));
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 560.0, y: 760.0 },
+            verbs: vec![Verb::Grab],
+            ..dock_snapshot(16)
+        });
+
+        let frame = settle(&mut engine, &dock_snapshot(16));
+        assert_eq!(frame.state, State::Perched, "{frame:?}");
+        assert_eq!(frame.position, on_the_dock_from_the_right());
+    }
+
+    /// The sprite need not walk into the Dock to end up behind it: an
+    /// autohidden Dock slides out around whatever is standing there, asleep
+    /// included. The sprite that was resting in front of nothing is now behind
+    /// something, and climbs out the same way.
+    #[test]
+    fn a_dock_that_unhides_around_a_sleeping_sprite_wakes_it_onto_the_top() {
+        let mut engine = a_character_at(Point { x: 450.0, y: 0.0 });
+        settle(&mut engine, &snapshot(100));
+        let asleep = engine.tick(&snapshot(SLEEP_AFTER_MS));
+        assert_eq!(asleep.state, State::Asleep, "{asleep:?}");
+
+        let frame = settle(&mut engine, &dock_snapshot(16));
+        assert_eq!(frame.state, State::Perched, "{frame:?}");
+        assert_eq!(frame.position, on_the_dock_from_the_left());
+    }
+
+    /// Behind the Dock means behind the Dock's own display. Displays stack
+    /// vertically as well as side by side, and a display below this one shares
+    /// its x-range: a sprite on that floor is under the Dock's columns and
+    /// behind none of it. Treating it as hidden climbs it onto a Dock on
+    /// another screen, or loops it for ever — climb, top out, fall, climb.
+    #[test]
+    fn a_sprite_on_a_display_below_the_docks_is_not_behind_the_dock() {
+        let below = Rect {
+            x: 0.0,
+            y: 800.0,
+            width: 1000.0,
+            height: 800.0,
+        };
+        let stacked = WorldSnapshot {
+            displays: vec![one_display(), below],
+            ..dock_snapshot(16)
+        };
+        let standing = Point {
+            x: 500.0,
+            y: below.bottom(),
+        };
+
+        let mut engine = a_character_at(standing);
+        for _ in 0..80 {
+            let frame = engine.tick(&stacked);
+            assert_ne!(frame.state, State::Climbing, "{frame:?}");
+            assert_eq!(frame.position, standing, "{frame:?}");
+        }
     }
 
     /// A sprite standing on the floor of one display, with those Behaviors to
