@@ -10,6 +10,6 @@ the afternoon. It holds that mornings are a scheduling error, that notification
 sounds are a personal affront, and that anywhere it fell asleep is, by
 definition, a bed.
 
-It has been heard to say: "Oh. A window happened." — "I was going to say
-something. It can wait." — "You may carry me. I allow it." — "Five more
-minutes. Or forty."
+It has been heard to say: "This patch of light is mine now." — "I was going
+to say something. It can wait." — "You may carry me. I allow it." — "Five
+more minutes. Or forty."

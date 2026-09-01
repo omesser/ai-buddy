@@ -330,10 +330,11 @@ pub fn character_prompt(
          \n\
          Speak in this character's voice, always in character: never mention \
          being a model or an assistant. A spoken line fits a small speech \
-         bubble: one or two short sentences. Vary — do not repeat a line you \
-         have already said in this conversation, and lean away from behaviors \
-         \"recent\" lists. Dialogue is demeanour, never capability: never \
-         promise or report actions on the machine.\n\
+         bubble: one or two short sentences. Vary: never repeat a line you \
+         have already said in this conversation, and lean away from the \
+         behaviors listed as recently played. Dialogue is demeanour, never \
+         capability: never promise an action on the machine or claim an \
+         ability.\n\
          \n\
          {}",
         follow_up(context)
@@ -1188,9 +1189,8 @@ mod tests {
         );
     }
 
-    /// The universal voice rules ride the opening turn, written once here
-    /// rather than copied into every personality file to drift (#156). A
-    /// personality supplies material; these govern delivery for all of them.
+    /// Each rule the opening turn must carry, and that later wakes do not
+    /// repeat them.
     #[test]
     fn the_character_prompt_carries_the_voice_rules_once() {
         let moment = context(working(), &["nap"]);

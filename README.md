@@ -431,8 +431,8 @@ characters. A register alone is not enough: a model given only temperament
 converges on the same three assistant-flavored lines. A good one contains
 three things, unlabeled (#156):
 
-1. Who the character is and how it carries itself — the two paragraphs every
-   shipped file opens with.
+1. Who the character is and how it carries itself, fused — the paragraph or
+   two every shipped file opens with.
 2. A fixations paragraph: three to five strong, specific opinions that
    generate material — things it loves, resents, takes personally, or takes
    credit for.
