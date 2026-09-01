@@ -29,6 +29,18 @@ pub fn set_overlay_primary(down: bool) {
     OVERLAY_PRIMARY.store(down, Ordering::SeqCst);
 }
 
+/// The overlay is passing clicks through, so it cannot still be holding a
+/// press. A pointerup the webview never delivered would otherwise leave the
+/// latch set, and `primary_button_down` would stay true after the hand had
+/// gone — gluing the sprite to a button nobody is pressing.
+///
+/// This is the watchdog that must not look at the session poll: that poll is
+/// the one that misses a press our own window swallowed, which is exactly
+/// when this latch is the only witness.
+pub fn overlay_passes_clicks_through() {
+    OVERLAY_PRIMARY.store(false, Ordering::SeqCst);
+}
+
 fn overlay_primary_down() -> bool {
     OVERLAY_PRIMARY.load(Ordering::SeqCst)
 }
@@ -380,5 +392,19 @@ mod tests {
         set_overlay_primary(false);
         // The session poll may still be true if a real button is held during
         // the test; only the overlay half is under this test's control.
+    }
+
+    /// A pointerup the webview never delivered would leave the latch set.
+    /// Once the overlay is passing clicks through it cannot still be holding
+    /// a press, so the latch must drop — otherwise `primary_button_down`
+    /// stays true and the sprite glues to a button nobody is pressing.
+    #[test]
+    fn a_stale_overlay_latch_clears_when_the_overlay_passes_clicks_through() {
+        set_overlay_primary(true);
+        overlay_passes_clicks_through();
+        assert!(
+            !overlay_primary_down(),
+            "click-through means the overlay is not a witness, so a lost pointerup must not keep the latch"
+        );
     }
 }

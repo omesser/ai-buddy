@@ -594,6 +594,25 @@ fn run_frame_loop(
             // up by one press.
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
+
+            // Last tick's click-through is the one that decided whether the
+            // overlay could hear this press. Passing through means it cannot
+            // still be holding a button, so a lost pointerup is dropped here
+            // rather than gluing the sprite to a hand that has gone. The
+            // session poll is not consulted: it is the one that misses a
+            // press our own window swallowed, which is when this latch is
+            // the only witness.
+            let on_overlay =
+                display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
+            if !visible {
+                platform::overlay_passes_clicks_through();
+            } else if let Some(index) = on_overlay {
+                if ignoring.get(index).copied().flatten() == Some(true) {
+                    platform::overlay_passes_clicks_through();
+                }
+            } else {
+                platform::overlay_passes_clicks_through();
+            }
             let held = platform::primary_button_down();
             let button_edge = match (button_was_down, held) {
                 (false, true) => Some("down"),
@@ -1087,8 +1106,6 @@ fn run_frame_loop(
             // and drop the sprite in the user's hand.
             let holding = lives.iter().any(|live| live.pointer.grabbing());
             let ignore = !(presence.visible && (over_sprite || holding));
-            let on_overlay =
-                display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             let mut flipped = false;
 
             for (index, display) in displays.frames.iter().enumerate() {
