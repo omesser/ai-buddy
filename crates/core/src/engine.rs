@@ -4966,20 +4966,6 @@ mod tests {
     // Cursor awareness tests (#152, #153): scripted pointer tracks with no windowing system.
 
     /// Helper: move cursor from far away to near the sprite.
-    fn approach_cursor(engine: &mut Engine, from_x: f64, to_x: f64, steps: usize) {
-        let sprite_x = engine.position.x;
-        for i in 0..steps {
-            let t = (i as f64) / (steps as f64);
-            let cursor_x = from_x + t * (to_x - from_x);
-            engine.tick(&WorldSnapshot {
-                cursor: Point {
-                    x: cursor_x,
-                    y: engine.position.y,
-                },
-                ..snapshot(16)
-            });
-        }
-    }
 
     /// #152: Near reaction with indifferent keeps doing whatever it was doing.
     #[test]
@@ -5117,7 +5103,7 @@ mod tests {
                 // Rush detected and reaction played.
                 // Continue for a few more ticks to verify it doesn't repeat.
                 for _ in 0..5 {
-                    let staying = engine.tick(&WorldSnapshot {
+                    let _staying = engine.tick(&WorldSnapshot {
                         cursor: Point {
                             x: engine.position.x + 50.0,
                             y: engine.position.y,
@@ -5188,7 +5174,7 @@ mod tests {
         let mut cursor_x = sprite_x + 300.0;
         let mut ticks = 0;
         while ticks < (CHASE_TIMEOUT_MS / 100) + 5 {
-            let frame = engine.tick(&WorldSnapshot {
+            let _frame = engine.tick(&WorldSnapshot {
                 cursor: Point {
                     x: cursor_x,
                     y: engine.position.y,
