@@ -620,11 +620,12 @@ fn run_frame_loop(
                         })
                         .collect::<Vec<_>>();
 
-                    let built = menu::build(
-                        &installed,
-                        &live.character.name,
-                        live.engine.do_not_disturb(),
-                    );
+                    let do_not_disturb = roster
+                        .get(&live.id)
+                        .map(|inst| inst.do_not_disturb())
+                        .unwrap_or(false);
+
+                    let built = menu::build(&installed, &live.character.name, do_not_disturb);
 
                     if let Some(event) = menu::show_and_wait(&built.menu) {
                         if let Some(action) = built.actions.get(&event.id.0) {
@@ -637,9 +638,14 @@ fn run_frame_loop(
                                     // actual switch are deferred.
                                 }
                                 menu::MenuAction::ToggleDnd => {
-                                    let new_state = !live.engine.do_not_disturb();
-                                    live.engine.set_do_not_disturb(new_state);
-                                    eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
+                                    if let Some(instance) = roster.get_mut(&live.id) {
+                                        let new_state = !instance.do_not_disturb();
+                                        instance.set_do_not_disturb(new_state);
+                                        eprintln!(
+                                            "menu: DND {}",
+                                            if new_state { "on" } else { "off" }
+                                        );
+                                    }
                                 }
                                 menu::MenuAction::Hide => {
                                     if let Ok(mut rules) = rules.lock() {
@@ -661,13 +667,12 @@ fn run_frame_loop(
                 // dragging.
                 let grab_started = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab))
                     && live.last_state != Some(State::Dragged);
-                if live
-                    .verbs
-                    .iter()
-                    .any(|verb| {
-                        matches!(verb, Verb::Poke | Verb::Summon | Verb::Menu | Verb::Throw { .. })
-                    })
-                    || grab_started
+                if live.verbs.iter().any(|verb| {
+                    matches!(
+                        verb,
+                        Verb::Poke | Verb::Summon | Verb::Menu | Verb::Throw { .. }
+                    )
+                }) || grab_started
                 {
                     live.addressed = true;
                     live.happened = if live

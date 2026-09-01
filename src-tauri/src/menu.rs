@@ -5,7 +5,7 @@
 //! actions are shell commands that do not enter the frame loop: character
 //! switching, DND toggle, hiding, and quit.
 
-use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use std::collections::HashMap;
 
 /// The menu items that trigger actions, keyed by their menu item id.
@@ -132,10 +132,7 @@ mod tests {
             .menu
             .items()
             .iter()
-            .find_map(|item| {
-                item.as_submenu()
-                    .filter(|sub| sub.text() == "Character")
-            })
+            .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
             .expect("Character submenu exists");
 
         let names: Vec<_> = character_menu
@@ -160,10 +157,7 @@ mod tests {
             .menu
             .items()
             .iter()
-            .find_map(|item| {
-                item.as_submenu()
-                    .filter(|sub| sub.text() == "Character")
-            })
+            .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
             .expect("Character submenu exists");
 
         let checked: Vec<_> = character_menu

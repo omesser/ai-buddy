@@ -2361,7 +2361,8 @@ mod tests {
             ..snapshot(100)
         });
         assert_eq!(
-            menu_opened.state, State::Dragged,
+            menu_opened.state,
+            State::Dragged,
             "the sprite stays grabbed while the menu is open"
         );
 
@@ -2371,7 +2372,8 @@ mod tests {
             ..snapshot(100)
         });
         assert_eq!(
-            released.state, State::Falling,
+            released.state,
+            State::Falling,
             "releasing after dismissing the menu drops it as usual"
         );
     }

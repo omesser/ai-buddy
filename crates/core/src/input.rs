@@ -409,7 +409,10 @@ mod tests {
     fn a_click_on_the_sprite_is_a_poke_and_never_moves_it() {
         let mut pointer = Pointer::default();
 
-        assert_eq!(pointer.update(true, true, false, at(100.0, 100.0), TICK), vec![]);
+        assert_eq!(
+            pointer.update(true, true, false, at(100.0, 100.0), TICK),
+            vec![]
+        );
         assert_eq!(
             pointer.update(true, true, false, at(100.0, 100.0), TICK),
             vec![],
@@ -531,7 +534,10 @@ mod tests {
         for _ in 0..8 {
             pointer.update(true, true, false, at(100.0, 100.0), TICK);
         }
-        assert_eq!(pointer.update(true, false, false, at(100.0, 100.0), TICK), vec![]);
+        assert_eq!(
+            pointer.update(true, false, false, at(100.0, 100.0), TICK),
+            vec![]
+        );
         assert!(!pointer.grabbing());
     }
 
@@ -564,13 +570,19 @@ mod tests {
     fn a_press_that_did_not_begin_on_the_sprite_is_ignored() {
         let mut pointer = Pointer::default();
 
-        assert_eq!(pointer.update(false, true, false, at(500.0, 500.0), TICK), vec![]);
+        assert_eq!(
+            pointer.update(false, true, false, at(500.0, 500.0), TICK),
+            vec![]
+        );
         assert_eq!(
             pointer.update(true, true, false, at(100.0, 100.0), TICK),
             vec![],
             "dragging a window under the sprite does not pick the sprite up"
         );
-        assert_eq!(pointer.update(true, false, false, at(100.0, 100.0), TICK), vec![]);
+        assert_eq!(
+            pointer.update(true, false, false, at(100.0, 100.0), TICK),
+            vec![]
+        );
         assert!(!pointer.grabbing());
     }
 
