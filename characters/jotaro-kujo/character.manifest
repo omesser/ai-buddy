@@ -23,6 +23,13 @@ scale = 1
 near_reaction = "indifferent"
 rush_reaction = "face"
 
+# Doubling the ambient wait suits someone who speaks only when speaking is
+# shorter than not speaking.
+
+[director]
+model_base = 2
+model_power = 1
+
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
@@ -66,30 +73,44 @@ fps = 2
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 1
 
-# A starter life, copied from BMO's — tune it to the pet.
-[behaviors.walk]
-play = ["walk"]
-weight = 1
-when = "idle over 30s"
-
-[behaviors.patrol]
-play = ["walk", "idle", "walk"]
-then = "walk"
-weight = 3
-when = "idle over 2m"
-
-[behaviors.fidget]
-play = ["idle"]
-weight = 2
-when = "idle over 10s"
-
-[behaviors.report]
-play = ["talk", "idle", "talk"]
-weight = 3
-when = "idle under 1m"
+# Jotaro is still, and this table says so. Standing is most of what he does;
+# the walk is hands in pockets rather than a patrol; talking is rationed. The
+# arc: a flat acknowledgement for whoever turned up, long stretches upright,
+# sitting down to watch once they have stopped typing, and lying down — cap
+# on — when the desk has plainly emptied.
+#
+# `greet` sits at the floor weight because he does not make an occasion of
+# anyone arriving, and `mutter` matches it: two Behaviors that open his mouth,
+# both rare, against a five-weight `stand`. The bands overlap so no instant of
+# the day leaves him nothing he may do.
 
 [behaviors.greet]
 play = ["talk"]
-then = "patrol"
-weight = 4
+weight = 1
 when = "idle under 10s"
+
+[behaviors.stand]
+play = ["idle"]
+weight = 5
+when = "idle over 10s"
+
+[behaviors.mutter]
+play = ["talk"]
+weight = 1
+when = "idle over 30s"
+
+[behaviors.walk]
+play = ["walk"]
+weight = 2
+when = "idle over 30s"
+
+[behaviors.watch]
+play = ["sit"]
+then = "stand"
+weight = 4
+when = "idle over 1m"
+
+[behaviors.rest]
+play = ["sit", "sleep"]
+weight = 3
+when = "idle over 2m"
