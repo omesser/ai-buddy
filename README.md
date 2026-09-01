@@ -439,7 +439,9 @@ three things, unlabeled (#156):
 3. Sample lines, verbatim, introduced in prose ("It has been heard to say:
    …"). Well-chosen lines also carry the character's recurring bits, which is
    why bits get no section of their own. Be generous: each line is another
-   calibration point, and `characters/black-mage/` shows how far that goes.
+   calibration point, and `characters/black-mage/` shows how far that goes. A
+   catchphrase belongs here: the prompt asks for variety but leaves repetition
+   the character owns to the personality.
 
 Leave out the universal rules — stay in character, no model-mentions, fit the
 bubble, vary — the assembled Character Prompt states them once for every
