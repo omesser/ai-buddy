@@ -284,14 +284,14 @@ can answer it. Run the app, then confirm:
    work-area strip as the fallback where neither answers.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of
    Black Mage whose idle declares a faster `fps`, and the idle is visibly faster
-   than it was at the declared 8. Editing the repository's own
+   than it was at the declared 1. Editing the repository's own
    `characters/` changes nothing on its own: the app reads the copy
    `tauri-build` placed next to the binary, not the source of that copy.
 
    ```sh
    mkdir -p /tmp/ai-buddy-fast
    cp -R characters/black-mage /tmp/ai-buddy-fast/
-   sed -i '' 's/^fps = 8$/fps = 20/' /tmp/ai-buddy-fast/black-mage/character.manifest
+   sed -i '' 's/^fps = 1$/fps = 20/' /tmp/ai-buddy-fast/black-mage/character.manifest
    cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-fast cargo run
    ```
 
