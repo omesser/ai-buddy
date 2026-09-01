@@ -10,7 +10,9 @@
 //! one edit in one file.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[cfg(target_os = "macos")]
+use std::time::Duration;
+use std::time::Instant;
 
 use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
