@@ -4,10 +4,14 @@
 //! current state, so its shape can be tested without popping a window. Menu
 //! actions are shell commands that do not enter the frame loop: character
 //! switching, DND toggle, hiding, and quit.
+//!
+//! On non-macOS platforms, muda pulls in platform-specific dependencies (libxdo
+//! on Linux) that are not available in CI. Cfg-gate the entire implementation
+//! to macOS only; other platforms get stub functions that return None.
 
 #[cfg(target_os = "macos")]
-use muda::ContextMenu;
-use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+#[cfg(target_os = "macos")]
 use std::collections::HashMap;
 
 /// The menu items that trigger actions, keyed by their menu item id.
@@ -26,10 +30,15 @@ pub enum MenuAction {
 /// What the shell needs to show the menu and handle its selections: the menu
 /// itself (ready to pop), and the mapping from muda's menu item ids to the
 /// actions they perform.
+#[cfg(target_os = "macos")]
 pub struct BuiltMenu {
     pub menu: Menu,
     pub actions: HashMap<String, MenuAction>,
 }
+
+/// Stub BuiltMenu for non-macOS platforms where muda is not available.
+#[cfg(not(target_os = "macos"))]
+pub struct BuiltMenu {}
 
 /// Build the context menu from the list of installed characters and the
 /// current Character's name.
@@ -41,6 +50,7 @@ pub struct BuiltMenu {
 /// `installed` is the list of Character Package names the loader found, in the
 /// order they were found. `current` is the name of the Character currently on
 /// screen, which is check-marked in the submenu.
+#[cfg(target_os = "macos")]
 pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> BuiltMenu {
     let menu = Menu::new();
     let mut actions = HashMap::new();
@@ -89,35 +99,31 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
     BuiltMenu { menu, actions }
 }
 
+/// Stub build for non-macOS platforms where muda is unavailable.
+#[cfg(not(target_os = "macos"))]
+pub fn build(_installed: &[String], _current: &str, _do_not_disturb: bool) -> BuiltMenu {
+    BuiltMenu {}
+}
+
 /// Block until the user dismisses the menu, returning the action they selected
 /// if any. The menu is shown at the given cursor position.
 ///
 /// Blocking is deliberate: the sprite pauses while the menu is open, which is
 /// what Menu holding the Engine's not-now gates means. A menu that returned
 /// immediately would let the sprite keep moving underneath it.
-///
-/// Linux context menus require a GTK Window reference, which is not available
-/// in this shell-level function without threading Tauri's window through the
-/// call stack. Leave unimplemented for now; #155 is targeting macOS first.
+#[cfg(target_os = "macos")]
 pub fn show_and_wait(menu: &Menu) -> Option<MenuEvent> {
-    #[cfg(target_os = "macos")]
     unsafe {
         menu.show_context_menu_for_nsview(std::ptr::null_mut(), None);
     }
 
-    #[cfg(target_os = "windows")]
-    unsafe {
-        menu.show_context_menu_for_hwnd(std::ptr::null_mut(), None);
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        // Linux: GTK context menus need a window reference.
-        // Returning None skips the menu for now.
-        let _ = menu;
-    }
-
     MenuEvent::receiver().try_recv().ok()
+}
+
+/// Stub show_and_wait for non-macOS platforms where muda is unavailable.
+#[cfg(not(target_os = "macos"))]
+pub fn show_and_wait(_menu: &BuiltMenu) -> Option<()> {
+    None
 }
 
 #[cfg(test)]
