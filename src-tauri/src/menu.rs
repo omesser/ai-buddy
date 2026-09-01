@@ -5,7 +5,7 @@
 //! actions are shell commands that do not enter the frame loop: character
 //! switching, DND toggle, hiding, and quit.
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use muda::ContextMenu;
 use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use std::collections::HashMap;
@@ -95,20 +95,26 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
 /// Blocking is deliberate: the sprite pauses while the menu is open, which is
 /// what Menu holding the Engine's not-now gates means. A menu that returned
 /// immediately would let the sprite keep moving underneath it.
+///
+/// Linux context menus require a GTK Window reference, which is not available
+/// in this shell-level function without threading Tauri's window through the
+/// call stack. Leave unimplemented for now; #155 is targeting macOS first.
 pub fn show_and_wait(menu: &Menu) -> Option<MenuEvent> {
     #[cfg(target_os = "macos")]
     unsafe {
         menu.show_context_menu_for_nsview(std::ptr::null_mut(), None);
     }
 
-    #[cfg(target_os = "linux")]
-    unsafe {
-        menu.show_context_menu_for_gtk_window(std::ptr::null_mut(), None);
-    }
-
     #[cfg(target_os = "windows")]
     unsafe {
         menu.show_context_menu_for_hwnd(std::ptr::null_mut(), None);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        // Linux: GTK context menus need a window reference.
+        // Returning None skips the menu for now.
+        let _ = menu;
     }
 
     MenuEvent::receiver().try_recv().ok()
