@@ -1019,6 +1019,14 @@ fn run_frame_loop(
                 let frame = instance.tick(&world);
                 riding |= frame.riding;
 
+                // Engine names a Poke and a Dwell. The pointer loop also
+                // marks verbs so the wake can say `happened: poked`; this
+                // is the bit that must not be dropped or a click never
+                // reaches the session.
+                if frame.addressed {
+                    live.addressed = true;
+                }
+
                 let became_perched = live.last_state.is_some()
                     && frame.state == State::Perched
                     && live.last_state != Some(State::Perched);
