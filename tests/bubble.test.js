@@ -8,6 +8,7 @@ import {
   wrapText,
   placeBubble,
   createBubbleMachine,
+  forOverlay,
   CEILING_CLEARANCE,
   THINKING_GRACE_MS,
   THINKING_MIN_HOLD_MS,
@@ -317,4 +318,28 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
     ["showSpeech:hi", "hideSpeech", "showSpeech:again"],
     "the indicator never appeared",
   );
+});
+
+// --- #178: one overlay owns the bubble; the rest draw the art only. ---
+
+test("a placement this overlay does not own carries no bubble", () => {
+  const spoken = { dialogue: "Yare yare daze.", thinking: true, bubble: true, x: 1 };
+  assert.equal(forOverlay(spoken), spoken, "the owner sees it untouched");
+
+  const elsewhere = forOverlay({ ...spoken, bubble: false });
+  assert.equal(elsewhere.dialogue, null, "no line to latch on the wrong display");
+  assert.equal(elsewhere.thinking, false, "no thinking to arm on the wrong display");
+  assert.equal(elsewhere.x, 1, "everything the art needs is left alone");
+});
+
+test("a losing overlay never arms the indicator off a thinking it does not own", () => {
+  const { machine, advance, placement, surface } = machineHarness();
+
+  machine.frame(forOverlay(placement({ thinking: true, bubble: false })));
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+  assert.equal(surface(), null, "grace never armed: this display is not the owner");
+
+  machine.frame(forOverlay(placement({ thinking: true, bubble: true })));
+  advance(THINKING_GRACE_MS);
+  assert.equal(surface(), "thinking", "the same frame, owned, arms it");
 });

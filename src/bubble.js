@@ -187,3 +187,13 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds, ceilingCleara
 
   return { x, y, flipped, tailOffset };
 }
+
+// A placement as this overlay may act on it (#178). The shell names exactly
+// one overlay per Instance as the bubble's owner; every other overlay draws
+// the art and nothing else. Stripping the bubble fields here, before the
+// placement is latched or drawn, is what keeps a losing overlay from arming
+// the thinking grace off a `thinking` it was never meant to show.
+export function forOverlay(placement) {
+  if (placement.bubble) return placement;
+  return { ...placement, dialogue: null, thinking: false };
+}

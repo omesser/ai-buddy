@@ -11,6 +11,7 @@
 import { interpolate } from "./interpolate.js";
 import {
   createBubbleMachine,
+  forOverlay,
   wrapText,
   placeBubble,
   CEILING_CLEARANCE,
@@ -277,9 +278,17 @@ async function start() {
         view.bubble.style.zIndex = `${index * 2}`;
         view.sprite.style.zIndex = `${index * 2 + 1}`;
 
+        // One overlay owns each Instance's bubble (#178); elsewhere the
+        // bubble would clamp back inside this display and show beside no
+        // sprite. Speech hides on its reading timer, not on the next frame,
+        // so a losing overlay drops its bubble now rather than holding a
+        // stale one — and latches nothing, since `owned` carries no bubble.
+        const owned = forOverlay(sprite);
+        if (!sprite.bubble) view.bubbles.hideAllNow();
+
         view.previous = view.latest;
         view.latest = {
-          ...sprite,
+          ...owned,
           visible: payload.visible,
           fade_ms: payload.fade_ms,
           at: performance.now(),
@@ -288,7 +297,7 @@ async function start() {
         // placement: an Engine that ticks faster than the display refreshes
         // overwrites some placements before `draw` ever reads them. The machine
         // latches the pulse here, where every delivery is seen.
-        view.bubbles.event(sprite);
+        view.bubbles.event(owned);
       });
 
       // An id that stopped arriving is an Instance that was dismissed, so its

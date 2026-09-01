@@ -49,6 +49,21 @@ pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> 
         })
 }
 
+/// The one overlay that draws an Instance's speech bubble and thinking
+/// indicator (#178).
+///
+/// Every overlay is handed every sprite and draws the part that falls inside
+/// it, which is right for the art: the wrong display's copy simply clips
+/// away. A bubble is not clipped geometry — the renderer keeps it readable by
+/// pulling it back inside the display, so the copy on the wrong display comes
+/// back into view at an edge. So a bubble is owned by exactly one overlay, the
+/// one under the feet. The feet rather than the art's rectangle: a sprite
+/// straddling a seam is still standing on one display, and the owner then
+/// changes once, at the seam, instead of flickering as the art crosses.
+pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
+    display_index_for(feet, displays)
+}
+
 /// Whether a display's window has this point, right and bottom edges excluded.
 fn covers(point: (f64, f64), rect: &Rect) -> bool {
     (rect.x..rect.x + rect.width).contains(&point.0)
@@ -456,6 +471,25 @@ mod tests {
             121,
             "172 - 51"
         );
+    }
+
+    /// #178: a bubble is drawn by exactly one overlay. It follows the feet,
+    /// not the sprite's rectangle — a Character whose art straddles the seam
+    /// is still standing on one display, and anchoring to the feet is what
+    /// keeps the bubble from flickering between displays as it walks across.
+    #[test]
+    fn a_bubble_belongs_to_the_display_under_the_feet() {
+        let displays = two_displays();
+
+        // Art wide enough to straddle the seam; the feet are still on the first.
+        assert_eq!(bubble_owner((1900.0, 1000.0), &displays), Some(0));
+        assert_eq!(bubble_owner((1919.9, 1000.0), &displays), Some(0));
+        assert_eq!(
+            bubble_owner((1920.0, 1000.0), &displays),
+            Some(1),
+            "ownership flips once, at the seam column, and nowhere else"
+        );
+        assert_eq!(bubble_owner((2600.0, 500.0), &displays), Some(1));
     }
 
     #[test]
