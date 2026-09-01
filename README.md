@@ -521,21 +521,11 @@ dependency and not a live bridge (#112). It is the one script allowed to need
 Pillow, because petscodex ships webp sprite sheets and decoding webp rules out
 the standard library.
 
-Two formats have adapters:
+You can import a pack from these galleries into a Character Package: [Pets Codex](https://petscodex.com/) and [petdex](https://petdex.dev/), which use the Pets Codex / petdex engine (same atlas, one adapter), and [Shimeji Shop](https://shimejishop.com/), which uses Shimeji-ee. Those are the only adapters. No other format is supported. If you want another format, open a GitHub issue. In that issue, show that the request does not break license restrictions (the importer warns on undeclared or non-permissive licenses; whoever imports is who ships; see the license paragraph later in this section).
 
-- **petscodex** — [petscodex.com](https://petscodex.com/)'s fixed-grid sprite
-  sheets. `npx petscodex install <id>` lands a pack at `~/.codex/pets/<id>/`;
-  the importer slices it by petdex's row semantics and builds the whole
-  Required Animation Set, with `waiting` as an idle `variant_of` ring member.
-- **shimeji** — Shimeji-ee packs: per-pose PNGs plus the pack's `actions.xml`
-  naming pose sequences, every frame mirrored to head right. A pack of bare
-  `shime*.png` files with no conf (shimejishop distributes these) rides
-  Shimeji-ee's standard conf instead.
+`npx petscodex install <id>` lands a pack at `~/.codex/pets/<id>/`; the importer slices it by petdex's row semantics and builds the whole Required Animation Set, with `waiting` as an idle `variant_of` ring member. Shimeji-ee packs are per-pose PNGs plus the pack's `actions.xml` naming pose sequences, every frame mirrored to head right. A pack of bare `shime*.png` files with no conf (shimejishop distributes these) rides Shimeji-ee's standard conf instead.
 
-An ecosystem without an adapter needs one written — the importer reads a
-machine-readable convention or it reads nothing. There is deliberately no
-generic fallback for a bare pile of frames
-([ADR-0009](./docs/adr/0009-no-generic-import-on-ramp.md)).
+An ecosystem without an adapter needs one written — the importer reads a machine-readable convention or it reads nothing. There is deliberately no generic fallback for a bare pile of frames ([ADR-0009](./docs/adr/0009-no-generic-import-on-ramp.md)).
 
 Pillow lives in a [uv](https://docs.astral.sh/uv/)-managed virtual
 environment, never in a system Python:
