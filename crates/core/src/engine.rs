@@ -153,6 +153,9 @@ pub struct Frame {
     /// horizontal travel turns it, so a stop keeps the last heading and the
     /// renderer can mirror the art by it without flicker at rest.
     pub facing: f64,
+    /// Whether the user addressed the buddy this tick. True when Dwell
+    /// threshold is reached. The Director wakes reactively on this.
+    pub addressed: bool,
 }
 
 /// How long one Primitive holds the screen.
@@ -220,7 +223,6 @@ const NEAR_RADIUS: f64 = 150.0;
 ///
 /// A tuning knob: long enough that passing over the sprite does not wake the
 /// Director, short enough that intentionally addressing feels immediate.
-#[allow(dead_code)] // Reserved for future Director wake mechanism
 const DWELL_MS: u32 = 400;
 
 /// Minimum cursor velocity toward the sprite to count as a Rush, in points per second (#152).
@@ -314,6 +316,8 @@ pub struct Engine {
     cursor_near: bool,
     /// Milliseconds the cursor has rested on the sprite without pressing (#152).
     cursor_dwell_ms: u32,
+    /// Whether this dwell session has already addressed the Director (#152).
+    cursor_dwell_addressed: bool,
     /// Last observed cursor position, for Rush velocity calculation (#152).
     last_cursor: Point,
     /// Last observed cursor velocity, for Rush detection (#152).
@@ -356,6 +360,7 @@ impl Engine {
             rush_reaction: CursorReaction::default(),
             cursor_near: false,
             cursor_dwell_ms: 0,
+            cursor_dwell_addressed: false,
             last_cursor: Point::default(),
             cursor_velocity: Point::default(),
             rush_reported: false,
@@ -522,6 +527,7 @@ impl Engine {
         // Near exit: cursor leaves the radius. Back to whatever it was doing.
         if !self.cursor_near && was_near {
             self.cursor_dwell_ms = 0;
+            self.cursor_dwell_addressed = false;
             self.rush_reported = false;
             // Leaving the radius releases any Near reaction that started a walk.
             // The sprite does not chase; it just keeps the walk until it stops or
@@ -573,13 +579,20 @@ impl Engine {
 
         // Dwell: cursor rests on the sprite for a beat without pressing.
         // Counts as addressing: set `addressed` so the next Director wake is reactive.
-        // TODO: This needs to communicate back to the Director somehow. For now,
-        // we track the dwell time but don't yet wake the Director.
+        // Play talk's first moment or an idle acknowledgment.
+        let mut addressed = false;
         if cursor_distance < 30.0 {
             // On the sprite itself
             self.cursor_dwell_ms = self.cursor_dwell_ms.saturating_add(snapshot.elapsed_ms);
+            if self.cursor_dwell_ms >= DWELL_MS && !self.cursor_dwell_addressed {
+                // Dwell threshold met: address the Director once per session.
+                self.cursor_dwell_addressed = true;
+                addressed = true;
+                started |= self.play(&[Primitive::Talk]);
+            }
         } else {
             self.cursor_dwell_ms = 0;
+            self.cursor_dwell_addressed = false;
         }
 
         // Walking is the Engine's, deciding to walk is not: nothing else here
@@ -804,6 +817,7 @@ impl Engine {
             behavior,
             riding: self.riding,
             facing: self.facing,
+            addressed,
         }
     }
 
@@ -5319,5 +5333,101 @@ mod tests {
             near.animation, "talk",
             "Near reaction (speak) plays under DND (answers the user)"
         );
+    }
+
+    /// #152: Dwell addresses the Director when the cursor rests on the sprite
+    /// for the threshold duration.
+    #[test]
+    fn dwell_addresses_the_director() {
+        let mut engine = a_resting_sprite();
+        let sprite_x = engine.position.x;
+        let sprite_y = engine.position.y;
+
+        // Cursor moves onto the sprite.
+        let on_sprite = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+        assert!(!on_sprite.addressed, "not addressed yet");
+
+        // Cursor rests for half the dwell threshold.
+        let dwelling = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x,
+                y: sprite_y,
+            },
+            elapsed_ms: DWELL_MS / 2,
+            ..snapshot(16)
+        });
+        assert!(!dwelling.addressed, "still not addressed yet");
+
+        // Cursor continues to rest, crossing the threshold.
+        let addressed = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x,
+                y: sprite_y,
+            },
+            elapsed_ms: DWELL_MS / 2 + 1,
+            ..snapshot(16)
+        });
+        assert!(addressed.addressed, "addressed after dwell threshold");
+        assert_eq!(addressed.animation, "talk", "plays talk's first moment");
+
+        // Continuing to dwell doesn't address again.
+        let still_dwelling = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+        assert!(
+            !still_dwelling.addressed,
+            "addressed only once per dwell session"
+        );
+    }
+
+    /// #152: A cursor that only passes through the sprite without dwelling
+    /// does not address the Director.
+    #[test]
+    fn passing_cursor_does_not_address() {
+        let mut engine = a_resting_sprite();
+        let sprite_x = engine.position.x;
+        let sprite_y = engine.position.y;
+
+        // Cursor approaches and passes over the sprite quickly.
+        let approach = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x - 50.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+        assert!(!approach.addressed, "not addressed while approaching");
+
+        let over = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x,
+                y: sprite_y,
+            },
+            elapsed_ms: 16,
+            ..snapshot(16)
+        });
+        assert!(
+            !over.addressed,
+            "not addressed: only on sprite for 16ms, below threshold"
+        );
+
+        let past = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 50.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+        assert!(!past.addressed, "not addressed after passing through");
     }
 }
