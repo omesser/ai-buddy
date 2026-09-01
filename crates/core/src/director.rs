@@ -493,10 +493,20 @@ fn triggered(trigger: &Trigger, activity: &Activity) -> bool {
 /// splitmix64: five lines, no dependency, no seed it degenerates on — which a
 /// bare xorshift has at zero. `rand` would be a dependency and a trait object
 /// for a coin toss the Engine performs once every twenty seconds.
-struct Seeded(u64);
+///
+/// Public because the Shell needs draws of its own — where each Instance's wake
+/// clock starts — and a second generator there would be a second thing to
+/// reason about at a second quality. One mixer, one set of properties.
+pub struct Seeded(u64);
 
 impl Seeded {
-    fn next(&mut self) -> u64 {
+    pub fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    /// The next draw. Well mixed even from adjacent seeds, which is what lets
+    /// one launch seed a buddy apiece.
+    pub fn draw(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -519,7 +529,7 @@ impl Seeded {
             return None;
         }
 
-        let mut drawn = self.next() % total;
+        let mut drawn = self.draw() % total;
         for (name, weight) in choices {
             match drawn.checked_sub(u64::from(*weight)) {
                 Some(left) => drawn = left,
@@ -600,6 +610,54 @@ mod tests {
             "the seed is the whole of the unpredictability"
         );
         assert_ne!(first, other, "and a different seed is a different life");
+    }
+
+    /// Two Instances of one Character, seeded a bit apart the way the Shell
+    /// seeds them, and each keeping its own record of what it has played.
+    ///
+    /// #13 asks for Instances that play Behaviors independently, and a
+    /// difference in seed alone does not buy it: suppression walks each
+    /// Director through what it has not lately done, so with a Character
+    /// declaring few enough Behaviors both are steered onto the same one and
+    /// stay in step. This pins where the line actually falls.
+    #[test]
+    fn two_instances_of_one_character_do_not_pick_in_lockstep() {
+        // BMO's own set, which is what the lockstep was first seen with.
+        let behaviors = declaring(&[
+            ("walk", 1, None),
+            ("patrol", 3, None),
+            ("fidget", 2, None),
+            ("report", 3, None),
+            ("greet", 4, None),
+        ]);
+
+        // Each Instance remembers only its own Behaviors, exactly as the frame
+        // loop does with one `recent` per Instance.
+        let played = |seed: u64| -> Vec<String> {
+            let mut director = StaticDirector::new(behaviors.clone(), seed);
+            let mut recent: Vec<String> = Vec::new();
+            (0..8)
+                .filter_map(|_| {
+                    let moment = context(
+                        working(),
+                        &recent.iter().map(String::as_str).collect::<Vec<_>>(),
+                    );
+                    director.propose(&moment).map(|proposal| {
+                        remember(&mut recent, proposal.behavior.clone());
+                        proposal.behavior
+                    })
+                })
+                .collect()
+        };
+
+        let one = played(0x5EED);
+        let two = played(0x5EED ^ 1);
+
+        assert_eq!(one.len(), 8, "both wake the same number of times");
+        assert_ne!(
+            one, two,
+            "a Character with five Behaviors leaves suppression room to differ"
+        );
     }
 
     #[test]

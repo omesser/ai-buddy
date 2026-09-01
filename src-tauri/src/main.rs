@@ -29,11 +29,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
 use ai_buddy_core::director::{
-    self, Context, Director, Happened, ModelDirector, Pace, StaticDirector, Wake,
+    self, Context, Director, Happened, ModelDirector, Pace, Seeded, StaticDirector, Wake,
 };
-use ai_buddy_core::engine::{Engine, Point, State, Verb};
-use ai_buddy_core::input::Pointer;
+use ai_buddy_core::engine::{Point, State, Verb};
+use ai_buddy_core::input::{press_target, Pointer};
+use ai_buddy_core::memory::{self, MemoryManifest};
 use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
+use ai_buddy_core::roster::{self, InstanceId, InstanceSpec, Roster};
 use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
@@ -95,13 +97,56 @@ struct Drawn {
     mirrored: bool,
 }
 
-/// One tick's instruction to the renderer: where to draw the sprite in logical
-/// points from the overlay's top-left, and which Animation frame to draw.
+/// Everything one Instance keeps between ticks that belongs to the Shell rather
+/// than to its Engine.
 ///
-/// Pushed every tick rather than fetched, so the webview holds no authoritative
-/// state — it draws what it was last told and remembers nothing.
+/// The Roster owns the Engines, which is the whole of what an Instance is in the
+/// pure core. None of this can live there: a Director that posts over the
+/// network, a pointer gesture measured against art, and the last rectangle the
+/// hit-test used are all things the core has no window server for.
+///
+/// Every field is here because sharing it between Instances would be visible.
+/// One Director for two buddies would have them move in lockstep; one `Pointer`
+/// would have a double-click on one count towards a Summon on the other; one
+/// `Drawn` would hit-test both against whichever drew last.
+struct InstanceState {
+    /// Which Instance in the Roster this belongs to.
+    id: InstanceId,
+    /// The Character this Instance runs, shared with every other Instance
+    /// running the same one.
+    character: Arc<Character>,
+    director: StaticDirector,
+    model: Option<Arc<ModelDirector<model::Endpoint>>>,
+    pending: model::InFlight,
+    in_flight: Option<Context>,
+    recent: Vec<String>,
+    pace: Pace,
+    since_wake: Duration,
+    since_state: Duration,
+    since_ambient: Duration,
+    previous_idle: Duration,
+    last_state: Option<State>,
+    addressed: bool,
+    happened: Happened,
+    pointer: Pointer,
+    drawn_last: Option<Drawn>,
+    /// This tick's verbs, decided before any Instance is ticked. Held on the
+    /// Instance because `press_target` has to see every hit-test before any
+    /// pointer is told whether the press was its own.
+    verbs: Vec<Verb>,
+}
+
+/// Where one Instance is to be drawn in one overlay, in logical points from
+/// that overlay's top-left, and which Animation frame to draw.
 #[derive(Clone, Serialize)]
-struct Placement<'a> {
+struct SpritePlacement<'a> {
+    /// The Instance this sprite belongs to, so the renderer keeps one element
+    /// per Instance across ticks rather than redrawing a fresh set. An id that
+    /// stops arriving is an Instance that was dismissed, and its element goes.
+    id: &'a str,
+    /// Which Character's art to draw from. Instances may run different
+    /// Characters, and two running the same one name the same art.
+    character: &'a str,
     x: i32,
     y: i32,
     width: i32,
@@ -111,8 +156,33 @@ struct Placement<'a> {
     /// the name the Engine asked with.
     animation: &'a str,
     frame_index: usize,
+    /// -1 to mirror the art (heading left), 1 to draw it as authored.
+    facing: i8,
+    /// A line to speak on this tick only. Dialogue is an event, not a state.
+    /// #119: the webview latches it and owns display duration.
+    dialogue: Option<String>,
+    /// Whether to show the thinking ellipsis. Derived from InFlight state and
+    /// addressed. #119: grace and min-hold are in the webview so the Engine
+    /// stays tick-pure.
+    thinking: bool,
+}
+
+/// One tick's instruction to the renderer: every Instance's sprite, and whether
+/// the Character is on screen at all.
+///
+/// Pushed every tick rather than fetched, so the webview holds no authoritative
+/// state — it draws what it was last told and remembers nothing.
+///
+/// One message carrying every sprite rather than one per Instance, because the
+/// list is also the answer to which Instances still exist. Sent separately, a
+/// dismissed Instance would simply stop being mentioned, and nothing would say
+/// whether its last message was the end or the next one was merely late.
+#[derive(Clone, Serialize)]
+struct Placement<'a> {
+    sprites: Vec<SpritePlacement<'a>>,
     /// Whether the hide rules have the Character on screen, and how long the
-    /// change that decided it was given.
+    /// change that decided it was given. One answer for every Instance: the
+    /// rules are about the desktop, not about a sprite.
     ///
     /// Carried on every frame rather than announced on the tick it changes.
     /// The first tick fires 16ms into setup, before the webview has fetched
@@ -122,14 +192,25 @@ struct Placement<'a> {
     /// all session.
     visible: bool,
     fade_ms: u32,
-    /// -1 to mirror the art (heading left), 1 to draw it as authored.
+}
+
+/// What one Instance's tick decided to draw, in the space every display shares.
+///
+/// The step between ticking the Instances and telling the overlays. Every
+/// overlay is told about every Instance in its own coordinates, so the
+/// placement is worked out once here and turned into each overlay's rectangle
+/// below — and the art names are owned rather than borrowed so that this
+/// outlives the borrow of the Character it came from.
+struct Placed {
+    id: InstanceId,
+    character: String,
+    sprite: SpriteRect,
+    width: i32,
+    height: i32,
+    animation: String,
+    frame_index: usize,
     facing: i8,
-    /// A line to speak on this tick only. Dialogue is an event, not a state.
-    /// #119: the webview latches it and owns display duration.
     dialogue: Option<String>,
-    /// Whether to show the thinking ellipsis. Derived from InFlight state and
-    /// addressed. #119: grace and min-hold are in the webview so the Engine
-    /// stays tick-pure.
     thinking: bool,
 }
 
@@ -167,20 +248,36 @@ fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
-/// What the webview needs of the Character, as Tauri managed state: the art
-/// as `data:` URLs, and whether to smooth it when scaling (the Character
-/// Manifest's `render_mode`). A struct rather than a bare map so managed
-/// state, keyed by type, cannot collide with another map of the same shape.
+/// What the webview needs of one Character: the art as `data:` URLs, and
+/// whether to smooth it when scaling (the Character Manifest's `render_mode`).
 #[derive(Clone, serde::Serialize)]
-struct ArtUrls {
+struct CharacterArt {
     art: BTreeMap<String, Vec<String>>,
     smooth: bool,
 }
 
-/// The Character's art, fetched once by the webview when it loads.
+/// Every Character on screen, by name, as Tauri managed state.
+///
+/// Keyed by Character rather than by Instance, which is what keeps the art one
+/// copy: two Instances of one Character are the common case #13 exists for, and
+/// encoding a sprite sheet twice to draw the same pet twice would double the
+/// heaviest thing the app holds.
+///
+/// A struct rather than a bare map so managed state, keyed by type, cannot
+/// collide with another map of the same shape.
+#[derive(Clone, serde::Serialize)]
+struct ArtUrls {
+    characters: BTreeMap<String, CharacterArt>,
+}
+
+/// The art of every Character on screen, fetched once by the webview when it
+/// loads.
 ///
 /// A command rather than an event: an event emitted during setup would race the
-/// webview's own listener, and the art does not change while the app runs.
+/// webview's own listener, and the art does not change while the app runs —
+/// which is also why the Instances that may run are settled at launch. Spawning
+/// one afterwards is #18's, and it will have to hand the webview art this
+/// command has already answered without.
 #[tauri::command]
 fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
@@ -358,52 +455,25 @@ fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
 #[allow(clippy::too_many_arguments)]
 fn run_frame_loop(
     app: tauri::AppHandle,
-    character: Arc<Character>,
+    mut roster: Roster,
+    mut lives: Vec<InstanceState>,
     source: impl WindowSource + Send + 'static,
     displays: platform::DisplayCache,
     rules: Arc<Mutex<HideRules>>,
-    start: Point,
     covered: Vec<Rect>,
     director_run: DirectorRun,
 ) {
     thread::spawn(move || {
-        let mut engine = Engine::new(start).with_behaviors(character.behaviors.clone());
         let mut assembler = SnapshotAssembler::new(source);
-
-        // The Static Director, which is the whole of the buddy's life until a
-        // Harness is attached: no network, no key, nothing to time out. Seeded
-        // from the wall clock so that two runs are not the same afternoon,
-        // which is the one thing the Engine's own purity forbids it to do.
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_nanos() as u64);
         let DirectorRun { config, inspect } = director_run;
-        let mut director = StaticDirector::new(character.behaviors.clone(), seed);
-        let model = config.enabled.then(|| {
-            Arc::new(ModelDirector::new(
-                model::endpoint().expect("enabled means a key was set"),
-                character.behaviors.keys().cloned(),
-            ))
-        });
-        let pending = model::InFlight::new();
-        let mut in_flight: Option<Context> = None;
+
+        // Read once for every Instance: there is one desktop and one user, and
+        // asking AppKit how long they have been idle once per buddy would be
+        // the same answer bought several times.
         let mut free_tier = FreeTier::default();
         let activity_source = platform::activity_source();
-        let mut recent: Vec<String> = Vec::new();
         let mut since_sense = Duration::ZERO;
-        let mut since_wake = Duration::ZERO;
-        let mut previous_idle = Duration::MAX;
-        let mut since_state = Duration::ZERO;
-        let mut last_state: Option<State> = None;
-        let mut pace = Pace::with_growth(
-            config.ambient_first,
-            character.model_base,
-            character.model_power,
-        );
-        let mut since_ambient = Duration::ZERO;
         let mut last_activity: Option<Activity> = None;
-        let mut addressed = false;
-        let mut happened = Happened::Ambient;
 
         // One click-through flag per overlay, `None` until that overlay's first
         // decision so the first tick always applies.
@@ -413,8 +483,6 @@ fn run_frame_loop(
         // main thread, which is the only place that can change what they cover
         // and so the only place that knows when this is true again.
         let covered = Arc::new(Mutex::new(covered));
-
-        let mut pointer = Pointer::default();
 
         // Click-through is invisible: nothing on screen says whether the overlay
         // is currently swallowing clicks or passing them on. This trace is the
@@ -428,10 +496,6 @@ fn run_frame_loop(
         let tracing_frames = env_util::env_flag_is_on("AI_BUDDY_TRACE_FRAMES");
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
-
-        // The art is looked up again rather than kept, which costs one map
-        // lookup and saves copying a mask sixty times a second.
-        let mut drawn_last: Option<Drawn> = None;
 
         loop {
             thread::sleep(ENGINE_TICK);
@@ -477,51 +541,86 @@ fn run_frame_loop(
                 cursor_points.y.round() as i32,
             );
 
+            // A dismissed Instance is gone from the Roster, and its Shell state
+            // goes with it. Dropped before anything is hit-tested rather than
+            // skipped inside the loop: a pointer left behind still counts as a
+            // gesture, and one mid-drag when its Instance was dismissed would
+            // hold every other buddy's presses for as long as the button stayed
+            // down.
+            lives.retain(|live| roster.get(&live.id).is_some());
+
             // Last tick's answer, which is the right one: the art being
             // hit-tested is the art that was last drawn. A Character nobody can
             // see is not there to be pressed, so a click where it would have
             // been reaches the window underneath and pokes nothing.
             let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
-            let pressed_sprite = visible
-                && drawn_last.as_ref().is_some_and(|last| {
-                    character
-                        .draw(last.animation, last.animation_ms)
-                        .is_some_and(|art| {
-                            art.mask
-                                .hit(&last.rect, cursor_at.0, cursor_at.1, last.mirrored)
-                        })
-                });
-            let verbs = pointer.update(
-                pressed_sprite,
-                platform::primary_button_down(),
-                cursor_points,
-                elapsed_ms,
-            );
-
-            if tracing_frames && !verbs.is_empty() {
-                eprintln!("verbs: {verbs:?}");
-            }
-
-            // Grab is on every held tick. Only the first tick of a hold is a
-            // pick-up; the rest would otherwise wake the session while dragging.
-            let grab_started = verbs.iter().any(|verb| matches!(verb, Verb::Grab))
-                && last_state != Some(State::Dragged);
-            if verbs
+            let pressed: Vec<bool> = lives
                 .iter()
-                .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Throw { .. }))
-                || grab_started
-            {
-                addressed = true;
-                happened = if verbs.iter().any(|verb| matches!(verb, Verb::Throw { .. })) {
-                    Happened::Throw
-                } else if grab_started {
-                    Happened::Grab
-                } else if verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
-                    Happened::Poke
-                } else {
-                    Happened::Summon
-                };
+                .map(|live| {
+                    visible
+                        && live.drawn_last.as_ref().is_some_and(|last| {
+                            live.character
+                                .draw(last.animation, last.animation_ms)
+                                .is_some_and(|art| {
+                                    art.mask.hit(
+                                        &last.rect,
+                                        cursor_at.0,
+                                        cursor_at.1,
+                                        last.mirrored,
+                                    )
+                                })
+                        })
+                })
+                .collect();
+
+            // One cursor, several sprites, and at most one gesture. Decided
+            // across every Instance before any of them is told, because two
+            // overlapping sprites handed the same hit-test would both be picked
+            // up by one press.
+            let gesturing = lives.iter().position(|live| live.pointer.gesturing());
+            let target = press_target(&pressed, gesturing);
+            let held = platform::primary_button_down();
+
+            for (index, live) in lives.iter_mut().enumerate() {
+                // Only the Instance the press belongs to is told the cursor is
+                // over it. The rest are still updated: a pointer that stopped
+                // being told the time would measure the next gesture's velocity
+                // over the gap.
+                live.verbs =
+                    live.pointer
+                        .update(target == Some(index), held, cursor_points, elapsed_ms);
+
+                if tracing_frames && !live.verbs.is_empty() {
+                    eprintln!("verbs: {} {:?}", live.id, live.verbs);
+                }
+
+                // Grab is on every held tick. Only the first tick of a hold is a
+                // pick-up; the rest would otherwise wake the session while
+                // dragging.
+                let grab_started = live.verbs.iter().any(|verb| matches!(verb, Verb::Grab))
+                    && live.last_state != Some(State::Dragged);
+                if live
+                    .verbs
+                    .iter()
+                    .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Throw { .. }))
+                    || grab_started
+                {
+                    live.addressed = true;
+                    live.happened = if live
+                        .verbs
+                        .iter()
+                        .any(|verb| matches!(verb, Verb::Throw { .. }))
+                    {
+                        Happened::Throw
+                    } else if grab_started {
+                        Happened::Grab
+                    } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
+                        Happened::Poke
+                    } else {
+                        Happened::Summon
+                    };
+                }
             }
 
             // The Director's clock is the same elapsed time the Engine is
@@ -532,95 +631,28 @@ fn run_frame_loop(
             // most of a tick.
             let elapsed = Duration::from_millis(u64::from(elapsed_ms));
             since_sense += elapsed;
-            since_wake += elapsed;
-            since_state += elapsed;
-            if !last_activity
-                .as_ref()
-                .is_some_and(|activity| activity.displays_asleep)
-            {
-                since_ambient += elapsed;
-            }
 
-            let mut proposal = None;
-            let arrived = pending.try_take();
-            let applied = arrived.is_some();
-            if let Some(wake) = arrived {
-                let context = in_flight
-                    .take()
-                    .expect("a started call still has its context");
-                if model::tracing() {
-                    match &wake {
-                        Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(
-                            "director: parsed {}{}",
-                            parsed.behavior,
-                            parsed
-                                .dialogue
-                                .as_deref()
-                                .map(|line| format!(" | {line}"))
-                                .unwrap_or_default(),
-                        ),
-                        Wake::Proposed(_) => {}
-                        Wake::Failed => eprintln!("director: failed; Static fallback"),
-                    }
-                }
-                proposal = director::fallback(wake, &mut director, &context);
-                if model::tracing() {
-                    match &proposal {
-                        Some(playing) if playing.behavior.is_empty() => {
-                            eprintln!(
-                                "director: saying {}",
-                                playing.dialogue.as_deref().unwrap_or("")
-                            );
-                        }
-                        Some(playing) => eprintln!(
-                            "director: playing {}{}",
-                            playing.behavior,
-                            playing
-                                .dialogue
-                                .as_deref()
-                                .map(|line| format!(" | {line}"))
-                                .unwrap_or_default(),
-                        ),
-                        None => eprintln!("director: nothing to play"),
-                    }
-                }
-            }
-
-            if since_sense >= SENSE_INTERVAL {
+            // One reading of the user for every Instance, taken before any of
+            // them is ticked so that they all wake against the same desktop. A
+            // read per buddy would be the same two calls into AppKit bought N
+            // times, and two buddies deciding on idle times a tick apart.
+            let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
                 let activity = free_tier.read(&activity_source, &SystemClock);
-                let due = director::due(
-                    since_wake,
-                    config.wake_every,
-                    &activity,
-                    previous_idle,
-                    since_state,
-                    engine.do_not_disturb(),
-                );
-                previous_idle = activity.idle;
+                last_activity = Some(activity.clone());
+                Some(activity)
+            } else {
+                None
+            };
+            let displays_asleep = last_activity
+                .as_ref()
+                .is_some_and(|activity| activity.displays_asleep);
 
-                if due {
-                    since_wake = since_wake.saturating_sub(config.wake_every);
-                    since_state = Duration::ZERO;
-                    // Static keeps the free life going. A session call in
-                    // flight is the one exception: do not stack a weight pick
-                    // on a proposal that is about to land.
-                    if pending.ready() && !applied {
-                        proposal = director.propose(&Context {
-                            activity: activity.clone(),
-                            recent: recent.clone(),
-                            personality: character.personality.clone(),
-                            state: last_state.unwrap_or(State::Grounded),
-                            happened,
-                            standing: String::new(),
-                        });
-                    }
-                }
-                last_activity = Some(activity);
-            }
-
-            let mut world = assembler.assemble(elapsed_ms, cursor_points, verbs);
-            world.proposal = proposal;
+            // Assembled once and handed to every Instance. It carries the
+            // desktop, which they share, and the window list is re-read on the
+            // assembler's own schedule — asking it once per Instance would poll
+            // the window server N times for one answer.
+            let mut world = assembler.assemble(elapsed_ms, cursor_points, Vec::new());
 
             // Whole display frames, not the usable ones physics runs in: the
             // reserved strips are the difference between a fullscreen window
@@ -633,83 +665,283 @@ fn run_frame_loop(
                 fullscreen_frontmost: fullscreen_frontmost(&rects, &displays.frames),
             };
 
-            let frame = engine.tick(&world);
-            assembler.poll_fast(frame.riding);
+            // Where each Instance ends up, in the space every display shares.
+            let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
 
-            let became_perched = last_state.is_some()
-                && frame.state == State::Perched
-                && last_state != Some(State::Perched);
-            if became_perched {
-                addressed = true;
-                happened = Happened::Perch;
-            }
+            // The window list is re-read at the frame rate while any Instance is
+            // riding a moving window. One riding buddy is reason enough: the
+            // others cost nothing extra, the read being shared.
+            let mut riding = false;
 
-            if last_state != Some(frame.state) {
-                last_state = Some(frame.state);
-                since_state = Duration::ZERO;
-            }
+            // Whether the cursor is over any Instance's art. Click-through is a
+            // property of the overlay, which every Instance shares, so one
+            // sprite under the cursor is enough to make the overlay take the
+            // click — and the press is then routed to that one Instance.
+            let mut over_sprite = false;
 
-            // After the tick so a Throw is already Falling, not still Dragged.
-            let reactive_wake =
-                if let (Some(model), Some(activity)) = (&model, last_activity.as_ref()) {
-                    if director::session_due(
-                        addressed,
-                        since_ambient,
-                        &pace,
-                        activity.displays_asleep,
-                        engine.do_not_disturb(),
-                    ) && pending.ready()
-                        && !applied
-                    {
-                        let context = Context {
-                            activity: activity.clone(),
-                            recent: recent.clone(),
-                            personality: character.personality.clone(),
-                            state: frame.state,
-                            happened,
-                            standing: assembler.standing_on(frame.position),
-                        };
-                        let was_addressed = addressed;
-                        if addressed {
-                            pace.after_reactive();
-                        } else {
-                            pace.after_ambient();
-                        }
-                        addressed = false;
-                        happened = Happened::Ambient;
-                        since_ambient = Duration::ZERO;
-                        let payload = model.prompt(&context);
-                        if let Ok(mut inspect) = inspect.lock() {
-                            inspect.last_payload = Some(payload);
-                            inspect.wake_secs = pace.wait().as_secs();
-                        }
-                        pending.start(Arc::clone(model), context.clone());
-                        in_flight = Some(context);
-                        was_addressed
-                    } else {
-                        false
-                    }
-                } else {
-                    false
+            for live in lives.iter_mut() {
+                let Some(instance) = roster.get_mut(&live.id) else {
+                    continue; // dismissed; the retain above has already dropped it
                 };
 
-            let thinking = !pending.ready()
-                && (reactive_wake
-                    || in_flight
-                        .as_ref()
-                        .is_some_and(|ctx| ctx.happened != Happened::Ambient))
-                && !engine.do_not_disturb();
-
-            // What the user has seen is what the Engine played, not what the
-            // Director asked for: a proposal the State refuses never reaches
-            // the screen, and suppressing it would silence a Behavior nobody
-            // watched.
-            if let Some(played) = &frame.behavior {
-                director::remember(&mut recent, played.clone());
-                if tracing_frames {
-                    eprintln!("director: {played}");
+                live.since_wake += elapsed;
+                live.since_state += elapsed;
+                if !displays_asleep {
+                    live.since_ambient += elapsed;
                 }
+
+                let mut proposal = None;
+                let arrived = live.pending.try_take();
+                let applied = arrived.is_some();
+                if let Some(wake) = arrived {
+                    let context = live
+                        .in_flight
+                        .take()
+                        .expect("a started call still has its context");
+                    if model::tracing() {
+                        match &wake {
+                            Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(
+                                "director: {} parsed {}{}",
+                                live.id,
+                                parsed.behavior,
+                                parsed
+                                    .dialogue
+                                    .as_deref()
+                                    .map(|line| format!(" | {line}"))
+                                    .unwrap_or_default(),
+                            ),
+                            Wake::Proposed(_) => {}
+                            Wake::Failed => {
+                                eprintln!("director: {} failed; Static fallback", live.id)
+                            }
+                        }
+                    }
+                    proposal = director::fallback(wake, &mut live.director, &context);
+                    if model::tracing() {
+                        match &proposal {
+                            Some(playing) if playing.behavior.is_empty() => {
+                                eprintln!(
+                                    "director: {} saying {}",
+                                    live.id,
+                                    playing.dialogue.as_deref().unwrap_or("")
+                                );
+                            }
+                            Some(playing) => eprintln!(
+                                "director: {} playing {}{}",
+                                live.id,
+                                playing.behavior,
+                                playing
+                                    .dialogue
+                                    .as_deref()
+                                    .map(|line| format!(" | {line}"))
+                                    .unwrap_or_default(),
+                            ),
+                            None => eprintln!("director: {} nothing to play", live.id),
+                        }
+                    }
+                }
+
+                if let Some(activity) = &sensed {
+                    let due = director::due(
+                        live.since_wake,
+                        config.wake_every,
+                        activity,
+                        live.previous_idle,
+                        live.since_state,
+                        instance.do_not_disturb(),
+                    );
+                    live.previous_idle = activity.idle;
+
+                    if due {
+                        live.since_wake = live.since_wake.saturating_sub(config.wake_every);
+                        live.since_state = Duration::ZERO;
+                        // Static keeps the free life going. A session call in
+                        // flight is the one exception: do not stack a weight pick
+                        // on a proposal that is about to land.
+                        if live.pending.ready() && !applied {
+                            proposal = live.director.propose(&Context {
+                                activity: activity.clone(),
+                                recent: live.recent.clone(),
+                                personality: live.character.personality.clone(),
+                                state: live.last_state.unwrap_or(State::Grounded),
+                                happened: live.happened,
+                                standing: String::new(),
+                            });
+                        }
+                    }
+                }
+
+                // The verbs are this Instance's alone, decided above. Taken
+                // rather than cloned: the snapshot is reused across Instances,
+                // and a verb left behind would be replayed next tick.
+                world.verbs = std::mem::take(&mut live.verbs);
+                world.proposal = proposal;
+
+                let frame = instance.tick(&world);
+                riding |= frame.riding;
+
+                let became_perched = live.last_state.is_some()
+                    && frame.state == State::Perched
+                    && live.last_state != Some(State::Perched);
+                if became_perched {
+                    live.addressed = true;
+                    live.happened = Happened::Perch;
+                }
+
+                if live.last_state != Some(frame.state) {
+                    live.last_state = Some(frame.state);
+                    live.since_state = Duration::ZERO;
+                }
+
+                // After the tick so a Throw is already Falling, not still Dragged.
+                let reactive_wake =
+                    if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
+                        if director::session_due(
+                            live.addressed,
+                            live.since_ambient,
+                            &live.pace,
+                            activity.displays_asleep,
+                            instance.do_not_disturb(),
+                        ) && live.pending.ready()
+                            && !applied
+                        {
+                            let context = Context {
+                                activity: activity.clone(),
+                                recent: live.recent.clone(),
+                                personality: live.character.personality.clone(),
+                                state: frame.state,
+                                happened: live.happened,
+                                standing: assembler.standing_on(frame.position),
+                            };
+                            let was_addressed = live.addressed;
+                            if live.addressed {
+                                live.pace.after_reactive();
+                            } else {
+                                live.pace.after_ambient();
+                            }
+                            live.addressed = false;
+                            live.happened = Happened::Ambient;
+                            live.since_ambient = Duration::ZERO;
+                            let payload = model.prompt(&context);
+                            // One panel for however many Instances are running, so
+                            // the newest call is what it shows. #18 owns the panel
+                            // and can give it a buddy to choose; until then, the
+                            // last payload sent is the honest answer to "what was
+                            // sent", whichever Instance sent it.
+                            if let Ok(mut inspect) = inspect.lock() {
+                                inspect.last_payload = Some(payload);
+                                inspect.wake_secs = live.pace.wait().as_secs();
+                            }
+                            live.pending.start(Arc::clone(model), context.clone());
+                            live.in_flight = Some(context);
+                            was_addressed
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                let thinking = !live.pending.ready()
+                    && (reactive_wake
+                        || live
+                            .in_flight
+                            .as_ref()
+                            .is_some_and(|ctx| ctx.happened != Happened::Ambient))
+                    && !instance.do_not_disturb();
+
+                // What the user has seen is what the Engine played, not what the
+                // Director asked for: a proposal the State refuses never reaches
+                // the screen, and suppressing it would silence a Behavior nobody
+                // watched.
+                if let Some(played) = &frame.behavior {
+                    director::remember(&mut live.recent, played.clone());
+                    if tracing_frames {
+                        eprintln!("director: {} {played}", live.id);
+                    }
+                }
+
+                // The Engine names an Animation and how long it has been
+                // playing; the Character Manifest says what that means in
+                // frames. Resolving it here rather than in the webview keeps the
+                // frame the hit-test measures and the frame the user sees the
+                // same one.
+                // A Character with no drawable Animation at all, which a
+                // validated Character Package cannot be. Left out of `placed`,
+                // and the webview reads absence as dismissal: it takes the
+                // sprite away, bubble and interpolation with it. That is the
+                // right answer for art that cannot be drawn, and the reason
+                // nothing else in this loop may skip an Instance silently.
+                let Some(drawn) = live.character.draw(frame.animation, frame.animation_ms) else {
+                    continue;
+                };
+                let scale = live.character.scale as i32;
+                let (width, height) = (
+                    drawn.frame_size.0 as i32 * scale,
+                    drawn.frame_size.1 as i32 * scale,
+                );
+
+                // Placed once, in the space every display shares. Each overlay
+                // is handed it in its own coordinates below.
+                let sprite =
+                    place_sprite((frame.position.x, frame.position.y), (width, height), scale);
+
+                if tracing_frames {
+                    // Unix milliseconds, so that a prop window opened by the
+                    // verification script and this loop can be read against one
+                    // clock. Only read when tracing: the loop needs elapsed
+                    // time, never the time of day.
+                    let at_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_or(0, |since| since.as_millis());
+
+                    // The Instance last, so that everything before it stands
+                    // where it did when one buddy was all there was.
+                    // scripts/verify-overlay.sh matches on this prefix, runs a
+                    // single Instance, and has no use for which one.
+                    eprintln!(
+                        "frame: {} {:?} pos({:.0},{:.0}) sprite({},{}) {}#{} {}",
+                        at_ms,
+                        frame.state,
+                        frame.position.x,
+                        frame.position.y,
+                        sprite.x,
+                        sprite.y,
+                        frame.animation,
+                        drawn.index,
+                        live.id,
+                    );
+                }
+
+                // The tick's second hit-test, against the sprite about to be
+                // drawn rather than the one last drawn: whether the next click
+                // should reach us is a question about where the art is going to
+                // be. A cursor that has just arrived over it must not spend a
+                // frame passing clicks to the application underneath.
+                let mirrored = frame.facing < 0.0;
+                over_sprite |= drawn.mask.hit(&sprite, cursor_at.0, cursor_at.1, mirrored);
+                live.drawn_last = Some(Drawn {
+                    rect: sprite,
+                    animation: frame.animation,
+                    animation_ms: frame.animation_ms,
+                    mirrored,
+                });
+
+                placed.push(Placed {
+                    id: live.id.clone(),
+                    character: live.character.name.clone(),
+                    sprite,
+                    width,
+                    height,
+                    animation: drawn.animation.to_string(),
+                    frame_index: drawn.index,
+                    facing: frame.facing as i8,
+                    dialogue: frame.dialogue.clone(),
+                    thinking,
+                });
             }
+
+            assembler.poll_fast(riding);
 
             // The log is what is silent on almost every tick, not the
             // renderer: only a change is worth a line, and a fullscreen
@@ -764,66 +996,14 @@ fn run_frame_loop(
                 });
             }
 
-            // The Engine names an Animation and how long it has been playing;
-            // the Character Manifest says what that means in frames. Resolving
-            // it here rather than in the webview keeps the frame the hit-test
-            // measures and the frame the user sees the same one.
-            let Some(drawn) = character.draw(frame.animation, frame.animation_ms) else {
-                continue; // a Character with no drawable Animation at all
-            };
-            let scale = character.scale as i32;
-            let (width, height) = (
-                drawn.frame_size.0 as i32 * scale,
-                drawn.frame_size.1 as i32 * scale,
-            );
-
-            // Placed once, in the space every display shares. Each overlay is
-            // handed it in its own coordinates below.
-            let sprite = place_sprite((frame.position.x, frame.position.y), (width, height), scale);
-
-            if tracing_frames {
-                // Unix milliseconds, so that a prop window opened by the
-                // verification script and this loop can be read against one
-                // clock. Only read when tracing: the loop needs elapsed time,
-                // never the time of day.
-                let at_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_or(0, |since| since.as_millis());
-
-                eprintln!(
-                    "frame: {} {:?} pos({:.0},{:.0}) sprite({},{}) {}#{}",
-                    at_ms,
-                    frame.state,
-                    frame.position.x,
-                    frame.position.y,
-                    sprite.x,
-                    sprite.y,
-                    frame.animation,
-                    drawn.index,
-                );
-            }
-
-            // The tick's second hit-test, against the sprite about to be drawn
-            // rather than the one last drawn: whether the next click should
-            // reach us is a question about where the art is going to be. A
-            // cursor that has just arrived over it must not spend a frame
-            // passing clicks to the application underneath.
-            let mirrored = frame.facing < 0.0;
-            let over_sprite = drawn.mask.hit(&sprite, cursor_at.0, cursor_at.1, mirrored);
-            drawn_last = Some(Drawn {
-                rect: sprite,
-                animation: frame.animation,
-                animation_ms: frame.animation_ms,
-                mirrored,
-            });
-
-            // Click-through returns wherever the sprite is not drawn, and
-            // everywhere while the Character is hidden — a Character nobody can
-            // see must not swallow a click. The exception is a held Character:
-            // a drag that outruns the art would otherwise put the cursor over
+            // Click-through returns wherever no sprite is drawn, and everywhere
+            // while the Character is hidden — a Character nobody can see must
+            // not swallow a click. The exception is a held Character: a drag
+            // that outruns the art would otherwise put the cursor over
             // transparent pixels, hand the button to whatever is underneath,
             // and drop the sprite in the user's hand.
-            let ignore = !(presence.visible && (over_sprite || pointer.grabbing()));
+            let holding = lives.iter().any(|live| live.pointer.grabbing());
+            let ignore = !(presence.visible && (over_sprite || holding));
             let on_overlay =
                 display_index_for((cursor_points.x, cursor_points.y), &displays.frames);
             let mut flipped = false;
@@ -833,33 +1013,43 @@ fn run_frame_loop(
                 let Some(window) = app.get_webview_window(&label) else {
                     continue; // a display whose overlay has not been built yet
                 };
-                let local = sprite.in_overlay(*display);
-
-                // Every overlay is told, including the ones the sprite is
-                // nowhere near: each draws the part that falls inside it, which
-                // is what leaves a Character on a seam whole instead of clipped
-                // to one display.
+                // Every overlay is told about every Instance, including the ones
+                // no sprite is anywhere near: each draws the part that falls
+                // inside it, which is what leaves a Character on a seam whole
+                // instead of clipped to one display.
                 //
                 // Addressed rather than emitted to all, because each overlay
-                // is told a different rectangle. src/main.js has to name its
-                // own label to match: an untargeted listener hears every emit,
-                // addressed elsewhere or not, and would draw whichever
-                // rectangle arrived last.
+                // is told a different set of rectangles. src/main.js has to name
+                // its own label to match: an untargeted listener hears every
+                // emit, addressed elsewhere or not, and would draw whichever
+                // display's rectangles arrived last.
+                let sprites = placed
+                    .iter()
+                    .map(|instance| {
+                        let local = instance.sprite.in_overlay(*display);
+                        SpritePlacement {
+                            id: &instance.id,
+                            character: &instance.character,
+                            x: local.x,
+                            y: local.y,
+                            width: instance.width,
+                            height: instance.height,
+                            animation: &instance.animation,
+                            frame_index: instance.frame_index,
+                            facing: instance.facing,
+                            dialogue: instance.dialogue.clone(),
+                            thinking: instance.thinking,
+                        }
+                    })
+                    .collect();
+
                 let _ = window.emit_to(
                     label,
                     FRAME_EVENT,
                     Placement {
-                        x: local.x,
-                        y: local.y,
-                        width,
-                        height,
-                        animation: drawn.animation,
-                        frame_index: drawn.index,
+                        sprites,
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
-                        facing: frame.facing as i8,
-                        dialogue: frame.dialogue.clone(),
-                        thinking,
                     },
                 );
 
@@ -901,8 +1091,227 @@ fn run_frame_loop(
     });
 }
 
-/// The Character to put on screen: the first package that loads out of every
-/// place ai-buddy looks.
+/// The environment variable naming the Instances to run.
+///
+/// An environment variable rather than a flag because it is how ai-buddy is
+/// already configured — `AI_BUDDY_CHARACTER` picks the Character, and the trace
+/// flags turn the logs on — and a second mechanism for the same kind of answer
+/// is a second place to look it up.
+const INSTANCES_VAR: &str = "AI_BUDDY_INSTANCES";
+
+/// Which Instances the launch configuration asks for.
+///
+/// Empty is the answer when it asks for none, and it is not a failure: it is
+/// every way of starting ai-buddy that existed before Instances did.
+/// `load_instances` turns it into the one buddy the app has always run.
+fn requested_instances() -> Result<Vec<InstanceSpec>, String> {
+    roster::parse_specs(&std::env::var(INSTANCES_VAR).unwrap_or_default())
+}
+
+/// Load the Character each requested Instance names, sharing one load between
+/// Instances that name the same one.
+///
+/// Asking for no Instances runs the one ai-buddy has always run: the Character
+/// `AI_BUDDY_CHARACTER` names, or the default, called after itself. That has to
+/// keep working, or every existing way of starting the app would start something
+/// different.
+///
+/// The Character comes back beside the spec that asked for it, and an Instance
+/// with no name of its own takes the Character's — which is what `bmo` alone
+/// means.
+fn load_instances(
+    app: &tauri::AppHandle,
+    wanted: &[InstanceSpec],
+) -> Result<Vec<(InstanceSpec, Arc<Character>)>, String> {
+    if wanted.is_empty() {
+        let character = Arc::new(load_named(app, std::env::var_os(package::CHARACTER_VAR))?);
+        let name = character.name.clone();
+        return Ok(vec![(
+            InstanceSpec {
+                character: character.name.clone(),
+                name,
+            },
+            character,
+        )]);
+    }
+
+    let mut loaded: BTreeMap<String, Arc<Character>> = BTreeMap::new();
+    let mut instances = Vec::with_capacity(wanted.len());
+
+    for spec in wanted {
+        let character = match loaded.get(&spec.character) {
+            Some(character) => Arc::clone(character),
+            None => {
+                let character = Arc::new(load_named(
+                    app,
+                    Some(std::ffi::OsString::from(&spec.character)),
+                )?);
+                loaded.insert(spec.character.clone(), Arc::clone(&character));
+                character
+            }
+        };
+
+        let name = if spec.name.is_empty() {
+            character.name.clone()
+        } else {
+            spec.name.clone()
+        };
+        instances.push((
+            InstanceSpec {
+                character: spec.character.clone(),
+                name,
+            },
+            character,
+        ));
+    }
+
+    Ok(instances)
+}
+
+/// Spawn every requested Instance into a Roster, and build the Shell state each
+/// one keeps beside its Engine.
+///
+/// Memory is one file for every Instance, which is what makes a second buddy
+/// already know the user: `Roster` holds it behind an `Arc` and hands the same
+/// one to each.
+fn spawn_instances(
+    loaded: &[(InstanceSpec, Arc<Character>)],
+    start: Point,
+    config: &model::DirectorConfig,
+) -> (Roster, Vec<InstanceState>) {
+    let mut roster = Roster::new(MemoryManifest::new(memory::shared_path()));
+    let mut lives = Vec::with_capacity(loaded.len());
+
+    // The wall clock, so that two runs are not the same afternoon — the one
+    // thing the Engine's own purity forbids it to do. Mixed with the Instance's
+    // place in the list below, because Instances built in the same nanosecond
+    // would otherwise share a seed and make the same choices for as long as they
+    // both lived, which is the lockstep #13 asks not to have.
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64);
+
+    // Where each Instance's wake clock starts. Drawn from the same launch seed
+    // rather than from the clock again: `as_nanos` read three times in a row
+    // differs in its low bits only, and a phase taken from that would put every
+    // buddy within a millisecond of the others.
+    let mut phases = Seeded::new(seed);
+
+    let widths: Vec<f64> = loaded
+        .iter()
+        .map(|(_, character)| sprite_width(character))
+        .collect();
+    let positions = starting_positions(start, &widths);
+
+    for (index, (spec, character)) in loaded.iter().enumerate() {
+        let id = roster.spawn(character, spec.name.clone(), positions[index]);
+
+        lives.push(InstanceState {
+            id,
+            character: Arc::clone(character),
+            director: StaticDirector::new(character.behaviors.clone(), seed ^ index as u64),
+            // One per Instance, because each buddy wakes on its own clock and
+            // carries its own conversation.
+            //
+            // ponytail: N Instances with a key make N times the model calls, on
+            // N independent `Pace` clocks and against no shared budget. Fine for
+            // the handful a desktop holds; a budget the Instances draw from is
+            // the upgrade, and it wants somewhere to show the spend, which is
+            // #18's panel.
+            model: config.enabled.then(|| {
+                Arc::new(ModelDirector::new(
+                    model::endpoint().expect("enabled means a key was set"),
+                    character.behaviors.keys().cloned(),
+                ))
+            }),
+            pending: model::InFlight::new(),
+            in_flight: None,
+            recent: Vec::new(),
+            pace: Pace::with_growth(
+                config.ambient_first,
+                character.model_base,
+                character.model_power,
+            ),
+            // Started somewhere inside the interval rather than at nothing, so
+            // that N buddies do not all decide on the same tick. What each
+            // decides already differs — every Instance has its own seed — but
+            // deciding together still reads as coordinated, and it puts N model
+            // calls in one instant instead of spreading them.
+            since_wake: phase_of(config.wake_every, phases.draw()),
+            since_state: Duration::ZERO,
+            since_ambient: Duration::ZERO,
+            previous_idle: Duration::MAX,
+            last_state: None,
+            addressed: false,
+            happened: Happened::Ambient,
+            pointer: Pointer::default(),
+            drawn_last: None,
+            verbs: Vec::new(),
+        });
+    }
+
+    (roster, lives)
+}
+
+/// How far through the wake interval an Instance's clock starts, from one draw
+/// of randomness.
+///
+/// Somewhere in the interval rather than a share of it apiece. An even spread
+/// keeps buddies exactly out of phase, which is its own kind of mechanical: the
+/// same three buddies wake in the same order at the same spacing for the whole
+/// session, and two of them are always the same distance apart. A draw each
+/// makes the spacing uneven and different every launch.
+///
+/// Never the whole interval, so nobody starts already due and wakes on the
+/// first tick. The randomness is injected rather than drawn here so that the
+/// arithmetic is testable — `docs/SPEC.md`, and the reason `Seeded` exists.
+fn phase_of(interval: Duration, draw: u64) -> Duration {
+    let millis = u64::try_from(interval.as_millis()).unwrap_or(u64::MAX);
+    if millis == 0 {
+        return Duration::ZERO;
+    }
+    Duration::from_millis(draw % millis)
+}
+
+/// How wide a Character's sprite usually is, in points.
+///
+/// The idle Animation's frame, blown up by the Character's scale. Animations may
+/// declare different frame sizes, so this is what the Character is usually drawn
+/// at rather than what it is always drawn at.
+fn sprite_width(character: &Character) -> f64 {
+    character
+        .draw("idle", 0)
+        .map_or(0.0, |drawn| f64::from(drawn.frame_size.0))
+        * f64::from(character.scale)
+}
+
+/// Where each Instance comes into the world, given one starting point and each
+/// sprite's width.
+///
+/// `starting_position` returns a single point, and several buddies dropped on it
+/// would fall as one body and land in a stack. Each is placed a sprite's width
+/// past the one before it — cumulatively, so the gap is the width of the sprite
+/// actually standing there rather than the width of the newest: stepping by the
+/// current Character's width puts a narrow one on top of the wide one it
+/// follows.
+///
+/// Nothing clamps the run to the display. Far enough out and the Engine's walls
+/// stop them, which is a better answer than arithmetic here pretending to know
+/// how many will fit.
+fn starting_positions(start: Point, widths: &[f64]) -> Vec<Point> {
+    let mut x = start.x;
+    widths
+        .iter()
+        .map(|width| {
+            let at = Point { x, y: start.y };
+            x += width;
+            at
+        })
+        .collect()
+}
+
+/// The Character an Instance asked for: the first package that loads out of
+/// every place ai-buddy looks. Naming none takes the default.
 ///
 /// Every rejection is reported before moving on, because a package that was
 /// meant to load and did not is exactly what its author needs to hear about. A
@@ -910,7 +1319,14 @@ fn run_frame_loop(
 ///
 /// Finding none stops startup, so the failure names every directory that was
 /// searched: that list is the whole of what the reader has to go on.
-fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
+///
+/// Takes the name rather than reading the environment itself because an Instance
+/// names its own Character. Several Instances mean several loads, and the
+/// search, the reporting and the failure are the same for each.
+fn load_named(
+    app: &tauri::AppHandle,
+    wanted: Option<std::ffi::OsString>,
+) -> Result<Character, String> {
     // The shipped Characters are an app resource, which `tauri-build` copies
     // next to the binary for `cargo run` as well as into a bundle.
     let bundled = app
@@ -920,7 +1336,6 @@ fn load_character(app: &tauri::AppHandle) -> Result<Character, String> {
         .map(|dir| dir.join(BUNDLED_CHARACTERS));
 
     let search_paths = package::search_paths(bundled);
-    let wanted = std::env::var_os(package::CHARACTER_VAR);
     let installed = package::installed(&search_paths);
     let candidates = match &wanted {
         Some(_) => package::named(installed, wanted.as_deref()),
@@ -982,15 +1397,29 @@ fn main() {
             // means no overlay. Reported and exited rather than returned as a
             // setup error: Tauri turns that into a panic the event loop cannot
             // unwind, which buries the one line worth reading under a
-            // backtrace.
-            let character = Arc::new(load_character(&app.handle().clone()).unwrap_or_else(|why| {
+            // backtrace. The same goes for a list of Instances that cannot be
+            // read: starting with a different set of buddies from the one the
+            // user asked for would be worse than saying so.
+            let wanted = requested_instances().unwrap_or_else(|why| {
+                eprintln!("instances: {why}");
+                std::process::exit(1);
+            });
+            let loaded = load_instances(&app.handle().clone(), &wanted).unwrap_or_else(|why| {
                 eprintln!("character: {why}");
                 std::process::exit(1);
-            }));
-            app.manage(ArtUrls {
-                art: art_urls(&character),
-                smooth: character.smooth,
             });
+
+            // One art entry per Character, however many Instances run it.
+            let mut characters = BTreeMap::new();
+            for (_, character) in &loaded {
+                characters
+                    .entry(character.name.clone())
+                    .or_insert_with(|| CharacterArt {
+                        art: art_urls(character),
+                        smooth: character.smooth,
+                    });
+            }
+            app.manage(ArtUrls { characters });
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.
@@ -1031,20 +1460,34 @@ fn main() {
             }
             place_overlays(app.handle(), &covered)?;
 
-            // The sprite size is the idle Animation's, blown up. Animations may
-            // declare different frame sizes, so this is what the Character is
-            // usually drawn at rather than what it is always drawn at; it is
-            // here because scripts/verify-overlay.sh crops a screenshot to it.
-            let (sprite_width, sprite_height) = character
-                .draw("idle", 0)
-                .map_or((0, 0), |drawn| drawn.frame_size);
+            // The sprite size is the first Instance's idle Animation, blown up.
+            // Animations may declare different frame sizes, so this is what the
+            // Character is usually drawn at rather than what it is always drawn
+            // at; it is here because scripts/verify-overlay.sh crops a
+            // screenshot to it, and that script runs one Instance.
+            let (sprite_width, sprite_height) = loaded
+                .first()
+                .and_then(|(_, character)| {
+                    let scale = character.scale as i32;
+                    character.draw("idle", 0).map(|drawn| {
+                        (
+                            drawn.frame_size.0 as i32 * scale,
+                            drawn.frame_size.1 as i32 * scale,
+                        )
+                    })
+                })
+                .unwrap_or((0, 0));
 
             eprintln!(
-                "overlay: {} display(s); character {}; sprite {}x{}",
+                "overlay: {} display(s); sprite {}x{}; {}",
                 covered.len(),
-                character.name,
-                sprite_width as i32 * character.scale as i32,
-                sprite_height as i32 * character.scale as i32,
+                sprite_width,
+                sprite_height,
+                loaded
+                    .iter()
+                    .map(|(spec, character)| format!("{} as {}", character.name, spec.name))
+                    .collect::<Vec<_>>()
+                    .join(", "),
             );
 
             // Shared because the hotkey and the frame loop each see half of the
@@ -1064,15 +1507,17 @@ fn main() {
             } else if config.configured {
                 eprintln!("director: off; using StaticDirector");
             }
+
+            let (roster, lives) = spawn_instances(&loaded, start, &config);
             let director_run = DirectorRun { config, inspect };
 
             run_frame_loop(
                 app.handle().clone(),
-                character,
+                roster,
+                lives,
                 source,
                 displays,
                 rules,
-                start,
                 covered,
                 director_run,
             );
@@ -1162,5 +1607,126 @@ mod tests {
 
         assert_eq!(art["idle"], vec![url(PATCHY), url(SOLID)]);
         assert_eq!(art["sit"], vec![url(SOLID), url(PATCHY)]);
+    }
+
+    /// Every way of starting ai-buddy that existed before Instances did asks for
+    /// no Instances, which `load_instances` turns into the one buddy it has
+    /// always run. One test rather than three because they read the same
+    /// environment variable and separate tests would race each other for it.
+    #[test]
+    fn naming_no_instances_asks_for_none_and_a_list_is_read_in_full() {
+        std::env::remove_var(INSTANCES_VAR);
+        assert_eq!(
+            requested_instances(),
+            Ok(Vec::new()),
+            "the default single buddy is not a spec"
+        );
+
+        std::env::set_var(INSTANCES_VAR, "bmo:One,bmo:Two");
+        let specs = requested_instances().expect("the list parses");
+        assert_eq!(specs.len(), 2, "both Instances are asked for");
+        assert!(specs.iter().all(|spec| spec.character == "bmo"));
+
+        // A list that cannot be read stops startup rather than guessing.
+        std::env::set_var(INSTANCES_VAR, "bmo:");
+        assert!(requested_instances().is_err());
+
+        std::env::remove_var(INSTANCES_VAR);
+    }
+
+    /// The arithmetic that keeps buddies from landing in a stack, and the reason
+    /// it accumulates: stepping by each Character's own width puts a narrow
+    /// sprite on top of the wide one it follows.
+    #[test]
+    fn each_instance_starts_a_sprites_width_past_the_one_before_it() {
+        let start = Point { x: 100.0, y: 50.0 };
+
+        assert_eq!(
+            starting_positions(start, &[32.0, 32.0, 32.0]),
+            vec![
+                Point { x: 100.0, y: 50.0 },
+                Point { x: 132.0, y: 50.0 },
+                Point { x: 164.0, y: 50.0 },
+            ]
+        );
+
+        // A wide Character followed by a narrow one: the gap is the width of the
+        // sprite standing there, not the width of the one arriving.
+        assert_eq!(
+            starting_positions(start, &[128.0, 16.0, 16.0]),
+            vec![
+                Point { x: 100.0, y: 50.0 },
+                Point { x: 228.0, y: 50.0 },
+                Point { x: 244.0, y: 50.0 },
+            ],
+            "the narrow sprite clears the wide one"
+        );
+
+        assert_eq!(
+            starting_positions(start, &[]),
+            Vec::new(),
+            "no Instances, no positions"
+        );
+        assert_eq!(
+            starting_positions(start, &[64.0]),
+            vec![start],
+            "one buddy still comes into the world where it always did"
+        );
+    }
+
+    /// A wake clock starts somewhere inside the interval, never past it.
+    #[test]
+    fn a_wake_clock_starts_somewhere_inside_the_interval() {
+        let interval = Duration::from_secs(60);
+
+        assert_eq!(phase_of(interval, 0), Duration::ZERO);
+        assert_eq!(phase_of(interval, 1_500), Duration::from_millis(1_500));
+
+        // A draw is a whole u64, so most of them are past the interval and wrap.
+        assert_eq!(
+            phase_of(interval, 60_000),
+            Duration::ZERO,
+            "a draw of exactly the interval wraps to the start of it"
+        );
+        assert_eq!(phase_of(interval, 61_234), Duration::from_millis(1_234));
+
+        // Never already due: a phase equal to the interval would wake every
+        // buddy on the first tick, which is the thing being avoided.
+        for draw in [0, 1, u64::MAX / 2, u64::MAX] {
+            assert!(
+                phase_of(interval, draw) < interval,
+                "draw {draw} lands inside the interval"
+            );
+        }
+
+        // An interval of nothing cannot happen, and must not divide by zero.
+        assert_eq!(phase_of(Duration::ZERO, u64::MAX), Duration::ZERO);
+    }
+
+    /// The property the randomness is for: buddies from one launch start their
+    /// clocks at different, unevenly spaced points.
+    #[test]
+    fn buddies_from_one_launch_start_their_clocks_apart() {
+        let interval = Duration::from_secs(60);
+        let mut draws = Seeded::new(0x5EED);
+
+        let phases: Vec<Duration> = (0..4).map(|_| phase_of(interval, draws.draw())).collect();
+
+        let mut distinct = phases.clone();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            4,
+            "no two buddies wake together: {phases:?}"
+        );
+
+        // Uneven, which is what a draw buys over a share apiece: an even spread
+        // would make every gap identical.
+        let gaps: Vec<Duration> = distinct.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        assert!(
+            gaps.windows(2).any(|pair| pair[0] != pair[1]),
+            "the spacing is not a fixed step: {gaps:?}"
+        );
     }
 }

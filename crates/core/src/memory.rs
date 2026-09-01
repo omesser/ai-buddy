@@ -27,6 +27,21 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// The one file every Instance and every Harness shares.
+///
+/// Named here rather than by each caller because Memory being shared is what
+/// makes a second Instance already know the user: two callers computing the
+/// same path are two places for it to stop being the same path, and the
+/// difference would look like a buddy that forgot.
+///
+/// ponytail: a temporary directory, which is where Memory has lived since the
+/// MCP server put it there. Somewhere durable — Application Support — is worth
+/// having, and belongs to whichever issue gives the user a way to see and move
+/// it rather than to #13.
+pub fn shared_path() -> PathBuf {
+    std::env::temp_dir().join("ai-buddy-mcp").join("memory.md")
+}
+
 /// Memory on disk, at a path the user owns.
 pub struct MemoryManifest {
     path: PathBuf,

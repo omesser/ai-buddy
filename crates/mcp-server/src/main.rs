@@ -48,11 +48,13 @@ impl AiBuddyServer {
 
     fn make_context(&self) -> DispatchContext<'static> {
         static SOURCE: StubWindowSource = StubWindowSource;
-        let temp_dir = std::env::temp_dir().join("ai-buddy-mcp");
-        std::fs::create_dir_all(&temp_dir).ok();
+        let memory_path = ai_buddy_core::memory::shared_path();
+        if let Some(dir) = memory_path.parent() {
+            std::fs::create_dir_all(dir).ok();
+        }
         DispatchContext {
             window_source: &SOURCE,
-            memory_path: temp_dir.join("memory.md"),
+            memory_path,
             denylist: DenyList::default(),
             roster: &[],
         }
