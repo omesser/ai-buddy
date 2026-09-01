@@ -11,8 +11,7 @@
 
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "macos")]
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};

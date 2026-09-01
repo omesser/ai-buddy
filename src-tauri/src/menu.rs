@@ -43,6 +43,27 @@ pub struct BuiltMenu {
     pub actions: std::collections::HashMap<String, MenuAction>,
 }
 
+/// Build the action mapping from installed characters. Pure function with no
+/// muda calls, so it can be tested without a native Menu.
+fn actions_for(
+    installed: &[String],
+    _current: &str,
+    _do_not_disturb: bool,
+) -> std::collections::HashMap<String, MenuAction> {
+    let mut actions = std::collections::HashMap::new();
+
+    // Character switching: one action per installed package.
+    for name in installed {
+        let item_id = format!("character:{name}");
+        actions.insert(item_id, MenuAction::SwitchCharacter(name.clone()));
+    }
+
+    actions.insert("dnd".to_string(), MenuAction::ToggleDnd);
+    actions.insert("hide".to_string(), MenuAction::Hide);
+
+    actions
+}
+
 /// Build the context menu from the list of installed characters and the
 /// current Character's name.
 ///
@@ -56,7 +77,6 @@ pub struct BuiltMenu {
 #[cfg(target_os = "macos")]
 pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> BuiltMenu {
     let menu = Menu::new();
-    let mut actions = HashMap::new();
 
     // Chat… — Summon (#17). Until chat exists, the item performs today's
     // Summon (accepted, visibly nothing). Disabled for now since chat is not
@@ -73,8 +93,6 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
         for name in installed {
             let item_id = format!("character:{name}");
             let item = CheckMenuItem::new(name, true, name == current, None);
-            actions.insert(item_id.clone(), MenuAction::SwitchCharacter(name.clone()));
-
             let _ = character_submenu.append(&item);
         }
 
@@ -82,15 +100,11 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
     }
 
     // Do Not Disturb — checkbox calling Engine::set_do_not_disturb.
-    let dnd_id = "dnd".to_string();
     let dnd = CheckMenuItem::new("Do Not Disturb", true, do_not_disturb, None);
-    actions.insert(dnd_id, MenuAction::ToggleDnd);
     let _ = menu.append(&dnd);
 
     // Hide — same instant hide path as the hotkey.
-    let hide_id = "hide".to_string();
     let hide = MenuItem::new("Hide", true, None);
-    actions.insert(hide_id, MenuAction::Hide);
     let _ = menu.append(&hide);
 
     // What the buddy can see… — ABSENT until #148 exists. Not disabled.
@@ -99,24 +113,16 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
     // Quit.
     let _ = menu.append(&PredefinedMenuItem::quit(None));
 
+    let actions = actions_for(installed, current, do_not_disturb);
+
     BuiltMenu { menu, actions }
 }
 
 /// Stub build for non-macOS platforms where muda is unavailable.
 /// Returns the action mapping so tests can verify the logic without a native Menu.
 #[cfg(not(target_os = "macos"))]
-pub fn build(installed: &[String], _current: &str, _do_not_disturb: bool) -> BuiltMenu {
-    let mut actions = std::collections::HashMap::new();
-
-    // Build the same action mapping as macOS, just without the native Menu.
-    for name in installed {
-        let item_id = format!("character:{name}");
-        actions.insert(item_id, MenuAction::SwitchCharacter(name.clone()));
-    }
-
-    actions.insert("dnd".to_string(), MenuAction::ToggleDnd);
-    actions.insert("hide".to_string(), MenuAction::Hide);
-
+pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> BuiltMenu {
+    let actions = actions_for(installed, current, do_not_disturb);
     BuiltMenu { actions }
 }
 
@@ -127,9 +133,11 @@ pub fn build(installed: &[String], _current: &str, _do_not_disturb: bool) -> Bui
 /// what Menu holding the Engine's not-now gates means. A menu that returned
 /// immediately would let the sprite keep moving underneath it.
 #[cfg(target_os = "macos")]
-pub fn show_and_wait(menu: &Menu) -> Option<MenuEvent> {
+pub fn show_and_wait(built: &BuiltMenu) -> Option<MenuEvent> {
     unsafe {
-        menu.show_context_menu_for_nsview(std::ptr::null_mut(), None);
+        built
+            .menu
+            .show_context_menu_for_nsview(std::ptr::null_mut(), None);
     }
 
     MenuEvent::receiver().try_recv().ok()
@@ -137,7 +145,7 @@ pub fn show_and_wait(menu: &Menu) -> Option<MenuEvent> {
 
 /// Stub show_and_wait for non-macOS platforms where muda is unavailable.
 #[cfg(not(target_os = "macos"))]
-pub fn show_and_wait(_menu: &BuiltMenu) -> Option<()> {
+pub fn show_and_wait(_built: &BuiltMenu) -> Option<()> {
     None
 }
 
@@ -205,7 +213,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires main thread on macOS, display on Linux"]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires main thread on macOS"]
     fn the_current_character_is_check_marked() {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
         let built = build(&installed, "nim", false);
@@ -237,7 +246,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires main thread on macOS, display on Linux"]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires main thread on macOS"]
     fn dnd_checkbox_reflects_engine_state() {
         let built_off = build(&[], "bmo", false);
         let built_on = build(&[], "bmo", true);
@@ -261,17 +271,17 @@ mod tests {
     #[test]
     fn every_actionable_item_is_mapped() {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
-        let built = build(&installed, "bmo", true);
+        let actions = actions_for(&installed, "bmo", true);
 
         assert_eq!(
-            built.actions.len(),
+            actions.len(),
             4,
             "two characters, DND, and Hide: four actions"
         );
 
         assert!(
             matches!(
-                built.actions.get("character:bmo"),
+                actions.get("character:bmo"),
                 Some(MenuAction::SwitchCharacter(name)) if name == "bmo"
             ),
             "BMO switch action is mapped"
@@ -279,25 +289,26 @@ mod tests {
 
         assert!(
             matches!(
-                built.actions.get("character:nim"),
+                actions.get("character:nim"),
                 Some(MenuAction::SwitchCharacter(name)) if name == "nim"
             ),
             "Nim switch action is mapped"
         );
 
         assert!(
-            matches!(built.actions.get("dnd"), Some(MenuAction::ToggleDnd)),
+            matches!(actions.get("dnd"), Some(MenuAction::ToggleDnd)),
             "DND toggle is mapped"
         );
 
         assert!(
-            matches!(built.actions.get("hide"), Some(MenuAction::Hide)),
+            matches!(actions.get("hide"), Some(MenuAction::Hide)),
             "Hide action is mapped"
         );
     }
 
     #[test]
-    #[ignore = "requires main thread on macOS, display on Linux"]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires main thread on macOS"]
     fn chat_is_present_but_disabled() {
         let built = build(&[], "bmo", false);
 

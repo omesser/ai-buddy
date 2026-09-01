@@ -627,7 +627,7 @@ fn run_frame_loop(
 
                     let built = menu::build(&installed, &live.character.name, do_not_disturb);
 
-                    if let Some(event) = menu::show_and_wait(&built.menu) {
+                    if let Some(event) = menu::show_and_wait(&built) {
                         if let Some(action) = built.actions.get(&event.id.0) {
                             match action {
                                 menu::MenuAction::SwitchCharacter(name) => {
