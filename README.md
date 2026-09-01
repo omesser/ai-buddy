@@ -443,9 +443,18 @@ three things, unlabeled (#156):
    catchphrase belongs here: the prompt asks for variety but leaves repetition
    the character owns to the personality.
 
-Leave out the universal rules — stay in character, no model-mentions, fit the
-bubble, vary — the assembled Character Prompt states them once for every
-Character, so personality files cannot drift apart on them.
+#### Universal rules
+
+Leave these out of a personality file. `character_prompt` in
+`crates/core/src/director.rs` injects them once for every Character, so the
+files cannot drift apart on them:
+
+- Stay in character, and never mention being a model or an assistant.
+- Fit the bubble — five short sentences at the most.
+- Vary, preferring an unused line, while a signature phrase may recur.
+- Lean away from the Behaviors that just played.
+- Dialogue is demeanour, never capability: no promising actions on the
+  machine, no claiming abilities.
 
 The format stays internal and undocumented until v2 — see
 [DESIGN.md](./DESIGN.md).

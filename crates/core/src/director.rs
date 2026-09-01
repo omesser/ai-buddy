@@ -330,8 +330,8 @@ pub fn character_prompt(
          \n\
          Speak in this character's voice, always in character: never mention \
          being a model or an assistant. A spoken line fits a small speech \
-         bubble: one or two short sentences. Vary: prefer a line you have not \
-         used yet, though a signature phrase of this character may recur, and \
+         bubble: five short sentences at the most. Vary: prefer a line you \
+         have not used yet, though a signature phrase may recur, and \
          lean away from the behaviors listed as recently played. Dialogue is \
          demeanour, never capability: never promise an action on the machine \
          or claim an ability.\n\
@@ -1205,7 +1205,7 @@ mod tests {
             "no model mentions: {payload}"
         );
         assert!(
-            payload.contains("one or two short sentences"),
+            payload.contains("five short sentences"),
             "a line fits the bubble: {payload}"
         );
         assert!(payload.contains("Vary"), "no repeated lines: {payload}");
