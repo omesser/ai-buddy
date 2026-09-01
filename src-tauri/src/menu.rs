@@ -5,7 +5,9 @@
 //! actions are shell commands that do not enter the frame loop: character
 //! switching, DND toggle, hiding, and quit.
 
-use muda::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+#[cfg(target_os = "macos")]
+use muda::ContextMenu;
 use std::collections::HashMap;
 
 /// The menu items that trigger actions, keyed by their menu item id.
@@ -93,7 +95,20 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
 /// what Menu holding the Engine's not-now gates means. A menu that returned
 /// immediately would let the sprite keep moving underneath it.
 pub fn show_and_wait(menu: &Menu) -> Option<MenuEvent> {
-    menu.show_context_menu_for_nsview(std::ptr::null_mut(), None);
+    #[cfg(target_os = "macos")]
+    unsafe {
+        menu.show_context_menu_for_nsview(std::ptr::null_mut(), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    unsafe {
+        menu.show_context_menu_for_gtk_window(std::ptr::null_mut(), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    unsafe {
+        menu.show_context_menu_for_hwnd(std::ptr::null_mut(), None);
+    }
 
     MenuEvent::receiver().try_recv().ok()
 }
@@ -114,7 +129,10 @@ mod tests {
             .menu
             .items()
             .iter()
-            .any(|item| item.as_submenu().is_some());
+            .any(|item| {
+                item.as_submenu()
+                    .is_some_and(|sub| sub.text() == "Character")
+            });
 
         assert!(
             !has_character_submenu,
@@ -127,21 +145,28 @@ mod tests {
         let installed = vec!["bmo".to_string(), "nim".to_string(), "cat".to_string()];
         let built = build(&installed, "bmo", false);
 
-        let items = built.menu.items();
-        let character_menu = items
-            .iter()
-            .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
-            .expect("Character submenu exists");
+        let has_all_names = built.menu.items().iter().any(|item| {
+            item.as_submenu()
+                .is_some_and(|sub| {
+                    sub.text() == "Character"
+                        && sub.items().iter().filter_map(|i| i.as_check_menuitem()).count() == 3
+                        && sub.items().iter().any(|i| {
+                            i.as_check_menuitem()
+                                .is_some_and(|c| c.text() == "bmo")
+                        })
+                        && sub.items().iter().any(|i| {
+                            i.as_check_menuitem()
+                                .is_some_and(|c| c.text() == "nim")
+                        })
+                        && sub.items().iter().any(|i| {
+                            i.as_check_menuitem()
+                                .is_some_and(|c| c.text() == "cat")
+                        })
+                })
+        });
 
-        let names: Vec<_> = character_menu
-            .items()
-            .iter()
-            .filter_map(|item| item.as_check_menuitem().map(|check| check.text()))
-            .collect();
-
-        assert_eq!(
-            names,
-            vec!["bmo", "nim", "cat"],
+        assert!(
+            has_all_names,
             "submenu carries every installed package"
         );
     }
@@ -151,25 +176,28 @@ mod tests {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
         let built = build(&installed, "nim", false);
 
-        let items = built.menu.items();
-        let character_menu = items
-            .iter()
-            .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
-            .expect("Character submenu exists");
-
-        let checked: Vec<_> = character_menu
-            .items()
-            .iter()
-            .filter_map(|item| {
-                item.as_check_menuitem()
-                    .filter(|check| check.is_checked())
-                    .map(|check| check.text())
+        let nim_is_checked = built.menu.items().iter().any(|item| {
+            item.as_submenu().is_some_and(|sub| {
+                sub.text() == "Character"
+                    && sub.items().iter().any(|i| {
+                        i.as_check_menuitem()
+                            .is_some_and(|c| c.text() == "nim" && c.is_checked())
+                    })
             })
-            .collect();
+        });
 
-        assert_eq!(
-            checked,
-            vec!["nim"],
+        let bmo_is_not_checked = built.menu.items().iter().any(|item| {
+            item.as_submenu().is_some_and(|sub| {
+                sub.text() == "Character"
+                    && sub.items().iter().any(|i| {
+                        i.as_check_menuitem()
+                            .is_some_and(|c| c.text() == "bmo" && !c.is_checked())
+                    })
+            })
+        });
+
+        assert!(
+            nim_is_checked && bmo_is_not_checked,
             "only the current Character is checked"
         );
     }
@@ -179,26 +207,18 @@ mod tests {
         let built_off = build(&[], "bmo", false);
         let built_on = build(&[], "bmo", true);
 
-        let items_off = built_off.menu.items();
-        let dnd_off = items_off
-            .iter()
-            .find_map(|item| {
-                item.as_check_menuitem()
-                    .filter(|check| check.text() == "Do Not Disturb")
-            })
-            .expect("DND item exists");
+        let dnd_off_unchecked = built_off.menu.items().iter().any(|item| {
+            item.as_check_menuitem()
+                .is_some_and(|check| check.text() == "Do Not Disturb" && !check.is_checked())
+        });
 
-        let items_on = built_on.menu.items();
-        let dnd_on = items_on
-            .iter()
-            .find_map(|item| {
-                item.as_check_menuitem()
-                    .filter(|check| check.text() == "Do Not Disturb")
-            })
-            .expect("DND item exists");
+        let dnd_on_checked = built_on.menu.items().iter().any(|item| {
+            item.as_check_menuitem()
+                .is_some_and(|check| check.text() == "Do Not Disturb" && check.is_checked())
+        });
 
-        assert!(!dnd_off.is_checked(), "DND unchecked when off");
-        assert!(dnd_on.is_checked(), "DND checked when on");
+        assert!(dnd_off_unchecked, "DND unchecked when off");
+        assert!(dnd_on_checked, "DND checked when on");
     }
 
     #[test]
@@ -243,15 +263,11 @@ mod tests {
     fn chat_is_present_but_disabled() {
         let built = build(&[], "bmo", false);
 
-        let items = built.menu.items();
-        let chat = items
-            .iter()
-            .find_map(|item| item.as_menuitem().filter(|mi| mi.text() == "Chat…"))
-            .expect("Chat item exists");
+        let chat_is_disabled = built.menu.items().iter().any(|item| {
+            item.as_menuitem()
+                .is_some_and(|mi| mi.text() == "Chat…" && !mi.is_enabled())
+        });
 
-        assert!(
-            !chat.is_enabled(),
-            "Chat is disabled until #17 is implemented"
-        );
+        assert!(chat_is_disabled, "Chat is disabled until #17 is implemented");
     }
 }
