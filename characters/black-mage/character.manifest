@@ -5,6 +5,10 @@
 # existing pose is reused: fall is tuck/crouch, not lying down; sleep uses the
 # KO/down pose; talk alternates stand and cast; hold shows the holditem pose.
 # Pixel art at scale 3 for desktop readability.
+#
+# Character voice: Black Mage Evilwizardington from Brian Clevinger's 8-Bit
+# Theater (Nuklear Power), not a silent FF1 class. The sprite is GigaGuy's
+# FF1 custom.
 
 name = "Black Mage"
 scale = 3
@@ -67,8 +71,8 @@ loop = "once"
 frames = ["frames/talk-0.png", "frames/talk-1.png"]
 fps = 3
 
-# A mage who casts from safety. Greets briefly, settles into contemplation,
-# rarely wanders. The arc: acknowledge presence, stand idle most of the time,
+# Greets by announcing himself, idles by seething, only powers down when
+# nothing is left to insult. The arc: greet loud, stand idle most of the time,
 # sit when idle persists, sleep deeply after long absence.
 
 [behaviors.greet]
