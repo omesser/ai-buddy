@@ -113,7 +113,7 @@ mod tests {
         let items: Vec<_> = built
             .menu
             .items()
-            .iter()
+            .into_iter()
             .filter_map(|item| item.as_submenu())
             .collect();
 
@@ -131,13 +131,13 @@ mod tests {
         let character_menu = built
             .menu
             .items()
-            .iter()
+            .into_iter()
             .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
             .expect("Character submenu exists");
 
         let names: Vec<_> = character_menu
             .items()
-            .iter()
+            .into_iter()
             .filter_map(|item| item.as_check_menuitem().map(|check| check.text()))
             .collect();
 
@@ -156,13 +156,13 @@ mod tests {
         let character_menu = built
             .menu
             .items()
-            .iter()
+            .into_iter()
             .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
             .expect("Character submenu exists");
 
         let checked: Vec<_> = character_menu
             .items()
-            .iter()
+            .into_iter()
             .filter_map(|item| {
                 item.as_check_menuitem()
                     .filter(|check| check.is_checked())
@@ -185,7 +185,7 @@ mod tests {
         let dnd_off = built_off
             .menu
             .items()
-            .iter()
+            .into_iter()
             .find_map(|item| {
                 item.as_check_menuitem()
                     .filter(|check| check.text() == "Do Not Disturb")
@@ -195,7 +195,7 @@ mod tests {
         let dnd_on = built_on
             .menu
             .items()
-            .iter()
+            .into_iter()
             .find_map(|item| {
                 item.as_check_menuitem()
                     .filter(|check| check.text() == "Do Not Disturb")
@@ -251,7 +251,7 @@ mod tests {
         let chat = built
             .menu
             .items()
-            .iter()
+            .into_iter()
             .find_map(|item| item.as_menuitem().filter(|mi| mi.text() == "Chat…"))
             .expect("Chat item exists");
 
