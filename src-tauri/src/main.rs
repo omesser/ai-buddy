@@ -627,36 +627,31 @@ fn run_frame_loop(
 
                     let built = menu::build(&installed, &live.character.name, do_not_disturb);
 
-                    if let Some(event) = menu::show_and_wait(&built) {
-                        if let Some(action) = built.actions.get(&event.id.0) {
-                            match action {
-                                menu::MenuAction::SwitchCharacter(name) => {
-                                    eprintln!("menu: switching to {name}");
-                                    // ponytail: character switching lands with
-                                    // #18's settings. The menu builds and the
-                                    // action is recognized; persistence and the
-                                    // actual switch are deferred.
+                    if let Some(action) = menu::show_and_wait(&built) {
+                        match action {
+                            menu::MenuAction::SwitchCharacter(name) => {
+                                eprintln!("menu: switching to {name}");
+                                // ponytail: character switching lands with
+                                // #18's settings. The menu builds and the
+                                // action is recognized; persistence and the
+                                // actual switch are deferred.
+                            }
+                            menu::MenuAction::ToggleDnd => {
+                                if let Some(instance) = roster.get_mut(&live.id) {
+                                    let new_state = !instance.do_not_disturb();
+                                    instance.set_do_not_disturb(new_state);
+                                    eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
                                 }
-                                menu::MenuAction::ToggleDnd => {
-                                    if let Some(instance) = roster.get_mut(&live.id) {
-                                        let new_state = !instance.do_not_disturb();
-                                        instance.set_do_not_disturb(new_state);
-                                        eprintln!(
-                                            "menu: DND {}",
-                                            if new_state { "on" } else { "off" }
-                                        );
-                                    }
+                            }
+                            menu::MenuAction::Hide => {
+                                if let Ok(mut rules) = rules.lock() {
+                                    rules.toggle();
+                                    eprintln!("menu: hiding");
                                 }
-                                menu::MenuAction::Hide => {
-                                    if let Ok(mut rules) = rules.lock() {
-                                        rules.toggle();
-                                        eprintln!("menu: hiding");
-                                    }
-                                }
-                                menu::MenuAction::Quit => {
-                                    eprintln!("menu: quit");
-                                    std::process::exit(0);
-                                }
+                            }
+                            menu::MenuAction::Quit => {
+                                eprintln!("menu: quit");
+                                std::process::exit(0);
                             }
                         }
                     }

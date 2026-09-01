@@ -92,7 +92,7 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
 
         for name in installed {
             let item_id = format!("character:{name}");
-            let item = CheckMenuItem::new(name, true, name == current, None);
+            let item = CheckMenuItem::with_id(item_id, name, true, name == current, None);
             let _ = character_submenu.append(&item);
         }
 
@@ -100,11 +100,11 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
     }
 
     // Do Not Disturb — checkbox calling Engine::set_do_not_disturb.
-    let dnd = CheckMenuItem::new("Do Not Disturb", true, do_not_disturb, None);
+    let dnd = CheckMenuItem::with_id("dnd", "Do Not Disturb", true, do_not_disturb, None);
     let _ = menu.append(&dnd);
 
     // Hide — same instant hide path as the hotkey.
-    let hide = MenuItem::new("Hide", true, None);
+    let hide = MenuItem::with_id("hide", "Hide", true, None);
     let _ = menu.append(&hide);
 
     // What the buddy can see… — ABSENT until #148 exists. Not disabled.
@@ -133,19 +133,22 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
 /// what Menu holding the Engine's not-now gates means. A menu that returned
 /// immediately would let the sprite keep moving underneath it.
 #[cfg(target_os = "macos")]
-pub fn show_and_wait(built: &BuiltMenu) -> Option<MenuEvent> {
+pub fn show_and_wait(built: &BuiltMenu) -> Option<MenuAction> {
     unsafe {
         built
             .menu
             .show_context_menu_for_nsview(std::ptr::null_mut(), None);
     }
 
-    MenuEvent::receiver().try_recv().ok()
+    MenuEvent::receiver()
+        .try_recv()
+        .ok()
+        .and_then(|event| built.actions.get(&event.id.0).cloned())
 }
 
 /// Stub show_and_wait for non-macOS platforms where muda is unavailable.
 #[cfg(not(target_os = "macos"))]
-pub fn show_and_wait(_built: &BuiltMenu) -> Option<()> {
+pub fn show_and_wait(_built: &BuiltMenu) -> Option<MenuAction> {
     None
 }
 
