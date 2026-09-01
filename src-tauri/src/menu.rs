@@ -15,8 +15,10 @@ use muda::{CheckMenuItem, ContextMenu, Menu, MenuEvent, MenuItem, PredefinedMenu
 use std::collections::HashMap;
 
 /// The menu items that trigger actions, keyed by their menu item id.
+///
+/// Quit is not here: it uses PredefinedMenuItem::quit, which Tauri handles
+/// directly without our action mapping.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub enum MenuAction {
     /// Character ▸ <name>. Switch to the named Character Package.
     SwitchCharacter(String),
@@ -24,8 +26,6 @@ pub enum MenuAction {
     ToggleDnd,
     /// Hide the Character instantly, same path as the hotkey.
     Hide,
-    /// Quit the application.
-    Quit,
 }
 
 /// What the shell needs to show the menu and handle its selections: the menu
@@ -46,11 +46,11 @@ pub struct BuiltMenu {
 
 /// Build the action mapping from installed characters. Pure function with no
 /// muda calls, so it can be tested without a native Menu.
-fn actions_for(
-    installed: &[String],
-    _current: &str,
-    _do_not_disturb: bool,
-) -> std::collections::HashMap<String, MenuAction> {
+///
+/// current and do_not_disturb are used in build() to set menu item state
+/// (checkmarks), but the actions themselves are stateless: they toggle or
+/// switch, regardless of current values.
+fn actions_for(installed: &[String]) -> std::collections::HashMap<String, MenuAction> {
     let mut actions = std::collections::HashMap::new();
 
     // Character switching: one action per installed package.
@@ -114,7 +114,7 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
     // Quit.
     let _ = menu.append(&PredefinedMenuItem::quit(None));
 
-    let actions = actions_for(installed, current, do_not_disturb);
+    let actions = actions_for(installed);
 
     BuiltMenu { menu, actions }
 }
@@ -123,7 +123,7 @@ pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> Built
 /// Returns the action mapping so tests can verify the logic without a native Menu.
 #[cfg(not(target_os = "macos"))]
 pub fn build(installed: &[String], current: &str, do_not_disturb: bool) -> BuiltMenu {
-    let actions = actions_for(installed, current, do_not_disturb);
+    let actions = actions_for(installed);
     BuiltMenu { actions }
 }
 
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn every_actionable_item_is_mapped() {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
-        let actions = actions_for(&installed, "bmo", true);
+        let actions = actions_for(&installed);
 
         assert_eq!(
             actions.len(),
