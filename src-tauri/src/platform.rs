@@ -11,7 +11,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
@@ -116,11 +116,14 @@ impl DisplayCache {
 /// They move at human speed — someone toggles Dock hiding, drags it to another
 /// edge, or plugs a display in — so this is far more often than it needs to be
 /// and still costs one main-thread hop every other poll.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const USABLE_FRAME_REFRESH: Duration = Duration::from_millis(500);
 
 #[cfg(target_os = "macos")]
 mod macos;
+
+#[cfg(all(unix, not(target_os = "macos")))]
+mod x11;
 
 /// Make the overlay a floating, non-activating panel.
 #[cfg(target_os = "macos")]
@@ -144,10 +147,17 @@ pub fn primary_button_down() -> bool {
     overlay_primary_down() || macos::primary_button_down()
 }
 
+/// X11 on Linux: session poll (XQueryPointer) or overlay latch.
+/// Wayland has only the overlay latch (no global pointer).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn primary_button_down() -> bool {
+    overlay_primary_down() || x11::primary_button_down()
+}
+
 /// Without a session poll there is only the overlay latch. A click that
 /// reaches the webview still pokes; one that never does is the supported
 /// degradation, like the missing window geometry beside it.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn primary_button_down() -> bool {
     overlay_primary_down()
 }
@@ -158,7 +168,13 @@ pub fn secondary_button_down() -> bool {
     macos::secondary_button_down()
 }
 
-#[cfg(not(target_os = "macos"))]
+/// X11 on Linux: XQueryPointer for Button3 (right-click).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn secondary_button_down() -> bool {
+    x11::secondary_button_down()
+}
+
+#[cfg(not(unix))]
 pub fn secondary_button_down() -> bool {
     false
 }
