@@ -2304,6 +2304,78 @@ mod tests {
         }
     }
 
+    /// Menu interrupts what the sprite is doing, not where it is going: the
+    /// walk it was on carries on through the menu being shown. This matches
+    /// Poke: both are interactions that acknowledge the user without stopping
+    /// the sprite's motion.
+    #[test]
+    fn a_menu_mid_stroll_does_not_stop_the_walk() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let under_way = engine.tick(&a_long_perch());
+        assert_eq!(under_way.velocity.x, WALK_SPEED);
+
+        let menu_opened = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Menu],
+            ..a_long_perch()
+        });
+        assert_eq!(
+            menu_opened.velocity.x, WALK_SPEED,
+            "the walk continues while the menu is open"
+        );
+
+        let strolling: Vec<Frame> = (0..12).map(|_| engine.tick(&a_long_perch())).collect();
+        assert!(
+            strolling.iter().all(|frame| frame.velocity.x == WALK_SPEED),
+            "and keeps going after the menu is dismissed: {strolling:?}"
+        );
+    }
+
+    /// Menu during a drag behaves like Poke: the sprite stays grabbed. The
+    /// menu blocks, so the drag is paused while it is shown, but releasing the
+    /// button after dismissing the menu still ends the Grab.
+    #[test]
+    fn a_menu_during_a_drag_does_not_drop_the_sprite() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &snapshot(100));
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 100.0, y: 0.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        let dragging = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 200.0, y: 0.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        assert_eq!(dragging.state, State::Dragged);
+
+        let menu_opened = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 200.0, y: 0.0 },
+            verbs: vec![Verb::Menu, Verb::Grab],
+            ..snapshot(100)
+        });
+        assert_eq!(
+            menu_opened.state, State::Dragged,
+            "the sprite stays grabbed while the menu is open"
+        );
+
+        let released = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 200.0, y: 0.0 },
+            verbs: Vec::new(),
+            ..snapshot(100)
+        });
+        assert_eq!(
+            released.state, State::Falling,
+            "releasing after dismissing the menu drops it as usual"
+        );
+    }
+
     /// The other side of the wake that plays nothing: a wake is not an arrival
     /// only because the sprite is put straight back on the footing it fell
     /// asleep on. Woken with that footing gone, it is in the air like anything

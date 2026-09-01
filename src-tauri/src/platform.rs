@@ -122,6 +122,17 @@ pub fn primary_button_down() -> bool {
     false
 }
 
+/// Whether the secondary mouse button (right-click) is down.
+#[cfg(target_os = "macos")]
+pub fn secondary_button_down() -> bool {
+    macos::secondary_button_down()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn secondary_button_down() -> bool {
+    false
+}
+
 /// Where the Free tier comes from: what the user is in, and how long since they
 /// touched anything.
 #[cfg(target_os = "macos")]

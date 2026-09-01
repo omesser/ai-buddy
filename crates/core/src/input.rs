@@ -1,9 +1,9 @@
 //! Turning a pointer into interaction verbs.
 //!
-//! The Shell knows two things each tick: where the cursor is, and whether the
-//! primary button is down. This turns that pair into the verbs the Engine
-//! understands, and it is pure so that every gesture can be tested by writing
-//! one down rather than by performing it.
+//! The Shell knows three things each tick: where the cursor is, whether the
+//! primary button is down, and whether the secondary button is down. This turns
+//! those into the verbs the Engine understands, and it is pure so that every
+//! gesture can be tested by writing one down rather than by performing it.
 //!
 //! A press over the sprite is ambiguous until it ends. Held still and released,
 //! it was a Poke. Moved, or held long enough, it was the beginning of a Grab.
@@ -11,9 +11,10 @@
 //! and drop it, which is the difference between a companion you can prod and
 //! one you cannot touch without moving.
 //!
-//! Four of the five verbs are decided here. Menu is not: #18 owns the menu
-//! itself and the tray icon that has to open the same one, so the right-click
-//! that opens it arrives with them rather than ahead of them.
+//! All five verbs are decided here: Poke, Grab, Throw, Summon (double-click),
+//! and Menu (right-click). A right-click over the sprite is a Menu, released
+//! immediately to avoid conflicting with drag. Right-click elsewhere passes
+//! through to the desktop.
 
 use crate::engine::{Point, Verb};
 
@@ -116,16 +117,21 @@ impl Default for Pointer {
 }
 
 impl Pointer {
-    /// The verbs this tick, given where the cursor is and whether the primary
-    /// button is down.
+    /// The verbs this tick, given where the cursor is and whether each button
+    /// is down.
     ///
     /// `over_sprite` is the Shell's alpha hit-test. It decides whether a press
     /// belongs to the sprite at all; once a Grab is under way the cursor is
     /// free to leave the art, which is what dragging is.
+    ///
+    /// `secondary_held` is the right button. A right-click over the sprite is
+    /// a Menu, emitted immediately rather than held: the menu blocks until
+    /// dismissed, so a press that waits for release would never see one.
     pub fn update(
         &mut self,
         over_sprite: bool,
         held: bool,
+        secondary_held: bool,
         cursor: Point,
         elapsed_ms: u32,
     ) -> Vec<Verb> {
@@ -142,6 +148,10 @@ impl Pointer {
 
         let pressed = held && !self.was_held;
         self.was_held = held;
+
+        if secondary_held && over_sprite {
+            return vec![Verb::Menu];
+        }
 
         match (self.phase, held) {
             // Pressing anywhere else is somebody else's click, and a button
@@ -305,14 +315,14 @@ mod tests {
 
     /// A whole click: press and release without moving.
     fn click(pointer: &mut Pointer) -> Vec<Verb> {
-        pointer.update(true, true, at(100.0, 100.0), TICK);
-        pointer.update(true, false, at(100.0, 100.0), TICK)
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        pointer.update(true, false, false, at(100.0, 100.0), TICK)
     }
 
     /// Waits out the double-click interval with the button up.
     fn pause(pointer: &mut Pointer) {
         for _ in 0..DOUBLE_CLICK_MS / TICK + 2 {
-            pointer.update(true, false, at(100.0, 100.0), TICK);
+            pointer.update(true, false, false, at(100.0, 100.0), TICK);
         }
     }
 
@@ -385,12 +395,12 @@ mod tests {
         let mut pointer = Pointer::default();
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
 
-        pointer.update(true, true, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
         assert_eq!(
-            pointer.update(true, true, at(120.0, 100.0), TICK),
+            pointer.update(true, true, false, at(120.0, 100.0), TICK),
             vec![Verb::Grab]
         );
-        pointer.update(true, false, at(120.0, 100.0), TICK);
+        pointer.update(true, false, false, at(120.0, 100.0), TICK);
 
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
     }
@@ -399,15 +409,15 @@ mod tests {
     fn a_click_on_the_sprite_is_a_poke_and_never_moves_it() {
         let mut pointer = Pointer::default();
 
-        assert_eq!(pointer.update(true, true, at(100.0, 100.0), TICK), vec![]);
+        assert_eq!(pointer.update(true, true, false, at(100.0, 100.0), TICK), vec![]);
         assert_eq!(
-            pointer.update(true, true, at(100.0, 100.0), TICK),
+            pointer.update(true, true, false, at(100.0, 100.0), TICK),
             vec![],
             "a press alone commits to nothing"
         );
 
         assert_eq!(
-            pointer.update(true, false, at(100.0, 100.0), TICK),
+            pointer.update(true, false, false, at(100.0, 100.0), TICK),
             vec![Verb::Poke]
         );
         assert!(!pointer.grabbing());
@@ -420,10 +430,10 @@ mod tests {
         let mut pointer = Pointer::default();
         let mut verbs = Vec::new();
 
-        verbs.extend(pointer.update(true, true, at(100.0, 100.0), TICK));
+        verbs.extend(pointer.update(true, true, false, at(100.0, 100.0), TICK));
         // A hand is not steady; a click drifts a pixel.
-        verbs.extend(pointer.update(true, true, at(101.0, 100.0), TICK));
-        verbs.extend(pointer.update(true, false, at(101.0, 100.0), TICK));
+        verbs.extend(pointer.update(true, true, false, at(101.0, 100.0), TICK));
+        verbs.extend(pointer.update(true, false, false, at(101.0, 100.0), TICK));
 
         assert_eq!(verbs, vec![Verb::Poke]);
     }
@@ -431,15 +441,15 @@ mod tests {
     #[test]
     fn dragging_past_the_threshold_grabs_the_sprite() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
 
         assert_eq!(
-            pointer.update(true, true, at(103.0, 100.0), TICK),
+            pointer.update(true, true, false, at(103.0, 100.0), TICK),
             vec![],
             "three points is still a click"
         );
         assert_eq!(
-            pointer.update(true, true, at(110.0, 100.0), TICK),
+            pointer.update(true, true, false, at(110.0, 100.0), TICK),
             vec![Verb::Grab]
         );
         assert!(pointer.grabbing(), "so the hit-test is suspended");
@@ -449,10 +459,10 @@ mod tests {
     #[test]
     fn holding_still_long_enough_also_grabs() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
 
         let held = (0..DRAG_DELAY_MS / TICK + 2)
-            .map(|_| pointer.update(true, true, at(100.0, 100.0), TICK))
+            .map(|_| pointer.update(true, true, false, at(100.0, 100.0), TICK))
             .find(|verbs| !verbs.is_empty());
 
         assert_eq!(held, Some(vec![Verb::Grab]));
@@ -464,12 +474,12 @@ mod tests {
     #[test]
     fn a_grab_survives_the_cursor_leaving_the_sprite() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
-        pointer.update(true, true, at(120.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(120.0, 100.0), TICK);
         assert!(pointer.grabbing());
 
         assert_eq!(
-            pointer.update(false, true, at(400.0, 300.0), TICK),
+            pointer.update(false, true, false, at(400.0, 300.0), TICK),
             vec![Verb::Grab],
             "the drag outran the sprite and still holds it"
         );
@@ -479,12 +489,12 @@ mod tests {
     #[test]
     fn releasing_a_moving_grab_throws_the_sprite() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
-        pointer.update(true, true, at(120.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(120.0, 100.0), TICK);
 
-        pointer.update(false, true, at(136.0, 100.0), TICK);
-        pointer.update(false, true, at(152.0, 100.0), TICK);
-        let thrown = pointer.update(false, false, at(152.0, 100.0), TICK);
+        pointer.update(false, true, false, at(136.0, 100.0), TICK);
+        pointer.update(false, true, false, at(152.0, 100.0), TICK);
+        let thrown = pointer.update(false, false, false, at(152.0, 100.0), TICK);
 
         // The hand covered 52 points across five 16ms ticks, which is 650
         // points a second. The measurement is taken over the recent window
@@ -511,17 +521,17 @@ mod tests {
     #[test]
     fn releasing_a_still_grab_drops_the_sprite_rather_than_throwing_it() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
         let grabbed = (0..DRAG_DELAY_MS / TICK + 2)
-            .map(|_| pointer.update(true, true, at(100.0, 100.0), TICK))
+            .map(|_| pointer.update(true, true, false, at(100.0, 100.0), TICK))
             .any(|verbs| verbs.contains(&Verb::Grab));
         assert!(grabbed);
 
         // Long enough still that the velocity window holds only stillness.
         for _ in 0..8 {
-            pointer.update(true, true, at(100.0, 100.0), TICK);
+            pointer.update(true, true, false, at(100.0, 100.0), TICK);
         }
-        assert_eq!(pointer.update(true, false, at(100.0, 100.0), TICK), vec![]);
+        assert_eq!(pointer.update(true, false, false, at(100.0, 100.0), TICK), vec![]);
         assert!(!pointer.grabbing());
     }
 
@@ -531,18 +541,18 @@ mod tests {
     #[test]
     fn a_twitch_at_the_moment_of_release_is_not_a_throw() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
-        pointer.update(true, true, at(120.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(120.0, 100.0), TICK);
         assert!(pointer.grabbing());
 
         // Settled, then one point of jitter on the last tick before letting go.
         for _ in 0..8 {
-            pointer.update(true, true, at(300.0, 300.0), TICK);
+            pointer.update(true, true, false, at(300.0, 300.0), TICK);
         }
-        pointer.update(true, true, at(301.0, 300.0), TICK);
+        pointer.update(true, true, false, at(301.0, 300.0), TICK);
 
         assert_eq!(
-            pointer.update(true, false, at(301.0, 300.0), TICK),
+            pointer.update(true, false, false, at(301.0, 300.0), TICK),
             vec![],
             "put down, not thrown"
         );
@@ -554,13 +564,13 @@ mod tests {
     fn a_press_that_did_not_begin_on_the_sprite_is_ignored() {
         let mut pointer = Pointer::default();
 
-        assert_eq!(pointer.update(false, true, at(500.0, 500.0), TICK), vec![]);
+        assert_eq!(pointer.update(false, true, false, at(500.0, 500.0), TICK), vec![]);
         assert_eq!(
-            pointer.update(true, true, at(100.0, 100.0), TICK),
+            pointer.update(true, true, false, at(100.0, 100.0), TICK),
             vec![],
             "dragging a window under the sprite does not pick the sprite up"
         );
-        assert_eq!(pointer.update(true, false, at(100.0, 100.0), TICK), vec![]);
+        assert_eq!(pointer.update(true, false, false, at(100.0, 100.0), TICK), vec![]);
         assert!(!pointer.grabbing());
     }
 
@@ -569,16 +579,44 @@ mod tests {
     #[test]
     fn a_held_grab_is_reported_on_every_tick() {
         let mut pointer = Pointer::default();
-        pointer.update(true, true, at(100.0, 100.0), TICK);
-        pointer.update(true, true, at(120.0, 100.0), TICK);
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(120.0, 100.0), TICK);
 
         for step in 0..5 {
             let x = 130.0 + f64::from(step) * 10.0;
             assert_eq!(
-                pointer.update(false, true, at(x, 100.0), TICK),
+                pointer.update(false, true, false, at(x, 100.0), TICK),
                 vec![Verb::Grab]
             );
         }
+    }
+
+    /// A right-click over the sprite is a Menu, emitted immediately rather than
+    /// waiting for release: the menu blocks until dismissed, so a held press
+    /// would never see the release.
+    #[test]
+    fn a_right_click_on_the_sprite_is_a_menu() {
+        let mut pointer = Pointer::default();
+
+        assert_eq!(
+            pointer.update(true, false, true, at(100.0, 100.0), TICK),
+            vec![Verb::Menu],
+            "secondary button down over the sprite opens the menu"
+        );
+        assert!(!pointer.grabbing(), "and does not grab");
+    }
+
+    /// Right-click elsewhere stays click-through, so the desktop's own context
+    /// menu is still reachable.
+    #[test]
+    fn a_right_click_off_the_sprite_is_ignored() {
+        let mut pointer = Pointer::default();
+
+        assert_eq!(
+            pointer.update(false, false, true, at(500.0, 500.0), TICK),
+            vec![],
+            "secondary button down elsewhere is not our Menu"
+        );
     }
 
     /// Nothing under the cursor is nobody's press, which is what leaves a click

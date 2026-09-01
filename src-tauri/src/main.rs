@@ -18,6 +18,7 @@
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
 mod env_util;
+mod menu;
 mod model;
 mod package;
 mod platform;
@@ -555,6 +556,7 @@ fn run_frame_loop(
             // been reaches the window underneath and pokes nothing.
             let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
+<<<<<<< HEAD
             let pressed: Vec<bool> = lives
                 .iter()
                 .map(|live| {
@@ -573,6 +575,23 @@ fn run_frame_loop(
                         })
                 })
                 .collect();
+=======
+            let pressed_sprite = visible
+                && drawn_last.as_ref().is_some_and(|last| {
+                    character
+                        .draw(last.animation, last.animation_ms)
+                        .is_some_and(|art| {
+                            art.mask
+                                .hit(&last.rect, cursor_at.0, cursor_at.1, last.mirrored)
+                        })
+                });
+            let verbs = pointer.update(
+                pressed_sprite,
+                platform::primary_button_down(),
+                cursor_points,
+                elapsed_ms,
+            );
+>>>>>>> 2e68ad6 (feat(menu): implement context menu on right-click (#155))
 
             // One cursor, several sprites, and at most one gesture. Decided
             // across every Instance before any of them is told, because two
@@ -581,18 +600,78 @@ fn run_frame_loop(
             let gesturing = lives.iter().position(|live| live.pointer.gesturing());
             let target = press_target(&pressed, gesturing);
             let held = platform::primary_button_down();
+            let secondary_held = platform::secondary_button_down();
 
             for (index, live) in lives.iter_mut().enumerate() {
                 // Only the Instance the press belongs to is told the cursor is
                 // over it. The rest are still updated: a pointer that stopped
                 // being told the time would measure the next gesture's velocity
                 // over the gap.
-                live.verbs =
-                    live.pointer
-                        .update(target == Some(index), held, cursor_points, elapsed_ms);
+                live.verbs = live.pointer.update(
+                    target == Some(index),
+                    held,
+                    secondary_held,
+                    cursor_points,
+                    elapsed_ms,
+                );
 
                 if tracing_frames && !live.verbs.is_empty() {
                     eprintln!("verbs: {} {:?}", live.id, live.verbs);
+                }
+
+                // Menu blocks until dismissed, so it is handled outside the
+                // tick: building the menu, showing it, and executing its action
+                // all happen here. The blocking wait is what pauses the sprite.
+                if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
+                    let bundled = app
+                        .path()
+                        .resource_dir()
+                        .ok()
+                        .map(|dir| dir.join(BUNDLED_CHARACTERS));
+                    let search_paths = package::search_paths(bundled);
+                    let installed = package::installed(&search_paths)
+                        .iter()
+                        .filter_map(|path| {
+                            path.file_stem()
+                                .and_then(|name| name.to_str())
+                                .map(|name| name.to_string())
+                        })
+                        .collect::<Vec<_>>();
+
+                    let built = menu::build(
+                        &installed,
+                        &live.character.name,
+                        live.engine.do_not_disturb(),
+                    );
+
+                    if let Some(event) = menu::show_and_wait(&built.menu) {
+                        if let Some(action) = built.actions.get(&event.id.0) {
+                            match action {
+                                menu::MenuAction::SwitchCharacter(name) => {
+                                    eprintln!("menu: switching to {name}");
+                                    // ponytail: character switching lands with
+                                    // #18's settings. The menu builds and the
+                                    // action is recognized; persistence and the
+                                    // actual switch are deferred.
+                                }
+                                menu::MenuAction::ToggleDnd => {
+                                    let new_state = !live.engine.do_not_disturb();
+                                    live.engine.set_do_not_disturb(new_state);
+                                    eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
+                                }
+                                menu::MenuAction::Hide => {
+                                    if let Ok(mut rules) = rules.lock() {
+                                        rules.toggle();
+                                        eprintln!("menu: hiding");
+                                    }
+                                }
+                                menu::MenuAction::Quit => {
+                                    eprintln!("menu: quit");
+                                    std::process::exit(0);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Grab is on every held tick. Only the first tick of a hold is a
@@ -603,7 +682,9 @@ fn run_frame_loop(
                 if live
                     .verbs
                     .iter()
-                    .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Throw { .. }))
+                    .any(|verb| {
+                        matches!(verb, Verb::Poke | Verb::Summon | Verb::Menu | Verb::Throw { .. })
+                    })
                     || grab_started
                 {
                     live.addressed = true;
@@ -615,6 +696,8 @@ fn run_frame_loop(
                         Happened::Throw
                     } else if grab_started {
                         Happened::Grab
+                    } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
+                        Happened::Poke
                     } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
                         Happened::Poke
                     } else {
