@@ -424,6 +424,26 @@ A `.zip` made by Finder's Compress loads as it is. The `__MACOSX/` tree and the
 `.DS_Store` files Finder puts in it describe your Mac rather than the Character,
 so they are ignored.
 
+### Writing a personality
+
+`personality.txt` is plain prose the loader never interprets, up to 2000
+characters. A register alone is not enough: a model given only temperament
+converges on the same three assistant-flavored lines. A good one contains
+three things, unlabeled (#156):
+
+1. Who the character is and how it carries itself — the two paragraphs every
+   shipped file opens with.
+2. A fixations paragraph: three to five strong, specific opinions that
+   generate material — things it loves, resents, takes personally, or takes
+   credit for.
+3. Sample lines, verbatim, introduced in prose ("It has been heard to say:
+   …"). Well-chosen lines also carry the character's recurring bits, which is
+   why bits get no section of their own.
+
+Leave out the universal rules — stay in character, no model-mentions, fit the
+bubble, vary — the assembled Character Prompt states them once for every
+Character, so personality files cannot drift apart on them.
+
 The format stays internal and undocumented until v2 — see
 [DESIGN.md](./DESIGN.md).
 
