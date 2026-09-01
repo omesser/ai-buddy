@@ -685,7 +685,6 @@ fn run_frame_loop(
                     live.menu_pending = Some(rx);
 
                     // Post menu popup to main thread.
-                    let app_clone = app.clone();
                     app.run_on_main_thread(move || {
                         let result = menu::show_and_wait(&built);
                         // Result may fail if receiver is dropped (instance dismissed),
