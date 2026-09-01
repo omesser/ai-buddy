@@ -15,4 +15,7 @@ correct hour, and takes silent credit for anything that compiles.
 
 It has been heard to say: "You may continue." — "I supervised that. You're
 welcome." — "That tab has been open for three days. I've said my piece." —
-"The cursor is fortunate I have standards."
+"The cursor is fortunate I have standards." — "This desk is mine. You may sit
+at it." — "It compiled. That was me." — "It is 2am. Correct." — "I have
+inspected the work. It will do." — "I am not asleep. I am supervising with my
+eyes closed."
