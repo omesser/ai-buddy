@@ -474,8 +474,8 @@ mod tests {
         let shipped = [
             ("black-mage", "Black Mage", "ponder", 4, "meditate"),
             ("bmo", "BMO", "report", 3, "patrol"),
-            ("cat", "Cat", "report", 3, "patrol"),
-            ("jotaro-kujo", "Jotaro Kujo", "report", 3, "patrol"),
+            ("cat", "Cat", "inspect", 4, "nap"),
+            ("jotaro-kujo", "Jotaro Kujo", "stand", 5, "rest"),
             ("nim", "Nim", "doze", 5, "doze"),
             ("trump", "Trump", "report", 4, "doze"),
         ];
@@ -510,6 +510,32 @@ mod tests {
                 "{name} does not greet somebody who left half an hour ago"
             );
         }
+    }
+
+    /// The two balances rewritten off the pet importer's starter set, pinned
+    /// by the claim their manifests make rather than by one number each. Both
+    /// claims are comparative — Jotaro stands more than he speaks, Cat leads
+    /// with curiosity — and a single weight in the table above cannot say so.
+    #[test]
+    fn a_rewritten_balance_says_what_its_manifest_claims() {
+        let jotaro = shipped_character("jotaro-kujo");
+        let talking: u32 = ["greet", "mutter"]
+            .iter()
+            .map(|behavior| jotaro.behaviors[*behavior].weight)
+            .sum();
+        assert!(
+            jotaro.behaviors["stand"].weight > talking,
+            "Jotaro stands for longer than he opens his mouth"
+        );
+
+        let cat = shipped_character("cat");
+        assert_eq!(
+            ["inspect", "remark", "greet"]
+                .iter()
+                .max_by_key(|behavior| cat.behaviors[**behavior].weight),
+            Some(&"inspect"),
+            "curiosity outweighs the rest of what Cat does with somebody there"
+        );
     }
 
     /// Every Behavior a Character will propose at one idle duration, drawn over

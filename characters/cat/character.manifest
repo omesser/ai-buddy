@@ -80,34 +80,57 @@ fps = 6
 frames = ["frames/sleep-0.png"]
 fps = 1
 
-# A starter life, copied from BMO's — tune it to the pet.
-[behaviors.walk]
-play = ["walk"]
-weight = 1
-when = "idle over 30s"
+# Curiosity first, which is the whole of this cat. It investigates while you
+# are there and remarks on what it found; it prowls its territory once you
+# stop; it curls up only after you have plainly gone. The arc: ask what you
+# are doing the moment you arrive, keep investigating and commenting while
+# you are at the keyboard, walk the desk when the typing stops, sit and
+# supervise, and sleep last of all.
+#
+# `inspect` is the heaviest thing it may do while somebody is there, which is
+# what "wants to know what everything is" looks like in a Behavior table.
+# `nap` is the one Behavior kept for an empty desk. The bands overlap so no
+# instant of the day leaves it nothing it may do.
 
-[behaviors.patrol]
-play = ["walk", "idle", "walk"]
-then = "walk"
+[behaviors.greet]
+play = ["talk"]
+then = "inspect"
 weight = 3
-when = "idle over 2m"
+when = "idle under 10s"
 
-[behaviors.fidget]
+[behaviors.inspect]
+play = ["walk", "idle"]
+weight = 4
+when = "idle under 1m"
+
+[behaviors.remark]
+play = ["talk", "idle"]
+weight = 2
+when = "idle under 1m"
+
+[behaviors.groom]
 play = ["idle"]
 weight = 2
 when = "idle over 10s"
 
-[behaviors.report]
-play = ["talk", "idle", "talk"]
+[behaviors.prowl]
+play = ["walk", "idle", "walk"]
+then = "groom"
 weight = 3
-when = "idle under 1m"
+when = "idle over 30s"
 
-[behaviors.greet]
-play = ["talk"]
-then = "patrol"
+[behaviors.supervise]
+play = ["sit"]
+weight = 3
+when = "idle over 1m"
+
+[behaviors.nap]
+play = ["sit", "sleep"]
 weight = 4
-when = "idle under 10s"
+when = "idle over 2m"
 
+# Chasing the cursor is the fixation the personality admits to only by
+# denying it, so it stays light against the investigating.
 [behaviors.play-with-cursor]
 play = ["chase"]
 weight = 2
