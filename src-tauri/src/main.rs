@@ -556,7 +556,6 @@ fn run_frame_loop(
             // been reaches the window underneath and pokes nothing.
             let visible = rules.lock().is_ok_and(|rules| rules.presence().visible);
 
-<<<<<<< HEAD
             let pressed: Vec<bool> = lives
                 .iter()
                 .map(|live| {
@@ -575,23 +574,6 @@ fn run_frame_loop(
                         })
                 })
                 .collect();
-=======
-            let pressed_sprite = visible
-                && drawn_last.as_ref().is_some_and(|last| {
-                    character
-                        .draw(last.animation, last.animation_ms)
-                        .is_some_and(|art| {
-                            art.mask
-                                .hit(&last.rect, cursor_at.0, cursor_at.1, last.mirrored)
-                        })
-                });
-            let verbs = pointer.update(
-                pressed_sprite,
-                platform::primary_button_down(),
-                cursor_points,
-                elapsed_ms,
-            );
->>>>>>> 2e68ad6 (feat(menu): implement context menu on right-click (#155))
 
             // One cursor, several sprites, and at most one gesture. Decided
             // across every Instance before any of them is told, because two

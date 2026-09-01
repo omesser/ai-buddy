@@ -2376,6 +2376,46 @@ mod tests {
         );
     }
 
+    /// Menu during a chase behaves like Poke during a walk: the chase is
+    /// interrupted (aborted), but the sprite's current velocity persists.
+    /// This pins the Menu verb's contract against the chase Primitive (#164).
+    #[test]
+    fn a_menu_during_a_chase_aborts_the_chase() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.play(&[Primitive::Chase]);
+
+        let chasing = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: 500.0,
+                y: engine.position.y,
+            },
+            ..a_long_perch()
+        });
+        assert_eq!(chasing.animation, "walk", "chase is under way");
+        assert!(
+            chasing.velocity.x.abs() > 0.0,
+            "sprite is moving toward cursor"
+        );
+
+        let menu_opened = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: 500.0,
+                y: engine.position.y,
+            },
+            verbs: vec![Verb::Menu],
+            ..a_long_perch()
+        });
+        assert!(
+            engine.on_screen() != Some(Primitive::Chase),
+            "chase is aborted by Menu"
+        );
+        assert!(
+            menu_opened.velocity.x.abs() > 0.0,
+            "but velocity persists like during walk interrupt"
+        );
+    }
+
     /// The other side of the wake that plays nothing: a wake is not an arrival
     /// only because the sprite is put straight back on the footing it fell
     /// asleep on. Woken with that footing gone, it is in the air like anything
