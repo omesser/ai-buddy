@@ -6,6 +6,7 @@
 //! The Completer runs on a worker thread. The frame loop only `try_recv`s.
 //! #18 binds these settings. Until then they come from the env.
 
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -213,22 +214,27 @@ fn base_url() -> String {
 fn is_local(base: &str) -> bool {
     let host = base.split("://").nth(1).unwrap_or(base);
     let host = host.split('/').next().unwrap_or(host);
+    // Userinfo first: in `10.0.0.1@172.16.evil.com` the digits belong to the
+    // credentials, and the request goes to evil.com.
+    let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
     let host = match host.strip_prefix('[') {
         // An IPv6 literal is bracketed, so the colons inside are not a port.
         Some(rest) => rest.split(']').next().unwrap_or(rest),
         None => host.rsplit_once(':').map_or(host, |(host, _)| host),
     };
-    if host == "localhost" || host == "::1" || host.ends_with(".local") {
+    // A fully-qualified name ends in a dot, and DNS reads it as the same name.
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".local") {
         return true;
     }
-    let octets: Vec<u8> = host
-        .split('.')
-        .filter_map(|part| part.parse().ok())
-        .collect();
-    match octets[..] {
-        [127, _, _, _] | [10, _, _, _] | [192, 168, _, _] => true,
-        [172, second, _, _] => (16..=31).contains(&second),
-        _ => false,
+    // Parse the whole host as an address rather than picking numbers out of
+    // it: `10.0.0.5.evil.com` is a remote name that merely opens with one.
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
+        // fc00::/7 is the IPv6 private range. `Ipv6Addr::is_unique_local` is
+        // still unstable, and this repo builds on the pinned stable toolchain.
+        Ok(IpAddr::V6(ip)) => ip.is_loopback() || ip.octets()[0] & 0xfe == 0xfc,
+        Err(_) => false,
     }
 }
 
@@ -244,9 +250,12 @@ fn timeout_for(local: bool) -> Duration {
 }
 
 fn max_tokens_for(local: bool) -> u32 {
+    // Guarded like `env_secs`: a zero cap would ask for a reply with no room
+    // to answer in.
     if let Some(cap) = std::env::var(MAX_TOKENS)
         .ok()
-        .and_then(|raw| raw.parse().ok())
+        .and_then(|raw| raw.parse::<u32>().ok())
+        .filter(|&cap| cap > 0)
     {
         return cap;
     }
@@ -562,26 +571,27 @@ fn model_matches(served: &str, wanted: &str) -> bool {
 /// Read a `/v1/models` answer. Pure, so the decision is testable without a
 /// server: the caller does the HTTP and the naming.
 ///
-/// A server that lists nothing recognisable gets the benefit of the doubt.
-/// MLX and some llama.cpp builds answer with an empty or unfamiliar list, and
-/// claiming their model is absent would be worse than saying nothing.
+/// A body this cannot read gets the benefit of the doubt: MLX and some
+/// llama.cpp builds answer without a `data` list, and calling their model
+/// absent would be worse than saying nothing. An empty `data` is different —
+/// that is a server saying plainly it serves nothing, which is worth hearing.
 fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Result<(), String> {
     let (code, body) = models.map_err(|error| format!("unreachable: {error}"))?;
     if !(200..300).contains(&code) {
         return Err(format!("/v1/models answered {code}"));
     }
-    let served: Vec<String> = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|value| {
-            value["data"].as_array().map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item["id"].as_str().map(str::to_string))
-                    .collect()
-            })
-        })
-        .unwrap_or_default();
-    if served.is_empty() || served.iter().any(|id| model_matches(id, model)) {
+    let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+    let Some(items) = parsed.as_ref().and_then(|value| value["data"].as_array()) else {
+        return Ok(());
+    };
+    let served: Vec<&str> = items
+        .iter()
+        .filter_map(|item| item["id"].as_str())
+        .collect();
+    if served.is_empty() {
+        return Err("is up and serving no models".to_string());
+    }
+    if served.iter().any(|id| model_matches(id, model)) {
         return Ok(());
     }
     Err(format!(
@@ -1022,6 +1032,7 @@ mod tests {
         assert!(is_local("http://10.0.0.5:8000"));
         assert!(is_local("http://172.16.4.2:8080"));
         assert!(is_local("http://studio.local:1234"), "mDNS");
+        assert!(is_local("http://[fd00::1]:8080"), "an IPv6 private address");
         assert!(!is_local("https://api.openai.com"));
         assert!(!is_local("https://api.x.ai"));
         assert!(
@@ -1032,6 +1043,34 @@ mod tests {
             !is_local("https://localhost.example.com"),
             "a hostname that merely starts with localhost"
         );
+    }
+
+    #[test]
+    fn a_remote_host_wearing_an_address_is_still_remote() {
+        // Picking the numbers out of a name would read every one of these as
+        // a machine on this LAN, and hand it a keyless Character Prompt.
+        assert!(!is_local("http://10.0.0.5.evil.com:8080"));
+        assert!(!is_local("http://192.168.1.1.attacker.net"));
+        assert!(
+            !is_local("http://api.10.0.0.5.example.com"),
+            "digits in the middle of the name"
+        );
+        assert!(
+            !is_local("http://10.0.0.1@172.16.evil.com/"),
+            "the digits are userinfo; the host is evil.com"
+        );
+        assert!(
+            is_local("http://user@10.0.0.1"),
+            "userinfo before a real one"
+        );
+    }
+
+    #[test]
+    fn a_host_is_matched_however_it_is_spelled() {
+        assert!(is_local("http://LOCALHOST:11434"));
+        assert!(is_local("http://Localhost"));
+        assert!(is_local("http://STUDIO.LOCAL:1234"));
+        assert!(is_local("http://localhost.:11434"), "fully qualified");
     }
 
     #[test]
@@ -1069,11 +1108,19 @@ mod tests {
     }
 
     #[test]
-    fn a_server_that_lists_nothing_is_left_alone() {
-        // MLX and some llama.cpp builds answer with an empty or unfamiliar
-        // list. A probe that cannot see the model must not claim it is absent.
-        assert!(preflight_verdict(Ok((200, r#"{"data":[]}"#.to_string())), "any").is_ok());
+    fn a_body_this_cannot_read_is_left_alone() {
+        // MLX and some llama.cpp builds answer without a `data` list. A probe
+        // that cannot see the model must not claim it is absent.
         assert!(preflight_verdict(Ok((200, "not json".to_string())), "any").is_ok());
+        assert!(preflight_verdict(Ok((200, r#"{"models":["a"]}"#.to_string())), "any").is_ok());
+    }
+
+    #[test]
+    fn a_server_serving_nothing_says_so() {
+        // Ollama with nothing pulled answers 200 with an empty list. That is
+        // knowable, and the reason the buddy is about to stay quiet.
+        let empty = preflight_verdict(Ok((200, r#"{"data":[]}"#.to_string())), "gemma4");
+        assert!(empty.unwrap_err().contains("serving no models"));
     }
 
     #[test]

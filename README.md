@@ -137,12 +137,14 @@ scripts/probe-model.sh
 
 The buddy wakes on a pace all day and every Poke is a wake on top of that, so
 a hosted API puts a meter on idling — and each wake sends the frontmost
-application name and the clock off the machine. A model served on your own
-desk removes both problems, and it needs no key: set a local
-`AI_BUDDY_DIRECTOR_BASE_URL` and leave `AI_BUDDY_DIRECTOR_API_KEY` unset.
-Local means loopback, an RFC1918 address, or a `.local` name; anything else
-still requires a key, so a missing cloud key never turns into an
-unauthenticated request.
+application name and the clock off the machine. A server of your own removes
+the metering, and a server on loopback also keeps that context on this
+machine; a box across the LAN still receives it. Either way it needs no key:
+set a local `AI_BUDDY_DIRECTOR_BASE_URL` and leave `AI_BUDDY_DIRECTOR_API_KEY`
+unset. "Local" here means loopback, an RFC1918 or IPv6 private address, or a
+`.local` name — the LAN counts, which is a wider circle than the *on-device*
+"Local Gate" in [CONTEXT.md](./CONTEXT.md). Anything else still requires a
+key, so a missing cloud key never turns into an unauthenticated request.
 
 All five servers below speak `/v1/chat/completions`, which is the path the
 Completer already builds:
