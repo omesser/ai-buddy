@@ -150,11 +150,12 @@ mod tests {
     /// verification.
     ///
     /// These tests create native muda::Menu objects, which requires the main
-    /// thread on macOS and a display on Linux. Skip them in CI and rely on
-    /// local manual testing instead.
+    /// thread on macOS. Only the action-map test runs in CI; the rest are
+    /// verified manually.
 
     #[test]
-    #[ignore = "requires main thread on macOS, display on Linux"]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires main thread on macOS"]
     fn a_menu_with_no_characters_installed_has_no_character_submenu() {
         let built = build(&[], "bmo", false);
 
@@ -170,7 +171,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires main thread on macOS, display on Linux"]
+    #[cfg(target_os = "macos")]
+    #[ignore = "requires main thread on macOS"]
     fn the_character_submenu_lists_every_installed_package() {
         let installed = vec!["bmo".to_string(), "nim".to_string(), "cat".to_string()];
         let built = build(&installed, "bmo", false);
