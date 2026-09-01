@@ -18,6 +18,11 @@ name = "Jotaro Kujo"
 render_mode = "smooth"
 scale = 1
 
+# Cursor reactions: cool and unfazed, doesn't react to proximity but faces challenges.
+[cursor]
+near_reaction = "indifferent"
+rush_reaction = "face"
+
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2

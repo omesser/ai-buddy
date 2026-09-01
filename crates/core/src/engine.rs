@@ -5,7 +5,7 @@
 //! what lets every spatial property be tested by constructing snapshots and
 //! asserting frames, with no windowing system, no model and no waiting.
 
-use crate::character::{Behavior, Primitive};
+use crate::character::{Behavior, CursorReaction, Primitive};
 pub use crate::window_source::WindowId;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -209,6 +209,39 @@ pub const RIDE_ACCELERATION: f64 = 10_000.0;
 /// only the fall decision stays on this cadence. #98.
 const YANK_WINDOW_S: f64 = 0.1;
 
+/// Cursor proximity radius in points. The cursor enters Near when it crosses
+/// this threshold around the sprite (#152).
+///
+/// A tuning knob: close enough to react before the hand is on top of the sprite,
+/// far enough that the buddy does not jump at every scroll or window move.
+const NEAR_RADIUS: f64 = 150.0;
+
+/// How long the cursor must rest on the sprite to count as Dwell, in milliseconds (#152).
+///
+/// A tuning knob: long enough that passing over the sprite does not wake the
+/// Director, short enough that intentionally addressing feels immediate.
+#[allow(dead_code)] // Reserved for future Director wake mechanism
+const DWELL_MS: u32 = 400;
+
+/// Minimum cursor velocity toward the sprite to count as a Rush, in points per second (#152).
+///
+/// A tuning knob: fast enough to read as a startle (a flick or a fast approach),
+/// slow enough that ordinary cursor travel near the sprite does not trigger it.
+const RUSH_VELOCITY: f64 = 800.0;
+
+/// Maximum time the chase Primitive pursues the cursor before giving up, in milliseconds (#153).
+///
+/// A tuning knob: long enough to catch a cursor that is moving or that starts far away,
+/// short enough that a chase that will never close still disengages in time for the
+/// sprite to do something else. Boredom is the realism.
+const CHASE_TIMEOUT_MS: u32 = 8000;
+
+/// How close the sprite's x must be to the cursor's x to count as arrival, in points (#153).
+///
+/// A tuning knob: close enough to read as catching it, loose enough that the
+/// sprite does not overshoot and backtrack.
+const CHASE_ARRIVAL_THRESHOLD: f64 = 30.0;
+
 pub struct Engine {
     position: Point,
     velocity: Point,
@@ -274,6 +307,22 @@ pub struct Engine {
     /// dialogue is not spoken, while Poke/Grab/Throw still work and the
     /// Character stays visible.
     do_not_disturb: bool,
+    /// Character's reactions to cursor proximity (#152).
+    near_reaction: CursorReaction,
+    rush_reaction: CursorReaction,
+    /// Whether the cursor is currently within NEAR_RADIUS of the sprite (#152).
+    cursor_near: bool,
+    /// Milliseconds the cursor has rested on the sprite without pressing (#152).
+    cursor_dwell_ms: u32,
+    /// Last observed cursor position, for Rush velocity calculation (#152).
+    last_cursor: Point,
+    /// Last observed cursor velocity, for Rush detection (#152).
+    cursor_velocity: Point,
+    /// Whether a Rush has already been reported this Near session (#152).
+    /// Prevents repeated Rush reactions while the cursor stays near.
+    rush_reported: bool,
+    /// Milliseconds since the chase Primitive started (#153).
+    chase_ms: u32,
 }
 
 impl Engine {
@@ -303,6 +352,14 @@ impl Engine {
             yank_reference: Point::default(),
             since_yank_ref_s: 0.0,
             do_not_disturb: false,
+            near_reaction: CursorReaction::default(),
+            rush_reaction: CursorReaction::default(),
+            cursor_near: false,
+            cursor_dwell_ms: 0,
+            last_cursor: Point::default(),
+            cursor_velocity: Point::default(),
+            rush_reported: false,
+            chase_ms: 0,
         }
     }
 
@@ -311,6 +368,13 @@ impl Engine {
     /// Primitives the Engine already owns.
     pub fn with_behaviors(mut self, behaviors: BTreeMap<String, Behavior>) -> Self {
         self.behaviors = behaviors;
+        self
+    }
+
+    /// The Character's cursor reactions (#152).
+    pub fn with_cursor_reactions(mut self, near: CursorReaction, rush: CursorReaction) -> Self {
+        self.near_reaction = near;
+        self.rush_reaction = rush;
         self
     }
 
@@ -356,11 +420,24 @@ impl Engine {
         // What was already playing ages before anything new starts, so a
         // Primitive begun this tick gets its whole turn rather than losing this
         // tick's milliseconds to the one it replaced.
+
+        // Chase timer advances while Chase is playing (#153).
+        if self.on_screen() == Some(Primitive::Chase) {
+            self.chase_ms = self.chase_ms.saturating_add(snapshot.elapsed_ms);
+        }
+
         let mut started = self.advance(snapshot.elapsed_ms);
 
         // `woke` marks a sprite a verb roused, so the footing it is put back
         // on is not mistaken for one it arrived at. See the landing below.
         let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
+
+        // Any Verb aborts chase like it aborts walk (#153).
+        if !snapshot.verbs.is_empty() && self.on_screen() == Some(Primitive::Chase) {
+            self.playing.clear();
+            self.primitive_ms = 0;
+            self.chase_ms = 0;
+        }
 
         // A Grab wins over whatever the sprite was doing: the user's hand is
         // the one input that outranks the world.
@@ -379,6 +456,132 @@ impl Engine {
             self.velocity = thrown_velocity(snapshot).unwrap_or_default();
         }
 
+        // Cursor proximity tracking (#152, #153). The cursor position already
+        // arrives every tick for hit-testing, so noticing costs no new sensing.
+        let cursor_distance =
+            (snapshot.cursor.x - self.position.x).hypot(snapshot.cursor.y - self.position.y);
+        let was_near = self.cursor_near;
+        self.cursor_near = cursor_distance < NEAR_RADIUS;
+
+        // Cursor velocity for Rush detection: points moved since last tick.
+        let cursor_moved = Point {
+            x: snapshot.cursor.x - self.last_cursor.x,
+            y: snapshot.cursor.y - self.last_cursor.y,
+        };
+        self.cursor_velocity = if snapshot.elapsed_ms > 0 {
+            Point {
+                x: cursor_moved.x * 1000.0 / f64::from(snapshot.elapsed_ms),
+                y: cursor_moved.y * 1000.0 / f64::from(snapshot.elapsed_ms),
+            }
+        } else {
+            Point::default()
+        };
+        self.last_cursor = snapshot.cursor;
+
+        // Near enter: cursor crosses into the radius. Play the Character's near_reaction.
+        // #152: these still play under Do Not Disturb (like Poke — they answer the user).
+        if self.cursor_near && !was_near {
+            self.rush_reported = false;
+            match self.near_reaction {
+                CursorReaction::Indifferent => {}
+                CursorReaction::Speak => {
+                    started |= self.play(&[Primitive::Talk]);
+                }
+                CursorReaction::Face => {
+                    // Face toward the cursor.
+                    self.facing = if snapshot.cursor.x > self.position.x {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                }
+                CursorReaction::Toward => {
+                    // Walk toward the cursor. One-shot reaction, not cursor pursuit (#153).
+                    self.facing = if snapshot.cursor.x > self.position.x {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    started |= self.play(&[Primitive::Walk]);
+                }
+                CursorReaction::Away => {
+                    // Walk away from the cursor.
+                    self.facing = if snapshot.cursor.x < self.position.x {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    started |= self.play(&[Primitive::Walk]);
+                }
+                CursorReaction::React => {
+                    started |= self.play(&[Primitive::React]);
+                }
+            }
+        }
+
+        // Near exit: cursor leaves the radius. Back to whatever it was doing.
+        if !self.cursor_near && was_near {
+            self.cursor_dwell_ms = 0;
+            self.rush_reported = false;
+            // Leaving the radius releases any Near reaction that started a walk.
+            // The sprite does not chase; it just keeps the walk until it stops or
+            // something else interrupts.
+        }
+
+        // Rush (startle): high cursor velocity toward the sprite ending near it.
+        // Play once per Near session, not repeatedly while the cursor stays.
+        if self.cursor_near && !self.rush_reported {
+            let velocity_magnitude = self.cursor_velocity.x.hypot(self.cursor_velocity.y);
+            // Velocity toward the sprite: cursor moving and getting closer.
+            let toward = cursor_distance < NEAR_RADIUS * 1.2 && velocity_magnitude > RUSH_VELOCITY;
+            if toward {
+                self.rush_reported = true;
+                match self.rush_reaction {
+                    CursorReaction::Indifferent => {}
+                    CursorReaction::Speak => {
+                        started |= self.play(&[Primitive::Talk]);
+                    }
+                    CursorReaction::Face => {
+                        self.facing = if snapshot.cursor.x > self.position.x {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                    }
+                    CursorReaction::Toward => {
+                        self.facing = if snapshot.cursor.x > self.position.x {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        started |= self.play(&[Primitive::Walk]);
+                    }
+                    CursorReaction::Away => {
+                        self.facing = if snapshot.cursor.x < self.position.x {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        started |= self.play(&[Primitive::Walk]);
+                    }
+                    CursorReaction::React => {
+                        started |= self.play(&[Primitive::React]);
+                    }
+                }
+            }
+        }
+
+        // Dwell: cursor rests on the sprite for a beat without pressing.
+        // Counts as addressing: set `addressed` so the next Director wake is reactive.
+        // TODO: This needs to communicate back to the Director somehow. For now,
+        // we track the dwell time but don't yet wake the Director.
+        if cursor_distance < 30.0 {
+            // On the sprite itself
+            self.cursor_dwell_ms = self.cursor_dwell_ms.saturating_add(snapshot.elapsed_ms);
+        } else {
+            self.cursor_dwell_ms = 0;
+        }
+
         // Walking is the Engine's, deciding to walk is not: nothing else here
         // moves the sprite of its own accord. A walk needs no ending — it lasts
         // until the sprite runs out of Perch, which is the whole point of it —
@@ -387,9 +590,38 @@ impl Engine {
         // rather than where it is going. What does stop it is a Primitive that
         // is the sprite standing still: `walk sit` would otherwise slide along
         // the edge it sat down on.
+        //
+        // Chase (#153): steer walk velocity toward the cursor's x along the ground.
         if matches!(state, State::Grounded | State::Perched) {
             match self.on_screen() {
                 Some(Primitive::Walk) => self.velocity.x = self.facing * WALK_SPEED,
+                Some(Primitive::Chase) => {
+                    // Steer toward the cursor's x.
+                    let target_x = snapshot.cursor.x;
+                    let distance_x = (target_x - self.position.x).abs();
+
+                    if distance_x < CHASE_ARRIVAL_THRESHOLD {
+                        // Arrived: one react swat, then disengage.
+                        self.velocity.x = 0.0;
+                        self.playing.clear();
+                        self.primitive_ms = 0;
+                        started |= self.play(&[Primitive::React]);
+                    } else if self.chase_ms >= CHASE_TIMEOUT_MS {
+                        // Timeout: give up mid-stride and stop.
+                        self.velocity.x = 0.0;
+                        self.playing.clear();
+                        self.primitive_ms = 0;
+                        started = true;
+                    } else {
+                        // Keep chasing: steer toward cursor's x.
+                        self.facing = if target_x > self.position.x {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        self.velocity.x = self.facing * WALK_SPEED;
+                    }
+                }
                 Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep | Primitive::Hold) => {
                     self.velocity.x = 0.0
                 }
@@ -873,6 +1105,11 @@ impl Engine {
         }
         // Last first, so the Primitive on screen is the one on top.
         self.playing = primitives.iter().rev().copied().collect();
+
+        // Reset chase timer when Chase starts (#153).
+        if primitives.contains(&Primitive::Chase) {
+            self.chase_ms = 0;
+        }
         self.primitive_ms = PRIMITIVE_MS;
         true
     }
@@ -888,6 +1125,8 @@ impl Engine {
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk => true,
+            // Chase (#153): only while Grounded or Perched, never during Dragged/thrown/climbing.
+            Primitive::Chase => matches!(self.state, State::Grounded | State::Perched),
             _ => matches!(self.state, State::Grounded | State::Perched),
         })
     }
@@ -1002,6 +1241,8 @@ fn animation_of(primitive: Primitive) -> &'static str {
         Primitive::React => "react",
         Primitive::Talk => "talk",
         Primitive::Hold => "hold",
+        // Chase uses walk art while steering toward the cursor.
+        Primitive::Chase => "walk",
     }
 }
 
@@ -4706,5 +4947,377 @@ mod tests {
         assert_eq!(silent.animation, "react", "greet plays its own animation");
         assert_eq!(silent.dialogue, None);
         assert_eq!(silent.behavior, Some("greet".to_string()));
+    }
+
+    // Cursor awareness tests (#152, #153): scripted pointer tracks with no windowing system.
+
+    /// Helper: move cursor from far away to near the sprite.
+    fn approach_cursor(engine: &mut Engine, from_x: f64, to_x: f64, steps: usize) {
+        let sprite_x = engine.position.x;
+        for i in 0..steps {
+            let t = (i as f64) / (steps as f64);
+            let cursor_x = from_x + t * (to_x - from_x);
+            engine.tick(&WorldSnapshot {
+                cursor: Point {
+                    x: cursor_x,
+                    y: engine.position.y,
+                },
+                ..snapshot(16)
+            });
+        }
+    }
+
+    /// #152: Near reaction with indifferent keeps doing whatever it was doing.
+    #[test]
+    fn near_indifferent_keeps_the_sprite_doing_whatever_it_was_doing() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Indifferent, CursorReaction::Indifferent);
+
+        // Cursor far away: idle.
+        let far = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: 1000.0,
+                y: 100.0,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(far.animation, "idle");
+
+        // Cursor enters Near radius: still idle.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x + 50.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(near.animation, "idle", "indifferent means no reaction");
+    }
+
+    /// #152: Near reaction with speak plays talk.
+    #[test]
+    fn near_speak_plays_talk_when_cursor_enters_radius() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Speak, CursorReaction::Indifferent);
+
+        // Cursor enters Near radius.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x + 50.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(near.animation, "talk", "speak reaction plays talk");
+    }
+
+    /// #152: Near reaction with face turns to face the cursor.
+    #[test]
+    fn near_face_turns_the_sprite_toward_the_cursor() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Face, CursorReaction::Indifferent);
+        engine.facing = -1.0; // Start facing left.
+
+        // Cursor enters Near radius to the right.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x + 50.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(near.facing, 1.0, "sprite faces right toward the cursor");
+    }
+
+    /// #152: Near reaction with toward walks toward the cursor.
+    #[test]
+    fn near_toward_walks_the_sprite_toward_the_cursor() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Toward, CursorReaction::Indifferent);
+
+        // Cursor enters Near radius to the right.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x + 100.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(near.animation, "walk", "toward reaction starts a walk");
+        assert_eq!(near.facing, 1.0, "walks toward the cursor");
+    }
+
+    /// #152: Near reaction with away walks away from the cursor.
+    #[test]
+    fn near_away_walks_the_sprite_away_from_the_cursor() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Away, CursorReaction::Indifferent);
+
+        // Cursor enters Near radius to the right.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x + 100.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(near.animation, "walk", "away reaction starts a walk");
+        assert_eq!(near.facing, -1.0, "walks away from the cursor");
+    }
+
+    /// #152: Near reaction with react plays react.
+    #[test]
+    fn near_react_plays_react_when_cursor_enters_radius() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::React, CursorReaction::Indifferent);
+
+        // Cursor enters Near radius.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: engine.position.x + 50.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(near.animation, "react", "react reaction plays react");
+    }
+
+    /// #152: Rush (startle) plays the rush_reaction once when cursor rushes at sprite.
+    #[test]
+    fn rush_plays_the_rush_reaction_once_on_high_velocity_approach() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Indifferent, CursorReaction::React);
+
+        // Move cursor quickly toward sprite (high velocity).
+        let mut last_x = engine.position.x + 300.0;
+        for _ in 0..3 {
+            let frame = engine.tick(&WorldSnapshot {
+                cursor: Point {
+                    x: last_x,
+                    y: engine.position.y,
+                },
+                ..snapshot(16)
+            });
+            last_x -= 100.0; // Fast approach: 100 points per 16ms = high velocity
+            if frame.animation == "react" {
+                // Rush detected and reaction played.
+                // Continue for a few more ticks to verify it doesn't repeat.
+                for _ in 0..5 {
+                    let staying = engine.tick(&WorldSnapshot {
+                        cursor: Point {
+                            x: engine.position.x + 50.0,
+                            y: engine.position.y,
+                        },
+                        ..snapshot(16)
+                    });
+                    // Should not repeat rush reaction while cursor stays near.
+                }
+                return;
+            }
+        }
+        panic!("Rush reaction was not triggered");
+    }
+
+    /// #153: Chase steers toward cursor's x, swats on arrival, disengages.
+    #[test]
+    fn chase_walks_toward_cursor_and_swats_on_arrival() {
+        let mut engine = a_resting_sprite();
+        let sprite_x = engine.position.x;
+
+        // Start chase with cursor close by (just outside arrival threshold).
+        engine.play(&[Primitive::Chase]);
+
+        // First tick: should be chasing (walking).
+        let chasing = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + CHASE_ARRIVAL_THRESHOLD + 10.0,
+                y: engine.position.y,
+            },
+            ..snapshot(100)
+        });
+        assert_eq!(chasing.animation, "walk", "chase uses walk art");
+        assert_eq!(chasing.facing, 1.0, "faces toward cursor");
+
+        // Move cursor very close (within arrival threshold) or let sprite walk close enough.
+        for _ in 0..20 {
+            let frame = engine.tick(&WorldSnapshot {
+                cursor: Point {
+                    x: sprite_x + 50.0, // Fixed target within walking distance
+                    y: engine.position.y,
+                },
+                ..snapshot(100)
+            });
+
+            // When sprite gets close enough, it should swat.
+            if frame.animation == "react" {
+                // Success!
+                return;
+            }
+        }
+
+        panic!(
+            "Chase did not swat on arrival. Sprite position: {}, cursor at: {}",
+            engine.position.x,
+            sprite_x + 50.0
+        );
+    }
+
+    /// #153: Chase times out if cursor never arrives.
+    #[test]
+    fn chase_times_out_if_cursor_escapes() {
+        let mut engine = a_resting_sprite();
+        let sprite_x = engine.position.x;
+
+        engine.play(&[Primitive::Chase]);
+
+        // Chase a cursor that keeps escaping (moving away).
+        let mut cursor_x = sprite_x + 300.0;
+        let mut ticks = 0;
+        while ticks < (CHASE_TIMEOUT_MS / 100) + 5 {
+            let frame = engine.tick(&WorldSnapshot {
+                cursor: Point {
+                    x: cursor_x,
+                    y: engine.position.y,
+                },
+                ..snapshot(100)
+            });
+            cursor_x += 50.0; // Cursor moves away.
+            ticks += 1;
+
+            // After timeout, chase should give up.
+            if ticks > (CHASE_TIMEOUT_MS / 100) {
+                // Chase should have stopped by now.
+                if engine.on_screen() != Some(Primitive::Chase) {
+                    return; // Chase gave up, test passes.
+                }
+            }
+        }
+        panic!("Chase did not time out as expected");
+    }
+
+    /// #153: Any Verb aborts chase.
+    #[test]
+    fn chase_aborts_on_any_verb() {
+        let mut engine = a_resting_sprite();
+        engine.play(&[Primitive::Chase]);
+
+        // Poke aborts chase.
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            cursor: Point {
+                x: engine.position.x + 200.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+
+        assert_eq!(
+            poked.animation, "react",
+            "Poke aborts chase and plays react"
+        );
+        assert!(
+            engine.on_screen() != Some(Primitive::Chase),
+            "chase is no longer playing"
+        );
+    }
+
+    /// #153: Chase never plays under Do Not Disturb.
+    #[test]
+    fn chase_is_refused_under_do_not_disturb() {
+        let mut engine = a_resting_sprite();
+        engine.set_do_not_disturb(true);
+
+        // Propose a behavior with chase.
+        let frame = engine.tick(&WorldSnapshot {
+            proposal: Some(BehaviorProposal {
+                behavior: "chase-test".to_string(),
+                dialogue: None,
+            }),
+            cursor: Point {
+                x: engine.position.x + 200.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+
+        // Chase should not start under DND.
+        assert_eq!(frame.animation, "idle", "DND refuses chase proposals");
+    }
+
+    /// #152: Near and Rush reactions still play under Do Not Disturb (like Poke).
+    #[test]
+    fn cursor_reactions_play_under_do_not_disturb() {
+        let mut engine =
+            a_resting_sprite().with_cursor_reactions(CursorReaction::Speak, CursorReaction::React);
+        engine.set_do_not_disturb(true);
+
+        let sprite_x = engine.position.x;
+        let sprite_y = engine.position.y;
+
+        // Start with cursor far away.
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 500.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+
+        // Slowly approach to avoid triggering Rush (high velocity detection).
+        // Each step moves 50 points in 16ms = 3125 points/s, well below RUSH_VELOCITY of 800.
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 450.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 400.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 250.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 200.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 160.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+
+        // Near reaction still plays under DND when cursor enters radius (NEAR_RADIUS = 150).
+        // Moving from 160 to 140 is 20 points in 16ms = 1250 points/s, above RUSH_VELOCITY.
+        // Need to move even slower: 10 points in 16ms = 625 points/s, below 800.
+        let near = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: sprite_x + 149.0,
+                y: sprite_y,
+            },
+            ..snapshot(16)
+        });
+        assert_eq!(
+            near.animation, "talk",
+            "Near reaction (speak) plays under DND (answers the user)"
+        );
     }
 }

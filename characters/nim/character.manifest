@@ -12,6 +12,11 @@ name = "Nim"
 model_base = 2
 model_power = 1
 
+# Cursor reactions: attentive and cautious, observes but startles at sudden movement.
+[cursor]
+near_reaction = "face"
+rush_reaction = "away"
+
 # Twice BMO's frames everywhere, played fast enough that the in-betweens are
 # seen rather than sat through. Sleep is the exception: a breath that slow is
 # the point of it.

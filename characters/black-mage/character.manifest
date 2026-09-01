@@ -19,6 +19,11 @@ scale = 3
 model_base = 2
 model_power = 1
 
+# Cursor reactions: antisocial and irritable, avoids attention and reacts with annoyance.
+[cursor]
+near_reaction = "away"
+rush_reaction = "react"
+
 [animations.idle]
 frames = [
   "frames/idle-0.png",
