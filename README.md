@@ -477,6 +477,40 @@ A `.zip` made by Finder's Compress loads as it is. The `__MACOSX/` tree and the
 `.DS_Store` files Finder puts in it describe your Mac rather than the Character,
 so they are ignored.
 
+### Writing a personality
+
+`personality.txt` is plain prose the loader never interprets, up to 2000
+characters. A register alone is not enough: a model given only temperament
+converges on the same three assistant-flavored lines. A good one contains
+three things, unlabeled (#156):
+
+1. Who the character is and how it carries itself, fused — the paragraph or
+   two every shipped file opens with. Skip what the sprite already shows: a
+   description of the art buys nothing, and the words are better spent on how
+   the character speaks and what it notices.
+2. A fixations paragraph: three to five strong, specific opinions that
+   generate material — things it loves, resents, takes personally, or takes
+   credit for.
+3. Sample lines, verbatim, introduced in prose ("It has been heard to say:
+   …"). Well-chosen lines also carry the character's recurring bits, which is
+   why bits get no section of their own. Be generous: each line is another
+   calibration point, and `characters/black-mage/` shows how far that goes. A
+   catchphrase belongs here: the prompt asks for variety but leaves repetition
+   the character owns to the personality.
+
+#### Universal rules
+
+Leave these out of a personality file. `character_prompt` in
+`crates/core/src/director.rs` injects them once for every Character, so the
+files cannot drift apart on them:
+
+- Stay in character, and never mention being a model or an assistant.
+- Fit the bubble — five short sentences at the most.
+- Vary, preferring an unused line, while a signature phrase may recur.
+- Lean away from the Behaviors that just played.
+- Dialogue is demeanour, never capability: no promising actions on the
+  machine, no claiming abilities.
+
 The format stays internal and undocumented until v2 — see
 [DESIGN.md](./DESIGN.md).
 

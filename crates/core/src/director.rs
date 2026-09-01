@@ -316,6 +316,9 @@ pub fn character_prompt(
         context.personality.as_str()
     };
 
+    // The universal voice rules, written once for every Character rather
+    // than copied into personality files to drift (#156). A personality
+    // supplies the material; this paragraph governs the delivery.
     format!(
         "{personality}\n\
          \n\
@@ -324,6 +327,14 @@ pub fn character_prompt(
          Reply with the behavior name on the first line.\n\
          An optional spoken line may follow on the next line.\n\
          Propose nothing else.\n\
+         \n\
+         Speak in this character's voice, always in character: never mention \
+         being a model or an assistant. A spoken line fits a small speech \
+         bubble: five short sentences at the most. Vary: prefer a line you \
+         have not used yet, though a signature phrase may recur, and \
+         lean away from the behaviors listed as recently played. Dialogue is \
+         demeanour, never capability: never promise an action on the machine \
+         or claim an ability.\n\
          \n\
          {}",
         follow_up(context)
@@ -1233,6 +1244,36 @@ mod tests {
         assert!(
             payload.contains("standing on: the display floor, above the Dock"),
             "standing: {payload}"
+        );
+    }
+
+    /// Each rule the opening turn must carry, and that later wakes do not
+    /// repeat them.
+    #[test]
+    fn the_character_prompt_carries_the_voice_rules_once() {
+        let moment = context(working(), &["nap"]);
+        let payload = character_prompt(&moment, ["wave"]);
+
+        assert!(
+            payload.contains("always in character"),
+            "no character breaks: {payload}"
+        );
+        assert!(
+            payload.contains("model or an assistant"),
+            "no model mentions: {payload}"
+        );
+        assert!(
+            payload.contains("five short sentences"),
+            "a line fits the bubble: {payload}"
+        );
+        assert!(payload.contains("Vary"), "no repeated lines: {payload}");
+        assert!(
+            payload.contains("never promise"),
+            "demeanour, not capability: {payload}"
+        );
+        assert!(
+            !follow_up(&moment).contains("always in character"),
+            "the rules ride the opening only; later wakes stay cheap"
         );
     }
 
