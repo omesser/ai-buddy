@@ -253,6 +253,27 @@ mod tests {
         of.iter().map(|name| (*name).to_string()).collect()
     }
 
+    /// The whole reason the description exists: it can cross to the main thread.
+    ///
+    /// A compile-time check rather than a runtime one — it fails the build, not
+    /// the run. Putting a native handle in a `MenuEntry` would make the menu
+    /// unsendable and there would be nothing to build over there from, which is
+    /// the mistake this stands in the way of.
+    #[test]
+    fn a_description_can_be_sent_to_another_thread() {
+        fn assert_send<T: Send>() {}
+        assert_send::<MenuDescription>();
+        assert_send::<MenuEntry>();
+        assert_send::<MenuAction>();
+
+        // And genuinely crosses one, so the bound is not just asserted.
+        let description = describe(&names(&["bmo"]), "bmo", true);
+        let moved = std::thread::spawn(move || description.entries.len());
+
+        // Chat, Character, Do Not Disturb, Hide, Quit.
+        assert_eq!(moved.join().expect("the thread panicked"), 5);
+    }
+
     /// The row a description carries for `id`, whatever kind it is.
     fn entry_with_id<'a>(description: &'a MenuDescription, id: &str) -> Option<&'a MenuEntry> {
         description.entries.iter().find(|entry| match entry {
