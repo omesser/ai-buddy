@@ -470,6 +470,7 @@ Name a Character to start that one:
 cd src-tauri && AI_BUDDY_CHARACTER=bmo cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
 cd src-tauri && AI_BUDDY_CHARACTER=blip cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=jotaro-kujo cargo run
 ```
 
 The name is the package's directory, without the `.zip` if it is an archive.
@@ -625,6 +626,13 @@ and none of this repository's license claims cover that art.
 
 Trump's frames are cut from the [petscodex](https://petscodex.com/pets/trump)
 pet `trump` by the same importer.
+
+Jotaro Kujo's frames are cut from the
+[petscodex](https://petscodex.com/pets/jotaro-kujo) pet `jotaro-kujo` by
+`scripts/import-pet.py`. The installed package declares no license, so the
+import was accepted with `--accept-license`. Jotaro Kujo is Shueisha /
+Hirohiko Araki IP and the pack is fan art; the character is a development
+asset, and none of this repository's license claims cover that art.
 
 ## License
 
