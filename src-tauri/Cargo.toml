@@ -38,8 +38,9 @@ ureq = {version = "2", features = ["json"]}
 serde_json = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Native context menu. tauri 2 includes muda 0.19 for menu support.
-# macOS-only dependencies for window management and cursor position.
+# The context menu (#155) is not here: `tauri::menu` already wraps the menu
+# library Tauri ships with, so naming it again would put a second copy of it in
+# the tree — and on Linux the copy is what dragged in libxdo.
 objc2 = "0.6"
 objc2-app-kit = {version = "0.3", features = [
   "NSWindow",
