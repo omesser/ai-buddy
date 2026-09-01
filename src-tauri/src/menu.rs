@@ -110,15 +110,14 @@ mod tests {
     fn a_menu_with_no_characters_installed_has_no_character_submenu() {
         let built = build(&[], "bmo", false);
 
-        let items: Vec<_> = built
+        let has_character_submenu = built
             .menu
             .items()
-            .into_iter()
-            .filter_map(|item| item.as_submenu())
-            .collect();
+            .iter()
+            .any(|item| item.as_submenu().is_some());
 
         assert!(
-            items.is_empty(),
+            !has_character_submenu,
             "no Character submenu when nothing is installed"
         );
     }
@@ -128,16 +127,15 @@ mod tests {
         let installed = vec!["bmo".to_string(), "nim".to_string(), "cat".to_string()];
         let built = build(&installed, "bmo", false);
 
-        let character_menu = built
-            .menu
-            .items()
-            .into_iter()
+        let items = built.menu.items();
+        let character_menu = items
+            .iter()
             .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
             .expect("Character submenu exists");
 
         let names: Vec<_> = character_menu
             .items()
-            .into_iter()
+            .iter()
             .filter_map(|item| item.as_check_menuitem().map(|check| check.text()))
             .collect();
 
@@ -153,16 +151,15 @@ mod tests {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
         let built = build(&installed, "nim", false);
 
-        let character_menu = built
-            .menu
-            .items()
-            .into_iter()
+        let items = built.menu.items();
+        let character_menu = items
+            .iter()
             .find_map(|item| item.as_submenu().filter(|sub| sub.text() == "Character"))
             .expect("Character submenu exists");
 
         let checked: Vec<_> = character_menu
             .items()
-            .into_iter()
+            .iter()
             .filter_map(|item| {
                 item.as_check_menuitem()
                     .filter(|check| check.is_checked())
@@ -182,20 +179,18 @@ mod tests {
         let built_off = build(&[], "bmo", false);
         let built_on = build(&[], "bmo", true);
 
-        let dnd_off = built_off
-            .menu
-            .items()
-            .into_iter()
+        let items_off = built_off.menu.items();
+        let dnd_off = items_off
+            .iter()
             .find_map(|item| {
                 item.as_check_menuitem()
                     .filter(|check| check.text() == "Do Not Disturb")
             })
             .expect("DND item exists");
 
-        let dnd_on = built_on
-            .menu
-            .items()
-            .into_iter()
+        let items_on = built_on.menu.items();
+        let dnd_on = items_on
+            .iter()
             .find_map(|item| {
                 item.as_check_menuitem()
                     .filter(|check| check.text() == "Do Not Disturb")
@@ -248,10 +243,9 @@ mod tests {
     fn chat_is_present_but_disabled() {
         let built = build(&[], "bmo", false);
 
-        let chat = built
-            .menu
-            .items()
-            .into_iter()
+        let items = built.menu.items();
+        let chat = items
+            .iter()
             .find_map(|item| item.as_menuitem().filter(|mi| mi.text() == "Chat…"))
             .expect("Chat item exists");
 
