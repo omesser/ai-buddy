@@ -154,11 +154,13 @@ impl Pointer {
         let secondary_pressed = secondary_held && !self.was_secondary_held;
         self.was_secondary_held = secondary_held;
 
+        let mut verbs = Vec::new();
+
         if secondary_pressed && over_sprite {
-            return vec![Verb::Menu];
+            verbs.push(Verb::Menu);
         }
 
-        match (self.phase, held) {
+        let gesture_verbs = match (self.phase, held) {
             // Pressing anywhere else is somebody else's click, and a button
             // already down when the cursor arrives was never pressed here.
             (Phase::Idle, true) if over_sprite && pressed => {
@@ -217,7 +219,10 @@ impl Pointer {
                     vec![Verb::Throw { velocity }]
                 }
             }
-        }
+        };
+
+        verbs.extend(gesture_verbs);
+        verbs
     }
 
     /// Whether the sprite is being held.
@@ -659,7 +664,9 @@ mod tests {
         );
     }
 
-    /// Right-click during a drag is a Menu, and interrupts the drag like Poke.
+    /// Right-click during a drag is a Menu, and the drag continues. Both verbs
+    /// are emitted in the same tick: Menu from the right button press, Grab
+    /// from the ongoing left button hold.
     #[test]
     fn a_right_click_during_a_drag_is_a_menu() {
         let mut pointer = Pointer::default();
@@ -669,7 +676,11 @@ mod tests {
         assert!(pointer.grabbing(), "sprite is being dragged");
 
         let verbs = pointer.update(true, true, true, at(150.0, 100.0), TICK);
-        assert_eq!(verbs, vec![Verb::Menu], "right-click emits Menu");
+        assert_eq!(
+            verbs,
+            vec![Verb::Menu, Verb::Grab],
+            "right-click emits Menu, held left button emits Grab"
+        );
         assert!(pointer.grabbing(), "drag continues, Menu does not drop");
     }
 
