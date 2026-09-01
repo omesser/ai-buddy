@@ -5,7 +5,7 @@
 //! actions are shell commands that do not enter the frame loop: character
 //! switching, DND toggle, hiding, and quit.
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use muda::ContextMenu;
 use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use std::collections::HashMap;
@@ -176,6 +176,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires main thread on macOS, display on Linux"]
     fn the_current_character_is_check_marked() {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
         let built = build(&installed, "nim", false);
@@ -207,6 +208,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires main thread on macOS, display on Linux"]
     fn dnd_checkbox_reflects_engine_state() {
         let built_off = build(&[], "bmo", false);
         let built_on = build(&[], "bmo", true);
@@ -226,6 +228,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires main thread on macOS, display on Linux"]
     fn every_actionable_item_is_mapped() {
         let installed = vec!["bmo".to_string(), "nim".to_string()];
         let built = build(&installed, "bmo", true);
@@ -264,6 +267,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires main thread on macOS, display on Linux"]
     fn chat_is_present_but_disabled() {
         let built = build(&[], "bmo", false);
 
