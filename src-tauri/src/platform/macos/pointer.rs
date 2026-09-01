@@ -5,10 +5,12 @@
 //! Accessibility permission — the same trade `sensing` makes to read how long
 //! ago the last input was without reading the input itself.
 //!
-//! The Shell polls this beside the cursor position it already reads each tick,
-//! which is why no mouse event has to reach the webview at all. That matters:
-//! the overlay is click-through wherever the sprite is not drawn, so the
-//! webview would stop hearing a drag the moment it outran the art.
+//! The Shell polls this beside the cursor position it already reads each tick.
+//! A drag that outruns the art still has to be seen, and the overlay is
+//! click-through wherever the sprite is not drawn, so the webview alone would
+//! drop the button the moment the cursor left the pixels. The overlay still
+//! reports the press that landed on it: this query has been seen to stay
+//! false for a click our own window swallowed.
 
 use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
 

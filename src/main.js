@@ -305,6 +305,27 @@ async function start() {
   );
 
   requestAnimationFrame(draw);
+
+  // The overlay only receives these while click-through is off — over the
+  // art. The Rust side's session button poll has been seen to miss that
+  // press, which is how a click on the sprite produced no Poke.
+  const reportPrimary = (down) => {
+    window.__TAURI__.core.invoke("overlay_primary", { down }).catch((err) => {
+      console.error("overlay_primary", err);
+    });
+  };
+  document.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.target.setPointerCapture?.(event.pointerId);
+    reportPrimary(true);
+  });
+  document.addEventListener("pointerup", (event) => {
+    if (event.button !== 0) return;
+    reportPrimary(false);
+  });
+  document.addEventListener("pointercancel", () => {
+    reportPrimary(false);
+  });
 }
 
 start().catch((err) => {

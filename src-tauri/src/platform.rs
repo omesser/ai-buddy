@@ -9,12 +9,29 @@
 //! The dispatch lives here rather than in `main.rs` so that adding a platform is
 //! one edit in one file.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
+
+/// A press the overlay webview felt. `CGEventSource` is a session query and
+/// has been seen to stay false for a click that landed on our own window —
+/// the sprite then swallows the click and never pokes. The webview is the
+/// other witness: it only hears the button while click-through is off, which
+/// is exactly when the cursor is over the art.
+static OVERLAY_PRIMARY: AtomicBool = AtomicBool::new(false);
+
+/// Latch or release the overlay's witness of the primary button.
+pub fn set_overlay_primary(down: bool) {
+    OVERLAY_PRIMARY.store(down, Ordering::SeqCst);
+}
+
+fn overlay_primary_down() -> bool {
+    OVERLAY_PRIMARY.load(Ordering::SeqCst)
+}
 
 /// The displays as the frame loop needs to see them, from one read.
 ///
@@ -108,19 +125,19 @@ pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// Whether the primary mouse button is down.
 ///
-/// Polled beside the cursor rather than delivered as an event, so a drag that
-/// outruns the sprite keeps being seen. See `macos::pointer`.
+/// The session poll sees a drag that outruns the art. The overlay latch
+/// sees a click the poll has missed on our own window. Either is a press.
 #[cfg(target_os = "macos")]
 pub fn primary_button_down() -> bool {
-    macos::primary_button_down()
+    overlay_primary_down() || macos::primary_button_down()
 }
 
-/// Without a way to read the button there are no interaction verbs, and the
-/// sprite is watched rather than touched. A supported degradation, like the
-/// missing window geometry beside it.
+/// Without a session poll there is only the overlay latch. A click that
+/// reaches the webview still pokes; one that never does is the supported
+/// degradation, like the missing window geometry beside it.
 #[cfg(not(target_os = "macos"))]
 pub fn primary_button_down() -> bool {
-    false
+    overlay_primary_down()
 }
 
 /// Whether the secondary mouse button (right-click) is down.
@@ -343,4 +360,25 @@ fn exact_dock() -> Option<(Rect, DockSource)> {
 #[cfg(not(target_os = "macos"))]
 fn exact_dock() -> Option<(Rect, DockSource)> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A press that lands on the overlay is one `CGEventSource` has been
+    /// seen to miss. The overlay's own pointer events are the other half of
+    /// `primary_button_down`; without them a click on the sprite is silent.
+    #[test]
+    fn overlay_primary_is_enough_for_a_press() {
+        set_overlay_primary(false);
+        set_overlay_primary(true);
+        assert!(
+            primary_button_down(),
+            "a click the overlay felt must count as the button down"
+        );
+        set_overlay_primary(false);
+        // The session poll may still be true if a real button is held during
+        // the test; only the overlay half is under this test's control.
+    }
 }

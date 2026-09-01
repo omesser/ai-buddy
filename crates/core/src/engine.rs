@@ -5184,6 +5184,10 @@ mod tests {
         });
         assert_eq!(near.animation, "walk", "toward reaction starts a walk");
         assert_eq!(near.facing, 1.0, "walks toward the cursor");
+        assert_eq!(
+            near.velocity.x, WALK_SPEED,
+            "toward must move right when the cursor is to the right, not merely face it"
+        );
     }
 
     /// #152: Near reaction with away walks away from the cursor.
@@ -5202,6 +5206,10 @@ mod tests {
         });
         assert_eq!(near.animation, "walk", "away reaction starts a walk");
         assert_eq!(near.facing, -1.0, "walks away from the cursor");
+        assert_eq!(
+            near.velocity.x, -WALK_SPEED,
+            "away must move left when the cursor is to the right"
+        );
     }
 
     /// #152: Near reaction with react plays react.
@@ -5255,6 +5263,38 @@ mod tests {
             }
         }
         panic!("Rush reaction was not triggered");
+    }
+
+    /// #152: Rush `toward` walks at the cursor, not away from it. Facing
+    /// alone is not enough — the art can face one way and the feet the other.
+    #[test]
+    fn rush_toward_walks_at_the_cursor_not_away() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Indifferent, CursorReaction::Toward);
+
+        let start_x = engine.position.x;
+        // High-velocity approach from the right, ending still to the right.
+        engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: start_x + 300.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+        let rushed = engine.tick(&WorldSnapshot {
+            cursor: Point {
+                x: start_x + 80.0,
+                y: engine.position.y,
+            },
+            ..snapshot(16)
+        });
+
+        assert_eq!(rushed.animation, "walk", "rush toward starts a walk");
+        assert_eq!(rushed.facing, 1.0, "faces the cursor on the right");
+        assert_eq!(
+            rushed.velocity.x, WALK_SPEED,
+            "feet travel toward the cursor, not away from it"
+        );
     }
 
     /// #153: Chase steers toward cursor's x, swats on arrival, disengages.
