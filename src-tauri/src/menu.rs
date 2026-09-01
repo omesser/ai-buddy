@@ -5,12 +5,13 @@
 //! actions are shell commands that do not enter the frame loop: character
 //! switching, DND toggle, hiding, and quit.
 
-use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 #[cfg(target_os = "macos")]
 use muda::ContextMenu;
+use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use std::collections::HashMap;
 
 /// The menu items that trigger actions, keyed by their menu item id.
+#[allow(dead_code)]
 pub enum MenuAction {
     /// Character ▸ <name>. Switch to the named Character Package.
     SwitchCharacter(String),
@@ -125,14 +126,10 @@ mod tests {
     fn a_menu_with_no_characters_installed_has_no_character_submenu() {
         let built = build(&[], "bmo", false);
 
-        let has_character_submenu = built
-            .menu
-            .items()
-            .iter()
-            .any(|item| {
-                item.as_submenu()
-                    .is_some_and(|sub| sub.text() == "Character")
-            });
+        let has_character_submenu = built.menu.items().iter().any(|item| {
+            item.as_submenu()
+                .is_some_and(|sub| sub.text() == "Character")
+        });
 
         assert!(
             !has_character_submenu,
@@ -146,29 +143,30 @@ mod tests {
         let built = build(&installed, "bmo", false);
 
         let has_all_names = built.menu.items().iter().any(|item| {
-            item.as_submenu()
-                .is_some_and(|sub| {
-                    sub.text() == "Character"
-                        && sub.items().iter().filter_map(|i| i.as_check_menuitem()).count() == 3
-                        && sub.items().iter().any(|i| {
-                            i.as_check_menuitem()
-                                .is_some_and(|c| c.text() == "bmo")
-                        })
-                        && sub.items().iter().any(|i| {
-                            i.as_check_menuitem()
-                                .is_some_and(|c| c.text() == "nim")
-                        })
-                        && sub.items().iter().any(|i| {
-                            i.as_check_menuitem()
-                                .is_some_and(|c| c.text() == "cat")
-                        })
-                })
+            item.as_submenu().is_some_and(|sub| {
+                sub.text() == "Character"
+                    && sub
+                        .items()
+                        .iter()
+                        .filter_map(|i| i.as_check_menuitem())
+                        .count()
+                        == 3
+                    && sub
+                        .items()
+                        .iter()
+                        .any(|i| i.as_check_menuitem().is_some_and(|c| c.text() == "bmo"))
+                    && sub
+                        .items()
+                        .iter()
+                        .any(|i| i.as_check_menuitem().is_some_and(|c| c.text() == "nim"))
+                    && sub
+                        .items()
+                        .iter()
+                        .any(|i| i.as_check_menuitem().is_some_and(|c| c.text() == "cat"))
+            })
         });
 
-        assert!(
-            has_all_names,
-            "submenu carries every installed package"
-        );
+        assert!(has_all_names, "submenu carries every installed package");
     }
 
     #[test]
@@ -268,6 +266,9 @@ mod tests {
                 .is_some_and(|mi| mi.text() == "Chat…" && !mi.is_enabled())
         });
 
-        assert!(chat_is_disabled, "Chat is disabled until #17 is implemented");
+        assert!(
+            chat_is_disabled,
+            "Chat is disabled until #17 is implemented"
+        );
     }
 }

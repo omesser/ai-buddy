@@ -683,9 +683,11 @@ fn run_frame_loop(
                         Happened::Throw
                     } else if grab_started {
                         Happened::Grab
-                    } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
-                        Happened::Poke
-                    } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Poke)) {
+                    } else if live
+                        .verbs
+                        .iter()
+                        .any(|verb| matches!(verb, Verb::Menu | Verb::Poke))
+                    {
                         Happened::Poke
                     } else {
                         Happened::Summon
