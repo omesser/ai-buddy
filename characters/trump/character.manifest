@@ -16,9 +16,11 @@
 # sitting behind a title bar rather than nodding off. Land ends on
 # idle's rest frame — the jump row's last cell is a yellow burst,
 # and `loop = "once"` would hold it. Cycles slowed so the idle ring
-# and the wave read as motion, not a twitch. Walk stood shorter
-# than idle; it is scaled to the same height, then every frame is
-# resampled to 85% so he sits a bit smaller on the desk.
+# and the wave read as motion, not a twitch. Every frame is
+# resampled to 85% so he sits a bit smaller on the desk. Walk keeps
+# the sheet's own proportion: a running pose is drawn shorter than a
+# standing one, so stretching it to idle's height grew the whole
+# figure, head and all, every time he set off.
 
 name = "Trump"
 render_mode = "smooth"
