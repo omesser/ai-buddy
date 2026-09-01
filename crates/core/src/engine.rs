@@ -4965,8 +4965,6 @@ mod tests {
 
     // Cursor awareness tests (#152, #153): scripted pointer tracks with no windowing system.
 
-    /// Helper: move cursor from far away to near the sprite.
-
     /// #152: Near reaction with indifferent keeps doing whatever it was doing.
     #[test]
     fn near_indifferent_keeps_the_sprite_doing_whatever_it_was_doing() {
