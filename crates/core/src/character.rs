@@ -191,10 +191,15 @@ pub enum Primitive {
     /// Gripping a moving Perch. The Engine plays this itself (#98); a
     /// Character may also compose it.
     Hold,
+    /// Steer walk velocity toward the cursor's x along the ground (#153).
+    /// Reach cursor x: one react swat, then disengage. Timeout if never
+    /// arrives: give up. The cursor is up on the screen; the buddy chases
+    /// its shadow on the floor.
+    Chase,
 }
 
 /// Every Primitive by the name a Character Manifest writes.
-const PRIMITIVES: [(&str, Primitive); 8] = [
+const PRIMITIVES: [(&str, Primitive); 9] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
     ("land", Primitive::Land),
@@ -203,6 +208,7 @@ const PRIMITIVES: [(&str, Primitive); 8] = [
     ("react", Primitive::React),
     ("talk", Primitive::Talk),
     ("hold", Primitive::Hold),
+    ("chase", Primitive::Chase),
 ];
 
 /// A named frame sequence and how it plays.
@@ -321,6 +327,28 @@ pub struct Character {
     /// Proactive model-call wait grows by `model_base.pow(model_power)`.
     pub model_base: u32,
     pub model_power: u32,
+    /// How the Character reacts when the cursor enters its Near radius (#152).
+    pub near_reaction: CursorReaction,
+    /// How the Character reacts to a cursor rushing at it (#152).
+    pub rush_reaction: CursorReaction,
+}
+
+/// How a Character reacts to the cursor entering its Near radius or rushing at it (#152).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CursorReaction {
+    /// Keep doing whatever it was doing.
+    #[default]
+    Indifferent,
+    /// Speak (`talk`).
+    Speak,
+    /// Turn to face the cursor (`facing` toward it; art already mirrors).
+    Face,
+    /// Walk toward the cursor.
+    Toward,
+    /// Walk away from the cursor.
+    Away,
+    /// Play `react`.
+    React,
 }
 
 /// What the renderer needs to draw one tick.
@@ -500,6 +528,8 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             scale: declared.scale.unwrap_or(DEFAULT_SCALE),
             model_base: declared.model_base.unwrap_or(DEFAULT_MODEL_BASE),
             model_power: declared.model_power.unwrap_or(DEFAULT_MODEL_POWER),
+            near_reaction: declared.near_reaction.unwrap_or_default(),
+            rush_reaction: declared.rush_reaction.unwrap_or_default(),
         }),
         _ => Err(errors),
     }
@@ -533,6 +563,8 @@ struct Declared {
     scale: Option<u32>,
     model_base: Option<u32>,
     model_power: Option<u32>,
+    near_reaction: Option<CursorReaction>,
+    rush_reaction: Option<CursorReaction>,
     animations: BTreeMap<String, DeclaredAnimation>,
     behaviors: BTreeMap<String, DeclaredBehavior>,
 }
@@ -640,9 +672,10 @@ fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared> {
                 )),
             },
             "director" => parse_director(item, manifest, &mut declared, errors),
+            "cursor" => parse_cursor(item, manifest, &mut declared, errors),
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
-                 name, render_mode, scale, animations, behaviors and director"
+                 name, render_mode, scale, animations, behaviors, director and cursor"
             )),
         }
     }
@@ -686,6 +719,56 @@ fn parse_director(item: &Item, manifest: &str, declared: &mut Declared, errors: 
                  model_base and model_power"
             )),
         }
+    }
+}
+
+/// `[cursor]`: how the Character reacts to cursor proximity.
+fn parse_cursor(item: &Item, manifest: &str, declared: &mut Declared, errors: &mut Vec<String>) {
+    let Some(table) = item.as_table_like() else {
+        errors.push(
+            "\"cursor\" is not a table; it reads [cursor] with \
+             near_reaction and rush_reaction below"
+                .to_string(),
+        );
+        return;
+    };
+
+    for (key, item) in table.iter() {
+        match key {
+            "near_reaction" => match parse_cursor_reaction(item.as_str()) {
+                Some(reaction) => declared.near_reaction = Some(reaction),
+                None => errors.push(format!(
+                    "\"cursor.near_reaction\" is {}, and must be one of: \
+                     indifferent, speak, face, toward, away, react",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "rush_reaction" => match parse_cursor_reaction(item.as_str()) {
+                Some(reaction) => declared.rush_reaction = Some(reaction),
+                None => errors.push(format!(
+                    "\"cursor.rush_reaction\" is {}, and must be one of: \
+                     indifferent, speak, face, toward, away, react",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            other => errors.push(format!(
+                "unknown declaration cursor.{other:?}; [cursor] declares \
+                 near_reaction and rush_reaction"
+            )),
+        }
+    }
+}
+
+/// Parse a cursor reaction from its manifest name.
+fn parse_cursor_reaction(value: Option<&str>) -> Option<CursorReaction> {
+    match value? {
+        "indifferent" => Some(CursorReaction::Indifferent),
+        "speak" => Some(CursorReaction::Speak),
+        "face" => Some(CursorReaction::Face),
+        "toward" => Some(CursorReaction::Toward),
+        "away" => Some(CursorReaction::Away),
+        "react" => Some(CursorReaction::React),
+        _ => None,
     }
 }
 
@@ -1646,7 +1729,7 @@ mod tests {
             errors,
             vec![
                 "behavior \"greet\" declares \"jump\", which is not a Primitive; \
-                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold"
+                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase"
                     .to_string()
             ],
             "the author is told the offending word and what they may write instead"
@@ -1772,7 +1855,7 @@ mod tests {
             errors,
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, render_mode, scale, animations, behaviors and director"
+                 name, render_mode, scale, animations, behaviors, director and cursor"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
@@ -2172,13 +2255,13 @@ mod tests {
                  as then = \"settle\""
                     .to_string(),
                 "behavior \"pounce\" declares 7, which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold"
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
                     .to_string(),
                 "when for behavior \"pounce\" is 6, which is not a condition; a condition \
                  reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\""
                     .to_string(),
                 "behavior \"фыр\" declares [], which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold"
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
                     .to_string(),
             ],
             "each nonsense declaration is rejected by name, saying what is wrong"

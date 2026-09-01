@@ -17,6 +17,11 @@ scale = 1
 model_base = 1
 model_power = 1
 
+# Cursor reactions: friendly and helpful, greets but is surprised by sudden approaches.
+[cursor]
+near_reaction = "speak"
+rush_reaction = "react"
+
 # The idle is a calm stand; the singing and the skateboard ride its ring as
 # variants. The sit is the pack's self-play set: four games on its own screen.
 

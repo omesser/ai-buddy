@@ -31,6 +31,11 @@ scale = 1
 model_base = 1
 model_power = 1
 
+# Cursor reactions: attention-seeking and engaging, talks to and approaches everything.
+[cursor]
+near_reaction = "speak"
+rush_reaction = "toward"
+
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 4

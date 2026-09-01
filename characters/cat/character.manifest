@@ -24,6 +24,11 @@ scale = 1
 model_base = 1
 model_power = 1
 
+# Cursor reactions: curious and playful, comes to investigate but startles easily.
+[cursor]
+near_reaction = "toward"
+rush_reaction = "away"
+
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 5
@@ -102,3 +107,8 @@ play = ["talk"]
 then = "patrol"
 weight = 4
 when = "idle under 10s"
+
+[behaviors.play-with-cursor]
+play = ["chase"]
+weight = 2
+when = "idle over 1m"

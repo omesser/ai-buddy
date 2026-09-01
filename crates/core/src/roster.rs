@@ -116,7 +116,9 @@ impl Roster {
     /// running several of one Character exists to avoid.
     pub fn spawn(&mut self, character: &Character, name: String, position: Point) -> InstanceId {
         let id = uuid::Uuid::new_v4().to_string();
-        let engine = Engine::new(position).with_behaviors(character.behaviors.clone());
+        let engine = Engine::new(position)
+            .with_behaviors(character.behaviors.clone())
+            .with_cursor_reactions(character.near_reaction, character.rush_reaction);
         let instance = Instance {
             id: id.clone(),
             name,
@@ -162,7 +164,8 @@ impl Roster {
 mod tests {
     use super::*;
     use crate::character::{
-        Animation, Behavior, Character, Primitive, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER,
+        Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
+        DEFAULT_MODEL_POWER,
     };
     use crate::engine::{Point, Rect, Verb};
     use crate::memory::MemoryManifest;
@@ -217,6 +220,8 @@ mod tests {
             scale: 1,
             model_base: DEFAULT_MODEL_BASE,
             model_power: DEFAULT_MODEL_POWER,
+            near_reaction: CursorReaction::default(),
+            rush_reaction: CursorReaction::default(),
         }
     }
 
