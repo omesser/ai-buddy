@@ -73,6 +73,8 @@ pub struct Pointer {
     /// Without this, dragging a window under a resting sprite picks the sprite
     /// up the moment the cursor crosses it.
     was_held: bool,
+    /// Secondary button last tick. Menu is the press edge, not held state.
+    was_secondary_held: bool,
     /// Where the press began, so travel is measured from it rather than from
     /// the previous tick — a slow drag never moves far in 16ms.
     pressed_at: Point,
@@ -103,6 +105,7 @@ impl Default for Pointer {
         Self {
             phase: Phase::Idle,
             was_held: false,
+            was_secondary_held: false,
             pressed_at: Point::default(),
             pressed_ms: 0,
             cursor: None,
@@ -125,8 +128,7 @@ impl Pointer {
     /// free to leave the art, which is what dragging is.
     ///
     /// `secondary_held` is the right button. A right-click over the sprite is
-    /// a Menu, emitted immediately rather than held: the menu blocks until
-    /// dismissed, so a press that waits for release would never see one.
+    /// a Menu, emitted on the press edge (button down transition).
     pub fn update(
         &mut self,
         over_sprite: bool,
@@ -149,7 +151,10 @@ impl Pointer {
         let pressed = held && !self.was_held;
         self.was_held = held;
 
-        if secondary_held && over_sprite {
+        let secondary_pressed = secondary_held && !self.was_secondary_held;
+        self.was_secondary_held = secondary_held;
+
+        if secondary_pressed && over_sprite {
             return vec![Verb::Menu];
         }
 
@@ -603,9 +608,7 @@ mod tests {
         }
     }
 
-    /// A right-click over the sprite is a Menu, emitted immediately rather than
-    /// waiting for release: the menu blocks until dismissed, so a held press
-    /// would never see the release.
+    /// A right-click over the sprite is a Menu, emitted on the press edge.
     #[test]
     fn a_right_click_on_the_sprite_is_a_menu() {
         let mut pointer = Pointer::default();
@@ -616,6 +619,31 @@ mod tests {
             "secondary button down over the sprite opens the menu"
         );
         assert!(!pointer.grabbing(), "and does not grab");
+    }
+
+    /// Holding the right button does not retrigger Menu; Menu is the press
+    /// edge only.
+    #[test]
+    fn holding_right_button_does_not_retrigger_menu() {
+        let mut pointer = Pointer::default();
+
+        assert_eq!(
+            pointer.update(true, false, true, at(100.0, 100.0), TICK),
+            vec![Verb::Menu],
+            "first right button press emits Menu"
+        );
+
+        assert_eq!(
+            pointer.update(true, false, true, at(100.0, 100.0), TICK),
+            vec![],
+            "held right button does not emit a second Menu"
+        );
+
+        assert_eq!(
+            pointer.update(true, false, true, at(100.0, 100.0), TICK),
+            vec![],
+            "still no Menu on continued hold"
+        );
     }
 
     /// Right-click elsewhere stays click-through, so the desktop's own context
@@ -629,6 +657,20 @@ mod tests {
             vec![],
             "secondary button down elsewhere is not our Menu"
         );
+    }
+
+    /// Right-click during a drag is a Menu, and interrupts the drag like Poke.
+    #[test]
+    fn a_right_click_during_a_drag_is_a_menu() {
+        let mut pointer = Pointer::default();
+
+        pointer.update(true, true, false, at(100.0, 100.0), TICK);
+        pointer.update(true, true, false, at(150.0, 100.0), TICK);
+        assert!(pointer.grabbing(), "sprite is being dragged");
+
+        let verbs = pointer.update(true, true, true, at(150.0, 100.0), TICK);
+        assert_eq!(verbs, vec![Verb::Menu], "right-click emits Menu");
+        assert!(pointer.grabbing(), "drag continues, Menu does not drop");
     }
 
     /// Nothing under the cursor is nobody's press, which is what leaves a click
