@@ -74,6 +74,8 @@ impl Instance {
     /// Tick this Instance's Engine forward.
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         if let Some(proposal) = self.pending.take() {
+            // Last write this frame wins: a queued Expression proposal
+            // displaces a Director proposal already on the snapshot.
             let mut snapshot = snapshot.clone();
             snapshot.proposal = Some(proposal);
             self.engine.tick(&snapshot)

@@ -34,6 +34,17 @@ pub struct DispatchContext<'a> {
     pub expression: Option<&'a mut dyn ExpressionHandle>,
 }
 
+/// Reborrow a taken handle for one call. `as_deref_mut` on `Option<&mut dyn>`
+/// is stuck at the inner lifetime, so the handle could not be stored back.
+fn as_expression_handle<'short>(
+    expression: &'short mut Option<&mut dyn ExpressionHandle>,
+) -> Option<&'short mut dyn ExpressionHandle> {
+    match expression {
+        Some(handle) => Some(&mut **handle),
+        None => None,
+    }
+}
+
 fn parse_args<T: for<'de> Deserialize<'de>>(
     arguments: Value,
     tool_name: &str,
@@ -59,15 +70,18 @@ pub fn dispatch(
             }
             let args: Args = parse_args(arguments, tool_name)?;
             let roster = context.roster;
-            // take() rather than as_deref_mut(): Option<&mut dyn> is invariant,
-            // and `&'a mut DispatchContext<'a>` extends that borrow past every caller.
-            let expression = context.expression.take();
+            // take() rather than as_deref_mut() on the field: Option<&mut dyn>
+            // is invariant, and `&'a mut DispatchContext<'a>` would extend that
+            // borrow past every caller. The local is assigned back so a reused
+            // context keeps the handle.
+            let mut expression = context.expression.take();
             let result = tools::speak(
                 &args.message,
                 args.instance_id.as_deref(),
                 roster,
-                expression,
+                as_expression_handle(&mut expression),
             );
+            context.expression = expression;
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -82,13 +96,14 @@ pub fn dispatch(
             }
             let args: Args = parse_args(arguments, tool_name)?;
             let roster = context.roster;
-            let expression = context.expression.take();
+            let mut expression = context.expression.take();
             let result = tools::play_behavior(
                 &args.behavior,
                 args.instance_id.as_deref(),
                 roster,
-                expression,
+                as_expression_handle(&mut expression),
             );
+            context.expression = expression;
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -655,6 +670,73 @@ mod tests {
         }
 
         (roster, id)
+    }
+
+    #[test]
+    fn reused_dispatch_context_keeps_the_expression_handle() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        struct SharedRoster(Rc<RefCell<crate::roster::Roster>>);
+
+        impl crate::tools::ExpressionHandle for SharedRoster {
+            fn enqueue(
+                &mut self,
+                instance_id: &str,
+                proposal: crate::engine::BehaviorProposal,
+            ) -> bool {
+                crate::tools::ExpressionHandle::enqueue(
+                    &mut *self.0.borrow_mut(),
+                    instance_id,
+                    proposal,
+                )
+            }
+        }
+
+        let temp = TempDir::new("reuse-handle");
+        let source = fake_source(vec![]);
+        let (roster, instance_id) =
+            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+
+        let shared = Rc::new(RefCell::new(roster));
+        let roster_info = shared
+            .borrow()
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo { id, name })
+            .collect::<Vec<_>>();
+
+        let mut expression = SharedRoster(Rc::clone(&shared));
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut expression),
+        };
+
+        let first = dispatch("speak", json!({"message": "First line"}), &mut context)
+            .expect("dispatch succeeds");
+        assert_eq!(first["success"], true);
+
+        let snapshot = test_snapshot();
+        let first_frame = shared
+            .borrow_mut()
+            .get_mut(&instance_id)
+            .expect("instance still in roster")
+            .tick(&snapshot);
+        assert_eq!(first_frame.dialogue.as_deref(), Some("First line"));
+
+        let second = dispatch("speak", json!({"message": "Second line"}), &mut context)
+            .expect("dispatch succeeds");
+        assert_eq!(second["success"], true);
+
+        let second_frame = shared
+            .borrow_mut()
+            .get_mut(&instance_id)
+            .expect("instance still in roster")
+            .tick(&snapshot);
+        assert_eq!(second_frame.dialogue.as_deref(), Some("Second line"));
     }
 
     #[test]
