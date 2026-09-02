@@ -37,12 +37,6 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Uses XShapeCombineMask to set the input region. When mask_data is None,
 /// the entire window is click-through. When mask_data is Some, only the opaque
 /// pixels receive clicks.
-///
-/// Integration seam: this function provides the X11 implementation of mask-based
-/// click-through, but it is not yet called from the frame loop. The frame loop
-/// currently uses Tauri's `set_ignore_cursor_events(bool)`, which is boolean only.
-/// To use XShapeCombineMask, the frame loop needs to pass the AlphaMask here.
-#[allow(dead_code)]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,

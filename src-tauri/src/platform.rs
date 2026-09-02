@@ -189,10 +189,6 @@ pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
 /// On X11, XShapeCombineMask carves the click-through region from the sprite's
 /// alpha. On macOS and other platforms, this is a no-op since Tauri's
 /// `set_ignore_cursor_events` is sufficient.
-///
-/// Integration seam: the X11 implementation exists but is not yet wired to the
-/// frame loop. See platform/x11/overlay.rs::update_input_region.
-#[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
