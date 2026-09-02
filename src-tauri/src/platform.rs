@@ -304,9 +304,9 @@ impl ActivitySource for LinuxActivitySource {
     }
 }
 
-/// A platform that reports nothing is one where every Behavior with a trigger
-/// simply never fires, which leaves the untriggered ones — a life, if a duller
-/// one. The same supported degradation as the missing window geometry.
+/// A platform that reports nothing never fires a triggered Behavior, which
+/// leaves the untriggered ones — a life, if a duller one. The same supported
+/// degradation as the missing window geometry.
 #[cfg(not(unix))]
 pub fn activity_source() -> impl ActivitySource {
     ai_buddy_core::sensing::StubActivitySource

@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use keyring::Entry;
 
-/// Account name for the Director API key in the OS secret store.
+/// Account name in the OS secret store, not a settings key.
 pub const DIRECTOR_API_KEY: &str = "director-api-key";
 
 /// Read and write secrets without naming where they live.

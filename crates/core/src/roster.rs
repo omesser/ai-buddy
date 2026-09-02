@@ -118,7 +118,6 @@ pub struct Roster {
 }
 
 impl Roster {
-    /// Create a new empty Roster with the given Memory.
     pub fn new(memory: MemoryManifest) -> Self {
         Self {
             instances: BTreeMap::new(),

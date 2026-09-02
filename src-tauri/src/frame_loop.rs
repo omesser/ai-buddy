@@ -1122,9 +1122,8 @@ pub(crate) fn run_frame_loop(
                     continue; // a display whose overlay has not been built yet
                 };
 
-                // Retry EWMH configuration if it hasn't succeeded yet. GTK needs
-                // the window realized (shown and ticked) before window_handle works,
-                // AND window_handle() must be called from the GTK main thread.
+                // GTK has no window handle until the widget is realized, and
+                // `window_handle` must run on the GTK main thread.
                 #[cfg(all(unix, not(target_os = "macos")))]
                 if !configured
                     .lock()
@@ -1157,7 +1156,6 @@ pub(crate) fn run_frame_loop(
                                     }
                                 }
                                 Err(e) => {
-                                    // Log first failure for diagnostics
                                     static LOGGED: std::sync::atomic::AtomicBool =
                                         std::sync::atomic::AtomicBool::new(false);
                                     if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
@@ -1228,10 +1226,8 @@ pub(crate) fn run_frame_loop(
                 #[cfg(all(unix, not(target_os = "macos")))]
                 {
                     if !ignore && presence.visible {
-                        // Find the first sprite on this overlay (if any) to use its mask
                         let sprite_on_overlay = placed.iter().find(|instance| {
                             let local = instance.sprite.in_overlay(*display);
-                            // Sprite is on this overlay if any part of it is visible
                             local.x + instance.width > 0
                                 && local.x < display.width as i32
                                 && local.y + instance.height > 0
@@ -1240,7 +1236,6 @@ pub(crate) fn run_frame_loop(
 
                         if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
-                            // Cache mask parameters to avoid rebuilding pixmap every 16ms
                             let (_width, _height, opaque) = instance.mask.raw();
                             let mask_params = (
                                 Some(opaque.to_vec()),
@@ -1250,7 +1245,6 @@ pub(crate) fn run_frame_loop(
                                 instance.sprite.scale,
                             );
 
-                            // Only update XShape if mask parameters changed and no work in flight
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params)
                                 && !mask_in_flight
                                     .lock()
@@ -1297,7 +1291,6 @@ pub(crate) fn run_frame_loop(
                                                 }
                                             }
                                             Err(e) => {
-                                                // Log first failure for diagnostics
                                                 static LOGGED: std::sync::atomic::AtomicBool =
                                                     std::sync::atomic::AtomicBool::new(false);
                                                 if !LOGGED
@@ -1311,7 +1304,6 @@ pub(crate) fn run_frame_loop(
                                 });
                             }
 
-                            // Only set ignore=false after mask has been applied at least once
                             if mask_applied
                                 .lock()
                                 .unwrap()
@@ -1326,7 +1318,6 @@ pub(crate) fn run_frame_loop(
                                 }
                             }
                         } else {
-                            // No sprite on this overlay, make it fully click-through
                             let mask_params = (None, 0, 0, 1, 1);
 
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
@@ -1356,7 +1347,6 @@ pub(crate) fn run_frame_loop(
                             }
                         }
                     } else {
-                        // Ignoring or invisible: make the whole window click-through
                         let mask_params = (None, 0, 0, 1, 1);
 
                         if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
@@ -1387,7 +1377,6 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
-                // On macOS and other platforms, use Tauri's boolean click-through only
                 #[cfg(not(all(unix, not(target_os = "macos"))))]
                 {
                     // Only record the new state once the platform accepted it.
