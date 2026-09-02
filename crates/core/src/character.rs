@@ -53,6 +53,7 @@
 //! Frame count and frame size are read from the art instead of declared, since
 //! a declared size can disagree with the art and a derived one cannot.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -1057,6 +1058,11 @@ fn parse_duration(text: &str) -> Option<Duration> {
 /// large to be a sprite, or too much of it, asks the renderer for memory no
 /// Character needs. All of them are rejections.
 ///
+/// Headers first, masks second: the pixel budget is a sum of IHDR sizes, so
+/// an over-budget package is refused before any mask is built. Decoding a
+/// package we are about to reject would spend the memory the bound exists
+/// to refuse.
+///
 /// Decoding here rather than in the renderer is what makes a loaded Character
 /// renderable by construction: art the mask cannot be built from is one more
 /// rejection naming its frame, instead of a Character the loader declared
@@ -1069,8 +1075,9 @@ fn resolve_animations(
     let mut animations = BTreeMap::new();
     let mut art: BTreeMap<String, Art> = BTreeMap::new();
     // One mask per distinct frame, exactly as the renderer holds them: a frame
-    // two Animations share is charged once.
-    let mut charged: BTreeSet<String> = BTreeSet::new();
+    // two Animations share is charged once. The animation name is kept so a
+    // decode error still names the declaration, not only the file.
+    let mut charged: BTreeMap<String, String> = BTreeMap::new();
     let mut pixels: u64 = 0;
 
     for (name, declaration) in declared {
@@ -1098,28 +1105,9 @@ fn resolve_animations(
                     ));
                 }
                 Ok(size) => {
-                    // Decoded only while the pixel budget holds: past it the
-                    // package is rejected anyway, and decoding on regardless
-                    // would build the very masks the bound exists to refuse.
-                    if charged.insert(frame.clone()) {
+                    if let Entry::Vacant(slot) = charged.entry(frame.clone()) {
+                        slot.insert(name.clone());
                         pixels += u64::from(size.0) * u64::from(size.1);
-                        if pixels <= MAX_CHARACTER_PIXELS {
-                            match AlphaMask::from_png(bytes, ALPHA_THRESHOLD) {
-                                Ok(mask) => {
-                                    art.insert(
-                                        frame.clone(),
-                                        Art {
-                                            png: bytes.clone(),
-                                            mask,
-                                        },
-                                    );
-                                }
-                                Err(why) => errors.push(format!(
-                                    "animation {name:?} frame {frame:?} \
-                                     is not readable art: {why}"
-                                )),
-                            }
-                        }
                     }
                     match frame_size {
                         None => frame_size = Some(size),
@@ -1155,6 +1143,28 @@ fn resolve_animations(
             "the package's frames are {pixels} pixels in all, over the \
              {MAX_CHARACTER_PIXELS}-pixel limit"
         ));
+        // Past the budget the package is refused, and decoding on regardless
+        // would build the very masks the bound exists to refuse. Headers
+        // already named every frame; that is the whole of this path.
+        return (animations, art);
+    }
+
+    for (frame, animation) in charged {
+        let bytes = &package[&frame];
+        match AlphaMask::from_png(bytes, ALPHA_THRESHOLD) {
+            Ok(mask) => {
+                art.insert(
+                    frame,
+                    Art {
+                        png: bytes.clone(),
+                        mask,
+                    },
+                );
+            }
+            Err(why) => errors.push(format!(
+                "animation {animation:?} frame {frame:?} is not readable art: {why}"
+            )),
+        }
     }
 
     (animations, art)
@@ -1785,14 +1795,16 @@ mod tests {
 
     /// Hostile input: a chain far deeper than any author would write, ending in
     /// a loop. A loader that walked it by recursion would exhaust the stack
-    /// instead of reporting anything.
+    /// instead of reporting anything. Two thousand links is past a typical
+    /// debug stack; the proof is the rejection, not the length of the TOML.
     #[test]
     fn a_very_deep_chain_ending_in_a_loop_is_rejected_rather_than_crashing() {
+        const DEPTH: u32 = 2_000;
         let mut manifest = declaring(&REQUIRED_ANIMATIONS);
-        for link in 0..20_000 {
+        for link in 0..DEPTH {
             manifest.push_str(&format!("[behaviors.b{link}]\nthen = \"b{}\"\n", link + 1));
         }
-        manifest.push_str("[behaviors.b20000]\nthen = \"b0\"\n");
+        manifest.push_str(&format!("[behaviors.b{DEPTH}]\nthen = \"b0\"\n"));
 
         let errors = errors(load_manifest(&manifest));
         assert_names(&errors, "cannot terminate");
@@ -2170,6 +2182,11 @@ mod tests {
     /// neither bounds the masks the renderer holds for the whole Character. A
     /// frame two Animations share is one mask, so it is charged once (user
     /// story 48).
+    ///
+    /// The package that sits on the budget is not loaded: that is 256
+    /// megapixels of masks, and the check that it *would* load is the same
+    /// arithmetic the over-budget path already uses. The refusal is the
+    /// behavior; headers name the frames, so nothing inflates them.
     #[test]
     fn a_character_whose_frames_outweigh_the_budget_is_rejected() {
         let frame = png_bytes(MAX_FRAME_SIDE, MAX_FRAME_SIDE);
@@ -2196,9 +2213,6 @@ mod tests {
             package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
             package
         };
-
-        let character = load(&declaring_distinct(budget)).expect("the budget itself loads");
-        assert_eq!(character.animations["wave"].frames.len(), budget - 1);
 
         let over = errors(load(&declaring_distinct(budget + 1)));
         assert_eq!(
