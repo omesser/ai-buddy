@@ -99,6 +99,20 @@ impl SettingsView {
             .map(|row| format!("{} ({})", row.name, row.character))
             .collect()
     }
+
+    pub fn api_key_placeholder(&self) -> String {
+        if !self.api_key_error.is_empty() {
+            format!("Unavailable — {}", self.api_key_error)
+        } else if self.api_key_set {
+            format!("Set — {}", self.api_key_fingerprint)
+        } else {
+            "Not set".into()
+        }
+    }
+
+    pub fn clear_key_enabled(&self) -> bool {
+        self.api_key_set || !self.api_key_error.is_empty()
+    }
 }
 
 /// Work the settings window asks the frame loop to do.
