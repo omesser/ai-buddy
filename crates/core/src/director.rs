@@ -138,26 +138,46 @@ impl<C: Completer> ModelDirector<C> {
                 // The Completer has the opening; later turns stay short
                 // even if this reply failed to parse.
                 self.opened.store(true, Ordering::SeqCst);
+                let speech = || as_speech(&reply).map_or(Wake::Failed, Wake::Proposed);
                 match parse_proposal(&reply) {
-                    Ok(proposal) if self.knows(&proposal.behavior) => Wake::Proposed(proposal),
-                    Ok(proposal) if proposal.behavior.eq_ignore_ascii_case("say") => {
-                        Wake::Proposed(BehaviorProposal {
-                            behavior: String::new(),
-                            dialogue: proposal.dialogue.or(Some(proposal.behavior)),
-                        })
-                    }
-                    _ => match as_speech(&reply) {
-                        Some(said) => Wake::Proposed(said),
-                        None => Wake::Failed,
+                    Ok(proposal) => match self.declared(&proposal.behavior) {
+                        // Under the declared spelling: the Engine looks it up exactly.
+                        Some(declared) => Wake::Proposed(BehaviorProposal {
+                            behavior: declared.to_string(),
+                            dialogue: proposal.dialogue,
+                        }),
+                        // `say` with a line speaks it. `say` with nothing after it
+                        // has nothing to say, and Static is a better answer than
+                        // the word itself.
+                        None if proposal.behavior.eq_ignore_ascii_case("say") => {
+                            match proposal.dialogue {
+                                Some(line) => Wake::Proposed(BehaviorProposal {
+                                    behavior: String::new(),
+                                    dialogue: Some(line),
+                                }),
+                                None => Wake::Failed,
+                            }
+                        }
+                        None => speech(),
                     },
+                    Err(_) => speech(),
                 }
             }
             Err(_) => Wake::Failed,
         }
     }
 
-    fn knows(&self, name: &str) -> bool {
-        self.behaviors.iter().any(|declared| declared == name)
+    /// The declared Behavior `name` refers to, in its declared spelling.
+    ///
+    /// Case is ignored because every local model measured in #175 capitalises
+    /// the name — `Prowl`, `Inspect`, `Nap` — and refusing it turned each of
+    /// those wakes into speech with the Behavior stuck on the front. The
+    /// `say:` prefix beside this is already read the same way. #231.
+    fn declared(&self, name: &str) -> Option<&str> {
+        self.behaviors
+            .iter()
+            .find(|declared| declared.eq_ignore_ascii_case(name))
+            .map(String::as_str)
     }
 }
 
@@ -316,6 +336,9 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
         Some((name, line)) => (name.trim(), Some(line.trim())),
         None => (first, None),
     };
+    // A full stop or colon after the name is the model finishing a sentence,
+    // not a different name; without this the whole reply becomes speech.
+    let name = name.trim_end_matches(['.', ':']);
     if name.is_empty() || !identifier(name) {
         return Err(ParseError);
     }
@@ -950,6 +973,27 @@ mod tests {
         assert_eq!(inline.dialogue.as_deref(), Some("sleepy"));
     }
 
+    /// The trim lives here, so it is pinned here: a full stop or colon after
+    /// the name is not part of the name, and the dialogue after `|` is left
+    /// exactly as written.
+    #[test]
+    fn a_full_stop_or_colon_after_the_name_is_not_part_of_it() {
+        assert_eq!(parse_proposal("nap.").expect("trimmed").behavior, "nap");
+        assert_eq!(parse_proposal("nap:").expect("trimmed").behavior, "nap");
+
+        let inline = parse_proposal("nap: | so sleepy...").expect("trimmed");
+        assert_eq!(inline.behavior, "nap");
+        assert_eq!(
+            inline.dialogue.as_deref(),
+            Some("so sleepy..."),
+            "only the name is trimmed"
+        );
+
+        // Case is the Director's business, not the parser's: the name comes
+        // through as written and `declared` maps it to the declared spelling.
+        assert_eq!(parse_proposal("Nap.").expect("trimmed").behavior, "Nap");
+    }
+
     /// Completer that returns a fixed reply and records the prompt it received.
     struct Scripted {
         reply: Result<String, String>,
@@ -1100,6 +1144,69 @@ mod tests {
             Wake::Proposed(said) => {
                 assert!(said.behavior.is_empty());
                 assert_eq!(said.dialogue.as_deref(), Some("cartwheel"));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
+    }
+
+    /// Local models capitalise the name they were told to answer with. The
+    /// proposal has to come back in the declared spelling, or the Engine cannot
+    /// find it. #231.
+    #[test]
+    fn a_behavior_named_in_the_wrong_case_plays_the_declared_one() {
+        let director = ModelDirector::new(Scripted::says("Prowl | on it"), ["prowl", "nap"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(
+                    proposal.behavior, "prowl",
+                    "the declared spelling, which is the one the Engine can find"
+                );
+                assert_eq!(proposal.dialogue.as_deref(), Some("on it"));
+            }
+            other => panic!("expected the Behavior to play, got {other:?}"),
+        }
+    }
+
+    /// Punctuation after the one token the model was asked for is not a
+    /// different answer.
+    #[test]
+    fn a_trailing_full_stop_or_colon_still_names_the_behavior() {
+        for reply in ["Prowl.", "prowl:", "PROWL. | hunting"] {
+            let director = ModelDirector::new(Scripted::says(reply), ["prowl"]);
+            match director.wake(&context(working(), &[])) {
+                Wake::Proposed(proposal) => {
+                    assert_eq!(proposal.behavior, "prowl", "from {reply:?}");
+                }
+                other => panic!("{reply:?} should play prowl, got {other:?}"),
+            }
+        }
+    }
+
+    /// `say` is the model's way of speaking instead of acting. With nothing
+    /// after it there is nothing to speak, and the Static Director is a better
+    /// answer than a buddy that says the word "say". The trim above makes
+    /// `say:` reach this arm, so it is pinned here rather than left to luck.
+    #[test]
+    fn say_with_nothing_to_say_falls_back_rather_than_saying_say() {
+        for reply in ["say", "say:", "Say."] {
+            let director = ModelDirector::new(Scripted::says(reply), ["wave"]);
+            assert_eq!(
+                director.wake(&context(working(), &[])),
+                Wake::Failed,
+                "{reply:?} has nothing to say, so Static should answer"
+            );
+        }
+    }
+
+    /// Ignoring case must not widen what counts as declared: a name nothing
+    /// declares is still said, whatever its case.
+    #[test]
+    fn an_undeclared_name_in_any_case_is_still_said() {
+        let director = ModelDirector::new(Scripted::says("Cartwheel"), ["wave"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty());
+                assert_eq!(said.dialogue.as_deref(), Some("Cartwheel"));
             }
             other => panic!("expected speech, got {other:?}"),
         }
