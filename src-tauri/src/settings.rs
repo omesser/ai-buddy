@@ -5,6 +5,8 @@
 //! editor, the same deal Memory already makes. Missing keys take their
 //! defaults, so an older file keeps working when a field is added.
 
+pub mod form;
+
 use std::fmt;
 use std::fs;
 use std::io;
@@ -98,8 +100,7 @@ impl SettingsView {
             .collect()
     }
 
-    /// Secure-field placeholder. A store error is not "Not set": that invites
-    /// a paste over a key that may still be in Keychain.
+    #[cfg(test)]
     pub fn api_key_placeholder(&self) -> String {
         if !self.api_key_error.is_empty() {
             format!("Unavailable — {}", self.api_key_error)
@@ -110,8 +111,7 @@ impl SettingsView {
         }
     }
 
-    /// Clear stays offered when the store failed: a key we could not read
-    /// may still be there to wipe.
+    #[cfg(test)]
     pub fn clear_key_enabled(&self) -> bool {
         self.api_key_set || !self.api_key_error.is_empty()
     }
