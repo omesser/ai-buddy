@@ -79,9 +79,10 @@ data in a Character Package. The unit the Director proposes and the engine plays
 _Avoid_: Routine, script, macro
 
 **Director**:
-The role that proposes a Behavior. Static weights fill it when no Harness is
-attached; an attached Harness fills it from the same conversation as chat.
-Never runs in the frame loop and never drives animation directly.
+The role that proposes a Behavior and Speech. Static weights fill it when no
+Harness is attached; an attached Harness is that role, from the same
+conversation as chat, and proposes Speech by calling speak. Never runs in the
+frame loop and never drives animation directly.
 _Avoid_: Brain, agent, planner
 
 **Proactive model call**:
@@ -104,6 +105,11 @@ The Primitive and required Animation of gripping a moving Perch so the sprite
 keeps its place on the edge. Engine-played, like Land: no Director proposes it
 in time. Not a State — the sprite stays Perched.
 _Avoid_: Squat, cling, grab (Grab is the verb that picks the sprite up)
+
+**Talk**:
+The Primitive and Required Animation of a talking mouth. Art, not words —
+Speech may play it; a silent reaction may too.
+_Avoid_: speak
 
 **Surface**:
 What the sprite stands on: a display's floor, or a Perch. The umbrella over
@@ -182,8 +188,18 @@ _Avoid_: Invoke, activate, wake
 
 ### Expression
 
+**Speech**:
+The line the buddy says. Always a Director proposal — never a second mouth.
+Static proposes it today; an attached Harness proposes it by calling speak.
+_Avoid_: talk (the Required Animation), message, utterance
+
+**speak**:
+The MCP tool by which a Harness proposes Speech. The Static Director proposes
+the same Speech without this tool.
+_Avoid_: talk, say
+
 **Speech bubble**:
-A bubble above the sprite showing Frame.dialogue, held for reading time (900ms
+A bubble above the sprite showing Speech, held for reading time (900ms
 + 55ms per character, clamped to 2–8 s). A new line replaces the old one.
 Implemented in #119.
 _Avoid_: Chat bubble, message, tooltip
