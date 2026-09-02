@@ -45,6 +45,11 @@ __pycache__/
 # committing one would nest a clone inside itself.
 .worktrees/
 
+# Superpowers implementation plans are session scratch. A decision that
+# has to last goes in docs/adr/, CONTEXT.md, README.md, AGENTS.md, or
+# docs/SPEC.md.
+docs/superpowers/
+
 # Claude Code's working directory: local settings, and the throwaway worktrees
 # subagents are given. Those worktrees are checkouts of this repository, so
 # committing one would nest a clone inside itself.
