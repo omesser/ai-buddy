@@ -100,6 +100,7 @@ impl SettingsView {
             .collect()
     }
 
+    #[cfg(test)]
     pub fn api_key_placeholder(&self) -> String {
         if !self.api_key_error.is_empty() {
             format!("Unavailable — {}", self.api_key_error)
@@ -110,6 +111,7 @@ impl SettingsView {
         }
     }
 
+    #[cfg(test)]
     pub fn clear_key_enabled(&self) -> bool {
         self.api_key_set || !self.api_key_error.is_empty()
     }
