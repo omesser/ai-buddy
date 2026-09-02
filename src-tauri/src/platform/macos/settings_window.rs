@@ -269,12 +269,9 @@ impl SettingsController {
         let mtm = self.mtm();
         let width = box_view.frame().size.width;
         let mut y = box_view.frame().size.height - 4.0;
-        for (index, row) in view.instances.iter().enumerate() {
+        for (index, line) in view.instance_lines().iter().enumerate() {
             y -= 24.0;
-            let label = NSTextField::labelWithString(
-                &NSString::from_str(&format!("{} ({})", row.name, row.character)),
-                mtm,
-            );
+            let label = NSTextField::labelWithString(&NSString::from_str(line), mtm);
             label.setFrame(NSRect::new(
                 NSPoint::new(0.0, y),
                 NSSize::new(width - 90.0, 22.0),
@@ -353,6 +350,16 @@ impl Cursor {
         label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
         self.place(&label, 32.0);
     }
+}
+
+/// Redraw if the window is already up. The frame loop publishes Instances
+/// after a dismiss; without this the list stays the one from last become-key.
+pub fn refresh_if_showing() {
+    CONTROLLER.with(|slot| {
+        if let Some(controller) = slot.borrow().as_ref() {
+            controller.refresh();
+        }
+    });
 }
 
 /// Show the settings window, creating it the first time.

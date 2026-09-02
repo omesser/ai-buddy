@@ -917,7 +917,7 @@ fn run_frame_loop(
             ops,
         } = extras;
         publish_instances(&roster, &instance_rows);
-        let mut tray_actions = {
+        let (mut tray_actions, mut last_menu) = {
             let installed: Vec<String> = characters.keys().cloned().collect();
             let current = lives
                 .first()
@@ -937,7 +937,7 @@ fn run_frame_loop(
                 &settings_now,
                 rules_now.as_deref().unwrap_or(&HideRules::default()),
             );
-            description.actions
+            (description.actions.clone(), Some(description))
         };
 
         // Read once for every Instance: there is one desktop and one user, and
@@ -1193,7 +1193,9 @@ fn run_frame_loop(
                 }
             }
 
+            let mut settings_ops = false;
             while let Ok(op) = ops.try_recv() {
+                settings_ops = true;
                 match op {
                     SettingsOp::Spawn { character, name } => {
                         spawn_live(
@@ -1229,8 +1231,13 @@ fn run_frame_loop(
                 remember_instances(&roster, &settings, &settings_path);
             }
             publish_instances(&roster, &instance_rows);
+            if settings_ops {
+                let _ = app.run_on_main_thread(|| {
+                    platform::refresh_settings();
+                });
+            }
 
-            if !chosen.is_empty() {
+            {
                 let installed: Vec<String> = characters.keys().cloned().collect();
                 let current = lives
                     .first()
@@ -1250,19 +1257,21 @@ fn run_frame_loop(
                     &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
                 );
-                tray_actions = description.actions.clone();
-                let handle = app.clone();
-                let _ = app.run_on_main_thread(move || {
-                    if let Some(state) = handle.try_state::<TrayHandle>() {
-                        if let Ok(guard) = state.0.lock() {
-                            if let Some(icon) = guard.as_ref() {
-                                if let Err(why) = tray::refresh(icon, &handle, &description) {
-                                    eprintln!("tray: {why}");
+                if let Some(description) = menu::replace_if_changed(&mut last_menu, description) {
+                    tray_actions = description.actions.clone();
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        if let Some(state) = handle.try_state::<TrayHandle>() {
+                            if let Ok(guard) = state.0.lock() {
+                                if let Some(icon) = guard.as_ref() {
+                                    if let Err(why) = tray::refresh(icon, &handle, &description) {
+                                        eprintln!("tray: {why}");
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                }
             }
 
             if let Ok(settings) = settings.lock() {

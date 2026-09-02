@@ -73,6 +73,14 @@ impl SettingsView {
     pub fn excluded_text(&self) -> String {
         self.excluded_applications.join("\n")
     }
+
+    /// The Instances list as the window prints it: name, then Character.
+    pub fn instance_lines(&self) -> Vec<String> {
+        self.instances
+            .iter()
+            .map(|row| format!("{} ({})", row.name, row.character))
+            .collect()
+    }
 }
 
 /// Work the settings window asks the frame loop to do.
@@ -558,6 +566,33 @@ mod tests {
         assert_eq!(view.last_payload.as_deref(), Some("You are Nim."));
         assert_eq!(view.installed, ["bmo", "nim"]);
         assert_eq!(view.instances[0].name, "Nim");
+        assert_eq!(view.instance_lines(), ["Nim (nim)"]);
+    }
+
+    /// The Instances list is this view. After a dismiss the window must
+    /// redraw from a view that no longer carries the gone row.
+    #[test]
+    fn a_dismissed_instance_is_gone_from_the_settings_list() {
+        let settings = Settings::default();
+        let remaining = vec![InstanceRow {
+            id: "trump".to_string(),
+            name: "Trump".to_string(),
+            character: "Trump".to_string(),
+        }];
+        let view = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/memory.md"),
+            None,
+            vec!["Trump".to_string(), "Cat".to_string()],
+            remaining,
+        );
+        assert_eq!(view.instance_lines(), ["Trump (Trump)"]);
+        assert!(
+            view.instance_lines()
+                .iter()
+                .all(|line| !line.contains("Cat")),
+            "Cat must not remain after it was dismissed"
+        );
     }
 
     #[test]

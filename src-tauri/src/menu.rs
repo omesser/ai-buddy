@@ -270,6 +270,23 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     MenuDescription { entries, actions }
 }
 
+/// The next tray draw, if this description is not the one already showing.
+///
+/// Settings can dismiss or spawn without a menu click. The tray only
+/// updates when someone pushes a new description, so "did a row change"
+/// is the gate, not "did they click".
+pub fn replace_if_changed(
+    previous: &mut Option<MenuDescription>,
+    next: MenuDescription,
+) -> Option<MenuDescription> {
+    if previous.as_ref() == Some(&next) {
+        None
+    } else {
+        *previous = Some(next.clone());
+        Some(next)
+    }
+}
+
 /// Build the native menu from a description.
 ///
 /// Must be called on the main thread. Every constructor here reaches the
@@ -423,6 +440,25 @@ mod tests {
             MenuEntry::Item { id: got, .. } | MenuEntry::Check { id: got, .. } => got == id,
             _ => false,
         })
+    }
+
+    /// The rows of the Instances submenu.
+    fn instance_items(description: &MenuDescription) -> Option<&Vec<MenuEntry>> {
+        description.entries.iter().find_map(|entry| match entry {
+            MenuEntry::Submenu { label, items } if label == "Instances" => Some(items),
+            _ => None,
+        })
+    }
+
+    fn instance_labels(description: &MenuDescription) -> Vec<&str> {
+        instance_items(description)
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| match entry {
+                MenuEntry::Item { label, .. } => Some(label.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The rows of the Character submenu, or none if there is no submenu.
@@ -718,6 +754,47 @@ mod tests {
                 _ => true,
             }),
             "Do Not Disturb is not a hide rule"
+        );
+    }
+
+    /// The tray only redraws when this says the description changed. A
+    /// dismiss that does not pass through a menu click still has to.
+    #[test]
+    fn a_dismissed_instance_is_a_menu_that_must_be_pushed() {
+        let installed = names(&["bmo"]);
+        let two = [
+            ("id-nim".to_string(), "Nim".to_string()),
+            ("id-bmo".to_string(), "BMO".to_string()),
+        ];
+        let mut snap = snapshot(&installed, "bmo", false);
+        snap.instances = &two;
+        let before = describe(snap.clone());
+
+        let one = [("id-nim".to_string(), "Nim".to_string())];
+        snap.instances = &one;
+        let after = describe(snap);
+
+        assert_eq!(instance_labels(&before), ["Nim", "BMO", "New…"]);
+        assert_eq!(instance_labels(&after), ["Nim", "New…"]);
+
+        let mut last = Some(before);
+        let pushed = replace_if_changed(&mut last, after);
+        assert!(pushed.is_some(), "a dismissed Instance is a different menu");
+        assert_eq!(
+            instance_labels(pushed.as_ref().expect("pushed")),
+            ["Nim", "New…"]
+        );
+    }
+
+    #[test]
+    fn an_unchanged_menu_is_not_pushed_again() {
+        let installed = names(&["bmo"]);
+        let first = describe(snapshot(&installed, "bmo", false));
+        let again = describe(snapshot(&installed, "bmo", false));
+        let mut last = Some(first);
+        assert!(
+            replace_if_changed(&mut last, again).is_none(),
+            "the same rows are not a rebuild"
         );
     }
 }
