@@ -131,9 +131,18 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     macos::configure_overlay(window)
 }
 
+/// X11 on Linux: EWMH states for floating, skip-taskbar, skip-pager.
+/// Click-through via XShapeCombineMask will be added after window geometry lands.
+/// Wayland offers no reliable compositor-independent way to configure these, so it
+/// stays degraded.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+    x11::configure_overlay(window)
+}
+
 /// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.
 /// The plain Tauri window is what every other platform gets.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }

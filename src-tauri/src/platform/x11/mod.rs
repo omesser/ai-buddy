@@ -6,6 +6,8 @@
 
 #![cfg(all(unix, not(target_os = "macos")))]
 
+mod overlay;
 mod pointer;
 
+pub use overlay::configure_overlay;
 pub use pointer::{primary_button_down, secondary_button_down};

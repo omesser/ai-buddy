@@ -35,6 +35,9 @@ pub fn secondary_button_down() -> bool {
 fn button_state_mask() -> Option<u16> {
     let display = display()?;
     let screen = &display.setup().roots[0];
-    let reply = xproto::query_pointer(display, screen.root).ok()?.reply().ok()?;
+    let reply = xproto::query_pointer(display, screen.root)
+        .ok()?
+        .reply()
+        .ok()?;
     Some(reply.mask.into())
 }
