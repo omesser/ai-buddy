@@ -105,6 +105,10 @@ cargo run
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
+Settings → Director persists base URL and model, and stores the API key in
+the OS secret store (Keychain on macOS). `cargo run` with those env vars
+unset uses the saved Completer. The env vars remain a one-process override.
+
 A Character that should grow faster or slower than doubling says so:
 
 ```toml

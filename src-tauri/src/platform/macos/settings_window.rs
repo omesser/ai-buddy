@@ -11,8 +11,8 @@ use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSBackingStoreType, NSButton, NSColor,
     NSControlStateValueOff, NSControlStateValueOn, NSFont, NSPopUpButton, NSScrollView,
-    NSTextDelegate, NSTextField, NSTextView, NSTextViewDelegate, NSView, NSWindow,
-    NSWindowDelegate, NSWindowStyleMask,
+    NSSecureTextField, NSTextDelegate, NSTextField, NSTextView, NSTextViewDelegate, NSView,
+    NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -22,7 +22,9 @@ use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
-const DOC_HEIGHT: f64 = 1156.0;
+// Completer rows under Director. Short of this the Launch section clips
+// below the document.
+const DOC_HEIGHT: f64 = 1332.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
 
@@ -41,6 +43,10 @@ struct Ivars {
     session: RefCell<Option<SettingsSession>>,
     window: RefCell<Option<Retained<NSWindow>>>,
     director: RefCell<Option<Retained<NSButton>>>,
+    base_url: RefCell<Option<Retained<NSTextField>>>,
+    model: RefCell<Option<Retained<NSTextField>>>,
+    api_key: RefCell<Option<Retained<NSTextField>>>,
+    clear_key: RefCell<Option<Retained<NSButton>>>,
     ambient: RefCell<Option<Retained<NSButton>>>,
     dnd: RefCell<Option<Retained<NSButton>>>,
     hidden: RefCell<Option<Retained<NSButton>>>,
@@ -97,6 +103,36 @@ define_class!(
                 _ => return,
             }
             self.apply(patch);
+        }
+
+        #[unsafe(method(commitEndpoint:))]
+        fn commit_endpoint(&self, _sender: Option<&AnyObject>) {
+            let director_base_url = trimmed_field(&self.ivars().base_url);
+            let director_model = trimmed_field(&self.ivars().model);
+            let typed_key = trimmed_field(&self.ivars().api_key);
+            // Empty is leave-alone: filling None would be indistinguishable
+            // from Clear, and would wipe a stored key on every blur.
+            let director_api_key = if typed_key.is_empty() {
+                None
+            } else {
+                Some(typed_key)
+            };
+            self.apply(SettingsPatch {
+                director_base_url: Some(director_base_url),
+                director_model: Some(director_model),
+                director_api_key,
+                ..SettingsPatch::default()
+            });
+            self.refresh();
+        }
+
+        #[unsafe(method(clearKey:))]
+        fn clear_key(&self, _sender: Option<&AnyObject>) {
+            self.apply(SettingsPatch {
+                director_api_key: Some("".into()),
+                ..SettingsPatch::default()
+            });
+            self.refresh();
         }
 
         #[unsafe(method(excludedEnded:))]
@@ -232,6 +268,26 @@ impl SettingsController {
             return;
         };
         fill_checkbox(&self.ivars().director, view.director_enabled);
+        if let Some(field) = self.ivars().base_url.borrow().as_ref() {
+            field.setStringValue(&NSString::from_str(&view.director_base_url));
+        }
+        if let Some(field) = self.ivars().model.borrow().as_ref() {
+            field.setStringValue(&NSString::from_str(&view.director_model));
+        }
+        if let Some(field) = self.ivars().api_key.borrow().as_ref() {
+            // The store is not a value we put back in a password field: that
+            // would echo the secret, and an empty commit on blur would wipe it.
+            field.setStringValue(&NSString::from_str(""));
+            let placeholder = if view.api_key_set {
+                format!("Set — {}", view.api_key_fingerprint)
+            } else {
+                "Not set".into()
+            };
+            field.setPlaceholderString(Some(&NSString::from_str(&placeholder)));
+        }
+        if let Some(button) = self.ivars().clear_key.borrow().as_ref() {
+            button.setEnabled(view.api_key_set);
+        }
         fill_checkbox(&self.ivars().ambient, view.ambient_wakes);
         fill_checkbox(&self.ivars().dnd, view.do_not_disturb);
         fill_checkbox(&self.ivars().hidden, view.hidden);
@@ -414,6 +470,43 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let ambient = checkbox("Ambient session wakes", TAG_AMBIENT, &controller, mtm);
     cursor.place(&ambient, 22.0);
     cursor.hint("Off keeps Poke and Summon on the session path. Idle life stays Static.");
+    let base_url_label = NSTextField::labelWithString(&NSString::from_str("Base URL"), mtm);
+    cursor.place(&base_url_label, 18.0);
+    let base_url = endpoint_field("https://api.openai.com", &controller, mtm);
+    cursor.place(&base_url, 24.0);
+    let model_label = NSTextField::labelWithString(&NSString::from_str("Model"), mtm);
+    cursor.place(&model_label, 18.0);
+    let model = endpoint_field("gpt-4o-mini", &controller, mtm);
+    cursor.place(&model, 24.0);
+    let api_key_label = NSTextField::labelWithString(&NSString::from_str("API key"), mtm);
+    cursor.place(&api_key_label, 18.0);
+    let api_key = NSSecureTextField::initWithFrame(
+        NSSecureTextField::alloc(mtm),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
+    )
+    .into_super();
+    bind_commit(&api_key, &controller);
+    let clear_key = unsafe {
+        NSButton::buttonWithTitle_target_action(
+            &NSString::from_str("Clear key"),
+            Some(&*controller),
+            Some(sel!(clearKey:)),
+            mtm,
+        )
+    };
+    cursor.y -= 24.0;
+    let key_width = FIELD_WIDTH - 100.0;
+    api_key.setFrame(NSRect::new(
+        NSPoint::new(MARGIN, cursor.y),
+        NSSize::new(key_width, 24.0),
+    ));
+    clear_key.setFrame(NSRect::new(
+        NSPoint::new(MARGIN + key_width + 8.0, cursor.y),
+        NSSize::new(92.0, 24.0),
+    ));
+    document.addSubview(&api_key);
+    document.addSubview(&clear_key);
+    cursor.y -= 8.0;
     cursor.heading("Last user turn");
     cursor.hint("Inspect only. The last session turn, opening Character Prompt or follow-up.");
     let payload = inspect_block(mtm);
@@ -533,6 +626,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     cursor.place(&launch, 22.0);
 
     *controller.ivars().director.borrow_mut() = Some(director);
+    *controller.ivars().base_url.borrow_mut() = Some(base_url);
+    *controller.ivars().model.borrow_mut() = Some(model);
+    *controller.ivars().api_key.borrow_mut() = Some(api_key);
+    *controller.ivars().clear_key.borrow_mut() = Some(clear_key);
     *controller.ivars().ambient.borrow_mut() = Some(ambient);
     *controller.ivars().dnd.borrow_mut() = Some(dnd);
     *controller.ivars().hidden.borrow_mut() = Some(hidden);
@@ -584,6 +681,38 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().window.borrow_mut() = Some(window);
     controller.refresh();
     controller
+}
+
+fn trimmed_field(slot: &RefCell<Option<Retained<NSTextField>>>) -> String {
+    slot.borrow()
+        .as_ref()
+        .map(|field| field.stringValue().to_string())
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn endpoint_field(
+    placeholder: &str,
+    controller: &SettingsController,
+    mtm: MainThreadMarker,
+) -> Retained<NSTextField> {
+    let field = NSTextField::textFieldWithString(&NSString::from_str(""), mtm);
+    field.setPlaceholderString(Some(&NSString::from_str(placeholder)));
+    bind_commit(&field, controller);
+    field
+}
+
+fn bind_commit(field: &NSTextField, controller: &SettingsController) {
+    // Target/action, not textDidEndEditing: that selector already commits
+    // excluded applications and cannot tell these fields apart.
+    unsafe {
+        field.setTarget(Some(controller));
+        field.setAction(Some(sel!(commitEndpoint:)));
+    }
+    if let Some(cell) = field.cell() {
+        cell.setSendsActionOnEndEditing(true);
+    }
 }
 
 fn checkbox(
