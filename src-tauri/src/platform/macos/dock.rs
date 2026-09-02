@@ -108,6 +108,9 @@ pub fn dock_bounds() -> Option<(Rect, DockSource)> {
     if let Some(bounds) = core_dock_rect().and_then(horizontal) {
         return Some((bounds, DockSource::CoreDock));
     }
+    if !crate::consent::wanted(crate::consent::CapabilityId::Accessibility) {
+        return None;
+    }
     ax_bounds()
         .and_then(horizontal)
         .map(|bounds| (bounds, DockSource::Accessibility))

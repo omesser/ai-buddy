@@ -25,7 +25,6 @@ pub enum RowOperation {
     OpenMemory,
     WipeMemory,
     ClearKey,
-    EnableConsent(String),
 }
 
 /// One section of the settings form.
@@ -386,11 +385,11 @@ pub fn describe() -> FormDescription {
     );
     actions.insert(
         CONSENT_ACCESSIBILITY_ID.to_string(),
-        RowAction::Operation(RowOperation::EnableConsent("accessibility".to_string())),
+        RowAction::PatchField("use_accessibility".to_string()),
     );
     actions.insert(
         CONSENT_SCREEN_RECORDING_ID.to_string(),
-        RowAction::Operation(RowOperation::EnableConsent("screen_recording".to_string())),
+        RowAction::PatchField("use_screen_recording".to_string()),
     );
 
     FormDescription { sections, actions }
@@ -734,15 +733,11 @@ mod tests {
 
         assert_eq!(
             description.actions.get(CONSENT_ACCESSIBILITY_ID),
-            Some(&RowAction::Operation(RowOperation::EnableConsent(
-                "accessibility".to_string()
-            )))
+            Some(&RowAction::PatchField("use_accessibility".to_string()))
         );
         assert_eq!(
             description.actions.get(CONSENT_SCREEN_RECORDING_ID),
-            Some(&RowAction::Operation(RowOperation::EnableConsent(
-                "screen_recording".to_string()
-            )))
+            Some(&RowAction::PatchField("use_screen_recording".to_string()))
         );
     }
 }

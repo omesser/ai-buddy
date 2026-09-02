@@ -1353,6 +1353,14 @@ fn main() {
             // user asked for would be worse than saying so.
             let settings_file = settings::settings_path(&memory::data_dir());
             let mut settings = Settings::load(&settings_file);
+            consent::set_wanted(
+                consent::CapabilityId::Accessibility,
+                settings.use_accessibility,
+            );
+            consent::set_wanted(
+                consent::CapabilityId::ScreenRecording,
+                settings.use_screen_recording,
+            );
             let wanted = requested_instances(&settings).unwrap_or_else(|why| {
                 eprintln!("instances: {why}");
                 std::process::exit(1);

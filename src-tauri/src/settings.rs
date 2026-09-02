@@ -89,7 +89,7 @@ impl SettingsView {
             api_key_set,
             api_key_fingerprint,
             api_key_error,
-            consent: consent::rows(&consent::Null),
+            consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
         }
     }
@@ -277,13 +277,13 @@ impl SettingsSession {
             instances,
             self.key_status_for_view(),
         );
-        view.consent = consent::rows(consent::live());
         view.consent_listed_as = consent::process_listed_as();
         view
     }
 
-    /// Flip on: the system prompt for that grant, and only then. Flip off
-    /// cannot revoke a macOS grant; the next refresh shows the truth.
+    /// Flip on: persist intent, then the system prompt if the OS has not
+    /// granted yet. Flip off: persist intent and stop using the grant; the
+    /// OS grant stays until Privacy & Security revokes it.
     pub fn enable_consent(&self, id: CapabilityId) {
         consent::enable(id, consent::live());
     }
@@ -295,9 +295,13 @@ impl SettingsSession {
         if let Some(raw) = patch.director_api_key.as_deref() {
             self.remember_written_key(raw);
         }
+        let prompt_ax = patch.use_accessibility == Some(true);
+        let prompt_sr = patch.use_screen_recording == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
         settings.apply(patch);
+        consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
+        consent::set_wanted(CapabilityId::ScreenRecording, settings.use_screen_recording);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
@@ -321,6 +325,12 @@ impl SettingsSession {
         }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
+        }
+        if prompt_ax {
+            self.enable_consent(CapabilityId::Accessibility);
+        }
+        if prompt_sr {
+            self.enable_consent(CapabilityId::ScreenRecording);
         }
         Ok(())
     }
@@ -401,6 +411,8 @@ pub struct SettingsPatch {
     /// Present so callers can write the store; `Settings::apply` ignores it
     /// because the key is not a file field.
     pub director_api_key: Option<String>,
+    pub use_accessibility: Option<bool>,
+    pub use_screen_recording: Option<bool>,
 }
 
 impl fmt::Debug for SettingsPatch {
@@ -421,6 +433,8 @@ impl fmt::Debug for SettingsPatch {
                 "director_api_key",
                 &self.director_api_key.as_deref().map(model::key_fingerprint),
             )
+            .field("use_accessibility", &self.use_accessibility)
+            .field("use_screen_recording", &self.use_screen_recording)
             .finish()
     }
 }
@@ -460,8 +474,21 @@ impl Settings {
         if let Some(value) = patch.director_model {
             self.director_model = value;
         }
+        if let Some(value) = patch.use_accessibility {
+            self.use_accessibility = value;
+        }
+        if let Some(value) = patch.use_screen_recording {
+            self.use_screen_recording = value;
+        }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
+    }
+
+    pub fn wants_consent(&self, id: CapabilityId) -> bool {
+        match id {
+            CapabilityId::Accessibility => self.use_accessibility,
+            CapabilityId::ScreenRecording => self.use_screen_recording,
+        }
     }
 }
 
@@ -497,6 +524,10 @@ pub struct Settings {
     pub director_base_url: String,
     /// Empty means unset — Completer resolution falls through to env then defaults.
     pub director_model: String,
+    /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
+    pub use_accessibility: bool,
+    /// Use Screen Recording where the OS has granted it. Off does not revoke TCC.
+    pub use_screen_recording: bool,
 }
 
 impl Default for Settings {
@@ -514,6 +545,8 @@ impl Default for Settings {
             instances: Vec::new(),
             director_base_url: String::new(),
             director_model: String::new(),
+            use_accessibility: false,
+            use_screen_recording: false,
         }
     }
 }
@@ -672,6 +705,8 @@ mod tests {
             }],
             director_base_url: "https://api.x.ai".into(),
             director_model: "grok-4.6".into(),
+            use_accessibility: true,
+            use_screen_recording: false,
         };
         settings.save(&path).expect("save");
 
@@ -910,6 +945,8 @@ mod tests {
             instances: Vec::new(),
             director_base_url: String::new(),
             director_model: String::new(),
+            use_accessibility: true,
+            use_screen_recording: false,
         };
         let mut view = SettingsView::from_parts(
             &settings,
@@ -941,11 +978,43 @@ mod tests {
             view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
             ["Accessibility", "Screen Recording"]
         );
+        assert!(
+            view.consent[0].granted,
+            "the checkbox follows settings intent, not the OS grant"
+        );
+        assert!(!view.consent[1].granted);
         view.consent_listed_as = "Cursor".into();
         assert!(
             view.consent_intro().contains("Cursor"),
             "the pane has to name the TCC row, got {:?}",
             view.consent_intro()
+        );
+    }
+
+    #[test]
+    fn unchecking_consent_stops_using_it_without_a_file_grant() {
+        let mut settings = Settings::default();
+        settings.apply(SettingsPatch {
+            use_accessibility: Some(true),
+            ..SettingsPatch::default()
+        });
+        assert!(settings.use_accessibility);
+        settings.apply(SettingsPatch {
+            use_accessibility: Some(false),
+            ..SettingsPatch::default()
+        });
+        assert!(!settings.use_accessibility);
+        let view = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (false, String::new(), String::new()),
+        );
+        assert!(
+            !view.consent[0].granted,
+            "unchecking has to show off even if the OS still holds the grant"
         );
     }
 

@@ -5,6 +5,8 @@
 //! grant, what it buys, what it costs, and the system prompt fires only when
 //! the user flips one on.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CapabilityId {
     Accessibility,
@@ -25,6 +27,8 @@ pub struct ConsentRow {
     pub title: &'static str,
     pub buys: &'static str,
     pub costs: &'static str,
+    /// Settings has this capability on. Separate from the OS grant: flipping
+    /// on prompts if needed; flipping off stops using it and does not revoke.
     pub granted: bool,
 }
 
@@ -51,11 +55,32 @@ pub const CAPABILITIES: &[Capability] = &[
 ];
 
 /// Linux, and tests that do not care about the live OS.
+#[cfg(not(target_os = "macos"))]
 pub struct Null;
+
+static WANT_ACCESSIBILITY: AtomicBool = AtomicBool::new(false);
+static WANT_SCREEN_RECORDING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the buddy should use this grant. The OS grant can remain after
+/// the user unchecks; Dock geometry and titles must still follow this.
+pub fn wanted(id: CapabilityId) -> bool {
+    match id {
+        CapabilityId::Accessibility => WANT_ACCESSIBILITY.load(Ordering::Relaxed),
+        CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.load(Ordering::Relaxed),
+    }
+}
+
+pub fn set_wanted(id: CapabilityId, on: bool) {
+    match id {
+        CapabilityId::Accessibility => WANT_ACCESSIBILITY.store(on, Ordering::Relaxed),
+        CapabilityId::ScreenRecording => WANT_SCREEN_RECORDING.store(on, Ordering::Relaxed),
+    }
+}
 
 #[cfg(target_os = "macos")]
 struct Macos;
 
+#[cfg(not(target_os = "macos"))]
 impl Probe for Null {
     fn granted(&self, _: CapabilityId) -> bool {
         false
@@ -246,7 +271,7 @@ mod macos {
     }
 }
 
-pub fn rows(probe: &dyn Probe) -> Vec<ConsentRow> {
+pub fn rows(wanted: impl Fn(CapabilityId) -> bool) -> Vec<ConsentRow> {
     CAPABILITIES
         .iter()
         .map(|cap| ConsentRow {
@@ -254,7 +279,7 @@ pub fn rows(probe: &dyn Probe) -> Vec<ConsentRow> {
             title: cap.title,
             buys: cap.buys,
             costs: cap.costs,
-            granted: probe.granted(cap.id),
+            granted: wanted(cap.id),
         })
         .collect()
 }
@@ -278,7 +303,7 @@ pub fn listed_under_hint(name: &str) -> String {
 /// Cursor, a packaged build is ai-buddy.
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
-        "First run grants nothing. Check a box to ask macOS. {} Unchecking here does not revoke a grant.",
+        "First run grants nothing. Check a box to ask macOS. {} Unchecking stops the buddy using it; turn it off in Privacy & Security to revoke.",
         listed_under_hint(listed_as)
     )
 }
@@ -293,14 +318,6 @@ pub fn process_listed_as() -> String {
     #[cfg(not(target_os = "macos"))]
     {
         "ai-buddy".into()
-    }
-}
-
-pub fn capability_from_name(name: &str) -> Option<CapabilityId> {
-    match name {
-        "accessibility" => Some(CapabilityId::Accessibility),
-        "screen_recording" => Some(CapabilityId::ScreenRecording),
-        _ => None,
     }
 }
 
@@ -348,7 +365,7 @@ mod tests {
     /// unreachable again: nothing else names the trade. #148.
     #[test]
     fn the_catalog_names_each_capability_and_its_trade() {
-        let rows = rows(&Null);
+        let rows = rows(|_| false);
         assert_eq!(rows.len(), 2);
 
         assert_eq!(rows[0].id, CapabilityId::Accessibility);
@@ -380,12 +397,12 @@ mod tests {
         assert!(!rows[1].granted);
     }
 
-    /// A grant the OS already holds must show as on, or the checkbox lies
-    /// and flipping it would prompt for something already given.
+    /// The checkbox is settings intent, not the OS grant. An OS grant the
+    /// user turned off here must show as off or they cannot stop the buddy
+    /// using it.
     #[test]
-    fn rows_report_the_live_grants() {
-        let probe = Fake::granting(&[CapabilityId::Accessibility]);
-        let rows = rows(&probe);
+    fn rows_report_wanted_capabilities() {
+        let rows = rows(|id| id == CapabilityId::Accessibility);
         assert!(rows[0].granted);
         assert!(!rows[1].granted);
     }

@@ -10,17 +10,16 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSAutoresizingMaskOptions, NSBackingStoreType, NSButton,
-    NSColor, NSControlStateValueOff, NSControlStateValueOn, NSControlTextEditingDelegate, NSFont,
-    NSPopUpButton, NSScrollView, NSSecureTextField, NSTextDelegate, NSTextField,
-    NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
-    NSWindowStyleMask,
+    NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
+    NSBackingStoreType, NSButton, NSColor, NSControlStateValueOff, NSControlStateValueOn,
+    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
+    NSStatusWindowLevel, NSTextDelegate, NSTextField, NSTextFieldDelegate, NSTextView,
+    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
-use crate::consent;
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
@@ -37,6 +36,7 @@ thread_local! {
 struct Ivars {
     session: RefCell<Option<SettingsSession>>,
     window: RefCell<Option<Retained<NSWindow>>>,
+    scroll: RefCell<Option<Retained<NSScrollView>>>,
     director: RefCell<Option<Retained<NSButton>>>,
     base_url: RefCell<Option<Retained<NSTextField>>>,
     model: RefCell<Option<Retained<NSTextField>>>,
@@ -75,7 +75,7 @@ define_class!(
         }
 
         #[unsafe(method(windowDidResize:))]
-        fn resized(&self, _notification: &NSNotification) {
+        fn did_resize(&self, _notification: &NSNotification) {
             self.fit_to_window();
         }
     }
@@ -112,18 +112,6 @@ define_class!(
                 return;
             };
 
-            if let form::RowAction::Operation(form::RowOperation::EnableConsent(name)) = action {
-                if on {
-                    if let Some(capability_id) = consent::capability_from_name(name) {
-                        if let Some(session) = self.ivars().session.borrow().as_ref() {
-                            session.enable_consent(capability_id);
-                        }
-                    }
-                }
-                self.refresh();
-                return;
-            }
-
             let mut patch = SettingsPatch::default();
             if let form::RowAction::PatchField(field_name) = action {
                 match field_name.as_str() {
@@ -133,6 +121,8 @@ define_class!(
                     "hidden" => patch.hidden = Some(on),
                     "hide_in_fullscreen" => patch.hide_in_fullscreen = Some(on),
                     "launch_at_login" => patch.launch_at_login = Some(on),
+                    "use_accessibility" => patch.use_accessibility = Some(on),
+                    "use_screen_recording" => patch.use_screen_recording = Some(on),
                     _ => return,
                 }
             } else {
@@ -183,7 +173,6 @@ define_class!(
                     form::RowOperation::OpenMemory => self.do_memory_open(),
                     form::RowOperation::WipeMemory => self.do_memory_wipe(),
                     form::RowOperation::ClearKey => self.do_clear_key(),
-                    form::RowOperation::EnableConsent(name) => self.do_enable_consent(name),
                 }
             }
         }
@@ -278,15 +267,6 @@ impl SettingsController {
             director_api_key: Some("".into()),
             ..SettingsPatch::default()
         });
-        self.refresh();
-    }
-
-    fn do_enable_consent(&self, name: &str) {
-        if let Some(capability_id) = consent::capability_from_name(name) {
-            if let Some(session) = self.ivars().session.borrow().as_ref() {
-                session.enable_consent(capability_id);
-            }
-        }
         self.refresh();
     }
 
@@ -394,19 +374,23 @@ impl SettingsController {
 
     fn fit_to_window(&self) {
         let ivars = self.ivars();
+        let Some(window) = ivars.window.borrow().clone() else {
+            return;
+        };
         let Some(scroll) = ivars.scroll.borrow().clone() else {
             return;
         };
+        let Some(content) = window.contentView() else {
+            return;
+        };
+        scroll.setFrame(content.bounds());
         let Some(document) = scroll.documentView() else {
             return;
         };
-        document.setFrameSize(document_size(scroll.contentSize().width));
-        for child in document.subviews() {
-            if let Ok(field) = child.downcast::<NSTextField>() {
-                if field.preferredMaxLayoutWidth() > 0.0 {
-                    field.setPreferredMaxLayoutWidth(field.frame().size.width);
-                }
-            }
+        let width = scroll.contentSize().width;
+        document.setFrameSize(NSSize::new(width, DOC_HEIGHT));
+        if let Some(field) = ivars.consent_intro.borrow().as_ref() {
+            field.setPreferredMaxLayoutWidth(width - MARGIN * 2.0);
         }
     }
 
@@ -756,6 +740,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     scroll.setDocumentView(Some(&document));
     scroll.setHasVerticalScroller(true);
     scroll.setHasHorizontalScroller(false);
+    stretch_xy(&scroll);
 
     let window = unsafe {
         let style = NSWindowStyleMask::Titled
@@ -774,6 +759,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
         );
         window.setTitle(&NSString::from_str("Settings"));
         window.setContentView(Some(&scroll));
+        window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
         window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
         window
     };
@@ -782,7 +768,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().scroll.borrow_mut() = Some(scroll);
     controller.fit_to_window();
     controller.refresh();
-    window.makeKeyAndOrderFront(None);
+    raise(&window, mtm);
 
     controller
 }
@@ -796,7 +782,7 @@ pub fn show(session: SettingsSession) {
             *existing.ivars().session.borrow_mut() = Some(session);
             existing.refresh();
             if let Some(window) = existing.ivars().window.borrow().as_ref() {
-                window.makeKeyAndOrderFront(None);
+                raise(window, mtm);
             }
         } else {
             *borrow = Some(build(mtm, session));
@@ -826,9 +812,6 @@ impl Cursor {
             NSSize::new(FIELD_WIDTH, height),
         ));
         stretch_x(widget);
-        if let Some(field) = widget.downcast_ref::<NSTextField>() {
-            field.setPreferredMaxLayoutWidth(FIELD_WIDTH);
-        }
         self.parent.addSubview(widget);
     }
 
@@ -980,19 +963,33 @@ fn fill_popup(cell: &RefCell<Option<Retained<NSPopUpButton>>>, options: &[String
     popup.selectItemWithTitle(&NSString::from_str(current));
 }
 
-/// NSClipView will not stretch a document taller than itself, so WidthSizable
-/// on the form is a no-op while it scrolls. Width is the clip's; height is the
-/// form.
-fn document_size(clip_width: f64) -> NSSize {
-    NSSize::new(clip_width, DOC_HEIGHT)
+/// Settings sits above the overlay. The overlay is floating; a normal window
+/// falls behind it, and tray Settings then looks like a no-op.
+fn raise(window: &NSWindow, mtm: MainThreadMarker) {
+    let app = NSApplication::sharedApplication(mtm);
+    unsafe {
+        let _: () = msg_send![window, setLevel: NSStatusWindowLevel as NSWindowLevel];
+        let _: () = msg_send![window, setHidesOnDeactivate: false];
+        let _: () = msg_send![&app, activateIgnoringOtherApps: true];
+        let _: () = msg_send![window, orderFrontRegardless];
+    }
+    window.makeKeyAndOrderFront(None);
 }
 
 fn stretch_x(view: &NSView) {
-    // wrappingLabelWithString opts into Auto Layout; this window is frames.
     unsafe {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+}
+
+fn stretch_xy(view: &NSView) {
+    unsafe {
+        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
+    }
+    view.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
 }
 
 fn pin_right(view: &NSView) {
@@ -1000,20 +997,4 @@ fn pin_right(view: &NSView) {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_document_width_follows_the_clip_view() {
-        let at_open = document_size(WINDOW_WIDTH);
-        assert_eq!(at_open.width, WINDOW_WIDTH);
-        assert_eq!(at_open.height, DOC_HEIGHT);
-
-        let wider = document_size(800.0);
-        assert_eq!(wider.width, 800.0);
-        assert_eq!(wider.height, DOC_HEIGHT);
-    }
 }
