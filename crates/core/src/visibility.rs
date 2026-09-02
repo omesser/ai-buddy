@@ -40,6 +40,18 @@ pub const FADE_MS: u32 = 500;
 /// which differ by the depth of a menu bar.
 const EDGE_TOLERANCE: f64 = 1.0;
 
+/// Thickness at or below which a window can be the Dock or the menu bar,
+/// as a fraction of the display. A zoomed window is most of the display.
+/// Same third as `plausible_dock`. #188.
+const STRIP_FRACTION: f64 = 0.3;
+
+/// A Dock or menu bar spans most of the edge it sits on.
+///
+/// A short window on that edge is still the frontmost app. Skipping it would
+/// treat the fullscreen window behind it as frontmost and hide the Character.
+/// #188.
+const STRIP_SPAN: f64 = 0.5;
+
 /// What the desktop says about whether the Character belongs on screen.
 ///
 /// One condition, named rather than passed as a bare bool, because the caller
@@ -154,9 +166,10 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
 
 /// Whether the frontmost application window covers a whole display.
 ///
-/// The frontmost window is the first one: a `WorldSnapshot` carries windows in
-/// descending z-order and only at the ordinary application level, so the head
-/// of that list is the window the user is working in.
+/// Skip the Dock and the menu bar. They sit on a display edge and never cover
+/// it. The snapshot lists the Dock first because it draws above every app
+/// window, so treating it as frontmost would miss a fullscreen app behind it.
+/// #188.
 ///
 /// Covering a *whole* display is what separates fullscreen from zoomed. A
 /// zoomed window stops at the menu bar and the Dock, and the Character is
@@ -173,7 +186,11 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
 pub fn fullscreen_frontmost(windows: &[WindowRect], frames: &[Rect]) -> bool {
     windows
         .iter()
-        .find(|window| frames.iter().any(|frame| overlaps(window, frame)))
+        .find(|window| {
+            frames
+                .iter()
+                .any(|frame| overlaps(window, frame) && !reserved_strip(window, frame))
+        })
         .is_some_and(|window| frames.iter().any(|frame| covers(window, frame)))
 }
 
@@ -190,6 +207,24 @@ fn overlaps(window: &WindowRect, frame: &Rect) -> bool {
         && window.x + window.width > frame.x
         && window.y < frame.y + frame.height
         && window.y + window.height > frame.y
+}
+
+/// The Dock and the menu bar. Skip them so a fullscreen window behind them
+/// still counts.
+fn reserved_strip(window: &WindowRect, frame: &Rect) -> bool {
+    let hugs_top = (window.y - frame.y).abs() <= EDGE_TOLERANCE;
+    let hugs_bottom =
+        ((window.y + window.height) - (frame.y + frame.height)).abs() <= EDGE_TOLERANCE;
+    let hugs_left = (window.x - frame.x).abs() <= EDGE_TOLERANCE;
+    let hugs_right = ((window.x + window.width) - (frame.x + frame.width)).abs() <= EDGE_TOLERANCE;
+
+    let thin_h = window.height > 0.0 && window.height <= frame.height * STRIP_FRACTION;
+    let thin_w = window.width > 0.0 && window.width <= frame.width * STRIP_FRACTION;
+    let spans_h = window.width >= frame.width * STRIP_SPAN;
+    let spans_v = window.height >= frame.height * STRIP_SPAN;
+
+    (thin_h && spans_h && (hugs_top || hugs_bottom))
+        || (thin_w && spans_v && (hugs_left || hugs_right))
 }
 
 /// Whether a window reaches every edge of a display, give or take the slack a
@@ -269,6 +304,18 @@ mod tests {
             fullscreen_frontmost(&[menu_bar, fullscreen], &displays),
             "the frontmost window that is anywhere on a display is the one being worked in"
         );
+        // On the display, not above it. OnScreenOnly still reports this
+        // strip, so skipping only off-display windows is not enough. #188.
+        let on_display = WindowRect {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 32.0,
+        };
+        assert!(
+            fullscreen_frontmost(&[on_display, fullscreen], &displays),
+            "a menu bar on the display does not hide a fullscreen window behind it"
+        );
         assert!(
             !fullscreen_frontmost(&[menu_bar], &displays),
             "and a desktop holding nothing but the strip hides nothing"
@@ -302,6 +349,44 @@ mod tests {
                 "a window parked at {parked:?} is not on any display and answers for nothing"
             );
         }
+    }
+
+    /// The snapshot lists the Dock first. It never covers a display, so it
+    /// must not hide a fullscreen window behind it. #188.
+    #[test]
+    fn the_dock_does_not_answer_for_the_window_behind_it() {
+        // Centered on the bottom edge, not stretched to the sides — the
+        // rectangle CoreDock reports. Numbers from #145.
+        let dock = window(234.0, 988.0, 1452.0, 92.0);
+        let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
+
+        assert!(
+            fullscreen_frontmost(&[dock, fullscreen], &[display()]),
+            "Dock in front of a fullscreen window is still fullscreen"
+        );
+        assert!(
+            !fullscreen_frontmost(&[dock], &[display()]),
+            "the Dock alone is not fullscreen"
+        );
+
+        let side_dock = window(0.0, 200.0, 70.0, 680.0);
+        assert!(
+            fullscreen_frontmost(&[side_dock, fullscreen], &[display()]),
+            "a left-edge Dock in front of a fullscreen window is still fullscreen"
+        );
+    }
+
+    /// A short window on the bottom edge is still the frontmost app.
+    /// If it were skipped as the Dock, the fullscreen window behind it would
+    /// hide the Character. #188.
+    #[test]
+    fn a_short_window_on_the_bottom_edge_is_still_the_one_being_worked_in() {
+        let palette = window(200.0, 880.0, 400.0, 200.0);
+        let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
+        assert!(
+            !fullscreen_frontmost(&[palette, fullscreen], &[display()]),
+            "a short window on the bottom edge is not the Dock"
+        );
     }
 
     #[test]
