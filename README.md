@@ -176,10 +176,10 @@ cargo run
 ```sh
 omlx serve --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --api-key your-key-here
 
-AI_BUDDY_DIRECTOR_API_KEY=your-key-here \
+AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
 AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
-AI_BUDDY_DIRECTOR_MODEL=mlx-community/Qwen2.5-1.5B-Instruct-4bit \
-cargo run
+AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+cargo run --bin ai-buddy
 ```
 
 **Check a server** before you trust it — reports whether the model you
@@ -192,9 +192,9 @@ AI_BUDDY_DIRECTOR_MODEL=gemma4 \
 scripts/probe-model.sh
 
 # oMLX (with key)
-AI_BUDDY_DIRECTOR_API_KEY=your-key-here \
+AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
 AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
-AI_BUDDY_DIRECTOR_MODEL=mlx-community/Qwen2.5-1.5B-Instruct-4bit \
+AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
 scripts/probe-model.sh
 ```
 
