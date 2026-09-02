@@ -38,6 +38,7 @@ pub fn on_verbs(state: State, verbs: &[Verb]) -> (State, bool) {
         return (State::Dragged, woke);
     }
     let state = match state {
+        // Let go. Thrown or simply dropped, what follows is a fall.
         State::Dragged => State::Falling,
         // Woken. Whether it is still standing on anything is settled by
         // falling, the same as any other loss of footing.

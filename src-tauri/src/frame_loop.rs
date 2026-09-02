@@ -1122,8 +1122,9 @@ pub(crate) fn run_frame_loop(
                     continue; // a display whose overlay has not been built yet
                 };
 
-                // GTK has no window handle until the widget is realized, and
-                // `window_handle` must run on the GTK main thread.
+                // Retried until it succeeds: GTK has no window handle until the
+                // widget is realized (shown and ticked), and `window_handle`
+                // must run on the GTK main thread.
                 #[cfg(all(unix, not(target_os = "macos")))]
                 if !configured
                     .lock()
@@ -1228,6 +1229,7 @@ pub(crate) fn run_frame_loop(
                     if !ignore && presence.visible {
                         let sprite_on_overlay = placed.iter().find(|instance| {
                             let local = instance.sprite.in_overlay(*display);
+                            // Sprite is on this overlay if any part of it is visible
                             local.x + instance.width > 0
                                 && local.x < display.width as i32
                                 && local.y + instance.height > 0
@@ -1245,8 +1247,8 @@ pub(crate) fn run_frame_loop(
                                 instance.sprite.scale,
                             );
 
-                            // last_mask exists so an unchanged sprite does not rebuild
-                            // the pixmap every 16ms.
+                            // `last_mask` exists so an unchanged sprite does not
+                            // rebuild the pixmap every 16ms.
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params)
                                 && !mask_in_flight
                                     .lock()
@@ -1320,6 +1322,7 @@ pub(crate) fn run_frame_loop(
                                 }
                             }
                         } else {
+                            // No sprite on this overlay, make it fully click-through
                             let mask_params = (None, 0, 0, 1, 1);
 
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
@@ -1349,6 +1352,7 @@ pub(crate) fn run_frame_loop(
                             }
                         }
                     } else {
+                        // Ignoring or invisible: make the whole window click-through
                         let mask_params = (None, 0, 0, 1, 1);
 
                         if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
@@ -1379,6 +1383,7 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
+                // On macOS and other platforms, use Tauri's boolean click-through only
                 #[cfg(not(all(unix, not(target_os = "macos"))))]
                 {
                     // Only record the new state once the platform accepted it.

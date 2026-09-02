@@ -85,7 +85,7 @@ fn visible_windows() -> Vec<WindowRect> {
     result
 }
 
-/// `_NET_CLIENT_LIST_STACKING`: bottom to top, the order X11 stores.
+/// Read _NET_CLIENT_LIST_STACKING: windows in stacking order, bottom to top.
 fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     let stacking_atom = intern_atom(conn, "_NET_CLIENT_LIST_STACKING").ok()?;
     let reply = xproto::get_property(
@@ -139,10 +139,12 @@ fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     )
 }
 
+/// Whether this WM_CLASS names one of our own overlay windows.
 fn is_own_overlay_class(class: &str) -> bool {
     class == "ai-buddy" || class == "Ai-buddy"
 }
 
+/// Read one window's geometry, owner, and layer, or None if it should be skipped.
 fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     if !is_normal_window(conn, window) {
         return None;
@@ -304,6 +306,7 @@ fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
         })
 }
 
+/// Intern an atom, reusing it if it already exists.
 fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
     xproto::intern_atom(conn, false, name.as_bytes())
         .ok()

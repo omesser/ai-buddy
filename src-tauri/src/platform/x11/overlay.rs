@@ -1,7 +1,9 @@
-//! X11 overlay: EWMH float and XShape click-through.
+//! X11 overlay window configuration: floating, non-activating, click-through.
 //!
-//! GTK has no click-through finer than the whole window, so the input region
-//! is taken from the sprite's alpha mask. Wayland stays degraded by design.
+//! GTK has no click-through finer than the whole window, so `XShapeCombineMask`
+//! carves the input region from the sprite's alpha mask. EWMH window states
+//! float the overlay above other windows and skip the taskbar and pager.
+//! Wayland stays degraded by design.
 
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, SK};
@@ -10,10 +12,10 @@ use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-/// Float above other windows, skip the taskbar and pager.
+/// Float above other windows, non-activating, skip the taskbar and pager.
 ///
 /// Returns Err when the window handle is not available yet, so the caller can
-/// retry once the GTK widget is realized.
+/// retry on subsequent frames once the GTK widget is realized.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     let raw_window_handle = match window.window_handle() {
         Ok(handle) => handle,
@@ -37,10 +39,11 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Opaque pixels receive clicks; `None` makes the whole window pass them.
+/// `XShapeCombineMask` sets the input region: `None` makes the entire window
+/// click-through, `Some` gives clicks only to the opaque pixels.
 ///
 /// Returns Err when the window handle is not available yet, so the caller can
-/// retry once the GTK widget is realized.
+/// retry on subsequent frames once the GTK widget is realized.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
@@ -60,7 +63,8 @@ pub fn update_input_region(
         RawWindowHandle::Xlib(xlib_window) => xlib_window.window as u32,
         RawWindowHandle::Xcb(xcb_window) => xcb_window.window.get(),
         _ => {
-            return Ok(()); // Wayland is degraded by design; failing here would retry forever.
+            // Wayland or other: degraded by design, and an Err would retry forever.
+            return Ok(());
         }
     };
 
@@ -85,6 +89,7 @@ pub fn update_input_region(
     Ok(())
 }
 
+/// Apply the alpha mask as the input region using XShapeCombineMask.
 fn apply_input_mask(
     conn: &RustConnection,
     window: u32,
@@ -137,7 +142,8 @@ fn apply_input_mask(
     xproto::change_gc(conn, gc, &xproto::ChangeGCAux::new().foreground(1))
         .map_err(|e| format!("Failed to set GC foreground: {e}"))?;
 
-    // Facing < 0 mirrors the mask, matching `AlphaMask::hit` and the renderer.
+    // Facing < 0 mirrors the mask horizontally, matching `AlphaMask::hit` and
+    // the renderer.
     let mirror = sprite_facing < 0;
     for y in 0..height {
         for x in 0..width {
@@ -187,7 +193,7 @@ fn apply_input_mask(
     Ok(())
 }
 
-/// Empty input region: the whole window passes clicks through.
+/// Clear the input region, making the entire window click-through.
 fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> {
     shape::mask(conn, shape::SO::SET, SK::INPUT, window, 0, 0, x11rb::NONE)
         .map_err(|e| format!("Failed to clear input region: {e}"))?
@@ -201,6 +207,8 @@ fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> 
 }
 
 /// The overlay is not an application window, so the window manager must not treat it as one.
+///
+/// `_NET_WM_STATE_ABOVE`, `_NET_WM_STATE_SKIP_TASKBAR`, `_NET_WM_STATE_SKIP_PAGER`.
 fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     let net_wm_state = intern_atom(conn, "_NET_WM_STATE")?;
     let above = intern_atom(conn, "_NET_WM_STATE_ABOVE")?;
@@ -227,6 +235,7 @@ fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// Intern an atom, reusing it if it already exists.
 fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, String> {
     xproto::intern_atom(conn, false, name.as_bytes())
         .map_err(|e| format!("Failed to intern atom {name}: {e}"))?

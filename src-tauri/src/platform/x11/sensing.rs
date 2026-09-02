@@ -25,7 +25,8 @@ impl ai_buddy_core::sensing::ActivitySource for X11ActivitySource {
     }
 }
 
-/// The class is the application name that triggers match against.
+/// `_NET_ACTIVE_WINDOW` for the frontmost window, then its `WM_CLASS`: the
+/// class is the application name that triggers match against.
 fn frontmost_window_class() -> Option<String> {
     let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
@@ -103,6 +104,7 @@ fn displays_sleeping() -> Option<bool> {
     Some(info.state && info.power_level != x11rb::protocol::dpms::DPMSMode::ON)
 }
 
+/// Intern an atom, reusing it if it already exists.
 fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
     xproto::intern_atom(conn, false, name.as_bytes())
         .ok()

@@ -1,3 +1,5 @@
+// Bubble rendering logic for speech and thinking indicators.
+
 export const CEILING_CLEARANCE = 128;
 
 const MIN_DURATION_MS = 2000;
@@ -110,10 +112,12 @@ export function createBubbleMachine(io) {
   }
 
   return {
+    // Every delivered placement, straight from the event listener.
     event(placement) {
       if (placement.dialogue) pendingDialogue = placement.dialogue;
     },
 
+    // The newest placement, once per drawn frame.
     frame(placement) {
       const dialogue = pendingDialogue;
       pendingDialogue = null;
@@ -129,6 +133,7 @@ export function createBubbleMachine(io) {
           speechTimer = null;
           speechShowing = false;
           io.hideSpeech();
+          // Only now may a turn still in flight surface its indicator.
           if (thinking && graceTimer === null && !thinkingShown) armGrace();
         }, bubbleDuration(dialogue));
       }

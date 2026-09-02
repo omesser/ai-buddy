@@ -11,7 +11,7 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 log_info() {
   echo -e "${GREEN}[INFO]${NC} $*"
@@ -96,6 +96,7 @@ sleep 3
 grep -q "frame:.*\(Falling\|Grounded\)" "$TRACE_LOG" || fail "Sprite did not initialize (no Falling or Grounded state)"
 log_info "✓ Sprite initialized"
 
+# Get sprite position to place test window under it
 SPRITE_POS=$(tail -50 "$TRACE_LOG" | grep "frame:" | tail -1 | grep -oP 'sprite\(\K[0-9]+,[0-9]+' || echo "")
 [ -n "$SPRITE_POS" ] || fail "Could not determine sprite position from traces"
 SPRITE_X=$(echo "$SPRITE_POS" | cut -d, -f1)
