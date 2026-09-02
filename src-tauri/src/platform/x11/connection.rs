@@ -2,6 +2,11 @@
 //!
 //! Single process-lifetime connection reused by pointer, overlay, window_source,
 //! and sensing modules. Lazily initialized on first use.
+//!
+//! Thread-safety: RustConnection implements Sync, making it safe to share
+//! across threads. OnceLock provides thread-safe initialization. Read operations
+//! like get_property are safe for concurrent access from the frame thread and
+//! GTK main thread.
 
 use std::sync::OnceLock;
 use x11rb::rust_connection::RustConnection;
