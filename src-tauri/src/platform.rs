@@ -11,7 +11,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
@@ -91,6 +91,7 @@ impl Default for Displays {
 
 /// Which rung of the Dock-geometry chain answered; see `macos::dock_bounds`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // macOS-only, not used on Linux
 pub enum DockSource {
     /// `CoreDockGetRect`, the private SPI: exact, no grant needed.
     CoreDock,
@@ -116,11 +117,14 @@ impl DisplayCache {
 /// They move at human speed — someone toggles Dock hiding, drags it to another
 /// edge, or plugs a display in — so this is far more often than it needs to be
 /// and still costs one main-thread hop every other poll.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const USABLE_FRAME_REFRESH: Duration = Duration::from_millis(500);
 
 #[cfg(target_os = "macos")]
 mod macos;
+
+#[cfg(all(unix, not(target_os = "macos")))]
+mod x11;
 
 /// Make the overlay a floating, non-activating panel.
 #[cfg(target_os = "macos")]
@@ -128,10 +132,51 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     macos::configure_overlay(window)
 }
 
+/// X11 on Linux: EWMH states for floating, skip-taskbar, skip-pager.
+/// Click-through via XShapeCombineMask will be added after window geometry lands.
+/// Wayland offers no reliable compositor-independent way to configure these, so it
+/// stays degraded.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+    x11::configure_overlay(window)
+}
+
 /// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.
 /// The plain Tauri window is what every other platform gets.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+/// Update the input region for the overlay window based on the sprite's alpha mask.
+///
+/// On X11, XShapeCombineMask carves the click-through region from the sprite's
+/// alpha. On macOS and other platforms, this is a no-op since Tauri's
+/// `set_ignore_cursor_events` is sufficient.
+///
+/// Integration seam: the X11 implementation exists but is not yet wired to the
+/// frame loop. See platform/x11/overlay.rs::update_input_region.
+#[allow(dead_code)]
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn update_input_region(
+    window: &tauri::WebviewWindow,
+    mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    sprite_x: i32,
+    sprite_y: i32,
+    scale: i32,
+) -> Result<(), String> {
+    x11::update_input_region(window, mask_data, sprite_x, sprite_y, scale)
+}
+
+#[allow(dead_code)]
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+pub fn update_input_region(
+    _window: &tauri::WebviewWindow,
+    _mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    _sprite_x: i32,
+    _sprite_y: i32,
+    _scale: i32,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -144,10 +189,17 @@ pub fn primary_button_down() -> bool {
     overlay_primary_down() || macos::primary_button_down()
 }
 
+/// X11 on Linux: session poll (XQueryPointer) or overlay latch.
+/// Wayland has only the overlay latch (no global pointer).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn primary_button_down() -> bool {
+    overlay_primary_down() || x11::primary_button_down()
+}
+
 /// Without a session poll there is only the overlay latch. A click that
 /// reaches the webview still pokes; one that never does is the supported
 /// degradation, like the missing window geometry beside it.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn primary_button_down() -> bool {
     overlay_primary_down()
 }
@@ -158,7 +210,13 @@ pub fn secondary_button_down() -> bool {
     macos::secondary_button_down()
 }
 
-#[cfg(not(target_os = "macos"))]
+/// X11 on Linux: XQueryPointer for Button3 (right-click).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn secondary_button_down() -> bool {
+    x11::secondary_button_down()
+}
+
+#[cfg(not(unix))]
 pub fn secondary_button_down() -> bool {
     false
 }
@@ -170,10 +228,52 @@ pub fn activity_source() -> impl ActivitySource {
     macos::MacosActivitySource
 }
 
+/// X11 on Linux: _NET_ACTIVE_WINDOW for frontmost, Xss for idle, DPMS for sleep.
+/// Wayland offers no global state, so it stays StubActivitySource.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn activity_source() -> LinuxActivitySource {
+    if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("DISPLAY").is_err() {
+        LinuxActivitySource::Wayland
+    } else {
+        LinuxActivitySource::X11(x11::X11ActivitySource)
+    }
+}
+
+/// Runtime dispatch between X11 and Wayland activity sources on Linux.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub enum LinuxActivitySource {
+    X11(x11::X11ActivitySource),
+    Wayland,
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+impl ActivitySource for LinuxActivitySource {
+    fn frontmost_application(&self) -> Option<String> {
+        match self {
+            Self::X11(source) => source.frontmost_application(),
+            Self::Wayland => None,
+        }
+    }
+
+    fn idle(&self) -> std::time::Duration {
+        match self {
+            Self::X11(source) => source.idle(),
+            Self::Wayland => std::time::Duration::ZERO,
+        }
+    }
+
+    fn displays_asleep(&self) -> bool {
+        match self {
+            Self::X11(source) => source.displays_asleep(),
+            Self::Wayland => false,
+        }
+    }
+}
+
 /// A platform that reports nothing is one where every Behavior with a trigger
 /// simply never fires, which leaves the untriggered ones — a life, if a duller
 /// one. The same supported degradation as the missing window geometry.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn activity_source() -> impl ActivitySource {
     ai_buddy_core::sensing::StubActivitySource
 }
@@ -227,9 +327,80 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
     (source, cache)
 }
 
+/// X11 on Linux: read windows from _NET_CLIENT_LIST, with 500ms refresh for hot-plug.
+/// Wayland stays DisplayOnlySource: no global window list.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache) {
+    if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("DISPLAY").is_err() {
+        let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
+        return (
+            LinuxWindowSource::Wayland(DisplayOnlySource(cache.clone())),
+            cache,
+        );
+    }
+
+    let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
+    let refreshed = Arc::new(Mutex::new(Instant::now()));
+
+    let source = x11::X11WindowSource::new({
+        let cache = cache.clone();
+        let app_clone = app.clone();
+        move || {
+            if due(&refreshed) {
+                *cache.0.lock().unwrap() = read_displays(&app_clone);
+            }
+
+            let displays = cache.read();
+            (
+                displays.usable_frames,
+                displays.dock.map(|(bounds, _)| bounds),
+            )
+        }
+    });
+
+    (LinuxWindowSource::X11(source), cache)
+}
+
+/// Runtime dispatch between X11 and Wayland window sources on Linux.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub enum LinuxWindowSource {
+    X11(x11::X11WindowSource),
+    Wayland(DisplayOnlySource),
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+impl WindowSource for LinuxWindowSource {
+    fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
+        match self {
+            Self::X11(source) => source.capabilities(),
+            Self::Wayland(source) => source.capabilities(),
+        }
+    }
+
+    fn read(&self) -> ai_buddy_core::window_source::WorldGeometry {
+        match self {
+            Self::X11(source) => source.read(),
+            Self::Wayland(source) => source.read(),
+        }
+    }
+}
+
 /// Whether enough time has passed to ask the main thread again, marking it
 /// asked if so.
 #[cfg(target_os = "macos")]
+fn due(refreshed: &Mutex<Instant>) -> bool {
+    let Ok(mut refreshed) = refreshed.lock() else {
+        return false;
+    };
+    if refreshed.elapsed() < USABLE_FRAME_REFRESH {
+        return false;
+    }
+    *refreshed = Instant::now();
+    true
+}
+
+/// X11 display refresh check: same as macOS but without main thread dispatch.
+#[cfg(all(unix, not(target_os = "macos")))]
 fn due(refreshed: &Mutex<Instant>) -> bool {
     let Ok(mut refreshed) = refreshed.lock() else {
         return false;
@@ -246,24 +417,16 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
 /// displays still come from Tauri, which reads them on every platform; only the
 /// windows are missing.
 ///
-/// ponytail: read once at startup rather than on a timer, so a display plugged
-/// in later goes unnoticed until restart. Add the refresh when a Wayland or X11
-/// build actually ships.
-#[cfg(not(target_os = "macos"))]
-pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
-    let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
-    (DisplayOnlySource(cache.clone()), cache)
-}
+/// X11 fills window_source() above with real geometry; this is the Wayland fallback.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub struct DisplayOnlySource(DisplayCache);
 
-/// Screen edges and nothing else.
+/// Screen edges and nothing else, for Wayland or when DISPLAY is unset.
 ///
 /// `Capabilities::default()` declares no `window_geometry`, so `snapshot()`
 /// clears the windows and the Engine is handed a world with a floor and walls
 /// and no Perches — which is what the degraded mode is.
-#[cfg(not(target_os = "macos"))]
-struct DisplayOnlySource(DisplayCache);
-
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 impl WindowSource for DisplayOnlySource {
     fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
         ai_buddy_core::window_source::Capabilities::default()
@@ -273,13 +436,31 @@ impl WindowSource for DisplayOnlySource {
         ai_buddy_core::window_source::WorldGeometry {
             usable_frames: self.0.read().usable_frames,
             windows: Vec::new(),
-            // Not a gap in Dock sensing but in the platform underneath it:
-            // there is no window source here at all yet. When an X11 one
-            // lands, its taskbar counterpart is `_NET_WM_STRUT_PARTIAL` on
-            // windows of `_NET_WM_WINDOW_TYPE_DOCK` — exact per-edge extents
-            // with start and end, the very thing macOS needed a private SPI
-            // for — behind the same `plausible_dock` gate. Wayland offers
-            // nothing global, which is the degraded mode already described.
+            dock: None,
+        }
+    }
+}
+
+/// Windows stub: read-once, displays and no windows.
+#[cfg(not(unix))]
+pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
+    let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
+    (DisplayOnlySource(cache.clone()), cache)
+}
+
+#[cfg(not(unix))]
+pub struct DisplayOnlySource(DisplayCache);
+
+#[cfg(not(unix))]
+impl WindowSource for DisplayOnlySource {
+    fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
+        ai_buddy_core::window_source::Capabilities::default()
+    }
+
+    fn read(&self) -> ai_buddy_core::window_source::WorldGeometry {
+        ai_buddy_core::window_source::WorldGeometry {
+            usable_frames: self.0.read().usable_frames,
+            windows: Vec::new(),
             dock: None,
         }
     }
