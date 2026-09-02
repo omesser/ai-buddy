@@ -11,9 +11,10 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSBackingStoreType, NSButton, NSColor,
-    NSControlStateValueOff, NSControlStateValueOn, NSFont, NSPopUpButton, NSScrollView,
-    NSSecureTextField, NSTextDelegate, NSTextField, NSTextFieldDelegate, NSTextView,
-    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+    NSControlStateValueOff, NSControlStateValueOn, NSControlTextEditingDelegate, NSFont,
+    NSPopUpButton, NSScrollView, NSSecureTextField, NSTextDelegate, NSTextField,
+    NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
+    NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -79,6 +80,8 @@ define_class!(
     }
 
     unsafe impl NSTextViewDelegate for SettingsController {}
+
+    unsafe impl NSControlTextEditingDelegate for SettingsController {}
 
     unsafe impl NSTextFieldDelegate for SettingsController {}
 
@@ -872,5 +875,5 @@ fn fill_popup(cell: &RefCell<Option<Retained<NSPopUpButton>>>, options: &[String
     for option in options {
         popup.addItemWithTitle(&NSString::from_str(option));
     }
-    popup.selectItemWithTitle(Some(&NSString::from_str(current)));
+    popup.selectItemWithTitle(&NSString::from_str(current));
 }
