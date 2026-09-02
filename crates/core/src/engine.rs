@@ -385,8 +385,20 @@ impl Engine {
     /// #84: toggle Do Not Disturb. The Character stays visible but stops
     /// starting things: no Director proposals are applied and no unprompted
     /// dialogue is spoken. Poke, Grab, and Throw still work.
+    ///
+    /// A walk already under way has to be sat down too. Walk velocity
+    /// outlives the Primitive that started it, so refusing the next
+    /// proposal would otherwise leave the sprite pacing.
     pub fn set_do_not_disturb(&mut self, enabled: bool) {
         self.do_not_disturb = enabled;
+        if enabled
+            && matches!(self.state, State::Grounded | State::Perched)
+            && (self.is_walking()
+                || matches!(self.on_screen(), Some(Primitive::Walk | Primitive::Chase)))
+        {
+            let _ = self.play(&[Primitive::Sit]);
+            self.velocity.x = 0.0;
+        }
     }
 
     pub fn do_not_disturb(&self) -> bool {
@@ -4809,6 +4821,46 @@ mod tests {
             asleep.state,
             State::Asleep,
             "the sprite settles to sleep without Director proposals waking it"
+        );
+    }
+
+    /// #84: walk velocity outlives the Primitive that started it, so refusing
+    /// the next proposal is not enough. Sit is what stops the feet.
+    #[test]
+    fn toggling_do_not_disturb_stops_a_walk_and_sits_the_sprite_down() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        let strolling = engine.tick(&a_long_perch());
+        assert_eq!(
+            strolling.animation, "walk",
+            "precondition: the sprite is walking"
+        );
+        assert_ne!(
+            strolling.velocity.x, 0.0,
+            "precondition: the walk has a heading"
+        );
+
+        engine.set_do_not_disturb(true);
+        let settled = engine.tick(&a_long_perch());
+
+        assert_eq!(settled.animation, "sit");
+        assert_eq!(settled.velocity.x, 0.0, "sit is what stops the walk");
+        assert_eq!(
+            settled.state,
+            State::Perched,
+            "quiet is sit, not gone and not asleep"
+        );
+
+        let rest: Vec<Frame> = (0..20).map(|_| engine.tick(&a_long_perch())).collect();
+        assert!(
+            rest.iter()
+                .all(|frame| frame.velocity.x == 0.0 && frame.animation == "sit"),
+            "the walk does not resume: {rest:?}"
         );
     }
 
