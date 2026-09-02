@@ -16,33 +16,33 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 log_info() {
-	echo -e "${GREEN}[INFO]${NC} $*"
+  echo -e "${GREEN}[INFO]${NC} $*"
 }
 
 log_warn() {
-	echo -e "${YELLOW}[WARN]${NC} $*"
+  echo -e "${YELLOW}[WARN]${NC} $*"
 }
 
 log_error() {
-	echo -e "${RED}[ERROR]${NC} $*"
+  echo -e "${RED}[ERROR]${NC} $*"
 }
 
 # Check if running under X11
 if [ -z "${DISPLAY:-}" ]; then
-	log_error "DISPLAY not set. Run under X11 or Xvfb."
-	exit 1
+  log_error "DISPLAY not set. Run under X11 or Xvfb."
+  exit 1
 fi
 
 # Check for xdotool
-if ! command -v xdotool &>/dev/null; then
-	log_error "xdotool not found. Install with: sudo apt-get install xdotool"
-	exit 1
+if ! command -v xdotool &> /dev/null; then
+  log_error "xdotool not found. Install with: sudo apt-get install xdotool"
+  exit 1
 fi
 
 # Check for xprop
-if ! command -v xprop &>/dev/null; then
-	log_error "xprop not found. Install with: sudo apt-get install x11-utils"
-	exit 1
+if ! command -v xprop &> /dev/null; then
+  log_error "xprop not found. Install with: sudo apt-get install x11-utils"
+  exit 1
 fi
 
 log_info "Building ai-buddy..."
@@ -62,9 +62,9 @@ sleep 3
 WINDOW_ID=$(xdotool search --name "ai-buddy" | head -1 || true)
 
 if [ -z "$WINDOW_ID" ]; then
-	log_error "Could not find ai-buddy window"
-	kill $APP_PID 2>/dev/null || true
-	exit 1
+  log_error "Could not find ai-buddy window"
+  kill $APP_PID 2> /dev/null || true
+  exit 1
 fi
 
 log_info "Found window ID: $WINDOW_ID"
@@ -74,25 +74,25 @@ log_info "Checking EWMH window states..."
 WINDOW_PROPS=$(xprop -id "$WINDOW_ID" _NET_WM_STATE)
 
 if echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE"; then
-	log_info "✓ _NET_WM_STATE_ABOVE set"
+  log_info "✓ _NET_WM_STATE_ABOVE set"
 else
-	log_error "✗ _NET_WM_STATE_ABOVE missing"
-	kill $APP_PID 2>/dev/null || true
-	exit 1
+  log_error "✗ _NET_WM_STATE_ABOVE missing"
+  kill $APP_PID 2> /dev/null || true
+  exit 1
 fi
 
 if echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR"; then
-	log_info "✓ _NET_WM_STATE_SKIP_TASKBAR set"
+  log_info "✓ _NET_WM_STATE_SKIP_TASKBAR set"
 else
-	log_error "✗ _NET_WM_STATE_SKIP_TASKBAR missing"
-	kill $APP_PID 2>/dev/null || true
-	exit 1
+  log_error "✗ _NET_WM_STATE_SKIP_TASKBAR missing"
+  kill $APP_PID 2> /dev/null || true
+  exit 1
 fi
 
 if echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_PAGER"; then
-	log_info "✓ _NET_WM_STATE_SKIP_PAGER set"
+  log_info "✓ _NET_WM_STATE_SKIP_PAGER set"
 else
-	log_warn "⚠ _NET_WM_STATE_SKIP_PAGER missing (some WMs may not support this)"
+  log_warn "⚠ _NET_WM_STATE_SKIP_PAGER missing (some WMs may not support this)"
 fi
 
 # Note: Testing Perch/ride/drop/Poke behavior would require:
@@ -106,8 +106,8 @@ fi
 # Manual testing can verify interaction behaviors.
 
 log_info "Cleaning up..."
-kill $APP_PID 2>/dev/null || true
-wait $APP_PID 2>/dev/null || true
+kill $APP_PID 2> /dev/null || true
+wait $APP_PID 2> /dev/null || true
 
 log_info "✅ X11 overlay EWMH states verified!"
 log_info ""
