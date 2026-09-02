@@ -89,7 +89,7 @@ const FRAME_EVENT: &str = "frame";
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
     config: model::DirectorConfig,
-    sources: model::DirectorSources,
+    settings: model::DirectorSettings,
     inspect: Arc<Mutex<model::DirectorInspect>>,
 }
 
@@ -657,14 +657,14 @@ fn apply_menu_action(
     settings_path: &std::path::Path,
     characters: &BTreeMap<String, Arc<Character>>,
     config: &mut model::DirectorConfig,
-    sources: &model::DirectorSources,
+    director: &model::DirectorSettings,
     inspect: &Arc<Mutex<model::DirectorInspect>>,
     app: &tauri::AppHandle,
 ) {
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
-                switch_instance(roster, lives, instance_id, character, config, sources);
+                switch_instance(roster, lives, instance_id, character, config, director);
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -689,7 +689,7 @@ fn apply_menu_action(
                     &name,
                     name.clone(),
                     config,
-                    sources,
+                    director,
                 );
             }
         }
@@ -767,7 +767,7 @@ fn switch_instance(
     instance_id: &InstanceId,
     character: Arc<Character>,
     config: &model::DirectorConfig,
-    sources: &model::DirectorSources,
+    settings: &model::DirectorSettings,
 ) {
     roster.retarget(instance_id, &character);
     if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
@@ -785,7 +785,7 @@ fn switch_instance(
             &mut live.in_flight,
             &mut live.model,
             live.character.behaviors.keys().cloned(),
-            sources,
+            settings,
             config.configured,
         );
         live.recent.clear();
@@ -801,7 +801,7 @@ fn spawn_live(
     character_name: &str,
     instance_name: String,
     config: &model::DirectorConfig,
-    sources: &model::DirectorSources,
+    settings: &model::DirectorSettings,
 ) {
     let Some(character) = characters.get(character_name).cloned() else {
         eprintln!("menu: no Character named {character_name}");
@@ -829,7 +829,7 @@ fn spawn_live(
         director: StaticDirector::new(character.behaviors.clone(), seed),
         model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
-                model::endpoint_from(sources).expect("configured means a Completer exists"),
+                model::endpoint_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
             ))
         }),
@@ -1040,7 +1040,7 @@ fn spawn_instances(
     loaded: &[(InstanceSpec, Arc<Character>)],
     start: Point,
     config: &model::DirectorConfig,
-    sources: &model::DirectorSources,
+    settings: &model::DirectorSettings,
 ) -> (Roster, Vec<InstanceState>) {
     let mut roster = Roster::new(MemoryManifest::new(memory::shared_path()));
     let mut lives = Vec::with_capacity(loaded.len());
@@ -1083,7 +1083,7 @@ fn spawn_instances(
             // #18's panel.
             model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
-                    model::endpoint_from(sources).expect("configured means a Completer exists"),
+                    model::endpoint_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                 ))
             }),
@@ -1402,14 +1402,14 @@ fn main() {
             }
 
             let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new());
-            let sources = match settings::director_sources(&settings, secrets.as_ref()) {
-                Ok(sources) => sources,
+            let director = match settings::director_settings(&settings, secrets.as_ref()) {
+                Ok(director) => director,
                 Err(why) => {
                     eprintln!("director: secret store: {why}");
                     model::resolve(&settings.director_base_url, &settings.director_model, None)
                 }
             };
-            let mut config = model::config_from(&sources);
+            let mut config = model::config_from(&director);
             config.enabled = settings.director_enabled && config.configured;
             config.ambient_allowed = settings.ambient_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect()));
@@ -1418,10 +1418,10 @@ fn main() {
                 eprintln!("{line}");
             }
             if config.enabled {
-                model::spawn_preflight(&sources);
+                model::spawn_preflight(&director);
             }
 
-            let (mut roster, lives) = spawn_instances(&loaded, start, &config, &sources);
+            let (mut roster, lives) = spawn_instances(&loaded, start, &config, &director);
             if settings.do_not_disturb {
                 for (id, _) in roster.list() {
                     if let Some(instance) = roster.get_mut(&id) {
@@ -1497,7 +1497,7 @@ fn main() {
 
             let director_run = DirectorRun {
                 config,
-                sources,
+                settings: director,
                 inspect,
             };
 

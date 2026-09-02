@@ -58,7 +58,7 @@ pub(crate) fn run_frame_loop(
         let mut assembler = SnapshotAssembler::new(source);
         let DirectorRun {
             mut config,
-            mut sources,
+            settings: mut director,
             inspect,
         } = director_run;
         let FrameExtras {
@@ -361,7 +361,7 @@ pub(crate) fn run_frame_loop(
                     &settings_path,
                     &characters,
                     &mut config,
-                    &sources,
+                    &director,
                     &inspect,
                     &app,
                 );
@@ -389,7 +389,7 @@ pub(crate) fn run_frame_loop(
                             &settings_path,
                             &characters,
                             &mut config,
-                            &sources,
+                            &director,
                             &inspect,
                             &app,
                         );
@@ -409,7 +409,7 @@ pub(crate) fn run_frame_loop(
                             &character,
                             name,
                             &config,
-                            &sources,
+                            &director,
                         );
                     }
                     SettingsOp::Dismiss { id } => {
@@ -426,7 +426,7 @@ pub(crate) fn run_frame_loop(
                                     &id,
                                     Arc::clone(&loaded),
                                     &config,
-                                    &sources,
+                                    &director,
                                 );
                             }
                         } else {
@@ -434,13 +434,13 @@ pub(crate) fn run_frame_loop(
                         }
                     }
                     SettingsOp::Retarget {
-                        sources: new_sources,
+                        settings,
                         enabled,
                         ambient_allowed,
                         configured,
                     } => {
-                        sources = new_sources;
-                        config = model::config_from(&sources);
+                        director = settings;
+                        config = model::config_from(&director);
                         config.enabled = enabled;
                         config.ambient_allowed = ambient_allowed;
                         config.configured = configured;
@@ -458,7 +458,7 @@ pub(crate) fn run_frame_loop(
                                 &mut live.in_flight,
                                 &mut live.model,
                                 live.character.behaviors.keys().cloned(),
-                                &sources,
+                                &director,
                                 configured,
                             );
                         }

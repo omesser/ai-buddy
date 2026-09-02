@@ -18,7 +18,7 @@ use ai_buddy_core::visibility::HideRules;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::model::{self, DirectorInspect, DirectorSources};
+use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
 /// One running buddy, as settings lists it.
@@ -133,7 +133,7 @@ pub enum SettingsOp {
     /// Completer target changed. Resolved off the frame thread so the loop
     /// never reads Keychain. Drops in-flight session history (ADR-0008).
     Retarget {
-        sources: DirectorSources,
+        settings: DirectorSettings,
         enabled: bool,
         ambient_allowed: bool,
         configured: bool,
@@ -156,10 +156,10 @@ pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Res
 
 /// Env, then the file, then the store. A store read error is `Err`, not Unset:
 /// treating it as no key would drop a remote Completer to Static on Retarget.
-pub fn director_sources(
+pub fn director_settings(
     settings: &Settings,
     secrets: &dyn SecretStore,
-) -> Result<DirectorSources, String> {
+) -> Result<DirectorSettings, String> {
     let stored = secrets.get(DIRECTOR_API_KEY)?;
     Ok(model::resolve(
         &settings.director_base_url,
@@ -209,12 +209,12 @@ fn stored_key_status(store: &dyn SecretStore) -> (bool, String, String) {
     }
 }
 
-/// Resolve sources on the settings thread. The frame loop only applies them.
+/// Resolve Director settings on the settings thread. The frame loop only applies them.
 fn retarget_payload(settings: &Settings, store: &dyn SecretStore) -> Result<SettingsOp, String> {
-    let sources = director_sources(settings, store)?;
-    let cfg = model::config_from(&sources);
+    let director = director_settings(settings, store)?;
+    let cfg = model::config_from(&director);
     Ok(SettingsOp::Retarget {
-        sources,
+        settings: director,
         enabled: settings.director_enabled && cfg.configured,
         ambient_allowed: settings.ambient_wakes,
         configured: cfg.configured,
@@ -1003,7 +1003,7 @@ mod tests {
             ..Settings::default()
         };
         assert!(
-            director_sources(&settings, &FailingStore).is_err(),
+            director_settings(&settings, &FailingStore).is_err(),
             "a store error must not resolve as no key"
         );
         let unset = model::resolve(&settings.director_base_url, &settings.director_model, None);
@@ -1095,22 +1095,22 @@ mod tests {
     }
 
     #[test]
-    fn retarget_payload_carries_resolved_sources() {
+    fn retarget_payload_carries_resolved_settings() {
         let store = MemoryStore::new();
         store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
         let settings = endpoint_settings();
         match retarget_payload(&settings, &store).unwrap() {
             SettingsOp::Retarget {
-                sources,
+                settings,
                 enabled,
                 configured,
                 ambient_allowed,
             } => {
-                assert_eq!(sources.api_key, "sk-stored-key");
+                assert_eq!(settings.api_key, "sk-stored-key");
                 assert!(configured);
                 assert!(enabled);
                 assert!(ambient_allowed);
-                let dump = format!("{sources:?}");
+                let dump = format!("{settings:?}");
                 assert!(
                     !dump.contains("sk-stored-key"),
                     "Retarget Debug must not echo the key: {dump}"

@@ -120,16 +120,16 @@ enum KeyRead {
 /// `api_key` empty means unset or invalid. `key_invalid` means the winning
 /// source was set but unusable.
 #[derive(Clone)]
-pub struct DirectorSources {
+pub struct DirectorSettings {
     pub base_url: String,
     pub model: String,
     pub api_key: String,
     pub key_invalid: bool,
 }
 
-impl std::fmt::Debug for DirectorSources {
+impl std::fmt::Debug for DirectorSettings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DirectorSources")
+        f.debug_struct("DirectorSettings")
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("key_fingerprint", &key_fingerprint(&self.api_key))
@@ -147,7 +147,7 @@ pub fn resolve(
     persisted_base: &str,
     persisted_model: &str,
     stored_key: Option<&str>,
-) -> DirectorSources {
+) -> DirectorSettings {
     let base_url = resolve_string(BASE_URL, persisted_base, DEFAULT_BASE);
     let model = resolve_string(MODEL, persisted_model, DEFAULT_MODEL);
     let key = match key_from_env() {
@@ -159,7 +159,7 @@ pub fn resolve(
         KeyRead::Invalid => (String::new(), true),
         KeyRead::Unset => (String::new(), false),
     };
-    DirectorSources {
+    DirectorSettings {
         base_url,
         model,
         api_key,
@@ -175,26 +175,26 @@ fn resolve_string(var: &str, persisted: &str, default: &str) -> String {
     }
 }
 
-/// Build Director on/off from already-resolved sources.
-pub fn config_from(sources: &DirectorSources) -> DirectorConfig {
-    let configured = !sources.api_key.is_empty() || is_local(&sources.base_url);
+/// Build Director on/off from already-resolved settings.
+pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
+    let configured = !settings.api_key.is_empty() || is_local(&settings.base_url);
     let enabled = configured && !off();
     DirectorConfig {
         enabled,
         configured,
-        key_invalid: sources.key_invalid,
+        key_invalid: settings.key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
         ambient_allowed: true,
     }
 }
 
-/// An OpenAI-compatible chat Completer from already-resolved sources, or
+/// An OpenAI-compatible chat Completer from already-resolved settings, or
 /// `None` when a remote host has no key set.
-pub fn endpoint_from(sources: &DirectorSources) -> Option<Endpoint> {
-    let local = is_local(&sources.base_url);
-    let api_key = if !sources.api_key.is_empty() {
-        sources.api_key.clone()
+pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
+    let local = is_local(&settings.base_url);
+    let api_key = if !settings.api_key.is_empty() {
+        settings.api_key.clone()
     } else if local {
         // `headers` omits Authorization when the key is empty, so a local
         // server sees a plain request rather than a made-up Bearer token.
@@ -204,8 +204,8 @@ pub fn endpoint_from(sources: &DirectorSources) -> Option<Endpoint> {
     };
     Some(Endpoint {
         api_key,
-        url: completions_url(&sources.base_url),
-        model: sources.model.clone(),
+        url: completions_url(&settings.base_url),
+        model: settings.model.clone(),
         timeout: timeout_for(local),
         max_tokens: max_tokens_for(local),
         session: Mutex::new(Vec::new()),
@@ -679,8 +679,8 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
 ///
 /// Spawned rather than awaited. ADR-0004 keeps the model off the frame loop,
 /// and a stopped server would otherwise hold up startup for the timeout.
-pub fn spawn_preflight(sources: &DirectorSources) {
-    let Some(endpoint) = endpoint_from(sources) else {
+pub fn spawn_preflight(settings: &DirectorSettings) {
+    let Some(endpoint) = endpoint_from(settings) else {
         return;
     };
     thread::spawn(move || {
@@ -916,7 +916,7 @@ impl InFlight {
     }
 }
 
-/// Drop an in-flight wake and install a Completer for the new sources.
+/// Drop an in-flight wake and install a Completer for the new settings.
 ///
 /// The worker still finishes; its Wake lands on a channel nobody reads.
 /// ureq cannot abort a POST already on the wire.
@@ -925,14 +925,14 @@ pub fn retarget_model(
     in_flight: &mut Option<Context>,
     model: &mut Option<Arc<ModelDirector<Endpoint>>>,
     behaviors: impl IntoIterator<Item = impl Into<String>>,
-    sources: &DirectorSources,
+    settings: &DirectorSettings,
     configured: bool,
 ) {
     pending.cancel();
     *in_flight = None;
     *model = configured.then(|| {
         Arc::new(ModelDirector::new(
-            endpoint_from(sources).expect("configured means a Completer exists"),
+            endpoint_from(settings).expect("configured means a Completer exists"),
             behaviors,
         ))
     });
@@ -994,64 +994,64 @@ mod tests {
     #[test]
     fn env_beats_persisted_base_and_model() {
         with_env(None, Some("https://api.x.ai"), Some("grok-4.6"), || {
-            let sources = resolve("https://api.openai.com", "gpt-4o-mini", Some("sk-stored"));
-            assert_eq!(sources.base_url, "https://api.x.ai");
-            assert_eq!(sources.model, "grok-4.6");
+            let settings = resolve("https://api.openai.com", "gpt-4o-mini", Some("sk-stored"));
+            assert_eq!(settings.base_url, "https://api.x.ai");
+            assert_eq!(settings.model, "grok-4.6");
         });
     }
 
     #[test]
     fn persisted_is_used_when_env_is_unset() {
         with_env(None, None, None, || {
-            let sources = resolve("https://api.x.ai", "grok-4.6", Some("sk-stored-key"));
-            assert_eq!(sources.base_url, "https://api.x.ai");
-            assert_eq!(sources.model, "grok-4.6");
-            assert_eq!(sources.api_key, "sk-stored-key");
-            assert!(!sources.key_invalid);
+            let settings = resolve("https://api.x.ai", "grok-4.6", Some("sk-stored-key"));
+            assert_eq!(settings.base_url, "https://api.x.ai");
+            assert_eq!(settings.model, "grok-4.6");
+            assert_eq!(settings.api_key, "sk-stored-key");
+            assert!(!settings.key_invalid);
         });
     }
 
     #[test]
     fn env_key_beats_the_stored_key() {
         with_env(Some("sk-env-key"), None, None, || {
-            let sources = resolve("", "", Some("sk-stored-key"));
-            assert_eq!(sources.api_key, "sk-env-key");
+            let settings = resolve("", "", Some("sk-stored-key"));
+            assert_eq!(settings.api_key, "sk-env-key");
         });
     }
 
     #[test]
     fn invalid_env_beats_store() {
         with_env(Some(""), None, None, || {
-            let sources = resolve(
+            let settings = resolve(
                 "https://api.openai.com",
                 "gpt-4o-mini",
                 Some("sk-stored-key"),
             );
             assert!(
-                sources.api_key.is_empty(),
+                settings.api_key.is_empty(),
                 "a blank env key must not fall through to the store"
             );
-            assert!(sources.key_invalid);
+            assert!(settings.key_invalid);
         });
     }
 
     #[test]
     fn a_remote_url_without_a_key_is_not_configured() {
         with_env(None, None, None, || {
-            let sources = resolve("https://api.openai.com", "gpt-4o-mini", None);
-            let config = config_from(&sources);
+            let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
+            let config = config_from(&settings);
             assert!(!config.configured);
-            assert!(endpoint_from(&sources).is_none());
+            assert!(endpoint_from(&settings).is_none());
         });
     }
 
     #[test]
     fn a_local_url_without_a_key_is_configured() {
         with_env(None, None, None, || {
-            let sources = resolve("http://localhost:11434", "gemma4", None);
-            let config = config_from(&sources);
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let config = config_from(&settings);
             assert!(config.configured);
-            let endpoint = endpoint_from(&sources).expect("local needs no key");
+            let endpoint = endpoint_from(&settings).expect("local needs no key");
             assert!(endpoint.url().contains("11434"));
             assert_eq!(endpoint.model(), "gemma4");
         });
@@ -1067,10 +1067,10 @@ mod tests {
     }
 
     #[test]
-    fn director_sources_debug_prints_the_fingerprint_not_the_key() {
+    fn director_settings_debug_prints_the_fingerprint_not_the_key() {
         with_env(None, None, None, || {
-            let sources = resolve("", "", Some("sk-super-secret-key"));
-            let dump = format!("{sources:?}");
+            let settings = resolve("", "", Some("sk-super-secret-key"));
+            let dump = format!("{settings:?}");
             assert!(
                 !dump.contains("sk-super-secret-key"),
                 "Debug must not echo the key: {dump}"
@@ -1382,16 +1382,16 @@ mod tests {
     #[test]
     fn a_present_key_is_used_even_when_the_base_is_local() {
         with_env(None, None, None, || {
-            let sources = resolve(
+            let settings = resolve(
                 "http://localhost:8000",
                 "local-model",
                 Some("omlx-test-key"),
             );
             assert!(
-                is_local(&sources.base_url),
+                is_local(&settings.base_url),
                 "precondition: the base is local"
             );
-            let endpoint = endpoint_from(&sources).expect("local is configured");
+            let endpoint = endpoint_from(&settings).expect("local is configured");
             assert_eq!(
                 endpoint.key_fingerprint(),
                 key_fingerprint("omlx-test-key"),
@@ -1435,8 +1435,8 @@ mod tests {
     #[test]
     fn retarget_drops_an_in_flight_wake_and_installs_the_new_completer() {
         with_env(None, None, None, || {
-            let sources = resolve("http://localhost:11434", "gemma4", None);
-            let config = config_from(&sources);
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let config = config_from(&settings);
             let mut pending = InFlight::new();
             let mut in_flight = Some(wake_context());
             let mut model = None;
@@ -1445,7 +1445,7 @@ mod tests {
                 &mut in_flight,
                 &mut model,
                 ["stroll"],
-                &sources,
+                &settings,
                 config.configured,
             );
             assert!(pending.ready(), "cancel replaced the channel");
@@ -1457,8 +1457,8 @@ mod tests {
     #[test]
     fn retarget_to_a_remote_without_a_key_leaves_static() {
         with_env(None, None, None, || {
-            let sources = resolve("https://api.openai.com", "gpt-4o-mini", None);
-            let config = config_from(&sources);
+            let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
+            let config = config_from(&settings);
             let mut pending = InFlight::new();
             let mut in_flight = None;
             let mut model = None;
@@ -1467,7 +1467,7 @@ mod tests {
                 &mut in_flight,
                 &mut model,
                 ["stroll"],
-                &sources,
+                &settings,
                 config.configured,
             );
             assert!(model.is_none());
@@ -1477,8 +1477,8 @@ mod tests {
     #[test]
     fn retarget_installs_when_configured_even_if_director_is_off() {
         with_env(None, None, None, || {
-            let sources = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&sources);
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&settings);
             config.enabled = false;
             assert!(config.configured, "local needs no key");
             let mut pending = InFlight::new();
@@ -1489,7 +1489,7 @@ mod tests {
                 &mut in_flight,
                 &mut model,
                 ["stroll"],
-                &sources,
+                &settings,
                 config.configured,
             );
             assert!(
