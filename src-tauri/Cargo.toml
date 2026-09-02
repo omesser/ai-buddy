@@ -41,6 +41,9 @@ tauri-plugin-global-shortcut = "2"
 # does not wait. ureq instead of reqwest: no tokio.
 ureq = {version = "2", features = ["json"]}
 serde_json = "1"
+# The OS secret store is how the Director key survives `cargo run` without
+# landing in `settings.json`.
+keyring = "3"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 # X11 for Linux: window list, pointer state, EWMH properties, idle time.
