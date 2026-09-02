@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::memory::MemoryManifest;
-use crate::tools::{self, DenyList, InstanceInfo};
+use crate::tools::{self, DenyList, ExpressionHandle, InstanceInfo};
 use crate::window_source::WindowSource;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +31,7 @@ pub struct DispatchContext<'a> {
     pub memory_path: PathBuf,
     pub denylist: DenyList,
     pub roster: &'a [InstanceInfo],
+    pub expression: Option<&'a mut dyn ExpressionHandle>,
 }
 
 fn parse_args<T: for<'de> Deserialize<'de>>(
@@ -46,16 +47,27 @@ fn parse_args<T: for<'de> Deserialize<'de>>(
 pub fn dispatch(
     tool_name: &str,
     arguments: Value,
-    context: &DispatchContext,
+    context: &mut DispatchContext,
 ) -> Result<Value, DispatchError> {
     match tool_name {
         "speak" => {
             #[derive(Deserialize)]
             struct Args {
                 message: String,
+                #[serde(default)]
+                instance_id: Option<String>,
             }
             let args: Args = parse_args(arguments, tool_name)?;
-            let result = tools::speak(&args.message);
+            let roster = context.roster;
+            // take() rather than as_deref_mut(): Option<&mut dyn> is invariant,
+            // and `&'a mut DispatchContext<'a>` extends that borrow past every caller.
+            let expression = context.expression.take();
+            let result = tools::speak(
+                &args.message,
+                args.instance_id.as_deref(),
+                roster,
+                expression,
+            );
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -65,9 +77,18 @@ pub fn dispatch(
             #[derive(Deserialize)]
             struct Args {
                 behavior: String,
+                #[serde(default)]
+                instance_id: Option<String>,
             }
             let args: Args = parse_args(arguments, tool_name)?;
-            let result = tools::play_behavior(&args.behavior);
+            let roster = context.roster;
+            let expression = context.expression.take();
+            let result = tools::play_behavior(
+                &args.behavior,
+                args.instance_id.as_deref(),
+                roster,
+                expression,
+            );
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -150,6 +171,10 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     "message": {
                         "type": "string",
                         "description": "The message to speak"
+                    },
+                    "instance_id": {
+                        "type": "string",
+                        "description": "Optional instance ID to target"
                     }
                 },
                 "required": ["message"]
@@ -164,6 +189,10 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     "behavior": {
                         "type": "string",
                         "description": "The name of the Behavior to play"
+                    },
+                    "instance_id": {
+                        "type": "string",
+                        "description": "Optional instance ID to target"
                     }
                 },
                 "required": ["behavior"]
@@ -279,6 +308,7 @@ mod tests {
             memory_path: temp.join("memory.md"),
             denylist: DenyList::default(),
             roster,
+            expression: None,
         }
     }
 
@@ -305,10 +335,10 @@ mod tests {
     fn dispatch_speak_returns_speak_result() {
         let temp = TempDir::new("speak");
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"message": "Hello, world"});
-        let result = dispatch("speak", args, &context).expect("dispatch succeeds");
+        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
 
         assert_eq!(result["success"], true);
         assert_eq!(result["message"], "Hello, world");
@@ -318,10 +348,10 @@ mod tests {
     fn dispatch_play_behavior_returns_play_behavior_result() {
         let temp = TempDir::new("play");
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"behavior": "wave"});
-        let result = dispatch("play_behavior", args, &context).expect("dispatch succeeds");
+        let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
 
         assert_eq!(result["success"], true);
         assert_eq!(result["behavior"], "wave");
@@ -331,10 +361,10 @@ mod tests {
     fn dispatch_list_windows_returns_list_windows_result() {
         let temp = TempDir::new("list-windows");
         let source = fake_source(vec![window("Terminal", 10.0, 20.0, 800.0, 600.0)]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({});
-        let result = dispatch("list_windows", args, &context).expect("dispatch succeeds");
+        let result = dispatch("list_windows", args, &mut context).expect("dispatch succeeds");
 
         let windows = result["windows"].as_array().expect("windows is array");
         assert_eq!(windows.len(), 1);
@@ -345,10 +375,10 @@ mod tests {
     fn dispatch_describe_screen_returns_describe_screen_result() {
         let temp = TempDir::new("describe");
         let source = fake_source(vec![window("Safari", 30.0, 40.0, 1200.0, 800.0)]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({});
-        let result = dispatch("describe_screen", args, &context).expect("dispatch succeeds");
+        let result = dispatch("describe_screen", args, &mut context).expect("dispatch succeeds");
 
         let description = result["description"]
             .as_str()
@@ -366,10 +396,10 @@ mod tests {
             .expect("remembering writes");
 
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({});
-        let result = dispatch("recall", args, &context).expect("dispatch succeeds");
+        let result = dispatch("recall", args, &mut context).expect("dispatch succeeds");
 
         let content = result["content"].as_str().expect("content is string");
         assert!(content.contains("The user likes coffee"));
@@ -379,10 +409,10 @@ mod tests {
     fn dispatch_remember_returns_remember_result() {
         let temp = TempDir::new("remember");
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"heading": "Facts", "fact": "The user's name is Oded"});
-        let result = dispatch("remember", args, &context).expect("dispatch succeeds");
+        let result = dispatch("remember", args, &mut context).expect("dispatch succeeds");
 
         assert_eq!(result["recorded"], "- The user's name is Oded");
     }
@@ -401,10 +431,10 @@ mod tests {
             },
         ];
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &roster);
+        let mut context = test_context(&temp, &source, &roster);
 
         let args = json!({});
-        let result = dispatch("list_instances", args, &context).expect("dispatch succeeds");
+        let result = dispatch("list_instances", args, &mut context).expect("dispatch succeeds");
 
         let instances = result["instances"].as_array().expect("instances is array");
         assert_eq!(instances.len(), 2);
@@ -416,10 +446,10 @@ mod tests {
     fn dispatch_unknown_tool_returns_error() {
         let temp = TempDir::new("unknown");
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({});
-        let result = dispatch("click_mouse", args, &context);
+        let result = dispatch("click_mouse", args, &mut context);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -431,10 +461,10 @@ mod tests {
     fn dispatch_with_invalid_arguments_returns_error() {
         let temp = TempDir::new("bad-args");
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"wrong_field": 42});
-        let result = dispatch("speak", args, &context);
+        let result = dispatch("speak", args, &mut context);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -488,7 +518,7 @@ mod tests {
         context.denylist = denylist;
 
         let args = json!({});
-        let result = dispatch("list_windows", args, &context).expect("dispatch succeeds");
+        let result = dispatch("list_windows", args, &mut context).expect("dispatch succeeds");
 
         let windows = result["windows"].as_array().expect("windows is array");
         assert_eq!(windows.len(), 1);
@@ -510,7 +540,7 @@ mod tests {
         context.denylist = denylist;
 
         let args = json!({});
-        let result = dispatch("describe_screen", args, &context).expect("dispatch succeeds");
+        let result = dispatch("describe_screen", args, &mut context).expect("dispatch succeeds");
 
         let description = result["description"]
             .as_str()
@@ -523,12 +553,295 @@ mod tests {
     fn dispatch_list_instances_with_empty_roster_returns_empty_list() {
         let temp = TempDir::new("empty-roster");
         let source = fake_source(vec![]);
-        let context = test_context(&temp, &source, &[]);
+        let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({});
-        let result = dispatch("list_instances", args, &context).expect("dispatch succeeds");
+        let result = dispatch("list_instances", args, &mut context).expect("dispatch succeeds");
 
         let instances = result["instances"].as_array().expect("instances is array");
         assert_eq!(instances.len(), 0);
+    }
+
+    /// Copy test helpers from roster.rs
+    fn test_character(name: &str) -> crate::character::Character {
+        use crate::character::{
+            Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
+            DEFAULT_MODEL_POWER,
+        };
+        use std::collections::BTreeMap;
+
+        let mut animations = BTreeMap::new();
+        let required = [
+            "idle", "walk", "fall", "land", "sit", "sleep", "react", "talk", "hold",
+        ];
+        for anim in required {
+            animations.insert(
+                anim.to_string(),
+                Animation {
+                    frames: vec![format!("{anim}-0.png")],
+                    frame_size: (32, 32),
+                    fps: 8,
+                    looping: true,
+                    variants: Vec::new(),
+                },
+            );
+        }
+
+        let mut behaviors = BTreeMap::new();
+        behaviors.insert(
+            "wave".to_string(),
+            Behavior {
+                primitives: vec![Primitive::React],
+                then: None,
+                weight: 1,
+                trigger: None,
+            },
+        );
+
+        Character {
+            name: name.to_string(),
+            personality: format!("A test character named {name}"),
+            animations,
+            behaviors,
+            art: BTreeMap::new(),
+            smooth: false,
+            scale: 1,
+            model_base: DEFAULT_MODEL_BASE,
+            model_power: DEFAULT_MODEL_POWER,
+            near_reaction: CursorReaction::default(),
+            rush_reaction: CursorReaction::default(),
+        }
+    }
+
+    fn test_snapshot() -> crate::engine::WorldSnapshot {
+        use crate::engine::{Point, Rect, WorldSnapshot};
+
+        WorldSnapshot {
+            displays: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            }],
+            windows: vec![],
+            cursor: Point { x: 100.0, y: 100.0 },
+            verbs: vec![],
+            elapsed_ms: 16,
+            proposal: None,
+            poll_generation: 0,
+        }
+    }
+
+    /// Build roster with grounded instance - settle ~50 ticks so sprite is Grounded
+    fn test_roster_with_grounded_instance(
+        name: &str,
+        memory_path: &std::path::Path,
+    ) -> (crate::roster::Roster, String) {
+        use crate::engine::Point;
+        use crate::memory::MemoryManifest;
+
+        let memory = MemoryManifest::new(memory_path.to_path_buf());
+        let mut roster = crate::roster::Roster::new(memory);
+        let character = test_character(name);
+        let id = roster.spawn(&character, name.to_string(), Point { x: 100.0, y: 100.0 });
+
+        // Settle ~50 ticks so the sprite is Grounded before proposing
+        let mut snapshot = test_snapshot();
+        for _ in 0..50 {
+            if let Some(instance) = roster.get_mut(&id) {
+                instance.tick(&snapshot);
+            }
+            snapshot.elapsed_ms = 16; // ~60fps
+        }
+
+        (roster, id)
+    }
+
+    #[test]
+    fn speak_with_one_instance_enqueues_dialogue_and_plays_talk() {
+        let temp = TempDir::new("speak-expression");
+        let source = fake_source(vec![]);
+        let (mut roster, instance_id) =
+            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+
+        // Build roster info from the roster
+        let roster_info = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo { id, name })
+            .collect::<Vec<_>>();
+
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut roster),
+        };
+
+        let args = json!({"message": "Hello, world!"});
+        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(result["success"], true);
+        assert_eq!(result["message"], "Hello, world!");
+        drop(context);
+
+        // The Engine should have received the dialogue proposal and play talk
+        let snapshot = test_snapshot();
+        let instance = roster
+            .get_mut(&instance_id)
+            .expect("instance still in roster");
+        let frame = instance.tick(&snapshot);
+        assert!(frame.dialogue.is_some(), "Frame should carry dialogue");
+        assert_eq!(frame.dialogue.as_ref().unwrap(), "Hello, world!");
+        assert_eq!(frame.animation, "talk");
+    }
+
+    #[test]
+    fn play_behavior_with_one_instance_delivers_the_proposal_to_the_engine() {
+        let temp = TempDir::new("behavior-expression");
+        let source = fake_source(vec![]);
+        let (mut roster, instance_id) =
+            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+
+        let roster_info = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo { id, name })
+            .collect::<Vec<_>>();
+
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut roster),
+        };
+
+        let args = json!({"behavior": "wave"});
+        let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(result["success"], true);
+        assert_eq!(result["behavior"], "wave");
+        drop(context);
+
+        // wave's Primitive is React -> Frame.animation == "react" and Frame.behavior == Some("wave")
+        let snapshot = test_snapshot();
+        let instance = roster
+            .get_mut(&instance_id)
+            .expect("instance still in roster");
+        let frame = instance.tick(&snapshot);
+        assert_eq!(frame.animation, "react");
+        assert_eq!(frame.behavior, Some("wave".to_string()));
+    }
+
+    #[test]
+    fn omitted_instance_id_with_several_instances_is_failure() {
+        let temp = TempDir::new("multi-instance");
+        let source = fake_source(vec![]);
+        let infos = [
+            InstanceInfo {
+                id: "instance-1".to_string(),
+                name: "First".to_string(),
+            },
+            InstanceInfo {
+                id: "instance-2".to_string(),
+                name: "Second".to_string(),
+            },
+        ];
+        let mut context = test_context(&temp, &source, &infos);
+
+        let args = json!({"message": "Hello"});
+        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(result["success"], false);
+        assert_eq!(result["message"], "Hello");
+    }
+
+    #[test]
+    fn unknown_instance_id_is_failure() {
+        let temp = TempDir::new("unknown-instance");
+        let source = fake_source(vec![]);
+        let infos = [InstanceInfo {
+            id: "known-instance".to_string(),
+            name: "Known".to_string(),
+        }];
+        let mut context = test_context(&temp, &source, &infos);
+
+        let args = json!({"message": "Hello", "instance_id": "unknown-instance"});
+        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(result["success"], false);
+        assert_eq!(result["message"], "Hello");
+    }
+
+    #[test]
+    fn empty_roster_without_a_handle_keeps_the_stub_success_shape() {
+        let temp = TempDir::new("empty-roster");
+        let source = fake_source(vec![]);
+        let mut context = test_context(&temp, &source, &[]);
+
+        let args = json!({"message": "Hello, world"});
+        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(result["success"], true);
+        assert_eq!(result["message"], "Hello, world");
+    }
+
+    /// Break: empty message / empty behavior start reporting success, or become DispatchError.
+    #[test]
+    fn empty_message_and_empty_behavior_keep_the_existing_failure_shape() {
+        let temp = TempDir::new("empty-inputs");
+        let source = fake_source(vec![]);
+        let mut context = test_context(&temp, &source, &[]);
+
+        let speak_args = json!({"message": ""});
+        let speak_result = dispatch("speak", speak_args, &mut context).expect("dispatch succeeds");
+        assert_eq!(speak_result["success"], false);
+        assert_eq!(speak_result["message"], "");
+
+        let behavior_args = json!({"behavior": ""});
+        let behavior_result =
+            dispatch("play_behavior", behavior_args, &mut context).expect("dispatch succeeds");
+        assert_eq!(behavior_result["success"], false);
+        assert_eq!(behavior_result["behavior"], "");
+    }
+
+    #[test]
+    fn an_undeclared_behavior_is_still_enqueued_and_the_engine_refuses() {
+        let temp = TempDir::new("undeclared-behavior");
+        let source = fake_source(vec![]);
+        let (mut roster, instance_id) =
+            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+
+        let roster_info = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceInfo { id, name })
+            .collect::<Vec<_>>();
+
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut roster),
+        };
+
+        let args = json!({"behavior": "undeclared_behavior"});
+        let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
+
+        // Tool should still report success and enqueue
+        assert_eq!(result["success"], true);
+        assert_eq!(result["behavior"], "undeclared_behavior");
+        drop(context);
+
+        // But Engine should refuse it - Frame.behavior is None
+        let snapshot = test_snapshot();
+        let instance = roster
+            .get_mut(&instance_id)
+            .expect("instance still in roster");
+        let frame = instance.tick(&snapshot);
+        assert_eq!(frame.behavior, None);
     }
 }

@@ -4,7 +4,7 @@
 //! Behavior, never in knowledge — Memory is shared.
 
 use crate::character::Character;
-use crate::engine::{Engine, Frame, Point, WorldSnapshot};
+use crate::engine::{BehaviorProposal, Engine, Frame, Point, WorldSnapshot};
 use crate::memory::MemoryManifest;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -67,12 +67,24 @@ pub struct Instance {
     pub name: String,
     character_name: String,
     engine: Engine,
+    pending: Option<BehaviorProposal>,
 }
 
 impl Instance {
     /// Tick this Instance's Engine forward.
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
-        self.engine.tick(snapshot)
+        if let Some(proposal) = self.pending.take() {
+            let mut snapshot = snapshot.clone();
+            snapshot.proposal = Some(proposal);
+            self.engine.tick(&snapshot)
+        } else {
+            self.engine.tick(snapshot)
+        }
+    }
+
+    /// Enqueue a BehaviorProposal to be applied on the next tick.
+    pub fn enqueue(&mut self, proposal: BehaviorProposal) {
+        self.pending = Some(proposal);
     }
 
     /// The Character this Instance is running.
@@ -143,6 +155,7 @@ impl Roster {
             name,
             character_name: character.name.clone(),
             engine,
+            pending: None,
         };
         self.instances.insert(id.clone(), instance);
         id
@@ -194,6 +207,18 @@ impl Roster {
         match self.instances.get_mut(id) {
             Some(instance) => {
                 instance.rename(name);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+impl crate::tools::ExpressionHandle for Roster {
+    fn enqueue(&mut self, instance_id: &str, proposal: BehaviorProposal) -> bool {
+        match self.instances.get_mut(instance_id) {
+            Some(instance) => {
+                instance.enqueue(proposal);
                 true
             }
             None => false,

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::Path;
 
+use crate::engine::BehaviorProposal;
 use crate::memory::MemoryManifest;
 use crate::window_source::WindowSource;
 
@@ -33,6 +34,13 @@ pub struct SpeakResult {
 pub struct PlayBehaviorResult {
     pub success: bool,
     pub behavior: String,
+}
+
+/// Live handle for enqueueing Expression proposals onto Character Instances.
+pub trait ExpressionHandle {
+    /// Enqueue a BehaviorProposal onto the Instance with the given id.
+    /// Returns true if that id was live and the proposal was queued.
+    fn enqueue(&mut self, instance_id: &str, proposal: BehaviorProposal) -> bool;
 }
 
 /// Tool result for the `list_windows` tool.
@@ -121,24 +129,140 @@ impl DenyList {
 
 /// Make the buddy speak a line of dialogue.
 ///
-/// v1: returns success without rendering, since the Spatial Layer that would
-/// display dialogue is not yet wired to tool calls. The shape is correct and
-/// testable.
-pub fn speak(message: &str) -> SpeakResult {
+/// Expression is a pending BehaviorProposal on a live Instance; without
+/// a target or handle the documented success JSON is still returned so a
+/// Harness can call the tools before #16 crosses the process boundary.
+pub fn speak(
+    message: &str,
+    instance_id: Option<&str>,
+    roster: &[InstanceInfo],
+    expression: Option<&mut dyn ExpressionHandle>,
+) -> SpeakResult {
+    if message.is_empty() {
+        return SpeakResult {
+            success: false,
+            message: message.to_string(),
+        };
+    }
+
+    let target_id = match resolve_target(instance_id, roster) {
+        TargetResolution::Resolved(id) => id,
+        TargetResolution::NoInstances => {
+            return SpeakResult {
+                success: true,
+                message: message.to_string(),
+            };
+        }
+        TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
+            return SpeakResult {
+                success: false,
+                message: message.to_string(),
+            };
+        }
+    };
+
+    if let Some(handle) = expression {
+        let proposal = BehaviorProposal {
+            behavior: String::new(),
+            dialogue: Some(message.to_string()),
+        };
+        if handle.enqueue(&target_id, proposal) {
+            return SpeakResult {
+                success: true,
+                message: message.to_string(),
+            };
+        }
+    }
+
     SpeakResult {
-        success: !message.is_empty(),
+        success: true,
         message: message.to_string(),
+    }
+}
+
+/// Target resolution result for Expression tools.
+enum TargetResolution {
+    /// Resolved to a specific instance id
+    Resolved(String),
+    /// No instances in roster (stub success case)
+    NoInstances,
+    /// Unknown instance_id provided
+    UnknownInstance,
+    /// Multiple instances but no specific id provided
+    AmbiguousTarget,
+}
+
+/// Target resolution against roster for both speak and play_behavior.
+fn resolve_target(instance_id: Option<&str>, roster: &[InstanceInfo]) -> TargetResolution {
+    match instance_id {
+        Some(id) => {
+            // Check if the given id exists in roster
+            if roster.iter().any(|info| info.id == id) {
+                TargetResolution::Resolved(id.to_string())
+            } else {
+                TargetResolution::UnknownInstance
+            }
+        }
+        None => {
+            // No instance_id provided
+            match roster.len() {
+                0 => TargetResolution::NoInstances,
+                1 => TargetResolution::Resolved(roster[0].id.clone()),
+                _ => TargetResolution::AmbiguousTarget,
+            }
+        }
     }
 }
 
 /// Play a named Behavior.
 ///
-/// v1: returns success without playing, since Character Instances do not yet
-/// exist to receive the proposal. The tool behaves sensibly when no Instance
-/// exists: it reports success rather than crashing.
-pub fn play_behavior(behavior: &str) -> PlayBehaviorResult {
+/// Expression is a pending BehaviorProposal on a live Instance; without
+/// a target or handle the documented success JSON is still returned so a
+/// Harness can call the tools before #16 crosses the process boundary.
+pub fn play_behavior(
+    behavior: &str,
+    instance_id: Option<&str>,
+    roster: &[InstanceInfo],
+    expression: Option<&mut dyn ExpressionHandle>,
+) -> PlayBehaviorResult {
+    if behavior.is_empty() {
+        return PlayBehaviorResult {
+            success: false,
+            behavior: behavior.to_string(),
+        };
+    }
+
+    let target_id = match resolve_target(instance_id, roster) {
+        TargetResolution::Resolved(id) => id,
+        TargetResolution::NoInstances => {
+            return PlayBehaviorResult {
+                success: true,
+                behavior: behavior.to_string(),
+            };
+        }
+        TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
+            return PlayBehaviorResult {
+                success: false,
+                behavior: behavior.to_string(),
+            };
+        }
+    };
+
+    if let Some(handle) = expression {
+        let proposal = BehaviorProposal {
+            behavior: behavior.to_string(),
+            dialogue: None,
+        };
+        if handle.enqueue(&target_id, proposal) {
+            return PlayBehaviorResult {
+                success: true,
+                behavior: behavior.to_string(),
+            };
+        }
+    }
+
     PlayBehaviorResult {
-        success: !behavior.is_empty(),
+        success: true,
         behavior: behavior.to_string(),
     }
 }
@@ -271,27 +395,27 @@ mod tests {
 
     #[test]
     fn speak_returns_success_with_the_message() {
-        let result = speak("Hello, I am here to help");
+        let result = speak("Hello, I am here to help", None, &[], None);
         assert!(result.success);
         assert_eq!(result.message, "Hello, I am here to help");
     }
 
     #[test]
     fn speak_with_empty_message_reports_failure() {
-        let result = speak("");
+        let result = speak("", None, &[], None);
         assert!(!result.success);
     }
 
     #[test]
     fn play_behavior_returns_success_with_the_behavior_name() {
-        let result = play_behavior("greet");
+        let result = play_behavior("greet", None, &[], None);
         assert!(result.success);
         assert_eq!(result.behavior, "greet");
     }
 
     #[test]
     fn play_behavior_with_empty_name_reports_failure() {
-        let result = play_behavior("");
+        let result = play_behavior("", None, &[], None);
         assert!(!result.success);
     }
 
