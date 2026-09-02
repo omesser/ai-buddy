@@ -1,7 +1,4 @@
 //! Spatial queries over a `WorldSnapshot`.
-//!
-//! Geometry reports Surfaces; what standing on one turns the sprite into is
-//! `transition`'s to say.
 
 use super::{Point, Rect, Window, WorldSnapshot, CEILING_CLEARANCE, EDGE_CLEARANCE};
 
