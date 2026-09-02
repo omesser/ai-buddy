@@ -219,8 +219,10 @@ silent — an unparsable reply becomes speech, a failed one becomes Static.
 `measure_the_reply_contract_failure_rate` (an `#[ignore]`d test in
 `src-tauri/src/model.rs`) counts the outcomes over 40 varied wakes against a
 live server, classifying with `ModelDirector::wake` itself so the measurement
-cannot drift from what the app does. On an Apple-silicon Mac, loading
-`characters/cat`:
+cannot drift from what the app does. Nothing pins `temperature` or a seed —
+the app sends neither — so forty wakes tell 5% from 50% but not 5% from 8%;
+`AI_BUDDY_BENCH_WAKES` raises the sample when a tighter number is worth the
+minutes. On an Apple-silicon Mac, loading `characters/cat`:
 
 | Server | Model | Contract kept | Prose instead | Failed |
 |---|---|---|---|---|

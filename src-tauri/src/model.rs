@@ -1536,6 +1536,8 @@ mod tests {
     /// AI_BUDDY_DIRECTOR_MODEL=gemma4 \
     /// cargo test -p ai-buddy measure_the_reply_contract -- --ignored --nocapture
     /// ```
+    ///
+    /// `AI_BUDDY_BENCH_WAKES` sets the sample size; it defaults to 40.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {
@@ -1545,7 +1547,16 @@ mod tests {
         use std::path::Path;
         use std::time::{Instant, SystemTime};
 
-        const WAKES: usize = 40;
+        // Forty tells 5% from 50%, which is what the question needs. It does
+        // not tell 5% from 8%: nothing pins `temperature` or a seed, because
+        // the app sends neither and this measures the app, so runs of the
+        // same model wander by a few points. Raise it when a tighter number
+        // is worth the minutes.
+        let wakes: usize = std::env::var("AI_BUDDY_BENCH_WAKES")
+            .ok()
+            .and_then(|raw| raw.parse().ok())
+            .filter(|&n: &usize| n > 0)
+            .unwrap_or(40);
 
         let endpoint = endpoint().expect("AI_BUDDY_DIRECTOR_BASE_URL and _MODEL in the env");
         let model = endpoint.model().to_string();
@@ -1578,7 +1589,7 @@ mod tests {
         let mut examples: Vec<String> = Vec::new();
         let started = Instant::now();
 
-        for turn in 0..WAKES {
+        for turn in 0..wakes {
             let (happened, state, standing) = &occasions[turn % occasions.len()];
             let context = Context {
                 activity: Activity {
@@ -1634,8 +1645,8 @@ mod tests {
             }
         }
 
-        let percent = |n: usize| (n as f64) * 100.0 / (WAKES as f64);
-        println!("\n#175 reply-contract outcomes over {WAKES} wakes");
+        let percent = |n: usize| (n as f64) * 100.0 / (wakes as f64);
+        println!("\n#175 reply-contract outcomes over {wakes} wakes");
         println!("  model:     {model} at {origin}");
         println!("  behaviors: {}", behaviors.join(", "));
         println!("  elapsed:   {:.0}s", started.elapsed().as_secs_f64());
@@ -1653,13 +1664,14 @@ mod tests {
             "  the model broke the contract on {:.0}% of wakes",
             percent(speech + failed)
         );
+        println!("  (sampling is the server's own; runs of one model wander a few points)");
         for line in &examples {
             println!("{line}");
         }
 
         assert_eq!(
             accepted + case_only + speech + failed,
-            WAKES,
+            wakes,
             "every wake lands in exactly one bucket"
         );
     }
