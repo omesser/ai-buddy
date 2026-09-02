@@ -115,22 +115,106 @@ enum KeyRead {
     Present(String),
 }
 
-/// Read Director config from the env. No API key means `StaticDirector`
-/// only — unless the server is on this machine or this LAN, which needs no
-/// key to talk to.
-pub fn config() -> DirectorConfig {
-    let key = key_from_env();
-    let configured = matches!(key, KeyRead::Present(_)) || is_local(&base_url());
-    let key_invalid = matches!(key, KeyRead::Invalid);
+/// Resolved base URL, model, and key before they become a Completer.
+///
+/// `api_key` empty means unset or invalid. `key_invalid` means the winning
+/// source was set but unusable.
+#[derive(Clone, Debug)]
+pub struct DirectorSources {
+    pub base_url: String,
+    pub model: String,
+    pub api_key: String,
+    pub key_invalid: bool,
+}
+
+/// Env first, then persisted settings, then defaults. Does not write env.
+///
+/// Empty env values fall through (a blank override is treated as unset).
+/// For the key, env Invalid still wins over a stored key: the process asked
+/// to override.
+pub fn resolve(
+    persisted_base: &str,
+    persisted_model: &str,
+    stored_key: Option<&str>,
+) -> DirectorSources {
+    let base_url = resolve_string(BASE_URL, persisted_base, DEFAULT_BASE);
+    let model = resolve_string(MODEL, persisted_model, DEFAULT_MODEL);
+    let key = match key_from_env() {
+        KeyRead::Unset => key_from_raw(stored_key),
+        other => other,
+    };
+    let (api_key, key_invalid) = match key {
+        KeyRead::Present(key) => (key, false),
+        KeyRead::Invalid => (String::new(), true),
+        KeyRead::Unset => (String::new(), false),
+    };
+    DirectorSources {
+        base_url,
+        model,
+        api_key,
+        key_invalid,
+    }
+}
+
+fn resolve_string(var: &str, persisted: &str, default: &str) -> String {
+    match std::env::var(var) {
+        Ok(value) if !value.is_empty() => value,
+        _ if !persisted.is_empty() => persisted.to_string(),
+        _ => default.to_string(),
+    }
+}
+
+/// Build Director on/off from already-resolved sources.
+pub fn config_from(sources: &DirectorSources) -> DirectorConfig {
+    let configured = !sources.api_key.is_empty() || is_local(&sources.base_url);
     let enabled = configured && !off();
     DirectorConfig {
         enabled,
         configured,
-        key_invalid,
+        key_invalid: sources.key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
         ambient_allowed: true,
     }
+}
+
+/// An OpenAI-compatible chat Completer from already-resolved sources, or
+/// `None` when a remote host has no key set.
+pub fn endpoint_from(sources: &DirectorSources) -> Option<Endpoint> {
+    let local = is_local(&sources.base_url);
+    let api_key = if !sources.api_key.is_empty() {
+        sources.api_key.clone()
+    } else if local {
+        // `headers` omits Authorization when the key is empty, so a local
+        // server sees a plain request rather than a made-up Bearer token.
+        String::new()
+    } else {
+        return None;
+    };
+    Some(Endpoint {
+        api_key,
+        url: completions_url(&sources.base_url),
+        model: sources.model.clone(),
+        timeout: timeout_for(local),
+        max_tokens: max_tokens_for(local),
+        session: Mutex::new(Vec::new()),
+    })
+}
+
+/// Length and last four. Enough to tell two keys apart, not enough to use.
+pub fn key_fingerprint(key: &str) -> String {
+    let n = key.len();
+    let last = if n >= 4 { &key[n - 4..] } else { "****" };
+    format!("len={n} last={last}")
+}
+
+/// Read Director config from the env. No API key means `StaticDirector`
+/// only — unless the server is on this machine or this LAN, which needs no
+/// key to talk to.
+///
+/// Env-only wrapper until Task 4 wires persisted settings and the store.
+pub fn config() -> DirectorConfig {
+    config_from(&resolve("", "", None))
 }
 
 /// One line for the mode, and a warning when a key was offered but unusable.
@@ -185,13 +269,6 @@ fn key_from_env() -> KeyRead {
     }
 }
 
-fn secret_key() -> Option<String> {
-    match key_from_env() {
-        KeyRead::Present(key) => Some(key),
-        KeyRead::Unset | KeyRead::Invalid => None,
-    }
-}
-
 fn off() -> bool {
     matches!(
         std::env::var(ENABLED).ok().as_deref(),
@@ -204,10 +281,6 @@ fn off() -> bool {
 fn env_secs(var: &str) -> Option<Duration> {
     let secs: u64 = std::env::var(var).ok()?.parse().ok()?;
     (secs > 0).then_some(Duration::from_secs(secs))
-}
-
-fn base_url() -> String {
-    std::env::var(BASE_URL).unwrap_or_else(|_| DEFAULT_BASE.to_string())
 }
 
 /// Is this base URL served from this machine or this LAN?
@@ -274,25 +347,10 @@ fn max_tokens_for(local: bool) -> u32 {
 
 /// An OpenAI-compatible chat Completer, or `None` when a remote host has no
 /// key set.
+///
+/// Env-only wrapper until Task 4 wires persisted settings and the store.
 pub fn endpoint() -> Option<Endpoint> {
-    let base = base_url();
-    let local = is_local(&base);
-    let api_key = match secret_key() {
-        Some(key) => key,
-        // `headers` omits Authorization when the key is empty, so a local
-        // server sees a plain request rather than a made-up Bearer token.
-        None if local => String::new(),
-        None => return None,
-    };
-    let model = std::env::var(MODEL).unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-    Some(Endpoint {
-        api_key,
-        url: completions_url(&base),
-        model,
-        timeout: timeout_for(local),
-        max_tokens: max_tokens_for(local),
-        session: Mutex::new(Vec::new()),
-    })
+    endpoint_from(&resolve("", "", None))
 }
 
 /// Join a provider base onto the inference path without doubling `/v1`.
@@ -361,13 +419,7 @@ impl Endpoint {
 
     /// Length and last four. Enough to tell two keys apart, not enough to use.
     pub fn key_fingerprint(&self) -> String {
-        let n = self.api_key.len();
-        let last = if n >= 4 {
-            &self.api_key[n - 4..]
-        } else {
-            "****"
-        };
-        format!("len={n} last={last}")
+        key_fingerprint(&self.api_key)
     }
 
     pub fn origin(&self) -> String {
@@ -853,6 +905,109 @@ impl InFlight {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn with_env(key: Option<&str>, base: Option<&str>, model: Option<&str>, body: impl FnOnce()) {
+        struct Guard {
+            key: Option<String>,
+            base: Option<String>,
+            model: Option<String>,
+        }
+
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                restore(API_KEY, self.key.take());
+                restore(BASE_URL, self.base.take());
+                restore(MODEL, self.model.take());
+            }
+        }
+
+        fn save(var: &str) -> Option<String> {
+            std::env::var(var).ok()
+        }
+
+        fn restore(var: &str, previous: Option<String>) {
+            match previous {
+                Some(value) => std::env::set_var(var, value),
+                None => std::env::remove_var(var),
+            }
+        }
+
+        fn apply(var: &str, value: Option<&str>) {
+            match value {
+                Some(value) => std::env::set_var(var, value),
+                None => std::env::remove_var(var),
+            }
+        }
+
+        let _guard = Guard {
+            key: save(API_KEY),
+            base: save(BASE_URL),
+            model: save(MODEL),
+        };
+        apply(API_KEY, key);
+        apply(BASE_URL, base);
+        apply(MODEL, model);
+        body();
+    }
+
+    #[test]
+    fn env_beats_persisted_base_and_model() {
+        with_env(None, Some("https://api.x.ai"), Some("grok-4.6"), || {
+            let sources = resolve("https://api.openai.com", "gpt-4o-mini", Some("sk-stored"));
+            assert_eq!(sources.base_url, "https://api.x.ai");
+            assert_eq!(sources.model, "grok-4.6");
+        });
+    }
+
+    #[test]
+    fn persisted_is_used_when_env_is_unset() {
+        with_env(None, None, None, || {
+            let sources = resolve("https://api.x.ai", "grok-4.6", Some("sk-stored-key"));
+            assert_eq!(sources.base_url, "https://api.x.ai");
+            assert_eq!(sources.model, "grok-4.6");
+            assert_eq!(sources.api_key, "sk-stored-key");
+            assert!(!sources.key_invalid);
+        });
+    }
+
+    #[test]
+    fn env_key_beats_the_stored_key() {
+        with_env(Some("sk-env-key"), None, None, || {
+            let sources = resolve("", "", Some("sk-stored-key"));
+            assert_eq!(sources.api_key, "sk-env-key");
+        });
+    }
+
+    #[test]
+    fn a_remote_url_without_a_key_is_not_configured() {
+        with_env(None, None, None, || {
+            let sources = resolve("https://api.openai.com", "gpt-4o-mini", None);
+            let config = config_from(&sources);
+            assert!(!config.configured);
+            assert!(endpoint_from(&sources).is_none());
+        });
+    }
+
+    #[test]
+    fn a_local_url_without_a_key_is_configured() {
+        with_env(None, None, None, || {
+            let sources = resolve("http://localhost:11434", "gemma4", None);
+            let config = config_from(&sources);
+            assert!(config.configured);
+            let endpoint = endpoint_from(&sources).expect("local needs no key");
+            assert!(endpoint.url().contains("11434"));
+            assert_eq!(endpoint.model(), "gemma4");
+        });
+    }
+
+    #[test]
+    fn resolve_does_not_write_env() {
+        with_env(None, None, None, || {
+            let _ = resolve("https://api.x.ai", "grok-4.6", Some("sk-stored"));
+            assert!(std::env::var("AI_BUDDY_DIRECTOR_API_KEY").is_err());
+            assert!(std::env::var("AI_BUDDY_DIRECTOR_BASE_URL").is_err());
+        });
+    }
 
     #[test]
     fn a_chat_completion_body_yields_the_message_content() {
