@@ -451,10 +451,13 @@ impl Endpoint {
 
     /// GET `url`. Non-2xx is still `Ok` — the status and body are the answer.
     pub fn get(&self, url: &str) -> Result<(u16, String), String> {
-        let request = self.headers(ureq::get(url));
+        let request = self
+            .headers(ureq::get(url))
+            .config()
+            .http_status_as_error(false)
+            .build();
         match request.call() {
-            Ok(response) => read_ok(response),
-            Err(ureq::Error::Status(code, response)) => read_status(code, response),
+            Ok(response) => read_response(response),
             Err(error) => Err(error.to_string()),
         }
     }
@@ -473,16 +476,19 @@ impl Endpoint {
         let body = request_body(&self.model, &snapshot, uses_responses(url), self.max_tokens);
         let request = self
             .headers(ureq::post(url))
-            .set("Content-Type", "application/json");
+            .set("Content-Type", "application/json")
+            .config()
+            .http_status_as_error(false)
+            .build();
         let text = match request.send_json(body) {
             Ok(response) => {
-                let (_, text) = read_ok(response)?;
-                text
-            }
-            Err(ureq::Error::Status(code, response)) => {
-                self.session.lock().expect("session lock").pop();
-                let (_, text) = read_status(code, response)?;
-                return Err(status_error(url, code, &text));
+                let (code, text) = read_response(response)?;
+                if (200..300).contains(&code) {
+                    text
+                } else {
+                    self.session.lock().expect("session lock").pop();
+                    return Err(status_error(url, code, &text));
+                }
             }
             Err(error) => {
                 self.session.lock().expect("session lock").pop();
@@ -504,17 +510,14 @@ impl Endpoint {
         }
     }
 
-    fn headers(&self, mut request: ureq::Request) -> ureq::Request {
-        // ureq's default UA gets a WAF 403 on some edges; name ourselves.
-        request = request
+    fn headers(&self, request: ureq::RequestBuilder) -> ureq::RequestBuilder {
+        let mut request = request
             .set("User-Agent", "ai-buddy")
             .set("Accept", "application/json")
             .timeout(self.timeout);
         if !self.api_key.is_empty() {
             request = request.set("Authorization", &format!("Bearer {}", self.api_key));
         }
-        // Anthropic's OpenAI layer accepts Bearer; the native Messages path
-        // wants these two. Sending both covers either.
         if self.url.contains("api.anthropic.com") {
             request = request.set("anthropic-version", "2023-06-01");
             if !self.api_key.is_empty() {
@@ -609,14 +612,12 @@ fn status_error(url: &str, code: u16, body: &str) -> String {
     }
 }
 
-fn read_ok(response: ureq::Response) -> Result<(u16, String), String> {
-    let code = response.status();
-    let text = response.into_string().map_err(|error| error.to_string())?;
-    Ok((code, text))
-}
-
-fn read_status(code: u16, response: ureq::Response) -> Result<(u16, String), String> {
-    let text = response.into_string().unwrap_or_default();
+fn read_response(mut response: http::Response<ureq::Body>) -> Result<(u16, String), String> {
+    let code = response.status().as_u16();
+    let text = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|error| error.to_string())?;
     Ok((code, text))
 }
 
