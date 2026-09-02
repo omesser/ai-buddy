@@ -20,15 +20,17 @@ use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
+use crate::consent::{self, CapabilityId};
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
-const DOC_HEIGHT: f64 = 1332.0;
+const DOC_HEIGHT: f64 = 1600.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
 
+const TAG_CONSENT_BASE: isize = 10;
 thread_local! {
     static CONTROLLER: RefCell<Option<Retained<SettingsController>>> = const { RefCell::new(None) };
 }
@@ -47,6 +49,7 @@ struct Ivars {
     hidden: RefCell<Option<Retained<NSButton>>>,
     fullscreen: RefCell<Option<Retained<NSButton>>>,
     tag_to_id: RefCell<HashMap<isize, String>>,
+    consent: RefCell<Vec<Retained<NSButton>>>,
     hotkey: RefCell<Option<Retained<NSTextField>>>,
     excluded: RefCell<Option<Retained<NSTextView>>>,
     payload: RefCell<Option<Retained<NSTextField>>>,
@@ -99,6 +102,16 @@ define_class!(
             };
             let on = button.state() == NSControlStateValueOn;
 
+            if let Some(id) = consent_id(button.tag()) {
+                if on {
+                    if let Some(session) = self.ivars().session.borrow().as_ref() {
+                        session.enable_consent(id);
+                    }
+                }
+                self.refresh();
+                return;
+            }
+
             let tag = button.tag();
             let tag_to_id = self.ivars().tag_to_id.borrow();
             let Some(id) = tag_to_id.get(&tag) else {
@@ -109,6 +122,7 @@ define_class!(
             let Some(action) = description.actions.get(id) else {
                 return;
             };
+
 
             let mut patch = SettingsPatch::default();
             if let form::RowAction::PatchField(field_name) = action {
@@ -313,6 +327,16 @@ impl SettingsController {
         fill_checkbox(&self.ivars().dnd, view.do_not_disturb);
         fill_checkbox(&self.ivars().hidden, view.hidden);
         fill_checkbox(&self.ivars().fullscreen, view.hide_in_fullscreen);
+        {
+            let buttons = self.ivars().consent.borrow();
+            for (button, row) in buttons.iter().zip(view.consent.iter()) {
+                button.setState(if row.granted {
+                    NSControlStateValueOn
+                } else {
+                    NSControlStateValueOff
+                });
+            }
+        }
         if let Some(field) = self.ivars().hotkey.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.hide_hotkey));
         }
@@ -675,6 +699,34 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
         }
     }
 
+    cursor.heading("What the buddy can see");
+    {
+        let intro = NSTextField::wrappingLabelWithString(
+            &NSString::from_str(
+                "First run grants nothing. Flip one on to trigger the system prompt. macOS holds the grant; turn it off in System Settings.",
+            ),
+            mtm,
+        );
+        intro.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        intro.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        cursor.place(&intro, 48.0);
+    }
+    let mut consent_buttons = Vec::new();
+    for (i, cap) in consent::CAPABILITIES.iter().enumerate() {
+        let button = checkbox(cap.title, TAG_CONSENT_BASE + i as isize, &controller, mtm);
+        cursor.place(&button, 22.0);
+        {
+            let trade = NSTextField::wrappingLabelWithString(
+                &NSString::from_str(&format!("{} {}", cap.buys, cap.costs)),
+                mtm,
+            );
+            trade.setTextColor(Some(&NSColor::secondaryLabelColor()));
+            trade.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+            cursor.place(&trade, 56.0);
+        }
+        consent_buttons.push(button);
+    }
+
     *controller.ivars().director.borrow_mut() = director_button;
     *controller.ivars().ambient.borrow_mut() = ambient_button;
     *controller.ivars().base_url.borrow_mut() = base_url_field;
@@ -684,6 +736,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().dnd.borrow_mut() = dnd_button;
     *controller.ivars().hidden.borrow_mut() = hidden_button;
     *controller.ivars().fullscreen.borrow_mut() = fullscreen_button;
+    *controller.ivars().consent.borrow_mut() = consent_buttons;
     *controller.ivars().hotkey.borrow_mut() = hotkey_field;
     *controller.ivars().excluded.borrow_mut() = excluded_text;
     *controller.ivars().payload.borrow_mut() = payload_field;
@@ -834,6 +887,11 @@ fn inspect_block(mtm: MainThreadMarker) -> Retained<NSTextField> {
     let field = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
     field.setFont(NSFont::userFixedPitchFontOfSize(11.0).as_deref());
     field
+}
+
+fn consent_id(tag: isize) -> Option<CapabilityId> {
+    let index = usize::try_from(tag - TAG_CONSENT_BASE).ok()?;
+    consent::CAPABILITIES.get(index).map(|cap| cap.id)
 }
 
 fn endpoint_field(

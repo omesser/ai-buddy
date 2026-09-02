@@ -264,8 +264,8 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     });
     actions.insert(SETTINGS_ID.to_string(), MenuAction::OpenSettings);
 
-    // What the buddy can see… — absent until #148 exists. Not a disabled row:
-    // a disabled row promises a feature, and there is nothing to promise yet.
+    // What the buddy can see lives in Settings, not the menu. A row here
+    // would look like a prompt on right-click, which decision 9 refuses.
 
     entries.push(MenuEntry::Item {
         id: QUIT_ID.to_string(),
@@ -565,7 +565,8 @@ mod tests {
         );
     }
 
-    /// #148 has not been written. A disabled row would promise it.
+    /// Consent lives in settings (#148), not here. A menu row would look
+    /// like a prompt on right-click, which decision 9 still refuses.
     #[test]
     fn the_consent_row_is_absent_rather_than_disabled() {
         let installed = names(&["bmo"]);

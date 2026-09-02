@@ -20,6 +20,7 @@ use ai_buddy_core::visibility::HideRules;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
+use crate::consent::{self, CapabilityId, ConsentRow};
 use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
@@ -54,6 +55,8 @@ pub struct SettingsView {
     pub api_key_fingerprint: String,
     /// Non-empty when the last store read failed. Distinct from unset.
     pub api_key_error: String,
+    /// Live OS grants, not a file field. The window rereads them on become-key.
+    pub consent: Vec<ConsentRow>,
 }
 
 impl SettingsView {
@@ -84,6 +87,7 @@ impl SettingsView {
             api_key_set,
             api_key_fingerprint,
             api_key_error,
+            consent: consent::rows(&consent::Null),
         }
     }
 
@@ -256,14 +260,22 @@ impl SettingsSession {
             .lock()
             .ok()
             .and_then(|inspect| inspect.last_payload.clone());
-        SettingsView::from_parts(
+        let mut view = SettingsView::from_parts(
             &settings,
             &self.memory_path,
             last_payload,
             self.installed.clone(),
             instances,
             self.key_status_for_view(),
-        )
+        );
+        view.consent = consent::rows(consent::live());
+        view
+    }
+
+    /// Flip on: the system prompt for that grant, and only then. Flip off
+    /// cannot revoke a macOS grant; the next refresh shows the truth.
+    pub fn enable_consent(&self, id: CapabilityId) {
+        consent::enable(id, consent::live());
     }
 
     pub fn apply(&self, patch: SettingsPatch) -> Result<(), String> {
@@ -915,6 +927,10 @@ mod tests {
         assert_eq!(view.instances[0].name, "Nim");
         assert_eq!(view.instance_lines(), ["Nim (nim)"]);
         assert!(!view.api_key_set);
+        assert_eq!(
+            view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
+            ["Accessibility", "Screen Recording"]
+        );
     }
 
     /// The Instances list is this view. After a dismiss the window must

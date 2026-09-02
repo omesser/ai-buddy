@@ -288,7 +288,9 @@ require Screen Recording consent on macOS 10.15+, and sitting on a window's edge
 does not need titles.
 
 Accessibility becomes a deliberate upgrade tied to the Functional Layer, where
-the user understands the trade.
+the user understands the trade. The upgrade path is settings: a **What the
+buddy can see** pane names each grant, what it buys, and what it costs, and
+the system prompt fires only when the user flips one on.
 
 Beyond that, two consented modes:
 

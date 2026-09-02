@@ -449,8 +449,8 @@ can answer it. Run the app, then confirm:
    and standing on the Dock is standing on the island the screen actually
    shows. The exact rectangle comes from a chain the startup log names —
    a private SPI that needs no consent, then the Accessibility API where that
-   trust was already granted (never prompted for), then the full-width
-   work-area strip as the fallback where neither answers.
+   trust was already granted (settings is where the user turns it on), then the
+   full-width work-area strip as the fallback where neither answers.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of
    Black Mage whose idle declares a faster `fps`, and the idle is visibly faster
    than it was at the declared 1. Editing the repository's own

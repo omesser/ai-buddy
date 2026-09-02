@@ -17,6 +17,7 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+mod consent;
 mod env_util;
 mod frame_loop;
 mod menu;
@@ -1391,8 +1392,7 @@ fn main() {
             // Which Dock the physics got: the true rectangle over the SPI,
             // the true rectangle over Accessibility, or the full-width strip
             // the work area reserves. Printed because the difference is
-            // invisible until a sprite walks past the Dock's real end, and
-            // the app never prompts to change it (DESIGN.md decision 9).
+            // invisible until a sprite walks past the Dock's real end.
             if cfg!(target_os = "macos") {
                 match displays.read().dock {
                     Some((dock, source)) => eprintln!(
