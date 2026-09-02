@@ -16,6 +16,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "app"
     ],
@@ -24,6 +25,14 @@
     ],
     "resources": {
       "../characters": "characters"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/omesser/ai-buddy/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFEOEI4QjE3QzY0QjU5QTcKUldUTm5qZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqZ0NqCg=="
     }
   }
 }

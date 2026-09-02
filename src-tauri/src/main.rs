@@ -22,8 +22,12 @@ mod menu;
 mod model;
 mod package;
 mod platform;
+mod settings;
+mod tray;
 
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -40,13 +44,15 @@ use ai_buddy_core::overlay::{display_index_for, place_sprite, SpriteRect};
 use ai_buddy_core::roster::{self, InstanceId, InstanceSpec, Roster};
 use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::{starting_position, SnapshotAssembler};
+use ai_buddy_core::tools::DenyList;
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde::Serialize;
+use settings::{InstanceRow, Settings, SettingsOp, SettingsSession};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// Where the shipped Character Packages sit inside the app's resources. Kept in
 /// step with `bundle.resources` in `tauri.conf.json`.
@@ -174,6 +180,18 @@ enum MenuSignal {
 struct MenuChannel {
     sender: mpsc::Sender<MenuSignal>,
     receiver: mpsc::Receiver<MenuSignal>,
+}
+
+/// Settings plus the live roster the settings window reads.
+struct SettingsState {
+    settings: Arc<Mutex<Settings>>,
+    path: PathBuf,
+    memory_path: PathBuf,
+    installed: Vec<String>,
+    instances: Arc<Mutex<Vec<InstanceRow>>>,
+    inspect: Arc<Mutex<model::DirectorInspect>>,
+    ops: mpsc::Sender<SettingsOp>,
+    rules: Arc<Mutex<HideRules>>,
 }
 
 /// How long a hold survives without hearing anything before it is dropped.
@@ -331,16 +349,66 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-/// Last Character Prompt and current Director config. #18's settings panel
-/// calls this.
-#[tauri::command]
-fn director_payload(
-    inspect: tauri::State<'_, Arc<Mutex<model::DirectorInspect>>>,
-) -> model::DirectorInspect {
-    inspect
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+fn open_in_editor(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    if !path.exists() {
+        std::fs::write(path, "").map_err(|error| error.to_string())?;
+    }
+    std::process::Command::new("open")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Settings is Shell furniture. SPEC gives the webview to the sprite and chat,
+/// so this is an AppKit window, opened on the main thread because that is
+/// where the native objects live.
+fn show_settings(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<SettingsState>() else {
+        eprintln!("settings: opened before the shell was ready");
+        return;
+    };
+    let session = SettingsSession {
+        settings: Arc::clone(&state.settings),
+        path: state.path.clone(),
+        memory_path: state.memory_path.clone(),
+        rules: Arc::clone(&state.rules),
+        inspect: Arc::clone(&state.inspect),
+        instances: Arc::clone(&state.instances),
+        installed: state.installed.clone(),
+        ops: state.ops.clone(),
+        app: app.clone(),
+        on_rebind: bind_hide_hotkey,
+    };
+    if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
+        eprintln!("settings: {why}");
+    }
+}
+
+fn persist_settings(settings: &Settings, path: &std::path::Path) {
+    if let Err(why) = settings.save(path) {
+        eprintln!("settings: {why}");
+    }
+}
+
+fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &std::path::Path) {
+    if let Ok(mut settings) = settings.lock() {
+        settings.instances = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| InstanceSpec {
+                character: roster
+                    .get(&id)
+                    .map(|instance| instance.character_name().to_string())
+                    .unwrap_or_default(),
+                name,
+            })
+            .collect();
+        persist_settings(&settings, path);
+    }
 }
 
 /// The overlay heard the primary button. The frame loop polls a session
@@ -348,6 +416,13 @@ fn director_payload(
 #[tauri::command]
 fn overlay_primary(down: bool) {
     platform::set_overlay_primary(down);
+}
+
+/// Same witness for the right button. Without it a right-click on the sprite
+/// is swallowed by the webview and the session poll never sees a Menu.
+#[tauri::command]
+fn overlay_secondary(down: bool) {
+    platform::set_overlay_secondary(down);
 }
 
 /// Put the overlay over one display, covering it exactly.
@@ -456,73 +531,346 @@ fn place_overlays(app: &tauri::AppHandle, displays: &[Rect]) -> Result<(), Strin
 /// Register the hotkey that hides and shows the Character.
 ///
 /// Three modifiers, because a global shortcut is taken from every application
-/// on the machine and B alone belongs to most of them. Fixed rather than
-/// configurable: ai-buddy has no settings surface until #18, and a value that
-/// never changes is not configuration.
+/// on the machine and B alone belongs to most of them. The binding is the
+/// settings string, rebound when that string changes.
 ///
 /// A hotkey another application already holds is reported and let go. Losing it
 /// costs the user one way to hide the Character, which is not worth losing the
 /// Character over.
-fn register_hide_hotkey(app: &tauri::AppHandle, rules: Arc<Mutex<HideRules>>) {
-    let shortcut = Shortcut::new(
-        Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER),
-        Code::KeyB,
-    );
+fn shortcut_from_spec(spec: &str) -> Option<Shortcut> {
+    let parsed = settings::parse_hotkey(spec)
+        .or_else(|| settings::parse_hotkey(settings::DEFAULT_HIDE_HOTKEY))?;
+    let code: Code = settings::key_code_name(parsed.key)?.parse().ok()?;
+    let mut modifiers = Modifiers::empty();
+    if parsed.control {
+        modifiers |= Modifiers::CONTROL;
+    }
+    if parsed.option {
+        modifiers |= Modifiers::ALT;
+    }
+    if parsed.shift {
+        modifiers |= Modifiers::SHIFT;
+    }
+    if parsed.command {
+        modifiers |= Modifiers::SUPER;
+    }
+    Some(Shortcut::new(Some(modifiers), code))
+}
 
-    // Spelled out rather than taken from `shortcut.into_string()`, which says
-    // "control+alt+super+KeyB". These are the names on a Mac keyboard, and this
-    // is the one line that tells a user which keys to press. Edit both.
-    const HIDE_HOTKEY: &str = "Control-Option-Command-B";
-
+fn install_hide_hotkey(
+    app: &tauri::AppHandle,
+    rules: Arc<Mutex<HideRules>>,
+    settings: Arc<Mutex<Settings>>,
+    settings_path: PathBuf,
+) -> bool {
     let plugin = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcut(shortcut)
-        .expect("a Shortcut built here converts into itself")
         .with_handler(move |_app, _shortcut, event| {
             // Pressed only. The handler is called again on release, and a
             // toggle that ran twice would hand the Character back before the
             // user had let go of the key.
             if event.state() == ShortcutState::Pressed {
-                if let Ok(mut rules) = rules.lock() {
-                    rules.toggle();
+                if let (Ok(mut rules), Ok(mut settings)) = (rules.lock(), settings.lock()) {
+                    settings::toggle_away(&mut rules, &mut settings);
+                    persist_settings(&settings, &settings_path);
                 }
             }
         })
         .build();
-
     if let Err(why) = app.plugin(plugin) {
-        eprintln!("hotkey: {HIDE_HOTKEY} is unavailable, so the Character cannot be hidden by hand: {why}");
+        eprintln!("hotkey: unavailable, so the Character cannot be hidden by hand: {why}");
+        false
+    } else {
+        true
     }
 }
 
-/// Apply a menu action to the roster and hide rules.
+fn bind_hide_hotkey(app: &tauri::AppHandle, spec: &str) {
+    if app
+        .try_state::<tauri_plugin_global_shortcut::GlobalShortcut<tauri::Wry>>()
+        .is_none()
+    {
+        return;
+    }
+    let Some(shortcut) = shortcut_from_spec(spec) else {
+        eprintln!("hotkey: {spec} could not be parsed");
+        return;
+    };
+    let gs = app.global_shortcut();
+    if let Err(why) = gs.unregister_all() {
+        eprintln!("hotkey: could not drop the previous binding: {why}");
+    }
+    if let Err(why) = gs.register(shortcut) {
+        eprintln!(
+            "hotkey: {spec} is unavailable, so the Character cannot be hidden by hand: {why}"
+        );
+    }
+}
+
+fn check_for_update(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_updater::UpdaterExt;
+        let updater = match app.updater() {
+            Ok(updater) => updater,
+            Err(why) => {
+                eprintln!("updater: {why}");
+                return;
+            }
+        };
+        match updater.check().await {
+            Ok(Some(update)) => {
+                eprintln!("updater: {} available, downloading", update.version);
+                if let Err(why) = update.download_and_install(|_, _| {}, || {}).await {
+                    eprintln!("updater: {why}");
+                }
+            }
+            Ok(None) => eprintln!("updater: up to date"),
+            Err(why) => eprintln!("updater: {why}"),
+        }
+    });
+}
+
+// One over the clippy cap. Settings, hide rules, and the Director each have
+// to hear the same click, and folding them would mix persist with proposal.
+#[allow(clippy::too_many_arguments)]
 fn apply_menu_action(
     action: menu::MenuAction,
     roster: &mut Roster,
+    lives: &mut Vec<InstanceState>,
     instance_id: &InstanceId,
     rules: &Arc<Mutex<HideRules>>,
+    settings: &Arc<Mutex<Settings>>,
+    settings_path: &std::path::Path,
+    characters: &BTreeMap<String, Arc<Character>>,
+    config: &mut model::DirectorConfig,
+    inspect: &Arc<Mutex<model::DirectorInspect>>,
+    app: &tauri::AppHandle,
 ) {
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
-            eprintln!("menu: switching to {name}");
-            // ponytail: character switching lands with
-            // #18's settings. The menu builds and the
-            // action is recognized; persistence and the
-            // actual switch are deferred.
+            if let Some(character) = characters.get(&name).cloned() {
+                switch_instance(roster, lives, instance_id, character, config);
+                if let Ok(mut settings) = settings.lock() {
+                    settings.character = name.clone();
+                    persist_settings(&settings, settings_path);
+                }
+                eprintln!("menu: switching to {name}");
+            } else {
+                eprintln!("menu: no Character named {name}");
+            }
+        }
+        menu::MenuAction::SpawnInstance => {
+            let character_name = settings
+                .lock()
+                .ok()
+                .map(|s| s.character.clone())
+                .filter(|name| !name.is_empty())
+                .or_else(|| lives.first().map(|live| live.character.name.clone()));
+            if let Some(name) = character_name {
+                spawn_live(roster, lives, characters, &name, name.clone(), config);
+            }
+        }
+        menu::MenuAction::ToggleDirector => {
+            if let Ok(mut settings) = settings.lock() {
+                settings.director_enabled = !settings.director_enabled;
+                config.enabled = settings.director_enabled && config.configured;
+                if let Ok(mut inspect) = inspect.lock() {
+                    inspect.enabled = config.enabled;
+                }
+                persist_settings(&settings, settings_path);
+                eprintln!(
+                    "menu: Director {}",
+                    if settings.director_enabled {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                );
+            }
         }
         menu::MenuAction::ToggleDnd => {
             if let Some(instance) = roster.get_mut(instance_id) {
                 let new_state = !instance.do_not_disturb();
                 instance.set_do_not_disturb(new_state);
+                if let Ok(mut settings) = settings.lock() {
+                    settings.do_not_disturb = new_state;
+                    persist_settings(&settings, settings_path);
+                }
                 eprintln!("menu: DND {}", if new_state { "on" } else { "off" });
             }
         }
         menu::MenuAction::Hide => {
             if let Ok(mut r) = rules.lock() {
-                r.toggle();
-                eprintln!("menu: hiding");
+                if let Ok(mut settings) = settings.lock() {
+                    settings::toggle_away(&mut r, &mut settings);
+                    persist_settings(&settings, settings_path);
+                }
+                eprintln!("menu: {}", if r.is_away() { "away" } else { "back" });
             }
         }
+        menu::MenuAction::ToggleFullscreenHide => {
+            if let Ok(mut r) = rules.lock() {
+                let next = !r.hide_in_fullscreen();
+                r.set_hide_in_fullscreen(next);
+                if let Ok(mut settings) = settings.lock() {
+                    settings.hide_in_fullscreen = r.hide_in_fullscreen();
+                    persist_settings(&settings, settings_path);
+                }
+            }
+        }
+        menu::MenuAction::OpenMemory => {
+            let _ = open_in_editor(&memory::shared_path());
+        }
+        menu::MenuAction::OpenSettings => show_settings(app),
     }
+}
+
+fn switch_instance(
+    roster: &mut Roster,
+    lives: &mut [InstanceState],
+    instance_id: &InstanceId,
+    character: Arc<Character>,
+    config: &model::DirectorConfig,
+) {
+    roster.retarget(instance_id, &character);
+    if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
+        live.character = character;
+        live.director = StaticDirector::new(live.character.behaviors.clone(), 0);
+        live.model = config.enabled.then(|| {
+            Arc::new(ModelDirector::new(
+                model::endpoint().expect("enabled means a key was set"),
+                live.character.behaviors.keys().cloned(),
+            ))
+        });
+        live.pace = Pace::with_growth(
+            config.ambient_first,
+            live.character.model_base,
+            live.character.model_power,
+        );
+        // The old session is the previous Character's. A Wake still on the
+        // wire would propose as them; drop it and ask for this opening turn.
+        live.pending.cancel();
+        live.in_flight = None;
+        live.recent.clear();
+        live.happened = Happened::Ambient;
+        live.addressed = true;
+    }
+}
+
+fn spawn_live(
+    roster: &mut Roster,
+    lives: &mut Vec<InstanceState>,
+    characters: &BTreeMap<String, Arc<Character>>,
+    character_name: &str,
+    instance_name: String,
+    config: &model::DirectorConfig,
+) {
+    let Some(character) = characters.get(character_name).cloned() else {
+        eprintln!("menu: no Character named {character_name}");
+        return;
+    };
+    let start = lives
+        .last()
+        .and_then(|live| live.drawn_last.as_ref())
+        .map(|drawn| Point {
+            x: f64::from(drawn.rect.x) + sprite_width(&character) + 16.0,
+            y: f64::from(drawn.rect.y),
+        })
+        .unwrap_or(Point { x: 80.0, y: 80.0 });
+    let name = if instance_name.is_empty() {
+        character.name.clone()
+    } else {
+        instance_name
+    };
+    let id = roster.spawn(&character, name, start);
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64);
+    lives.push(InstanceState {
+        id,
+        director: StaticDirector::new(character.behaviors.clone(), seed),
+        model: config.enabled.then(|| {
+            Arc::new(ModelDirector::new(
+                model::endpoint().expect("enabled means a key was set"),
+                character.behaviors.keys().cloned(),
+            ))
+        }),
+        pending: model::InFlight::new(),
+        in_flight: None,
+        recent: Vec::new(),
+        pace: Pace::with_growth(
+            config.ambient_first,
+            character.model_base,
+            character.model_power,
+        ),
+        since_wake: Duration::ZERO,
+        since_state: Duration::ZERO,
+        since_ambient: Duration::ZERO,
+        previous_idle: Duration::MAX,
+        last_state: None,
+        addressed: false,
+        happened: Happened::Ambient,
+        pointer: Pointer::default(),
+        drawn_last: None,
+        verbs: Vec::new(),
+        menu_hold: None,
+        character,
+    });
+}
+
+/// The menu bar icon. Held so a toggle on the frame-loop thread can rebuild
+/// the menu on the main thread, where the native objects live.
+struct TrayHandle(Mutex<Option<tauri::tray::TrayIcon>>);
+
+struct FrameExtras {
+    settings: Arc<Mutex<Settings>>,
+    settings_path: PathBuf,
+    characters: BTreeMap<String, Arc<Character>>,
+    instances: Arc<Mutex<Vec<InstanceRow>>>,
+    ops: mpsc::Receiver<SettingsOp>,
+}
+
+fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
+    if let Ok(mut rows) = dest.lock() {
+        *rows = roster
+            .list()
+            .into_iter()
+            .map(|(id, name)| {
+                let character = roster
+                    .get(&id)
+                    .map(|instance| instance.character_name().to_string())
+                    .unwrap_or_default();
+                InstanceRow {
+                    id,
+                    name,
+                    character,
+                }
+            })
+            .collect();
+    }
+}
+
+fn describe_menu(
+    installed: &[String],
+    current: &str,
+    roster: &Roster,
+    instance_id: &str,
+    settings: &Settings,
+    rules: &HideRules,
+) -> menu::MenuDescription {
+    let instances = roster.list();
+    menu::describe(menu::MenuSnapshot {
+        installed,
+        current_character: current,
+        instances: &instances,
+        director_enabled: settings.director_enabled,
+        do_not_disturb: roster
+            .get(instance_id)
+            .map(|instance| instance.do_not_disturb())
+            .unwrap_or(false),
+        hidden: rules.is_away(),
+        hide_in_fullscreen: rules.hide_in_fullscreen(),
+        hide_hotkey: &settings.hide_hotkey,
+    })
 }
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
@@ -549,6 +897,7 @@ fn run_frame_loop(
     covered: Vec<Rect>,
     director_run: DirectorRun,
     menu_channel: MenuChannel,
+    extras: FrameExtras,
 ) {
     let MenuChannel {
         sender: menu_sender,
@@ -556,7 +905,40 @@ fn run_frame_loop(
     } = menu_channel;
     thread::spawn(move || {
         let mut assembler = SnapshotAssembler::new(source);
-        let DirectorRun { config, inspect } = director_run;
+        let DirectorRun {
+            mut config,
+            inspect,
+        } = director_run;
+        let FrameExtras {
+            settings,
+            settings_path,
+            characters,
+            instances: instance_rows,
+            ops,
+        } = extras;
+        publish_instances(&roster, &instance_rows);
+        let (mut tray_actions, mut last_menu) = {
+            let installed: Vec<String> = characters.keys().cloned().collect();
+            let current = lives
+                .first()
+                .map(|live| live.character.name.clone())
+                .unwrap_or_default();
+            let id = lives
+                .first()
+                .map(|live| live.id.clone())
+                .unwrap_or_default();
+            let settings_now = settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
+            let rules_now = rules.lock().ok();
+            let description = describe_menu(
+                &installed,
+                &current,
+                &roster,
+                &id,
+                &settings_now,
+                rules_now.as_deref().unwrap_or(&HideRules::default()),
+            );
+            (description.actions.clone(), Some(description))
+        };
 
         // Read once for every Instance: there is one desktop and one user, and
         // asking AppKit how long they have been idle once per buddy would be
@@ -766,8 +1148,146 @@ fn run_frame_loop(
                 })
                 .collect();
 
-            for (id, action) in picked {
-                apply_menu_action(action, &mut roster, &id, &rules);
+            for (id, action) in &picked {
+                apply_menu_action(
+                    action.clone(),
+                    &mut roster,
+                    &mut lives,
+                    id,
+                    &rules,
+                    &settings,
+                    &settings_path,
+                    &characters,
+                    &mut config,
+                    &inspect,
+                    &app,
+                );
+            }
+            if !picked.is_empty() {
+                remember_instances(&roster, &settings, &settings_path);
+            }
+
+            // Tray clicks have no menu_hold: the same ids land here, and the
+            // first Instance is the one they apply to when nobody's menu is open.
+            if picked.is_empty() {
+                for id in &chosen {
+                    if let Some(action) = tray_actions.get(id).cloned() {
+                        let target = lives
+                            .first()
+                            .map(|live| live.id.clone())
+                            .unwrap_or_default();
+                        apply_menu_action(
+                            action,
+                            &mut roster,
+                            &mut lives,
+                            &target,
+                            &rules,
+                            &settings,
+                            &settings_path,
+                            &characters,
+                            &mut config,
+                            &inspect,
+                            &app,
+                        );
+                    }
+                }
+            }
+
+            let mut settings_ops = false;
+            while let Ok(op) = ops.try_recv() {
+                settings_ops = true;
+                match op {
+                    SettingsOp::Spawn { character, name } => {
+                        spawn_live(
+                            &mut roster,
+                            &mut lives,
+                            &characters,
+                            &character,
+                            name,
+                            &config,
+                        );
+                    }
+                    SettingsOp::Dismiss { id } => {
+                        roster.dismiss(&id);
+                        lives.retain(|live| live.id != id);
+                    }
+                    SettingsOp::SwitchAll { character } => {
+                        if let Some(loaded) = characters.get(&character).cloned() {
+                            let ids: Vec<_> = lives.iter().map(|live| live.id.clone()).collect();
+                            for id in ids {
+                                switch_instance(
+                                    &mut roster,
+                                    &mut lives,
+                                    &id,
+                                    Arc::clone(&loaded),
+                                    &config,
+                                );
+                            }
+                        } else {
+                            eprintln!("settings: no Character named {character}");
+                        }
+                    }
+                }
+                remember_instances(&roster, &settings, &settings_path);
+            }
+            publish_instances(&roster, &instance_rows);
+            if settings_ops {
+                let _ = app.run_on_main_thread(|| {
+                    platform::refresh_settings();
+                });
+            }
+
+            {
+                let installed: Vec<String> = characters.keys().cloned().collect();
+                let current = lives
+                    .first()
+                    .map(|live| live.character.name.clone())
+                    .unwrap_or_default();
+                let id = lives
+                    .first()
+                    .map(|live| live.id.clone())
+                    .unwrap_or_default();
+                let settings_now = settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
+                let rules_now = rules.lock().ok();
+                let description = describe_menu(
+                    &installed,
+                    &current,
+                    &roster,
+                    &id,
+                    &settings_now,
+                    rules_now.as_deref().unwrap_or(&HideRules::default()),
+                );
+                if let Some(description) = menu::replace_if_changed(&mut last_menu, description) {
+                    tray_actions = description.actions.clone();
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        if let Some(state) = handle.try_state::<TrayHandle>() {
+                            if let Ok(guard) = state.0.lock() {
+                                if let Some(icon) = guard.as_ref() {
+                                    if let Err(why) = tray::refresh(icon, &handle, &description) {
+                                        eprintln!("tray: {why}");
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            if let Ok(settings) = settings.lock() {
+                config.ambient_allowed = settings.ambient_wakes;
+                config.enabled = settings.director_enabled && config.configured;
+                let dnd = settings.do_not_disturb;
+                if let Ok(mut inspect) = inspect.lock() {
+                    inspect.enabled = config.enabled;
+                    inspect.ambient_wakes = settings.ambient_wakes;
+                }
+                drop(settings);
+                for (id, _) in roster.list() {
+                    if let Some(instance) = roster.get_mut(&id) {
+                        instance.set_do_not_disturb(dnd);
+                    }
+                }
             }
 
             if menu_closed {
@@ -806,30 +1326,23 @@ fn run_frame_loop(
                         live.verbs.push(Verb::Menu);
                     }
                 } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
-                    let bundled = app
-                        .path()
-                        .resource_dir()
-                        .ok()
-                        .map(|dir| dir.join(BUNDLED_CHARACTERS));
-                    let search_paths = package::search_paths(bundled);
-                    let installed = package::installed(&search_paths)
-                        .iter()
-                        .filter_map(|path| {
-                            path.file_stem()
-                                .and_then(|name| name.to_str())
-                                .map(|name| name.to_string())
-                        })
-                        .collect::<Vec<_>>();
+                    // Same names the cache is keyed by. Folder stems (`trump`)
+                    // are not Character names (`Trump`); looking up a stem
+                    // would silently refuse the switch.
+                    let installed: Vec<String> = characters.keys().cloned().collect();
 
                     // The Engine's own answer rather than a copy of it, so the
                     // checkbox cannot disagree with what the buddy is doing.
-                    let do_not_disturb = roster
-                        .get(&live.id)
-                        .map(|instance| instance.do_not_disturb())
-                        .unwrap_or(false);
-
-                    let description =
-                        menu::describe(&installed, &live.character.name, do_not_disturb);
+                    let settings_now = settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
+                    let rules_now = rules.lock().ok();
+                    let description = describe_menu(
+                        &installed,
+                        &live.character.name,
+                        &roster,
+                        &live.id,
+                        &settings_now,
+                        rules_now.as_deref().unwrap_or(&HideRules::default()),
+                    );
 
                     // The overlay the cursor is on, and where in it the cursor
                     // is. A menu is positioned in a window's coordinates, and
@@ -938,7 +1451,20 @@ fn run_frame_loop(
             // times, and two buddies deciding on idle times a tick apart.
             let sensed = if since_sense >= SENSE_INTERVAL {
                 since_sense = since_sense.saturating_sub(SENSE_INTERVAL);
-                let activity = free_tier.read(&activity_source, &SystemClock);
+                let mut activity = free_tier.read(&activity_source, &SystemClock);
+                if let Ok(settings) = settings.lock() {
+                    let denylist = DenyList {
+                        excluded_applications: settings.excluded_applications.clone(),
+                        filter_password_fields: true,
+                    };
+                    if activity
+                        .frontmost_application
+                        .as_deref()
+                        .is_some_and(|name| !denylist.allows(name))
+                    {
+                        activity.frontmost_application = None;
+                    }
+                }
                 last_activity = Some(activity.clone());
                 Some(activity)
             } else {
@@ -1111,7 +1637,9 @@ fn run_frame_loop(
                             &live.pace,
                             activity.displays_asleep,
                             instance.do_not_disturb(),
-                        ) && live.pending.ready()
+                            config.ambient_allowed,
+                        ) && config.enabled
+                            && live.pending.ready()
                             && !applied
                         {
                             let context = Context {
@@ -1435,11 +1963,15 @@ const INSTANCES_VAR: &str = "AI_BUDDY_INSTANCES";
 
 /// Which Instances the launch configuration asks for.
 ///
-/// Empty is the answer when it asks for none, and it is not a failure: it is
-/// every way of starting ai-buddy that existed before Instances did.
-/// `load_instances` turns it into the one buddy the app has always run.
-fn requested_instances() -> Result<Vec<InstanceSpec>, String> {
-    roster::parse_specs(&std::env::var(INSTANCES_VAR).unwrap_or_default())
+/// The environment wins when a developer set it. Otherwise settings. Empty is
+/// still first-run: `load_instances` turns it into the one buddy the app has
+/// always run.
+fn requested_instances(settings: &Settings) -> Result<Vec<InstanceSpec>, String> {
+    match std::env::var(INSTANCES_VAR) {
+        Ok(raw) => roster::parse_specs(&raw),
+        Err(_) if !settings.instances.is_empty() => Ok(settings.instances.clone()),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 /// Load the Character each requested Instance names, sharing one load between
@@ -1453,12 +1985,49 @@ fn requested_instances() -> Result<Vec<InstanceSpec>, String> {
 /// The Character comes back beside the spec that asked for it, and an Instance
 /// with no name of its own takes the Character's — which is what `bmo` alone
 /// means.
+fn load_all_characters(
+    app: &tauri::AppHandle,
+) -> (
+    BTreeMap<String, CharacterArt>,
+    BTreeMap<String, Arc<Character>>,
+) {
+    let bundled = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|dir| dir.join(BUNDLED_CHARACTERS));
+    let search_paths = package::search_paths(bundled);
+    let mut art = BTreeMap::new();
+    let mut cache = BTreeMap::new();
+    for path in package::installed(&search_paths) {
+        let files = match package::read(&path) {
+            Ok(files) => files,
+            Err(_) => continue,
+        };
+        if let Ok(character) = ai_buddy_core::character::load(&files) {
+            art.insert(
+                character.name.clone(),
+                CharacterArt {
+                    art: art_urls(&character),
+                    smooth: character.smooth,
+                },
+            );
+            cache.insert(character.name.clone(), Arc::new(character));
+        }
+    }
+    (art, cache)
+}
+
 fn load_instances(
     app: &tauri::AppHandle,
     wanted: &[InstanceSpec],
+    settings: &Settings,
 ) -> Result<Vec<(InstanceSpec, Arc<Character>)>, String> {
     if wanted.is_empty() {
-        let character = Arc::new(load_named(app, std::env::var_os(package::CHARACTER_VAR))?);
+        let wanted = std::env::var_os(package::CHARACTER_VAR).or_else(|| {
+            (!settings.character.is_empty()).then(|| std::ffi::OsString::from(&settings.character))
+        });
+        let character = Arc::new(load_named(app, wanted)?);
         let name = character.name.clone();
         return Ok(vec![(
             InstanceSpec {
@@ -1645,6 +2214,11 @@ fn starting_positions(start: Point, widths: &[f64]) -> Vec<Point> {
         .collect()
 }
 
+/// The folder stem (`trump`) or the Character name (`Trump`) both name a package.
+fn names_the_package(path: &Path, character_name: &str, wanted: &OsStr) -> bool {
+    path.file_stem() == Some(wanted) || OsStr::new(character_name) == wanted
+}
+
 /// The Character an Instance asked for: the first package that loads out of
 /// every place ai-buddy looks. Naming none takes the default.
 ///
@@ -1673,7 +2247,17 @@ fn load_named(
     let search_paths = package::search_paths(bundled);
     let installed = package::installed(&search_paths);
     let candidates = match &wanted {
-        Some(_) => package::named(installed, wanted.as_deref()),
+        Some(name) => {
+            // Folder stem first (`trump`). A switch persists Character.name
+            // (`Trump`); that is not a stem, so fall through to every package
+            // and match after load.
+            let by_stem = package::named(installed.clone(), Some(name));
+            if by_stem.is_empty() {
+                installed
+            } else {
+                by_stem
+            }
+        }
         None => package::preferring(installed, package::DEFAULT_CHARACTER),
     };
 
@@ -1689,6 +2273,11 @@ fn load_named(
 
         match ai_buddy_core::character::load(&files) {
             Ok(character) => {
+                if let Some(wanted) = &wanted {
+                    if !names_the_package(candidate, &character.name, wanted) {
+                        continue;
+                    }
+                }
                 eprintln!("character: {} from {}", character.name, candidate.display());
                 return Ok(character);
             }
@@ -1728,8 +2317,8 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             character,
-            director_payload,
-            overlay_primary
+            overlay_primary,
+            overlay_secondary
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
@@ -1739,17 +2328,22 @@ fn main() {
             // backtrace. The same goes for a list of Instances that cannot be
             // read: starting with a different set of buddies from the one the
             // user asked for would be worse than saying so.
-            let wanted = requested_instances().unwrap_or_else(|why| {
+            let settings_file = settings::settings_path(&memory::data_dir());
+            let mut settings = Settings::load(&settings_file);
+            let wanted = requested_instances(&settings).unwrap_or_else(|why| {
                 eprintln!("instances: {why}");
                 std::process::exit(1);
             });
-            let loaded = load_instances(&app.handle().clone(), &wanted).unwrap_or_else(|why| {
-                eprintln!("character: {why}");
-                std::process::exit(1);
-            });
+            let loaded =
+                load_instances(&app.handle().clone(), &wanted, &settings).unwrap_or_else(|why| {
+                    eprintln!("character: {why}");
+                    std::process::exit(1);
+                });
 
-            // One art entry per Character, however many Instances run it.
-            let mut characters = BTreeMap::new();
+            // Every installed package's art, so a switch or a spawn does not
+            // have to wait for a reload the overlay never does.
+            let (art, character_cache) = load_all_characters(&app.handle().clone());
+            let mut characters = art;
             for (_, character) in &loaded {
                 characters
                     .entry(character.name.clone())
@@ -1759,6 +2353,7 @@ fn main() {
                     });
             }
             app.manage(ArtUrls { characters });
+            let installed: Vec<String> = character_cache.keys().cloned().collect();
 
             // Keep ai-buddy out of the Dock and the application switcher. The
             // overlay is furniture, not an app you switch to.
@@ -1832,10 +2427,23 @@ fn main() {
             // Shared because the hotkey and the frame loop each see half of the
             // answer: the key is pressed on the main thread and the desktop is
             // read on the loop's.
-            let rules = Arc::new(Mutex::new(HideRules::default()));
-            register_hide_hotkey(app.handle(), Arc::clone(&rules));
+            let mut hide_rules = HideRules::default();
+            hide_rules.set_away(settings.hidden);
+            hide_rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
+            let rules = Arc::new(Mutex::new(hide_rules));
 
-            let config = model::config();
+            if let Err(why) = app
+                .handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())
+            {
+                eprintln!("updater: {why}");
+            } else {
+                check_for_update(app.handle().clone());
+            }
+
+            let mut config = model::config();
+            config.enabled = settings.director_enabled && config.configured;
+            config.ambient_allowed = settings.ambient_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect()));
             app.manage(Arc::clone(&inspect));
             for line in model::startup_lines(&config) {
@@ -1845,7 +2453,79 @@ fn main() {
                 model::spawn_preflight();
             }
 
-            let (roster, lives) = spawn_instances(&loaded, start, &config);
+            let (mut roster, lives) = spawn_instances(&loaded, start, &config);
+            if settings.do_not_disturb {
+                for (id, _) in roster.list() {
+                    if let Some(instance) = roster.get_mut(&id) {
+                        instance.set_do_not_disturb(true);
+                    }
+                }
+            }
+            if settings.character.is_empty() {
+                if let Some((_, character)) = loaded.first() {
+                    settings.character = character.name.clone();
+                }
+            }
+            persist_settings(&settings, &settings_file);
+
+            let settings = Arc::new(Mutex::new(settings));
+            if install_hide_hotkey(
+                app.handle(),
+                Arc::clone(&rules),
+                Arc::clone(&settings),
+                settings_file.clone(),
+            ) {
+                let spec = settings
+                    .lock()
+                    .ok()
+                    .map(|s| s.hide_hotkey.clone())
+                    .unwrap_or_default();
+                bind_hide_hotkey(app.handle(), &spec);
+            }
+            let instance_rows = Arc::new(Mutex::new(Vec::new()));
+            let (ops_tx, ops_rx) = mpsc::channel();
+            app.manage(SettingsState {
+                settings: Arc::clone(&settings),
+                path: settings_file.clone(),
+                memory_path: memory::shared_path(),
+                installed,
+                instances: Arc::clone(&instance_rows),
+                inspect: Arc::clone(&inspect),
+                ops: ops_tx,
+                rules: Arc::clone(&rules),
+            });
+            app.manage(Arc::clone(&rules));
+
+            let tray = {
+                let installed: Vec<String> = character_cache.keys().cloned().collect();
+                let current = lives
+                    .first()
+                    .map(|live| live.character.name.clone())
+                    .unwrap_or_default();
+                let id = lives
+                    .first()
+                    .map(|live| live.id.clone())
+                    .unwrap_or_default();
+                let settings_now = settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
+                let rules_now = rules.lock().ok();
+                let description = describe_menu(
+                    &installed,
+                    &current,
+                    &roster,
+                    &id,
+                    &settings_now,
+                    rules_now.as_deref().unwrap_or(&HideRules::default()),
+                );
+                match tray::install(app.handle(), &description) {
+                    Ok(icon) => Some(icon),
+                    Err(why) => {
+                        eprintln!("tray: {why}");
+                        None
+                    }
+                }
+            };
+            app.manage(TrayHandle(Mutex::new(tray)));
+
             let director_run = DirectorRun { config, inspect };
 
             // Selections do not come back from the popup: it returns once the
@@ -1872,6 +2552,13 @@ fn main() {
                     sender: menu_sender,
                     receiver: menu_receiver,
                 },
+                FrameExtras {
+                    settings,
+                    settings_path: settings_file,
+                    characters: character_cache,
+                    instances: instance_rows,
+                    ops: ops_rx,
+                },
             );
             Ok(())
         })
@@ -1883,6 +2570,34 @@ fn main() {
 mod tests {
     use super::*;
     use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
+
+    /// Settings persist Character.name (`Trump`). The env var and the folder
+    /// are still the package stem (`trump`). Either has to start the same buddy.
+    #[test]
+    fn a_package_answers_to_its_folder_or_its_character_name() {
+        let folder = Path::new("/characters/trump");
+        assert!(
+            names_the_package(folder, "Trump", OsStr::new("trump")),
+            "AI_BUDDY_CHARACTER=trump still names the folder"
+        );
+        assert!(
+            names_the_package(folder, "Trump", OsStr::new("Trump")),
+            "settings.character after a switch is the Character name"
+        );
+        assert!(
+            !names_the_package(Path::new("/characters/bmo"), "BMO", OsStr::new("Trump")),
+            "some other package is not a match just because it loaded"
+        );
+    }
+
+    /// A rebound hide hotkey must register the letter the user named, not B.
+    #[test]
+    fn a_rebound_spec_registers_its_letter() {
+        let shortcut = shortcut_from_spec("Control-Shift-H").expect("parses");
+        assert_eq!(shortcut.key, Code::KeyH);
+        let shipped = shortcut_from_spec(settings::DEFAULT_HIDE_HOTKEY).expect("default");
+        assert_eq!(shipped.key, Code::KeyB);
+    }
 
     /// A 2x2 RGBA frame whose top-left pixel is transparent.
     const PATCHY: &[u8] = include_bytes!("../../crates/core/tests/fixtures/alpha-2x2.png");
@@ -1969,21 +2684,34 @@ mod tests {
     fn naming_no_instances_asks_for_none_and_a_list_is_read_in_full() {
         std::env::remove_var(INSTANCES_VAR);
         assert_eq!(
-            requested_instances(),
+            requested_instances(&Settings::default()),
             Ok(Vec::new()),
             "the default single buddy is not a spec"
         );
 
         std::env::set_var(INSTANCES_VAR, "bmo:One,bmo:Two");
-        let specs = requested_instances().expect("the list parses");
+        let specs = requested_instances(&Settings::default()).expect("the list parses");
         assert_eq!(specs.len(), 2, "both Instances are asked for");
         assert!(specs.iter().all(|spec| spec.character == "bmo"));
 
         // A list that cannot be read stops startup rather than guessing.
         std::env::set_var(INSTANCES_VAR, "bmo:");
-        assert!(requested_instances().is_err());
+        assert!(requested_instances(&Settings::default()).is_err());
 
         std::env::remove_var(INSTANCES_VAR);
+
+        let remembered = Settings {
+            instances: vec![InstanceSpec {
+                character: "nim".to_string(),
+                name: "Nim".to_string(),
+            }],
+            ..Settings::default()
+        };
+        assert_eq!(
+            requested_instances(&remembered).expect("settings list"),
+            remembered.instances,
+            "settings own the roster when the env is unset"
+        );
     }
 
     /// The arithmetic that keeps buddies from landing in a stack, and the reason

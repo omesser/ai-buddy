@@ -277,20 +277,27 @@ pub fn due(
 /// Whether to wake the session Director (Harness, or the HTTP stand-in).
 ///
 /// Reactive when the user addressed the buddy. Proactive when `since_ambient`
-/// has reached the current `Pace`. Never while the display is asleep. Quiet
-/// under Do Not Disturb so the Character stays visible and Poke still works;
-/// displays-asleep would drop Poke too.
+/// has reached the current `Pace` and ambient wakes are allowed. Never while
+/// the display is asleep. Quiet under Do Not Disturb so the Character stays
+/// visible and Poke still works; displays-asleep would drop Poke too.
+///
+/// Ambient is its own switch: off keeps Poke and Summon on the session path
+/// and leaves Static weights to fill the idle life. #18.
 pub fn session_due(
     addressed: bool,
     since_ambient: Duration,
     pace: &Pace,
     displays_asleep: bool,
     do_not_disturb: bool,
+    ambient_allowed: bool,
 ) -> bool {
     if do_not_disturb {
         return false;
     }
-    !displays_asleep && (addressed || since_ambient >= pace.wait())
+    if displays_asleep {
+        return false;
+    }
+    addressed || (ambient_allowed && since_ambient >= pace.wait())
 }
 
 /// The opening turn: who this is, what it may propose, and this moment.
@@ -960,23 +967,23 @@ mod tests {
         let pace = Pace::new();
 
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false),
+            session_due(true, Duration::ZERO, &pace, false, false, true),
             "the user addressed the buddy"
         );
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false, false),
+            !session_due(false, Duration::ZERO, &pace, false, false, true),
             "nothing happened and the wait has not elapsed"
         );
         assert!(
-            session_due(false, Pace::FIRST, &pace, false, false),
+            session_due(false, Pace::FIRST, &pace, false, false, true),
             "the first ambient wait has elapsed"
         );
         assert!(
-            !session_due(true, Duration::ZERO, &pace, true, false),
+            !session_due(true, Duration::ZERO, &pace, true, false, true),
             "asleep: not even a Poke spends tokens"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, true, false),
+            !session_due(false, Pace::FIRST, &pace, true, false, true),
             "asleep: ambient stays quiet"
         );
     }
@@ -1312,6 +1319,26 @@ mod tests {
         );
     }
 
+    /// A switch is a new ModelDirector. The next wake has to be this
+    /// Character's opening, not a follow-up in the previous conversation.
+    #[test]
+    fn a_new_director_opens_again() {
+        let first = ModelDirector::new(Scripted::says("wave"), ["wave"]);
+        let moment = context(working(), &["nap"]);
+        first.wake(&moment);
+
+        let next = ModelDirector::new(Scripted::says("wave"), ["stroll"]);
+        let payload = next.prompt(&moment);
+        assert!(
+            payload.contains("You may propose"),
+            "switch is a new opening: {payload}"
+        );
+        assert!(
+            payload.contains("stroll"),
+            "the new roster, not the old: {payload}"
+        );
+    }
+
     #[test]
     fn pick_up_and_perch_are_named_in_the_follow_up() {
         let picked = context(working(), &[]);
@@ -1338,11 +1365,11 @@ mod tests {
         let pace = Pace::new();
 
         assert!(
-            !session_due(true, Duration::ZERO, &pace, false, true),
+            !session_due(true, Duration::ZERO, &pace, false, true, true),
             "addressed but Do Not Disturb is on"
         );
         assert!(
-            !session_due(false, Pace::FIRST, &pace, false, true),
+            !session_due(false, Pace::FIRST, &pace, false, true, true),
             "ambient wait elapsed but Do Not Disturb is on"
         );
     }
@@ -1352,20 +1379,31 @@ mod tests {
         let pace = Pace::new();
 
         assert!(
-            session_due(true, Duration::ZERO, &pace, false, false),
+            session_due(true, Duration::ZERO, &pace, false, false, true),
             "addressed and Do Not Disturb is off"
         );
         assert!(
-            session_due(false, Pace::FIRST, &pace, false, false),
+            session_due(false, Pace::FIRST, &pace, false, false, true),
             "ambient wait elapsed and Do Not Disturb is off"
         );
         assert!(
-            !session_due(false, Duration::ZERO, &pace, false, false),
+            !session_due(false, Duration::ZERO, &pace, false, false, true),
             "nothing happened and wait not elapsed"
         );
         assert!(
-            !session_due(true, Duration::ZERO, &pace, true, false),
+            !session_due(true, Duration::ZERO, &pace, true, false, true),
             "asleep silences even when Do Not Disturb is off"
+        );
+
+        // Ambient off is not Director off: a Poke still spends a session turn,
+        // and an elapsed idle wait does not. Static weights keep the life.
+        assert!(
+            session_due(true, Duration::ZERO, &pace, false, false, false),
+            "a Poke still wakes the Director when ambient is off"
+        );
+        assert!(
+            !session_due(false, Pace::FIRST, &pace, false, false, false),
+            "an elapsed ambient wait does not wake when ambient is off"
         );
     }
 

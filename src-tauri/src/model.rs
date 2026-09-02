@@ -69,11 +69,12 @@ const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
 
-/// Last Character Prompt and the config that produced it. #18 displays this.
+/// Last user turn and the config that produced it. #18 displays this.
 #[derive(Clone, Debug, Serialize)]
 pub struct DirectorInspect {
     pub enabled: bool,
     pub configured: bool,
+    pub ambient_wakes: bool,
     pub wake_secs: u64,
     pub last_payload: Option<String>,
 }
@@ -90,6 +91,8 @@ pub struct DirectorConfig {
     pub wake_every: Duration,
     /// First ambient session wait. `Pace` doubles from here.
     pub ambient_first: Duration,
+    /// Proactive session wakes. Off keeps reactive wakes and Static idle life.
+    pub ambient_allowed: bool,
 }
 
 impl DirectorConfig {
@@ -97,6 +100,7 @@ impl DirectorConfig {
         DirectorInspect {
             enabled: self.enabled,
             configured: self.configured,
+            ambient_wakes: self.ambient_allowed,
             wake_secs: self.ambient_first.as_secs(),
             last_payload: None,
         }
@@ -125,6 +129,7 @@ pub fn config() -> DirectorConfig {
         key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
+        ambient_allowed: true,
     }
 }
 
@@ -809,6 +814,14 @@ impl InFlight {
         !self.busy.load(Ordering::SeqCst)
     }
 
+    /// Drop a call that no longer belongs to this Character.
+    ///
+    /// The worker still finishes; its Wake lands on a channel nobody reads.
+    /// ureq cannot abort a POST already on the wire.
+    pub fn cancel(&mut self) {
+        *self = Self::new();
+    }
+
     pub fn start<C: Completer + Send + Sync + 'static>(
         &self,
         director: Arc<ModelDirector<C>>,
@@ -962,6 +975,7 @@ mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
+            ambient_allowed: true,
         };
         assert_eq!(startup_lines(&static_only), ["director: StaticDirector"]);
 
@@ -987,6 +1001,7 @@ mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Duration::from_secs(45),
+            ambient_allowed: true,
         };
         assert_eq!(
             startup_lines(&model),
@@ -999,6 +1014,7 @@ mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
+            ambient_allowed: true,
         };
         assert_eq!(startup_lines(&off), ["director: off; using StaticDirector"]);
     }
@@ -1153,5 +1169,59 @@ mod tests {
 
         assert_eq!(api_key, "omlx-test-key");
         assert!(!api_key.is_empty(), "the key is preserved, not dropped");
+    }
+
+    struct Slow;
+
+    impl Completer for Slow {
+        fn complete(&self, _: &str) -> Result<String, String> {
+            thread::sleep(Duration::from_millis(40));
+            Ok("idle".to_string())
+        }
+    }
+
+    fn wake_context() -> Context {
+        use ai_buddy_core::engine::State;
+        use ai_buddy_core::sensing::Activity;
+        use std::time::UNIX_EPOCH;
+
+        Context {
+            activity: Activity {
+                frontmost_application: None,
+                switched: false,
+                idle: Duration::ZERO,
+                at: UNIX_EPOCH,
+                hour: 12,
+                minute: 0,
+                displays_asleep: false,
+            },
+            recent: Vec::new(),
+            personality: String::new(),
+            state: State::Grounded,
+            happened: ai_buddy_core::director::Happened::Ambient,
+            standing: String::new(),
+        }
+    }
+
+    /// A switch must not apply the old Character's reply, and must be able
+    /// to start the new opening before that POST returns.
+    #[test]
+    fn cancel_drops_a_wake_that_still_arrives() {
+        let pending = InFlight::new();
+        let director = Arc::new(ModelDirector::new(Slow, ["idle"]));
+        pending.start(director, wake_context());
+        assert!(!pending.ready(), "the call is in flight");
+
+        let mut pending = pending;
+        pending.cancel();
+        assert!(
+            pending.ready(),
+            "a cancelled call must not block the next Character Prompt"
+        );
+        thread::sleep(Duration::from_millis(80));
+        assert!(
+            pending.try_take().is_none(),
+            "the abandoned Wake must not land on the new Character"
+        );
     }
 }

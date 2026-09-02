@@ -311,15 +311,15 @@ async function start() {
   // press, which is how a click on the sprite produced no Poke.
   // Last write wins: two in-flight invokes can complete out of order, and
   // an up that lands before its down would leave the latch stuck true.
-  const reportPrimary = (() => {
+  const reporter = (command) => {
     let inflight = false;
     let queued = null;
     const send = (down) => {
       inflight = true;
       window.__TAURI__.core
-        .invoke("overlay_primary", { down })
+        .invoke(command, { down })
         .catch((err) => {
-          console.error("overlay_primary", err);
+          console.error(command, err);
         })
         .finally(() => {
           inflight = false;
@@ -337,18 +337,29 @@ async function start() {
       }
       send(down);
     };
-  })();
+  };
+  const reportPrimary = reporter("overlay_primary");
+  const reportSecondary = reporter("overlay_secondary");
+  // The webview's own menu is a browser menu. Ours is native and opened
+  // from Verb::Menu once the latch above is seen.
+  document.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
   document.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    event.target.setPointerCapture?.(event.pointerId);
-    reportPrimary(true);
+    if (event.button === 0) {
+      event.target.setPointerCapture?.(event.pointerId);
+      reportPrimary(true);
+    } else if (event.button === 2) {
+      reportSecondary(true);
+    }
   });
   document.addEventListener("pointerup", (event) => {
-    if (event.button !== 0) return;
-    reportPrimary(false);
+    if (event.button === 0) reportPrimary(false);
+    else if (event.button === 2) reportSecondary(false);
   });
   document.addEventListener("pointercancel", () => {
     reportPrimary(false);
+    reportSecondary(false);
   });
 }
 

@@ -10,10 +10,13 @@ mod dock;
 mod overlay_panel;
 mod pointer;
 mod sensing;
+mod settings_window;
 mod window_source;
 
 pub use dock::dock_bounds;
 pub use overlay_panel::configure_overlay;
 pub use pointer::{primary_button_down, secondary_button_down};
 pub use sensing::MacosActivitySource;
+pub use settings_window::refresh_if_showing as refresh_settings;
+pub use settings_window::show as show_settings;
 pub use window_source::MacosWindowSource;

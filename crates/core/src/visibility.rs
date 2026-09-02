@@ -92,13 +92,16 @@ pub struct Change {
 }
 
 /// The hide rules, and the user's standing wish over them.
-#[derive(Default)]
 pub struct HideRules {
     /// The user asked for the Character to go away, by hotkey or by menu. Kept
     /// apart from what is on screen because it survives every rule: a
     /// fullscreen application that comes and goes must not hand back a
     /// Character its owner sent away.
     away: bool,
+    /// Whether a fullscreen frontmost application takes the Character off
+    /// screen. On by default; settings can turn the rule off without sending
+    /// the Character away by hand.
+    hide_in_fullscreen: bool,
     /// What the overlay must be. Asked every tick rather than announced when
     /// it changes, so a webview still loading its art when a rule fired is
     /// told the answer on the first frame it draws.
@@ -108,11 +111,41 @@ pub struct HideRules {
     fade_ms: u32,
 }
 
+impl Default for HideRules {
+    fn default() -> Self {
+        Self {
+            away: false,
+            hide_in_fullscreen: true,
+            presence: Presence::default(),
+            fade_ms: 0,
+        }
+    }
+}
+
 impl HideRules {
     /// Flip the user's wish. Takes effect on the next `update`, so a press and
     /// the desktop it lands on are decided together rather than racing.
     pub fn toggle(&mut self) {
         self.away = !self.away;
+    }
+
+    /// Restore a persisted Go-away. Same flag `toggle` flips, so the hotkey
+    /// and a restart cannot disagree.
+    pub fn set_away(&mut self, away: bool) {
+        self.away = away;
+    }
+
+    pub fn is_away(&self) -> bool {
+        self.away
+    }
+
+    /// Settings' hide-in-fullscreen toggle. Takes effect on the next `update`.
+    pub fn set_hide_in_fullscreen(&mut self, enabled: bool) {
+        self.hide_in_fullscreen = enabled;
+    }
+
+    pub fn hide_in_fullscreen(&self) -> bool {
+        self.hide_in_fullscreen
     }
 
     /// What the overlay must do now, or `None` when nothing the user could see
@@ -125,7 +158,7 @@ impl HideRules {
         let was = self.presence;
         self.presence = if self.away {
             Presence::Away
-        } else if desktop.fullscreen_frontmost {
+        } else if self.hide_in_fullscreen && desktop.fullscreen_frontmost {
             Presence::Faded
         } else {
             Presence::Shown
@@ -430,6 +463,37 @@ mod tests {
             rules.update(Desktop::default()),
             Some(Change {
                 visible: true,
+                fade_ms: 0
+            })
+        );
+    }
+
+    /// The fullscreen rule is a setting, not a law. Off leaves the Character
+    /// on a presentation the user still wants it in.
+    #[test]
+    fn fullscreen_hide_can_be_turned_off() {
+        let mut rules = HideRules::default();
+        assert!(rules.hide_in_fullscreen());
+
+        rules.set_hide_in_fullscreen(false);
+        assert_eq!(rules.update(fullscreen()), None);
+        assert!(rules.presence().visible);
+
+        rules.set_hide_in_fullscreen(true);
+        assert_eq!(rules.update(fullscreen()), faded_out());
+    }
+
+    /// Go-away is the same flag across a restart, so a buddy sent away does
+    /// not come back on its own.
+    #[test]
+    fn away_can_be_restored_from_settings() {
+        let mut rules = HideRules::default();
+        rules.set_away(true);
+        assert!(rules.is_away());
+        assert_eq!(
+            rules.update(Desktop::default()),
+            Some(Change {
+                visible: false,
                 fade_ms: 0
             })
         );

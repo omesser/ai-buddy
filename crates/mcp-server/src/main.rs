@@ -2,8 +2,8 @@
 //!
 //! A Harness can spawn this binary and call the seven tools from #15.
 //! v1 uses injected stubs: StubWindowSource (no real window sensing), empty
-//! roster, default denylist, shared /tmp/ai-buddy-mcp/memory.md (Harness
-//! attach in #16 will provide real dependencies per instance).
+//! roster, denylist from settings.json beside Memory. A Harness attach in
+//! #16 will provide real dependencies per instance.
 
 use ai_buddy_core::dispatch::{dispatch, DispatchContext};
 use ai_buddy_core::tools::DenyList;
@@ -55,7 +55,9 @@ impl AiBuddyServer {
         DispatchContext {
             window_source: &SOURCE,
             memory_path,
-            denylist: DenyList::default(),
+            denylist: DenyList::from_settings_file(
+                &ai_buddy_core::memory::data_dir().join("settings.json"),
+            ),
             roster: &[],
         }
     }

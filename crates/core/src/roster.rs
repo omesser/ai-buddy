@@ -20,7 +20,7 @@ pub type InstanceId = String;
 ///
 /// A request rather than an Instance. The id and the Engine arrive at `spawn`,
 /// and nothing here knows whether the Character named can actually be loaded.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InstanceSpec {
     pub character: String,
     pub name: String,
@@ -94,6 +94,21 @@ impl Instance {
     pub fn set_do_not_disturb(&mut self, enabled: bool) {
         self.engine.set_do_not_disturb(enabled)
     }
+
+    /// Switch this Instance to another Character without moving it.
+    pub fn retarget(&mut self, character: &Character) {
+        self.character_name = character.name.clone();
+        self.engine.retarget(
+            character.behaviors.clone(),
+            character.near_reaction,
+            character.rush_reaction,
+        );
+    }
+
+    /// The name the user gave, which is what the menu and settings print.
+    pub fn rename(&mut self, name: String) {
+        self.name = name;
+    }
 }
 
 /// The roster of Character Instances.
@@ -162,6 +177,28 @@ impl Roster {
     /// The shared Memory.
     pub fn memory(&self) -> &Arc<MemoryManifest> {
         &self.memory
+    }
+
+    /// Switch one Instance's Character. False when the id is unknown.
+    pub fn retarget(&mut self, id: &str, character: &Character) -> bool {
+        match self.instances.get_mut(id) {
+            Some(instance) => {
+                instance.retarget(character);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Rename one Instance. False when the id is unknown.
+    pub fn rename(&mut self, id: &str, name: String) -> bool {
+        match self.instances.get_mut(id) {
+            Some(instance) => {
+                instance.rename(name);
+                true
+            }
+            None => false,
+        }
     }
 }
 
@@ -573,5 +610,34 @@ mod tests {
     fn the_error_quotes_the_entry_that_could_not_be_read() {
         let why = parse_specs("bmo:Blip,nope:").expect_err("the second is bad");
         assert!(why.contains("nope:"), "the entry is quoted: {why}");
+    }
+
+    /// Switching Character is a new set of Behaviors, not a new body. The id
+    /// and the name stay, or settings would lose the buddy it just renamed.
+    #[test]
+    fn retargeting_keeps_the_instance_and_changes_the_character() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget.md"));
+        let mut roster = Roster::new(memory);
+        let first = test_character("bmo");
+        let second = test_character("nim");
+        let id = roster.spawn(&first, "Beemo".to_string(), Point { x: 10.0, y: 20.0 });
+
+        assert!(roster.retarget(&id, &second));
+        let instance = roster.get(&id).expect("still there");
+        assert_eq!(instance.character_name(), "nim");
+        assert_eq!(instance.name, "Beemo");
+        assert!(!roster.retarget("missing", &second));
+    }
+
+    #[test]
+    fn renaming_changes_only_the_name() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-rename.md"));
+        let mut roster = Roster::new(memory);
+        let character = test_character("bmo");
+        let id = roster.spawn(&character, "old".to_string(), Point { x: 0.0, y: 0.0 });
+
+        assert!(roster.rename(&id, "new".to_string()));
+        assert_eq!(roster.list(), vec![(id, "new".to_string())]);
+        assert!(!roster.rename("missing", "x".to_string()));
     }
 }

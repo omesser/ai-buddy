@@ -27,19 +27,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// The folder Memory and settings share, so both are in one place the user owns.
+///
+/// ponytail: `dirs::data_dir` can be missing in a container or a test with no
+/// home, and then we fall back to `/tmp`. A reboot wipes that copy. The
+/// shipped app always has an Application Support directory; keep the fallback
+/// only for those environments, and drop it if a launch without a data dir
+/// should refuse instead.
+pub fn data_dir() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ai-buddy")
+}
+
 /// The one file every Instance and every Harness shares.
 ///
 /// Named here rather than by each caller because Memory being shared is what
 /// makes a second Instance already know the user: two callers computing the
 /// same path are two places for it to stop being the same path, and the
-/// difference would look like a buddy that forgot.
-///
-/// ponytail: a temporary directory, which is where Memory has lived since the
-/// MCP server put it there. Somewhere durable — Application Support — is worth
-/// having, and belongs to whichever issue gives the user a way to see and move
-/// it rather than to #13.
+/// difference would look like a buddy that forgot. `AI_BUDDY_MEMORY` wins when
+/// a test or the MCP probe needs a different file.
 pub fn shared_path() -> PathBuf {
-    std::env::temp_dir().join("ai-buddy-mcp").join("memory.md")
+    match std::env::var_os("AI_BUDDY_MEMORY") {
+        Some(path) => PathBuf::from(path),
+        None => data_dir().join("memory.md"),
+    }
 }
 
 /// Memory on disk, at a path the user owns.
@@ -311,6 +323,18 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn memory_lives_in_the_user_data_dir() {
+        assert!(
+            data_dir().ends_with("ai-buddy"),
+            "Application Support/ai-buddy, not a temp folder a reboot wipes"
+        );
+        assert_eq!(
+            data_dir().join("memory.md").file_name().unwrap(),
+            "memory.md"
+        );
     }
 
     #[test]

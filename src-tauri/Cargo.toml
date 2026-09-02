@@ -14,7 +14,12 @@ path = "src/main.rs"
 tauri-build = {version = "2", features = []}
 
 [dependencies]
-tauri = {version = "2", features = ["macos-private-api"]}
+tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
+# Launch at login, when there is a bundled app to start. The settings row
+# is frozen until then: a Launch Agent on `cargo run` is not the product.
+tauri-plugin-autostart = "2"
+# Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
+tauri-plugin-updater = "2"
 ai-buddy-core = {path = "../crates/core"}
 serde = {version = "1", features = ["derive"]}
 # Character Package art reaches the webview as `data:` URLs; `src/cast.rs` says
@@ -60,7 +65,24 @@ objc2-app-kit = {version = "0.3", features = [
   # Which application the user is in. Reports the application only — no window,
   # no title — so nothing here is gated by Screen Recording.
   "NSWorkspace",
-  "NSRunningApplication"
+  "NSRunningApplication",
+  # Native settings window. SPEC gives the webview to the sprite and chat, not
+  # to checkboxes.
+  "NSButton",
+  "NSButtonCell",
+  "NSCell",
+  "NSControl",
+  "NSTextField",
+  "NSText",
+  "NSTextView",
+  "NSPopUpButton",
+  "NSMenu",
+  "NSMenuItem",
+  "NSScrollView",
+  "NSView",
+  "NSColor",
+  "NSFont",
+  "NSAlert"
 ]}
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call
