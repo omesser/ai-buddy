@@ -150,6 +150,14 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
     }
 }
 
+pub fn capability_from_name(name: &str) -> Option<CapabilityId> {
+    match name {
+        "accessibility" => Some(CapabilityId::Accessibility),
+        "screen_recording" => Some(CapabilityId::ScreenRecording),
+        _ => None,
+    }
+}
+
 pub fn live() -> &'static dyn Probe {
     #[cfg(target_os = "macos")]
     {

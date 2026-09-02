@@ -29,8 +29,6 @@ const WINDOW_HEIGHT: f64 = 720.0;
 const DOC_HEIGHT: f64 = 1600.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
-
-const TAG_CONSENT_BASE: isize = 10;
 thread_local! {
     static CONTROLLER: RefCell<Option<Retained<SettingsController>>> = const { RefCell::new(None) };
 }
@@ -102,16 +100,6 @@ define_class!(
             };
             let on = button.state() == NSControlStateValueOn;
 
-            if let Some(id) = consent_id(button.tag()) {
-                if on {
-                    if let Some(session) = self.ivars().session.borrow().as_ref() {
-                        session.enable_consent(id);
-                    }
-                }
-                self.refresh();
-                return;
-            }
-
             let tag = button.tag();
             let tag_to_id = self.ivars().tag_to_id.borrow();
             let Some(id) = tag_to_id.get(&tag) else {
@@ -123,6 +111,17 @@ define_class!(
                 return;
             };
 
+            if let form::RowAction::Operation(form::RowOperation::EnableConsent(name)) = action {
+                if on {
+                    if let Some(capability_id) = consent::capability_from_name(name) {
+                        if let Some(session) = self.ivars().session.borrow().as_ref() {
+                            session.enable_consent(capability_id);
+                        }
+                    }
+                }
+                self.refresh();
+                return;
+            }
 
             let mut patch = SettingsPatch::default();
             if let form::RowAction::PatchField(field_name) = action {
@@ -183,6 +182,7 @@ define_class!(
                     form::RowOperation::OpenMemory => self.do_memory_open(),
                     form::RowOperation::WipeMemory => self.do_memory_wipe(),
                     form::RowOperation::ClearKey => self.do_clear_key(),
+                    form::RowOperation::EnableConsent(name) => self.do_enable_consent(name),
                 }
             }
         }
@@ -274,6 +274,15 @@ impl SettingsController {
             director_api_key: Some("".into()),
             ..SettingsPatch::default()
         });
+        self.refresh();
+    }
+
+    fn do_enable_consent(&self, name: &str) {
+        if let Some(capability_id) = consent::capability_from_name(name) {
+            if let Some(session) = self.ivars().session.borrow().as_ref() {
+                session.enable_consent(capability_id);
+            }
+        }
         self.refresh();
     }
 
@@ -467,6 +476,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut dnd_button = None;
     let mut hidden_button = None;
     let mut fullscreen_button = None;
+    let mut consent_buttons = Vec::new();
     let mut hotkey_field = None;
     let mut excluded_text = None;
     let mut payload_field = None;
@@ -506,11 +516,14 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                     }
 
                     match id.as_str() {
-                        form::DIRECTOR_ID => director_button = Some(btn),
-                        form::AMBIENT_ID => ambient_button = Some(btn),
-                        form::DND_ID => dnd_button = Some(btn),
-                        form::HIDDEN_ID => hidden_button = Some(btn),
-                        form::FULLSCREEN_ID => fullscreen_button = Some(btn),
+                        form::DIRECTOR_ID => director_button = Some(btn.clone()),
+                        form::AMBIENT_ID => ambient_button = Some(btn.clone()),
+                        form::DND_ID => dnd_button = Some(btn.clone()),
+                        form::HIDDEN_ID => hidden_button = Some(btn.clone()),
+                        form::FULLSCREEN_ID => fullscreen_button = Some(btn.clone()),
+                        form::CONSENT_ACCESSIBILITY_ID | form::CONSENT_SCREEN_RECORDING_ID => {
+                            consent_buttons.push(btn.clone());
+                        }
                         _ => {}
                     }
                 }
@@ -699,34 +712,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
         }
     }
 
-    cursor.heading("What the buddy can see");
-    {
-        let intro = NSTextField::wrappingLabelWithString(
-            &NSString::from_str(
-                "First run grants nothing. Flip one on to trigger the system prompt. macOS holds the grant; turn it off in System Settings.",
-            ),
-            mtm,
-        );
-        intro.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        intro.setFont(Some(&NSFont::systemFontOfSize(11.0)));
-        cursor.place(&intro, 48.0);
-    }
-    let mut consent_buttons = Vec::new();
-    for (i, cap) in consent::CAPABILITIES.iter().enumerate() {
-        let button = checkbox(cap.title, TAG_CONSENT_BASE + i as isize, &controller, mtm);
-        cursor.place(&button, 22.0);
-        {
-            let trade = NSTextField::wrappingLabelWithString(
-                &NSString::from_str(&format!("{} {}", cap.buys, cap.costs)),
-                mtm,
-            );
-            trade.setTextColor(Some(&NSColor::secondaryLabelColor()));
-            trade.setFont(Some(&NSFont::systemFontOfSize(11.0)));
-            cursor.place(&trade, 56.0);
-        }
-        consent_buttons.push(button);
-    }
-
     *controller.ivars().director.borrow_mut() = director_button;
     *controller.ivars().ambient.borrow_mut() = ambient_button;
     *controller.ivars().base_url.borrow_mut() = base_url_field;
@@ -887,11 +872,6 @@ fn inspect_block(mtm: MainThreadMarker) -> Retained<NSTextField> {
     let field = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
     field.setFont(NSFont::userFixedPitchFontOfSize(11.0).as_deref());
     field
-}
-
-fn consent_id(tag: isize) -> Option<CapabilityId> {
-    let index = usize::try_from(tag - TAG_CONSENT_BASE).ok()?;
-    consent::CAPABILITIES.get(index).map(|cap| cap.id)
 }
 
 fn endpoint_field(
