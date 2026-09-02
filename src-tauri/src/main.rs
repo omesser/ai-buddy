@@ -26,7 +26,8 @@ mod settings;
 mod tray;
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -745,6 +746,13 @@ fn switch_instance(
             live.character.model_base,
             live.character.model_power,
         );
+        // The old session is the previous Character's. A Wake still on the
+        // wire would propose as them; drop it and ask for this opening turn.
+        live.pending.cancel();
+        live.in_flight = None;
+        live.recent.clear();
+        live.happened = Happened::Ambient;
+        live.addressed = true;
     }
 }
 
@@ -2197,6 +2205,11 @@ fn starting_positions(start: Point, widths: &[f64]) -> Vec<Point> {
         .collect()
 }
 
+/// The folder stem (`trump`) or the Character name (`Trump`) both name a package.
+fn names_the_package(path: &Path, character_name: &str, wanted: &OsStr) -> bool {
+    path.file_stem() == Some(wanted) || OsStr::new(character_name) == wanted
+}
+
 /// The Character an Instance asked for: the first package that loads out of
 /// every place ai-buddy looks. Naming none takes the default.
 ///
@@ -2225,7 +2238,17 @@ fn load_named(
     let search_paths = package::search_paths(bundled);
     let installed = package::installed(&search_paths);
     let candidates = match &wanted {
-        Some(_) => package::named(installed, wanted.as_deref()),
+        Some(name) => {
+            // Folder stem first (`trump`). A switch persists Character.name
+            // (`Trump`); that is not a stem, so fall through to every package
+            // and match after load.
+            let by_stem = package::named(installed.clone(), Some(name));
+            if by_stem.is_empty() {
+                installed
+            } else {
+                by_stem
+            }
+        }
         None => package::preferring(installed, package::DEFAULT_CHARACTER),
     };
 
@@ -2241,6 +2264,11 @@ fn load_named(
 
         match ai_buddy_core::character::load(&files) {
             Ok(character) => {
+                if let Some(wanted) = &wanted {
+                    if !names_the_package(candidate, &character.name, wanted) {
+                        continue;
+                    }
+                }
                 eprintln!("character: {} from {}", character.name, candidate.display());
                 return Ok(character);
             }
@@ -2533,6 +2561,25 @@ fn main() {
 mod tests {
     use super::*;
     use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
+
+    /// Settings persist Character.name (`Trump`). The env var and the folder
+    /// are still the package stem (`trump`). Either has to start the same buddy.
+    #[test]
+    fn a_package_answers_to_its_folder_or_its_character_name() {
+        let folder = Path::new("/characters/trump");
+        assert!(
+            names_the_package(folder, "Trump", OsStr::new("trump")),
+            "AI_BUDDY_CHARACTER=trump still names the folder"
+        );
+        assert!(
+            names_the_package(folder, "Trump", OsStr::new("Trump")),
+            "settings.character after a switch is the Character name"
+        );
+        assert!(
+            !names_the_package(Path::new("/characters/bmo"), "BMO", OsStr::new("Trump")),
+            "some other package is not a match just because it loaded"
+        );
+    }
 
     /// A rebound hide hotkey must register the letter the user named, not B.
     #[test]

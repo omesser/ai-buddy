@@ -60,7 +60,7 @@ pub const SEARCH_PATH_VAR: &str = "AI_BUDDY_CHARACTERS";
 /// Name order is not a decision: without this, adding a package that sorts
 /// earlier would silently replace the buddy everybody sees. A preference and
 /// not a requirement — if it will not load, the search carries on behind it.
-/// Settings remembering a choice is #18; until then this is the only answer.
+/// Settings remembering a choice is #18. This is the first-run fallback.
 pub const DEFAULT_CHARACTER: &str = "bmo";
 
 /// The environment variable that starts one named Character rather than the

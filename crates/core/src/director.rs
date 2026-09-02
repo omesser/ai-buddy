@@ -1319,6 +1319,26 @@ mod tests {
         );
     }
 
+    /// A switch is a new ModelDirector. The next wake has to be this
+    /// Character's opening, not a follow-up in the previous conversation.
+    #[test]
+    fn a_new_director_opens_again() {
+        let first = ModelDirector::new(Scripted::says("wave"), ["wave"]);
+        let moment = context(working(), &["nap"]);
+        first.wake(&moment);
+
+        let next = ModelDirector::new(Scripted::says("wave"), ["stroll"]);
+        let payload = next.prompt(&moment);
+        assert!(
+            payload.contains("You may propose"),
+            "switch is a new opening: {payload}"
+        );
+        assert!(
+            payload.contains("stroll"),
+            "the new roster, not the old: {payload}"
+        );
+    }
+
     #[test]
     fn pick_up_and_perch_are_named_in_the_follow_up() {
         let picked = context(working(), &[]);

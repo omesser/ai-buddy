@@ -814,6 +814,14 @@ impl InFlight {
         !self.busy.load(Ordering::SeqCst)
     }
 
+    /// Drop a call that no longer belongs to this Character.
+    ///
+    /// The worker still finishes; its Wake lands on a channel nobody reads.
+    /// ureq cannot abort a POST already on the wire.
+    pub fn cancel(&mut self) {
+        *self = Self::new();
+    }
+
     pub fn start<C: Completer + Send + Sync + 'static>(
         &self,
         director: Arc<ModelDirector<C>>,
@@ -1161,5 +1169,59 @@ mod tests {
 
         assert_eq!(api_key, "omlx-test-key");
         assert!(!api_key.is_empty(), "the key is preserved, not dropped");
+    }
+
+    struct Slow;
+
+    impl Completer for Slow {
+        fn complete(&self, _: &str) -> Result<String, String> {
+            thread::sleep(Duration::from_millis(40));
+            Ok("idle".to_string())
+        }
+    }
+
+    fn wake_context() -> Context {
+        use ai_buddy_core::engine::State;
+        use ai_buddy_core::sensing::Activity;
+        use std::time::UNIX_EPOCH;
+
+        Context {
+            activity: Activity {
+                frontmost_application: None,
+                switched: false,
+                idle: Duration::ZERO,
+                at: UNIX_EPOCH,
+                hour: 12,
+                minute: 0,
+                displays_asleep: false,
+            },
+            recent: Vec::new(),
+            personality: String::new(),
+            state: State::Grounded,
+            happened: ai_buddy_core::director::Happened::Ambient,
+            standing: String::new(),
+        }
+    }
+
+    /// A switch must not apply the old Character's reply, and must be able
+    /// to start the new opening before that POST returns.
+    #[test]
+    fn cancel_drops_a_wake_that_still_arrives() {
+        let pending = InFlight::new();
+        let director = Arc::new(ModelDirector::new(Slow, ["idle"]));
+        pending.start(director, wake_context());
+        assert!(!pending.ready(), "the call is in flight");
+
+        let mut pending = pending;
+        pending.cancel();
+        assert!(
+            pending.ready(),
+            "a cancelled call must not block the next Character Prompt"
+        );
+        thread::sleep(Duration::from_millis(80));
+        assert!(
+            pending.try_take().is_none(),
+            "the abandoned Wake must not land on the new Character"
+        );
     }
 }
