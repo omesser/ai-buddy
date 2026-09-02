@@ -234,15 +234,59 @@ director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:l
 Neither line stops anything: a wake that fails already falls back to Static
 per turn. The line exists so a buddy that went quiet is not a mystery.
 
-**Size and the reply contract.** The Director asks for a Behavior name on one
-line and an optional spoken line on the next. Small models break that shape
-more often than hosted ones do, and every break is silent — an unparsable
-reply becomes speech, a failed one becomes Static. A local reasoning model
-(Qwen3, gpt-oss) has a second failure: it thinks inside the same token budget
-on chat-completions, so a tight cap can be spent before it writes anything.
-That is why the local cap defaults to 512 rather than 80. Constrained
-decoding is the real fix, and four of the five servers support it through
-`response_format`; #144 decides that shape.
+**Size and the reply contract, measured.** The Director asks for a Behavior
+name on one line and an optional spoken line on the next, and every break is
+silent — an unparsable reply becomes speech, a failed one becomes Static.
+`measure_the_reply_contract_failure_rate` (an `#[ignore]`d test in
+`src-tauri/src/model.rs`) counts the outcomes over 40 varied wakes against a
+live server, classifying with `ModelDirector::wake` itself so the measurement
+cannot drift from what the app does. Nothing pins `temperature` or a seed —
+the app sends neither — and the run shares one session, so replies condition
+each other; `AI_BUDDY_BENCH_WAKES` raises the sample when a tighter number is
+worth the minutes. On an Apple-silicon Mac, loading `characters/cat`:
+
+| Server | Model | Behavior played | Prose instead | Failed |
+|---|---|---|---|---|
+| Ollama | `gemma4:latest`, 8B Q4_K_M, 9.6 GB | 95% | 2% | 2% |
+| Ollama | `llama3.2:1b`, 1B | 12–78% | 22–88% | 0% |
+| oMLX | `gemma-4-e2b-it-4bit` | 90% | 10% | 0% |
+
+Every row is a post-#233 run.
+
+Instruction tuning matters more than size: a 4-bit `e2b` build plays a
+Behavior on nine wakes in ten, while the 1B swings between one and eight.
+**The 1B is a range because it is genuinely unstable** — four runs of the same
+model gave 12%, 30%, 65% and 78%.
+One session carries the whole run, so once a small model starts inventing
+names (`snub`, `scratching`, `grooming` for the declared `groom`) it keeps
+doing it, and a run locks into a good or bad groove rather than averaging out.
+The 8B repeated 95% twice. Read the 1B as "unreliable", not as a percentage.
+**Some of the remaining breaks are the personality file's doing.** The prose
+the `e2b` build returned instead of a Behavior was twice the verbatim line
+`"What is that one? Show me."` — one of the sample lines in
+`characters/cat/personality.txt`. A small model reads sample lines as replies
+to imitate whole, and a sample line carries no Behavior name, so quoting one
+breaks the contract by construction. Worth weighing when writing them (#156).
+
+Constrained decoding is the durable fix, and four of the five servers support
+it through `response_format`; #144 decides that shape.
+
+**The measurement's first finding was ours, and it is fixed.** `knows`
+compared a proposed Behavior name to the declared ones with `==`, and every
+model here answers `Prowl` where the manifest declares `prowl`, so a reply
+that kept the contract was refused, fell through `as_speech`, and reached the
+user as dialogue with the name stuck on the front — the buddy talked and never
+acted. Behaviors played were 0%, 2% and 0% before; they are 95%, 12–78% and
+90% after. #233 compares without case
+and hands back the Character's own spelling, which is what the Engine looks a
+Behavior up by; the numbers above are what the same harness measures after it.
+The comparison is exact-modulo-case, not fuzzy: `Greeter` and `grooming` still
+become speech, because no Character declares them.
+
+A local reasoning model (Qwen3, gpt-oss) has a second failure: it thinks
+inside the same token budget on chat-completions, so a tight cap can be spent
+before it writes anything. That is why the local cap defaults to 512 rather
+than 80.
 
 ## Development
 

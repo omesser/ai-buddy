@@ -1524,4 +1524,159 @@ mod tests {
             "the abandoned Wake must not land on the new Character"
         );
     }
+
+    /// #175: how often a live local model breaks the reply contract, as the
+    /// before number #144 argues from. Ignored because it needs a server and
+    /// spends real seconds; it is the harness, not a check of our own code.
+    ///
+    /// The classifier is `ModelDirector::wake` itself rather than a copy of
+    /// it, so the measurement cannot drift from what the app actually does:
+    /// a proposal naming a declared Behavior is accepted, an empty name is
+    /// `as_speech` catching prose, and `Failed` is the turn `StaticDirector`
+    /// takes. One session throughout, because that is how the buddy runs.
+    ///
+    /// ```sh
+    /// AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+    /// AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+    /// cargo test -p ai-buddy measure_the_reply_contract -- --ignored --nocapture
+    /// ```
+    ///
+    /// `AI_BUDDY_BENCH_WAKES` sets the sample size; it defaults to 40.
+    #[test]
+    #[ignore]
+    fn measure_the_reply_contract_failure_rate() {
+        use ai_buddy_core::director::{Context, Happened, ModelDirector, Wake};
+        use ai_buddy_core::engine::State;
+        use ai_buddy_core::sensing::Activity;
+        use std::path::Path;
+        use std::time::{Instant, SystemTime};
+
+        // Forty tells 5% from 50%, which is what the question needs. It does
+        // not tell 5% from 8%: nothing pins `temperature` or a seed, because
+        // the app sends neither and this measures the app, so runs of the
+        // same model wander by a few points. Raise it when a tighter number
+        // is worth the minutes.
+        let wakes: usize = std::env::var("AI_BUDDY_BENCH_WAKES")
+            .ok()
+            .and_then(|raw| raw.parse().ok())
+            .filter(|&n: &usize| n > 0)
+            .unwrap_or(40);
+
+        let endpoint = endpoint().expect("AI_BUDDY_DIRECTOR_BASE_URL and _MODEL in the env");
+        let model = endpoint.model().to_string();
+        let origin = endpoint.origin();
+
+        // A real shipped package, so the prompt is the one production sends:
+        // its Personality Prompt and its declared Behavior names.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../characters/cat");
+        let files = crate::package::read(&root).expect("the shipped cat package reads");
+        let cat = ai_buddy_core::character::load(&files).expect("and loads");
+        let behaviors: Vec<String> = cat.behaviors.keys().cloned().collect();
+
+        let director = ModelDirector::new(endpoint, behaviors.clone());
+
+        // Vary the wake so the prompts differ: the reactive verbs plus ambient.
+        let occasions = [
+            (Happened::Poke, State::Grounded, "the display floor"),
+            (Happened::Throw, State::Falling, "nothing"),
+            (Happened::Summon, State::Grounded, "a Terminal window"),
+            (Happened::Perch, State::Perched, "a Safari window"),
+            (Happened::Ambient, State::Grounded, "the top of the Dock"),
+        ];
+
+        let (mut accepted, mut speech, mut failed) = (0usize, 0usize, 0usize);
+        // A reply whose first line names a declared Behavior in the wrong
+        // case is the contract kept and our matcher refusing it: `knows`
+        // compares exactly. Counting it apart separates what the model got
+        // wrong from what we do.
+        let mut case_only = 0usize;
+        let mut examples: Vec<String> = Vec::new();
+        let started = Instant::now();
+
+        for turn in 0..wakes {
+            let (happened, state, standing) = &occasions[turn % occasions.len()];
+            let context = Context {
+                activity: Activity {
+                    frontmost_application: Some("Terminal".to_string()),
+                    switched: turn % 3 == 0,
+                    idle: Duration::from_secs((turn as u64 % 7) * 30),
+                    at: SystemTime::now(),
+                    hour: 9 + (turn as u8 % 12),
+                    minute: ((turn as u32 * 7) % 60) as u8,
+                    displays_asleep: false,
+                },
+                recent: Vec::new(),
+                personality: cat.personality.clone(),
+                state: *state,
+                happened: *happened,
+                standing: standing.to_string(),
+            };
+
+            match director.wake(&context) {
+                Wake::Proposed(proposal) if !proposal.behavior.is_empty() => {
+                    accepted += 1;
+                }
+                Wake::Proposed(proposal) => {
+                    // `as_speech` hands back the whole reply, so its first
+                    // line is the name the model actually offered.
+                    let said = proposal.dialogue.unwrap_or_default();
+                    let offered = said
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .trim()
+                        .trim_end_matches(['.', ':', '!'])
+                        .to_string();
+                    let near = behaviors
+                        .iter()
+                        .any(|declared| declared.eq_ignore_ascii_case(&offered));
+                    if near {
+                        case_only += 1;
+                    } else {
+                        speech += 1;
+                    }
+                    if examples.len() < 6 {
+                        let tag = if near { "case-only" } else { "speech" };
+                        examples.push(format!("  {tag}: {}", said.replace('\n', " | ")));
+                    }
+                }
+                Wake::Failed => {
+                    failed += 1;
+                    if examples.len() < 5 {
+                        examples.push("  failed: unparsable or transport error".to_string());
+                    }
+                }
+            }
+        }
+
+        let percent = |n: usize| (n as f64) * 100.0 / (wakes as f64);
+        println!("\n#175 reply-contract outcomes over {wakes} wakes");
+        println!("  model:     {model} at {origin}");
+        println!("  behaviors: {}", behaviors.join(", "));
+        println!("  elapsed:   {:.0}s", started.elapsed().as_secs_f64());
+        println!("  accepted:   {accepted:>3}  ({:.0}%)", percent(accepted));
+        println!(
+            "  case-only:  {case_only:>3}  ({:.0}%)  contract kept, matcher refused",
+            percent(case_only)
+        );
+        println!(
+            "  speech:     {speech:>3}  ({:.0}%)  genuine prose",
+            percent(speech)
+        );
+        println!("  failed:     {failed:>3}  ({:.0}%)", percent(failed));
+        println!(
+            "  the model broke the contract on {:.0}% of wakes",
+            percent(speech + failed)
+        );
+        println!("  (sampling is the server's own; runs of one model wander a few points)");
+        for line in &examples {
+            println!("{line}");
+        }
+
+        assert_eq!(
+            accepted + case_only + speech + failed,
+            wakes,
+            "every wake lands in exactly one bucket"
+        );
+    }
 }
