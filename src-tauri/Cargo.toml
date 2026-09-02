@@ -30,7 +30,7 @@ base64 = "0.23"
 # untrusted input is not something to hand-roll. `deflate-flate2` rather than
 # the umbrella `deflate` feature: it reuses the flate2 already here under `png`,
 # where the umbrella also drags in zopfli, a compressor only a writer needs.
-zip = {version = "4.2", default-features = false, features = ["deflate-flate2"]}
+zip = {version = "8.6", default-features = false, features = ["deflate-flate2"]}
 # The hotkey that hides and shows the Character. Tauri has no global shortcut
 # of its own — this is its first-party plugin — and the alternative is an
 # AppKit global event monitor, which needs Accessibility consent that DESIGN.md
