@@ -459,7 +459,7 @@ mod tests {
             .find(|s| s.heading == "Director")
             .expect("Director section");
 
-        assert_eq!(director.rows.len(), 2);
+        assert_eq!(director.rows.len(), 6);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -467,6 +467,22 @@ mod tests {
         assert!(matches!(
             director.rows[1],
             FormRow::Checkbox { ref id, .. } if id == AMBIENT_ID
+        ));
+        assert!(matches!(
+            director.rows[2],
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
+        ));
+        assert!(matches!(
+            director.rows[3],
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
+        ));
+        assert!(matches!(
+            director.rows[4],
+            FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
+        ));
+        assert!(matches!(
+            director.rows[5],
+            FormRow::Composite { ref id, .. } if id == "api_key_actions"
         ));
     }
 
@@ -584,7 +600,9 @@ mod tests {
                 match row {
                     FormRow::Checkbox { id, .. }
                     | FormRow::Popup { id, .. }
-                    | FormRow::Multiline { id, .. } => {
+                    | FormRow::Multiline { id, .. }
+                    | FormRow::TextField { id, .. }
+                    | FormRow::SecureField { id, .. } => {
                         assert!(
                             description.actions.contains_key(id),
                             "Row {id} has no action"
