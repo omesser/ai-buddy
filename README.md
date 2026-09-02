@@ -213,15 +213,39 @@ director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:l
 Neither line stops anything: a wake that fails already falls back to Static
 per turn. The line exists so a buddy that went quiet is not a mystery.
 
-**Size and the reply contract.** The Director asks for a Behavior name on one
-line and an optional spoken line on the next. Small models break that shape
-more often than hosted ones do, and every break is silent — an unparsable
-reply becomes speech, a failed one becomes Static. A local reasoning model
-(Qwen3, gpt-oss) has a second failure: it thinks inside the same token budget
-on chat-completions, so a tight cap can be spent before it writes anything.
-That is why the local cap defaults to 512 rather than 80. Constrained
-decoding is the real fix, and four of the five servers support it through
-`response_format`; #144 decides that shape.
+**Size and the reply contract, measured.** The Director asks for a Behavior
+name on one line and an optional spoken line on the next, and every break is
+silent — an unparsable reply becomes speech, a failed one becomes Static.
+`measure_the_reply_contract_failure_rate` (an `#[ignore]`d test in
+`src-tauri/src/model.rs`) counts the outcomes over 40 varied wakes against a
+live server, classifying with `ModelDirector::wake` itself so the measurement
+cannot drift from what the app does. On an Apple-silicon Mac, loading
+`characters/cat`:
+
+| Server | Model | Contract kept | Prose instead | Failed |
+|---|---|---|---|---|
+| Ollama | `gemma4:latest`, 8B Q4_K_M, 9.6 GB | 95% | 2% | 2% |
+| Ollama | `llama3.2:1b`, 1B | 78% | 22% | 0% |
+| oMLX | `gemma-4-e2b-it-4bit` | 100% | 0% | 0% |
+
+Size drives the break rate less than instruction tuning does: the 1B model
+breaks the shape on 22% of wakes, while a 4-bit `e2b` build kept it on all
+forty. Constrained decoding is still the durable fix, and four of the five
+servers support it through `response_format`; #144 decides that shape.
+
+**What the measurement found first, though, was ours.** `ModelDirector::knows`
+compares a proposed Behavior name to the declared ones with `==`, and every
+model above answers `Prowl` where the manifest declares `prowl`. So a reply
+that kept the contract is refused, falls through `as_speech`, and reaches the
+user as dialogue with the Behavior name stuck on the front — the buddy talks
+and never acts. Accepted-as-declared was 0%, 2% and 0% in the three runs
+above; the "contract kept" column is what a case-insensitive comparison would
+have accepted. #175 measured it; fixing it is a separate change.
+
+A local reasoning model (Qwen3, gpt-oss) has a second failure: it thinks
+inside the same token budget on chat-completions, so a tight cap can be spent
+before it writes anything. That is why the local cap defaults to 512 rather
+than 80.
 
 ## Development
 
