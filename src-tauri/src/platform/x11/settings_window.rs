@@ -28,7 +28,7 @@ thread_local! {
 struct SettingsWindow {
     window: Window,
     session: Arc<Mutex<Option<SettingsSession>>>,
-    controls: RefCell<HashMap<String, Control>>,
+    controls: Rc<RefCell<HashMap<String, Control>>>,
 }
 
 enum Control {
@@ -36,6 +36,8 @@ enum Control {
     Entry(gtk::Entry),
     TextView(gtk::TextView),
     Label(gtk::Label),
+    List(gtk::Box, String),
+    Popup(gtk::ComboBoxText),
 }
 
 impl SettingsWindow {
@@ -53,7 +55,7 @@ impl SettingsWindow {
         let this = Rc::new(Self {
             window,
             session: Arc::new(Mutex::new(None)),
-            controls: RefCell::new(HashMap::new()),
+            controls: Rc::new(RefCell::new(HashMap::new())),
         });
 
         this.build_ui();
@@ -292,20 +294,32 @@ impl SettingsWindow {
                     container.pack_start(&help_label, false, false, 0);
                 }
 
-                let scrolled = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
-                scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
-                scrolled.set_size_request(-1, 88);
+                if id == form::HOTKEY_ID {
+                    let label = gtk::Label::new(None);
+                    label.set_halign(Align::Start);
+                    label.set_xalign(0.0);
+                    label.set_selectable(true);
 
-                let text_view = gtk::TextView::new();
-                text_view.set_editable(false);
-                text_view.set_wrap_mode(gtk::WrapMode::Word);
-                text_view.set_monospace(true);
+                    container.pack_start(&label, false, false, 0);
+                    self.controls
+                        .borrow_mut()
+                        .insert(id.clone(), Control::Label(label));
+                } else {
+                    let scrolled = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+                    scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+                    scrolled.set_size_request(-1, 88);
 
-                scrolled.add(&text_view);
-                container.pack_start(&scrolled, false, false, 0);
-                self.controls
-                    .borrow_mut()
-                    .insert(id.clone(), Control::TextView(text_view));
+                    let text_view = gtk::TextView::new();
+                    text_view.set_editable(false);
+                    text_view.set_wrap_mode(gtk::WrapMode::Word);
+                    text_view.set_monospace(true);
+
+                    scrolled.add(&text_view);
+                    container.pack_start(&scrolled, false, false, 0);
+                    self.controls
+                        .borrow_mut()
+                        .insert(id.clone(), Control::TextView(text_view));
+                }
             }
             FormRow::InspectPath { id } => {
                 let label = gtk::Label::new(None);
@@ -318,6 +332,18 @@ impl SettingsWindow {
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Label(label));
+            }
+            FormRow::List { id, dismiss_label } => {
+                let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                list_box.set_size_request(-1, 80);
+
+                container.pack_start(&list_box, false, false, 0);
+                self.controls
+                    .borrow_mut()
+                    .insert(
+                        id.clone(),
+                        Control::List(list_box, dismiss_label.clone()),
+                    );
             }
             FormRow::Multiline {
                 id,
@@ -382,6 +408,25 @@ impl SettingsWindow {
 
                 for control in controls {
                     match control {
+                        CompositeControl::TextField { id, placeholder } => {
+                            let entry = gtk::Entry::new();
+                            entry.set_placeholder_text(Some(placeholder));
+                            entry.set_width_request(200);
+
+                            hbox.pack_start(&entry, false, false, 0);
+                            self.controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Entry(entry));
+                        }
+                        CompositeControl::Popup { id } => {
+                            let combo = gtk::ComboBoxText::new();
+                            combo.set_size_request(180, -1);
+
+                            hbox.pack_start(&combo, false, false, 0);
+                            self.controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Popup(combo));
+                        }
                         CompositeControl::Button { id, label } => {
                             let button = gtk::Button::with_label(label);
 
@@ -389,52 +434,139 @@ impl SettingsWindow {
                                 let action = action.clone();
                                 let session = Arc::clone(&self.session);
                                 let window_weak = self.window.downgrade();
-                                button.connect_clicked(move |_| {
-                                    if let Ok(guard) = session.lock() {
-                                        if let Some(sess) = guard.as_ref() {
-                                            if let RowAction::Operation(op) = &action {
-                                                match op {
-                                                    RowOperation::OpenMemory => {
-                                                        if let Err(e) = sess.open_memory() {
-                                                            eprintln!("settings: {e}");
-                                                        }
-                                                    }
-                                                    RowOperation::WipeMemory => {
-                                                        if let Some(window) = window_weak.upgrade()
-                                                        {
-                                                            if confirm_wipe(&window) {
-                                                                if let Err(e) = sess.wipe_memory() {
-                                                                    eprintln!("settings: {e}");
+
+                                if id == form::SPAWN_ID {
+                                    let new_name_id = form::NEW_NAME_ID.to_string();
+                                    let new_char_id = form::NEW_CHARACTER_ID.to_string();
+                                    let controls = self.controls.clone();
+
+                                    button.connect_clicked(move |_| {
+                                        if let Ok(guard) = session.lock() {
+                                            if let Some(sess) = guard.as_ref() {
+                                                if let RowAction::Operation(op) = &action {
+                                                    if matches!(op, RowOperation::Spawn) {
+                                                        let ctrl = controls.borrow();
+                                                        let name = ctrl
+                                                            .get(&new_name_id)
+                                                            .and_then(|c| {
+                                                                if let Control::Entry(e) = c {
+                                                                    Some(e.text().to_string())
+                                                                } else {
+                                                                    None
                                                                 }
+                                                            })
+                                                            .unwrap_or_default()
+                                                            .trim()
+                                                            .to_string();
+                                                        let character = ctrl
+                                                            .get(&new_char_id)
+                                                            .and_then(|c| {
+                                                                if let Control::Popup(p) = c {
+                                                                    p.active_text()
+                                                                        .map(|s| s.to_string())
+                                                                } else {
+                                                                    None
+                                                                }
+                                                            })
+                                                            .unwrap_or_default();
+
+                                                        if !name.is_empty()
+                                                            && !character.is_empty()
+                                                        {
+                                                            sess.spawn(character, name);
+                                                            if let Some(Control::Entry(e)) =
+                                                                ctrl.get(&new_name_id)
+                                                            {
+                                                                e.set_text("");
                                                             }
                                                         }
                                                     }
-                                                    RowOperation::ClearKey => {
-                                                        let patch = SettingsPatch {
-                                                            director_api_key: Some(String::new()),
-                                                            ..SettingsPatch::default()
-                                                        };
-                                                        if let Err(e) = sess.apply(patch) {
-                                                            eprintln!("settings: {e}");
-                                                        }
-                                                    }
-                                                    _ => {}
                                                 }
                                             }
                                         }
-                                    }
-                                });
+                                    });
+                                } else {
+                                    button.connect_clicked(move |_| {
+                                        if let Ok(guard) = session.lock() {
+                                            if let Some(sess) = guard.as_ref() {
+                                                if let RowAction::Operation(op) = &action {
+                                                    match op {
+                                                        RowOperation::OpenMemory => {
+                                                            if let Err(e) = sess.open_memory() {
+                                                                eprintln!("settings: {e}");
+                                                            }
+                                                        }
+                                                        RowOperation::WipeMemory => {
+                                                            if let Some(window) =
+                                                                window_weak.upgrade()
+                                                            {
+                                                                if confirm_wipe(&window) {
+                                                                    if let Err(e) =
+                                                                        sess.wipe_memory()
+                                                                    {
+                                                                        eprintln!("settings: {e}");
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        RowOperation::ClearKey => {
+                                                            let patch = SettingsPatch {
+                                                                director_api_key: Some(
+                                                                    String::new(),
+                                                                ),
+                                                                ..SettingsPatch::default()
+                                                            };
+                                                            if let Err(e) = sess.apply(patch) {
+                                                                eprintln!("settings: {e}");
+                                                            }
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
                             }
 
                             hbox.pack_start(&button, false, false, 0);
                         }
-                        _ => {}
                     }
                 }
 
                 container.pack_start(&hbox, false, false, 0);
             }
-            _ => {}
+            FormRow::Popup { id, .. } => {
+                let combo = gtk::ComboBoxText::new();
+                combo.set_hexpand(true);
+
+                if let Some(action) = actions.get(id) {
+                    let action = action.clone();
+                    let session = Arc::clone(&self.session);
+                    combo.connect_changed(move |combo| {
+                        if let Some(text) = combo.active_text() {
+                            if let Ok(guard) = session.lock() {
+                                if let Some(sess) = guard.as_ref() {
+                                    if let RowAction::PatchField(field) = &action {
+                                        if field == "character" {
+                                            let mut patch = SettingsPatch::default();
+                                            patch.character = Some(text.to_string());
+                                            if let Err(e) = sess.apply(patch) {
+                                                eprintln!("settings: {e}");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                container.pack_start(&combo, false, false, 0);
+                self.controls
+                    .borrow_mut()
+                    .insert(id.clone(), Control::Popup(combo));
+            }
         }
     }
 
@@ -507,6 +639,55 @@ impl SettingsWindow {
         if let Some(Control::TextView(text_view)) = controls.get(form::HOTKEY_ID) {
             if let Some(buffer) = text_view.buffer() {
                 buffer.set_text(&view.hide_hotkey);
+            }
+        }
+        if let Some(Control::Label(label)) = controls.get(form::HOTKEY_ID) {
+            label.set_text(&view.hide_hotkey);
+        }
+        if let Some(Control::Popup(combo)) = controls.get(form::CHARACTER_ID) {
+            combo.remove_all();
+            for name in &view.installed {
+                combo.append_text(name);
+            }
+            combo.set_active_id(Some(&view.character));
+        }
+        if let Some(Control::Popup(combo)) = controls.get(form::NEW_CHARACTER_ID) {
+            combo.remove_all();
+            for name in &view.installed {
+                combo.append_text(name);
+            }
+            combo.set_active_id(Some(&view.character));
+        }
+        if let Some(Control::List(list_box, dismiss_label)) = controls.get(form::INSTANCES_ID) {
+            for child in list_box.children() {
+                list_box.remove(&child);
+            }
+
+            for (index, line) in view.instance_lines().iter().enumerate() {
+                let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+
+                let label = gtk::Label::new(Some(line));
+                label.set_halign(Align::Start);
+                label.set_hexpand(true);
+
+                let dismiss_button = gtk::Button::with_label(dismiss_label);
+                let session = Arc::clone(&self.session);
+                let instance_id = view.instances.get(index).map(|i| i.id.clone());
+                dismiss_button.connect_clicked(move |_| {
+                    if let Some(id) = &instance_id {
+                        if let Ok(guard) = session.lock() {
+                            if let Some(sess) = guard.as_ref() {
+                                sess.dismiss(id.clone());
+                            }
+                        }
+                    }
+                });
+
+                hbox.pack_start(&label, true, true, 0);
+                hbox.pack_start(&dismiss_button, false, false, 0);
+                hbox.show_all();
+
+                list_box.pack_start(&hbox, false, false, 0);
             }
         }
     }
