@@ -828,9 +828,7 @@ fn editable_block(controller: &SettingsController, mtm: MainThreadMarker) -> Ret
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 88.0)),
     );
     text.setFont(NSFont::userFixedPitchFontOfSize(11.0).as_deref());
-    unsafe {
-        text.setDelegate(Some(ProtocolObject::from_ref(controller)));
-    }
+    text.setDelegate(Some(ProtocolObject::from_ref(controller)));
     text
 }
 
