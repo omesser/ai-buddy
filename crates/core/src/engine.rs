@@ -177,7 +177,7 @@ const PRIMITIVE_MS: u32 = 600;
 /// again. A tuning knob. `PRIMITIVE_MS` is the length of the `react` art, not
 /// of a pause that reads as the character noticing you; 2.5 s is long enough
 /// to register and short enough that a click never feels like a freeze. #177.
-const SETTLE_MS: u32 = 2_500;
+const POKE_COOLDOWN_MS: u32 = 2_500;
 
 /// How long a resting, untouched sprite waits before it goes to sleep. A tuning
 /// knob: long enough not to nod off mid-conversation, short enough that a sprite
@@ -339,7 +339,7 @@ pub struct Engine {
     /// Milliseconds left of standing still after a Poke. While it runs, a
     /// proposal that would move the sprite is refused; a Grab, a Throw or
     /// losing the ground ends it at once. #177.
-    settle_ms: u32,
+    poke_cooldown_ms: u32,
 }
 
 impl Engine {
@@ -378,7 +378,7 @@ impl Engine {
             cursor_velocity: Point::default(),
             rush_reported: false,
             chase_ms: 0,
-            settle_ms: 0,
+            poke_cooldown_ms: 0,
         }
     }
 
@@ -481,14 +481,16 @@ impl Engine {
         // on is not mistaken for one it arrived at. See the landing below.
         let (state, woke) = transition::on_verbs(self.state, &snapshot.verbs);
 
-        // The settle is a thing the sprite does on its feet. Being picked up
-        // or losing the ground ends it, because a settle that outlived the
+        // The cooldown is a thing the sprite does on its feet. Being picked up
+        // or losing the ground ends it, because a cooldown that outlived the
         // ground would refuse the first walk after the landing. `state` is
         // what the verbs made of it; a fall the world causes is decided at
         // `on_contact` below, so that clear lands one tick late — harmless,
         // since `permitted` refuses a walk while Falling anyway.
-        self.settle_ms = match state {
-            State::Grounded | State::Perched => self.settle_ms.saturating_sub(snapshot.elapsed_ms),
+        self.poke_cooldown_ms = match state {
+            State::Grounded | State::Perched => {
+                self.poke_cooldown_ms.saturating_sub(snapshot.elapsed_ms)
+            }
             _ => 0,
         };
 
@@ -657,7 +659,7 @@ impl Engine {
         // What does stop it is a Primitive that is the sprite standing still
         // (`walk sit` would otherwise slide along the edge it sat down on),
         // and a Poke — answered with the other verbs further down — which
-        // zeroes the feet and starts the settle (#177).
+        // zeroes the feet and starts the cooldown (#177).
         //
         // Chase (#153): steer walk velocity toward the cursor's x along the ground.
         if matches!(state, State::Grounded | State::Perched) {
@@ -800,10 +802,10 @@ impl Engine {
         if let Some(proposal) = &snapshot.proposal {
             if !self.do_not_disturb {
                 if let Some(primitives) = self.chain(&proposal.behavior) {
-                    // #177: mid-settle, `play` refuses a chain that would move
+                    // #177: mid-cooldown, `play` refuses a chain that would move
                     // the sprite — whole, greeting included, since a Behavior
                     // is one thing to refuse. A line or a gesture on its own
-                    // plays. What comes after the settle is the Director's
+                    // plays. What comes after the cooldown is the Director's
                     // fresh call, not the interrupted walk resuming.
                     if self.play(&primitives) {
                         started = true;
@@ -829,7 +831,7 @@ impl Engine {
             // flight. #177.
             if matches!(self.state, State::Grounded | State::Perched) {
                 self.velocity.x = 0.0;
-                self.settle_ms = SETTLE_MS;
+                self.poke_cooldown_ms = POKE_COOLDOWN_MS;
             }
             started |= self.play(&[Primitive::React]);
             // A click is how the user tests the Director. Dwell sets the
@@ -1208,7 +1210,7 @@ impl Engine {
     /// in mid-air, and none of it while asleep, which is a thing to be woken
     /// out of rather than to act from.
     ///
-    /// Motion has one more condition: the settle after a Poke (#177). It is
+    /// Motion has one more condition: the cooldown after a Poke (#177). It is
     /// checked here rather than at the proposal, because a proposal is not the
     /// only thing that starts a walk — a cursor reaction or a chase does too,
     /// and every one of them comes through this gate.
@@ -1216,7 +1218,7 @@ impl Engine {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk => true,
-            Primitive::Walk | Primitive::Chase => on_feet && self.settle_ms == 0,
+            Primitive::Walk | Primitive::Chase => on_feet && self.poke_cooldown_ms == 0,
             _ => on_feet,
         })
     }
@@ -2605,7 +2607,7 @@ mod tests {
         assert!(
             held.iter()
                 .all(|frame| frame.position.x == poked.position.x),
-            "it stays put through the settle: {held:?}"
+            "it stays put through the cooldown: {held:?}"
         );
         assert_eq!(
             held.last().unwrap().animation,
@@ -2618,7 +2620,7 @@ mod tests {
     /// moves the sprite is refused until it is over, while one that only
     /// speaks is not — the buddy was just addressed, and answering is fine.
     #[test]
-    fn a_walk_proposed_mid_settle_waits_and_one_after_it_does_not() {
+    fn a_walk_proposed_mid_cooldown_waits_and_one_after_it_does_not() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
         let poked = engine.tick(&WorldSnapshot {
@@ -2636,7 +2638,7 @@ mod tests {
         let refused = engine.tick(&a_long_perch());
         assert_eq!(
             refused.velocity.x, 0.0,
-            "a walk mid-settle waits: {refused:?}"
+            "a walk mid-cooldown waits: {refused:?}"
         );
         assert_eq!(refused.position.x, poked.position.x);
 
@@ -2647,7 +2649,7 @@ mod tests {
             }),
             ..a_long_perch()
         });
-        assert_eq!(greeted.animation, "react", "speaking mid-settle is fine");
+        assert_eq!(greeted.animation, "react", "speaking mid-cooldown is fine");
 
         for _ in 0..30 {
             engine.tick(&a_long_perch());
@@ -2659,15 +2661,15 @@ mod tests {
         let resumed = engine.tick(&a_long_perch());
         assert_eq!(
             resumed.velocity.x, WALK_SPEED,
-            "after the settle a walk is taken up: {resumed:?}"
+            "after the cooldown a walk is taken up: {resumed:?}"
         );
     }
 
-    /// The hand outranks standing still: a Grab mid-settle picks the sprite up
-    /// at once, and once it is thrown and lands, nothing of the settle is left
+    /// The hand outranks standing still: a Grab mid-cooldown picks the sprite up
+    /// at once, and once it is thrown and lands, nothing of the cooldown is left
     /// to refuse the next walk.
     #[test]
-    fn a_grab_mid_settle_takes_over_at_once_and_clears_the_settle() {
+    fn a_grab_mid_cooldown_takes_over_at_once_and_clears_the_cooldown() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
         engine.tick(&WorldSnapshot {
@@ -2699,14 +2701,14 @@ mod tests {
         let walking = engine.tick(&a_long_perch());
         assert_eq!(
             walking.velocity.x, WALK_SPEED,
-            "the hand ended the settle, not the clock: {walking:?}"
+            "the hand ended the cooldown, not the clock: {walking:?}"
         );
     }
 
-    /// Losing the ground mid-settle is a fall like any other, and the fall
-    /// ends the settle: the first walk after the landing is not refused.
+    /// Losing the ground mid-cooldown is a fall like any other, and the fall
+    /// ends the cooldown: the first walk after the landing is not refused.
     #[test]
-    fn losing_the_ground_mid_settle_falls_at_once_and_clears_the_settle() {
+    fn losing_the_ground_mid_cooldown_falls_at_once_and_clears_the_cooldown() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
         engine.tick(&WorldSnapshot {
@@ -2725,17 +2727,17 @@ mod tests {
         let walking = engine.tick(&snapshot(100));
         assert_eq!(
             walking.velocity.x, WALK_SPEED,
-            "nothing of the settle survives the fall: {walking:?}"
+            "nothing of the cooldown survives the fall: {walking:?}"
         );
     }
 
-    /// The settle's edge, pinned to the tick. A tick is 100 ms and the Poke
-    /// sets SETTLE_MS after that tick's decrement, so the settle is exactly
-    /// SETTLE_MS / 100 ticks after the Poke: a walk proposed one tick sooner
+    /// The cooldown's edge, pinned to the tick. A tick is 100 ms and the Poke
+    /// sets POKE_COOLDOWN_MS after that tick's decrement, so the cooldown is exactly
+    /// POKE_COOLDOWN_MS / 100 ticks after the Poke: a walk proposed one tick sooner
     /// is refused, one proposed on that tick is taken up.
     #[test]
-    fn the_settle_ends_on_the_tick_it_says_it_does() {
-        let ticks = (SETTLE_MS / 100) as usize;
+    fn the_cooldown_ends_on_the_tick_it_says_it_does() {
+        let ticks = (POKE_COOLDOWN_MS / 100) as usize;
         let propose_after = |plain: usize| {
             let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
             settle(&mut engine, &a_long_perch());
@@ -2765,11 +2767,11 @@ mod tests {
         );
     }
 
-    /// The settle is one gate for every path that starts motion, not a check
+    /// The cooldown is one gate for every path that starts motion, not a check
     /// at the proposal alone: a cursor reaction that would walk the sprite
-    /// toward the pointer is refused mid-settle, and walks once it is over.
+    /// toward the pointer is refused mid-cooldown, and walks once it is over.
     #[test]
-    fn a_cursor_reaction_cannot_walk_the_sprite_mid_settle() {
+    fn a_cursor_reaction_cannot_walk_the_sprite_mid_cooldown() {
         let mut engine = a_resting_sprite()
             .with_cursor_reactions(CursorReaction::Toward, CursorReaction::Indifferent);
         engine.tick(&WorldSnapshot {
@@ -2798,11 +2800,11 @@ mod tests {
         let again = engine.tick(&near());
         assert_eq!(
             again.animation, "walk",
-            "once the settle is over it walks: {again:?}"
+            "once the cooldown is over it walks: {again:?}"
         );
     }
 
-    /// The same settle on the display floor: the mechanism is the sprite's,
+    /// The same cooldown on the display floor: the mechanism is the sprite's,
     /// not the Perch's, and at rest on the floor it shows `idle`.
     #[test]
     fn a_poke_mid_stroll_on_the_floor_stops_the_walk_too() {
@@ -2827,9 +2829,9 @@ mod tests {
         assert_eq!(held.last().unwrap().animation, "idle");
     }
 
-    /// A second Poke restarts the settle rather than queuing another one.
+    /// A second Poke restarts the cooldown rather than queuing another one.
     #[test]
-    fn a_second_poke_mid_settle_restarts_the_settle() {
+    fn a_second_poke_mid_cooldown_restarts_the_cooldown() {
         let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
         settle(&mut engine, &a_long_perch());
         let poke = || WorldSnapshot {
@@ -2853,7 +2855,7 @@ mod tests {
         let still_held = engine.tick(&a_long_perch());
         assert_eq!(
             still_held.velocity.x, 0.0,
-            "the second Poke started the settle over: {still_held:?}"
+            "the second Poke started the cooldown over: {still_held:?}"
         );
 
         for _ in 0..6 {
