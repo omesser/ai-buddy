@@ -281,6 +281,8 @@ pub(crate) fn run_frame_loop(
             } else {
                 platform::overlay_passes_clicks_through();
             }
+            // Consuming reads — once each per tick, nowhere else. A second read
+            // eats the edge (#182).
             let held = platform::primary_button_down();
             let secondary_held = platform::secondary_button_down();
             let button_edge = match (button_was_down, held) {
