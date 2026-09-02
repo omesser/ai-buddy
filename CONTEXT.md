@@ -79,10 +79,10 @@ data in a Character Package. The unit the Director proposes and the engine plays
 _Avoid_: Routine, script, macro
 
 **Director**:
-The role that proposes a Behavior and Speech. Static weights fill it when no
-Harness is attached; an attached Harness is that role, from the same
-conversation as chat, and proposes Speech by calling speak. Never runs in the
-frame loop and never drives animation directly.
+The role that proposes a Behavior, and Speech when the session is on. Static
+weights fill Behaviors and never speak; an attached Harness is that role and
+proposes Speech by calling speak. Never runs in the frame loop and never
+drives animation directly.
 _Avoid_: Brain, agent, planner
 
 **Proactive model call**:
@@ -189,13 +189,13 @@ _Avoid_: Invoke, activate, wake
 ### Expression
 
 **Speech**:
-The line the buddy says. Always a Director proposal — never a second mouth.
-Static proposes it today; an attached Harness proposes it by calling speak.
+The line the buddy says. The session Director proposes it on a wake — Static
+never speaks — and an attached Harness proposes it by calling speak.
 _Avoid_: talk (the Required Animation), message, utterance
 
 **speak**:
-The MCP tool by which a Harness proposes Speech. The Static Director proposes
-the same Speech without this tool.
+The MCP tool by which a Harness proposes Speech. Until then the session
+Director proposes the same Speech without this tool.
 _Avoid_: talk, say
 
 **Speech bubble**:
