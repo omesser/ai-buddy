@@ -49,7 +49,7 @@ keyring = {version = "3", features = ["apple-native", "windows-native", "sync-se
 # X11 for Linux: window list, pointer state, EWMH properties, idle time.
 # x11rb is pure Rust, maintained, and wraps the protocol at a level that
 # gives both raw access and type-safe helpers.
-x11rb = {version = "0.13", features = ["allow-unsafe-code", "randr", "xfixes", "shape", "dpms", "screensaver"]}
+x11rb = {version = "0.14", features = ["allow-unsafe-code", "randr", "xfixes", "shape", "dpms", "screensaver"]}
 # Raw window handle for getting the X11 window id from Tauri.
 raw-window-handle = "0.6"
 # Cast atom arrays to bytes for X11 property changes.
