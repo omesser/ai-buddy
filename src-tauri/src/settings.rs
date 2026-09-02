@@ -17,7 +17,7 @@ use ai_buddy_core::visibility::HideRules;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::model::{self, DirectorInspect};
+use crate::model::{self, DirectorInspect, DirectorSources};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
 /// One running buddy, as settings lists it.
@@ -118,6 +118,32 @@ pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Res
     }
 }
 
+/// Env, then the file, then the store. A store read error is `Err`, not Unset:
+/// treating it as no key would drop a remote Completer to Static on Retarget.
+pub fn director_sources(
+    settings: &Settings,
+    secrets: &dyn SecretStore,
+) -> Result<DirectorSources, String> {
+    let stored = secrets.get(DIRECTOR_API_KEY)?;
+    Ok(model::resolve(
+        &settings.director_base_url,
+        &settings.director_model,
+        stored.as_deref(),
+    ))
+}
+
+/// Write the key first so a store error cannot leave a URL in memory that
+/// was never saved or sent as Retarget.
+fn apply_with_store(
+    settings: &mut Settings,
+    store: &dyn SecretStore,
+    patch: SettingsPatch,
+) -> Result<(), String> {
+    write_director_key(store, &patch)?;
+    settings.apply(patch);
+    Ok(())
+}
+
 /// Everything the native settings window needs to read and write.
 pub struct SettingsSession {
     pub settings: Arc<Mutex<Settings>>,
@@ -172,8 +198,7 @@ impl SettingsSession {
         let retarget = patch.director_base_url.is_some()
             || patch.director_model.is_some()
             || patch.director_api_key.is_some();
-        settings.apply(patch.clone());
-        write_director_key(self.secrets.as_ref(), &patch)?;
+        apply_with_store(&mut settings, self.secrets.as_ref(), patch)?;
         if let Some(name) = switching {
             let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
         }
@@ -766,6 +791,76 @@ mod tests {
         assert_eq!(
             store.get(DIRECTOR_API_KEY).unwrap().as_deref(),
             Some("sk-from-settings")
+        );
+    }
+
+    struct FailingStore;
+
+    impl SecretStore for FailingStore {
+        fn get(&self, _: &str) -> Result<Option<String>, String> {
+            Err("keychain locked".into())
+        }
+        fn set(&self, _: &str, _: &str) -> Result<(), String> {
+            Err("keychain locked".into())
+        }
+        fn delete(&self, _: &str) -> Result<(), String> {
+            Err("keychain locked".into())
+        }
+    }
+
+    #[test]
+    fn a_store_get_error_is_not_an_unset_remote_key() {
+        let settings = Settings {
+            director_base_url: "https://api.openai.com".into(),
+            director_model: "gpt-4o-mini".into(),
+            ..Settings::default()
+        };
+        assert!(
+            director_sources(&settings, &FailingStore).is_err(),
+            "a store error must not resolve as no key"
+        );
+        let unset = model::resolve(&settings.director_base_url, &settings.director_model, None);
+        assert!(
+            !model::config_from(&unset).configured,
+            "precondition: unset remote is Static"
+        );
+    }
+
+    #[test]
+    fn a_store_set_error_leaves_settings_unchanged() {
+        let mut settings = Settings::default();
+        let err = apply_with_store(
+            &mut settings,
+            &FailingStore,
+            SettingsPatch {
+                director_base_url: Some("https://api.x.ai".into()),
+                director_api_key: Some("sk-new".into()),
+                ..SettingsPatch::default()
+            },
+        );
+        assert!(err.is_err());
+        assert!(
+            settings.director_base_url.is_empty(),
+            "a failed key write must not leave a URL that was never saved"
+        );
+    }
+
+    #[test]
+    fn a_store_delete_error_leaves_settings_unchanged() {
+        let mut settings = Settings::default();
+        let err = apply_with_store(
+            &mut settings,
+            &FailingStore,
+            SettingsPatch {
+                director_base_url: Some("https://api.x.ai".into()),
+                director_api_key: Some(String::new()),
+                ..SettingsPatch::default()
+            },
+        );
+        assert!(err.is_err());
+        assert!(
+            settings.director_base_url.is_empty(),
+            "a failed key delete must not leave a URL that was never saved"
         );
     }
 

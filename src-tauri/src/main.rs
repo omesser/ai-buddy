@@ -399,15 +399,6 @@ fn persist_settings(settings: &Settings, path: &std::path::Path) {
     }
 }
 
-fn director_sources(settings: &Settings, secrets: &dyn SecretStore) -> model::DirectorSources {
-    let stored = secrets.get(secrets::DIRECTOR_API_KEY).ok().flatten();
-    model::resolve(
-        &settings.director_base_url,
-        &settings.director_model,
-        stored.as_deref(),
-    )
-}
-
 fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &std::path::Path) {
     if let Ok(mut settings) = settings.lock() {
         settings.instances = roster
@@ -1411,18 +1402,13 @@ fn main() {
             }
 
             let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new());
-            let stored = match secrets.get(secrets::DIRECTOR_API_KEY) {
-                Ok(value) => value,
+            let sources = match settings::director_sources(&settings, secrets.as_ref()) {
+                Ok(sources) => sources,
                 Err(why) => {
                     eprintln!("director: secret store: {why}");
-                    None
+                    model::resolve(&settings.director_base_url, &settings.director_model, None)
                 }
             };
-            let sources = model::resolve(
-                &settings.director_base_url,
-                &settings.director_model,
-                stored.as_deref(),
-            );
             let mut config = model::config_from(&sources);
             config.enabled = settings.director_enabled && config.configured;
             config.ambient_allowed = settings.ambient_wakes;
