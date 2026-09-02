@@ -39,7 +39,7 @@ zip = {version = "4.2", default-features = false, features = ["deflate-flate2"]}
 tauri-plugin-global-shortcut = "2"
 # Sync HTTP for the model Director. A worker thread posts; the frame loop
 # does not wait. ureq instead of reqwest: no tokio.
-ureq = {version = "2", features = ["json"]}
+ureq = {version = "3", features = ["json"]}
 serde_json = "1"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
