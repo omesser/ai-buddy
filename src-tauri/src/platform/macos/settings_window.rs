@@ -48,6 +48,7 @@ struct Ivars {
     fullscreen: RefCell<Option<Retained<NSButton>>>,
     tag_to_id: RefCell<HashMap<isize, String>>,
     consent: RefCell<Vec<Retained<NSButton>>>,
+    consent_intro: RefCell<Option<Retained<NSTextField>>>,
     hotkey: RefCell<Option<Retained<NSTextField>>>,
     excluded: RefCell<Option<Retained<NSTextView>>>,
     payload: RefCell<Option<Retained<NSTextField>>>,
@@ -346,6 +347,9 @@ impl SettingsController {
                 });
             }
         }
+        if let Some(field) = self.ivars().consent_intro.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.consent_intro()));
+        }
         if let Some(field) = self.ivars().hotkey.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.hide_hotkey));
         }
@@ -477,6 +481,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut hidden_button = None;
     let mut fullscreen_button = None;
     let mut consent_buttons = Vec::new();
+    let mut consent_intro = None;
     let mut hotkey_field = None;
     let mut excluded_text = None;
     let mut payload_field = None;
@@ -488,6 +493,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
 
     for section in &description.sections {
         cursor.heading(&section.heading);
+        if let Some(comment) = &section.comment {
+            let field = cursor.section_comment(comment);
+            if section.heading == "What the buddy can see" {
+                consent_intro = Some(field);
+            }
+        }
 
         for row in &section.rows {
             match row {
@@ -722,6 +733,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().hidden.borrow_mut() = hidden_button;
     *controller.ivars().fullscreen.borrow_mut() = fullscreen_button;
     *controller.ivars().consent.borrow_mut() = consent_buttons;
+    *controller.ivars().consent_intro.borrow_mut() = consent_intro;
     *controller.ivars().hotkey.borrow_mut() = hotkey_field;
     *controller.ivars().excluded.borrow_mut() = excluded_text;
     *controller.ivars().payload.borrow_mut() = payload_field;
@@ -827,6 +839,15 @@ impl Cursor {
         ));
         stretch_x(&label);
         self.parent.addSubview(&label);
+    }
+
+    fn section_comment(&mut self, text: &str) -> Retained<NSTextField> {
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
+        self.place(&label, 64.0);
+        label
     }
 
     fn hint(&mut self, text: &str) {

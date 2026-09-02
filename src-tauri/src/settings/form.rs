@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+use crate::consent;
+
 /// What a settings row writes when changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RowAction {
@@ -288,7 +290,7 @@ pub fn describe() -> FormDescription {
         },
         FormSection {
             heading: "What the buddy can see".to_string(),
-            comment: Some("First run grants nothing. Flip one on to trigger the system prompt. macOS holds the grant; turn it off in System Settings.".to_string()),
+            comment: Some(consent::pane_intro(&consent::process_listed_as())),
             rows: vec![
                 FormRow::Checkbox {
                     id: CONSENT_ACCESSIBILITY_ID.to_string(),
@@ -684,9 +686,14 @@ mod tests {
             .expect("Consent section exists");
 
         assert_eq!(consent.rows.len(), 2);
+        let listed = crate::consent::process_listed_as();
         assert!(
-            consent.comment.is_some(),
-            "Consent section should have a comment with first-run copy"
+            consent
+                .comment
+                .as_ref()
+                .is_some_and(|c| { c.contains(&listed) && c.contains("Privacy & Security") }),
+            "Consent section has to name the TCC row ({listed}), got {:?}",
+            consent.comment
         );
 
         let accessibility = consent

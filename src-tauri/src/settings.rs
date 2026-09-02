@@ -57,6 +57,8 @@ pub struct SettingsView {
     pub api_key_error: String,
     /// Live OS grants, not a file field. The window rereads them on become-key.
     pub consent: Vec<ConsentRow>,
+    /// The name Privacy & Security will show for this process.
+    pub consent_listed_as: String,
 }
 
 impl SettingsView {
@@ -88,7 +90,14 @@ impl SettingsView {
             api_key_fingerprint,
             api_key_error,
             consent: consent::rows(&consent::Null),
+            consent_listed_as: String::new(),
         }
+    }
+
+    /// The pane copy. The listed name is live: a `cargo run` from Cursor is
+    /// Cursor, a packaged build is ai-buddy.
+    pub fn consent_intro(&self) -> String {
+        consent::pane_intro(&self.consent_listed_as)
     }
 
     /// One name per line, the same text the excluded-applications field edits.
@@ -269,6 +278,7 @@ impl SettingsSession {
             self.key_status_for_view(),
         );
         view.consent = consent::rows(consent::live());
+        view.consent_listed_as = consent::process_listed_as();
         view
     }
 
@@ -901,7 +911,7 @@ mod tests {
             director_base_url: String::new(),
             director_model: String::new(),
         };
-        let view = SettingsView::from_parts(
+        let mut view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/ai-buddy/memory.md"),
             Some("You are Nim.".to_string()),
@@ -930,6 +940,12 @@ mod tests {
         assert_eq!(
             view.consent.iter().map(|row| row.title).collect::<Vec<_>>(),
             ["Accessibility", "Screen Recording"]
+        );
+        view.consent_listed_as = "Cursor".into();
+        assert!(
+            view.consent_intro().contains("Cursor"),
+            "the pane has to name the TCC row, got {:?}",
+            view.consent_intro()
         );
     }
 

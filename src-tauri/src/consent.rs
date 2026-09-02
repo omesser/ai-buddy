@@ -129,6 +129,121 @@ mod macos {
             let _ = CGRequestScreenCaptureAccess();
         }
     }
+
+    pub fn tcc_list_name() -> String {
+        if packaged() {
+            return localized_name(std::process::id() as i32).unwrap_or_else(|| "ai-buddy".into());
+        }
+        let self_pid = std::process::id() as i32;
+        // Unsigned `cargo run` is often "responsible" for itself; TCC still
+        // attributes the grant to the bundled parent that launched the shell.
+        responsible_pid()
+            .filter(|pid| *pid != self_pid)
+            .and_then(localized_name)
+            .filter(|name| !name.contains("Helper"))
+            .or_else(bundled_ancestor_name)
+            .or_else(|| localized_name(self_pid))
+            .unwrap_or_else(|| "ai-buddy".into())
+    }
+
+    fn packaged() -> bool {
+        std::env::current_exe().is_ok_and(|exe| {
+            exe.ancestors()
+                .any(|p| p.extension().is_some_and(|e| e == "app"))
+        })
+    }
+
+    fn localized_name(pid: i32) -> Option<String> {
+        objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?
+            .localizedName()
+            .map(|name| name.to_string())
+            .filter(|name| !name.is_empty())
+    }
+
+    fn responsible_pid() -> Option<i32> {
+        type GetResponsible = unsafe extern "C" fn(i32) -> i32;
+        // SAFETY: RTLD_DEFAULT searches loaded images; libSystem is always in.
+        let symbol = unsafe {
+            dlsym(
+                -2isize as *mut c_void,
+                c"responsibility_get_pid_responsible_for_pid".as_ptr(),
+            )
+        };
+        if symbol.is_null() {
+            return None;
+        }
+        // SAFETY: the SPI is pid in, pid out. Self is a valid answer for a
+        // packaged app. A reshape would be a wrong pid, and the caller still
+        // has to resolve a localized name from it.
+        let pid = unsafe {
+            let get: GetResponsible = std::mem::transmute(symbol);
+            get(std::process::id() as i32)
+        };
+        (pid > 0).then_some(pid)
+    }
+
+    /// Walk parents until one is a bundled app. A `cargo run` from Cursor's
+    /// terminal is often zsh → Cursor Helper → Cursor; TCC names Cursor.
+    fn bundled_ancestor_name() -> Option<String> {
+        let mut pid = unsafe { getppid() };
+        for _ in 0..24 {
+            if pid <= 1 {
+                break;
+            }
+            if let Some(app) =
+                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+            {
+                let bundled = app.bundleURL().is_some_and(|url| {
+                    url.path()
+                        .is_some_and(|path| path.to_string().contains(".app"))
+                });
+                if bundled {
+                    let name = app
+                        .localizedName()
+                        .map(|name| name.to_string())
+                        .filter(|name| !name.is_empty())?;
+                    // Cursor Helper.app sits inside Cursor.app; TCC names Cursor.
+                    if !name.contains("Helper") {
+                        return Some(name);
+                    }
+                }
+            }
+            pid = parent_pid(pid)?;
+        }
+        None
+    }
+
+    fn parent_pid(pid: i32) -> Option<i32> {
+        let mut buf = [0u8; 232];
+        let wrote = unsafe {
+            proc_pidinfo(
+                pid,
+                PROC_PIDTBSDINFO,
+                0,
+                buf.as_mut_ptr().cast(),
+                buf.len() as i32,
+            )
+        };
+        if wrote < 20 {
+            return None;
+        }
+        let ppid = u32::from_ne_bytes(buf[16..20].try_into().ok()?);
+        (ppid > 1).then_some(ppid as i32)
+    }
+
+    const PROC_PIDTBSDINFO: i32 = 5;
+
+    unsafe extern "C" {
+        fn dlsym(handle: *mut c_void, symbol: *const std::ffi::c_char) -> *mut c_void;
+        fn getppid() -> i32;
+        fn proc_pidinfo(
+            pid: i32,
+            flavor: i32,
+            arg: u64,
+            buffer: *mut c_void,
+            buffersize: i32,
+        ) -> i32;
+    }
 }
 
 pub fn rows(probe: &dyn Probe) -> Vec<ConsentRow> {
@@ -147,6 +262,37 @@ pub fn rows(probe: &dyn Probe) -> Vec<ConsentRow> {
 pub fn enable(id: CapabilityId, probe: &dyn Probe) {
     if !probe.granted(id) {
         probe.prompt(id);
+    }
+}
+
+/// The sentence settings prints so the user can find the row in System Settings.
+///
+/// A `cargo run` binary is unsigned, so TCC attributes the grant to whoever
+/// launched it — Cursor, Terminal — not to "ai-buddy". A packaged
+/// `.app` is listed under its own name.
+pub fn listed_under_hint(name: &str) -> String {
+    format!("macOS lists this process as {name}. That is the row to turn on in Privacy & Security.")
+}
+
+/// The pane copy. The listed name is live: a `cargo run` from Cursor is
+/// Cursor, a packaged build is ai-buddy.
+pub fn pane_intro(listed_as: &str) -> String {
+    format!(
+        "First run grants nothing. Check a box to ask macOS. {} Unchecking here does not revoke a grant.",
+        listed_under_hint(listed_as)
+    )
+}
+
+/// The localized name TCC will show. Packaged builds are this app; `cargo run`
+/// is the responsible parent (the IDE or terminal that launched it).
+pub fn process_listed_as() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        macos::tcc_list_name()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "ai-buddy".into()
     }
 }
 
@@ -263,5 +409,26 @@ mod tests {
         let probe = Fake::granting(&[CapabilityId::Accessibility]);
         enable(CapabilityId::Accessibility, &probe);
         assert!(probe.prompted.lock().expect("prompt log").is_empty());
+    }
+
+    /// A `cargo run` from Cursor is listed as Cursor, not ai-buddy. The
+    /// hint has to carry that name or the Accessibility list is a guessing game.
+    #[test]
+    fn the_grant_hint_names_the_app_macos_will_list() {
+        let hint = listed_under_hint("Cursor");
+        assert!(
+            hint.contains("Cursor"),
+            "the user has to see the TCC row name, got {hint:?}"
+        );
+        assert!(
+            hint.contains("Privacy & Security"),
+            "the hint has to say where to look, got {hint:?}"
+        );
+        assert!(!listed_under_hint("Terminal").contains("Cursor"));
+    }
+
+    #[test]
+    fn process_listed_as_is_not_empty() {
+        assert!(!process_listed_as().is_empty());
     }
 }
