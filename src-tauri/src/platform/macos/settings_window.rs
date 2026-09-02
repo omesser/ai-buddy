@@ -57,7 +57,6 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
-    scroll: RefCell<Option<Retained<NSScrollView>>>,
 }
 
 define_class!(
