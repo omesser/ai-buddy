@@ -597,11 +597,14 @@ impl SettingsWindow {
     }
 
     fn refresh(&self) {
-        let guard = self.session.lock().unwrap();
-        let Some(session) = guard.as_ref() else {
-            return;
+        let view = {
+            let guard = self.session.lock().unwrap();
+            let Some(session) = guard.as_ref() else {
+                return;
+            };
+            session.view()
         };
-        let view = session.view();
+
         let controls = self.controls.borrow();
 
         if let Some(Control::CheckButton(check)) = controls.get(form::DIRECTOR_ID) {

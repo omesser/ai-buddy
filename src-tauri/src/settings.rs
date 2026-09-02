@@ -957,7 +957,8 @@ mod tests {
             use_accessibility: true,
             use_screen_recording: false,
         };
-        let view = SettingsView::from_parts(
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+        let mut view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/ai-buddy/memory.md"),
             Some("You are Nim.".to_string()),
