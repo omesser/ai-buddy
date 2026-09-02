@@ -4,7 +4,6 @@
 //! (Xss) for idle duration, and DPMS for display sleep state. All consent-free,
 //! same as macOS's NSWorkspace and CGEventSource APIs.
 
-use std::sync::OnceLock;
 use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
@@ -27,16 +26,9 @@ impl ai_buddy_core::sensing::ActivitySource for X11ActivitySource {
     }
 }
 
-/// Get cached X11 connection.
-fn x11_connection() -> Option<&'static RustConnection> {
-    static CONN: OnceLock<Option<RustConnection>> = OnceLock::new();
-    CONN.get_or_init(|| RustConnection::connect(None).ok().map(|(conn, _)| conn))
-        .as_ref()
-}
-
 /// Read _NET_ACTIVE_WINDOW to get the frontmost window, then WM_CLASS for its app name.
 fn frontmost_window_class() -> Option<String> {
-    let conn = x11_connection()?;
+    let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
     let root = screen.root;
 
@@ -93,7 +85,7 @@ fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
 
 /// Read idle duration from X11 Screensaver extension.
 fn idle_duration() -> Option<Duration> {
-    let conn = x11_connection()?;
+    let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
 
     let info = x11rb::protocol::screensaver::query_info(conn, screen.root)
@@ -106,7 +98,7 @@ fn idle_duration() -> Option<Duration> {
 
 /// Check if displays are asleep via DPMS.
 fn displays_sleeping() -> Option<bool> {
-    let conn = x11_connection()?;
+    let conn = super::connection::connection()?;
 
     let info = x11rb::protocol::dpms::info(conn).ok()?.reply().ok()?;
 

@@ -4,7 +4,6 @@
 //! _NET_FRAME_EXTENTS for decorations, and WM_CLASS for the owner. All EWMH and ICCCM
 //! properties that require no consent, exactly like macOS's CGWindowListCopyWindowInfo.
 
-use std::sync::OnceLock;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
 use x11rb::rust_connection::RustConnection;
@@ -41,7 +40,7 @@ impl WindowSource for X11WindowSource {
         WorldGeometry {
             usable_frames,
             windows: visible_windows(),
-            dock: dock.or_else(|| strut_panel_bounds()),
+            dock: dock.or_else(strut_panel_bounds),
         }
     }
 }
@@ -51,7 +50,7 @@ impl WindowSource for X11WindowSource {
 /// Reads _NET_CLIENT_LIST_STACKING from the root window and reverses it:
 /// X11 stacks bottom-to-top, the Engine wants frontmost first.
 fn visible_windows() -> Vec<WindowRect> {
-    let Some(conn) = x11_connection() else {
+    let Some(conn) = super::connection::connection() else {
         return Vec::new();
     };
     let screen = &conn.setup().roots[0];
@@ -66,13 +65,6 @@ fn visible_windows() -> Vec<WindowRect> {
         .rev()
         .filter_map(|w| window_rect(conn, w))
         .collect()
-}
-
-/// Get a cached X11 connection for the process lifetime.
-fn x11_connection() -> Option<&'static RustConnection> {
-    static CONN: OnceLock<Option<RustConnection>> = OnceLock::new();
-    CONN.get_or_init(|| RustConnection::connect(None).ok().map(|(conn, _)| conn))
-        .as_ref()
 }
 
 /// Read _NET_CLIENT_LIST_STACKING: windows in stacking order, bottom to top.
@@ -277,7 +269,7 @@ fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
 /// bottom_start_x, bottom_end_x]. For a bottom panel, bottom != 0 and
 /// bottom_start_x/bottom_end_x define the horizontal span.
 fn strut_panel_bounds() -> Option<Rect> {
-    let conn = x11_connection()?;
+    let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
     let root = screen.root;
 

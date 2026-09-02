@@ -6,12 +6,13 @@
 
 #![cfg(all(unix, not(target_os = "macos")))]
 
+mod connection;
 mod overlay;
 mod pointer;
 mod sensing;
 mod window_source;
 
-pub use overlay::configure_overlay;
+pub use overlay::{configure_overlay, update_input_region};
 pub use pointer::{primary_button_down, secondary_button_down};
 pub use sensing::X11ActivitySource;
 

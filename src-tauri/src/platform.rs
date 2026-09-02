@@ -91,6 +91,7 @@ impl Default for Displays {
 
 /// Which rung of the Dock-geometry chain answered; see `macos::dock_bounds`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // macOS-only, not used on Linux
 pub enum DockSource {
     /// `CoreDockGetRect`, the private SPI: exact, no grant needed.
     CoreDock,
@@ -144,6 +145,38 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// The plain Tauri window is what every other platform gets.
 #[cfg(not(unix))]
 pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+/// Update the input region for the overlay window based on the sprite's alpha mask.
+///
+/// On X11, XShapeCombineMask carves the click-through region from the sprite's
+/// alpha. On macOS and other platforms, this is a no-op since Tauri's
+/// `set_ignore_cursor_events` is sufficient.
+///
+/// Integration seam: the X11 implementation exists but is not yet wired to the
+/// frame loop. See platform/x11/overlay.rs::update_input_region.
+#[allow(dead_code)]
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn update_input_region(
+    window: &tauri::WebviewWindow,
+    mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    sprite_x: i32,
+    sprite_y: i32,
+    scale: i32,
+) -> Result<(), String> {
+    x11::update_input_region(window, mask_data, sprite_x, sprite_y, scale)
+}
+
+#[allow(dead_code)]
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+pub fn update_input_region(
+    _window: &tauri::WebviewWindow,
+    _mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    _sprite_x: i32,
+    _sprite_y: i32,
+    _scale: i32,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -386,7 +419,7 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
 ///
 /// X11 fills window_source() above with real geometry; this is the Wayland fallback.
 #[cfg(all(unix, not(target_os = "macos")))]
-struct DisplayOnlySource(DisplayCache);
+pub struct DisplayOnlySource(DisplayCache);
 
 /// Screen edges and nothing else, for Wayland or when DISPLAY is unset.
 ///
@@ -416,7 +449,7 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
 }
 
 #[cfg(not(unix))]
-struct DisplayOnlySource(DisplayCache);
+pub struct DisplayOnlySource(DisplayCache);
 
 #[cfg(not(unix))]
 impl WindowSource for DisplayOnlySource {

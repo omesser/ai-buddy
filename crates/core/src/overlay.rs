@@ -162,6 +162,14 @@ impl AlphaMask {
         (self.width, self.height)
     }
 
+    /// Raw mask data for platform-specific input region APIs.
+    ///
+    /// Returns (width, height, row-major opaque bools). X11's XShapeCombineMask
+    /// needs this to carve the click-through region from the sprite's alpha.
+    pub fn raw(&self) -> (i32, i32, &[bool]) {
+        (self.width, self.height, &self.opaque)
+    }
+
     /// Build a mask from an 8-bit RGBA PNG, treating alpha at or above
     /// `threshold` as drawn.
     ///
