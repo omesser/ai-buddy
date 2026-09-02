@@ -12,7 +12,6 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 log_info() {
@@ -63,7 +62,7 @@ cleanup() {
   log_info "Cleaning up..."
   kill $APP_PID 2> /dev/null || true
   if [ $WM_STARTED -eq 1 ]; then
-    kill $WM_PID 2> /dev/null || true
+    kill "$WM_PID" 2> /dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -74,7 +73,7 @@ MAX_WAIT=15
 WAITED=0
 WINDOW_ID=""
 while [ $WAITED -lt $MAX_WAIT ]; do
-  WINDOW_ID=$(xdotool search --name "ai-buddy" 2>/dev/null | head -1 || true)
+  WINDOW_ID=$(xdotool search --name "ai-buddy" 2> /dev/null | head -1 || true)
   [ -n "$WINDOW_ID" ] && break
   sleep 1
   WAITED=$((WAITED + 1))
@@ -160,7 +159,7 @@ SPRITE_X=$(echo "$SPRITE_POS" | cut -d, -f1)
 SPRITE_Y=$(echo "$SPRITE_POS" | cut -d, -f2)
 
 log_info "Clicking sprite at ($SPRITE_X, $((SPRITE_Y + 30)))..."
-xdotool mousemove $SPRITE_X $((SPRITE_Y + 30))
+xdotool mousemove "$SPRITE_X" $((SPRITE_Y + 30))
 sleep 0.2
 xdotool click 1
 sleep 1

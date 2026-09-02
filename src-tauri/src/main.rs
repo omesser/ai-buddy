@@ -278,6 +278,7 @@ struct Placed {
     facing: i8,
     dialogue: Option<String>,
     thinking: bool,
+    #[allow(dead_code)]
     mask: ai_buddy_core::overlay::AlphaMask,
 }
 
