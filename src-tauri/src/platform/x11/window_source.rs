@@ -150,9 +150,6 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
         return None;
     }
 
-    // Skip our own overlay windows to avoid blocking Perch detection. The overlay
-    // covers the entire display and is frontmost, so without this filter every
-    // other window's top edge would be reported as occluded.
     let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
     if is_own_overlay_class(&owner) {
         return None;
@@ -186,7 +183,8 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     })
 }
 
-/// Check if a window is a normal application window via _NET_WM_WINDOW_TYPE.
+/// Skip docks, desktops, and menus: `_NET_WM_WINDOW_TYPE_NORMAL` only.
+/// Missing type is treated as normal — older windows omit it.
 fn is_normal_window(conn: &RustConnection, window: Window) -> bool {
     let Ok(type_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE") else {
         return false;
@@ -217,7 +215,8 @@ fn is_normal_window(conn: &RustConnection, window: Window) -> bool {
         .any(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == normal_atom)
 }
 
-/// Read _NET_FRAME_EXTENTS and adjust geometry to include window decorations.
+/// Include decorations: Perch is the outer top edge, and XGetWindowAttributes
+/// reports the client rect inside the frame.
 fn frame_geometry(
     conn: &RustConnection,
     window: Window,
@@ -355,7 +354,7 @@ fn strut_panel_bounds() -> Option<Rect> {
     None
 }
 
-/// Check if a window is a dock/panel via _NET_WM_WINDOW_TYPE_DOCK.
+/// Only `_NET_WM_WINDOW_TYPE_DOCK` publishes a strut we can treat as the Dock.
 fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
     let Ok(type_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE") else {
         return false;

@@ -9,7 +9,6 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
 use x11rb::rust_connection::RustConnection;
 
-/// X11 activity source for Linux.
 pub struct X11ActivitySource;
 
 impl ai_buddy_core::sensing::ActivitySource for X11ActivitySource {
@@ -26,7 +25,8 @@ impl ai_buddy_core::sensing::ActivitySource for X11ActivitySource {
     }
 }
 
-/// Read _NET_ACTIVE_WINDOW to get the frontmost window, then WM_CLASS for its app name.
+/// `_NET_ACTIVE_WINDOW` for the frontmost window, then its `WM_CLASS`: the
+/// class is the application name that triggers match against.
 fn frontmost_window_class() -> Option<String> {
     let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
@@ -96,7 +96,6 @@ fn idle_duration() -> Option<Duration> {
     Some(Duration::from_millis(u64::from(info.ms_since_user_input)))
 }
 
-/// Check if displays are asleep via DPMS.
 fn displays_sleeping() -> Option<bool> {
     let conn = super::connection::connection()?;
 

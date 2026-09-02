@@ -1,8 +1,9 @@
 //! X11 overlay window configuration: floating, non-activating, click-through.
 //!
-//! Sets EWMH window states to make the overlay float above other windows,
-//! skip the taskbar and pager, and uses XShapeCombineMask to carve the input
-//! region from the sprite's alpha mask.
+//! GTK has no click-through finer than the whole window, so `XShapeCombineMask`
+//! carves the input region from the sprite's alpha mask. EWMH window states
+//! float the overlay above other windows and skip the taskbar and pager.
+//! Wayland stays degraded by design.
 
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, SK};
@@ -11,7 +12,7 @@ use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-/// Configure the Tauri window as an X11 overlay: floating, non-activating, skip taskbar.
+/// Float above other windows, non-activating, skip the taskbar and pager.
 ///
 /// Returns Err when the window handle is not available yet, so the caller can
 /// retry on subsequent frames once the GTK widget is realized.
@@ -38,11 +39,8 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Update the input region for the overlay window based on the sprite's alpha mask.
-///
-/// Uses XShapeCombineMask to set the input region. When mask_data is None,
-/// the entire window is click-through. When mask_data is Some, only the opaque
-/// pixels receive clicks.
+/// `XShapeCombineMask` sets the input region: `None` makes the entire window
+/// click-through, `Some` gives clicks only to the opaque pixels.
 ///
 /// Returns Err when the window handle is not available yet, so the caller can
 /// retry on subsequent frames once the GTK widget is realized.
@@ -65,7 +63,8 @@ pub fn update_input_region(
         RawWindowHandle::Xlib(xlib_window) => xlib_window.window as u32,
         RawWindowHandle::Xcb(xcb_window) => xcb_window.window.get(),
         _ => {
-            return Ok(()); // Wayland or other, no-op
+            // Wayland or other: degraded by design, and an Err would retry forever.
+            return Ok(());
         }
     };
 
@@ -104,7 +103,6 @@ fn apply_input_mask(
     let scaled_width = width * scale;
     let scaled_height = height * scale;
 
-    // Create a pixmap to hold the mask
     let screen = &conn.setup().roots[0];
     let pixmap = conn
         .generate_id()
@@ -120,7 +118,6 @@ fn apply_input_mask(
     )
     .map_err(|e| format!("Failed to create pixmap: {e}"))?;
 
-    // Create a GC for drawing
     let gc = conn
         .generate_id()
         .map_err(|e| format!("Failed to generate GC ID: {e}"))?;
@@ -145,8 +142,8 @@ fn apply_input_mask(
     xproto::change_gc(conn, gc, &xproto::ChangeGCAux::new().foreground(1))
         .map_err(|e| format!("Failed to set GC foreground: {e}"))?;
 
-    // Draw the mask: for each opaque pixel, draw a scaled rectangle.
-    // When facing < 0, mirror the mask horizontally (same as AlphaMask::hit and renderer).
+    // Facing < 0 mirrors the mask horizontally, matching `AlphaMask::hit` and
+    // the renderer.
     let mirror = sprite_facing < 0;
     for y in 0..height {
         for x in 0..width {
@@ -174,7 +171,6 @@ fn apply_input_mask(
         }
     }
 
-    // Apply the mask to the input region
     shape::mask(
         conn,
         shape::SO::SET,
@@ -188,7 +184,6 @@ fn apply_input_mask(
     .check()
     .map_err(|e| format!("X11 error applying input mask: {e}"))?;
 
-    // Clean up
     xproto::free_gc(conn, gc).ok();
     xproto::free_pixmap(conn, pixmap).ok();
 
@@ -211,7 +206,9 @@ fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> 
     Ok(())
 }
 
-/// Set EWMH states: _NET_WM_STATE_ABOVE, _NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_SKIP_PAGER.
+/// The overlay is not an application window, so the window manager must not treat it as one.
+///
+/// `_NET_WM_STATE_ABOVE`, `_NET_WM_STATE_SKIP_TASKBAR`, `_NET_WM_STATE_SKIP_PAGER`.
 fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     let net_wm_state = intern_atom(conn, "_NET_WM_STATE")?;
     let above = intern_atom(conn, "_NET_WM_STATE_ABOVE")?;

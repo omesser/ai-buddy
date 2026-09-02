@@ -1,6 +1,4 @@
-//! Environment variable utilities.
-
-/// Check if an environment variable is on (1), off (0), or unset (off).
+/// Only the character `1` is on. `true`, `yes`, and `on` are off.
 pub fn env_flag_is_on(name: &str) -> bool {
     std::env::var(name).ok().as_deref() == Some("1")
 }

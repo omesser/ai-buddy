@@ -17,7 +17,6 @@ pub fn secondary_button_down() -> bool {
     button_state_mask().is_some_and(|mask| (mask & u16::from(ButtonMask::M3)) != 0)
 }
 
-/// Query the current pointer button mask as a raw u16.
 fn button_state_mask() -> Option<u16> {
     let display = super::connection::connection()?;
     let screen = &display.setup().roots[0];
