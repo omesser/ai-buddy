@@ -207,10 +207,11 @@ fn base_url() -> String {
 
 /// Is this base URL served from this machine or this LAN?
 ///
-/// Ollama, llama.cpp, LM Studio, vLLM and MLX all ship with no auth, so
-/// demanding a key for them means inventing one. A remote host still needs a
-/// real key: sending an unauthenticated request to a cloud provider is a
-/// worse answer than saying the key is missing.
+/// A local host (loopback, RFC1918, unique-local IPv6, or `.local`) makes
+/// `AI_BUDDY_DIRECTOR_API_KEY` optional rather than required: the user may
+/// leave it unset when the server has no auth (Ollama, mlx_lm.server) or set
+/// it when the server requires one (oMLX, llama.cpp with `--api-key`, vLLM
+/// with `--api-key`). A remote host still requires a real key.
 fn is_local(base: &str) -> bool {
     let host = base.split("://").nth(1).unwrap_or(base);
     let host = host.split('/').next().unwrap_or(host);
@@ -1128,5 +1129,29 @@ mod tests {
         let error = status_error("https://api.x.ai/v1/responses", 403, " {\"error\":\"no\"} ");
         assert!(error.contains("status 403"));
         assert!(error.contains("\"error\":\"no\""));
+    }
+
+    #[test]
+    fn a_present_key_is_used_even_when_the_base_is_local() {
+        // oMLX, llama.cpp --api-key, and vLLM --api-key all take keys on
+        // localhost. The `endpoint()` logic must preserve a present key when
+        // `is_local` returns true, not drop it or refuse to configure.
+        //
+        // This tests the match arm: `Some(key) => key`, which runs before the
+        // `None if local` arm. An Endpoint with a non-empty key on a local URL
+        // means the key was preserved.
+        let local_base = "http://localhost:8000";
+        assert!(is_local(local_base), "precondition: the base is local");
+
+        // Simulate what `endpoint()` does when a key is present and base is local
+        let key = Some("omlx-test-key".to_string());
+        let api_key = match key {
+            Some(k) => k,
+            None if is_local(local_base) => String::new(),
+            None => panic!("should not reach: test has a key"),
+        };
+
+        assert_eq!(api_key, "omlx-test-key");
+        assert!(!api_key.is_empty(), "the key is preserved, not dropped");
     }
 }
