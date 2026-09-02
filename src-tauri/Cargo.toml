@@ -64,7 +64,24 @@ objc2-app-kit = {version = "0.3", features = [
   # Which application the user is in. Reports the application only — no window,
   # no title — so nothing here is gated by Screen Recording.
   "NSWorkspace",
-  "NSRunningApplication"
+  "NSRunningApplication",
+  # Native settings window. SPEC gives the webview to the sprite and chat, not
+  # to checkboxes.
+  "NSButton",
+  "NSButtonCell",
+  "NSCell",
+  "NSControl",
+  "NSTextField",
+  "NSText",
+  "NSTextView",
+  "NSPopUpButton",
+  "NSMenu",
+  "NSMenuItem",
+  "NSScrollView",
+  "NSView",
+  "NSColor",
+  "NSFont",
+  "NSAlert"
 ]}
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call

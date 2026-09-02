@@ -8,10 +8,176 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
+use ai_buddy_core::memory::MemoryManifest;
 use ai_buddy_core::roster::InstanceSpec;
 use ai_buddy_core::visibility::HideRules;
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
+
+use crate::model::DirectorInspect;
+
+/// One running buddy, as settings lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstanceRow {
+    pub id: String,
+    pub name: String,
+    pub character: String,
+}
+
+/// What the settings window shows. Built from the live file and roster so the
+/// window holds no copy that could drift.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettingsView {
+    pub director_enabled: bool,
+    pub ambient_wakes: bool,
+    pub do_not_disturb: bool,
+    pub hidden: bool,
+    pub hide_in_fullscreen: bool,
+    pub hide_hotkey: String,
+    pub launch_at_login: bool,
+    pub excluded_applications: Vec<String>,
+    pub character: String,
+    pub memory_path: String,
+    pub last_payload: Option<String>,
+    pub installed: Vec<String>,
+    pub instances: Vec<InstanceRow>,
+}
+
+impl SettingsView {
+    pub fn from_parts(
+        settings: &Settings,
+        memory_path: &Path,
+        last_payload: Option<String>,
+        installed: Vec<String>,
+        instances: Vec<InstanceRow>,
+    ) -> Self {
+        Self {
+            director_enabled: settings.director_enabled,
+            ambient_wakes: settings.ambient_wakes,
+            do_not_disturb: settings.do_not_disturb,
+            hidden: settings.hidden,
+            hide_in_fullscreen: settings.hide_in_fullscreen,
+            hide_hotkey: settings.hide_hotkey.clone(),
+            launch_at_login: settings.launch_at_login,
+            excluded_applications: settings.excluded_applications.clone(),
+            character: settings.character.clone(),
+            memory_path: memory_path.display().to_string(),
+            last_payload,
+            installed,
+            instances,
+        }
+    }
+
+    /// One name per line, the same text the excluded-applications field edits.
+    pub fn excluded_text(&self) -> String {
+        self.excluded_applications.join("\n")
+    }
+}
+
+/// Work the settings window asks the frame loop to do.
+#[derive(Clone, Debug)]
+pub enum SettingsOp {
+    Spawn { character: String, name: String },
+    Dismiss { id: String },
+    SwitchAll { character: String },
+}
+
+/// Everything the native settings window needs to read and write.
+pub struct SettingsSession {
+    pub settings: Arc<Mutex<Settings>>,
+    pub path: PathBuf,
+    pub memory_path: PathBuf,
+    pub rules: Arc<Mutex<HideRules>>,
+    pub inspect: Arc<Mutex<DirectorInspect>>,
+    pub instances: Arc<Mutex<Vec<InstanceRow>>>,
+    pub installed: Vec<String>,
+    pub ops: mpsc::Sender<SettingsOp>,
+    pub app: AppHandle,
+    pub on_rebind: fn(&AppHandle, &str),
+    pub on_autostart: fn(&AppHandle, bool),
+}
+
+impl SettingsSession {
+    pub fn view(&self) -> SettingsView {
+        let settings = self
+            .settings
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        let instances = self
+            .instances
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        let last_payload = self
+            .inspect
+            .lock()
+            .ok()
+            .and_then(|inspect| inspect.last_payload.clone());
+        SettingsView::from_parts(
+            &settings,
+            &self.memory_path,
+            last_payload,
+            self.installed.clone(),
+            instances,
+        )
+    }
+
+    pub fn apply(&self, patch: SettingsPatch) -> Result<(), String> {
+        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
+        let switching = patch.character.clone();
+        let rebind = patch.hide_hotkey.clone();
+        settings.apply(patch);
+        if let Some(name) = switching {
+            let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
+        }
+        if let Ok(mut rules) = self.rules.lock() {
+            rules.set_away(settings.hidden);
+            rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
+        }
+        (self.on_autostart)(&self.app, settings.launch_at_login);
+        if let Some(spec) = rebind {
+            (self.on_rebind)(&self.app, &spec);
+        }
+        settings.save(&self.path).map_err(|error| error.to_string())
+    }
+
+    pub fn open_memory(&self) -> Result<(), String> {
+        open_in_editor(&self.memory_path)
+    }
+
+    pub fn wipe_memory(&self) -> Result<(), String> {
+        MemoryManifest::new(&self.memory_path)
+            .wipe()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn spawn(&self, character: String, name: String) {
+        let _ = self.ops.send(SettingsOp::Spawn { character, name });
+    }
+
+    pub fn dismiss(&self, id: String) {
+        let _ = self.ops.send(SettingsOp::Dismiss { id });
+    }
+}
+
+fn open_in_editor(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    if !path.exists() {
+        fs::write(path, "").map_err(|error| error.to_string())?;
+    }
+    std::process::Command::new("open")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
 
 /// What the settings window can change in one call.
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -355,6 +521,48 @@ mod tests {
         assert_eq!(key_code_name('H').as_deref(), Some("KeyH"));
         assert_eq!(key_code_name('B').as_deref(), Some("KeyB"));
         assert_eq!(key_code_name('1'), None);
+    }
+
+    /// The window reads this snapshot, not the file, so a field that does not
+    /// appear here is a field the user cannot see.
+    #[test]
+    fn the_settings_view_is_what_the_window_shows() {
+        let settings = Settings {
+            director_enabled: false,
+            ambient_wakes: false,
+            do_not_disturb: true,
+            hidden: true,
+            hide_in_fullscreen: false,
+            hide_hotkey: "Control-Shift-H".to_string(),
+            launch_at_login: true,
+            excluded_applications: vec!["1Password".to_string(), "Keychain Access".to_string()],
+            character: "nim".to_string(),
+            instances: Vec::new(),
+        };
+        let view = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/ai-buddy/memory.md"),
+            Some("You are Nim.".to_string()),
+            vec!["bmo".to_string(), "nim".to_string()],
+            vec![InstanceRow {
+                id: "1".to_string(),
+                name: "Nim".to_string(),
+                character: "nim".to_string(),
+            }],
+        );
+        assert!(!view.director_enabled);
+        assert!(!view.ambient_wakes);
+        assert!(view.do_not_disturb);
+        assert!(view.hidden);
+        assert!(!view.hide_in_fullscreen);
+        assert_eq!(view.hide_hotkey, "Control-Shift-H");
+        assert!(view.launch_at_login);
+        assert_eq!(view.excluded_text(), "1Password\nKeychain Access");
+        assert_eq!(view.character, "nim");
+        assert_eq!(view.memory_path, "/tmp/ai-buddy/memory.md");
+        assert_eq!(view.last_payload.as_deref(), Some("You are Nim."));
+        assert_eq!(view.installed, ["bmo", "nim"]);
+        assert_eq!(view.instances[0].name, "Nim");
     }
 
     #[test]

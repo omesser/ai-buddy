@@ -49,7 +49,7 @@ use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde::Serialize;
-use settings::{Settings, SettingsPatch};
+use settings::{InstanceRow, Settings, SettingsOp, SettingsSession};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -181,13 +181,6 @@ struct MenuChannel {
     receiver: mpsc::Receiver<MenuSignal>,
 }
 
-/// Work the settings window asks the frame loop to do.
-enum ShellOp {
-    Spawn { character: String, name: String },
-    Dismiss { id: InstanceId },
-    SwitchAll { character: String },
-}
-
 /// Settings plus the live roster the settings window reads.
 struct SettingsState {
     settings: Arc<Mutex<Settings>>,
@@ -196,31 +189,8 @@ struct SettingsState {
     installed: Vec<String>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     inspect: Arc<Mutex<model::DirectorInspect>>,
-    ops: mpsc::Sender<ShellOp>,
-}
-
-#[derive(Clone, serde::Serialize)]
-struct InstanceRow {
-    id: String,
-    name: String,
-    character: String,
-}
-
-#[derive(Clone, serde::Serialize)]
-struct SettingsView {
-    director_enabled: bool,
-    ambient_wakes: bool,
-    do_not_disturb: bool,
-    hidden: bool,
-    hide_in_fullscreen: bool,
-    hide_hotkey: String,
-    launch_at_login: bool,
-    excluded_applications: Vec<String>,
-    character: String,
-    memory_path: String,
-    last_payload: Option<String>,
-    installed: Vec<String>,
-    instances: Vec<InstanceRow>,
+    ops: mpsc::Sender<SettingsOp>,
+    rules: Arc<Mutex<HideRules>>,
 }
 
 /// How long a hold survives without hearing anything before it is dropped.
@@ -378,112 +348,6 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-/// Last Character Prompt and current Director config. #18's settings panel
-/// calls this.
-#[tauri::command]
-fn director_payload(
-    inspect: tauri::State<'_, Arc<Mutex<model::DirectorInspect>>>,
-) -> model::DirectorInspect {
-    inspect
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
-}
-
-#[tauri::command]
-fn settings_state(state: tauri::State<'_, SettingsState>) -> SettingsView {
-    let settings = state
-        .settings
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
-    let instances = state
-        .instances
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
-    let last_payload = state
-        .inspect
-        .lock()
-        .ok()
-        .and_then(|inspect| inspect.last_payload.clone());
-    SettingsView {
-        director_enabled: settings.director_enabled,
-        ambient_wakes: settings.ambient_wakes,
-        do_not_disturb: settings.do_not_disturb,
-        hidden: settings.hidden,
-        hide_in_fullscreen: settings.hide_in_fullscreen,
-        hide_hotkey: settings.hide_hotkey,
-        launch_at_login: settings.launch_at_login,
-        excluded_applications: settings.excluded_applications,
-        character: settings.character,
-        memory_path: state.memory_path.display().to_string(),
-        last_payload,
-        installed: state.installed.clone(),
-        instances,
-    }
-}
-
-#[tauri::command]
-fn settings_patch(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SettingsState>,
-    rules: tauri::State<'_, Arc<Mutex<HideRules>>>,
-    patch: SettingsPatch,
-) -> Result<(), String> {
-    let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let switching = patch.character.clone();
-    let rebind = patch.hide_hotkey.clone();
-    settings.apply(patch);
-    if let Some(name) = switching {
-        let _ = state.ops.send(ShellOp::SwitchAll { character: name });
-    }
-    if let Ok(mut rules) = rules.lock() {
-        rules.set_away(settings.hidden);
-        rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
-    }
-    apply_autostart(&app, settings.launch_at_login);
-    if let Some(spec) = rebind {
-        bind_hide_hotkey(&app, &spec);
-    }
-    settings
-        .save(&state.path)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn memory_open(state: tauri::State<'_, SettingsState>) -> Result<(), String> {
-    open_in_editor(&state.memory_path)
-}
-
-#[tauri::command]
-fn memory_wipe(state: tauri::State<'_, SettingsState>) -> Result<(), String> {
-    MemoryManifest::new(&state.memory_path)
-        .wipe()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn instance_spawn(
-    state: tauri::State<'_, SettingsState>,
-    character: String,
-    name: String,
-) -> Result<(), String> {
-    state
-        .ops
-        .send(ShellOp::Spawn { character, name })
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn instance_dismiss(state: tauri::State<'_, SettingsState>, id: String) -> Result<(), String> {
-    state
-        .ops
-        .send(ShellOp::Dismiss { id })
-        .map_err(|error| error.to_string())
-}
-
 fn apply_autostart(app: &tauri::AppHandle, enabled: bool) {
     use tauri_plugin_autostart::ManagerExt;
     let manager = app.autolaunch();
@@ -511,20 +375,28 @@ fn open_in_editor(path: &std::path::Path) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Settings is Shell furniture. SPEC gives the webview to the sprite and chat,
+/// so this is an AppKit window, opened on the main thread because that is
+/// where the native objects live.
 fn show_settings(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.show();
-        let _ = window.set_focus();
+    let Some(state) = app.try_state::<SettingsState>() else {
+        eprintln!("settings: opened before the shell was ready");
         return;
-    }
-    if let Err(why) =
-        WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-            .title("ai-buddy settings")
-            .inner_size(560.0, 760.0)
-            .resizable(true)
-            .skip_taskbar(false)
-            .build()
-    {
+    };
+    let session = SettingsSession {
+        settings: Arc::clone(&state.settings),
+        path: state.path.clone(),
+        memory_path: state.memory_path.clone(),
+        rules: Arc::clone(&state.rules),
+        inspect: Arc::clone(&state.inspect),
+        instances: Arc::clone(&state.instances),
+        installed: state.installed.clone(),
+        ops: state.ops.clone(),
+        app: app.clone(),
+        on_rebind: bind_hide_hotkey,
+        on_autostart: apply_autostart,
+    };
+    if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
         eprintln!("settings: {why}");
     }
 }
@@ -952,7 +824,7 @@ struct FrameExtras {
     settings_path: PathBuf,
     characters: BTreeMap<String, Arc<Character>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
-    ops: mpsc::Receiver<ShellOp>,
+    ops: mpsc::Receiver<SettingsOp>,
 }
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
@@ -1321,7 +1193,7 @@ fn run_frame_loop(
 
             while let Ok(op) = ops.try_recv() {
                 match op {
-                    ShellOp::Spawn { character, name } => {
+                    SettingsOp::Spawn { character, name } => {
                         spawn_live(
                             &mut roster,
                             &mut lives,
@@ -1331,11 +1203,11 @@ fn run_frame_loop(
                             &config,
                         );
                     }
-                    ShellOp::Dismiss { id } => {
+                    SettingsOp::Dismiss { id } => {
                         roster.dismiss(&id);
                         lives.retain(|live| live.id != id);
                     }
-                    ShellOp::SwitchAll { character } => {
+                    SettingsOp::SwitchAll { character } => {
                         if let Some(loaded) = characters.get(&character).cloned() {
                             let ids: Vec<_> = lives.iter().map(|live| live.id.clone()).collect();
                             for id in ids {
@@ -2420,17 +2292,7 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            character,
-            director_payload,
-            overlay_primary,
-            settings_state,
-            settings_patch,
-            memory_open,
-            memory_wipe,
-            instance_spawn,
-            instance_dismiss
-        ])
+        .invoke_handler(tauri::generate_handler![character, overlay_primary])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
             // means no overlay. Reported and exited rather than returned as a
@@ -2612,6 +2474,7 @@ fn main() {
                 instances: Arc::clone(&instance_rows),
                 inspect: Arc::clone(&inspect),
                 ops: ops_tx,
+                rules: Arc::clone(&rules),
             });
             app.manage(Arc::clone(&rules));
 

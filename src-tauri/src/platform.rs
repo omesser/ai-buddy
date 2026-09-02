@@ -141,6 +141,18 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
 }
 
+/// Open the native settings window. Main thread only.
+#[cfg(target_os = "macos")]
+pub fn show_settings(session: crate::settings::SettingsSession) {
+    macos::show_settings(session)
+}
+
+/// v1 settings is AppKit. Other platforms have no window until they have one.
+#[cfg(not(target_os = "macos"))]
+pub fn show_settings(_session: crate::settings::SettingsSession) {
+    eprintln!("settings: the native window is macOS in v1");
+}
+
 /// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.
 /// The plain Tauri window is what every other platform gets.
 #[cfg(not(unix))]
