@@ -10,11 +10,11 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSAutoresizingMaskOptions, NSBackingStoreType, NSButton,
-    NSColor, NSControlStateValueOff, NSControlStateValueOn, NSControlTextEditingDelegate, NSFont,
-    NSPopUpButton, NSScrollView, NSSecureTextField, NSTextDelegate, NSTextField,
-    NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
-    NSWindowStyleMask,
+    NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
+    NSBackingStoreType, NSButton, NSColor, NSControlStateValueOff, NSControlStateValueOn,
+    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
+    NSStatusWindowLevel, NSTextDelegate, NSTextField, NSTextFieldDelegate, NSTextView,
+    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -25,10 +25,9 @@ use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
-const DOC_HEIGHT: f64 = 1332.0;
+const DOC_HEIGHT: f64 = 1600.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
-
 thread_local! {
     static CONTROLLER: RefCell<Option<Retained<SettingsController>>> = const { RefCell::new(None) };
 }
@@ -37,6 +36,7 @@ thread_local! {
 struct Ivars {
     session: RefCell<Option<SettingsSession>>,
     window: RefCell<Option<Retained<NSWindow>>>,
+    scroll: RefCell<Option<Retained<NSScrollView>>>,
     director: RefCell<Option<Retained<NSButton>>>,
     base_url: RefCell<Option<Retained<NSTextField>>>,
     model: RefCell<Option<Retained<NSTextField>>>,
@@ -47,6 +47,8 @@ struct Ivars {
     hidden: RefCell<Option<Retained<NSButton>>>,
     fullscreen: RefCell<Option<Retained<NSButton>>>,
     tag_to_id: RefCell<HashMap<isize, String>>,
+    consent: RefCell<Vec<Retained<NSButton>>>,
+    consent_intro: RefCell<Option<Retained<NSTextField>>>,
     hotkey: RefCell<Option<Retained<NSTextField>>>,
     excluded: RefCell<Option<Retained<NSTextView>>>,
     payload: RefCell<Option<Retained<NSTextField>>>,
@@ -55,7 +57,6 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
-    scroll: RefCell<Option<Retained<NSScrollView>>>,
 }
 
 define_class!(
@@ -73,7 +74,7 @@ define_class!(
         }
 
         #[unsafe(method(windowDidResize:))]
-        fn resized(&self, _notification: &NSNotification) {
+        fn did_resize(&self, _notification: &NSNotification) {
             self.fit_to_window();
         }
     }
@@ -119,6 +120,8 @@ define_class!(
                     "hidden" => patch.hidden = Some(on),
                     "hide_in_fullscreen" => patch.hide_in_fullscreen = Some(on),
                     "launch_at_login" => patch.launch_at_login = Some(on),
+                    "use_accessibility" => patch.use_accessibility = Some(on),
+                    "use_screen_recording" => patch.use_screen_recording = Some(on),
                     _ => return,
                 }
             } else {
@@ -193,9 +196,12 @@ define_class!(
 
 impl SettingsController {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let controller: Retained<SettingsController> =
-            unsafe { msg_send![mtm.alloc::<SettingsController>(), init] };
-        controller
+        let this = Self::alloc(mtm).set_ivars(Ivars::default());
+        // SAFETY: NSObject's init takes no arguments. alloc+init without
+        // set_ivars leaves the drop flag Allocated; the next ivars() panics
+        // ("tried to access uninitialized instance variable"). #205 dropped
+        // this while rewriting the form as data.
+        unsafe { msg_send![super(this), init] }
     }
 
     fn mtm(&self) -> MainThreadMarker {
@@ -313,6 +319,19 @@ impl SettingsController {
         fill_checkbox(&self.ivars().dnd, view.do_not_disturb);
         fill_checkbox(&self.ivars().hidden, view.hidden);
         fill_checkbox(&self.ivars().fullscreen, view.hide_in_fullscreen);
+        {
+            let buttons = self.ivars().consent.borrow();
+            for (button, row) in buttons.iter().zip(view.consent.iter()) {
+                button.setState(if row.granted {
+                    NSControlStateValueOn
+                } else {
+                    NSControlStateValueOff
+                });
+            }
+        }
+        if let Some(field) = self.ivars().consent_intro.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.consent_intro()));
+        }
         if let Some(field) = self.ivars().hotkey.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.hide_hotkey));
         }
@@ -354,19 +373,23 @@ impl SettingsController {
 
     fn fit_to_window(&self) {
         let ivars = self.ivars();
+        let Some(window) = ivars.window.borrow().clone() else {
+            return;
+        };
         let Some(scroll) = ivars.scroll.borrow().clone() else {
             return;
         };
+        let Some(content) = window.contentView() else {
+            return;
+        };
+        scroll.setFrame(content.bounds());
         let Some(document) = scroll.documentView() else {
             return;
         };
-        document.setFrameSize(document_size(scroll.contentSize().width));
-        for child in document.subviews() {
-            if let Ok(field) = child.downcast::<NSTextField>() {
-                if field.preferredMaxLayoutWidth() > 0.0 {
-                    field.setPreferredMaxLayoutWidth(field.frame().size.width);
-                }
-            }
+        let width = scroll.contentSize().width;
+        document.setFrameSize(NSSize::new(width, DOC_HEIGHT));
+        if let Some(field) = ivars.consent_intro.borrow().as_ref() {
+            field.setPreferredMaxLayoutWidth(width - MARGIN * 2.0);
         }
     }
 
@@ -443,6 +466,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut dnd_button = None;
     let mut hidden_button = None;
     let mut fullscreen_button = None;
+    let mut consent_buttons = Vec::new();
+    let mut consent_intro = None;
     let mut hotkey_field = None;
     let mut excluded_text = None;
     let mut payload_field = None;
@@ -454,6 +479,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
 
     for section in &description.sections {
         cursor.heading(&section.heading);
+        if let Some(comment) = &section.comment {
+            let field = cursor.section_comment(comment);
+            if section.heading == "What the buddy can see" {
+                consent_intro = Some(field);
+            }
+        }
 
         for row in &section.rows {
             match row {
@@ -482,11 +513,14 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                     }
 
                     match id.as_str() {
-                        form::DIRECTOR_ID => director_button = Some(btn),
-                        form::AMBIENT_ID => ambient_button = Some(btn),
-                        form::DND_ID => dnd_button = Some(btn),
-                        form::HIDDEN_ID => hidden_button = Some(btn),
-                        form::FULLSCREEN_ID => fullscreen_button = Some(btn),
+                        form::DIRECTOR_ID => director_button = Some(btn.clone()),
+                        form::AMBIENT_ID => ambient_button = Some(btn.clone()),
+                        form::DND_ID => dnd_button = Some(btn.clone()),
+                        form::HIDDEN_ID => hidden_button = Some(btn.clone()),
+                        form::FULLSCREEN_ID => fullscreen_button = Some(btn.clone()),
+                        form::CONSENT_ACCESSIBILITY_ID | form::CONSENT_SCREEN_RECORDING_ID => {
+                            consent_buttons.push(btn.clone());
+                        }
                         _ => {}
                     }
                 }
@@ -684,6 +718,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().dnd.borrow_mut() = dnd_button;
     *controller.ivars().hidden.borrow_mut() = hidden_button;
     *controller.ivars().fullscreen.borrow_mut() = fullscreen_button;
+    *controller.ivars().consent.borrow_mut() = consent_buttons;
+    *controller.ivars().consent_intro.borrow_mut() = consent_intro;
     *controller.ivars().hotkey.borrow_mut() = hotkey_field;
     *controller.ivars().excluded.borrow_mut() = excluded_text;
     *controller.ivars().payload.borrow_mut() = payload_field;
@@ -703,6 +739,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     scroll.setDocumentView(Some(&document));
     scroll.setHasVerticalScroller(true);
     scroll.setHasHorizontalScroller(false);
+    stretch_xy(&scroll);
 
     let window = unsafe {
         let style = NSWindowStyleMask::Titled
@@ -721,6 +758,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
         );
         window.setTitle(&NSString::from_str("Settings"));
         window.setContentView(Some(&scroll));
+        window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
         window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
         window
     };
@@ -729,7 +767,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().scroll.borrow_mut() = Some(scroll);
     controller.fit_to_window();
     controller.refresh();
-    window.makeKeyAndOrderFront(None);
+    raise(&window, mtm);
 
     controller
 }
@@ -743,7 +781,7 @@ pub fn show(session: SettingsSession) {
             *existing.ivars().session.borrow_mut() = Some(session);
             existing.refresh();
             if let Some(window) = existing.ivars().window.borrow().as_ref() {
-                window.makeKeyAndOrderFront(None);
+                raise(window, mtm);
             }
         } else {
             *borrow = Some(build(mtm, session));
@@ -773,9 +811,6 @@ impl Cursor {
             NSSize::new(FIELD_WIDTH, height),
         ));
         stretch_x(widget);
-        if let Some(field) = widget.downcast_ref::<NSTextField>() {
-            field.setPreferredMaxLayoutWidth(FIELD_WIDTH);
-        }
         self.parent.addSubview(widget);
     }
 
@@ -789,6 +824,15 @@ impl Cursor {
         ));
         stretch_x(&label);
         self.parent.addSubview(&label);
+    }
+
+    fn section_comment(&mut self, text: &str) -> Retained<NSTextField> {
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
+        self.place(&label, 64.0);
+        label
     }
 
     fn hint(&mut self, text: &str) {
@@ -918,19 +962,33 @@ fn fill_popup(cell: &RefCell<Option<Retained<NSPopUpButton>>>, options: &[String
     popup.selectItemWithTitle(&NSString::from_str(current));
 }
 
-/// NSClipView will not stretch a document taller than itself, so WidthSizable
-/// on the form is a no-op while it scrolls. Width is the clip's; height is the
-/// form.
-fn document_size(clip_width: f64) -> NSSize {
-    NSSize::new(clip_width, DOC_HEIGHT)
+/// Settings sits above the overlay. The overlay is floating; a normal window
+/// falls behind it, and tray Settings then looks like a no-op.
+fn raise(window: &NSWindow, mtm: MainThreadMarker) {
+    let app = NSApplication::sharedApplication(mtm);
+    unsafe {
+        let _: () = msg_send![window, setLevel: NSStatusWindowLevel as NSWindowLevel];
+        let _: () = msg_send![window, setHidesOnDeactivate: false];
+        let _: () = msg_send![&app, activateIgnoringOtherApps: true];
+        let _: () = msg_send![window, orderFrontRegardless];
+    }
+    window.makeKeyAndOrderFront(None);
 }
 
 fn stretch_x(view: &NSView) {
-    // wrappingLabelWithString opts into Auto Layout; this window is frames.
     unsafe {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+}
+
+fn stretch_xy(view: &NSView) {
+    unsafe {
+        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
+    }
+    view.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
 }
 
 fn pin_right(view: &NSView) {
@@ -938,20 +996,4 @@ fn pin_right(view: &NSView) {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_document_width_follows_the_clip_view() {
-        let at_open = document_size(WINDOW_WIDTH);
-        assert_eq!(at_open.width, WINDOW_WIDTH);
-        assert_eq!(at_open.height, DOC_HEIGHT);
-
-        let wider = document_size(800.0);
-        assert_eq!(wider.width, 800.0);
-        assert_eq!(wider.height, DOC_HEIGHT);
-    }
 }

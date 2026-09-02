@@ -3,9 +3,9 @@
 //! `CGWindowListCopyWindowInfo` is the one macOS API that hands over the shape
 //! of the desktop for free. It reports bounds, owning application and window
 //! level to any process; only `kCGWindowName` — the title — is withheld until
-//! Screen Recording is granted, and this module never asks for it. That is what
-//! makes the Spatial Layer work on first run, before the user has agreed to
-//! anything.
+//! Screen Recording is granted, and this module never asks for it — settings
+//! does (#148). That is what makes the Spatial Layer work on first run, before
+//! the user has agreed to anything.
 
 use objc2::runtime::AnyObject;
 use objc2_core_foundation::{CFDictionary, CGRect};

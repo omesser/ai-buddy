@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+use crate::consent;
+
 /// What a settings row writes when changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RowAction {
@@ -118,6 +120,8 @@ pub const NEW_CHARACTER_ID: &str = "new_character";
 pub const SPAWN_ID: &str = "spawn";
 pub const MEMORY_OPEN_ID: &str = "memory_open";
 pub const MEMORY_WIPE_ID: &str = "memory_wipe";
+pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
+pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const LAUNCH_ID: &str = "launch";
 
 /// Describe the settings form. The AppKit window builds from this.
@@ -284,6 +288,26 @@ pub fn describe() -> FormDescription {
             }],
         },
         FormSection {
+            heading: "What the buddy can see".to_string(),
+            comment: Some(consent::pane_intro(&consent::process_listed_as())),
+            rows: vec![
+                FormRow::Checkbox {
+                    id: CONSENT_ACCESSIBILITY_ID.to_string(),
+                    label: "Accessibility".to_string(),
+                    frozen: false,
+                    help: Some("Exact Dock geometry, so the sprite does not walk into the Dock. macOS Accessibility. The buddy reads the Dock's bounds; it does not control your computer.".to_string()),
+                    comment: None,
+                },
+                FormRow::Checkbox {
+                    id: CONSENT_SCREEN_RECORDING_ID.to_string(),
+                    label: "Screen Recording".to_string(),
+                    frozen: false,
+                    help: Some("Window titles, and Capture when it ships. macOS Screen Recording, which can see the screen.".to_string()),
+                    comment: None,
+                },
+            ],
+        },
+        FormSection {
             heading: "Launch".to_string(),
             comment: None,
             rows: vec![FormRow::Checkbox {
@@ -359,6 +383,14 @@ pub fn describe() -> FormDescription {
         CLEAR_KEY_ID.to_string(),
         RowAction::Operation(RowOperation::ClearKey),
     );
+    actions.insert(
+        CONSENT_ACCESSIBILITY_ID.to_string(),
+        RowAction::PatchField("use_accessibility".to_string()),
+    );
+    actions.insert(
+        CONSENT_SCREEN_RECORDING_ID.to_string(),
+        RowAction::PatchField("use_screen_recording".to_string()),
+    );
 
     FormDescription { sections, actions }
 }
@@ -399,6 +431,7 @@ mod tests {
                 "Hide",
                 "Memory",
                 "Excluded applications",
+                "What the buddy can see",
                 "Launch",
             ]
         );
@@ -639,6 +672,72 @@ mod tests {
         assert_eq!(
             description.actions.get(MEMORY_OPEN_ID),
             Some(&RowAction::Operation(RowOperation::OpenMemory))
+        );
+    }
+
+    #[test]
+    fn consent_section_has_two_checkboxes() {
+        let description = describe();
+        let consent = description
+            .sections
+            .iter()
+            .find(|s| s.heading == "What the buddy can see")
+            .expect("Consent section exists");
+
+        assert_eq!(consent.rows.len(), 2);
+        let listed = crate::consent::process_listed_as();
+        assert!(
+            consent
+                .comment
+                .as_ref()
+                .is_some_and(|c| { c.contains(&listed) && c.contains("Privacy & Security") }),
+            "Consent section has to name the TCC row ({listed}), got {:?}",
+            consent.comment
+        );
+
+        let accessibility = consent
+            .rows
+            .iter()
+            .find(|r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_ACCESSIBILITY_ID))
+            .expect("Accessibility checkbox exists");
+
+        let screen_recording = consent
+            .rows
+            .iter()
+            .find(
+                |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_SCREEN_RECORDING_ID),
+            )
+            .expect("Screen Recording checkbox exists");
+
+        match accessibility {
+            FormRow::Checkbox { label, help, .. } => {
+                assert_eq!(label, "Accessibility");
+                assert!(
+                    help.as_ref().is_some_and(|h| h.contains("Dock")),
+                    "Accessibility help should mention Dock"
+                );
+            }
+            _ => panic!("Accessibility row must be a checkbox"),
+        }
+
+        match screen_recording {
+            FormRow::Checkbox { label, help, .. } => {
+                assert_eq!(label, "Screen Recording");
+                assert!(
+                    help.as_ref().is_some_and(|h| h.contains("title")),
+                    "Screen Recording help should mention titles"
+                );
+            }
+            _ => panic!("Screen Recording row must be a checkbox"),
+        }
+
+        assert_eq!(
+            description.actions.get(CONSENT_ACCESSIBILITY_ID),
+            Some(&RowAction::PatchField("use_accessibility".to_string()))
+        );
+        assert_eq!(
+            description.actions.get(CONSENT_SCREEN_RECORDING_ID),
+            Some(&RowAction::PatchField("use_screen_recording".to_string()))
         );
     }
 }

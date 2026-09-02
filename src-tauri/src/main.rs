@@ -17,6 +17,7 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+mod consent;
 mod env_util;
 mod frame_loop;
 mod menu;
@@ -1352,6 +1353,14 @@ fn main() {
             // user asked for would be worse than saying so.
             let settings_file = settings::settings_path(&memory::data_dir());
             let mut settings = Settings::load(&settings_file);
+            consent::set_wanted(
+                consent::CapabilityId::Accessibility,
+                settings.use_accessibility,
+            );
+            consent::set_wanted(
+                consent::CapabilityId::ScreenRecording,
+                settings.use_screen_recording,
+            );
             let wanted = requested_instances(&settings).unwrap_or_else(|why| {
                 eprintln!("instances: {why}");
                 std::process::exit(1);
@@ -1391,8 +1400,7 @@ fn main() {
             // Which Dock the physics got: the true rectangle over the SPI,
             // the true rectangle over Accessibility, or the full-width strip
             // the work area reserves. Printed because the difference is
-            // invisible until a sprite walks past the Dock's real end, and
-            // the app never prompts to change it (DESIGN.md decision 9).
+            // invisible until a sprite walks past the Dock's real end.
             if cfg!(target_os = "macos") {
                 match displays.read().dock {
                     Some((dock, source)) => eprintln!(

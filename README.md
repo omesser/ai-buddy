@@ -130,6 +130,11 @@ Settings → Director persists base URL and model, and stores the API key in
 the OS secret store (Keychain on macOS). `cargo run` with those env vars
 unset uses the saved Completer. The env vars remain a one-process override.
 
+Settings → What the buddy can see is how you grant Accessibility and Screen
+Recording. The pane names the row macOS will show: a `cargo run` from Cursor
+is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn
+that named app on in Privacy & Security.
+
 A Character that should grow faster or slower than doubling says so:
 
 ```toml
@@ -449,8 +454,9 @@ can answer it. Run the app, then confirm:
    and standing on the Dock is standing on the island the screen actually
    shows. The exact rectangle comes from a chain the startup log names —
    a private SPI that needs no consent, then the Accessibility API where that
-   trust was already granted (never prompted for), then the full-width
-   work-area strip as the fallback where neither answers.
+   trust was already granted (Settings → What the buddy can see names the
+   row to turn on), then the full-width work-area strip as the fallback
+   where neither answers.
 8. **Declared cadence is honoured.** Point ai-buddy at a copy of
    Black Mage whose idle declares a faster `fps`, and the idle is visibly faster
    than it was at the declared 1. Editing the repository's own
