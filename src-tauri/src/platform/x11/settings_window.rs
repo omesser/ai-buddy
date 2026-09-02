@@ -94,6 +94,16 @@ impl SettingsWindow {
         section: &form::FormSection,
         actions: &HashMap<String, RowAction>,
     ) {
+        let visible_rows: Vec<&FormRow> = section
+            .rows
+            .iter()
+            .filter(|row| !self.should_omit_row(row))
+            .collect();
+
+        if visible_rows.is_empty() {
+            return;
+        }
+
         let heading = gtk::Label::new(Some(&section.heading));
         heading.set_halign(Align::Start);
         heading.set_markup(&format!(
@@ -116,6 +126,15 @@ impl SettingsWindow {
 
         for row in &section.rows {
             self.build_row(container, row, actions);
+        }
+    }
+
+    fn should_omit_row(&self, row: &FormRow) -> bool {
+        match row {
+            FormRow::Checkbox { id, .. } => {
+                id == form::CONSENT_ACCESSIBILITY_ID || id == form::CONSENT_SCREEN_RECORDING_ID
+            }
+            _ => false,
         }
     }
 
@@ -662,14 +681,14 @@ impl SettingsWindow {
         if let Some(Control::Popup(combo)) = controls.get(form::CHARACTER_ID) {
             combo.remove_all();
             for name in &view.installed {
-                combo.append_text(name);
+                combo.append(Some(name), name);
             }
             combo.set_active_id(Some(&view.character));
         }
         if let Some(Control::Popup(combo)) = controls.get(form::NEW_CHARACTER_ID) {
             combo.remove_all();
             for name in &view.installed {
-                combo.append_text(name);
+                combo.append(Some(name), name);
             }
             combo.set_active_id(Some(&view.character));
         }
