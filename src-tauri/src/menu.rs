@@ -19,9 +19,6 @@
 use std::collections::HashMap;
 
 /// What a menu item does when it is chosen.
-///
-/// Quit is absent: it is a `PredefinedMenuItem`, which the platform handles
-/// itself, so nothing here has to recognise its id.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenuAction {
     /// Character ▸ <name>. Switch to the named Character Package.
@@ -40,6 +37,9 @@ pub enum MenuAction {
     OpenMemory,
     /// Open the settings window. Tray and sprite both reach it this way.
     OpenSettings,
+    /// Leave. Ours, not `PredefinedMenuItem::quit`: that calls `terminate:`
+    /// from inside the tray menu and deadlocks the overlay webviews.
+    Quit,
 }
 
 /// Everything `describe` needs to draw one menu. Tray and sprite build the
@@ -81,8 +81,6 @@ pub enum MenuEntry {
         label: String,
         items: Vec<MenuEntry>,
     },
-    /// Quit, which the platform supplies and labels in its own words.
-    Quit,
 }
 
 /// The whole menu as data: the rows, and what the clickable ones do.
@@ -126,6 +124,10 @@ const FULLSCREEN_ID: &str = "fullscreen";
 
 /// The id of the hotkey row under Hide rules.
 const HOTKEY_ID: &str = "hotkey";
+
+/// The id of Quit. Owned here so the tray event hook and the action table
+/// cannot drift onto different strings.
+pub(crate) const QUIT_ID: &str = "quit";
 
 /// The id prefix for a Character row, so `character:bmo` cannot collide with a
 /// package that happens to be called `hide`.
@@ -265,7 +267,12 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     // What the buddy can see… — absent until #148 exists. Not a disabled row:
     // a disabled row promises a feature, and there is nothing to promise yet.
 
-    entries.push(MenuEntry::Quit);
+    entries.push(MenuEntry::Item {
+        id: QUIT_ID.to_string(),
+        label: "Quit".to_string(),
+        enabled: true,
+    });
+    actions.insert(QUIT_ID.to_string(), MenuAction::Quit);
 
     MenuDescription { entries, actions }
 }
@@ -299,7 +306,7 @@ pub fn build(
     app: &tauri::AppHandle,
     description: &MenuDescription,
 ) -> Result<tauri::menu::Menu<tauri::Wry>, tauri::Error> {
-    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem, Submenu};
 
     // Built one item at a time rather than with `with_items`, because the rows
     // are of three different types and a Vec of them needs boxing either way.
@@ -345,17 +352,12 @@ pub fn build(
                             let child = MenuItem::with_id(app, id, label, *enabled, None::<&str>)?;
                             submenu.append(&child)?;
                         }
-                        // One level is all the menu has. Nesting a submenu or a
-                        // Quit inside one is not something `describe` builds,
-                        // and drawing it would be inventing a shape nothing
-                        // asked for.
-                        MenuEntry::Submenu { .. } | MenuEntry::Quit => {}
+                        // One level is all the menu has. Nesting a submenu
+                        // inside one is not something `describe` builds.
+                        MenuEntry::Submenu { .. } => {}
                     }
                 }
                 menu.append(&submenu)?;
-            }
-            MenuEntry::Quit => {
-                menu.append(&PredefinedMenuItem::quit(app, None)?)?;
             }
         }
     }
@@ -572,7 +574,6 @@ mod tests {
         let mentions_seeing = description.entries.iter().any(|entry| match entry {
             MenuEntry::Item { label, .. } | MenuEntry::Check { label, .. } => label.contains("see"),
             MenuEntry::Submenu { label, .. } => label.contains("see"),
-            MenuEntry::Quit => false,
         });
 
         assert!(
@@ -581,19 +582,21 @@ mod tests {
         );
     }
 
-    /// Quit is the platform's own item, so the action table does not carry it:
-    /// an id nothing looks up is an id that cannot be got wrong.
+    /// Quit is a row we handle, not the platform's `terminate:`. That call
+    /// deadlocks the overlay webviews when it runs from inside the tray menu.
     #[test]
-    fn quit_is_listed_without_an_action() {
+    fn quit_maps_to_an_action() {
         let description = describe(snapshot(&[], "bmo", false));
 
-        assert!(
-            description.entries.contains(&MenuEntry::Quit),
-            "Quit is in the menu"
+        assert_eq!(
+            entry_with_id(&description, "quit"),
+            Some(&MenuEntry::Item {
+                id: "quit".to_string(),
+                label: "Quit".to_string(),
+                enabled: true,
+            })
         );
-        // The platform owns Quit. An id in the table that nothing looks up is
-        // an id that cannot be got wrong — so Quit is absent from it.
-        assert!(description.actions.keys().all(|id| id != "quit"));
+        assert_eq!(description.actions.get("quit"), Some(&MenuAction::Quit));
     }
 
     fn clickable_ids(description: &MenuDescription) -> Vec<&String> {
@@ -650,7 +653,7 @@ mod tests {
     /// A package called `hide` must not become the Hide row.
     #[test]
     fn a_character_named_like_a_row_does_not_collide_with_it() {
-        let installed = names(&["hide", "dnd"]);
+        let installed = names(&["hide", "dnd", "quit"]);
         let description = describe(snapshot(&installed, "hide", false));
 
         assert_eq!(description.actions.get("hide"), Some(&MenuAction::Hide));
@@ -659,6 +662,11 @@ mod tests {
             Some(&MenuAction::SwitchCharacter("hide".to_string()))
         );
         assert_eq!(description.actions.get("dnd"), Some(&MenuAction::ToggleDnd));
+        assert_eq!(description.actions.get("quit"), Some(&MenuAction::Quit));
+        assert_eq!(
+            description.actions.get("character:quit"),
+            Some(&MenuAction::SwitchCharacter("quit".to_string()))
+        );
     }
 
     /// Settings and Memory are how the tray reaches configuration without

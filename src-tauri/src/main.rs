@@ -732,7 +732,20 @@ fn apply_menu_action(
             let _ = open_in_editor(&memory::shared_path());
         }
         menu::MenuAction::OpenSettings => show_settings(app),
+        menu::MenuAction::Quit => quit_now(),
     }
+}
+
+/// Leave without AppKit's `terminate:`.
+///
+/// `PredefinedMenuItem::quit` calls `[NSApp terminate:]` from inside the tray
+/// menu's tracking run loop. That teardown deadlocks against the overlay
+/// webviews the frame loop is still drawing into, and a hung full-display
+/// overlay is a desktop the user cannot click. `process::exit` skips that path;
+/// the window server drops the overlays with the process.
+fn quit_now() -> ! {
+    eprintln!("quit");
+    std::process::exit(0);
 }
 
 fn switch_instance(
@@ -2819,7 +2832,11 @@ fn main() {
             let (menu_sender, menu_receiver) = mpsc::channel();
             let hook_sender = menu_sender.clone();
             app.handle().on_menu_event(move |_app, event| {
-                let _ = hook_sender.send(MenuSignal::Chose(event.id().0.clone()));
+                let id = event.id().0.clone();
+                if id == menu::QUIT_ID {
+                    quit_now();
+                }
+                let _ = hook_sender.send(MenuSignal::Chose(id));
             });
 
             run_frame_loop(
