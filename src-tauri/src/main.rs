@@ -48,6 +48,7 @@ use ai_buddy_core::visibility::HideRules;
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use secrets::{KeyringStore, SecretStore};
 use serde::Serialize;
 use settings::{InstanceRow, Settings, SettingsOp, SettingsSession};
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -88,6 +89,7 @@ const FRAME_EVENT: &str = "frame";
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
     config: model::DirectorConfig,
+    sources: model::DirectorSources,
     inspect: Arc<Mutex<model::DirectorInspect>>,
 }
 
@@ -191,6 +193,7 @@ struct SettingsState {
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
     rules: Arc<Mutex<HideRules>>,
+    secrets: Arc<dyn SecretStore>,
 }
 
 /// How long a hold survives without hearing anything before it is dropped.
@@ -383,6 +386,7 @@ fn show_settings(app: &tauri::AppHandle) {
         ops: state.ops.clone(),
         app: app.clone(),
         on_rebind: bind_hide_hotkey,
+        secrets: Arc::clone(&state.secrets),
     };
     if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
         eprintln!("settings: {why}");
@@ -393,6 +397,15 @@ fn persist_settings(settings: &Settings, path: &std::path::Path) {
     if let Err(why) = settings.save(path) {
         eprintln!("settings: {why}");
     }
+}
+
+fn director_sources(settings: &Settings, secrets: &dyn SecretStore) -> model::DirectorSources {
+    let stored = secrets.get(secrets::DIRECTOR_API_KEY).ok().flatten();
+    model::resolve(
+        &settings.director_base_url,
+        &settings.director_model,
+        stored.as_deref(),
+    )
 }
 
 fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &std::path::Path) {
@@ -652,13 +665,14 @@ fn apply_menu_action(
     settings_path: &std::path::Path,
     characters: &BTreeMap<String, Arc<Character>>,
     config: &mut model::DirectorConfig,
+    sources: &model::DirectorSources,
     inspect: &Arc<Mutex<model::DirectorInspect>>,
     app: &tauri::AppHandle,
 ) {
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
-                switch_instance(roster, lives, instance_id, character, config);
+                switch_instance(roster, lives, instance_id, character, config, sources);
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -676,7 +690,15 @@ fn apply_menu_action(
                 .filter(|name| !name.is_empty())
                 .or_else(|| lives.first().map(|live| live.character.name.clone()));
             if let Some(name) = character_name {
-                spawn_live(roster, lives, characters, &name, name.clone(), config);
+                spawn_live(
+                    roster,
+                    lives,
+                    characters,
+                    &name,
+                    name.clone(),
+                    config,
+                    sources,
+                );
             }
         }
         menu::MenuAction::ToggleDirector => {
@@ -753,17 +775,12 @@ fn switch_instance(
     instance_id: &InstanceId,
     character: Arc<Character>,
     config: &model::DirectorConfig,
+    sources: &model::DirectorSources,
 ) {
     roster.retarget(instance_id, &character);
     if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
         live.character = character;
         live.director = StaticDirector::new(live.character.behaviors.clone(), 0);
-        live.model = config.enabled.then(|| {
-            Arc::new(ModelDirector::new(
-                model::endpoint().expect("enabled means a key was set"),
-                live.character.behaviors.keys().cloned(),
-            ))
-        });
         live.pace = Pace::with_growth(
             config.ambient_first,
             live.character.model_base,
@@ -771,8 +788,14 @@ fn switch_instance(
         );
         // The old session is the previous Character's. A Wake still on the
         // wire would propose as them; drop it and ask for this opening turn.
-        live.pending.cancel();
-        live.in_flight = None;
+        model::retarget_model(
+            &mut live.pending,
+            &mut live.in_flight,
+            &mut live.model,
+            live.character.behaviors.keys().cloned(),
+            sources,
+            config.enabled,
+        );
         live.recent.clear();
         live.happened = Happened::Ambient;
         live.addressed = true;
@@ -786,6 +809,7 @@ fn spawn_live(
     character_name: &str,
     instance_name: String,
     config: &model::DirectorConfig,
+    sources: &model::DirectorSources,
 ) {
     let Some(character) = characters.get(character_name).cloned() else {
         eprintln!("menu: no Character named {character_name}");
@@ -813,7 +837,7 @@ fn spawn_live(
         director: StaticDirector::new(character.behaviors.clone(), seed),
         model: config.enabled.then(|| {
             Arc::new(ModelDirector::new(
-                model::endpoint().expect("enabled means a key was set"),
+                model::endpoint_from(sources).expect("enabled means configured"),
                 character.behaviors.keys().cloned(),
             ))
         }),
@@ -850,6 +874,7 @@ struct FrameExtras {
     characters: BTreeMap<String, Arc<Character>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     ops: mpsc::Receiver<SettingsOp>,
+    secrets: Arc<dyn SecretStore>,
 }
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
@@ -1024,6 +1049,7 @@ fn spawn_instances(
     loaded: &[(InstanceSpec, Arc<Character>)],
     start: Point,
     config: &model::DirectorConfig,
+    sources: &model::DirectorSources,
 ) -> (Roster, Vec<InstanceState>) {
     let mut roster = Roster::new(MemoryManifest::new(memory::shared_path()));
     let mut lives = Vec::with_capacity(loaded.len());
@@ -1066,7 +1092,7 @@ fn spawn_instances(
             // #18's panel.
             model: config.enabled.then(|| {
                 Arc::new(ModelDirector::new(
-                    model::endpoint().expect("enabled means a key was set"),
+                    model::endpoint_from(sources).expect("enabled means configured"),
                     character.behaviors.keys().cloned(),
                 ))
             }),
@@ -1384,7 +1410,20 @@ fn main() {
                 check_for_update(app.handle().clone());
             }
 
-            let mut config = model::config();
+            let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new());
+            let stored = match secrets.get(secrets::DIRECTOR_API_KEY) {
+                Ok(value) => value,
+                Err(why) => {
+                    eprintln!("director: secret store: {why}");
+                    None
+                }
+            };
+            let sources = model::resolve(
+                &settings.director_base_url,
+                &settings.director_model,
+                stored.as_deref(),
+            );
+            let mut config = model::config_from(&sources);
             config.enabled = settings.director_enabled && config.configured;
             config.ambient_allowed = settings.ambient_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect()));
@@ -1393,10 +1432,10 @@ fn main() {
                 eprintln!("{line}");
             }
             if config.enabled {
-                model::spawn_preflight();
+                model::spawn_preflight(&sources);
             }
 
-            let (mut roster, lives) = spawn_instances(&loaded, start, &config);
+            let (mut roster, lives) = spawn_instances(&loaded, start, &config, &sources);
             if settings.do_not_disturb {
                 for (id, _) in roster.list() {
                     if let Some(instance) = roster.get_mut(&id) {
@@ -1436,6 +1475,7 @@ fn main() {
                 inspect: Arc::clone(&inspect),
                 ops: ops_tx,
                 rules: Arc::clone(&rules),
+                secrets: Arc::clone(&secrets),
             });
             app.manage(Arc::clone(&rules));
 
@@ -1469,7 +1509,11 @@ fn main() {
             };
             app.manage(TrayHandle(Mutex::new(tray)));
 
-            let director_run = DirectorRun { config, inspect };
+            let director_run = DirectorRun {
+                config,
+                sources,
+                inspect,
+            };
 
             // Selections do not come back from the popup: it returns once the
             // menu is on screen, and the click arrives here, later, on the app's
@@ -1505,6 +1549,7 @@ fn main() {
                     characters: character_cache,
                     instances: instance_rows,
                     ops: ops_rx,
+                    secrets,
                 },
             );
             Ok(())

@@ -212,7 +212,9 @@ pub fn key_fingerprint(key: &str) -> String {
 /// only — unless the server is on this machine or this LAN, which needs no
 /// key to talk to.
 ///
-/// Env-only wrapper until Task 4 wires persisted settings and the store.
+/// Env-only wrapper. The overlay resolves from settings and the store;
+/// the probe and tests still read the env alone.
+#[expect(dead_code)] // env-only wrapper; overlay call sites now use config_from
 pub fn config() -> DirectorConfig {
     config_from(&resolve("", "", None))
 }
@@ -243,7 +245,7 @@ pub fn startup_lines(config: &DirectorConfig) -> Vec<String> {
 
 /// Strip wrapping quotes and whitespace. `.env` files quote keys; a
 /// trailing newline is enough to 401 a Bearer token.
-fn trim_key(raw: &str) -> Option<String> {
+pub(crate) fn trim_key(raw: &str) -> Option<String> {
     let key = raw
         .trim()
         .trim_matches(|c: char| c == '"' || c == '\'')
@@ -348,7 +350,8 @@ fn max_tokens_for(local: bool) -> u32 {
 /// An OpenAI-compatible chat Completer, or `None` when a remote host has no
 /// key set.
 ///
-/// Env-only wrapper until Task 4 wires persisted settings and the store.
+/// Env-only wrapper. The overlay resolves from settings and the store;
+/// the probe and tests still read the env alone.
 pub fn endpoint() -> Option<Endpoint> {
     endpoint_from(&resolve("", "", None))
 }
@@ -665,11 +668,11 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
 ///
 /// Spawned rather than awaited. ADR-0004 keeps the model off the frame loop,
 /// and a stopped server would otherwise hold up startup for the timeout.
-pub fn spawn_preflight() {
-    thread::spawn(|| {
-        let Some(endpoint) = endpoint() else {
-            return;
-        };
+pub fn spawn_preflight(sources: &DirectorSources) {
+    let Some(endpoint) = endpoint_from(sources) else {
+        return;
+    };
+    thread::spawn(move || {
         let origin = endpoint.origin();
         let models = endpoint.get(&format!("{origin}/v1/models"));
         match preflight_verdict(models, endpoint.model()) {
@@ -900,6 +903,28 @@ impl InFlight {
             Err(_) => None,
         }
     }
+}
+
+/// Drop an in-flight wake and install a Completer for the new sources.
+///
+/// The worker still finishes; its Wake lands on a channel nobody reads.
+/// ureq cannot abort a POST already on the wire.
+pub fn retarget_model(
+    pending: &mut InFlight,
+    in_flight: &mut Option<Context>,
+    model: &mut Option<Arc<ModelDirector<Endpoint>>>,
+    behaviors: impl IntoIterator<Item = impl Into<String>>,
+    sources: &DirectorSources,
+    enabled: bool,
+) {
+    pending.cancel();
+    *in_flight = None;
+    *model = enabled.then(|| {
+        Arc::new(ModelDirector::new(
+            endpoint_from(sources).expect("enabled means configured"),
+            behaviors,
+        ))
+    });
 }
 
 #[cfg(test)]
@@ -1356,6 +1381,49 @@ mod tests {
             happened: ai_buddy_core::director::Happened::Ambient,
             standing: String::new(),
         }
+    }
+
+    #[test]
+    fn retarget_drops_an_in_flight_wake_and_installs_the_new_completer() {
+        with_env(None, None, None, || {
+            let sources = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&sources);
+            config.enabled = true;
+            let mut pending = InFlight::new();
+            let mut in_flight = Some(wake_context());
+            let mut model = None;
+            retarget_model(
+                &mut pending,
+                &mut in_flight,
+                &mut model,
+                ["stroll"],
+                &sources,
+                config.enabled,
+            );
+            assert!(pending.ready(), "cancel replaced the channel");
+            assert!(in_flight.is_none());
+            assert!(model.is_some());
+        });
+    }
+
+    #[test]
+    fn retarget_to_a_remote_without_a_key_leaves_static() {
+        with_env(None, None, None, || {
+            let sources = resolve("https://api.openai.com", "gpt-4o-mini", None);
+            let config = config_from(&sources);
+            let mut pending = InFlight::new();
+            let mut in_flight = None;
+            let mut model = None;
+            retarget_model(
+                &mut pending,
+                &mut in_flight,
+                &mut model,
+                ["stroll"],
+                &sources,
+                config.enabled && config.configured,
+            );
+            assert!(model.is_none());
+        });
     }
 
     /// A switch must not apply the old Character's reply, and must be able

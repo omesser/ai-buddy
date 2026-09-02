@@ -17,9 +17,9 @@ use tauri::{Emitter, Manager};
 
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, describe_menu, env_util, menu, model, overlay_label, place_overlays,
-    platform, publish_instances, remember_instances, spawn_live, switch_instance, tray,
-    DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed,
+    apply_menu_action, describe_menu, director_sources, env_util, menu, model, overlay_label,
+    place_overlays, platform, publish_instances, remember_instances, spawn_live, switch_instance,
+    tray, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed,
     Placement, SpritePlacement, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
     SENSE_INTERVAL,
 };
@@ -58,6 +58,7 @@ pub(crate) fn run_frame_loop(
         let mut assembler = SnapshotAssembler::new(source);
         let DirectorRun {
             mut config,
+            mut sources,
             inspect,
         } = director_run;
         let FrameExtras {
@@ -66,6 +67,7 @@ pub(crate) fn run_frame_loop(
             characters,
             instances: instance_rows,
             ops,
+            secrets,
         } = extras;
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
@@ -360,6 +362,7 @@ pub(crate) fn run_frame_loop(
                     &settings_path,
                     &characters,
                     &mut config,
+                    &sources,
                     &inspect,
                     &app,
                 );
@@ -387,6 +390,7 @@ pub(crate) fn run_frame_loop(
                             &settings_path,
                             &characters,
                             &mut config,
+                            &sources,
                             &inspect,
                             &app,
                         );
@@ -406,6 +410,7 @@ pub(crate) fn run_frame_loop(
                             &character,
                             name,
                             &config,
+                            &sources,
                         );
                     }
                     SettingsOp::Dismiss { id } => {
@@ -422,10 +427,36 @@ pub(crate) fn run_frame_loop(
                                     &id,
                                     Arc::clone(&loaded),
                                     &config,
+                                    &sources,
                                 );
                             }
                         } else {
                             eprintln!("settings: no Character named {character}");
+                        }
+                    }
+                    SettingsOp::Retarget => {
+                        let settings_now =
+                            settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
+                        sources = director_sources(&settings_now, secrets.as_ref());
+                        config = model::config_from(&sources);
+                        config.enabled = settings_now.director_enabled && config.configured;
+                        config.ambient_allowed = settings_now.ambient_wakes;
+                        if let Ok(mut inspect) = inspect.lock() {
+                            inspect.enabled = config.enabled;
+                            inspect.configured = config.configured;
+                            inspect.ambient_wakes = config.ambient_allowed;
+                        }
+                        for live in &mut lives {
+                            // The old session is the previous Character's. A Wake still on the
+                            // wire would propose as them; drop it and ask for this opening turn.
+                            model::retarget_model(
+                                &mut live.pending,
+                                &mut live.in_flight,
+                                &mut live.model,
+                                live.character.behaviors.keys().cloned(),
+                                &sources,
+                                config.enabled,
+                            );
                         }
                     }
                 }

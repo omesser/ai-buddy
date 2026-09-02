@@ -17,7 +17,8 @@ use ai_buddy_core::visibility::HideRules;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::model::DirectorInspect;
+use crate::model::{self, DirectorInspect};
+use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
 /// One running buddy, as settings lists it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +101,21 @@ pub enum SettingsOp {
     Spawn { character: String, name: String },
     Dismiss { id: String },
     SwitchAll { character: String },
+    Retarget,
+}
+
+/// Write the Director API key to the secret store, never to the settings file.
+///
+/// Empty after the same trim env keys use is delete: a quoted blank must not
+/// become a Bearer of quotes.
+pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Result<(), String> {
+    match patch.director_api_key.as_deref() {
+        None => Ok(()),
+        Some(value) => match model::trim_key(value) {
+            Some(key) => store.set(DIRECTOR_API_KEY, &key),
+            None => store.delete(DIRECTOR_API_KEY),
+        },
+    }
 }
 
 /// Everything the native settings window needs to read and write.
@@ -114,6 +130,7 @@ pub struct SettingsSession {
     pub ops: mpsc::Sender<SettingsOp>,
     pub app: AppHandle,
     pub on_rebind: fn(&AppHandle, &str),
+    pub secrets: Arc<dyn SecretStore>,
 }
 
 impl SettingsSession {
@@ -133,16 +150,18 @@ impl SettingsSession {
             .lock()
             .ok()
             .and_then(|inspect| inspect.last_payload.clone());
-        // Key presence comes from the secret store in a later task; the view
-        // must still build until that seam is wired.
+        let (api_key_set, api_key_fingerprint) = match self.secrets.get(DIRECTOR_API_KEY) {
+            Ok(Some(key)) => (true, model::key_fingerprint(&key)),
+            Ok(None) | Err(_) => (false, String::new()),
+        };
         SettingsView::from_parts(
             &settings,
             &self.memory_path,
             last_payload,
             self.installed.clone(),
             instances,
-            false,
-            String::new(),
+            api_key_set,
+            api_key_fingerprint,
         )
     }
 
@@ -150,9 +169,16 @@ impl SettingsSession {
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let switching = patch.character.clone();
         let rebind = patch.hide_hotkey.clone();
-        settings.apply(patch);
+        let retarget = patch.director_base_url.is_some()
+            || patch.director_model.is_some()
+            || patch.director_api_key.is_some();
+        settings.apply(patch.clone());
+        write_director_key(self.secrets.as_ref(), &patch)?;
         if let Some(name) = switching {
             let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
+        }
+        if retarget {
+            let _ = self.ops.send(SettingsOp::Retarget);
         }
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
@@ -213,8 +239,7 @@ pub struct SettingsPatch {
     pub director_base_url: Option<String>,
     pub director_model: Option<String>,
     /// Present so callers can write the store; `Settings::apply` ignores it
-    /// because the key is not a file field. Task 4 reads this.
-    #[expect(dead_code)]
+    /// because the key is not a file field.
     pub director_api_key: Option<String>,
 }
 
@@ -414,6 +439,7 @@ pub fn key_code_name(key: char) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secrets::{MemoryStore, SecretStore, DIRECTOR_API_KEY};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -703,6 +729,43 @@ mod tests {
                 .iter()
                 .all(|line| !line.contains("Cat")),
             "Cat must not remain after it was dismissed"
+        );
+    }
+
+    #[test]
+    fn write_director_key_sets_the_store_and_not_the_file() {
+        let store = MemoryStore::new();
+        let patch = SettingsPatch {
+            director_api_key: Some("sk-from-settings".to_string()),
+            ..SettingsPatch::default()
+        };
+        write_director_key(&store, &patch).unwrap();
+        assert_eq!(
+            store.get(DIRECTOR_API_KEY).unwrap().as_deref(),
+            Some("sk-from-settings")
+        );
+    }
+
+    #[test]
+    fn write_director_key_clears_on_empty() {
+        let store = MemoryStore::new();
+        store.set(DIRECTOR_API_KEY, "sk-from-settings").unwrap();
+        let patch = SettingsPatch {
+            director_api_key: Some(String::new()),
+            ..SettingsPatch::default()
+        };
+        write_director_key(&store, &patch).unwrap();
+        assert_eq!(store.get(DIRECTOR_API_KEY).unwrap(), None);
+    }
+
+    #[test]
+    fn write_director_key_none_leaves_the_store() {
+        let store = MemoryStore::new();
+        store.set(DIRECTOR_API_KEY, "sk-from-settings").unwrap();
+        write_director_key(&store, &SettingsPatch::default()).unwrap();
+        assert_eq!(
+            store.get(DIRECTOR_API_KEY).unwrap().as_deref(),
+            Some("sk-from-settings")
         );
     }
 
