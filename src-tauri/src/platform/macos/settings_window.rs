@@ -759,6 +759,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
         window.setTitle(&NSString::from_str("Settings"));
         window.setContentView(Some(&scroll));
         window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
+        retain_after_close(&window);
         window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
         window
     };
@@ -996,4 +997,49 @@ fn pin_right(view: &NSView) {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
+}
+
+/// Apple's default is true. True is the second-open SIGTRAP: we hold a
+/// Retained and raise it on the next tray click.
+fn release_window_when_closed() -> bool {
+    false
+}
+
+fn retain_after_close(window: &NSWindow) {
+    unsafe {
+        window.setReleasedWhenClosed(release_window_when_closed());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_mtm() -> MainThreadMarker {
+        // cargo test is a worker thread. NSObject alloc/init and ivars() do
+        // not need a run loop. NSWindow init does, and raises there.
+        unsafe { MainThreadMarker::new_unchecked() }
+    }
+
+    /// Opening Settings is `new` then `ivars()`. #205 dropped set_ivars;
+    /// that panic was "tried to access uninitialized instance variable".
+    #[test]
+    fn a_new_controller_can_read_its_ivars() {
+        let controller = SettingsController::new(test_mtm());
+        assert!(
+            controller.ivars().session.borrow().is_none(),
+            "ivars must be initialized before build() stores the session"
+        );
+    }
+
+    /// NSWindow cannot be constructed in `cargo test` (off the main thread
+    /// AppKit raises). This is the flag `retain_after_close` writes; leaving
+    /// Apple's default is the SIGTRAP on the second tray Settings.
+    #[test]
+    fn closing_must_keep_the_settings_window() {
+        assert!(
+            !release_window_when_closed(),
+            "the next tray Settings raises this same Retained window"
+        );
+    }
 }
