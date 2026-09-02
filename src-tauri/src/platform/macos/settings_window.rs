@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{define_class, msg_send, msg_send_id, sel, DefinedClass, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSBackingStoreType, NSButton, NSColor,
     NSControlStateValueOff, NSControlStateValueOn, NSFont, NSPopUpButton, NSScrollView,
@@ -172,109 +172,109 @@ define_class!(
                 session.dismiss(index);
             }
         }
-
-        fn do_spawn(&self) {
-            let ivars = self.ivars();
-            let name = ivars
-                .new_name
-                .borrow()
-                .as_ref()
-                .map(|field| field.stringValue().to_string())
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            let character = ivars
-                .new_character
-                .borrow()
-                .as_ref()
-                .and_then(|popup| popup.titleOfSelectedItem())
-                .map(|title| title.to_string())
-                .unwrap_or_default();
-            if name.is_empty() || character.is_empty() {
-                return;
-            }
-            if let Some(session) = ivars.session.borrow().as_ref() {
-                session.spawn(character, name);
-            }
-            if let Some(field) = ivars.new_name.borrow().as_ref() {
-                field.setStringValue(&NSString::from_str(""));
-            }
-        }
-
-        fn do_memory_open(&self) {
-            if let Some(session) = self.ivars().session.borrow().as_ref() {
-                if let Err(why) = session.open_memory() {
-                    eprintln!("settings: {why}");
-                }
-            }
-        }
-
-        fn do_memory_wipe(&self) {
-            let mtm = self.mtm();
-            let alert = NSAlert::new(mtm);
-            alert.setMessageText(&NSString::from_str("Wipe Memory?"));
-            alert.setInformativeText(&NSString::from_str(
-                "A backup is kept beside the file.",
-            ));
-            alert.addButtonWithTitle(&NSString::from_str("Wipe"));
-            alert.addButtonWithTitle(&NSString::from_str("Cancel"));
-            if alert.runModal() != NSAlertFirstButtonReturn {
-                return;
-            }
-            if let Some(session) = self.ivars().session.borrow().as_ref() {
-                if let Err(why) = session.wipe_memory() {
-                    eprintln!("settings: {why}");
-                }
-            }
-        }
-
-        fn do_clear_key(&self) {
-            self.apply(SettingsPatch {
-                director_api_key: Some("".into()),
-                ..SettingsPatch::default()
-            });
-            self.refresh();
-        }
-
-        fn commit_excluded(&self) {
-            let text = self
-                .ivars()
-                .excluded
-                .borrow()
-                .as_ref()
-                .map(|field| field.string().to_string())
-                .unwrap_or_default();
-            let lines: Vec<String> = text.lines().map(|line| line.trim().to_string()).collect();
-            self.apply(SettingsPatch {
-                excluded_applications: Some(lines),
-                ..SettingsPatch::default()
-            });
-        }
-
-        fn apply(&self, patch: SettingsPatch) {
-            if let Some(session) = self.ivars().session.borrow().as_ref() {
-                if let Err(why) = session.apply(patch) {
-                    eprintln!("settings: {why}");
-                    let alert = NSAlert::new(self.mtm());
-                    alert.setMessageText(&NSString::from_str("Could not save settings"));
-                    alert.setInformativeText(&NSString::from_str(&why));
-                    alert.addButtonWithTitle(&NSString::from_str("OK"));
-                    alert.runModal();
-                }
-            }
-        }
     }
 );
 
 impl SettingsController {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let controller: Retained<SettingsController> =
-            unsafe { msg_send_id![mtm.alloc::<SettingsController>(), init] };
+            unsafe { msg_send![mtm.alloc::<SettingsController>(), init] };
         controller
     }
 
     fn mtm(&self) -> MainThreadMarker {
         MainThreadMarker::from(self)
+    }
+
+    fn do_spawn(&self) {
+        let ivars = self.ivars();
+        let name = ivars
+            .new_name
+            .borrow()
+            .as_ref()
+            .map(|field| field.stringValue().to_string())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let character = ivars
+            .new_character
+            .borrow()
+            .as_ref()
+            .and_then(|popup| popup.titleOfSelectedItem())
+            .map(|title| title.to_string())
+            .unwrap_or_default();
+        if name.is_empty() || character.is_empty() {
+            return;
+        }
+        if let Some(session) = ivars.session.borrow().as_ref() {
+            session.spawn(character, name);
+        }
+        if let Some(field) = ivars.new_name.borrow().as_ref() {
+            field.setStringValue(&NSString::from_str(""));
+        }
+    }
+
+    fn do_memory_open(&self) {
+        if let Some(session) = self.ivars().session.borrow().as_ref() {
+            if let Err(why) = session.open_memory() {
+                eprintln!("settings: {why}");
+            }
+        }
+    }
+
+    fn do_memory_wipe(&self) {
+        let mtm = self.mtm();
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str("Wipe Memory?"));
+        alert.setInformativeText(&NSString::from_str(
+            "A backup is kept beside the file.",
+        ));
+        alert.addButtonWithTitle(&NSString::from_str("Wipe"));
+        alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+        if alert.runModal() != NSAlertFirstButtonReturn {
+            return;
+        }
+        if let Some(session) = self.ivars().session.borrow().as_ref() {
+            if let Err(why) = session.wipe_memory() {
+                eprintln!("settings: {why}");
+            }
+        }
+    }
+
+    fn do_clear_key(&self) {
+        self.apply(SettingsPatch {
+            director_api_key: Some("".into()),
+            ..SettingsPatch::default()
+        });
+        self.refresh();
+    }
+
+    fn commit_excluded(&self) {
+        let text = self
+            .ivars()
+            .excluded
+            .borrow()
+            .as_ref()
+            .map(|field| field.string().to_string())
+            .unwrap_or_default();
+        let lines: Vec<String> = text.lines().map(|line| line.trim().to_string()).collect();
+        self.apply(SettingsPatch {
+            excluded_applications: Some(lines),
+            ..SettingsPatch::default()
+        });
+    }
+
+    fn apply(&self, patch: SettingsPatch) {
+        if let Some(session) = self.ivars().session.borrow().as_ref() {
+            if let Err(why) = session.apply(patch) {
+                eprintln!("settings: {why}");
+                let alert = NSAlert::new(self.mtm());
+                alert.setMessageText(&NSString::from_str("Could not save settings"));
+                alert.setInformativeText(&NSString::from_str(&why));
+                alert.addButtonWithTitle(&NSString::from_str("OK"));
+                alert.runModal();
+            }
+        }
     }
 
     fn refresh(&self) {
@@ -806,8 +806,10 @@ fn bind_commit(field: &NSTextField, controller: &SettingsController) {
             let _: () = msg_send![&cell, setSendsActionOnEndEditing: true];
         }
     }
-    field.setTarget(Some(controller));
-    field.setAction(Some(sel!(excludedEnded:)));
+    unsafe {
+        field.setTarget(Some(controller));
+        field.setAction(Some(sel!(excludedEnded:)));
+    }
 }
 
 fn editable_block(controller: &SettingsController, mtm: MainThreadMarker) -> Retained<NSTextView> {
