@@ -14,7 +14,11 @@ path = "src/main.rs"
 tauri-build = {version = "2", features = []}
 
 [dependencies]
-tauri = {version = "2", features = ["macos-private-api"]}
+tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
+# Launch at login. WindowPet's autostart is the same plugin; we own the toggle.
+tauri-plugin-autostart = "2"
+# Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
+tauri-plugin-updater = "2"
 ai-buddy-core = {path = "../crates/core"}
 serde = {version = "1", features = ["derive"]}
 # Character Package art reaches the webview as `data:` URLs; `src/cast.rs` says

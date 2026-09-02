@@ -74,6 +74,7 @@ const HOSTED_MAX_TOKENS: u32 = 80;
 pub struct DirectorInspect {
     pub enabled: bool,
     pub configured: bool,
+    pub ambient_wakes: bool,
     pub wake_secs: u64,
     pub last_payload: Option<String>,
 }
@@ -90,6 +91,8 @@ pub struct DirectorConfig {
     pub wake_every: Duration,
     /// First ambient session wait. `Pace` doubles from here.
     pub ambient_first: Duration,
+    /// Proactive session wakes. Off keeps reactive wakes and Static idle life.
+    pub ambient_allowed: bool,
 }
 
 impl DirectorConfig {
@@ -97,6 +100,7 @@ impl DirectorConfig {
         DirectorInspect {
             enabled: self.enabled,
             configured: self.configured,
+            ambient_wakes: self.ambient_allowed,
             wake_secs: self.ambient_first.as_secs(),
             last_payload: None,
         }
@@ -125,6 +129,7 @@ pub fn config() -> DirectorConfig {
         key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
+        ambient_allowed: true,
     }
 }
 
@@ -962,6 +967,7 @@ mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
+            ambient_allowed: true,
         };
         assert_eq!(startup_lines(&static_only), ["director: StaticDirector"]);
 
@@ -987,6 +993,7 @@ mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Duration::from_secs(45),
+            ambient_allowed: true,
         };
         assert_eq!(
             startup_lines(&model),
@@ -999,6 +1006,7 @@ mod tests {
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
+            ambient_allowed: true,
         };
         assert_eq!(startup_lines(&off), ["director: off; using StaticDirector"]);
     }

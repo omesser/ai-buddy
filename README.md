@@ -24,9 +24,10 @@ Startup stops if no package loads, because a companion with no Character has
 nothing to be. A Director proposes Behaviors: Static weights with nothing
 configured, or an HTTP stand-in if you set a key (see [Running it](#running-it)).
 A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)).
-There is no chat surface and no menu yet: double-clicking is a Summon the
-Engine accepts and nothing answers (#17), and right-clicking does nothing at
-all — the menu it opens is the tray's (#18).
+There is no chat surface yet: double-clicking is a Summon the Engine accepts
+and nothing answers (#17). Right-clicking the sprite and the menu bar icon
+open the same menu: Character, Instances, Director, Do Not Disturb, Go away,
+Memory, Settings, Quit.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
@@ -112,8 +113,8 @@ model_base = 3
 model_power = 1
 ```
 
-Session calls stay quiet while the main display is asleep. #18 will bind these
-in settings.
+Session calls stay quiet while the main display is asleep. Settings can turn
+the Director off, or leave it on and disable ambient wakes.
 
 A 403 from xAI is the server refusing the key, not a bad JSON body (that is
 a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai);
@@ -505,12 +506,13 @@ The last three need a second display, and only a window server can answer them:
     application underneath.
 
 27. **A second buddy already knows what the first was told.** Memory is one
-    file for every Instance —
-    `$TMPDIR/ai-buddy-mcp/memory.md`. Write a fact into it, or have a Harness
-    write one through the MCP server, and it is the same Memory every buddy
-    reads. Dismissing a buddy leaves the file untouched. Nothing in the app
-    reads Memory into the Character Prompt yet, so this is a check on the file
-    being shared rather than on a buddy reciting it.
+    file for every Instance — `memory.md` in ai-buddy's data directory:
+    `~/Library/Application Support/ai-buddy` on macOS, `~/.local/share/ai-buddy`
+    on Linux, `%APPDATA%\ai-buddy` on Windows. Write a fact into it, or have a
+    Harness write one through the MCP server, and it is the same Memory every
+    buddy reads. Dismissing a buddy leaves the file untouched. Nothing in the
+    app reads Memory into the Character Prompt yet, so this is a check on the
+    file being shared rather than on a buddy reciting it.
 
 The sprite starts in the middle of the first display and goes wherever gravity
 and your windows take it from there, or wherever you put it. To watch it fall
@@ -653,7 +655,7 @@ With nothing named you get **BMO**, which is `DEFAULT_CHARACTER` in
 `src-tauri/src/package.rs` rather than whichever package happens to sort first —
 otherwise adding one could silently replace the Character everybody meets. It is
 a preference and not a requirement: if BMO will not load, the search carries on
-behind it. Remembering a Character you chose is settings, which is #18.
+behind it. Settings remembers the Character you chose.
 
 Either way the app prints what it loaded, which is the quickest way to be sure
 you are looking at the Character you meant:
@@ -662,9 +664,8 @@ you are looking at the Character you meant:
 character: BMO from ../characters/bmo
 ```
 
-This is a developer's switch, and the app has no menu to change Character while
-it runs — that is #18. To try a package without installing it, point the search
-somewhere else instead:
+The menu and settings switch Character while the app runs. To try a package
+without installing it, point the search somewhere else instead:
 
 ```sh
 cd src-tauri && AI_BUDDY_CHARACTERS=/path/to/my-packages cargo run
@@ -760,8 +761,14 @@ updater. ai-buddy is a greenfield build rather than a fork, for the reasons in
 [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md).
 
 The overlay here is an independent implementation — no WindowPet source is
-copied into this repository. Should any be lifted later, it is MIT and the
-attribution belongs in this section.
+copied into this repository. The tray, launch-at-login, and updater follow
+WindowPet's shape (a menu bar icon, `tauri-plugin-autostart`,
+`tauri-plugin-updater` checking GitHub Releases) under MIT. The menu those
+entry points open is ours. The updater endpoint is wired; a release that
+ships signed updates must replace the placeholder `pubkey` in
+`src-tauri/tauri.conf.json` with the minisign public key that signed the
+artifacts. Until then the plugin will refuse every update, which is safer
+than installing an unsigned one.
 
 [desktop-homunculus](https://github.com/not-elm/desktop-homunculus) informed the
 MCP-server-as-companion shape considered and rejected in the same ADR.

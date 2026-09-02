@@ -394,6 +394,24 @@ impl Engine {
         self.do_not_disturb
     }
 
+    /// Swap the Character this Engine is playing without moving the sprite.
+    ///
+    /// A switch is a new set of Behaviors and cursor reactions, not a new
+    /// body: dropping the sprite so it can fall as someone else would be a
+    /// teleport the user did not ask for.
+    pub fn retarget(
+        &mut self,
+        behaviors: BTreeMap<String, Behavior>,
+        near: CursorReaction,
+        rush: CursorReaction,
+    ) {
+        self.behaviors = behaviors;
+        self.near_reaction = near;
+        self.rush_reaction = rush;
+        self.playing.clear();
+        self.primitive_ms = 0;
+    }
+
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
 
