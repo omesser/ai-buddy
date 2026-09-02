@@ -253,7 +253,14 @@ define_class!(
 
         fn apply(&self, patch: SettingsPatch) {
             if let Some(session) = self.ivars().session.borrow().as_ref() {
-                session.apply(patch);
+                if let Err(why) = session.apply(patch) {
+                    eprintln!("settings: {why}");
+                    let alert = NSAlert::new(self.mtm());
+                    alert.setMessageText(&NSString::from_str("Could not save settings"));
+                    alert.setInformativeText(&NSString::from_str(&why));
+                    alert.addButtonWithTitle(&NSString::from_str("OK"));
+                    alert.runModal();
+                }
             }
         }
     }
