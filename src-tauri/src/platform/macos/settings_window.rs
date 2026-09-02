@@ -208,9 +208,12 @@ define_class!(
 
 impl SettingsController {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let controller: Retained<SettingsController> =
-            unsafe { msg_send![mtm.alloc::<SettingsController>(), init] };
-        controller
+        let this = Self::alloc(mtm).set_ivars(Ivars::default());
+        // SAFETY: NSObject's init takes no arguments. alloc+init without
+        // set_ivars leaves the drop flag Allocated; the next ivars() panics
+        // ("tried to access uninitialized instance variable"). #205 dropped
+        // this while rewriting the form as data.
+        unsafe { msg_send![super(this), init] }
     }
 
     fn mtm(&self) -> MainThreadMarker {
