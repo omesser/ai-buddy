@@ -7,9 +7,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 use x11rb::connection::Connection;
-use x11rb::protocol::dpms::ConnectionExt as DpmsExt;
-use x11rb::protocol::screensaver::ConnectionExt as SsExt;
-use x11rb::protocol::xproto::{self, Atom, AtomEnum, ConnectionExt, Window};
+use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
 use x11rb::rust_connection::RustConnection;
 
 /// X11 activity source for Linux.
