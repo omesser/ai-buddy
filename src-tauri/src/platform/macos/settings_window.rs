@@ -31,7 +31,6 @@ const TAG_AMBIENT: isize = 2;
 const TAG_DND: isize = 3;
 const TAG_HIDDEN: isize = 4;
 const TAG_FULLSCREEN: isize = 5;
-const TAG_LAUNCH: isize = 6;
 
 thread_local! {
     static CONTROLLER: RefCell<Option<Retained<SettingsController>>> = const { RefCell::new(None) };
@@ -46,10 +45,9 @@ struct Ivars {
     dnd: RefCell<Option<Retained<NSButton>>>,
     hidden: RefCell<Option<Retained<NSButton>>>,
     fullscreen: RefCell<Option<Retained<NSButton>>>,
-    launch: RefCell<Option<Retained<NSButton>>>,
     hotkey: RefCell<Option<Retained<NSTextField>>>,
     excluded: RefCell<Option<Retained<NSTextView>>>,
-    payload: RefCell<Option<Retained<NSTextView>>>,
+    payload: RefCell<Option<Retained<NSTextField>>>,
     memory_path: RefCell<Option<Retained<NSTextField>>>,
     character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
@@ -96,7 +94,6 @@ define_class!(
                 TAG_DND => patch.do_not_disturb = Some(on),
                 TAG_HIDDEN => patch.hidden = Some(on),
                 TAG_FULLSCREEN => patch.hide_in_fullscreen = Some(on),
-                TAG_LAUNCH => patch.launch_at_login = Some(on),
                 _ => return,
             }
             self.apply(patch);
@@ -250,15 +247,14 @@ impl SettingsController {
         fill_checkbox(&self.ivars().dnd, view.do_not_disturb);
         fill_checkbox(&self.ivars().hidden, view.hidden);
         fill_checkbox(&self.ivars().fullscreen, view.hide_in_fullscreen);
-        fill_checkbox(&self.ivars().launch, view.launch_at_login);
         if let Some(field) = self.ivars().hotkey.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.hide_hotkey));
         }
         if let Some(field) = self.ivars().memory_path.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.memory_path));
         }
-        if let Some(text) = self.ivars().payload.borrow().clone() {
-            text.setString(&NSString::from_str(
+        if let Some(field) = self.ivars().payload.borrow().clone() {
+            field.setStringValue(&NSString::from_str(
                 view.last_payload.as_deref().unwrap_or("Nothing sent yet."),
             ));
         }
@@ -423,8 +419,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     cursor.place(&ambient, 22.0);
     cursor.hint("Off keeps Poke and Summon on the session path. Idle life stays Static.");
     cursor.heading("Last Character Prompt");
-    let (payload_scroll, payload) = text_block(false, mtm);
-    cursor.place(&payload_scroll, 120.0);
+    cursor.hint("Inspect only. This is what the last session turn sent.");
+    let payload = inspect_block(mtm);
+    cursor.place(&payload, 88.0);
 
     cursor.heading("Character");
     let character = popup(&controller, sel!(characterPicked:), mtm);
@@ -475,12 +472,16 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     cursor.place(&fullscreen, 22.0);
     let hotkey_label = NSTextField::labelWithString(&NSString::from_str("Hotkey"), mtm);
     cursor.place(&hotkey_label, 18.0);
-    let hotkey = NSTextField::textFieldWithString(&NSString::from_str(""), mtm);
+    // Same chrome as the inspect fields so it does not look like a form box.
+    // It stays editable: this is how the binding is changed.
+    let hotkey = inspect_line(mtm);
+    hotkey.setEditable(true);
     unsafe {
         hotkey.setTarget(Some(&*controller));
         hotkey.setAction(Some(sel!(hotkeyEnded:)));
     }
-    cursor.place(&hotkey, 24.0);
+    cursor.place(&hotkey, 22.0);
+    cursor.hint("Click the binding to type another, like Control-Shift-H.");
 
     cursor.heading("Memory");
     let memory_path = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
@@ -516,13 +517,26 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     cursor.y -= 16.0;
 
     cursor.heading("Excluded applications");
-    cursor.hint("One application name per line. They never enter sensing.");
+    {
+        let label = NSTextField::wrappingLabelWithString(
+            &NSString::from_str(
+                "One application name per line. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.",
+            ),
+            mtm,
+        );
+        label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        cursor.place(&label, 48.0);
+    }
     let (excluded_scroll, excluded) = text_block(true, mtm);
     excluded.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
     cursor.place(&excluded_scroll, 80.0);
 
     cursor.heading("Launch");
-    let launch = checkbox("Launch at login", TAG_LAUNCH, &controller, mtm);
+    // A Launch Agent on `cargo run` is not launch-at-login. There is no
+    // bundled app to start, on any OS.
+    let launch = checkbox("Launch at login (unimplemented)", 0, &controller, mtm);
+    launch.setEnabled(false);
     cursor.place(&launch, 22.0);
 
     *controller.ivars().director.borrow_mut() = Some(director);
@@ -530,7 +544,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().dnd.borrow_mut() = Some(dnd);
     *controller.ivars().hidden.borrow_mut() = Some(hidden);
     *controller.ivars().fullscreen.borrow_mut() = Some(fullscreen);
-    *controller.ivars().launch.borrow_mut() = Some(launch);
     *controller.ivars().hotkey.borrow_mut() = Some(hotkey);
     *controller.ivars().excluded.borrow_mut() = Some(excluded);
     *controller.ivars().payload.borrow_mut() = Some(payload);
@@ -617,6 +630,19 @@ fn popup_plain(mtm: MainThreadMarker) -> Retained<NSPopUpButton> {
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
         false,
     )
+}
+
+/// A value the window shows, not a box you type into.
+fn inspect_line(mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let field = NSTextField::labelWithString(&NSString::from_str(""), mtm);
+    field.setSelectable(true);
+    field
+}
+
+fn inspect_block(mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let field = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
+    field.setSelectable(true);
+    field
 }
 
 fn text_block(

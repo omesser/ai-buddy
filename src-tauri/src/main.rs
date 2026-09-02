@@ -348,19 +348,6 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-fn apply_autostart(app: &tauri::AppHandle, enabled: bool) {
-    use tauri_plugin_autostart::ManagerExt;
-    let manager = app.autolaunch();
-    let result = if enabled {
-        manager.enable()
-    } else {
-        manager.disable()
-    };
-    if let Err(why) = result {
-        eprintln!("autostart: {why}");
-    }
-}
-
 fn open_in_editor(path: &std::path::Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -394,7 +381,6 @@ fn show_settings(app: &tauri::AppHandle) {
         ops: state.ops.clone(),
         app: app.clone(),
         on_rebind: bind_hide_hotkey,
-        on_autostart: apply_autostart,
     };
     if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
         eprintln!("settings: {why}");
@@ -2404,15 +2390,6 @@ fn main() {
             hide_rules.set_away(settings.hidden);
             hide_rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
             let rules = Arc::new(Mutex::new(hide_rules));
-
-            if let Err(why) = app.handle().plugin(tauri_plugin_autostart::init(
-                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-                None,
-            )) {
-                eprintln!("autostart: {why}");
-            } else {
-                apply_autostart(app.handle(), settings.launch_at_login);
-            }
 
             if let Err(why) = app
                 .handle()

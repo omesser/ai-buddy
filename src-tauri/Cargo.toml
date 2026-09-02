@@ -15,7 +15,8 @@ tauri-build = {version = "2", features = []}
 
 [dependencies]
 tauri = {version = "2", features = ["macos-private-api", "tray-icon"]}
-# Launch at login. WindowPet's autostart is the same plugin; we own the toggle.
+# Launch at login, when there is a bundled app to start. The settings row
+# is frozen until then: a Launch Agent on `cargo run` is not the product.
 tauri-plugin-autostart = "2"
 # Signed updates from GitHub Releases. WindowPet's updater shape, our endpoint.
 tauri-plugin-updater = "2"

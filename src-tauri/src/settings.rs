@@ -37,7 +37,6 @@ pub struct SettingsView {
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
     pub hide_hotkey: String,
-    pub launch_at_login: bool,
     pub excluded_applications: Vec<String>,
     pub character: String,
     pub memory_path: String,
@@ -61,7 +60,6 @@ impl SettingsView {
             hidden: settings.hidden,
             hide_in_fullscreen: settings.hide_in_fullscreen,
             hide_hotkey: settings.hide_hotkey.clone(),
-            launch_at_login: settings.launch_at_login,
             excluded_applications: settings.excluded_applications.clone(),
             character: settings.character.clone(),
             memory_path: memory_path.display().to_string(),
@@ -97,7 +95,6 @@ pub struct SettingsSession {
     pub ops: mpsc::Sender<SettingsOp>,
     pub app: AppHandle,
     pub on_rebind: fn(&AppHandle, &str),
-    pub on_autostart: fn(&AppHandle, bool),
 }
 
 impl SettingsSession {
@@ -138,7 +135,6 @@ impl SettingsSession {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
         }
-        (self.on_autostart)(&self.app, settings.launch_at_login);
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
         }
@@ -556,7 +552,6 @@ mod tests {
         assert!(view.hidden);
         assert!(!view.hide_in_fullscreen);
         assert_eq!(view.hide_hotkey, "Control-Shift-H");
-        assert!(view.launch_at_login);
         assert_eq!(view.excluded_text(), "1Password\nKeychain Access");
         assert_eq!(view.character, "nim");
         assert_eq!(view.memory_path, "/tmp/ai-buddy/memory.md");
