@@ -259,6 +259,11 @@ impl SettingsController {
         if let Some(session) = self.ivars().session.borrow().as_ref() {
             if let Err(why) = session.apply(patch) {
                 eprintln!("settings: {why}");
+                let alert = NSAlert::new(self.mtm());
+                alert.setMessageText(&NSString::from_str("Could not save settings"));
+                alert.setInformativeText(&NSString::from_str(&why));
+                alert.addButtonWithTitle(&NSString::from_str("OK"));
+                alert.runModal();
             }
         }
     }
@@ -278,12 +283,7 @@ impl SettingsController {
             // The store is not a value we put back in a password field: that
             // would echo the secret, and an empty commit on blur would wipe it.
             field.setStringValue(&NSString::from_str(""));
-            let placeholder = if view.api_key_set {
-                format!("Set — {}", view.api_key_fingerprint)
-            } else {
-                "Not set".into()
-            };
-            field.setPlaceholderString(Some(&NSString::from_str(&placeholder)));
+            field.setPlaceholderString(Some(&NSString::from_str(&view.api_key_placeholder())));
         }
         if let Some(button) = self.ivars().clear_key.borrow().as_ref() {
             button.setEnabled(view.api_key_set);

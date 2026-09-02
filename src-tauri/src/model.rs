@@ -119,12 +119,23 @@ enum KeyRead {
 ///
 /// `api_key` empty means unset or invalid. `key_invalid` means the winning
 /// source was set but unusable.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DirectorSources {
     pub base_url: String,
     pub model: String,
     pub api_key: String,
     pub key_invalid: bool,
+}
+
+impl std::fmt::Debug for DirectorSources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DirectorSources")
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("api_key", &key_fingerprint(&self.api_key))
+            .field("key_invalid", &self.key_invalid)
+            .finish()
+    }
 }
 
 /// Env first, then persisted settings, then defaults. Does not write env.
@@ -932,6 +943,12 @@ mod tests {
     use super::*;
 
     fn with_env(key: Option<&str>, base: Option<&str>, model: Option<&str>, body: impl FnOnce()) {
+        // Concurrent setenv/getenv is undefined behaviour. These three vars are
+        // process-global and nine tests share them; serialise the mutation.
+        // Recover from poison so one panicking test does not lock the rest out.
+        static ENV: Mutex<()> = Mutex::new(());
+        let _lock = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
         struct Guard {
             key: Option<String>,
             base: Option<String>,
@@ -1031,6 +1048,22 @@ mod tests {
             let _ = resolve("https://api.x.ai", "grok-4.6", Some("sk-stored"));
             assert!(std::env::var("AI_BUDDY_DIRECTOR_API_KEY").is_err());
             assert!(std::env::var("AI_BUDDY_DIRECTOR_BASE_URL").is_err());
+        });
+    }
+
+    #[test]
+    fn director_sources_debug_prints_the_fingerprint_not_the_key() {
+        with_env(None, None, None, || {
+            let sources = resolve("", "", Some("sk-super-secret-key"));
+            let dump = format!("{sources:?}");
+            assert!(
+                !dump.contains("sk-super-secret-key"),
+                "Debug must not echo the key: {dump}"
+            );
+            assert!(
+                dump.contains(&key_fingerprint("sk-super-secret-key")),
+                "Debug should name the fingerprint: {dump}"
+            );
         });
     }
 

@@ -93,6 +93,18 @@ impl SettingsView {
             .map(|row| format!("{} ({})", row.name, row.character))
             .collect()
     }
+
+    /// Secure-field placeholder. A store error is not "Not set": that invites
+    /// a paste over a key that may still be in Keychain.
+    pub fn api_key_placeholder(&self) -> String {
+        if self.api_key_set {
+            format!("Set — {}", self.api_key_fingerprint)
+        } else if self.api_key_fingerprint.is_empty() {
+            "Not set".into()
+        } else {
+            self.api_key_fingerprint.clone()
+        }
+    }
 }
 
 /// Work the settings window asks the frame loop to do.
@@ -144,6 +156,31 @@ fn apply_with_store(
     Ok(())
 }
 
+/// `Some` on the key always retargets: we cannot compare a secret to the
+/// file. URL and model retarget only when the value actually changed —
+/// `commit_endpoint` sends `Some` on every blur, including an unchanged field.
+fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
+    patch.director_api_key.is_some()
+        || patch
+            .director_base_url
+            .as_ref()
+            .is_some_and(|url| url != &settings.director_base_url)
+        || patch
+            .director_model
+            .as_ref()
+            .is_some_and(|model| model != &settings.director_model)
+}
+
+/// Fingerprint "Unavailable" is the third view state: not Unset, not Set.
+/// Clear stays off because `api_key_set` is false.
+fn stored_key_status(store: &dyn SecretStore) -> (bool, String) {
+    match store.get(DIRECTOR_API_KEY) {
+        Ok(Some(key)) => (true, model::key_fingerprint(&key)),
+        Ok(None) => (false, String::new()),
+        Err(_) => (false, "Unavailable".into()),
+    }
+}
+
 /// Everything the native settings window needs to read and write.
 pub struct SettingsSession {
     pub settings: Arc<Mutex<Settings>>,
@@ -176,10 +213,7 @@ impl SettingsSession {
             .lock()
             .ok()
             .and_then(|inspect| inspect.last_payload.clone());
-        let (api_key_set, api_key_fingerprint) = match self.secrets.get(DIRECTOR_API_KEY) {
-            Ok(Some(key)) => (true, model::key_fingerprint(&key)),
-            Ok(None) | Err(_) => (false, String::new()),
-        };
+        let (api_key_set, api_key_fingerprint) = stored_key_status(self.secrets.as_ref());
         SettingsView::from_parts(
             &settings,
             &self.memory_path,
@@ -195,9 +229,7 @@ impl SettingsSession {
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let switching = patch.character.clone();
         let rebind = patch.hide_hotkey.clone();
-        let retarget = patch.director_base_url.is_some()
-            || patch.director_model.is_some()
-            || patch.director_api_key.is_some();
+        let retarget = completer_retargets(&settings, &patch);
         apply_with_store(&mut settings, self.secrets.as_ref(), patch)?;
         if let Some(name) = switching {
             let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
@@ -567,8 +599,43 @@ mod tests {
         assert_eq!(view.director_model, "grok-4.6");
         assert!(view.api_key_set);
         assert_eq!(view.api_key_fingerprint, "len=12 last=key1");
+        assert_eq!(view.api_key_placeholder(), "Set — len=12 last=key1");
         let dump = format!("{view:?}");
         assert!(!dump.contains("sk-"), "{dump}");
+    }
+
+    #[test]
+    fn the_key_placeholder_is_not_set_when_unset() {
+        let view = SettingsView::from_parts(
+            &Settings::default(),
+            Path::new("/tmp/ai-buddy/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            false,
+            String::new(),
+        );
+        assert_eq!(view.api_key_placeholder(), "Not set");
+    }
+
+    #[test]
+    fn the_key_placeholder_is_unavailable_when_the_store_cannot_be_read() {
+        let view = SettingsView::from_parts(
+            &Settings::default(),
+            Path::new("/tmp/ai-buddy/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            false,
+            "Unavailable".into(),
+        );
+        assert!(!view.api_key_set);
+        assert_eq!(view.api_key_placeholder(), "Unavailable");
+        assert_ne!(
+            view.api_key_placeholder(),
+            "Not set",
+            "a locked store must not look like no key"
+        );
     }
 
     #[test]
@@ -824,6 +891,75 @@ mod tests {
             !model::config_from(&unset).configured,
             "precondition: unset remote is Static"
         );
+    }
+
+    #[test]
+    fn a_store_read_error_is_unavailable_not_unset() {
+        let (set, fingerprint) = stored_key_status(&FailingStore);
+        assert!(
+            !set,
+            "Clear must not be offered when the store cannot be read"
+        );
+        assert_eq!(fingerprint, "Unavailable");
+        let (unset, empty) = stored_key_status(&MemoryStore::new());
+        assert!(!unset);
+        assert!(empty.is_empty());
+    }
+
+    fn endpoint_settings() -> Settings {
+        Settings {
+            director_base_url: "https://api.openai.com".into(),
+            director_model: "gpt-4o-mini".into(),
+            ..Settings::default()
+        }
+    }
+
+    #[test]
+    fn tabbing_out_of_an_unchanged_endpoint_does_not_retarget() {
+        let settings = endpoint_settings();
+        let patch = SettingsPatch {
+            director_base_url: Some(settings.director_base_url.clone()),
+            director_model: Some(settings.director_model.clone()),
+            ..SettingsPatch::default()
+        };
+        assert!(
+            !completer_retargets(&settings, &patch),
+            "presence of the same URL and model must not reset session history"
+        );
+    }
+
+    #[test]
+    fn a_changed_base_url_or_model_retargets() {
+        let settings = endpoint_settings();
+        let url = SettingsPatch {
+            director_base_url: Some("https://api.x.ai".into()),
+            director_model: Some(settings.director_model.clone()),
+            ..SettingsPatch::default()
+        };
+        assert!(completer_retargets(&settings, &url));
+        let model = SettingsPatch {
+            director_base_url: Some(settings.director_base_url.clone()),
+            director_model: Some("grok-4.6".into()),
+            ..SettingsPatch::default()
+        };
+        assert!(completer_retargets(&settings, &model));
+    }
+
+    #[test]
+    fn a_key_patch_always_retargets() {
+        let settings = endpoint_settings();
+        let set = SettingsPatch {
+            director_base_url: Some(settings.director_base_url.clone()),
+            director_model: Some(settings.director_model.clone()),
+            director_api_key: Some("sk-new".into()),
+            ..SettingsPatch::default()
+        };
+        assert!(completer_retargets(&settings, &set));
+        let clear = SettingsPatch {
+            director_api_key: Some(String::new()),
+            ..SettingsPatch::default()
+        };
+        assert!(completer_retargets(&settings, &clear));
     }
 
     #[test]

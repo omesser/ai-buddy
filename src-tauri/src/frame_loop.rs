@@ -449,8 +449,8 @@ pub(crate) fn run_frame_loop(
                                     inspect.ambient_wakes = config.ambient_allowed;
                                 }
                                 for live in &mut lives {
-                                    // The old session is the previous Character's. A Wake still on the
-                                    // wire would propose as them; drop it and ask for this opening turn.
+                                    // The Completer changed, not the Character. A Wake still on
+                                    // the wire would propose against the old session; drop it.
                                     model::retarget_model(
                                         &mut live.pending,
                                         &mut live.in_flight,
