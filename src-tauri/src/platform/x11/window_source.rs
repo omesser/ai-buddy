@@ -1,0 +1,271 @@
+//! X11 window geometry from the window manager, consent-free.
+//!
+//! Reads _NET_CLIENT_LIST for the window list, XGetWindowAttributes for geometry,
+//! _NET_FRAME_EXTENTS for decorations, and WM_CLASS for the owner. All EWMH and ICCCM
+//! properties that require no consent, exactly like macOS's CGWindowListCopyWindowInfo.
+
+use std::sync::OnceLock;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
+use x11rb::rust_connection::RustConnection;
+
+use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
+
+/// The X11 window manager's view of the desktop.
+pub struct X11WindowSource {
+    /// Where the usable part of each display comes from, and the Dock's true
+    /// bounds when a panel announces itself via _NET_WM_STRUT_PARTIAL.
+    read_displays: Box<dyn Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync>,
+}
+
+impl X11WindowSource {
+    pub fn new(
+        read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            read_displays: Box::new(read_displays),
+        }
+    }
+}
+
+impl WindowSource for X11WindowSource {
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            window_geometry: true,
+            absolute_positioning: true,
+        }
+    }
+
+    fn read(&self) -> WorldGeometry {
+        let (usable_frames, dock) = (self.read_displays)();
+        WorldGeometry {
+            usable_frames,
+            windows: visible_windows(),
+            dock,
+        }
+    }
+}
+
+/// Visible windows, frontmost first.
+///
+/// Reads _NET_CLIENT_LIST_STACKING from the root window and reverses it:
+/// X11 stacks bottom-to-top, the Engine wants frontmost first.
+fn visible_windows() -> Vec<WindowRect> {
+    let Some(conn) = x11_connection() else {
+        return Vec::new();
+    };
+    let screen = &conn.setup().roots[0];
+    let root = screen.root;
+
+    let Some(windows) = window_list_stacking(conn, root) else {
+        return Vec::new();
+    };
+
+    windows
+        .into_iter()
+        .rev()
+        .filter_map(|w| window_rect(conn, w))
+        .collect()
+}
+
+/// Get a cached X11 connection for the process lifetime.
+fn x11_connection() -> Option<&'static RustConnection> {
+    static CONN: OnceLock<Option<RustConnection>> = OnceLock::new();
+    CONN.get_or_init(|| RustConnection::connect(None).ok().map(|(conn, _)| conn))
+        .as_ref()
+}
+
+/// Read _NET_CLIENT_LIST_STACKING: windows in stacking order, bottom to top.
+fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
+    let stacking_atom = intern_atom(conn, "_NET_CLIENT_LIST_STACKING").ok()?;
+    let reply = xproto::get_property(
+        conn,
+        false,
+        root,
+        stacking_atom,
+        AtomEnum::WINDOW,
+        0,
+        u32::MAX,
+    )
+    .ok()?
+    .reply()
+    .ok()?;
+
+    if reply.format != 32 || reply.value.len() % 4 != 0 {
+        return None;
+    }
+
+    Some(
+        reply
+            .value
+            .chunks_exact(4)
+            .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect(),
+    )
+}
+
+/// Read one window's geometry, owner, and layer, or None if it should be skipped.
+fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
+    if !is_normal_window(conn, window) {
+        return None;
+    }
+
+    let geom = xproto::get_geometry(conn, window).ok()?.reply().ok()?;
+    let translated = xproto::translate_coordinates(conn, window, geom.root, 0, 0)
+        .ok()?
+        .reply()
+        .ok()?;
+
+    let (x, y, width, height) = frame_geometry(
+        conn,
+        window,
+        translated.dst_x,
+        translated.dst_y,
+        geom.width,
+        geom.height,
+    );
+
+    let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
+
+    Some(WindowRect {
+        id: u64::from(window),
+        bounds: Rect {
+            x: f64::from(x),
+            y: f64::from(y),
+            width: f64::from(width),
+            height: f64::from(height),
+        },
+        owner,
+        layer: 0,
+    })
+}
+
+/// Check if a window is a normal application window via _NET_WM_WINDOW_TYPE.
+fn is_normal_window(conn: &RustConnection, window: Window) -> bool {
+    let Ok(type_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE") else {
+        return false;
+    };
+    let Ok(normal_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE_NORMAL") else {
+        return false;
+    };
+
+    let reply = match xproto::get_property(conn, false, window, type_atom, AtomEnum::ATOM, 0, 32)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+    {
+        Some(r) => r,
+        None => return true,
+    };
+
+    if reply.value.is_empty() {
+        return true;
+    }
+
+    if reply.format != 32 {
+        return false;
+    }
+
+    reply
+        .value
+        .chunks_exact(4)
+        .any(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == normal_atom)
+}
+
+/// Read _NET_FRAME_EXTENTS and adjust geometry to include window decorations.
+fn frame_geometry(
+    conn: &RustConnection,
+    window: Window,
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+) -> (i16, i16, u16, u16) {
+    let Ok(extents_atom) = intern_atom(conn, "_NET_FRAME_EXTENTS") else {
+        return (x, y, width, height);
+    };
+
+    let reply =
+        match xproto::get_property(conn, false, window, extents_atom, AtomEnum::CARDINAL, 0, 4)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+        {
+            Some(r) => r,
+            None => return (x, y, width, height),
+        };
+
+    if reply.format != 32 || reply.value.len() != 16 {
+        return (x, y, width, height);
+    }
+
+    let left = i32::from_ne_bytes([
+        reply.value[0],
+        reply.value[1],
+        reply.value[2],
+        reply.value[3],
+    ]);
+    let right = i32::from_ne_bytes([
+        reply.value[4],
+        reply.value[5],
+        reply.value[6],
+        reply.value[7],
+    ]);
+    let top = i32::from_ne_bytes([
+        reply.value[8],
+        reply.value[9],
+        reply.value[10],
+        reply.value[11],
+    ]);
+    let bottom = i32::from_ne_bytes([
+        reply.value[12],
+        reply.value[13],
+        reply.value[14],
+        reply.value[15],
+    ]);
+
+    (
+        x - left as i16,
+        y - top as i16,
+        (i32::from(width) + left + right) as u16,
+        (i32::from(height) + top + bottom) as u16,
+    )
+}
+
+/// Read WM_CLASS to get the window's application name.
+fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
+    let reply = xproto::get_property(
+        conn,
+        false,
+        window,
+        AtomEnum::WM_CLASS,
+        AtomEnum::STRING,
+        0,
+        1024,
+    )
+    .ok()?
+    .reply()
+    .ok()?;
+
+    if reply.format != 8 {
+        return None;
+    }
+
+    let value = reply.value;
+    String::from_utf8(value.clone())
+        .ok()
+        .and_then(|s| s.split('\0').nth(1).map(|c| c.to_string()))
+        .or_else(|| {
+            String::from_utf8_lossy(&value)
+                .split('\0')
+                .next()
+                .map(|s| s.to_string())
+        })
+}
+
+/// Intern an atom, reusing it if it already exists.
+fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
+    xproto::intern_atom(conn, false, name.as_bytes())
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .map(|reply| reply.atom)
+        .ok_or(())
+}
