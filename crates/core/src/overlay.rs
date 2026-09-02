@@ -517,6 +517,31 @@ mod tests {
         );
     }
 
+    /// #163 with #178: several Instances are several bubbles. Ownership is a
+    /// function of one Instance's feet, so two characters standing on two
+    /// displays each own a bubble on their own display at the same time —
+    /// the case a fix aimed at "only one bubble" could wrongly suppress.
+    #[test]
+    fn each_instance_owns_a_bubble_on_the_display_it_stands_on() {
+        let displays = two_displays();
+
+        let first = bubble_owner((960.0, 1000.0), &displays);
+        let second = bubble_owner((2600.0, 1000.0), &displays);
+
+        assert_eq!(first, Some(0));
+        assert_eq!(second, Some(1));
+        assert_ne!(
+            first, second,
+            "two characters on two displays are two bubbles, not one"
+        );
+
+        assert_eq!(
+            bubble_owner((100.0, 1000.0), &displays),
+            first,
+            "and two characters on the same display share that display's overlay"
+        );
+    }
+
     #[test]
     fn a_point_on_a_display_belongs_to_that_display() {
         let displays = two_displays();
