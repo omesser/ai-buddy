@@ -1,5 +1,3 @@
-//! Character Prompt and later-turn follow-up.
-
 use super::{Context, Happened, State};
 
 /// The opening turn: who this is, what it may propose, and this moment.
