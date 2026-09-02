@@ -1870,6 +1870,7 @@ fn run_frame_loop(
             // and drop the sprite in the user's hand.
             let holding = lives.iter().any(|live| live.pointer.grabbing());
             let ignore = !(presence.visible && (over_sprite || holding));
+            let mut flipped = false;
 
             for (index, display) in displays.frames.iter().enumerate() {
                 let label = overlay_label(index);
@@ -1922,8 +1923,10 @@ fn run_frame_loop(
                 // one display is never swallowed by a sprite on another.
                 let ignore = ignore || on_overlay != Some(index);
 
-                // On X11, use per-pixel click-through via XShapeCombineMask when not ignoring.
-                // On other platforms, fall back to boolean set_ignore_cursor_events.
+                // On X11, use per-pixel click-through via XShapeCombineMask.
+                // XShape carves the input region, but Tauri must also receive events.
+                // Set ignore-cursor-events false when applying a mask so opaque pixels
+                // reach the webview for Poke.
                 #[cfg(all(unix, not(target_os = "macos")))]
                 {
                     if !ignore && presence.visible {
@@ -1946,13 +1949,32 @@ fn run_frame_loop(
                                 local.y,
                                 instance.sprite.scale,
                             );
+                            // Tauri must receive events for opaque pixels to Poke
+                            if ignoring[index] != Some(false) {
+                                flipped = true;
+                                if window.set_ignore_cursor_events(false).is_ok() {
+                                    ignoring[index] = Some(false);
+                                }
+                            }
                         } else {
                             // No sprite on this overlay, make it fully click-through
                             let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                            if ignoring[index] != Some(true) {
+                                flipped = true;
+                                if window.set_ignore_cursor_events(true).is_ok() {
+                                    ignoring[index] = Some(true);
+                                }
+                            }
                         }
                     } else {
                         // Ignoring or invisible: make the whole window click-through
                         let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                        if ignoring[index] != Some(true) {
+                            flipped = true;
+                            if window.set_ignore_cursor_events(true).is_ok() {
+                                ignoring[index] = Some(true);
+                            }
+                        }
                     }
                 }
 
@@ -1973,42 +1995,20 @@ fn run_frame_loop(
             }
 
             ticks = ticks.wrapping_add(1);
-            // On X11, input region changes don't generate a flipped event, so trace less frequently
-            #[cfg(all(unix, not(target_os = "macos")))]
-            {
-                if tracing && ticks % 120 == 0 {
-                    eprintln!(
-                        "hit-test: cursor({:.0},{:.0}) scale {:.1} -> point({},{}) \
-                         on overlay {} {} click-through {}",
-                        cursor.x,
-                        cursor.y,
-                        cursor_scale,
-                        cursor_at.0,
-                        cursor_at.1,
-                        on_overlay.map_or(-1, |index| index as i32),
-                        if over_sprite { "HIT " } else { "miss" },
-                        if ignore { "on" } else { "OFF" },
-                    );
-                }
-            }
-
-            // On macOS and other platforms, trace on flip
-            #[cfg(not(all(unix, not(target_os = "macos"))))]
-            {
-                if tracing && ticks % 120 == 0 {
-                    eprintln!(
-                        "hit-test: cursor({:.0},{:.0}) scale {:.1} -> point({},{}) \
-                         on overlay {} {} click-through {}",
-                        cursor.x,
-                        cursor.y,
-                        cursor_scale,
-                        cursor_at.0,
-                        cursor_at.1,
-                        on_overlay.map_or(-1, |index| index as i32),
-                        if over_sprite { "HIT " } else { "miss" },
-                        if ignore { "on" } else { "OFF" },
-                    );
-                }
+            if tracing && (flipped || ticks % 120 == 0) {
+                eprintln!(
+                    "hit-test: cursor({:.0},{:.0}) scale {:.1} -> point({},{}) \
+                     on overlay {} {} click-through {}{}",
+                    cursor.x,
+                    cursor.y,
+                    cursor_scale,
+                    cursor_at.0,
+                    cursor_at.1,
+                    on_overlay.map_or(-1, |index| index as i32),
+                    if over_sprite { "HIT " } else { "miss" },
+                    if ignore { "on" } else { "OFF" },
+                    if flipped { "  <- flipped" } else { "" },
+                );
             }
         }
     });
