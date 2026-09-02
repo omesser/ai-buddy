@@ -1245,6 +1245,8 @@ pub(crate) fn run_frame_loop(
                                 instance.sprite.scale,
                             );
 
+                            // last_mask exists so an unchanged sprite does not rebuild
+                            // the pixmap every 16ms.
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params)
                                 && !mask_in_flight
                                     .lock()

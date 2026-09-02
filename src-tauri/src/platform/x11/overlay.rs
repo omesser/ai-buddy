@@ -200,7 +200,7 @@ fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> 
     Ok(())
 }
 
-/// `_NET_WM_STATE_ABOVE`, skip-taskbar, skip-pager. The overlay is furniture.
+/// Stay above other windows, and out of the taskbar and pager.
 fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     let net_wm_state = intern_atom(conn, "_NET_WM_STATE")?;
     let above = intern_atom(conn, "_NET_WM_STATE_ABOVE")?;

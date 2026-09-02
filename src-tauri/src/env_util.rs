@@ -1,4 +1,4 @@
-/// On only when the var is `1`. Unset and any other value are off.
+/// Only the character `1` is on. `true`, `yes`, and `on` are off.
 pub fn env_flag_is_on(name: &str) -> bool {
     std::env::var(name).ok().as_deref() == Some("1")
 }

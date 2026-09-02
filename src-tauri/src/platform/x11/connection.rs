@@ -11,7 +11,7 @@
 use std::sync::OnceLock;
 use x11rb::rust_connection::RustConnection;
 
-/// None if `DISPLAY` is unset or the open fails.
+/// Cached for the process. None if `DISPLAY` is unset or the open fails.
 pub fn connection() -> Option<&'static RustConnection> {
     static CONN: OnceLock<Option<RustConnection>> = OnceLock::new();
     CONN.get_or_init(|| RustConnection::connect(None).ok().map(|(conn, _)| conn))

@@ -495,7 +495,7 @@ impl Engine {
             _ => 0,
         };
 
-        // A Grab or Poke is the user's hand; chase yields the way walk does (#153).
+        // Any Verb aborts Chase, the way a Verb aborts Walk (#153).
         if !snapshot.verbs.is_empty() && self.on_screen() == Some(Primitive::Chase) {
             self.playing.clear();
             self.primitive_ms = 0;
@@ -593,7 +593,6 @@ impl Engine {
             let velocity_magnitude = self.cursor_velocity.x.hypot(self.cursor_velocity.y);
             // Speed while already Near is the whole test; direction is not
             // measured, so a flick past startles the same as a flick at it.
-            // The 1.2× slack never fails inside `cursor_near`.
             let toward = cursor_distance < NEAR_RADIUS * 1.2 && velocity_magnitude > RUSH_VELOCITY;
             if toward {
                 self.rush_reported = true;

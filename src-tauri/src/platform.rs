@@ -305,8 +305,8 @@ impl ActivitySource for LinuxActivitySource {
 }
 
 /// A platform that reports nothing never fires a triggered Behavior, which
-/// leaves the untriggered ones — a life, if a duller one. The same supported
-/// degradation as the missing window geometry.
+/// leaves the untriggered ones. The same supported degradation as the missing
+/// window geometry.
 #[cfg(not(unix))]
 pub fn activity_source() -> impl ActivitySource {
     ai_buddy_core::sensing::StubActivitySource
