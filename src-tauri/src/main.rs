@@ -965,14 +965,16 @@ fn run_frame_loop(
 
         // Track whether each overlay's EWMH configuration (floating, skip taskbar)
         // succeeded. Retried on each frame until successful. GTK may not have a
-        // window handle immediately after show().
-        let mut configured: Vec<bool> = vec![false; covered.len()];
+        // window handle immediately after show(). Shared with main thread so
+        // configure_overlay can report success.
+        let configured = Arc::new(Mutex::new(vec![false; covered.len()]));
 
         // Track whether each overlay's XShape input mask has successfully applied.
         // On Linux/GTK, update_input_region needs the main thread AND a realized
         // window. Do not set ignore_cursor_events(false) until the mask succeeds,
-        // or the entire overlay becomes a click-eater.
-        let mut mask_applied: Vec<bool> = vec![false; covered.len()];
+        // or the entire overlay becomes a click-eater. Shared with main thread so
+        // update_input_region can report success.
+        let mask_applied = Arc::new(Mutex::new(vec![false; covered.len()]));
 
         // Cache last applied mask parameters to avoid rebuilding the X pixmap
         // every 16ms. Only update XShape when mask data or position changes.
@@ -1022,8 +1024,14 @@ fn run_frame_loop(
 
             // One flag per overlay, and the desktop can gain or lose one.
             ignoring.resize(displays.frames.len(), None);
-            configured.resize(displays.frames.len(), false);
-            mask_applied.resize(displays.frames.len(), false);
+            configured
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), false);
+            mask_applied
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), false);
             #[cfg(all(unix, not(target_os = "macos")))]
             last_mask.resize(displays.frames.len(), (None, 0, 0, 1));
 
@@ -1912,25 +1920,35 @@ fn run_frame_loop(
                 // Retry EWMH configuration if it hasn't succeeded yet. GTK needs
                 // the window realized (shown and ticked) before window_handle works,
                 // AND window_handle() must be called from the GTK main thread.
-                if !configured.get(index).copied().unwrap_or(false) {
+                if !configured
+                    .lock()
+                    .unwrap()
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false)
+                {
                     let handle = app.clone();
                     let label_clone = label.clone();
+                    let configured_clone = Arc::clone(&configured);
+                    let overlay_index = index;
                     let _ = app.run_on_main_thread(move || {
                         if let Some(window) = handle.get_webview_window(&label_clone) {
-                            if let Err(e) = platform::configure_overlay(&window) {
-                                // Log first failure for diagnostics
-                                static LOGGED: std::sync::atomic::AtomicBool =
-                                    std::sync::atomic::AtomicBool::new(false);
-                                if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                                    eprintln!("overlay: {label_clone} EWMH config failed: {e}");
+                            match platform::configure_overlay(&window) {
+                                Ok(()) => {
+                                    configured_clone.lock().unwrap()[overlay_index] = true;
+                                    eprintln!("overlay: {label_clone} EWMH configured");
                                 }
-                            } else {
-                                eprintln!("overlay: {label_clone} EWMH configured");
+                                Err(e) => {
+                                    // Log first failure for diagnostics
+                                    static LOGGED: std::sync::atomic::AtomicBool =
+                                        std::sync::atomic::AtomicBool::new(false);
+                                    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                                        eprintln!("overlay: {label_clone} EWMH config failed: {e}");
+                                    }
+                                }
                             }
                         }
                     });
-                    // Mark as attempted; success will be visible on next frame's retry
-                    configured[index] = true;
                 }
 
                 // Every overlay is told about every Instance, including the ones
@@ -2001,8 +2019,13 @@ fn run_frame_loop(
                             let local = instance.sprite.in_overlay(*display);
                             // Cache mask parameters to avoid rebuilding pixmap every 16ms
                             let (_width, _height, opaque) = instance.mask.raw();
-                            let mask_params = (Some(opaque.to_vec()), local.x, local.y, instance.sprite.scale);
-                            
+                            let mask_params = (
+                                Some(opaque.to_vec()),
+                                local.x,
+                                local.y,
+                                instance.sprite.scale,
+                            );
+
                             // Only update XShape if mask parameters changed
                             if last_mask.get(index) != Some(&mask_params) {
                                 let handle = app.clone();
@@ -2011,32 +2034,47 @@ fn run_frame_loop(
                                 let sprite_x = local.x;
                                 let sprite_y = local.y;
                                 let sprite_scale = instance.sprite.scale;
-                                
+                                let mask_applied_clone = Arc::clone(&mask_applied);
+                                let overlay_index = index;
+
                                 let _ = app.run_on_main_thread(move || {
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        if let Err(e) = platform::update_input_region(
+                                        match platform::update_input_region(
                                             &window,
                                             Some(&mask_clone),
                                             sprite_x,
                                             sprite_y,
                                             sprite_scale,
                                         ) {
-                                            // Log first failure for diagnostics
-                                            static LOGGED: std::sync::atomic::AtomicBool =
-                                                std::sync::atomic::AtomicBool::new(false);
-                                            if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                                                eprintln!("overlay: {label_clone} update_input_region failed: {e}");
+                                            Ok(()) => {
+                                                mask_applied_clone.lock().unwrap()[overlay_index] =
+                                                    true;
+                                            }
+                                            Err(e) => {
+                                                // Log first failure for diagnostics
+                                                static LOGGED: std::sync::atomic::AtomicBool =
+                                                    std::sync::atomic::AtomicBool::new(false);
+                                                if !LOGGED
+                                                    .swap(true, std::sync::atomic::Ordering::Relaxed)
+                                                {
+                                                    eprintln!("overlay: {label_clone} update_input_region failed: {e}");
+                                                }
                                             }
                                         }
                                     }
                                 });
                                 last_mask[index] = mask_params;
-                                // Mark as applied; assume success for now
-                                mask_applied[index] = true;
                             }
-                            
+
                             // Only set ignore=false after mask has been applied at least once
-                            if mask_applied[index] && ignoring[index] != Some(false) {
+                            if mask_applied
+                                .lock()
+                                .unwrap()
+                                .get(index)
+                                .copied()
+                                .unwrap_or(false)
+                                && ignoring[index] != Some(false)
+                            {
                                 flipped = true;
                                 if window.set_ignore_cursor_events(false).is_ok() {
                                     ignoring[index] = Some(false);
@@ -2045,19 +2083,20 @@ fn run_frame_loop(
                         } else {
                             // No sprite on this overlay, make it fully click-through
                             let mask_params = (None, 0, 0, 1);
-                            
+
                             if last_mask.get(index) != Some(&mask_params) {
                                 let handle = app.clone();
                                 let label_clone = label.clone();
-                                
+
                                 let _ = app.run_on_main_thread(move || {
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                                        let _ =
+                                            platform::update_input_region(&window, None, 0, 0, 1);
                                     }
                                 });
                                 last_mask[index] = mask_params;
                             }
-                            
+
                             if ignoring[index] != Some(true) {
                                 flipped = true;
                                 if window.set_ignore_cursor_events(true).is_ok() {
@@ -2068,11 +2107,11 @@ fn run_frame_loop(
                     } else {
                         // Ignoring or invisible: make the whole window click-through
                         let mask_params = (None, 0, 0, 1);
-                        
+
                         if last_mask.get(index) != Some(&mask_params) {
                             let handle = app.clone();
                             let label_clone = label.clone();
-                            
+
                             let _ = app.run_on_main_thread(move || {
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
                                     let _ = platform::update_input_region(&window, None, 0, 0, 1);
@@ -2080,7 +2119,7 @@ fn run_frame_loop(
                             });
                             last_mask[index] = mask_params;
                         }
-                        
+
                         if ignoring[index] != Some(true) {
                             flipped = true;
                             if window.set_ignore_cursor_events(true).is_ok() {
