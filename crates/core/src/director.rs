@@ -23,6 +23,9 @@ use crate::character::{Behavior, Trigger, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWE
 use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
+mod prompt;
+pub use prompt::{character_prompt, follow_up};
+
 /// How long the Static Director goes unwoken when nothing notable happens.
 ///
 /// A tuning knob. Long enough that the sprite is not constantly interrupting
@@ -300,98 +303,6 @@ pub fn session_due(
     addressed || (ambient_allowed && since_ambient >= pace.wait())
 }
 
-/// The opening turn: who this is, what it may propose, and this moment.
-///
-/// Later wakes send `follow_up` only. The Completer holds the conversation
-/// so the Personality Prompt is not paid for again.
-pub fn character_prompt(
-    context: &Context,
-    behaviors: impl IntoIterator<Item = impl AsRef<str>>,
-) -> String {
-    let names: Vec<String> = behaviors
-        .into_iter()
-        .map(|name| name.as_ref().to_string())
-        .collect();
-    let declared = if names.is_empty() {
-        "(none)".to_string()
-    } else {
-        names.join(", ")
-    };
-    let personality = if context.personality.is_empty() {
-        "(no personality)"
-    } else {
-        context.personality.as_str()
-    };
-
-    // The universal voice rules, written once for every Character rather
-    // than copied into personality files to drift (#156). A personality
-    // supplies the material; this paragraph governs the delivery.
-    format!(
-        "{personality}\n\
-         \n\
-         You may propose one of these behaviors: {declared}\n\
-         \n\
-         Reply with the behavior name on the first line.\n\
-         An optional spoken line may follow on the next line.\n\
-         Propose nothing else.\n\
-         \n\
-         Speak in this character's voice, always in character: never mention \
-         being a model or an assistant. A spoken line fits a small speech \
-         bubble: five short sentences at the most. Vary: prefer a line you \
-         have not used yet, though a signature phrase may recur, and \
-         lean away from the behaviors listed as recently played. Dialogue is \
-         demeanour, never capability: never promise an action on the machine \
-         or claim an ability.\n\
-         \n\
-         {}",
-        follow_up(context)
-    )
-}
-
-/// A later turn in the same session. No Personality Prompt, no roster.
-pub fn follow_up(context: &Context) -> String {
-    let recent = if context.recent.is_empty() {
-        "(none)".to_string()
-    } else {
-        context.recent.join(", ")
-    };
-    let clock = format_clock(context.activity.hour, context.activity.minute);
-    let happened = match context.happened {
-        Happened::Poke => "poked",
-        Happened::Throw => "thrown",
-        Happened::Summon => "summoned",
-        Happened::Grab => "picked up",
-        Happened::Perch => "placed on a perch",
-        Happened::Ambient => "time passed",
-    };
-    let state = match context.state {
-        State::Grounded => "idle",
-        State::Falling => "falling",
-        State::Dragged => "held",
-        State::Perched => "perched",
-        State::Climbing => "climbing",
-        State::Asleep => "asleep",
-    };
-    let open = match context.activity.frontmost_application.as_deref() {
-        Some(name) if !name.is_empty() => format!("{name} is the frontmost window"),
-        _ => "nothing is frontmost".to_string(),
-    };
-
-    format!(
-        "what just happened: {happened}\n\
-         recent: {recent}\n\
-         time: {clock}\n\
-         state: {state}\n\
-         standing on: {standing}\n\
-         open: {open}\n",
-        standing = if context.standing.is_empty() {
-            "nothing"
-        } else {
-            context.standing.as_str()
-        },
-    )
-}
-
 /// The reply was not a Behavior name. Fall back instead of guessing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseError;
@@ -427,10 +338,6 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
 fn identifier(name: &str) -> bool {
     name.chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
-fn format_clock(hour: u8, minute: u8) -> String {
-    format!("{hour:02}:{minute:02}")
 }
 
 /// Weighted selection over a Character's declared Behaviors. No model, no
