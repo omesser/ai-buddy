@@ -59,6 +59,7 @@ impl AiBuddyServer {
                 &ai_buddy_core::memory::data_dir().join("settings.json"),
             ),
             roster: &[],
+            expression: None,
         }
     }
 }
@@ -66,11 +67,15 @@ impl AiBuddyServer {
 #[derive(Serialize, Deserialize, JsonSchema)]
 struct SpeakArgs {
     message: String,
+    #[serde(default)]
+    instance_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 struct PlayBehaviorArgs {
     behavior: String,
+    #[serde(default)]
+    instance_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -83,9 +88,9 @@ struct RememberArgs {
 impl AiBuddyServer {
     #[tool(description = "Make the Character speak a line of dialogue")]
     async fn speak(&self, Parameters(args): Parameters<SpeakArgs>) -> Result<String, String> {
-        let context = self.make_context();
+        let mut context = self.make_context();
         let args_json = serde_json::to_value(&args).map_err(|e| e.to_string())?;
-        let result = dispatch("speak", args_json, &context).map_err(|e| e.message)?;
+        let result = dispatch("speak", args_json, &mut context).map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
@@ -94,48 +99,49 @@ impl AiBuddyServer {
         &self,
         Parameters(args): Parameters<PlayBehaviorArgs>,
     ) -> Result<String, String> {
-        let context = self.make_context();
+        let mut context = self.make_context();
         let args_json = serde_json::to_value(&args).map_err(|e| e.to_string())?;
-        let result = dispatch("play_behavior", args_json, &context).map_err(|e| e.message)?;
+        let result = dispatch("play_behavior", args_json, &mut context).map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
     #[tool(description = "List visible windows with bounds and owning application")]
     async fn list_windows(&self) -> Result<String, String> {
-        let context = self.make_context();
+        let mut context = self.make_context();
         let result =
-            dispatch("list_windows", serde_json::json!({}), &context).map_err(|e| e.message)?;
+            dispatch("list_windows", serde_json::json!({}), &mut context).map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
     #[tool(description = "Describe what is on screen (v1: window metadata only)")]
     async fn describe_screen(&self) -> Result<String, String> {
-        let context = self.make_context();
-        let result =
-            dispatch("describe_screen", serde_json::json!({}), &context).map_err(|e| e.message)?;
+        let mut context = self.make_context();
+        let result = dispatch("describe_screen", serde_json::json!({}), &mut context)
+            .map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
     #[tool(description = "Recall everything Memory holds")]
     async fn recall(&self) -> Result<String, String> {
-        let context = self.make_context();
-        let result = dispatch("recall", serde_json::json!({}), &context).map_err(|e| e.message)?;
+        let mut context = self.make_context();
+        let result =
+            dispatch("recall", serde_json::json!({}), &mut context).map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
     #[tool(description = "Remember one fact under a heading")]
     async fn remember(&self, Parameters(args): Parameters<RememberArgs>) -> Result<String, String> {
-        let context = self.make_context();
+        let mut context = self.make_context();
         let args_json = serde_json::to_value(&args).map_err(|e| e.to_string())?;
-        let result = dispatch("remember", args_json, &context).map_err(|e| e.message)?;
+        let result = dispatch("remember", args_json, &mut context).map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 
     #[tool(description = "List Character Instances and their names")]
     async fn list_instances(&self) -> Result<String, String> {
-        let context = self.make_context();
-        let result =
-            dispatch("list_instances", serde_json::json!({}), &context).map_err(|e| e.message)?;
+        let mut context = self.make_context();
+        let result = dispatch("list_instances", serde_json::json!({}), &mut context)
+            .map_err(|e| e.message)?;
         serde_json::to_string(&result).map_err(|e| e.to_string())
     }
 }
