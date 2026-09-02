@@ -139,25 +139,50 @@ impl<C: Completer> ModelDirector<C> {
                 // even if this reply failed to parse.
                 self.opened.store(true, Ordering::SeqCst);
                 match parse_proposal(&reply) {
-                    Ok(proposal) if self.knows(&proposal.behavior) => Wake::Proposed(proposal),
-                    Ok(proposal) if proposal.behavior.eq_ignore_ascii_case("say") => {
-                        Wake::Proposed(BehaviorProposal {
-                            behavior: String::new(),
-                            dialogue: proposal.dialogue.or(Some(proposal.behavior)),
-                        })
-                    }
-                    _ => match as_speech(&reply) {
-                        Some(said) => Wake::Proposed(said),
-                        None => Wake::Failed,
+                    // The declared spelling, not the model's: a name written
+                    // at the start of a line comes back capitalised, and the
+                    // Engine looks a Behavior up by the name its Character
+                    // declared (#231).
+                    Ok(proposal) => match self.declared(&proposal.behavior) {
+                        Some(behavior) => Wake::Proposed(BehaviorProposal {
+                            behavior,
+                            dialogue: proposal.dialogue,
+                        }),
+                        None if proposal.behavior.eq_ignore_ascii_case("say") => {
+                            Wake::Proposed(BehaviorProposal {
+                                behavior: String::new(),
+                                dialogue: proposal.dialogue.or(Some(proposal.behavior)),
+                            })
+                        }
+                        None => spoken_or_failed(&reply),
                     },
+                    Err(_) => spoken_or_failed(&reply),
                 }
             }
             Err(_) => Wake::Failed,
         }
     }
 
-    fn knows(&self, name: &str) -> bool {
-        self.behaviors.iter().any(|declared| declared == name)
+    /// The Character's own spelling of `name`, when it declared one.
+    ///
+    /// Compared without case because that is the only way the two ever
+    /// differ in practice, and because `say` beside it is already matched
+    /// that way. A name nobody declared stays unknown, so loosening the
+    /// comparison never invents a Behavior (#231).
+    fn declared(&self, name: &str) -> Option<String> {
+        self.behaviors
+            .iter()
+            .find(|declared| declared.eq_ignore_ascii_case(name))
+            .cloned()
+    }
+}
+
+/// A reply that named no Behavior: speech when there are words, else a
+/// failed turn for `StaticDirector` to take.
+fn spoken_or_failed(reply: &str) -> Wake {
+    match as_speech(reply) {
+        Some(said) => Wake::Proposed(said),
+        None => Wake::Failed,
     }
 }
 
@@ -990,6 +1015,47 @@ mod tests {
                 assert_eq!(proposal.dialogue.as_deref(), Some("hey"));
             }
             other => panic!("the reply was a proposal, not {other:?}"),
+        }
+    }
+
+    /// #231: a model writes the Behavior name at the start of a line, so it
+    /// capitalises it — every local model measured in #175 answered `Prowl`
+    /// where the manifest declares `prowl`. Matching exactly threw those
+    /// replies away and spoke them instead, so the buddy talked and never
+    /// acted. `say` two arms below was already compared case-insensitively;
+    /// this is the same rule for the name beside it.
+    #[test]
+    fn a_declared_behavior_is_known_however_the_model_capitalises_it() {
+        let director = ModelDirector::new(Scripted::says("Prowl\nMine now."), ["prowl"]);
+        let moment = context(working(), &[]);
+
+        match director.wake(&moment) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(
+                    proposal.behavior, "prowl",
+                    "the declared spelling is what the Engine plays"
+                );
+                assert_eq!(proposal.dialogue.as_deref(), Some("Mine now."));
+            }
+            other => panic!("a capitalised name is still the Behavior, not {other:?}"),
+        }
+    }
+
+    /// The other half: a name nobody declared is still prose, not a Behavior
+    /// invented by loosening the comparison.
+    #[test]
+    fn a_name_no_character_declares_is_still_speech() {
+        let director = ModelDirector::new(Scripted::says("Check\nSomething moved."), ["prowl"]);
+        let moment = context(working(), &[]);
+
+        match director.wake(&moment) {
+            Wake::Proposed(proposal) => {
+                assert!(
+                    proposal.behavior.is_empty(),
+                    "no Behavior was played: {proposal:?}"
+                );
+            }
+            other => panic!("unknown names become speech, not {other:?}"),
         }
     }
 
