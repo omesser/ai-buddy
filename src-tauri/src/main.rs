@@ -794,7 +794,7 @@ fn switch_instance(
             &mut live.model,
             live.character.behaviors.keys().cloned(),
             sources,
-            config.enabled,
+            config.configured,
         );
         live.recent.clear();
         live.happened = Happened::Ambient;
@@ -835,9 +835,9 @@ fn spawn_live(
     lives.push(InstanceState {
         id,
         director: StaticDirector::new(character.behaviors.clone(), seed),
-        model: config.enabled.then(|| {
+        model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
-                model::endpoint_from(sources).expect("enabled means configured"),
+                model::endpoint_from(sources).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
             ))
         }),
@@ -1090,9 +1090,9 @@ fn spawn_instances(
             // the handful a desktop holds; a budget the Instances draw from is
             // the upgrade, and it wants somewhere to show the spend, which is
             // #18's panel.
-            model: config.enabled.then(|| {
+            model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
-                    model::endpoint_from(sources).expect("enabled means configured"),
+                    model::endpoint_from(sources).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                 ))
             }),

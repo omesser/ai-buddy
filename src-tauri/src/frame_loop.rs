@@ -455,7 +455,7 @@ pub(crate) fn run_frame_loop(
                                 &mut live.model,
                                 live.character.behaviors.keys().cloned(),
                                 &sources,
-                                config.enabled,
+                                config.configured,
                             );
                         }
                     }

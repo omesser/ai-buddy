@@ -915,13 +915,13 @@ pub fn retarget_model(
     model: &mut Option<Arc<ModelDirector<Endpoint>>>,
     behaviors: impl IntoIterator<Item = impl Into<String>>,
     sources: &DirectorSources,
-    enabled: bool,
+    configured: bool,
 ) {
     pending.cancel();
     *in_flight = None;
-    *model = enabled.then(|| {
+    *model = configured.then(|| {
         Arc::new(ModelDirector::new(
-            endpoint_from(sources).expect("enabled means configured"),
+            endpoint_from(sources).expect("configured means a Completer exists"),
             behaviors,
         ))
     });
@@ -1387,8 +1387,7 @@ mod tests {
     fn retarget_drops_an_in_flight_wake_and_installs_the_new_completer() {
         with_env(None, None, None, || {
             let sources = resolve("http://localhost:11434", "gemma4", None);
-            let mut config = config_from(&sources);
-            config.enabled = true;
+            let config = config_from(&sources);
             let mut pending = InFlight::new();
             let mut in_flight = Some(wake_context());
             let mut model = None;
@@ -1398,7 +1397,7 @@ mod tests {
                 &mut model,
                 ["stroll"],
                 &sources,
-                config.enabled,
+                config.configured,
             );
             assert!(pending.ready(), "cancel replaced the channel");
             assert!(in_flight.is_none());
@@ -1420,9 +1419,34 @@ mod tests {
                 &mut model,
                 ["stroll"],
                 &sources,
-                config.enabled && config.configured,
+                config.configured,
             );
             assert!(model.is_none());
+        });
+    }
+
+    #[test]
+    fn retarget_installs_when_configured_even_if_director_is_off() {
+        with_env(None, None, None, || {
+            let sources = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&sources);
+            config.enabled = false;
+            assert!(config.configured, "local needs no key");
+            let mut pending = InFlight::new();
+            let mut in_flight = None;
+            let mut model = None;
+            retarget_model(
+                &mut pending,
+                &mut in_flight,
+                &mut model,
+                ["stroll"],
+                &sources,
+                config.configured,
+            );
+            assert!(
+                model.is_some(),
+                "Director off must still leave a Completer for ToggleDirector"
+            );
         });
     }
 
