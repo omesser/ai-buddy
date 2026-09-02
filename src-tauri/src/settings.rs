@@ -96,6 +96,7 @@ impl SettingsView {
 
     /// The pane copy. The listed name is live: a `cargo run` from Cursor is
     /// Cursor, a packaged build is ai-buddy.
+    #[cfg(target_os = "macos")]
     pub fn consent_intro(&self) -> String {
         consent::pane_intro(&self.consent_listed_as)
     }
@@ -956,7 +957,7 @@ mod tests {
             use_accessibility: true,
             use_screen_recording: false,
         };
-        let mut view = SettingsView::from_parts(
+        let view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/ai-buddy/memory.md"),
             Some("You are Nim.".to_string()),
@@ -991,12 +992,15 @@ mod tests {
             "the checkbox follows settings intent, not the OS grant"
         );
         assert!(!view.consent[1].granted);
-        view.consent_listed_as = "Cursor".into();
-        assert!(
-            view.consent_intro().contains("Cursor"),
-            "the pane has to name the TCC row, got {:?}",
-            view.consent_intro()
-        );
+        #[cfg(target_os = "macos")]
+        {
+            view.consent_listed_as = "Cursor".into();
+            assert!(
+                view.consent_intro().contains("Cursor"),
+                "the pane has to name the TCC row, got {:?}",
+                view.consent_intro()
+            );
+        }
     }
 
     #[test]

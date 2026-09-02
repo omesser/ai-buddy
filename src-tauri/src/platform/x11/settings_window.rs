@@ -48,7 +48,8 @@ impl SettingsWindow {
         window.set_position(WindowPosition::Center);
         window.set_deletable(true);
 
-        window.connect_delete_event(|_, _| {
+        window.connect_delete_event(|window, _| {
+            window.hide();
             gtk::glib::Propagation::Stop
         });
 
@@ -162,20 +163,35 @@ impl SettingsWindow {
                     check.connect_toggled(move |check| {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
-                                let mut patch = SettingsPatch::default();
                                 if let RowAction::PatchField(field) = &action {
                                     let value = check.is_active();
-                                    match field.as_str() {
-                                        "director_enabled" => patch.director_enabled = Some(value),
-                                        "ambient_wakes" => patch.ambient_wakes = Some(value),
-                                        "do_not_disturb" => patch.do_not_disturb = Some(value),
-                                        "hidden" => patch.hidden = Some(value),
-                                        "hide_in_fullscreen" => {
-                                            patch.hide_in_fullscreen = Some(value)
-                                        }
-                                        "launch_at_login" => patch.launch_at_login = Some(value),
+                                    let patch = match field.as_str() {
+                                        "director_enabled" => SettingsPatch {
+                                            director_enabled: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
+                                        "ambient_wakes" => SettingsPatch {
+                                            ambient_wakes: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
+                                        "do_not_disturb" => SettingsPatch {
+                                            do_not_disturb: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
+                                        "hidden" => SettingsPatch {
+                                            hidden: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
+                                        "hide_in_fullscreen" => SettingsPatch {
+                                            hide_in_fullscreen: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
+                                        "launch_at_login" => SettingsPatch {
+                                            launch_at_login: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
                                         _ => return,
-                                    }
+                                    };
                                     if let Err(e) = sess.apply(patch) {
                                         eprintln!("settings: {e}");
                                     }
@@ -212,15 +228,18 @@ impl SettingsWindow {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
-                                let mut patch = SettingsPatch::default();
                                 if let RowAction::PatchField(field) = &action {
-                                    match field.as_str() {
-                                        "director_base_url" => {
-                                            patch.director_base_url = Some(text)
-                                        }
-                                        "director_model" => patch.director_model = Some(text),
+                                    let patch = match field.as_str() {
+                                        "director_base_url" => SettingsPatch {
+                                            director_base_url: Some(text),
+                                            ..SettingsPatch::default()
+                                        },
+                                        "director_model" => SettingsPatch {
+                                            director_model: Some(text),
+                                            ..SettingsPatch::default()
+                                        },
                                         _ => return,
-                                    }
+                                    };
                                     if let Err(e) = sess.apply(patch) {
                                         eprintln!("settings: {e}");
                                     }
@@ -254,10 +273,12 @@ impl SettingsWindow {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
-                                let mut patch = SettingsPatch::default();
                                 if let RowAction::PatchField(field) = &action {
                                     if field == "director_api_key" {
-                                        patch.director_api_key = Some(text);
+                                        let patch = SettingsPatch {
+                                            director_api_key: Some(text),
+                                            ..SettingsPatch::default()
+                                        };
                                         if let Err(e) = sess.apply(patch) {
                                             eprintln!("settings: {e}");
                                         }
@@ -385,9 +406,11 @@ impl SettingsWindow {
                                     .unwrap_or_default();
                                 let lines: Vec<String> =
                                     text.lines().map(|line| line.trim().to_string()).collect();
-                                let mut patch = SettingsPatch::default();
                                 if id == form::EXCLUDED_ID {
-                                    patch.excluded_applications = Some(lines);
+                                    let patch = SettingsPatch {
+                                        excluded_applications: Some(lines),
+                                        ..SettingsPatch::default()
+                                    };
                                     if let Err(e) = sess.apply(patch) {
                                         eprintln!("settings: {e}");
                                     }
@@ -549,8 +572,10 @@ impl SettingsWindow {
                                 if let Some(sess) = guard.as_ref() {
                                     if let RowAction::PatchField(field) = &action {
                                         if field == "character" {
-                                            let mut patch = SettingsPatch::default();
-                                            patch.character = Some(text.to_string());
+                                            let patch = SettingsPatch {
+                                                character: Some(text.to_string()),
+                                                ..SettingsPatch::default()
+                                            };
                                             if let Err(e) = sess.apply(patch) {
                                                 eprintln!("settings: {e}");
                                             }

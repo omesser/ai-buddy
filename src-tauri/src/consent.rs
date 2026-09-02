@@ -63,6 +63,7 @@ static WANT_SCREEN_RECORDING: AtomicBool = AtomicBool::new(false);
 
 /// Whether the buddy should use this grant. The OS grant can remain after
 /// the user unchecks; Dock geometry and titles must still follow this.
+#[cfg(target_os = "macos")]
 pub fn wanted(id: CapabilityId) -> bool {
     match id {
         CapabilityId::Accessibility => WANT_ACCESSIBILITY.load(Ordering::Relaxed),

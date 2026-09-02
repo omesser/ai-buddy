@@ -441,6 +441,15 @@ fn show_settings(app: &tauri::AppHandle) {
         secrets: Arc::clone(&state.secrets),
         key_cache: Mutex::new(None),
     };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if gtk::glib::MainContext::default().is_owner() {
+            platform::show_settings(session);
+            return;
+        }
+    }
+
     if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
         eprintln!("settings: {why}");
     }
