@@ -113,7 +113,6 @@ fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Windo
             .collect(),
     )
 }
-}
 
 /// Read _NET_CLIENT_LIST: windows in arbitrary order.
 ///

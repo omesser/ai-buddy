@@ -25,7 +25,7 @@ impl ai_buddy_core::sensing::ActivitySource for X11ActivitySource {
     }
 }
 
-/// The class is the application name triggers match against.
+/// The class is the application name that triggers match against.
 fn frontmost_window_class() -> Option<String> {
     let conn = super::connection::connection()?;
     let screen = &conn.setup().roots[0];
