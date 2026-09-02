@@ -29,6 +29,7 @@ struct SettingsWindow {
     window: Window,
     session: Arc<Mutex<Option<SettingsSession>>>,
     controls: Rc<RefCell<HashMap<String, Control>>>,
+    refreshing: std::cell::Cell<bool>,
 }
 
 enum Control {
@@ -57,6 +58,7 @@ impl SettingsWindow {
             window,
             session: Arc::new(Mutex::new(None)),
             controls: Rc::new(RefCell::new(HashMap::new())),
+            refreshing: std::cell::Cell::new(false),
         });
 
         this.build_ui();
@@ -124,7 +126,7 @@ impl SettingsWindow {
             container.pack_start(&comment_label, false, false, 0);
         }
 
-        for row in &section.rows {
+        for row in &visible_rows {
             self.build_row(container, row, actions);
         }
     }
@@ -173,7 +175,11 @@ impl SettingsWindow {
                 if let Some(action) = actions.get(id) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
                     check.connect_toggled(move |check| {
+                        if refreshing.get() {
+                            return;
+                        }
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 if let RowAction::PatchField(field) = &action {
@@ -236,8 +242,13 @@ impl SettingsWindow {
                 if let Some(action) = actions.get(id) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
                     let entry_clone = entry.clone();
-                    entry.connect_activate(move |_| {
+
+                    let apply_fn = move || {
+                        if refreshing.get() {
+                            return;
+                        }
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
@@ -259,6 +270,16 @@ impl SettingsWindow {
                                 }
                             }
                         }
+                    };
+
+                    let apply_fn_activate = apply_fn.clone();
+                    entry.connect_activate(move |_| {
+                        apply_fn_activate();
+                    });
+
+                    entry.connect_focus_out_event(move |_, _| {
+                        apply_fn();
+                        gtk::glib::Propagation::Proceed
                     });
                 }
 
@@ -281,8 +302,13 @@ impl SettingsWindow {
                 if let Some(action) = actions.get(id) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
                     let entry_clone = entry.clone();
-                    entry.connect_activate(move |_| {
+
+                    let apply_fn = move || {
+                        if refreshing.get() {
+                            return;
+                        }
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
@@ -300,6 +326,16 @@ impl SettingsWindow {
                                 }
                             }
                         }
+                    };
+
+                    let apply_fn_activate = apply_fn.clone();
+                    entry.connect_activate(move |_| {
+                        apply_fn_activate();
+                    });
+
+                    entry.connect_focus_out_event(move |_, _| {
+                        apply_fn();
+                        gtk::glib::Propagation::Proceed
                     });
                 }
 
@@ -328,11 +364,12 @@ impl SettingsWindow {
                     container.pack_start(&help_label, false, false, 0);
                 }
 
-                if id == form::HOTKEY_ID {
+                if id == form::HOTKEY_ID || id == form::PAYLOAD_ID {
                     let label = gtk::Label::new(None);
                     label.set_halign(Align::Start);
                     label.set_xalign(0.0);
                     label.set_selectable(true);
+                    label.set_line_wrap(true);
 
                     container.pack_start(&label, false, false, 0);
                     self.controls
@@ -407,8 +444,12 @@ impl SettingsWindow {
                 if *editable {
                     let buffer = text_view.buffer().expect("text buffer");
                     let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
                     let id = id.clone();
                     buffer.connect_changed(move |buffer| {
+                        if refreshing.get() {
+                            return;
+                        }
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = buffer
@@ -576,7 +617,11 @@ impl SettingsWindow {
                 if let Some(action) = actions.get(id) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
                     combo.connect_changed(move |combo| {
+                        if refreshing.get() {
+                            return;
+                        }
                         if let Some(text) = combo.active_text() {
                             if let Ok(guard) = session.lock() {
                                 if let Some(sess) = guard.as_ref() {
@@ -597,6 +642,8 @@ impl SettingsWindow {
                     });
                 }
 
+                combo.connect_scroll_event(|_, _| gtk::glib::Propagation::Stop);
+
                 container.pack_start(&combo, false, false, 0);
                 self.controls
                     .borrow_mut()
@@ -616,6 +663,9 @@ impl SettingsWindow {
     }
 
     fn refresh(&self) {
+        // Snapshot session.view() while holding the lock, then drop the guard
+        // before any GTK setter. Widget setters fire toggled/changed/activate
+        // synchronously, and those handlers lock the same non-reentrant mutex.
         let view = {
             let guard = self.session.lock().unwrap();
             let Some(session) = guard.as_ref() else {
@@ -623,6 +673,8 @@ impl SettingsWindow {
             };
             session.view()
         };
+
+        self.refreshing.set(true);
 
         let controls = self.controls.borrow();
 
@@ -660,19 +712,12 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::MEMORY_PATH_ID) {
             label.set_text(&view.memory_path);
         }
-        if let Some(Control::TextView(text_view)) = controls.get(form::PAYLOAD_ID) {
-            if let Some(buffer) = text_view.buffer() {
-                buffer.set_text(view.last_payload.as_deref().unwrap_or("Nothing sent yet."));
-            }
+        if let Some(Control::Label(label)) = controls.get(form::PAYLOAD_ID) {
+            label.set_text(view.last_payload.as_deref().unwrap_or("Nothing sent yet."));
         }
         if let Some(Control::TextView(text_view)) = controls.get(form::EXCLUDED_ID) {
             if let Some(buffer) = text_view.buffer() {
                 buffer.set_text(&view.excluded_text());
-            }
-        }
-        if let Some(Control::TextView(text_view)) = controls.get(form::HOTKEY_ID) {
-            if let Some(buffer) = text_view.buffer() {
-                buffer.set_text(&view.hide_hotkey);
             }
         }
         if let Some(Control::Label(label)) = controls.get(form::HOTKEY_ID) {
@@ -724,6 +769,8 @@ impl SettingsWindow {
                 list_box.pack_start(&hbox, false, false, 0);
             }
         }
+
+        self.refreshing.set(false);
     }
 }
 
@@ -746,6 +793,8 @@ fn confirm_wipe(parent: &Window) -> bool {
 }
 
 pub fn show(session: SettingsSession) {
+    // Tauri already initialized GTK and owns the main loop. Calling gtk::init()
+    // from the running main loop deadlocks. Only mark gtk-rs initialized.
     unsafe {
         gtk::set_initialized();
     }

@@ -419,9 +419,9 @@ fn open_in_editor(path: &std::path::Path) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-/// Settings is Shell furniture. SPEC gives the webview to the sprite and chat,
-/// so this is an AppKit window, opened on the main thread because that is
-/// where the native objects live.
+/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux).
+/// SPEC gives the webview to the sprite and chat, so this is opened on the
+/// toolkit main thread where the native objects live.
 fn show_settings(app: &tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
         eprintln!("settings: opened before the shell was ready");
@@ -442,6 +442,10 @@ fn show_settings(app: &tauri::AppHandle) {
         key_cache: Mutex::new(None),
     };
 
+    // On Linux, if the MainContext is already owned (menu/tray callback runs
+    // on the GTK main thread), use idle_add_local_once to defer window creation
+    // until after the current event completes. A sync wait or inline create
+    // deadlocks. If not the owner, invoke posts without waiting.
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let ctx = gtk::glib::MainContext::default();

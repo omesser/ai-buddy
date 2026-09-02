@@ -136,7 +136,7 @@ fn excluded_help() -> String {
     }
 }
 
-/// Describe the settings form. The AppKit window builds from this.
+/// Describe the settings form. The AppKit and Linux GTK windows build from this.
 pub fn describe() -> FormDescription {
     let sections = vec![
         FormSection {
