@@ -464,9 +464,14 @@ fn build_overlay(
         .visible(false)
         .build()?;
 
-    // Click-through until the cursor is proven to be over the sprite. The wrong
-    // default swallows a click; this one loses nothing.
+    // On Linux/GTK, set_ignore_cursor_events queues a tao WindowRequest that
+    // unwraps the GdkWindow, which is None until the widget is realized (needs
+    // the event loop, not just show()). The frame loop sets ignore-cursor on
+    // the first frame once the window exists. On macOS, NSWindow exists while
+    // hidden, so the call is safe and establishes the initial state.
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
     window.set_ignore_cursor_events(true)?;
+
     cover_display(&window, display)?;
     // Show the window first so GTK realizes it and creates the native handle.
     // Linux (GTK) has no GdkWindow until the widget is realized; macOS NSWindow
@@ -1891,11 +1896,11 @@ fn run_frame_loop(
 
                 // Retry EWMH configuration if it hasn't succeeded yet. GTK needs
                 // the window realized (shown and ticked) before window_handle works.
-                if !configured.get(index).copied().unwrap_or(false) {
-                    if platform::configure_overlay(&window).is_ok() {
-                        configured[index] = true;
-                        eprintln!("overlay: {label} EWMH configured");
-                    }
+                if !configured.get(index).copied().unwrap_or(false)
+                    && platform::configure_overlay(&window).is_ok()
+                {
+                    configured[index] = true;
+                    eprintln!("overlay: {label} EWMH configured");
                 }
 
                 // Every overlay is told about every Instance, including the ones
