@@ -12,9 +12,15 @@ use x11rb::rust_connection::RustConnection;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 /// Configure the Tauri window as an X11 overlay: floating, non-activating, skip taskbar.
+///
+/// Returns Err when the window handle is not available yet, so the caller can
+/// retry on subsequent frames once the GTK widget is realized.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let Ok(raw_window_handle) = window.window_handle() else {
-        return Err("Failed to get window handle".to_string());
+    let raw_window_handle = match window.window_handle() {
+        Ok(handle) => handle,
+        Err(e) => {
+            return Err(format!("Window handle not available yet: {}", e));
+        }
     };
 
     let x_window = match raw_window_handle.as_raw() {
@@ -38,20 +44,21 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// the entire window is click-through. When mask_data is Some, only the opaque
 /// pixels receive clicks.
 ///
-/// Integration seam: this function provides the X11 implementation of mask-based
-/// click-through, but it is not yet called from the frame loop. The frame loop
-/// currently uses Tauri's `set_ignore_cursor_events(bool)`, which is boolean only.
-/// To use XShapeCombineMask, the frame loop needs to pass the AlphaMask here.
-#[allow(dead_code)]
+/// Returns Err when the window handle is not available yet, so the caller can
+/// retry on subsequent frames once the GTK widget is realized.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
     sprite_x: i32,
     sprite_y: i32,
+    sprite_facing: i32,
     scale: i32,
 ) -> Result<(), String> {
-    let Ok(raw_window_handle) = window.window_handle() else {
-        return Err("Failed to get window handle".to_string());
+    let raw_window_handle = match window.window_handle() {
+        Ok(handle) => handle,
+        Err(e) => {
+            return Err(format!("Window handle not available yet: {}", e));
+        }
     };
 
     let x_window = match raw_window_handle.as_raw() {
@@ -67,7 +74,15 @@ pub fn update_input_region(
     };
 
     if let Some(mask) = mask_data {
-        apply_input_mask(conn, x_window, mask, sprite_x, sprite_y, scale)?;
+        apply_input_mask(
+            conn,
+            x_window,
+            mask,
+            sprite_x,
+            sprite_y,
+            sprite_facing,
+            scale,
+        )?;
     } else {
         clear_input_region(conn, x_window)?;
     }
@@ -82,6 +97,7 @@ fn apply_input_mask(
     mask: &ai_buddy_core::overlay::AlphaMask,
     sprite_x: i32,
     sprite_y: i32,
+    sprite_facing: i32,
     scale: i32,
 ) -> Result<(), String> {
     let (width, height, opaque) = mask.raw();
@@ -111,19 +127,43 @@ fn apply_input_mask(
     xproto::create_gc(conn, gc, pixmap, &Default::default())
         .map_err(|e| format!("Failed to create GC: {e}"))?;
 
-    // Draw the mask: for each opaque pixel in the source, draw a scaled rectangle
+    // Clear the pixmap to 0 (transparent). CreatePixmap contents are undefined.
+    xproto::poly_fill_rectangle(
+        conn,
+        pixmap,
+        gc,
+        &[xproto::Rectangle {
+            x: 0,
+            y: 0,
+            width: scaled_width as u16,
+            height: scaled_height as u16,
+        }],
+    )
+    .map_err(|e| format!("Failed to clear pixmap: {e}"))?;
+
+    // Set GC foreground to 1 for opaque pixels (default is 0)
+    xproto::change_gc(conn, gc, &xproto::ChangeGCAux::new().foreground(1))
+        .map_err(|e| format!("Failed to set GC foreground: {e}"))?;
+
+    // Draw the mask: for each opaque pixel, draw a scaled rectangle.
+    // When facing < 0, mirror the mask horizontally (same as AlphaMask::hit and renderer).
+    let mirror = sprite_facing < 0;
     for y in 0..height {
         for x in 0..width {
             let idx = (y * width + x) as usize;
             if opaque[idx] {
-                let scaled_x = x * scale;
+                let draw_x = if mirror {
+                    (width - 1 - x) * scale
+                } else {
+                    x * scale
+                };
                 let scaled_y = y * scale;
                 xproto::poly_fill_rectangle(
                     conn,
                     pixmap,
                     gc,
                     &[xproto::Rectangle {
-                        x: scaled_x as i16,
+                        x: draw_x as i16,
                         y: scaled_y as i16,
                         width: scale as u16,
                         height: scale as u16,

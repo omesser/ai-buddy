@@ -147,8 +147,8 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     macos::configure_overlay(window)
 }
 
-/// X11 on Linux: EWMH states for floating, skip-taskbar, skip-pager.
-/// Click-through via XShapeCombineMask will be added after window geometry lands.
+/// X11 on Linux: EWMH states for floating, skip-taskbar, skip-pager, plus
+/// per-pixel click-through via XShapeCombineMask from the sprite alpha.
 /// Wayland offers no reliable compositor-independent way to configure these, so it
 /// stays degraded.
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -189,19 +189,16 @@ pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
 /// On X11, XShapeCombineMask carves the click-through region from the sprite's
 /// alpha. On macOS and other platforms, this is a no-op since Tauri's
 /// `set_ignore_cursor_events` is sufficient.
-///
-/// Integration seam: the X11 implementation exists but is not yet wired to the
-/// frame loop. See platform/x11/overlay.rs::update_input_region.
-#[allow(dead_code)]
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
     sprite_x: i32,
     sprite_y: i32,
+    sprite_facing: i32,
     scale: i32,
 ) -> Result<(), String> {
-    x11::update_input_region(window, mask_data, sprite_x, sprite_y, scale)
+    x11::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
 }
 
 #[allow(dead_code)]
@@ -211,6 +208,7 @@ pub fn update_input_region(
     _mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
     _sprite_x: i32,
     _sprite_y: i32,
+    _sprite_facing: i32,
     _scale: i32,
 ) -> Result<(), String> {
     Ok(())

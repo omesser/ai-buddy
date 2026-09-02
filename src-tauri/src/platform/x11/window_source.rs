@@ -49,6 +49,11 @@ impl WindowSource for X11WindowSource {
 ///
 /// Reads _NET_CLIENT_LIST_STACKING from the root window and reverses it:
 /// X11 stacks bottom-to-top, the Engine wants frontmost first.
+///
+/// Filters out windows with WM_CLASS "ai-buddy"/"Ai-buddy" (our own overlays)
+/// so they do not block Perch detection. The overlay covers the entire display
+/// and is frontmost, so without this filter every other window's top edge would
+/// be reported as hidden.
 fn visible_windows() -> Vec<WindowRect> {
     let Some(conn) = super::connection::connection() else {
         return Vec::new();
@@ -96,9 +101,22 @@ fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Windo
     )
 }
 
+/// Whether this WM_CLASS names one of our own overlay windows.
+fn is_own_overlay_class(class: &str) -> bool {
+    class == "ai-buddy" || class == "Ai-buddy"
+}
+
 /// Read one window's geometry, owner, and layer, or None if it should be skipped.
 fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     if !is_normal_window(conn, window) {
+        return None;
+    }
+
+    // Skip our own overlay windows to avoid blocking Perch detection. The overlay
+    // covers the entire display and is frontmost, so without this filter every
+    // other window's top edge would be reported as occluded.
+    let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
+    if is_own_overlay_class(&owner) {
         return None;
     }
 
@@ -116,8 +134,6 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
         geom.width,
         geom.height,
     );
-
-    let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
 
     Some(WindowRect {
         id: u64::from(window),
@@ -347,4 +363,20 @@ fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]
     }
 
     Some(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The overlay windows must be filtered out of visible_windows so they do
+    /// not block Perch detection. WM_CLASS "ai-buddy" or "Ai-buddy" are ours.
+    #[test]
+    fn our_overlay_class_is_recognized() {
+        assert!(is_own_overlay_class("ai-buddy"));
+        assert!(is_own_overlay_class("Ai-buddy"));
+        assert!(!is_own_overlay_class("xfce4-terminal"));
+        assert!(!is_own_overlay_class(""));
+        assert!(!is_own_overlay_class("Chrome"));
+    }
 }
