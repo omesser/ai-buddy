@@ -479,9 +479,18 @@ fn build_overlay(
     cover_display(&window, display)?;
     // Show the window first so GTK realizes it and creates the native handle.
     // Linux (GTK) has no GdkWindow until the widget is realized; macOS NSWindow
-    // exists while hidden. configure_overlay will log and retry if the handle
-    // is still not ready after show().
+    // exists while hidden.
     window.show()?;
+
+    // Linux: configure_overlay may fail if the GTK widget is not yet realized.
+    // The frame loop retries on the main thread, so a failure here is not fatal.
+    // macOS: NSWindow is always ready, so failure is a real error.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Err(why) = platform::configure_overlay(&window) {
+        eprintln!("overlay: {label} EWMH config deferred: {why}");
+    }
+
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
     platform::configure_overlay(&window)?;
 
     eprintln!(
