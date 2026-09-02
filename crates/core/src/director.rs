@@ -149,10 +149,13 @@ impl<C: Completer> ModelDirector<C> {
                             dialogue: proposal.dialogue,
                         }),
                         None if proposal.behavior.eq_ignore_ascii_case("say") => {
-                            Wake::Proposed(BehaviorProposal {
-                                behavior: String::new(),
-                                dialogue: proposal.dialogue.or(Some(proposal.behavior)),
-                            })
+                            match proposal.dialogue {
+                                Some(line) => Wake::Proposed(BehaviorProposal {
+                                    behavior: String::new(),
+                                    dialogue: Some(line),
+                                }),
+                                None => Wake::Failed,
+                            }
                         }
                         None => spoken_or_failed(&reply),
                     },
@@ -341,6 +344,7 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
         Some((name, line)) => (name.trim(), Some(line.trim())),
         None => (first, None),
     };
+    let name = name.trim_end_matches(['.', ':']);
     if name.is_empty() || !identifier(name) {
         return Err(ParseError);
     }
@@ -1451,5 +1455,71 @@ mod tests {
             ),
             "nothing happened and timer not elapsed"
         );
+    }
+
+    #[test]
+    fn a_trailing_full_stop_or_colon_still_names_the_behavior() {
+        let director = ModelDirector::new(Scripted::says("Prowl."), ["prowl"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "prowl");
+            }
+            other => panic!("trailing full stop should not prevent match: {other:?}"),
+        }
+
+        let colon = ModelDirector::new(Scripted::says("prowl:"), ["prowl"]);
+        match colon.wake(&context(working(), &[])) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "prowl");
+            }
+            other => panic!("trailing colon should not prevent match: {other:?}"),
+        }
+
+        let with_dialogue =
+            ModelDirector::new(Scripted::says("PROWL. | hunting"), ["prowl", "wave"]);
+        match with_dialogue.wake(&context(working(), &[])) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "prowl");
+                assert_eq!(proposal.dialogue.as_deref(), Some("hunting"));
+            }
+            other => panic!("trailing punctuation with dialogue: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_full_stop_or_colon_after_the_name_is_not_part_of_it() {
+        let nap_dot = parse_proposal("nap.").expect("trailing full stop");
+        assert_eq!(nap_dot.behavior, "nap");
+
+        let nap_colon = parse_proposal("nap:").expect("trailing colon");
+        assert_eq!(nap_colon.behavior, "nap");
+
+        let with_dialogue = parse_proposal("nap: | so sleepy...").expect("colon with dialogue");
+        assert_eq!(with_dialogue.behavior, "nap");
+        assert_eq!(with_dialogue.dialogue.as_deref(), Some("so sleepy..."));
+
+        let upper = parse_proposal("Nap.").expect("case preserved before declared match");
+        assert_eq!(upper.behavior, "Nap");
+    }
+
+    #[test]
+    fn say_with_nothing_to_say_falls_back_rather_than_saying_say() {
+        let director = ModelDirector::new(Scripted::says("say"), ["wave"]);
+        match director.wake(&context(working(), &[])) {
+            Wake::Failed => {}
+            other => panic!("bare say should fail, not {other:?}"),
+        }
+
+        let colon = ModelDirector::new(Scripted::says("say:"), ["wave"]);
+        match colon.wake(&context(working(), &[])) {
+            Wake::Failed => {}
+            other => panic!("say: with no dialogue should fail, not {other:?}"),
+        }
+
+        let upper = ModelDirector::new(Scripted::says("Say."), ["wave"]);
+        match upper.wake(&context(working(), &[])) {
+            Wake::Failed => {}
+            other => panic!("Say. should fail, not {other:?}"),
+        }
     }
 }
