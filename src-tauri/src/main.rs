@@ -23,6 +23,7 @@ mod menu;
 mod model;
 mod package;
 mod platform;
+mod secrets;
 mod settings;
 mod tray;
 
