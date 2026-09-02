@@ -976,12 +976,19 @@ fn run_frame_loop(
         // update_input_region can report success.
         let mask_applied = Arc::new(Mutex::new(vec![false; covered.len()]));
 
+        // Track whether configure_overlay / update_input_region work is in flight
+        // to avoid queuing redundant main-thread posts every 16ms.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let configure_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let mask_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
+
         // Cache last applied mask parameters to avoid rebuilding the X pixmap
         // every 16ms. Only update XShape when mask data or position changes.
         // Shared with main thread so update_input_region can report success.
         #[cfg(all(unix, not(target_os = "macos")))]
-        let last_mask: Arc<Mutex<Vec<(Option<Vec<bool>>, i32, i32, i32)>>> =
-            Arc::new(Mutex::new(vec![(None, 0, 0, 1); covered.len()]));
+        let last_mask: Arc<Mutex<Vec<(Option<Vec<bool>>, i32, i32, i32, i32)>>> =
+            Arc::new(Mutex::new(vec![(None, 0, 0, 1, 1); covered.len()]));
 
         // The displays the overlays cover, as setup left them. Shared with the
         // main thread, which is the only place that can change what they cover
@@ -1034,10 +1041,20 @@ fn run_frame_loop(
                 .unwrap()
                 .resize(displays.frames.len(), false);
             #[cfg(all(unix, not(target_os = "macos")))]
+            configure_in_flight
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), false);
+            #[cfg(all(unix, not(target_os = "macos")))]
+            mask_in_flight
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), false);
+            #[cfg(all(unix, not(target_os = "macos")))]
             last_mask
                 .lock()
                 .unwrap()
-                .resize(displays.frames.len(), (None, 0, 0, 1));
+                .resize(displays.frames.len(), (None, 0, 0, 1, 1));
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -1924,30 +1941,45 @@ fn run_frame_loop(
                 // Retry EWMH configuration if it hasn't succeeded yet. GTK needs
                 // the window realized (shown and ticked) before window_handle works,
                 // AND window_handle() must be called from the GTK main thread.
+                #[cfg(all(unix, not(target_os = "macos")))]
                 if !configured
                     .lock()
                     .unwrap()
                     .get(index)
                     .copied()
                     .unwrap_or(false)
+                    && !configure_in_flight
+                        .lock()
+                        .unwrap()
+                        .get(index)
+                        .copied()
+                        .unwrap_or(false)
                 {
+                    configure_in_flight.lock().unwrap()[index] = true;
                     let handle = app.clone();
                     let label_clone = label.clone();
                     let configured_clone = Arc::clone(&configured);
+                    let configure_in_flight_clone = Arc::clone(&configure_in_flight);
                     let overlay_index = index;
+                    let trace = tracing;
                     let _ = app.run_on_main_thread(move || {
+                        configure_in_flight_clone.lock().unwrap()[overlay_index] = false;
                         if let Some(window) = handle.get_webview_window(&label_clone) {
                             match platform::configure_overlay(&window) {
                                 Ok(()) => {
                                     configured_clone.lock().unwrap()[overlay_index] = true;
-                                    eprintln!("overlay: {label_clone} EWMH configured");
+                                    if trace {
+                                        eprintln!("overlay: {label_clone} EWMH configured");
+                                    }
                                 }
                                 Err(e) => {
                                     // Log first failure for diagnostics
                                     static LOGGED: std::sync::atomic::AtomicBool =
                                         std::sync::atomic::AtomicBool::new(false);
                                     if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                                        eprintln!("overlay: {label_clone} EWMH config failed: {e}");
+                                        eprintln!(
+                                            "overlay: {label_clone} EWMH config deferred: {e}"
+                                        );
                                     }
                                 }
                             }
@@ -2027,29 +2059,43 @@ fn run_frame_loop(
                                 Some(opaque.to_vec()),
                                 local.x,
                                 local.y,
+                                i32::from(instance.facing),
                                 instance.sprite.scale,
                             );
 
-                            // Only update XShape if mask parameters changed
-                            if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
+                            // Only update XShape if mask parameters changed and no work in flight
+                            if last_mask.lock().unwrap().get(index) != Some(&mask_params)
+                                && !mask_in_flight
+                                    .lock()
+                                    .unwrap()
+                                    .get(index)
+                                    .copied()
+                                    .unwrap_or(false)
+                            {
+                                mask_in_flight.lock().unwrap()[index] = true;
                                 let handle = app.clone();
                                 let label_clone = label.clone();
                                 let mask_clone = instance.mask.clone();
                                 let sprite_x = local.x;
                                 let sprite_y = local.y;
+                                let sprite_facing = i32::from(instance.facing);
                                 let sprite_scale = instance.sprite.scale;
                                 let mask_applied_clone = Arc::clone(&mask_applied);
                                 let last_mask_clone = Arc::clone(&last_mask);
+                                let mask_in_flight_clone = Arc::clone(&mask_in_flight);
                                 let mask_params_clone = mask_params.clone();
                                 let overlay_index = index;
+                                let trace = tracing;
 
                                 let _ = app.run_on_main_thread(move || {
+                                    mask_in_flight_clone.lock().unwrap()[overlay_index] = false;
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
                                         match platform::update_input_region(
                                             &window,
                                             Some(&mask_clone),
                                             sprite_x,
                                             sprite_y,
+                                            sprite_facing,
                                             sprite_scale,
                                         ) {
                                             Ok(()) => {
@@ -2057,9 +2103,11 @@ fn run_frame_loop(
                                                     true;
                                                 last_mask_clone.lock().unwrap()[overlay_index] =
                                                     mask_params_clone;
-                                                eprintln!(
-                                                    "overlay: {label_clone} input mask applied"
-                                                );
+                                                if trace {
+                                                    eprintln!(
+                                                        "overlay: {label_clone} input mask applied"
+                                                    );
+                                                }
                                             }
                                             Err(e) => {
                                                 // Log first failure for diagnostics
@@ -2068,7 +2116,7 @@ fn run_frame_loop(
                                                 if !LOGGED
                                                     .swap(true, std::sync::atomic::Ordering::Relaxed)
                                                 {
-                                                    eprintln!("overlay: {label_clone} update_input_region failed: {e}");
+                                                    eprintln!("overlay: {label_clone} update_input_region deferred: {e}");
                                                 }
                                             }
                                         }
@@ -2092,7 +2140,7 @@ fn run_frame_loop(
                             }
                         } else {
                             // No sprite on this overlay, make it fully click-through
-                            let mask_params = (None, 0, 0, 1);
+                            let mask_params = (None, 0, 0, 1, 1);
 
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                                 let handle = app.clone();
@@ -2103,7 +2151,7 @@ fn run_frame_loop(
 
                                 let _ = app.run_on_main_thread(move || {
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        if platform::update_input_region(&window, None, 0, 0, 1)
+                                        if platform::update_input_region(&window, None, 0, 0, 1, 1)
                                             .is_ok()
                                         {
                                             last_mask_clone.lock().unwrap()[overlay_index] =
@@ -2122,7 +2170,7 @@ fn run_frame_loop(
                         }
                     } else {
                         // Ignoring or invisible: make the whole window click-through
-                        let mask_params = (None, 0, 0, 1);
+                        let mask_params = (None, 0, 0, 1, 1);
 
                         if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                             let handle = app.clone();
@@ -2133,7 +2181,8 @@ fn run_frame_loop(
 
                             let _ = app.run_on_main_thread(move || {
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
-                                    if platform::update_input_region(&window, None, 0, 0, 1).is_ok()
+                                    if platform::update_input_region(&window, None, 0, 0, 1, 1)
+                                        .is_ok()
                                     {
                                         last_mask_clone.lock().unwrap()[overlay_index] =
                                             mask_params_clone;
