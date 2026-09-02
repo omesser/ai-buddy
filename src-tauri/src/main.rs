@@ -978,9 +978,10 @@ fn run_frame_loop(
 
         // Cache last applied mask parameters to avoid rebuilding the X pixmap
         // every 16ms. Only update XShape when mask data or position changes.
+        // Shared with main thread so update_input_region can report success.
         #[cfg(all(unix, not(target_os = "macos")))]
-        let mut last_mask: Vec<(Option<Vec<bool>>, i32, i32, i32)> =
-            vec![(None, 0, 0, 1); covered.len()];
+        let last_mask: Arc<Mutex<Vec<(Option<Vec<bool>>, i32, i32, i32)>>> =
+            Arc::new(Mutex::new(vec![(None, 0, 0, 1); covered.len()]));
 
         // The displays the overlays cover, as setup left them. Shared with the
         // main thread, which is the only place that can change what they cover
@@ -1033,7 +1034,10 @@ fn run_frame_loop(
                 .unwrap()
                 .resize(displays.frames.len(), false);
             #[cfg(all(unix, not(target_os = "macos")))]
-            last_mask.resize(displays.frames.len(), (None, 0, 0, 1));
+            last_mask
+                .lock()
+                .unwrap()
+                .resize(displays.frames.len(), (None, 0, 0, 1));
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -2027,7 +2031,7 @@ fn run_frame_loop(
                             );
 
                             // Only update XShape if mask parameters changed
-                            if last_mask.get(index) != Some(&mask_params) {
+                            if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                                 let handle = app.clone();
                                 let label_clone = label.clone();
                                 let mask_clone = instance.mask.clone();
@@ -2035,6 +2039,8 @@ fn run_frame_loop(
                                 let sprite_y = local.y;
                                 let sprite_scale = instance.sprite.scale;
                                 let mask_applied_clone = Arc::clone(&mask_applied);
+                                let last_mask_clone = Arc::clone(&last_mask);
+                                let mask_params_clone = mask_params.clone();
                                 let overlay_index = index;
 
                                 let _ = app.run_on_main_thread(move || {
@@ -2049,6 +2055,11 @@ fn run_frame_loop(
                                             Ok(()) => {
                                                 mask_applied_clone.lock().unwrap()[overlay_index] =
                                                     true;
+                                                last_mask_clone.lock().unwrap()[overlay_index] =
+                                                    mask_params_clone;
+                                                eprintln!(
+                                                    "overlay: {label_clone} input mask applied"
+                                                );
                                             }
                                             Err(e) => {
                                                 // Log first failure for diagnostics
@@ -2063,7 +2074,6 @@ fn run_frame_loop(
                                         }
                                     }
                                 });
-                                last_mask[index] = mask_params;
                             }
 
                             // Only set ignore=false after mask has been applied at least once
@@ -2084,17 +2094,23 @@ fn run_frame_loop(
                             // No sprite on this overlay, make it fully click-through
                             let mask_params = (None, 0, 0, 1);
 
-                            if last_mask.get(index) != Some(&mask_params) {
+                            if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                                 let handle = app.clone();
                                 let label_clone = label.clone();
+                                let last_mask_clone = Arc::clone(&last_mask);
+                                let mask_params_clone = mask_params.clone();
+                                let overlay_index = index;
 
                                 let _ = app.run_on_main_thread(move || {
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        let _ =
-                                            platform::update_input_region(&window, None, 0, 0, 1);
+                                        if platform::update_input_region(&window, None, 0, 0, 1)
+                                            .is_ok()
+                                        {
+                                            last_mask_clone.lock().unwrap()[overlay_index] =
+                                                mask_params_clone;
+                                        }
                                     }
                                 });
-                                last_mask[index] = mask_params;
                             }
 
                             if ignoring[index] != Some(true) {
@@ -2108,16 +2124,22 @@ fn run_frame_loop(
                         // Ignoring or invisible: make the whole window click-through
                         let mask_params = (None, 0, 0, 1);
 
-                        if last_mask.get(index) != Some(&mask_params) {
+                        if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                             let handle = app.clone();
                             let label_clone = label.clone();
+                            let last_mask_clone = Arc::clone(&last_mask);
+                            let mask_params_clone = mask_params.clone();
+                            let overlay_index = index;
 
                             let _ = app.run_on_main_thread(move || {
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
-                                    let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                                    if platform::update_input_region(&window, None, 0, 0, 1).is_ok()
+                                    {
+                                        last_mask_clone.lock().unwrap()[overlay_index] =
+                                            mask_params_clone;
+                                    }
                                 }
                             });
-                            last_mask[index] = mask_params;
                         }
 
                         if ignoring[index] != Some(true) {
