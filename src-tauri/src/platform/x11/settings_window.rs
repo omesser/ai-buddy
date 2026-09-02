@@ -496,6 +496,7 @@ impl SettingsWindow {
                         CompositeControl::Popup { id } => {
                             let combo = gtk::ComboBoxText::new();
                             combo.set_size_request(180, -1);
+                            combo.connect_scroll_event(|_, _| gtk::glib::Propagation::Stop);
 
                             hbox.pack_start(&combo, false, false, 0);
                             self.controls
@@ -731,11 +732,20 @@ impl SettingsWindow {
             combo.set_active_id(Some(&view.character));
         }
         if let Some(Control::Popup(combo)) = controls.get(form::NEW_CHARACTER_ID) {
+            let current_selection = combo.active_id().map(|s| s.to_string());
             combo.remove_all();
             for name in &view.installed {
                 combo.append(Some(name), name);
             }
-            combo.set_active_id(Some(&view.character));
+            if let Some(selected) = current_selection {
+                if view.installed.contains(&selected) {
+                    combo.set_active_id(Some(&selected));
+                } else {
+                    combo.set_active_id(Some(&view.character));
+                }
+            } else {
+                combo.set_active_id(Some(&view.character));
+            }
         }
         if let Some(Control::List(list_box, dismiss_label)) = controls.get(form::INSTANCES_ID) {
             for child in list_box.children() {
