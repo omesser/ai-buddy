@@ -968,6 +968,18 @@ fn run_frame_loop(
         // window handle immediately after show().
         let mut configured: Vec<bool> = vec![false; covered.len()];
 
+        // Track whether each overlay's XShape input mask has successfully applied.
+        // On Linux/GTK, update_input_region needs the main thread AND a realized
+        // window. Do not set ignore_cursor_events(false) until the mask succeeds,
+        // or the entire overlay becomes a click-eater.
+        let mut mask_applied: Vec<bool> = vec![false; covered.len()];
+
+        // Cache last applied mask parameters to avoid rebuilding the X pixmap
+        // every 16ms. Only update XShape when mask data or position changes.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let mut last_mask: Vec<(Option<Vec<bool>>, i32, i32, i32)> =
+            vec![(None, 0, 0, 1); covered.len()];
+
         // The displays the overlays cover, as setup left them. Shared with the
         // main thread, which is the only place that can change what they cover
         // and so the only place that knows when this is true again.
@@ -1011,6 +1023,9 @@ fn run_frame_loop(
             // One flag per overlay, and the desktop can gain or lose one.
             ignoring.resize(displays.frames.len(), None);
             configured.resize(displays.frames.len(), false);
+            mask_applied.resize(displays.frames.len(), false);
+            #[cfg(all(unix, not(target_os = "macos")))]
+            last_mask.resize(displays.frames.len(), (None, 0, 0, 1));
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -1895,12 +1910,27 @@ fn run_frame_loop(
                 };
 
                 // Retry EWMH configuration if it hasn't succeeded yet. GTK needs
-                // the window realized (shown and ticked) before window_handle works.
-                if !configured.get(index).copied().unwrap_or(false)
-                    && platform::configure_overlay(&window).is_ok()
-                {
+                // the window realized (shown and ticked) before window_handle works,
+                // AND window_handle() must be called from the GTK main thread.
+                if !configured.get(index).copied().unwrap_or(false) {
+                    let handle = app.clone();
+                    let label_clone = label.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        if let Some(window) = handle.get_webview_window(&label_clone) {
+                            if let Err(e) = platform::configure_overlay(&window) {
+                                // Log first failure for diagnostics
+                                static LOGGED: std::sync::atomic::AtomicBool =
+                                    std::sync::atomic::AtomicBool::new(false);
+                                if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                                    eprintln!("overlay: {label_clone} EWMH config failed: {e}");
+                                }
+                            } else {
+                                eprintln!("overlay: {label_clone} EWMH configured");
+                            }
+                        }
+                    });
+                    // Mark as attempted; success will be visible on next frame's retry
                     configured[index] = true;
-                    eprintln!("overlay: {label} EWMH configured");
                 }
 
                 // Every overlay is told about every Instance, including the ones
@@ -1934,7 +1964,7 @@ fn run_frame_loop(
                     .collect();
 
                 let _ = window.emit_to(
-                    label,
+                    &label,
                     FRAME_EVENT,
                     Placement {
                         sprites,
@@ -1951,8 +1981,9 @@ fn run_frame_loop(
 
                 // On X11, use per-pixel click-through via XShapeCombineMask.
                 // XShape carves the input region, but Tauri must also receive events.
-                // Set ignore-cursor-events false when applying a mask so opaque pixels
-                // reach the webview for Poke.
+                // window_handle() requires the GTK main thread, so marshal the X11
+                // calls. Only set ignore-cursor-events false after the mask applies,
+                // or the overlay becomes a fullscreen click-eater.
                 #[cfg(all(unix, not(target_os = "macos")))]
                 {
                     if !ignore && presence.visible {
@@ -1968,15 +1999,44 @@ fn run_frame_loop(
 
                         if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
-                            let _ = platform::update_input_region(
-                                &window,
-                                Some(&instance.mask),
-                                local.x,
-                                local.y,
-                                instance.sprite.scale,
-                            );
-                            // Tauri must receive events for opaque pixels to Poke
-                            if ignoring[index] != Some(false) {
+                            // Cache mask parameters to avoid rebuilding pixmap every 16ms
+                            let (_width, _height, opaque) = instance.mask.raw();
+                            let mask_params = (Some(opaque.to_vec()), local.x, local.y, instance.sprite.scale);
+                            
+                            // Only update XShape if mask parameters changed
+                            if last_mask.get(index) != Some(&mask_params) {
+                                let handle = app.clone();
+                                let label_clone = label.clone();
+                                let mask_clone = instance.mask.clone();
+                                let sprite_x = local.x;
+                                let sprite_y = local.y;
+                                let sprite_scale = instance.sprite.scale;
+                                
+                                let _ = app.run_on_main_thread(move || {
+                                    if let Some(window) = handle.get_webview_window(&label_clone) {
+                                        if let Err(e) = platform::update_input_region(
+                                            &window,
+                                            Some(&mask_clone),
+                                            sprite_x,
+                                            sprite_y,
+                                            sprite_scale,
+                                        ) {
+                                            // Log first failure for diagnostics
+                                            static LOGGED: std::sync::atomic::AtomicBool =
+                                                std::sync::atomic::AtomicBool::new(false);
+                                            if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                                                eprintln!("overlay: {label_clone} update_input_region failed: {e}");
+                                            }
+                                        }
+                                    }
+                                });
+                                last_mask[index] = mask_params;
+                                // Mark as applied; assume success for now
+                                mask_applied[index] = true;
+                            }
+                            
+                            // Only set ignore=false after mask has been applied at least once
+                            if mask_applied[index] && ignoring[index] != Some(false) {
                                 flipped = true;
                                 if window.set_ignore_cursor_events(false).is_ok() {
                                     ignoring[index] = Some(false);
@@ -1984,7 +2044,20 @@ fn run_frame_loop(
                             }
                         } else {
                             // No sprite on this overlay, make it fully click-through
-                            let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                            let mask_params = (None, 0, 0, 1);
+                            
+                            if last_mask.get(index) != Some(&mask_params) {
+                                let handle = app.clone();
+                                let label_clone = label.clone();
+                                
+                                let _ = app.run_on_main_thread(move || {
+                                    if let Some(window) = handle.get_webview_window(&label_clone) {
+                                        let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                                    }
+                                });
+                                last_mask[index] = mask_params;
+                            }
+                            
                             if ignoring[index] != Some(true) {
                                 flipped = true;
                                 if window.set_ignore_cursor_events(true).is_ok() {
@@ -1994,7 +2067,20 @@ fn run_frame_loop(
                         }
                     } else {
                         // Ignoring or invisible: make the whole window click-through
-                        let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                        let mask_params = (None, 0, 0, 1);
+                        
+                        if last_mask.get(index) != Some(&mask_params) {
+                            let handle = app.clone();
+                            let label_clone = label.clone();
+                            
+                            let _ = app.run_on_main_thread(move || {
+                                if let Some(window) = handle.get_webview_window(&label_clone) {
+                                    let _ = platform::update_input_region(&window, None, 0, 0, 1);
+                                }
+                            });
+                            last_mask[index] = mask_params;
+                        }
+                        
                         if ignoring[index] != Some(true) {
                             flipped = true;
                             if window.set_ignore_cursor_events(true).is_ok() {
