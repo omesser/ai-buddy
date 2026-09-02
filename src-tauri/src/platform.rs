@@ -195,10 +195,52 @@ pub fn activity_source() -> impl ActivitySource {
     macos::MacosActivitySource
 }
 
+/// X11 on Linux: _NET_ACTIVE_WINDOW for frontmost, Xss for idle, DPMS for sleep.
+/// Wayland offers no global state, so it stays StubActivitySource.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn activity_source() -> LinuxActivitySource {
+    if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("DISPLAY").is_err() {
+        LinuxActivitySource::Wayland
+    } else {
+        LinuxActivitySource::X11(x11::X11ActivitySource)
+    }
+}
+
+/// Runtime dispatch between X11 and Wayland activity sources on Linux.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub enum LinuxActivitySource {
+    X11(x11::X11ActivitySource),
+    Wayland,
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+impl ActivitySource for LinuxActivitySource {
+    fn frontmost_application(&self) -> Option<String> {
+        match self {
+            Self::X11(source) => source.frontmost_application(),
+            Self::Wayland => None,
+        }
+    }
+
+    fn idle(&self) -> std::time::Duration {
+        match self {
+            Self::X11(source) => source.idle(),
+            Self::Wayland => std::time::Duration::ZERO,
+        }
+    }
+
+    fn displays_asleep(&self) -> bool {
+        match self {
+            Self::X11(source) => source.displays_asleep(),
+            Self::Wayland => false,
+        }
+    }
+}
+
 /// A platform that reports nothing is one where every Behavior with a trigger
 /// simply never fires, which leaves the untriggered ones — a life, if a duller
 /// one. The same supported degradation as the missing window geometry.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(unix))]
 pub fn activity_source() -> impl ActivitySource {
     ai_buddy_core::sensing::StubActivitySource
 }

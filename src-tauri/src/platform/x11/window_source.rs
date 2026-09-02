@@ -291,7 +291,7 @@ fn strut_panel_bounds() -> Option<Rect> {
         let strut = read_strut_partial(conn, window)?;
 
         if strut[3] > 0 {
-            let screen_width = f64::from(screen.width_in_pixels);
+            let _screen_width = f64::from(screen.width_in_pixels);
             let screen_height = f64::from(screen.height_in_pixels);
             let bottom_height = strut[3] as f64;
             let start_x = strut[10] as f64;
@@ -318,17 +318,9 @@ fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
         return false;
     };
 
-    let reply = match xproto::get_property(
-        conn,
-        false,
-        window,
-        type_atom,
-        AtomEnum::ATOM,
-        0,
-        32,
-    )
-    .ok()
-    .and_then(|cookie| cookie.reply().ok())
+    let reply = match xproto::get_property(conn, false, window, type_atom, AtomEnum::ATOM, 0, 32)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
     {
         Some(r) => r,
         None => return false,
@@ -341,27 +333,17 @@ fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
     reply
         .value
         .chunks_exact(4)
-        .any(|chunk| {
-            u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == dock_atom
-        })
+        .any(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == dock_atom)
 }
 
 /// Read _NET_WM_STRUT_PARTIAL property as 12 u32 values.
 fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]> {
     let strut_atom = intern_atom(conn, "_NET_WM_STRUT_PARTIAL").ok()?;
 
-    let reply = xproto::get_property(
-        conn,
-        false,
-        window,
-        strut_atom,
-        AtomEnum::CARDINAL,
-        0,
-        12,
-    )
-    .ok()?
-    .reply()
-    .ok()?;
+    let reply = xproto::get_property(conn, false, window, strut_atom, AtomEnum::CARDINAL, 0, 12)
+        .ok()?
+        .reply()
+        .ok()?;
 
     if reply.format != 32 || reply.value.len() != 48 {
         return None;
