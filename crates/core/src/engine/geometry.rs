@@ -1,6 +1,7 @@
 //! Spatial queries over a `WorldSnapshot`.
 
 use super::{Point, Rect, Window, WorldSnapshot, CEILING_CLEARANCE, EDGE_CLEARANCE};
+use crate::window_source::DOCK_PERCH_ID;
 
 /// A surface the sprite can come to rest on.
 pub(super) struct Support {
@@ -229,6 +230,83 @@ pub(super) fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) ->
         Some(right)
     } else if velocity_x < 0.0 && x <= left {
         Some(left)
+    } else {
+        None
+    }
+}
+
+/// The Dock, when the snapshot carries one: the Perch wearing the reserved id.
+pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
+    snapshot
+        .windows
+        .iter()
+        .find(|window| window.id == DOCK_PERCH_ID)
+        .map(|window| window.rect)
+}
+
+/// Where to stand when the Dock is in the way: clear of its nearer side, on
+/// the floor or in the air.
+///
+/// The Dock is the one thing on screen drawn in front of the sprite, so under
+/// it the sprite can be neither seen nor grabbed. Its side is a wall to climb
+/// (#176). Nearer rather than the side it came from, because the Dock can
+/// appear around a resting sprite when it unhides, and a dropped sprite
+/// arrives from above: on a walk the two are the same side, one step away.
+///
+/// The wall stands `EDGE_CLEARANCE` out from the Dock's own edge — half a
+/// sprite, the same half `at_horizontal_edge` keeps on screen — because a
+/// sprite centered on the edge is already half hidden, walking and climbing.
+/// Strictly inside that, so the sprite this puts on the line is beside the
+/// Dock and stays put: the walk stops going forward instead of being set
+/// back, which is the #141 stutter it must not repeat.
+pub(super) fn dock_side_reached(position: Point, snapshot: &WorldSnapshot) -> Option<f64> {
+    let dock = dock_in(snapshot)?;
+    let (left, right) = (
+        dock.x - EDGE_CLEARANCE,
+        dock.x + dock.width + EDGE_CLEARANCE,
+    );
+    if position.y <= dock.y || position.x <= left || position.x >= right {
+        return None;
+    }
+
+    // Behind the Dock's own display, not merely in its x-range: a display
+    // stacked below this one shares that range, and every sprite on its floor
+    // would otherwise be behind the Dock forever — climb, top out, fall,
+    // climb. The Dock's center says which display owns it, the way
+    // `window_source::centered_in` does (a Dock touches its display's edges).
+    // The display's bottom, not the Dock's: the real Dock stops short of the
+    // floor the sprite walks on.
+    let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
+    snapshot.displays.iter().find(|display| {
+        display.spans_x(center.0)
+            && center.1 >= display.y
+            && center.1 <= display.bottom()
+            && display.spans_x(position.x)
+            && position.y <= display.bottom()
+    })?;
+
+    Some(if position.x - left <= right - position.x {
+        left
+    } else {
+        right
+    })
+}
+
+/// Where a climb beside the Dock steps onto its top, once the feet reach it.
+///
+/// `EDGE_CLEARANCE` in from the side it climbed, so the whole sprite stands on
+/// the Dock rather than overhanging the corner — and so it stands somewhere
+/// `perch_at` agrees is the Dock, which is what keeps it there. Clamped to the
+/// far side for a Dock narrower than a sprite. `None` when the climb is
+/// nowhere near the Dock, which is every ordinary climb up a screen edge.
+pub(super) fn dock_top_at(x: f64, dock: Rect) -> Option<f64> {
+    let (left, right) = (dock.x, dock.x + dock.width);
+    if (left - EDGE_CLEARANCE..=left + EDGE_CLEARANCE).contains(&x) {
+        Some((left + EDGE_CLEARANCE).min(right))
+    } else if (right - EDGE_CLEARANCE..=right + EDGE_CLEARANCE).contains(&x) {
+        Some((right - EDGE_CLEARANCE).max(left))
+    } else if dock.spans_x(x) {
+        Some(x)
     } else {
         None
     }

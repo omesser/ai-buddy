@@ -12,7 +12,9 @@
 use std::time::Duration;
 
 use crate::engine::{Point, Rect, Verb, Window, WorldSnapshot};
-use crate::window_source::{WindowSource, WorldGeometry, POLL_INTERVAL, RIDE_POLL_INTERVAL};
+use crate::window_source::{
+    WindowSource, WorldGeometry, DOCK_PERCH_ID, POLL_INTERVAL, RIDE_POLL_INTERVAL,
+};
 
 /// The longest step of the world the Engine is ever told about, whatever the
 /// wall clock says.
@@ -211,15 +213,6 @@ fn world_snapshot(
         ..WorldSnapshot::default()
     }
 }
-
-/// The Perch id the Dock stands behind when its true bounds are known.
-///
-/// The Dock is not an application window, so the window server never hands it
-/// a place in the id space this could collide with: every macOS `CGWindowID`
-/// is 32-bit and widens into the low half of `WindowId`. A constant id keeps
-/// the Dock the same Perch across polls, which is what lets a sprite ride a
-/// Dock that resizes (#109).
-pub const DOCK_PERCH_ID: crate::window_source::WindowId = crate::window_source::WindowId::MAX;
 
 /// Whether a window at this level is somewhere the sprite may stand.
 ///
