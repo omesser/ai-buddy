@@ -49,6 +49,11 @@ impl WindowSource for X11WindowSource {
 ///
 /// Reads _NET_CLIENT_LIST_STACKING from the root window and reverses it:
 /// X11 stacks bottom-to-top, the Engine wants frontmost first.
+///
+/// Filters out windows with WM_CLASS "ai-buddy"/"Ai-buddy" (our own overlays)
+/// so they do not block Perch detection. The overlay covers the entire display
+/// and is frontmost, so without this filter every other window's top edge would
+/// be reported as hidden.
 fn visible_windows() -> Vec<WindowRect> {
     let Some(conn) = super::connection::connection() else {
         return Vec::new();
@@ -102,6 +107,14 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
         return None;
     }
 
+    // Skip our own overlay windows to avoid blocking Perch detection.
+    // The overlay covers the entire display and is frontmost, so without this
+    // filter every other window's top edge would be hidden by the overlay.
+    let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
+    if owner == "Ai-buddy" || owner == "ai-buddy" {
+        return None;
+    }
+
     let geom = xproto::get_geometry(conn, window).ok()?.reply().ok()?;
     let translated = xproto::translate_coordinates(conn, window, geom.root, 0, 0)
         .ok()?
@@ -116,8 +129,6 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
         geom.width,
         geom.height,
     );
-
-    let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
 
     Some(WindowRect {
         id: u64::from(window),
@@ -347,4 +358,33 @@ fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]
     }
 
     Some(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The overlay windows must be filtered out of visible_windows so they do
+    /// not block Perch detection. This test documents the expected behavior:
+    /// windows with WM_CLASS "ai-buddy" or "Ai-buddy" should be excluded.
+    ///
+    /// Cannot run without a real X11 server (no mocking layer exists), so this
+    /// is an ignored test. Live X11 validation confirms Perch works after the
+    /// filter was added.
+    #[test]
+    #[ignore = "needs real X11; live desktop validates"]
+    fn overlay_windows_are_filtered_out() {
+        // This test exists to document the requirement and expected behavior.
+        // The actual filtering logic in window_rect checks:
+        //   if owner == "Ai-buddy" || owner == "ai-buddy" { return None; }
+        //
+        // Live X11 desktop test (manual):
+        // 1. Run ai-buddy on X11
+        // 2. xprop on the overlay shows WM_CLASS "ai-buddy", "Ai-buddy"
+        // 3. Slide a terminal window under the sprite's feet
+        // 4. Sprite should Perch on the terminal's top edge
+        //
+        // Before fix: overlay blocked Perch (overlay reported as frontmost window)
+        // After fix: overlay excluded, terminal edge is a Perch
+    }
 }
