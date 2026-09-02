@@ -87,20 +87,21 @@ AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
 AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
 cargo run
 
-# Ollama — the key is required by the stand-in and ignored by Ollama
+# Ollama — a local server, so no key at all
 cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY=ollama \
 AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=llama3.2 \
+AI_BUDDY_DIRECTOR_MODEL=gemma4 \
 cargo run
 ```
 
 | Variable | What it does |
 |---|---|
-| `AI_BUDDY_DIRECTOR_API_KEY` | Required for the HTTP stand-in. Empty or unset is Static only. |
+| `AI_BUDDY_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a [local](#a-local-model-server) server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
 | `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
 | `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
 | `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. |
+| `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
+| `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 A Character that should grow faster or slower than doubling says so:
@@ -131,6 +132,91 @@ AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
 AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
 scripts/probe-model.sh
 ```
+
+### A local model server
+
+The buddy wakes on a pace all day and every Poke is a wake on top of that, so
+a hosted API puts a meter on idling — and each wake sends the frontmost
+application name and the clock off the machine. A server of your own removes
+the metering, and a server on loopback also keeps that context on this
+machine; a box across the LAN still receives it. "Local" here means loopback,
+an RFC1918 or IPv6 unique-local address, or a `.local` name — the LAN counts,
+which is a wider circle than the *on-device* "Local Gate" in
+[CONTEXT.md](./CONTEXT.md). A local base URL makes `AI_BUDDY_DIRECTOR_API_KEY`
+optional: leave it unset when the server has no auth, set it when the server
+requires one. A remote URL still requires a real key, so a missing cloud key
+never becomes an unauthenticated request.
+
+These servers speak `/v1/chat/completions`, which is the path the Completer
+already builds:
+
+| Server | Base URL | Model name | Auth | Tested |
+|---|---|---|---|---|
+| [Ollama](https://ollama.com) | `http://localhost:11434` | a tag: `gemma4`, `llama3.2:3b` | none by default | yes — `gemma4:latest`, 9.6 GB, on an Apple-silicon Mac |
+| [oMLX](https://github.com/jundot/omlx) | `http://localhost:8000` | a served model id | API key required | yes |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | `http://localhost:8080` | the gguf path, or `--alias` | optional `--api-key` | no |
+| [LM Studio](https://lmstudio.ai) | `http://localhost:1234` | the id shown in its server tab | optional | no |
+| [vLLM](https://docs.vllm.ai) | `http://localhost:8000` | the served model id | optional `--api-key` | no |
+| [MLX](https://github.com/ml-explore/mlx-examples) `mlx_lm.server` | `http://localhost:8080` | a Hugging Face repo id | none | no |
+
+**Ollama** (no auth):
+
+```sh
+ollama pull gemma4
+ollama serve
+
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+cargo run
+```
+
+**oMLX** (requires API key):
+
+```sh
+omlx serve --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --api-key your-key-here
+
+AI_BUDDY_DIRECTOR_API_KEY=your-key-here \
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
+AI_BUDDY_DIRECTOR_MODEL=mlx-community/Qwen2.5-1.5B-Instruct-4bit \
+cargo run
+```
+
+**Check a server** before you trust it — reports whether the model you
+configured is actually loaded:
+
+```sh
+# Ollama (no key)
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+scripts/probe-model.sh
+
+# oMLX (with key)
+AI_BUDDY_DIRECTOR_API_KEY=your-key-here \
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
+AI_BUDDY_DIRECTOR_MODEL=mlx-community/Qwen2.5-1.5B-Instruct-4bit \
+scripts/probe-model.sh
+```
+
+At startup the app asks the same question once, in the background, and says
+so when the answer is no:
+
+```
+director: http://localhost:11439 unreachable: Connection refused; staying on StaticDirector until it answers
+director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:latest
+```
+
+Neither line stops anything: a wake that fails already falls back to Static
+per turn. The line exists so a buddy that went quiet is not a mystery.
+
+**Size and the reply contract.** The Director asks for a Behavior name on one
+line and an optional spoken line on the next. Small models break that shape
+more often than hosted ones do, and every break is silent — an unparsable
+reply becomes speech, a failed one becomes Static. A local reasoning model
+(Qwen3, gpt-oss) has a second failure: it thinks inside the same token budget
+on chat-completions, so a tight cap can be spent before it writes anything.
+That is why the local cap defaults to 512 rather than 80. Constrained
+decoding is the real fix, and four of the five servers support it through
+`response_format`; #144 decides that shape.
 
 ## Development
 
