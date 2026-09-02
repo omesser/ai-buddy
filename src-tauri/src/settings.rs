@@ -282,7 +282,7 @@ impl Settings {
         }
     }
 
-    /// Write the document, creating the parent directory if needed.
+    /// First launch may write under an app-data dir that does not exist yet.
     pub fn save(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;

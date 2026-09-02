@@ -30,7 +30,7 @@ pub enum MenuAction {
     SpawnInstance,
     /// Session Director on/off. Off leaves Static weights running the life.
     ToggleDirector,
-    /// Do Not Disturb checkbox toggle.
+    /// Quiet without hiding. #84: proposals stop; the Character stays on screen.
     ToggleDnd,
     /// Hide the Character instantly, same path as the hotkey.
     Hide,
@@ -710,6 +710,14 @@ mod tests {
             description.actions.get("hotkey"),
             Some(&MenuAction::OpenSettings),
             "the hotkey row opens settings, where it is bound"
+        );
+        // DESIGN.md: quiet is not gone. DND lives on the menu, not in this list.
+        assert!(
+            items.iter().all(|entry| match entry {
+                MenuEntry::Check { id, .. } | MenuEntry::Item { id, .. } => id != "dnd",
+                _ => true,
+            }),
+            "Do Not Disturb is not a hide rule"
         );
     }
 }

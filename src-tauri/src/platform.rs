@@ -23,10 +23,20 @@ use ai_buddy_core::window_source::{Rect, WindowSource};
 /// other witness: it only hears the button while click-through is off, which
 /// is exactly when the cursor is over the art.
 static OVERLAY_PRIMARY: AtomicBool = AtomicBool::new(false);
+static OVERLAY_SECONDARY: AtomicBool = AtomicBool::new(false);
 
 /// Latch or release the overlay's witness of the primary button.
 pub fn set_overlay_primary(down: bool) {
     OVERLAY_PRIMARY.store(down, Ordering::SeqCst);
+}
+
+/// Latch or release the overlay's witness of the secondary button.
+///
+/// Same reason as the primary: a right-click on our window is one
+/// `CGEventSource` has been seen to miss, and without this latch the
+/// webview's own menu is the only thing that hears it.
+pub fn set_overlay_secondary(down: bool) {
+    OVERLAY_SECONDARY.store(down, Ordering::SeqCst);
 }
 
 /// The overlay is passing clicks through, so it cannot still be holding a
@@ -39,10 +49,15 @@ pub fn set_overlay_primary(down: bool) {
 /// when this latch is the only witness.
 pub fn overlay_passes_clicks_through() {
     OVERLAY_PRIMARY.store(false, Ordering::SeqCst);
+    OVERLAY_SECONDARY.store(false, Ordering::SeqCst);
 }
 
 fn overlay_primary_down() -> bool {
     OVERLAY_PRIMARY.load(Ordering::SeqCst)
+}
+
+fn overlay_secondary_down() -> bool {
+    OVERLAY_SECONDARY.load(Ordering::SeqCst)
 }
 
 /// The displays as the frame loop needs to see them, from one read.
@@ -219,18 +234,18 @@ pub fn primary_button_down() -> bool {
 /// Whether the secondary mouse button (right-click) is down.
 #[cfg(target_os = "macos")]
 pub fn secondary_button_down() -> bool {
-    macos::secondary_button_down()
+    overlay_secondary_down() || macos::secondary_button_down()
 }
 
 /// X11 on Linux: XQueryPointer for Button3 (right-click).
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn secondary_button_down() -> bool {
-    x11::secondary_button_down()
+    overlay_secondary_down() || x11::secondary_button_down()
 }
 
 #[cfg(not(unix))]
 pub fn secondary_button_down() -> bool {
-    false
+    overlay_secondary_down()
 }
 
 /// Where the Free tier comes from: what the user is in, and how long since they
@@ -598,6 +613,29 @@ mod tests {
         assert!(
             !overlay_primary_down(),
             "click-through means the overlay is not a witness, so a lost pointerup must not keep the latch"
+        );
+    }
+
+    /// A right-click on the overlay is the same miss as a left-click. Without
+    /// this latch the webview's Inspect menu is the only thing that hears it.
+    #[test]
+    fn overlay_secondary_is_enough_for_a_press() {
+        set_overlay_secondary(false);
+        set_overlay_secondary(true);
+        assert!(
+            secondary_button_down(),
+            "a right-click the overlay felt must count as the button down"
+        );
+        set_overlay_secondary(false);
+    }
+
+    #[test]
+    fn a_stale_secondary_latch_clears_when_the_overlay_passes_clicks_through() {
+        set_overlay_secondary(true);
+        overlay_passes_clicks_through();
+        assert!(
+            !overlay_secondary_down(),
+            "click-through must drop a swallowed right-click too"
         );
     }
 }

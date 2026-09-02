@@ -69,7 +69,7 @@ const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
 
-/// Last Character Prompt and the config that produced it. #18 displays this.
+/// Last user turn and the config that produced it. #18 displays this.
 #[derive(Clone, Debug, Serialize)]
 pub struct DirectorInspect {
     pub enabled: bool,

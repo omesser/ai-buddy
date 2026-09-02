@@ -69,8 +69,7 @@ pub enum Verb {
     Throw { velocity: Point },
     /// A click on the sprite.
     Poke,
-    /// A right-click on the sprite. Opens the same menu the tray icon opens,
-    /// which #18 owns; until it exists the verb is accepted and shows nothing.
+    /// A right-click on the sprite. Opens the same menu the tray icon opens.
     Menu,
     /// A double-click on the sprite. Opens the chat surface, which is #17;
     /// until it exists the verb is accepted and shows nothing.

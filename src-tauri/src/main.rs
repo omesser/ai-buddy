@@ -417,6 +417,13 @@ fn overlay_primary(down: bool) {
     platform::set_overlay_primary(down);
 }
 
+/// Same witness for the right button. Without it a right-click on the sprite
+/// is swallowed by the webview and the session poll never sees a Menu.
+#[tauri::command]
+fn overlay_secondary(down: bool) {
+    platform::set_overlay_secondary(down);
+}
+
 /// Put the overlay over one display, covering it exactly.
 ///
 /// Sized before it is moved. Growing a window anchors its bottom-left corner,
@@ -621,7 +628,6 @@ fn check_for_update(app: tauri::AppHandle) {
     });
 }
 
-/// Apply a menu action to the roster, hide rules, and settings.
 // One over the clippy cap. Settings, hide rules, and the Director each have
 // to hear the same click, and folding them would mix persist with proposal.
 #[allow(clippy::too_many_arguments)]
@@ -647,6 +653,8 @@ fn apply_menu_action(
                     persist_settings(&settings, settings_path);
                 }
                 eprintln!("menu: switching to {name}");
+            } else {
+                eprintln!("menu: no Character named {name}");
             }
         }
         menu::MenuAction::SpawnInstance => {
@@ -1205,6 +1213,8 @@ fn run_frame_loop(
                                     &config,
                                 );
                             }
+                        } else {
+                            eprintln!("settings: no Character named {character}");
                         }
                     }
                 }
@@ -1299,20 +1309,10 @@ fn run_frame_loop(
                         live.verbs.push(Verb::Menu);
                     }
                 } else if live.verbs.iter().any(|verb| matches!(verb, Verb::Menu)) {
-                    let bundled = app
-                        .path()
-                        .resource_dir()
-                        .ok()
-                        .map(|dir| dir.join(BUNDLED_CHARACTERS));
-                    let search_paths = package::search_paths(bundled);
-                    let installed = package::installed(&search_paths)
-                        .iter()
-                        .filter_map(|path| {
-                            path.file_stem()
-                                .and_then(|name| name.to_str())
-                                .map(|name| name.to_string())
-                        })
-                        .collect::<Vec<_>>();
+                    // Same names the cache is keyed by. Folder stems (`trump`)
+                    // are not Character names (`Trump`); looking up a stem
+                    // would silently refuse the switch.
+                    let installed: Vec<String> = characters.keys().cloned().collect();
 
                     // The Engine's own answer rather than a copy of it, so the
                     // checkbox cannot disagree with what the buddy is doing.
@@ -2278,7 +2278,11 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![character, overlay_primary])
+        .invoke_handler(tauri::generate_handler![
+            character,
+            overlay_primary,
+            overlay_secondary
+        ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
             // means no overlay. Reported and exited rather than returned as a

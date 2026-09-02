@@ -22,7 +22,7 @@ use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
-const DOC_HEIGHT: f64 = 1120.0;
+const DOC_HEIGHT: f64 = 1156.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
 
@@ -97,17 +97,6 @@ define_class!(
                 _ => return,
             }
             self.apply(patch);
-        }
-
-        #[unsafe(method(hotkeyEnded:))]
-        fn hotkey_ended(&self, sender: Option<&AnyObject>) {
-            let Some(field) = sender.and_then(|s| s.downcast_ref::<NSTextField>()) else {
-                return;
-            };
-            self.apply(SettingsPatch {
-                hide_hotkey: Some(field.stringValue().to_string()),
-                ..SettingsPatch::default()
-            });
         }
 
         #[unsafe(method(excludedEnded:))]
@@ -418,8 +407,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let ambient = checkbox("Ambient session wakes", TAG_AMBIENT, &controller, mtm);
     cursor.place(&ambient, 22.0);
     cursor.hint("Off keeps Poke and Summon on the session path. Idle life stays Static.");
-    cursor.heading("Last Character Prompt");
-    cursor.hint("Inspect only. This is what the last session turn sent.");
+    cursor.heading("Last user turn");
+    cursor.hint("Inspect only. The last session turn, opening Character Prompt or follow-up.");
     let payload = inspect_block(mtm);
     cursor.place(&payload, 88.0);
 
@@ -462,26 +451,23 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     document.addSubview(&spawn);
     cursor.y -= 16.0;
 
-    cursor.heading("Hide");
+    // DESIGN.md: quiet is not gone. A Hide heading would teach the opposite.
+    cursor.heading("Do Not Disturb");
     let dnd = checkbox("Do Not Disturb", TAG_DND, &controller, mtm);
     cursor.place(&dnd, 22.0);
     cursor.hint("On screen, not starting things.");
+
+    cursor.heading("Hide");
     let hidden = checkbox("Go away", TAG_HIDDEN, &controller, mtm);
     cursor.place(&hidden, 22.0);
     let fullscreen = checkbox("Hide in fullscreen apps", TAG_FULLSCREEN, &controller, mtm);
     cursor.place(&fullscreen, 22.0);
     let hotkey_label = NSTextField::labelWithString(&NSString::from_str("Hotkey"), mtm);
     cursor.place(&hotkey_label, 18.0);
-    // Same chrome as the inspect fields so it does not look like a form box.
-    // It stays editable: this is how the binding is changed.
+    // Shown, not edited. A string field is not a key recorder, and there is
+    // no capture UI yet.
     let hotkey = inspect_line(mtm);
-    hotkey.setEditable(true);
-    unsafe {
-        hotkey.setTarget(Some(&*controller));
-        hotkey.setAction(Some(sel!(hotkeyEnded:)));
-    }
     cursor.place(&hotkey, 22.0);
-    cursor.hint("Click the binding to type another, like Control-Shift-H.");
 
     cursor.heading("Memory");
     let memory_path = NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
