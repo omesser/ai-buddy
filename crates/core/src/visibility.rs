@@ -48,6 +48,13 @@ const EDGE_TOLERANCE: f64 = 1.0;
 /// display. #188.
 const STRIP_FRACTION: f64 = 0.3;
 
+/// How much of an edge a reserved strip must cover.
+///
+/// The Dock island is most of the display; a palette parked on the floor is
+/// not. Without this, a short frontmost window is skipped and the fullscreen
+/// window behind it hides the Character. #188.
+const STRIP_SPAN: f64 = 0.5;
+
 /// What the desktop says about whether the Character belongs on screen.
 ///
 /// One condition, named rather than passed as a bare bool, because the caller
@@ -220,8 +227,11 @@ fn reserved_strip(window: &WindowRect, frame: &Rect) -> bool {
 
     let thin_h = window.height > 0.0 && window.height <= frame.height * STRIP_FRACTION;
     let thin_w = window.width > 0.0 && window.width <= frame.width * STRIP_FRACTION;
+    let spans_h = window.width >= frame.width * STRIP_SPAN;
+    let spans_v = window.height >= frame.height * STRIP_SPAN;
 
-    (thin_h && (hugs_top || hugs_bottom)) || (thin_w && (hugs_left || hugs_right))
+    (thin_h && spans_h && (hugs_top || hugs_bottom))
+        || (thin_w && spans_v && (hugs_left || hugs_right))
 }
 
 /// Whether a window reaches every edge of a display, give or take the slack a
@@ -348,12 +358,9 @@ mod tests {
         }
     }
 
-    /// #188: the Shell inserts the Dock at the front of the snapshot, because
-    /// it draws above every application window. The Dock overlaps a display and
-    /// never covers one, so asking the first overlapping window asks whether
-    /// the Dock is fullscreen. During the Space transition the Dock is gone
-    /// and the Character fades out; then the Dock comes back and the Character
-    /// fades in and sits on the fullscreen app.
+    /// #188: the Shell inserts the Dock at the front of the snapshot. It
+    /// overlaps a display and never covers one, so it must not answer for the
+    /// fullscreen window behind it.
     #[test]
     fn the_dock_does_not_answer_for_the_window_behind_it() {
         // The island CoreDock reports: centered, sitting on the display's
@@ -374,6 +381,20 @@ mod tests {
         assert!(
             fullscreen_frontmost(&[side_dock, fullscreen], &[display()]),
             "a Dock on the left edge is the same strip, turned"
+        );
+    }
+
+    /// A short window on the bottom edge is still the window being worked in.
+    /// Treating every thin edge-hugger as chrome would skip it and hide for
+    /// the fullscreen window behind, which is the case
+    /// `a_fullscreen_window_that_is_not_frontmost` already names. #188.
+    #[test]
+    fn a_short_window_on_the_bottom_edge_is_still_the_one_being_worked_in() {
+        let palette = window(200.0, 880.0, 400.0, 200.0);
+        let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
+        assert!(
+            !fullscreen_frontmost(&[palette, fullscreen], &[display()]),
+            "a 400-wide palette on the floor is not the Dock"
         );
     }
 
