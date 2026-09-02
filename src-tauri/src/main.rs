@@ -468,8 +468,12 @@ fn build_overlay(
     // default swallows a click; this one loses nothing.
     window.set_ignore_cursor_events(true)?;
     cover_display(&window, display)?;
-    platform::configure_overlay(&window)?;
+    // Show the window first so GTK realizes it and creates the native handle.
+    // Linux (GTK) has no GdkWindow until the widget is realized; macOS NSWindow
+    // exists while hidden. configure_overlay will log and retry if the handle
+    // is still not ready after show().
     window.show()?;
+    platform::configure_overlay(&window)?;
 
     eprintln!(
         "overlay: {label} covers {:.0}x{:.0} at ({:.0},{:.0})",
@@ -954,6 +958,11 @@ fn run_frame_loop(
         // decision so the first tick always applies.
         let mut ignoring: Vec<Option<bool>> = vec![None; covered.len()];
 
+        // Track whether each overlay's EWMH configuration (floating, skip taskbar)
+        // succeeded. Retried on each frame until successful. GTK may not have a
+        // window handle immediately after show().
+        let mut configured: Vec<bool> = vec![false; covered.len()];
+
         // The displays the overlays cover, as setup left them. Shared with the
         // main thread, which is the only place that can change what they cover
         // and so the only place that knows when this is true again.
@@ -996,6 +1005,7 @@ fn run_frame_loop(
 
             // One flag per overlay, and the desktop can gain or lose one.
             ignoring.resize(displays.frames.len(), None);
+            configured.resize(displays.frames.len(), false);
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -1878,6 +1888,16 @@ fn run_frame_loop(
                 let Some(window) = app.get_webview_window(&label) else {
                     continue; // a display whose overlay has not been built yet
                 };
+
+                // Retry EWMH configuration if it hasn't succeeded yet. GTK needs
+                // the window realized (shown and ticked) before window_handle works.
+                if !configured.get(index).copied().unwrap_or(false) {
+                    if platform::configure_overlay(&window).is_ok() {
+                        configured[index] = true;
+                        eprintln!("overlay: {label} EWMH configured");
+                    }
+                }
+
                 // Every overlay is told about every Instance, including the ones
                 // no sprite is anywhere near: each draws the part that falls
                 // inside it, which is what leaves a Character on a seam whole

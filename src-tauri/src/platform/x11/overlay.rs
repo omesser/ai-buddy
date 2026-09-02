@@ -12,9 +12,19 @@ use x11rb::rust_connection::RustConnection;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 /// Configure the Tauri window as an X11 overlay: floating, non-activating, skip taskbar.
+///
+/// Missing window handles are logged but not fatal - the app must start even if
+/// EWMH configuration is delayed or fails.
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let Ok(raw_window_handle) = window.window_handle() else {
-        return Err("Failed to get window handle".to_string());
+    let raw_window_handle = match window.window_handle() {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!(
+                "overlay: configure_overlay deferred (no window handle yet): {}",
+                e
+            );
+            return Ok(()); // Log but don't abort startup
+        }
     };
 
     let x_window = match raw_window_handle.as_raw() {
@@ -37,6 +47,9 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Uses XShapeCombineMask to set the input region. When mask_data is None,
 /// the entire window is click-through. When mask_data is Some, only the opaque
 /// pixels receive clicks.
+///
+/// Missing window handles are logged but not fatal - click-through will retry
+/// on subsequent frames once the window is realized.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
@@ -44,8 +57,15 @@ pub fn update_input_region(
     sprite_y: i32,
     scale: i32,
 ) -> Result<(), String> {
-    let Ok(raw_window_handle) = window.window_handle() else {
-        return Err("Failed to get window handle".to_string());
+    let raw_window_handle = match window.window_handle() {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!(
+                "overlay: update_input_region deferred (no window handle yet): {}",
+                e
+            );
+            return Ok(()); // Log but don't abort
+        }
     };
 
     let x_window = match raw_window_handle.as_raw() {
