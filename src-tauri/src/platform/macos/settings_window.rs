@@ -20,7 +20,7 @@ use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
-use crate::consent::{self, CapabilityId};
+use crate::consent;
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
