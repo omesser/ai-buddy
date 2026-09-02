@@ -808,7 +808,9 @@ fn endpoint_field(
 }
 
 fn bind_commit(field: &NSTextField, controller: &SettingsController) {
-    field.setDelegate(Some(ProtocolObject::from_ref(controller)));
+    unsafe {
+        field.setDelegate(Some(ProtocolObject::from_ref(controller)));
+    }
     if let Some(cell) = field.cell() {
         unsafe {
             let _: () = msg_send![&cell, setSendsActionOnEndEditing: true];
@@ -821,14 +823,14 @@ fn bind_commit(field: &NSTextField, controller: &SettingsController) {
 }
 
 fn editable_block(controller: &SettingsController, mtm: MainThreadMarker) -> Retained<NSTextView> {
-    let text = unsafe {
-        NSTextView::initWithFrame(
-            NSTextView::alloc(mtm),
-            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 88.0)),
-        )
-    };
+    let text = NSTextView::initWithFrame(
+        NSTextView::alloc(mtm),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 88.0)),
+    );
     text.setFont(NSFont::userFixedPitchFontOfSize(11.0).as_deref());
-    text.setDelegate(Some(ProtocolObject::from_ref(controller)));
+    unsafe {
+        text.setDelegate(Some(ProtocolObject::from_ref(controller)));
+    }
     text
 }
 
