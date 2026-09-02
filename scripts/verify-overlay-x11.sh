@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Verify X11 overlay functional parity: Perch, ride, drop, Poke, EWMH states.
 #
-# Xvfb-runnable. Not a pre-commit hook. Asserts behavior from traces and xprop.
+# Xvfb-runnable with limitations: Tauri+WebKitGTK requires OpenGL/EGL support.
+# Under Xvfb, the app may fail to create windows due to missing GL drivers.
+# On a real X11 display with a window manager, all assertions run.
+#
 # Run with: scripts/verify-overlay-x11.sh
 
 set -euo pipefail
@@ -84,7 +87,8 @@ cleanup() {
   if [ $WM_STARTED -eq 1 ]; then
     kill $WM_PID 2> /dev/null || true
   fi
-  rm -f "$TRACE_LOG"
+  # Keep trace log for debugging
+  # rm -f "$TRACE_LOG"
 }
 trap cleanup EXIT
 
@@ -104,7 +108,19 @@ done
 
 if [ -z "$WINDOW_ID" ]; then
   log_error "Could not find ai-buddy window after ${MAX_WAIT}s"
-  cat "$TRACE_LOG"
+  log_error ""
+  log_error "This usually means WebKitGTK failed to create windows."
+  log_error "Common causes:"
+  log_error "  - Running under Xvfb without OpenGL/EGL support"
+  log_error "  - Missing mesa drivers (libgl1-mesa-dri, libegl1-mesa)"
+  log_error "  - X server does not support DRI3"
+  log_error ""
+  log_error "To run this script:"
+  log_error "  1. On a real X11 display: DISPLAY=:0 scripts/verify-overlay-x11.sh"
+  log_error "  2. Or install mesa: sudo apt-get install libgl1-mesa-dri libegl1-mesa"
+  log_error ""
+  log_error "Last 20 lines of trace log:"
+  tail -20 "$TRACE_LOG"
   exit 1
 fi
 
