@@ -12,8 +12,8 @@ use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSBackingStoreType, NSButton, NSColor,
     NSControlStateValueOff, NSControlStateValueOn, NSFont, NSPopUpButton, NSScrollView,
-    NSSecureTextField, NSTextDelegate, NSTextField, NSTextView, NSTextViewDelegate, NSView,
-    NSWindow, NSWindowDelegate, NSWindowStyleMask,
+    NSSecureTextField, NSTextDelegate, NSTextField, NSTextFieldDelegate, NSTextView,
+    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -79,6 +79,8 @@ define_class!(
     }
 
     unsafe impl NSTextViewDelegate for SettingsController {}
+
+    unsafe impl NSTextFieldDelegate for SettingsController {}
 
     impl SettingsController {
         #[unsafe(method(toggle:))]
@@ -167,9 +169,14 @@ define_class!(
             let Some(button) = sender.and_then(|s| s.downcast_ref::<NSButton>()) else {
                 return;
             };
-            let index = button.tag() as usize;
-            if let Some(session) = self.ivars().session.borrow().as_ref() {
-                session.dismiss(index);
+            let id = button.tag();
+            let session = self.ivars().session.borrow();
+            let Some(session) = session.as_ref() else {
+                return;
+            };
+            let view = session.view();
+            if let Some(row) = view.instances.get(id as usize) {
+                session.dismiss(row.id.clone());
             }
         }
     }
@@ -226,9 +233,7 @@ impl SettingsController {
         let mtm = self.mtm();
         let alert = NSAlert::new(mtm);
         alert.setMessageText(&NSString::from_str("Wipe Memory?"));
-        alert.setInformativeText(&NSString::from_str(
-            "A backup is kept beside the file.",
-        ));
+        alert.setInformativeText(&NSString::from_str("A backup is kept beside the file."));
         alert.addButtonWithTitle(&NSString::from_str("Wipe"));
         alert.addButtonWithTitle(&NSString::from_str("Cancel"));
         if alert.runModal() != NSAlertFirstButtonReturn {
@@ -555,15 +560,15 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                     if let Some(help_text) = help {
                         cursor.hint(help_text);
                     }
-                    let text = if *editable {
-                        editable_block(&controller, mtm)
+                    if *editable {
+                        let text = editable_block(&controller, mtm);
+                        cursor.place(&text, 88.0);
+                        if id == form::EXCLUDED_ID {
+                            excluded_text = Some(text);
+                        }
                     } else {
-                        inspect_block(mtm)
-                    };
-                    cursor.place(&text, 88.0);
-
-                    if id == form::EXCLUDED_ID {
-                        excluded_text = Some(text);
+                        let field = inspect_block(mtm);
+                        cursor.place(&field, 88.0);
                     }
                 }
                 FormRow::Composite { controls, .. } => {
@@ -834,8 +839,10 @@ fn popup(
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
         false,
     );
-    popup.setTarget(Some(controller));
-    popup.setAction(Some(action));
+    unsafe {
+        popup.setTarget(Some(controller));
+        popup.setAction(Some(action));
+    }
     popup
 }
 
