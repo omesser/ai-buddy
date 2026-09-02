@@ -48,6 +48,7 @@ use ai_buddy_core::visibility::HideRules;
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use secrets::{KeyringStore, SecretStore};
 use serde::Serialize;
 use settings::{InstanceRow, Settings, SettingsOp, SettingsSession};
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -88,6 +89,7 @@ const FRAME_EVENT: &str = "frame";
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
     config: model::DirectorConfig,
+    settings: model::DirectorSettings,
     inspect: Arc<Mutex<model::DirectorInspect>>,
 }
 
@@ -191,6 +193,7 @@ struct SettingsState {
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
     rules: Arc<Mutex<HideRules>>,
+    secrets: Arc<dyn SecretStore>,
 }
 
 /// How long a hold survives without hearing anything before it is dropped.
@@ -383,6 +386,8 @@ fn show_settings(app: &tauri::AppHandle) {
         ops: state.ops.clone(),
         app: app.clone(),
         on_rebind: bind_hide_hotkey,
+        secrets: Arc::clone(&state.secrets),
+        key_cache: Mutex::new(None),
     };
     if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
         eprintln!("settings: {why}");
@@ -652,13 +657,14 @@ fn apply_menu_action(
     settings_path: &std::path::Path,
     characters: &BTreeMap<String, Arc<Character>>,
     config: &mut model::DirectorConfig,
+    director: &model::DirectorSettings,
     inspect: &Arc<Mutex<model::DirectorInspect>>,
     app: &tauri::AppHandle,
 ) {
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
-                switch_instance(roster, lives, instance_id, character, config);
+                switch_instance(roster, lives, instance_id, character, config, director);
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -676,7 +682,15 @@ fn apply_menu_action(
                 .filter(|name| !name.is_empty())
                 .or_else(|| lives.first().map(|live| live.character.name.clone()));
             if let Some(name) = character_name {
-                spawn_live(roster, lives, characters, &name, name.clone(), config);
+                spawn_live(
+                    roster,
+                    lives,
+                    characters,
+                    &name,
+                    name.clone(),
+                    config,
+                    director,
+                );
             }
         }
         menu::MenuAction::ToggleDirector => {
@@ -753,17 +767,12 @@ fn switch_instance(
     instance_id: &InstanceId,
     character: Arc<Character>,
     config: &model::DirectorConfig,
+    settings: &model::DirectorSettings,
 ) {
     roster.retarget(instance_id, &character);
     if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
         live.character = character;
         live.director = StaticDirector::new(live.character.behaviors.clone(), 0);
-        live.model = config.enabled.then(|| {
-            Arc::new(ModelDirector::new(
-                model::endpoint().expect("enabled means a key was set"),
-                live.character.behaviors.keys().cloned(),
-            ))
-        });
         live.pace = Pace::with_growth(
             config.ambient_first,
             live.character.model_base,
@@ -771,8 +780,14 @@ fn switch_instance(
         );
         // The old session is the previous Character's. A Wake still on the
         // wire would propose as them; drop it and ask for this opening turn.
-        live.pending.cancel();
-        live.in_flight = None;
+        model::retarget_model(
+            &mut live.pending,
+            &mut live.in_flight,
+            &mut live.model,
+            live.character.behaviors.keys().cloned(),
+            settings,
+            config.configured,
+        );
         live.recent.clear();
         live.happened = Happened::Ambient;
         live.addressed = true;
@@ -786,6 +801,7 @@ fn spawn_live(
     character_name: &str,
     instance_name: String,
     config: &model::DirectorConfig,
+    settings: &model::DirectorSettings,
 ) {
     let Some(character) = characters.get(character_name).cloned() else {
         eprintln!("menu: no Character named {character_name}");
@@ -811,9 +827,9 @@ fn spawn_live(
     lives.push(InstanceState {
         id,
         director: StaticDirector::new(character.behaviors.clone(), seed),
-        model: config.enabled.then(|| {
+        model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
-                model::endpoint().expect("enabled means a key was set"),
+                model::endpoint_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
             ))
         }),
@@ -1024,6 +1040,7 @@ fn spawn_instances(
     loaded: &[(InstanceSpec, Arc<Character>)],
     start: Point,
     config: &model::DirectorConfig,
+    settings: &model::DirectorSettings,
 ) -> (Roster, Vec<InstanceState>) {
     let mut roster = Roster::new(MemoryManifest::new(memory::shared_path()));
     let mut lives = Vec::with_capacity(loaded.len());
@@ -1064,9 +1081,9 @@ fn spawn_instances(
             // the handful a desktop holds; a budget the Instances draw from is
             // the upgrade, and it wants somewhere to show the spend, which is
             // #18's panel.
-            model: config.enabled.then(|| {
+            model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
-                    model::endpoint().expect("enabled means a key was set"),
+                    model::endpoint_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                 ))
             }),
@@ -1384,7 +1401,15 @@ fn main() {
                 check_for_update(app.handle().clone());
             }
 
-            let mut config = model::config();
+            let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new());
+            let director = match settings::director_settings(&settings, secrets.as_ref()) {
+                Ok(director) => director,
+                Err(why) => {
+                    eprintln!("director: secret store: {why}");
+                    model::resolve(&settings.director_base_url, &settings.director_model, None)
+                }
+            };
+            let mut config = model::config_from(&director);
             config.enabled = settings.director_enabled && config.configured;
             config.ambient_allowed = settings.ambient_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect()));
@@ -1393,10 +1418,10 @@ fn main() {
                 eprintln!("{line}");
             }
             if config.enabled {
-                model::spawn_preflight();
+                model::spawn_preflight(&director);
             }
 
-            let (mut roster, lives) = spawn_instances(&loaded, start, &config);
+            let (mut roster, lives) = spawn_instances(&loaded, start, &config, &director);
             if settings.do_not_disturb {
                 for (id, _) in roster.list() {
                     if let Some(instance) = roster.get_mut(&id) {
@@ -1436,6 +1461,7 @@ fn main() {
                 inspect: Arc::clone(&inspect),
                 ops: ops_tx,
                 rules: Arc::clone(&rules),
+                secrets: Arc::clone(&secrets),
             });
             app.manage(Arc::clone(&rules));
 
@@ -1469,7 +1495,11 @@ fn main() {
             };
             app.manage(TrayHandle(Mutex::new(tray)));
 
-            let director_run = DirectorRun { config, inspect };
+            let director_run = DirectorRun {
+                config,
+                settings: director,
+                inspect,
+            };
 
             // Selections do not come back from the popup: it returns once the
             // menu is on screen, and the click arrives here, later, on the app's

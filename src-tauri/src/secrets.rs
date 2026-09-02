@@ -3,12 +3,11 @@
 //! The Director API key is one: it belongs in the OS secret store, not in
 //! `settings.json`, where a sync or a backup would copy it in plain text.
 //! `SecretStore` is the seam — `MemoryStore` in tests, `KeyringStore` in the
-//! process — so later tasks can read and write the key without touching Keychain
-//! from `#[cfg(test)]`.
+//! process — so tests can read and write the key without touching Keychain.
 
-#![expect(dead_code)] // Task 4 wires KeyringStore; Tasks 2–3 consume the seam.
-
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::Mutex;
 
 use keyring::Entry;
@@ -24,10 +23,12 @@ pub trait SecretStore: Send + Sync {
 }
 
 /// In-memory store for tests. Never touches Keychain.
+#[cfg(test)]
 pub struct MemoryStore {
     inner: Mutex<HashMap<String, String>>,
 }
 
+#[cfg(test)]
 impl MemoryStore {
     pub fn new() -> Self {
         Self {
@@ -36,6 +37,7 @@ impl MemoryStore {
     }
 }
 
+#[cfg(test)]
 impl SecretStore for MemoryStore {
     fn get(&self, account: &str) -> Result<Option<String>, String> {
         let map = self.inner.lock().map_err(|e| e.to_string())?;

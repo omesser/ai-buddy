@@ -58,6 +58,7 @@ pub(crate) fn run_frame_loop(
         let mut assembler = SnapshotAssembler::new(source);
         let DirectorRun {
             mut config,
+            settings: mut director,
             inspect,
         } = director_run;
         let FrameExtras {
@@ -360,6 +361,7 @@ pub(crate) fn run_frame_loop(
                     &settings_path,
                     &characters,
                     &mut config,
+                    &director,
                     &inspect,
                     &app,
                 );
@@ -387,6 +389,7 @@ pub(crate) fn run_frame_loop(
                             &settings_path,
                             &characters,
                             &mut config,
+                            &director,
                             &inspect,
                             &app,
                         );
@@ -406,6 +409,7 @@ pub(crate) fn run_frame_loop(
                             &character,
                             name,
                             &config,
+                            &director,
                         );
                     }
                     SettingsOp::Dismiss { id } => {
@@ -422,10 +426,41 @@ pub(crate) fn run_frame_loop(
                                     &id,
                                     Arc::clone(&loaded),
                                     &config,
+                                    &director,
                                 );
                             }
                         } else {
                             eprintln!("settings: no Character named {character}");
+                        }
+                    }
+                    SettingsOp::Retarget {
+                        settings,
+                        enabled,
+                        ambient_allowed,
+                        configured,
+                    } => {
+                        director = settings;
+                        config = model::config_from(&director);
+                        config.enabled = enabled;
+                        config.ambient_allowed = ambient_allowed;
+                        config.configured = configured;
+                        if let Ok(mut inspect) = inspect.lock() {
+                            inspect.enabled = config.enabled;
+                            inspect.configured = config.configured;
+                            inspect.ambient_wakes = config.ambient_allowed;
+                        }
+                        for live in &mut lives {
+                            // Completer target changed, not Character. A Wake
+                            // still on the wire would propose against the old
+                            // host and session; drop it and open a new turn.
+                            model::retarget_model(
+                                &mut live.pending,
+                                &mut live.in_flight,
+                                &mut live.model,
+                                live.character.behaviors.keys().cloned(),
+                                &director,
+                                configured,
+                            );
                         }
                     }
                 }
