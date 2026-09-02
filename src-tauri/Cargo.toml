@@ -40,6 +40,8 @@ tauri-plugin-global-shortcut = "2"
 # Sync HTTP for the model Director. A worker thread posts; the frame loop
 # does not wait. ureq instead of reqwest: no tokio.
 ureq = {version = "3", features = ["json"]}
+# ureq 3 uses http crate types; name it here for direct access.
+http = "1"
 serde_json = "1"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.

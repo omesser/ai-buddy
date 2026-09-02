@@ -510,7 +510,7 @@ impl Endpoint {
         }
     }
 
-    fn headers(&self, request: ureq::RequestBuilder) -> ureq::RequestBuilder {
+    fn headers<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
         let mut request = request
             .set("User-Agent", "ai-buddy")
             .set("Accept", "application/json")
@@ -518,6 +518,8 @@ impl Endpoint {
         if !self.api_key.is_empty() {
             request = request.set("Authorization", &format!("Bearer {}", self.api_key));
         }
+        // Anthropic's OpenAI layer accepts Bearer; the native Messages path
+        // wants these two. Sending both covers either.
         if self.url.contains("api.anthropic.com") {
             request = request.set("anthropic-version", "2023-06-01");
             if !self.api_key.is_empty() {
