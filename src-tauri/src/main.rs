@@ -444,9 +444,16 @@ fn show_settings(app: &tauri::AppHandle) {
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        gtk::glib::MainContext::default().invoke(move || {
-            platform::show_settings(session);
-        });
+        let ctx = gtk::glib::MainContext::default();
+        if ctx.is_owner() {
+            gtk::glib::idle_add_local_once(move || {
+                platform::show_settings(session);
+            });
+        } else {
+            ctx.invoke(move || {
+                platform::show_settings(session);
+            });
+        }
     }
 
     #[cfg(not(all(unix, not(target_os = "macos"))))]
