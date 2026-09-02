@@ -41,6 +41,10 @@ __pycache__/
 # Python virtual environments (the pet importer's Pillow lives in one)
 .venv/
 
+# Isolated git worktrees for feature work. Checkouts of this repository, so
+# committing one would nest a clone inside itself.
+.worktrees/
+
 # Claude Code's working directory: local settings, and the throwaway worktrees
 # subagents are given. Those worktrees are checkouts of this repository, so
 # committing one would nest a clone inside itself.
