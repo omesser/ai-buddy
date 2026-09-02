@@ -387,6 +387,7 @@ fn show_settings(app: &tauri::AppHandle) {
         app: app.clone(),
         on_rebind: bind_hide_hotkey,
         secrets: Arc::clone(&state.secrets),
+        key_cache: Mutex::new(None),
     };
     if let Err(why) = app.run_on_main_thread(move || platform::show_settings(session)) {
         eprintln!("settings: {why}");
@@ -865,7 +866,6 @@ struct FrameExtras {
     characters: BTreeMap<String, Arc<Character>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     ops: mpsc::Receiver<SettingsOp>,
-    secrets: Arc<dyn SecretStore>,
 }
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
@@ -1535,7 +1535,6 @@ fn main() {
                     characters: character_cache,
                     instances: instance_rows,
                     ops: ops_rx,
-                    secrets,
                 },
             );
             Ok(())

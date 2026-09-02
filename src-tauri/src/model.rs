@@ -132,7 +132,7 @@ impl std::fmt::Debug for DirectorSources {
         f.debug_struct("DirectorSources")
             .field("base_url", &self.base_url)
             .field("model", &self.model)
-            .field("api_key", &key_fingerprint(&self.api_key))
+            .field("key_fingerprint", &key_fingerprint(&self.api_key))
             .field("key_invalid", &self.key_invalid)
             .finish()
     }
@@ -944,8 +944,7 @@ mod tests {
 
     fn with_env(key: Option<&str>, base: Option<&str>, model: Option<&str>, body: impl FnOnce()) {
         // Concurrent setenv/getenv is undefined behaviour. These three vars are
-        // process-global and nine tests share them; serialise the mutation.
-        // Recover from poison so one panicking test does not lock the rest out.
+        // process-global and the resolve tests share them; serialise mutation.
         static ENV: Mutex<()> = Mutex::new(());
         let _lock = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
@@ -1021,6 +1020,22 @@ mod tests {
     }
 
     #[test]
+    fn invalid_env_beats_store() {
+        with_env(Some(""), None, None, || {
+            let sources = resolve(
+                "https://api.openai.com",
+                "gpt-4o-mini",
+                Some("sk-stored-key"),
+            );
+            assert!(
+                sources.api_key.is_empty(),
+                "a blank env key must not fall through to the store"
+            );
+            assert!(sources.key_invalid);
+        });
+    }
+
+    #[test]
     fn a_remote_url_without_a_key_is_not_configured() {
         with_env(None, None, None, || {
             let sources = resolve("https://api.openai.com", "gpt-4o-mini", None);
@@ -1059,6 +1074,10 @@ mod tests {
             assert!(
                 !dump.contains("sk-super-secret-key"),
                 "Debug must not echo the key: {dump}"
+            );
+            assert!(
+                dump.contains("key_fingerprint"),
+                "Debug should name the fingerprint field: {dump}"
             );
             assert!(
                 dump.contains(&key_fingerprint("sk-super-secret-key")),
@@ -1362,26 +1381,23 @@ mod tests {
 
     #[test]
     fn a_present_key_is_used_even_when_the_base_is_local() {
-        // oMLX, llama.cpp --api-key, and vLLM --api-key all take keys on
-        // localhost. The `endpoint()` logic must preserve a present key when
-        // `is_local` returns true, not drop it or refuse to configure.
-        //
-        // This tests the match arm: `Some(key) => key`, which runs before the
-        // `None if local` arm. An Endpoint with a non-empty key on a local URL
-        // means the key was preserved.
-        let local_base = "http://localhost:8000";
-        assert!(is_local(local_base), "precondition: the base is local");
-
-        // Simulate what `endpoint()` does when a key is present and base is local
-        let key = Some("omlx-test-key".to_string());
-        let api_key = match key {
-            Some(k) => k,
-            None if is_local(local_base) => String::new(),
-            None => panic!("should not reach: test has a key"),
-        };
-
-        assert_eq!(api_key, "omlx-test-key");
-        assert!(!api_key.is_empty(), "the key is preserved, not dropped");
+        with_env(None, None, None, || {
+            let sources = resolve(
+                "http://localhost:8000",
+                "local-model",
+                Some("omlx-test-key"),
+            );
+            assert!(
+                is_local(&sources.base_url),
+                "precondition: the base is local"
+            );
+            let endpoint = endpoint_from(&sources).expect("local is configured");
+            assert_eq!(
+                endpoint.key_fingerprint(),
+                key_fingerprint("omlx-test-key"),
+                "a present key must not be dropped for a local base"
+            );
+        });
     }
 
     struct Slow;

@@ -67,7 +67,6 @@ pub(crate) fn run_frame_loop(
             characters,
             instances: instance_rows,
             ops,
-            secrets,
         } = extras;
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
@@ -434,36 +433,34 @@ pub(crate) fn run_frame_loop(
                             eprintln!("settings: no Character named {character}");
                         }
                     }
-                    SettingsOp::Retarget => {
-                        let settings_now =
-                            settings.lock().ok().map(|s| s.clone()).unwrap_or_default();
-                        match super::settings::director_sources(&settings_now, secrets.as_ref()) {
-                            Ok(new_sources) => {
-                                sources = new_sources;
-                                config = model::config_from(&sources);
-                                config.enabled = settings_now.director_enabled && config.configured;
-                                config.ambient_allowed = settings_now.ambient_wakes;
-                                if let Ok(mut inspect) = inspect.lock() {
-                                    inspect.enabled = config.enabled;
-                                    inspect.configured = config.configured;
-                                    inspect.ambient_wakes = config.ambient_allowed;
-                                }
-                                for live in &mut lives {
-                                    // The Completer changed, not the Character. A Wake still on
-                                    // the wire would propose against the old session; drop it.
-                                    model::retarget_model(
-                                        &mut live.pending,
-                                        &mut live.in_flight,
-                                        &mut live.model,
-                                        live.character.behaviors.keys().cloned(),
-                                        &sources,
-                                        config.configured,
-                                    );
-                                }
-                            }
-                            // Keep the running Completer: treating a read error as
-                            // Unset would drop a remote session to Static.
-                            Err(why) => eprintln!("director: secret store: {why}"),
+                    SettingsOp::Retarget {
+                        sources: new_sources,
+                        enabled,
+                        ambient_allowed,
+                        configured,
+                    } => {
+                        sources = new_sources;
+                        config = model::config_from(&sources);
+                        config.enabled = enabled;
+                        config.ambient_allowed = ambient_allowed;
+                        config.configured = configured;
+                        if let Ok(mut inspect) = inspect.lock() {
+                            inspect.enabled = config.enabled;
+                            inspect.configured = config.configured;
+                            inspect.ambient_wakes = config.ambient_allowed;
+                        }
+                        for live in &mut lives {
+                            // Completer target changed, not Character. A Wake
+                            // still on the wire would propose against the old
+                            // host and session; drop it and open a new turn.
+                            model::retarget_model(
+                                &mut live.pending,
+                                &mut live.in_flight,
+                                &mut live.model,
+                                live.character.behaviors.keys().cloned(),
+                                &sources,
+                                configured,
+                            );
                         }
                     }
                 }

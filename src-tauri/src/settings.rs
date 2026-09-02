@@ -5,6 +5,7 @@
 //! editor, the same deal Memory already makes. Missing keys take their
 //! defaults, so an older file keeps working when a field is added.
 
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -49,6 +50,8 @@ pub struct SettingsView {
     /// Whether a key is stored — never the raw secret itself.
     pub api_key_set: bool,
     pub api_key_fingerprint: String,
+    /// Non-empty when the last store read failed. Distinct from unset.
+    pub api_key_error: String,
 }
 
 impl SettingsView {
@@ -58,9 +61,9 @@ impl SettingsView {
         last_payload: Option<String>,
         installed: Vec<String>,
         instances: Vec<InstanceRow>,
-        api_key_set: bool,
-        api_key_fingerprint: String,
+        api_key: (bool, String, String),
     ) -> Self {
+        let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
         Self {
             director_enabled: settings.director_enabled,
             ambient_wakes: settings.ambient_wakes,
@@ -78,6 +81,7 @@ impl SettingsView {
             director_model: settings.director_model.clone(),
             api_key_set,
             api_key_fingerprint,
+            api_key_error,
         }
     }
 
@@ -97,23 +101,43 @@ impl SettingsView {
     /// Secure-field placeholder. A store error is not "Not set": that invites
     /// a paste over a key that may still be in Keychain.
     pub fn api_key_placeholder(&self) -> String {
-        if self.api_key_set {
+        if !self.api_key_error.is_empty() {
+            format!("Unavailable — {}", self.api_key_error)
+        } else if self.api_key_set {
             format!("Set — {}", self.api_key_fingerprint)
-        } else if self.api_key_fingerprint.is_empty() {
-            "Not set".into()
         } else {
-            self.api_key_fingerprint.clone()
+            "Not set".into()
         }
+    }
+
+    /// Clear stays offered when the store failed: a key we could not read
+    /// may still be there to wipe.
+    pub fn clear_key_enabled(&self) -> bool {
+        self.api_key_set || !self.api_key_error.is_empty()
     }
 }
 
 /// Work the settings window asks the frame loop to do.
 #[derive(Clone, Debug)]
 pub enum SettingsOp {
-    Spawn { character: String, name: String },
-    Dismiss { id: String },
-    SwitchAll { character: String },
-    Retarget,
+    Spawn {
+        character: String,
+        name: String,
+    },
+    Dismiss {
+        id: String,
+    },
+    SwitchAll {
+        character: String,
+    },
+    /// Completer target changed. Resolved off the frame thread so the loop
+    /// never reads Keychain. Drops in-flight session history (ADR-0008).
+    Retarget {
+        sources: DirectorSources,
+        enabled: bool,
+        ambient_allowed: bool,
+        configured: bool,
+    },
 }
 
 /// Write the Director API key to the secret store, never to the settings file.
@@ -146,6 +170,7 @@ pub fn director_sources(
 
 /// Write the key first so a store error cannot leave a URL in memory that
 /// was never saved or sent as Retarget.
+#[cfg(test)]
 fn apply_with_store(
     settings: &mut Settings,
     store: &dyn SecretStore,
@@ -171,14 +196,29 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .is_some_and(|model| model != &settings.director_model)
 }
 
-/// Fingerprint "Unavailable" is the third view state: not Unset, not Set.
-/// Clear stays off because `api_key_set` is false.
-fn stored_key_status(store: &dyn SecretStore) -> (bool, String) {
+/// Fingerprint plus an error string: a get `Err` is not Unset. Log like the
+/// other store call sites so a locked Keychain is visible.
+fn stored_key_status(store: &dyn SecretStore) -> (bool, String, String) {
     match store.get(DIRECTOR_API_KEY) {
-        Ok(Some(key)) => (true, model::key_fingerprint(&key)),
-        Ok(None) => (false, String::new()),
-        Err(_) => (false, "Unavailable".into()),
+        Ok(Some(key)) => (true, model::key_fingerprint(&key), String::new()),
+        Ok(None) => (false, String::new(), String::new()),
+        Err(why) => {
+            eprintln!("director: secret store: {why}");
+            (false, String::new(), why)
+        }
     }
+}
+
+/// Resolve sources on the settings thread. The frame loop only applies them.
+fn retarget_payload(settings: &Settings, store: &dyn SecretStore) -> Result<SettingsOp, String> {
+    let sources = director_sources(settings, store)?;
+    let cfg = model::config_from(&sources);
+    Ok(SettingsOp::Retarget {
+        sources,
+        enabled: settings.director_enabled && cfg.configured,
+        ambient_allowed: settings.ambient_wakes,
+        configured: cfg.configured,
+    })
 }
 
 /// Everything the native settings window needs to read and write.
@@ -194,6 +234,9 @@ pub struct SettingsSession {
     pub app: AppHandle,
     pub on_rebind: fn(&AppHandle, &str),
     pub secrets: Arc<dyn SecretStore>,
+    /// Last successful store fingerprint. Become-key must not hit Keychain
+    /// every focus; a failed read is not cached, so unlocking can recover.
+    pub key_cache: Mutex<Option<(bool, String)>>,
 }
 
 impl SettingsSession {
@@ -213,38 +256,76 @@ impl SettingsSession {
             .lock()
             .ok()
             .and_then(|inspect| inspect.last_payload.clone());
-        let (api_key_set, api_key_fingerprint) = stored_key_status(self.secrets.as_ref());
         SettingsView::from_parts(
             &settings,
             &self.memory_path,
             last_payload,
             self.installed.clone(),
             instances,
-            api_key_set,
-            api_key_fingerprint,
+            self.key_status_for_view(),
         )
     }
 
     pub fn apply(&self, patch: SettingsPatch) -> Result<(), String> {
-        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let switching = patch.character.clone();
         let rebind = patch.hide_hotkey.clone();
+        write_director_key(self.secrets.as_ref(), &patch)?;
+        if let Some(raw) = patch.director_api_key.as_deref() {
+            self.remember_written_key(raw);
+        }
+        let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
-        apply_with_store(&mut settings, self.secrets.as_ref(), patch)?;
-        if let Some(name) = switching {
-            let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
-        }
-        if retarget {
-            let _ = self.ops.send(SettingsOp::Retarget);
-        }
+        settings.apply(patch);
         if let Ok(mut rules) = self.rules.lock() {
             rules.set_away(settings.hidden);
             rules.set_hide_in_fullscreen(settings.hide_in_fullscreen);
         }
+        let snapshot = settings.clone();
+        settings
+            .save(&self.path)
+            .map_err(|error| error.to_string())?;
+        drop(settings);
+
+        if let Some(name) = switching {
+            let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
+        }
+        if retarget {
+            match retarget_payload(&snapshot, self.secrets.as_ref()) {
+                Ok(op) => {
+                    let _ = self.ops.send(op);
+                }
+                Err(why) => eprintln!("director: secret store: {why}"),
+            }
+        }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
         }
-        settings.save(&self.path).map_err(|error| error.to_string())
+        Ok(())
+    }
+
+    fn remember_written_key(&self, raw: &str) {
+        let cached = match model::trim_key(raw) {
+            Some(key) => Some((true, model::key_fingerprint(&key))),
+            None => Some((false, String::new())),
+        };
+        if let Ok(mut cache) = self.key_cache.lock() {
+            *cache = cached;
+        }
+    }
+
+    fn key_status_for_view(&self) -> (bool, String, String) {
+        if let Ok(cache) = self.key_cache.lock() {
+            if let Some((set, fingerprint)) = cache.as_ref() {
+                return (*set, fingerprint.clone(), String::new());
+            }
+        }
+        let (set, fingerprint, error) = stored_key_status(self.secrets.as_ref());
+        if error.is_empty() {
+            if let Ok(mut cache) = self.key_cache.lock() {
+                *cache = Some((set, fingerprint.clone()));
+            }
+        }
+        (set, fingerprint, error)
     }
 
     pub fn open_memory(&self) -> Result<(), String> {
@@ -282,7 +363,7 @@ fn open_in_editor(path: &Path) -> Result<(), String> {
 }
 
 /// What the settings window can change in one call.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 pub struct SettingsPatch {
     pub director_enabled: Option<bool>,
     pub ambient_wakes: Option<bool>,
@@ -298,6 +379,28 @@ pub struct SettingsPatch {
     /// Present so callers can write the store; `Settings::apply` ignores it
     /// because the key is not a file field.
     pub director_api_key: Option<String>,
+}
+
+impl fmt::Debug for SettingsPatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SettingsPatch")
+            .field("director_enabled", &self.director_enabled)
+            .field("ambient_wakes", &self.ambient_wakes)
+            .field("do_not_disturb", &self.do_not_disturb)
+            .field("hidden", &self.hidden)
+            .field("hide_in_fullscreen", &self.hide_in_fullscreen)
+            .field("hide_hotkey", &self.hide_hotkey)
+            .field("launch_at_login", &self.launch_at_login)
+            .field("excluded_applications", &self.excluded_applications)
+            .field("character", &self.character)
+            .field("director_base_url", &self.director_base_url)
+            .field("director_model", &self.director_model)
+            .field(
+                "director_api_key",
+                &self.director_api_key.as_deref().map(model::key_fingerprint),
+            )
+            .finish()
+    }
 }
 
 impl Settings {
@@ -592,8 +695,7 @@ mod tests {
             Some("You are Nim.".to_string()),
             vec!["nim".to_string()],
             Vec::new(),
-            true,
-            "len=12 last=key1".to_string(),
+            (true, "len=12 last=key1".to_string(), String::new()),
         );
         assert_eq!(view.director_base_url, "https://api.x.ai");
         assert_eq!(view.director_model, "grok-4.6");
@@ -612,10 +714,10 @@ mod tests {
             None,
             Vec::new(),
             Vec::new(),
-            false,
-            String::new(),
+            (false, String::new(), String::new()),
         );
         assert_eq!(view.api_key_placeholder(), "Not set");
+        assert!(!view.clear_key_enabled());
     }
 
     #[test]
@@ -626,11 +728,14 @@ mod tests {
             None,
             Vec::new(),
             Vec::new(),
-            false,
-            "Unavailable".into(),
+            (false, String::new(), "keychain locked".into()),
         );
         assert!(!view.api_key_set);
-        assert_eq!(view.api_key_placeholder(), "Unavailable");
+        assert_eq!(view.api_key_placeholder(), "Unavailable — keychain locked");
+        assert!(
+            view.clear_key_enabled(),
+            "Clear stays offered so a key we could not read can still be wiped"
+        );
         assert_ne!(
             view.api_key_placeholder(),
             "Not set",
@@ -654,6 +759,23 @@ mod tests {
         let text = fs::read_to_string(&path).expect("read");
         assert!(!text.contains("sk-should-not-land"), "{text}");
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn settings_patch_debug_omits_the_raw_key() {
+        let patch = SettingsPatch {
+            director_api_key: Some("sk-super-secret-key".into()),
+            ..SettingsPatch::default()
+        };
+        let dump = format!("{patch:?}");
+        assert!(
+            !dump.contains("sk-super-secret-key"),
+            "Debug must not echo the key: {dump}"
+        );
+        assert!(
+            dump.contains(&model::key_fingerprint("sk-super-secret-key")),
+            "Debug should name the fingerprint: {dump}"
+        );
     }
 
     /// Ambient wakes are their own switch. Turning them off must not turn the
@@ -777,8 +899,7 @@ mod tests {
                 name: "Nim".to_string(),
                 character: "nim".to_string(),
             }],
-            false,
-            String::new(),
+            (false, String::new(), String::new()),
         );
         assert!(!view.director_enabled);
         assert!(!view.ambient_wakes);
@@ -812,8 +933,7 @@ mod tests {
             None,
             vec!["Trump".to_string(), "Cat".to_string()],
             remaining,
-            false,
-            String::new(),
+            (false, String::new(), String::new()),
         );
         assert_eq!(view.instance_lines(), ["Trump (Trump)"]);
         assert!(
@@ -894,16 +1014,28 @@ mod tests {
     }
 
     #[test]
-    fn a_store_read_error_is_unavailable_not_unset() {
-        let (set, fingerprint) = stored_key_status(&FailingStore);
+    fn a_store_get_error_is_not_presented_as_unset() {
+        let (set, fingerprint, error) = stored_key_status(&FailingStore);
         assert!(
-            !set,
-            "Clear must not be offered when the store cannot be read"
+            !error.is_empty(),
+            "a get Err must carry the failure, not look like Unset"
         );
-        assert_eq!(fingerprint, "Unavailable");
-        let (unset, empty) = stored_key_status(&MemoryStore::new());
+        assert!(!set);
+        assert!(fingerprint.is_empty());
+        let view = SettingsView::from_parts(
+            &Settings::default(),
+            Path::new("/tmp/ai-buddy/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (set, fingerprint, error),
+        );
+        assert_ne!(view.api_key_placeholder(), "Not set");
+        assert!(view.clear_key_enabled());
+        let (unset, empty, no_error) = stored_key_status(&MemoryStore::new());
         assert!(!unset);
         assert!(empty.is_empty());
+        assert!(no_error.is_empty());
     }
 
     fn endpoint_settings() -> Settings {
@@ -960,6 +1092,32 @@ mod tests {
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &clear));
+    }
+
+    #[test]
+    fn retarget_payload_carries_resolved_sources() {
+        let store = MemoryStore::new();
+        store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
+        let settings = endpoint_settings();
+        match retarget_payload(&settings, &store).unwrap() {
+            SettingsOp::Retarget {
+                sources,
+                enabled,
+                configured,
+                ambient_allowed,
+            } => {
+                assert_eq!(sources.api_key, "sk-stored-key");
+                assert!(configured);
+                assert!(enabled);
+                assert!(ambient_allowed);
+                let dump = format!("{sources:?}");
+                assert!(
+                    !dump.contains("sk-stored-key"),
+                    "Retarget Debug must not echo the key: {dump}"
+                );
+            }
+            other => panic!("expected Retarget, got {other:?}"),
+        }
     }
 
     #[test]

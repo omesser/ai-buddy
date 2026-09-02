@@ -286,7 +286,7 @@ impl SettingsController {
             field.setPlaceholderString(Some(&NSString::from_str(&view.api_key_placeholder())));
         }
         if let Some(button) = self.ivars().clear_key.borrow().as_ref() {
-            button.setEnabled(view.api_key_set);
+            button.setEnabled(view.clear_key_enabled());
         }
         fill_checkbox(&self.ivars().ambient, view.ambient_wakes);
         fill_checkbox(&self.ivars().dnd, view.do_not_disturb);
