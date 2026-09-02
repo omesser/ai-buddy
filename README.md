@@ -53,8 +53,10 @@ cargo run
 ### Linux
 
 On Linux, the tray icon requires a StatusNotifier host (typically provided by
-the desktop panel: GNOME Shell, KDE Plasma, XFCE panel). At runtime, one of
-`libayatana-appindicator3-1` or `libappindicator3-1` must be installed.
+the desktop panel: GNOME Shell, KDE Plasma, XFCE panel). A dock such as Plank
+is not one — the tray installs, and no icon appears. On Debian/Ubuntu,
+`xfce4-panel` (Status Tray plugin) is a host that works. At runtime, one
+of `libayatana-appindicator3-1` or `libappindicator3-1` must be installed.
 `libayatana` is preferred and is the one Tauri detects first when both are
 present.
 
@@ -300,8 +302,9 @@ than 80.
 The tray icon requires `libayatana-appindicator3-dev` (or the older
 `libappindicator3-dev`) at build time. A StatusNotifier host in the desktop
 environment displays the icon at runtime; without one the tray silently
-installs but shows no icon. On Wayland, tray availability depends on the
-compositor's tray protocol support.
+installs but shows no icon. Plank is not a host. `xfce4-panel` (Status Tray
+plugin) is. On Wayland, tray availability depends on the compositor's tray
+protocol support.
 
 ```sh
 # Debian/Ubuntu
