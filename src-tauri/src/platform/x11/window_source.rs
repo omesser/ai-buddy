@@ -41,7 +41,7 @@ impl WindowSource for X11WindowSource {
         WorldGeometry {
             usable_frames,
             windows: visible_windows(),
-            dock,
+            dock: dock.or_else(|| strut_panel_bounds()),
         }
     }
 }
@@ -268,4 +268,109 @@ fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
         .and_then(|cookie| cookie.reply().ok())
         .map(|reply| reply.atom)
         .ok_or(())
+}
+
+/// Read _NET_WM_STRUT_PARTIAL from dock/panel windows to find the panel bounds.
+///
+/// EWMH _NET_WM_STRUT_PARTIAL is 12 CARDINALs: [left, right, top, bottom,
+/// left_start_y, left_end_y, right_start_y, right_end_y, top_start_x, top_end_x,
+/// bottom_start_x, bottom_end_x]. For a bottom panel, bottom != 0 and
+/// bottom_start_x/bottom_end_x define the horizontal span.
+fn strut_panel_bounds() -> Option<Rect> {
+    let conn = x11_connection()?;
+    let screen = &conn.setup().roots[0];
+    let root = screen.root;
+
+    let windows = window_list_stacking(conn, root)?;
+
+    for window in windows {
+        if !is_dock_window(conn, window) {
+            continue;
+        }
+
+        let strut = read_strut_partial(conn, window)?;
+
+        if strut[3] > 0 {
+            let screen_width = f64::from(screen.width_in_pixels);
+            let screen_height = f64::from(screen.height_in_pixels);
+            let bottom_height = strut[3] as f64;
+            let start_x = strut[10] as f64;
+            let end_x = strut[11] as f64;
+
+            return Some(Rect {
+                x: start_x,
+                y: screen_height - bottom_height,
+                width: end_x - start_x,
+                height: bottom_height,
+            });
+        }
+    }
+
+    None
+}
+
+/// Check if a window is a dock/panel via _NET_WM_WINDOW_TYPE_DOCK.
+fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
+    let Ok(type_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE") else {
+        return false;
+    };
+    let Ok(dock_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE_DOCK") else {
+        return false;
+    };
+
+    let reply = match xproto::get_property(
+        conn,
+        false,
+        window,
+        type_atom,
+        AtomEnum::ATOM,
+        0,
+        32,
+    )
+    .ok()
+    .and_then(|cookie| cookie.reply().ok())
+    {
+        Some(r) => r,
+        None => return false,
+    };
+
+    if reply.format != 32 {
+        return false;
+    }
+
+    reply
+        .value
+        .chunks_exact(4)
+        .any(|chunk| {
+            u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == dock_atom
+        })
+}
+
+/// Read _NET_WM_STRUT_PARTIAL property as 12 u32 values.
+fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]> {
+    let strut_atom = intern_atom(conn, "_NET_WM_STRUT_PARTIAL").ok()?;
+
+    let reply = xproto::get_property(
+        conn,
+        false,
+        window,
+        strut_atom,
+        AtomEnum::CARDINAL,
+        0,
+        12,
+    )
+    .ok()?
+    .reply()
+    .ok()?;
+
+    if reply.format != 32 || reply.value.len() != 48 {
+        return None;
+    }
+
+    let mut result = [0u32; 12];
+    for (i, chunk) in reply.value.chunks_exact(4).enumerate() {
+        result[i] = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    }
+
+    Some(result)
 }
