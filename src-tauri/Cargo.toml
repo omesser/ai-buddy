@@ -24,7 +24,7 @@ ai-buddy-core = {path = "../crates/core"}
 serde = {version = "1", features = ["derive"]}
 # Character Package art reaches the webview as `data:` URLs; `src/cast.rs` says
 # why.
-base64 = "0.22"
+base64 = "0.23"
 # Reading a Character Package that was shipped as an archive. Zip because it is
 # what Finder's "Compress" produces, and a central-directory parser over
 # untrusted input is not something to hand-roll. `deflate-flate2` rather than
