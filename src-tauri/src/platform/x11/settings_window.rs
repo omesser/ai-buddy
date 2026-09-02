@@ -119,12 +119,7 @@ impl SettingsWindow {
         }
     }
 
-    fn build_row(
-        &self,
-        container: &gtk::Box,
-        row: &FormRow,
-        actions: &HashMap<String, RowAction>,
-    ) {
+    fn build_row(&self, container: &gtk::Box, row: &FormRow, actions: &HashMap<String, RowAction>) {
         match row {
             FormRow::Checkbox {
                 id,
@@ -133,8 +128,7 @@ impl SettingsWindow {
                 help,
                 comment: _,
             } => {
-                if id == form::CONSENT_ACCESSIBILITY_ID || id == form::CONSENT_SCREEN_RECORDING_ID
-                {
+                if id == form::CONSENT_ACCESSIBILITY_ID || id == form::CONSENT_SCREEN_RECORDING_ID {
                     return;
                 }
 
@@ -326,7 +320,10 @@ impl SettingsWindow {
                         .borrow_mut()
                         .insert(id.clone(), Control::Label(label));
                 } else {
-                    let scrolled = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+                    let scrolled = gtk::ScrolledWindow::new(
+                        None::<&gtk::Adjustment>,
+                        None::<&gtk::Adjustment>,
+                    );
                     scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
                     scrolled.set_size_request(-1, 88);
 
@@ -361,16 +358,10 @@ impl SettingsWindow {
                 container.pack_start(&list_box, false, false, 0);
                 self.controls
                     .borrow_mut()
-                    .insert(
-                        id.clone(),
-                        Control::List(list_box, dismiss_label.clone()),
-                    );
+                    .insert(id.clone(), Control::List(list_box, dismiss_label.clone()));
             }
             FormRow::Multiline {
-                id,
-                help,
-                editable,
-                ..
+                id, help, editable, ..
             } => {
                 if let Some(help_text) = help {
                     let help_label = gtk::Label::new(Some(help_text));
@@ -384,7 +375,8 @@ impl SettingsWindow {
                     container.pack_start(&help_label, false, false, 0);
                 }
 
-                let scrolled = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+                let scrolled =
+                    gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
                 scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
                 scrolled.set_size_request(-1, 88);
 
@@ -493,8 +485,7 @@ impl SettingsWindow {
                                                             })
                                                             .unwrap_or_default();
 
-                                                        if !name.is_empty()
-                                                            && !character.is_empty()
+                                                        if !name.is_empty() && !character.is_empty()
                                                         {
                                                             sess.spawn(character, name);
                                                             if let Some(Control::Entry(e)) =
@@ -649,11 +640,7 @@ impl SettingsWindow {
         }
         if let Some(Control::TextView(text_view)) = controls.get(form::PAYLOAD_ID) {
             if let Some(buffer) = text_view.buffer() {
-                buffer.set_text(
-                    view.last_payload
-                        .as_deref()
-                        .unwrap_or("Nothing sent yet."),
-                );
+                buffer.set_text(view.last_payload.as_deref().unwrap_or("Nothing sent yet."));
             }
         }
         if let Some(Control::TextView(text_view)) = controls.get(form::EXCLUDED_ID) {
@@ -737,15 +724,10 @@ fn confirm_wipe(parent: &Window) -> bool {
 }
 
 pub fn show(session: SettingsSession) {
-    if gtk::is_initialized() {
-        show_internal(session);
-    } else {
-        if gtk::init().is_err() {
-            eprintln!("settings: failed to initialize GTK");
-            return;
-        }
-        show_internal(session);
+    unsafe {
+        gtk::set_initialized();
     }
+    show_internal(session);
 }
 
 fn show_internal(session: SettingsSession) {
