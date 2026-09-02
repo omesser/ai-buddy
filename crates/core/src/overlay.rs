@@ -49,6 +49,32 @@ pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> 
         })
 }
 
+/// The one overlay that draws an Instance's speech bubble and thinking
+/// indicator (#178), or `None` when no overlay should.
+///
+/// Every overlay is handed every sprite and draws the part that falls inside
+/// it, which is right for the art: the wrong display's copy simply clips
+/// away. A bubble is not clipped geometry — the renderer keeps it readable by
+/// pulling it back inside the display, so the copy on the wrong display comes
+/// back into view at an edge. So a bubble is owned by exactly one overlay, the
+/// one under the feet. The feet rather than the art's rectangle: a sprite
+/// straddling a seam is still standing on one display, and the owner then
+/// changes once, at the seam, instead of flickering as the art crosses.
+///
+/// Unlike `display_index_for`, feet on no display own nothing. That function
+/// answers "which overlay is the cursor nearest", where an answer is always
+/// needed; here the nearest display would clamp a bubble into view beside a
+/// sprite that is off-screen — thrown past an edge, or on a display that was
+/// just unplugged — which is the very symptom this exists to remove.
+///
+/// `covers` is half-open, so feet exactly on the bottom edge of an upper
+/// display in a vertical stack belong to the display below. The Engine's
+/// floors keep resting feet strictly inside a display, so the seam column
+/// is only ever crossed, never stood on.
+pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
+    displays.iter().position(|display| covers(feet, display))
+}
+
 /// Whether a display's window has this point, right and bottom edges excluded.
 fn covers(point: (f64, f64), rect: &Rect) -> bool {
     (rect.x..rect.x + rect.width).contains(&point.0)
@@ -455,6 +481,64 @@ mod tests {
             sprite.in_overlay(rect(100.6, 50.6, 800.0, 600.0)).y,
             121,
             "172 - 51"
+        );
+    }
+
+    /// #178: a bubble is drawn by exactly one overlay, the one under the
+    /// feet — and by none when the feet are on no display, where the
+    /// cursor's nearest-display fallback would clamp a bubble into view
+    /// beside a sprite that is not there.
+    #[test]
+    fn a_bubble_belongs_to_the_display_under_the_feet_or_to_none() {
+        let displays = two_displays();
+
+        // Art wide enough to straddle the seam; the feet are still on the first.
+        assert_eq!(bubble_owner((1919.9, 1000.0), &displays), Some(0));
+        assert_eq!(
+            bubble_owner((1920.0, 1000.0), &displays),
+            Some(1),
+            "ownership flips once, at the seam column, and nowhere else"
+        );
+
+        assert_eq!(
+            bubble_owner((4000.0, 500.0), &displays),
+            None,
+            "thrown past the right edge: no overlay draws a bubble"
+        );
+        assert_eq!(
+            bubble_owner((960.0, 1080.0), &displays),
+            None,
+            "below the first display's bottom edge, with nothing beneath it"
+        );
+        assert_eq!(
+            display_index_for((4000.0, 500.0), &displays),
+            Some(1),
+            "where the cursor's question still gets its nearest answer"
+        );
+    }
+
+    /// #163 with #178: several Instances are several bubbles. Ownership is a
+    /// function of one Instance's feet, so two characters standing on two
+    /// displays each own a bubble on their own display at the same time —
+    /// the case a fix aimed at "only one bubble" could wrongly suppress.
+    #[test]
+    fn each_instance_owns_a_bubble_on_the_display_it_stands_on() {
+        let displays = two_displays();
+
+        let first = bubble_owner((960.0, 1000.0), &displays);
+        let second = bubble_owner((2600.0, 1000.0), &displays);
+
+        assert_eq!(first, Some(0));
+        assert_eq!(second, Some(1));
+        assert_ne!(
+            first, second,
+            "two characters on two displays are two bubbles, not one"
+        );
+
+        assert_eq!(
+            bubble_owner((100.0, 1000.0), &displays),
+            first,
+            "and two characters on the same display share that display's overlay"
         );
     }
 

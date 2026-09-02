@@ -8,6 +8,7 @@ import {
   wrapText,
   placeBubble,
   createBubbleMachine,
+  forOverlay,
   CEILING_CLEARANCE,
   THINKING_GRACE_MS,
   THINKING_MIN_HOLD_MS,
@@ -317,4 +318,49 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
     ["showSpeech:hi", "hideSpeech", "showSpeech:again"],
     "the indicator never appeared",
   );
+});
+
+// --- #178: one overlay owns the bubble; the rest draw the art only. ---
+
+test("a placement this overlay does not own carries no bubble", () => {
+  const spoken = { dialogue: "Yare yare daze.", thinking: true, bubble: true, x: 1 };
+  assert.equal(forOverlay(spoken), spoken, "the owner sees it untouched");
+
+  const elsewhere = forOverlay({ ...spoken, bubble: false });
+  assert.equal(elsewhere.dialogue, null, "no line to latch on the wrong display");
+  assert.equal(elsewhere.thinking, false, "no thinking to arm on the wrong display");
+  assert.equal(elsewhere.x, 1, "everything the art needs is left alone");
+});
+
+test("a losing overlay never arms the indicator off a thinking it does not own", () => {
+  const { machine, advance, placement, surface } = machineHarness();
+
+  machine.frame(forOverlay(placement({ thinking: true, bubble: false })));
+  advance(THINKING_GRACE_MS + THINKING_MIN_HOLD_MS);
+  assert.equal(surface(), null, "grace never armed: this display is not the owner");
+
+  machine.frame(forOverlay(placement({ thinking: true, bubble: true })));
+  advance(THINKING_GRACE_MS);
+  assert.equal(surface(), "thinking", "the same frame, owned, arms it");
+});
+
+test("a line crossing the seam hides on the old display before it shows on the new", () => {
+  // Two overlays, two machines: the shell hands the line to the owner, and on a
+  // crossing says it again to the new one (`carry_line`), while the old one
+  // hides on the tick it loses ownership — the way main.js does on `!bubble`.
+  const a = machineHarness();
+  const b = machineHarness();
+
+  a.machine.event(forOverlay(a.placement({ dialogue: "hi", bubble: true })));
+  a.machine.frame(forOverlay(a.placement({ bubble: true })));
+  b.machine.event(forOverlay(b.placement({ dialogue: "hi", bubble: false })));
+  assert.equal(a.surface(), "speech", "the owner shows the line");
+  assert.equal(b.surface(), null, "the other display never latched it");
+
+  // Mid-reading, ownership flips: the shell re-pulses to b and stops naming a.
+  a.machine.hideAllNow();
+  b.machine.event(forOverlay(b.placement({ dialogue: "hi", bubble: true })));
+  b.machine.frame(forOverlay(b.placement({ bubble: true })));
+  assert.equal(a.surface(), null, "the old display is already clear");
+  assert.equal(b.surface(), "speech", "and the new one shows the same line");
 });
