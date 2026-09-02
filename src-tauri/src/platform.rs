@@ -17,47 +17,94 @@ use std::time::{Duration, Instant};
 use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
 
-/// A press the overlay webview felt. `CGEventSource` is a session query and
-/// has been seen to stay false for a click that landed on our own window —
-/// the sprite then swallows the click and never pokes. The webview is the
-/// other witness: it only hears the button while click-through is off, which
-/// is exactly when the cursor is over the art.
-static OVERLAY_PRIMARY: AtomicBool = AtomicBool::new(false);
-static OVERLAY_SECONDARY: AtomicBool = AtomicBool::new(false);
-
-/// Latch or release the overlay's witness of the primary button.
-pub fn set_overlay_primary(down: bool) {
-    OVERLAY_PRIMARY.store(down, Ordering::SeqCst);
+/// One button as the overlay webview witnesses it.
+///
+/// `CGEventSource` is a session query and has been seen to stay false for a
+/// click that landed on our own window — the sprite then swallows the click
+/// and never pokes. The webview is the other witness: it only hears the button
+/// while click-through is off, which is exactly when the cursor is over the
+/// art.
+///
+/// Two bits rather than one, because the frame loop polls and a click can
+/// begin and end between two polls. The level alone reads false at both, and
+/// no Poke is ever minted (#182). The edge keeps the down until a read has
+/// consumed it, so a press that came and went is seen exactly once — and no
+/// more than once, which is what stops a real hold from turning into a hold
+/// and then a phantom Poke.
+struct Witness {
+    /// What the webview last reported: true from pointerdown to pointerup.
+    down: AtomicBool,
+    /// Set on every pointerdown, cleared by the read that consumes it.
+    pressed: AtomicBool,
 }
 
-/// Latch or release the overlay's witness of the secondary button.
+impl Witness {
+    const fn new() -> Self {
+        Self {
+            down: AtomicBool::new(false),
+            pressed: AtomicBool::new(false),
+        }
+    }
+
+    /// The webview heard the button go down or up.
+    fn report(&self, down: bool) {
+        self.down.store(down, Ordering::SeqCst);
+        if down {
+            self.pressed.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Whether the button is down now, or was pressed since the last call.
+    ///
+    /// Consuming. The edge is cleared whether or not the level is true — a
+    /// bitwise `|` rather than `||`, so the `swap` runs on every read.
+    fn take(&self) -> bool {
+        self.down.load(Ordering::SeqCst) | self.pressed.swap(false, Ordering::SeqCst)
+    }
+
+    /// The overlay is no longer a witness, so nothing it holds can be trusted.
+    fn forget(&self) {
+        self.down.store(false, Ordering::SeqCst);
+        self.pressed.store(false, Ordering::SeqCst);
+    }
+}
+
+static OVERLAY_PRIMARY: Witness = Witness::new();
+static OVERLAY_SECONDARY: Witness = Witness::new();
+
+/// The overlay heard the primary button go down or up.
+pub fn set_overlay_primary(down: bool) {
+    OVERLAY_PRIMARY.report(down);
+}
+
+/// The overlay heard the secondary button go down or up.
 ///
 /// Same reason as the primary: a right-click on our window is one
-/// `CGEventSource` has been seen to miss, and without this latch the
+/// `CGEventSource` has been seen to miss, and without this witness the
 /// webview's own menu is the only thing that hears it.
 pub fn set_overlay_secondary(down: bool) {
-    OVERLAY_SECONDARY.store(down, Ordering::SeqCst);
+    OVERLAY_SECONDARY.report(down);
 }
 
 /// The overlay is passing clicks through, so it cannot still be holding a
 /// press. A pointerup the webview never delivered would otherwise leave the
-/// latch set, and `primary_button_down` would stay true after the hand had
+/// level set, and `primary_button_down` would stay true after the hand had
 /// gone — gluing the sprite to a button nobody is pressing.
 ///
 /// This is the watchdog that must not look at the session poll: that poll is
 /// the one that misses a press our own window swallowed, which is exactly
-/// when this latch is the only witness.
+/// when this witness is the only one.
 pub fn overlay_passes_clicks_through() {
-    OVERLAY_PRIMARY.store(false, Ordering::SeqCst);
-    OVERLAY_SECONDARY.store(false, Ordering::SeqCst);
+    OVERLAY_PRIMARY.forget();
+    OVERLAY_SECONDARY.forget();
 }
 
 fn overlay_primary_down() -> bool {
-    OVERLAY_PRIMARY.load(Ordering::SeqCst)
+    OVERLAY_PRIMARY.take()
 }
 
 fn overlay_secondary_down() -> bool {
-    OVERLAY_SECONDARY.load(Ordering::SeqCst)
+    OVERLAY_SECONDARY.take()
 }
 
 /// The displays as the frame loop needs to see them, from one read.
@@ -214,10 +261,16 @@ pub fn update_input_region(
     Ok(())
 }
 
-/// Whether the primary mouse button is down.
+/// Whether the primary mouse button is down, or was pressed since the last
+/// call.
 ///
-/// The session poll sees a drag that outruns the art. The overlay latch
-/// sees a click the poll has missed on our own window. Either is a press.
+/// The session poll sees a drag that outruns the art. The overlay witness
+/// sees a click the poll has missed on our own window, including one that
+/// began and ended between two polls. Either is a press.
+///
+/// A consuming read: the overlay's edge is cleared by it. The frame loop asks
+/// once per tick, which is what makes "since the last call" mean "since the
+/// last tick".
 #[cfg(target_os = "macos")]
 pub fn primary_button_down() -> bool {
     overlay_primary_down() || macos::primary_button_down()
@@ -609,22 +662,55 @@ mod tests {
         // the test; only the overlay half is under this test's control.
     }
 
-    /// A pointerup the webview never delivered would leave the latch set.
-    /// Once the overlay is passing clicks through it cannot still be holding
-    /// a press, so the latch must drop — otherwise `primary_button_down`
-    /// stays true and the sprite glues to a button nobody is pressing.
+    /// A click can begin and end between two polls. The level alone reads
+    /// false at both, so no Poke is ever minted; the edge keeps the down until
+    /// it has been read once, so the press is seen exactly once and then gone.
+    /// #182.
     #[test]
-    fn a_stale_overlay_latch_clears_when_the_overlay_passes_clicks_through() {
-        set_overlay_primary(true);
-        overlay_passes_clicks_through();
+    fn a_click_shorter_than_one_tick_is_still_seen_once() {
+        let button = Witness::new();
+        button.report(true);
+        button.report(false);
         assert!(
-            !overlay_primary_down(),
+            button.take(),
+            "a press that came and went before anyone looked is still a press"
+        );
+        assert!(!button.take(), "and only once: the read consumes the edge");
+    }
+
+    /// The edge is for the missed down, not a second gesture. A real hold reads
+    /// true on every tick from the level, and letting go leaves nothing behind
+    /// that a later tick could mistake for another press — which is what would
+    /// turn every drag into a drag and then a Poke.
+    #[test]
+    fn a_held_button_reads_true_every_tick_and_nothing_after_release() {
+        let button = Witness::new();
+        button.report(true);
+        assert!(button.take());
+        assert!(button.take(), "still held: the level carries it");
+        button.report(false);
+        assert!(!button.take(), "released");
+        assert!(!button.take(), "and no phantom press follows the release");
+    }
+
+    /// A pointerup the webview never delivered would leave the level set.
+    /// Once the overlay is passing clicks through it cannot still be holding
+    /// a press, so both bits must drop — otherwise `primary_button_down`
+    /// stays true and the sprite glues to a button nobody is pressing. One
+    /// `Witness` serves both buttons, so one test covers both.
+    #[test]
+    fn passing_clicks_through_forgets_a_press_the_overlay_never_released() {
+        let button = Witness::new();
+        button.report(true);
+        button.forget();
+        assert!(
+            !button.take(),
             "click-through means the overlay is not a witness, so a lost pointerup must not keep the latch"
         );
     }
 
     /// A right-click on the overlay is the same miss as a left-click. Without
-    /// this latch the webview's Inspect menu is the only thing that hears it.
+    /// this witness the webview's Inspect menu is the only thing that hears it.
     #[test]
     fn overlay_secondary_is_enough_for_a_press() {
         set_overlay_secondary(false);
@@ -634,15 +720,5 @@ mod tests {
             "a right-click the overlay felt must count as the button down"
         );
         set_overlay_secondary(false);
-    }
-
-    #[test]
-    fn a_stale_secondary_latch_clears_when_the_overlay_passes_clicks_through() {
-        set_overlay_secondary(true);
-        overlay_passes_clicks_through();
-        assert!(
-            !overlay_secondary_down(),
-            "click-through must drop a swallowed right-click too"
-        );
     }
 }
