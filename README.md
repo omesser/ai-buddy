@@ -25,9 +25,11 @@ nothing to be. A Director proposes Behaviors: Static weights with nothing
 configured, or an HTTP stand-in if you set a key (see [Running it](#running-it)).
 A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)).
 There is no chat surface yet: double-clicking is a Summon the Engine accepts
-and nothing answers (#17). Right-clicking the sprite and the menu bar icon
-open the same menu: Character, Instances, Director, Do Not Disturb, Go away,
-Memory, Settings, Quit.
+and nothing answers (#17). Right-clicking the sprite and the tray / menu bar
+icon open the same menu: Character, Instances, Director, Do Not Disturb, Go
+away, Memory, Settings, Quit. The tray icon appears on Linux X11 with a
+StatusNotifier host; on Wayland without a tray protocol the sprite menu is
+the settings door.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
@@ -40,13 +42,32 @@ and is refused or abandoned when the State the sprite is in does not permit it.
 
 ## Running it
 
-macOS only for now. Windows is stubbed deliberately — see
-[docs/SPEC.md](./docs/SPEC.md).
+macOS, Linux (X11), and Windows (stubbed deliberately — see
+[docs/SPEC.md](./docs/SPEC.md)).
 
 ```sh
 cd src-tauri
 cargo run
 ```
+
+### Linux
+
+On Linux, the tray icon requires a StatusNotifier host (typically provided by
+the desktop panel: GNOME Shell, KDE Plasma, XFCE panel). At runtime, one of
+`libayatana-appindicator3-1` or `libappindicator3-1` must be installed.
+`libayatana` is preferred and is the one Tauri detects first when both are
+present.
+
+For development, install `libayatana-appindicator3-dev`:
+
+```sh
+# Debian/Ubuntu
+sudo apt install libayatana-appindicator3-dev
+```
+
+**Wayland**: A compositor without a tray protocol shows no icon. The sprite's
+context menu (right-click) remains the only settings door until a panel
+exists. This is a degraded mode, not an error.
 
 No bundler: the front end is static files under `src/`, which Tauri embeds at
 build time.
@@ -224,6 +245,19 @@ decoding is the real fix, and four of the five servers support it through
 `response_format`; #144 decides that shape.
 
 ## Development
+
+### Linux dependencies
+
+The tray icon requires `libayatana-appindicator3-dev` (or the older
+`libappindicator3-dev`) at build time. A StatusNotifier host in the desktop
+environment displays the icon at runtime; without one the tray silently
+installs but shows no icon. On Wayland, tray availability depends on the
+compositor's tray protocol support.
+
+```sh
+# Debian/Ubuntu
+sudo apt install libayatana-appindicator3-dev
+```
 
 ### Toolchains
 
