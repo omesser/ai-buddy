@@ -50,26 +50,39 @@ impl WindowSource for X11WindowSource {
 /// Reads _NET_CLIENT_LIST_STACKING from the root window and reverses it:
 /// X11 stacks bottom-to-top, the Engine wants frontmost first.
 ///
+/// Falls back to _NET_CLIENT_LIST when STACKING is unavailable or empty,
+/// as some window managers do not support stacking order.
+///
 /// Filters out windows with WM_CLASS "ai-buddy"/"Ai-buddy" (our own overlays)
 /// so they do not block Perch detection. The overlay covers the entire display
 /// and is frontmost, so without this filter every other window's top edge would
 /// be reported as hidden.
 fn visible_windows() -> Vec<WindowRect> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+
     let Some(conn) = super::connection::connection() else {
         return Vec::new();
     };
     let screen = &conn.setup().roots[0];
     let root = screen.root;
 
-    let Some(windows) = window_list_stacking(conn, root) else {
-        return Vec::new();
-    };
+    let windows = window_list_stacking(conn, root)
+        .filter(|list| !list.is_empty())
+        .or_else(|| window_list(conn, root))
+        .unwrap_or_default();
 
-    windows
+    let result: Vec<WindowRect> = windows
         .into_iter()
         .rev()
         .filter_map(|w| window_rect(conn, w))
-        .collect()
+        .collect();
+
+    if !LOGGED.swap(true, Ordering::Relaxed) {
+        eprintln!("window_source: {} visible windows", result.len());
+    }
+
+    result
 }
 
 /// Read _NET_CLIENT_LIST_STACKING: windows in stacking order, bottom to top.
@@ -87,6 +100,31 @@ fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Windo
     .ok()?
     .reply()
     .ok()?;
+
+    if reply.format != 32 || reply.value.len() % 4 != 0 {
+        return None;
+    }
+
+    Some(
+        reply
+            .value
+            .chunks_exact(4)
+            .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect(),
+    )
+}
+
+/// Read _NET_CLIENT_LIST: windows in arbitrary order.
+///
+/// Fallback for window managers that do not maintain _NET_CLIENT_LIST_STACKING.
+/// Order is undefined, so z-order occlusion may be incorrect, but some Perches
+/// are better than none.
+fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
+    let list_atom = intern_atom(conn, "_NET_CLIENT_LIST").ok()?;
+    let reply = xproto::get_property(conn, false, root, list_atom, AtomEnum::WINDOW, 0, u32::MAX)
+        .ok()?
+        .reply()
+        .ok()?;
 
     if reply.format != 32 || reply.value.len() % 4 != 0 {
         return None;
