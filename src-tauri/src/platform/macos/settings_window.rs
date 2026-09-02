@@ -10,8 +10,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSAlert, NSAlertFirstButtonReturn, NSBackingStoreType, NSButton, NSColor,
-    NSControlStateValueOff, NSControlStateValueOn, NSControlTextEditingDelegate, NSFont,
+    NSAlert, NSAlertFirstButtonReturn, NSAutoresizingMaskOptions, NSBackingStoreType, NSButton,
+    NSColor, NSControlStateValueOff, NSControlStateValueOn, NSControlTextEditingDelegate, NSFont,
     NSPopUpButton, NSScrollView, NSSecureTextField, NSTextDelegate, NSTextField,
     NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
     NSWindowStyleMask,
@@ -55,6 +55,7 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
+    scroll: RefCell<Option<Retained<NSScrollView>>>,
 }
 
 define_class!(
@@ -69,6 +70,11 @@ define_class!(
         #[unsafe(method(windowDidBecomeKey:))]
         fn became_key(&self, _notification: &NSNotification) {
             self.refresh();
+        }
+
+        #[unsafe(method(windowDidResize:))]
+        fn resized(&self, _notification: &NSNotification) {
+            self.fit_to_window();
         }
     }
 
@@ -346,6 +352,24 @@ impl SettingsController {
         self.fill_instances(&view, dismiss_label);
     }
 
+    fn fit_to_window(&self) {
+        let ivars = self.ivars();
+        let Some(scroll) = ivars.scroll.borrow().clone() else {
+            return;
+        };
+        let Some(document) = scroll.documentView() else {
+            return;
+        };
+        document.setFrameSize(document_size(scroll.contentSize().width));
+        for child in document.subviews() {
+            if let Ok(field) = child.downcast::<NSTextField>() {
+                if field.preferredMaxLayoutWidth() > 0.0 {
+                    field.setPreferredMaxLayoutWidth(field.frame().size.width);
+                }
+            }
+        }
+    }
+
     fn fill_instances(&self, view: &SettingsView, dismiss_label: &str) {
         let Some(box_view) = self.ivars().instances.borrow().clone() else {
             return;
@@ -363,6 +387,7 @@ impl SettingsController {
                 NSPoint::new(0.0, y),
                 NSSize::new(width - 90.0, 22.0),
             ));
+            stretch_x(&label);
             let dismiss = unsafe {
                 NSButton::buttonWithTitle_target_action(
                     &NSString::from_str(dismiss_label),
@@ -376,6 +401,7 @@ impl SettingsController {
                 NSPoint::new(width - 84.0, y),
                 NSSize::new(84.0, 22.0),
             ));
+            pin_right(&dismiss);
             box_view.addSubview(&label);
             box_view.addSubview(&dismiss);
             y -= 4.0;
@@ -601,6 +627,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     NSPoint::new(x, cursor.y),
                                     NSSize::new(180.0, 24.0),
                                 ));
+                                stretch_x(&pop);
                                 document.addSubview(&pop);
                                 x += 188.0;
 
@@ -630,6 +657,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     NSPoint::new(x, cursor.y),
                                     NSSize::new(if label.len() > 10 { 140.0 } else { 72.0 }, 24.0),
                                 ));
+                                if id == form::SPAWN_ID {
+                                    pin_right(&btn);
+                                }
                                 document.addSubview(&btn);
                                 x += if label.len() > 10 { 148.0 } else { 80.0 };
 
@@ -672,11 +702,13 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     );
     scroll.setDocumentView(Some(&document));
     scroll.setHasVerticalScroller(true);
+    scroll.setHasHorizontalScroller(false);
 
     let window = unsafe {
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
-            | NSWindowStyleMask::Miniaturizable;
+            | NSWindowStyleMask::Miniaturizable
+            | NSWindowStyleMask::Resizable;
         let window = NSWindow::initWithContentRect_styleMask_backing_defer(
             NSWindow::alloc(mtm),
             NSRect::new(
@@ -694,6 +726,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     };
 
     *controller.ivars().window.borrow_mut() = Some(window.clone());
+    *controller.ivars().scroll.borrow_mut() = Some(scroll);
+    controller.fit_to_window();
     controller.refresh();
     window.makeKeyAndOrderFront(None);
 
@@ -738,6 +772,10 @@ impl Cursor {
             NSPoint::new(MARGIN, self.y),
             NSSize::new(FIELD_WIDTH, height),
         ));
+        stretch_x(widget);
+        if let Some(field) = widget.downcast_ref::<NSTextField>() {
+            field.setPreferredMaxLayoutWidth(FIELD_WIDTH);
+        }
         self.parent.addSubview(widget);
     }
 
@@ -749,6 +787,7 @@ impl Cursor {
             NSPoint::new(MARGIN, self.y),
             NSSize::new(FIELD_WIDTH, 20.0),
         ));
+        stretch_x(&label);
         self.parent.addSubview(&label);
     }
 
@@ -761,6 +800,7 @@ impl Cursor {
             NSPoint::new(MARGIN, self.y),
             NSSize::new(FIELD_WIDTH, 12.0),
         ));
+        stretch_x(&label);
         self.parent.addSubview(&label);
     }
 }
@@ -876,4 +916,42 @@ fn fill_popup(cell: &RefCell<Option<Retained<NSPopUpButton>>>, options: &[String
         popup.addItemWithTitle(&NSString::from_str(option));
     }
     popup.selectItemWithTitle(&NSString::from_str(current));
+}
+
+/// NSClipView will not stretch a document taller than itself, so WidthSizable
+/// on the form is a no-op while it scrolls. Width is the clip's; height is the
+/// form.
+fn document_size(clip_width: f64) -> NSSize {
+    NSSize::new(clip_width, DOC_HEIGHT)
+}
+
+fn stretch_x(view: &NSView) {
+    // wrappingLabelWithString opts into Auto Layout; this window is frames.
+    unsafe {
+        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
+    }
+    view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+}
+
+fn pin_right(view: &NSView) {
+    unsafe {
+        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
+    }
+    view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_document_width_follows_the_clip_view() {
+        let at_open = document_size(WINDOW_WIDTH);
+        assert_eq!(at_open.width, WINDOW_WIDTH);
+        assert_eq!(at_open.height, DOC_HEIGHT);
+
+        let wider = document_size(800.0);
+        assert_eq!(wider.width, 800.0);
+        assert_eq!(wider.height, DOC_HEIGHT);
+    }
 }
