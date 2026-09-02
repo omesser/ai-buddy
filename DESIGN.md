@@ -458,6 +458,15 @@ key, no subscription, no permission prompts. That state is the default demo.
 
 ## Prior art
 
+Market research versus real-world competitors is in
+[docs/research/](./docs/research/): [market.md](./docs/research/market.md)
+sizes the desktop pet and AI assistant markets, identifies the five biggest by
+user base (Desktop Mate, VPet-Simulator, Shimeji-ee, ChatGPT desktop, Microsoft
+Copilot), and [competitors.md](./docs/research/competitors.md) compares
+ai-buddy's capabilities against them.
+
+Technical references that informed design:
+
 - **[Shimeji-ee](https://kilkakon.com/shimeji/)** — New BSD, Java/Swing,
   Windows-first, macOS via patched forks. Originally Shimeji by Yuki Yamada,
   Group Finity, 2009, zlib/libpng. Per-character XML behavior graphs. Read for

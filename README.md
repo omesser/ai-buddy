@@ -11,6 +11,12 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 ## State
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+
+Market research and competitor analysis are in [docs/research/](./docs/research/):
+[market.md](./docs/research/market.md) sizes demand and identifies the five
+biggest competitors, [competitors.md](./docs/research/competitors.md) compares
+ai-buddy's shipped and specced features against them.
+
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, rides that edge when the window
 is dragged slowly, and drops when the window is yanked or closed, and it stands
