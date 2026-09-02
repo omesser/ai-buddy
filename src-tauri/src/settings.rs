@@ -43,6 +43,11 @@ pub struct SettingsView {
     pub last_payload: Option<String>,
     pub installed: Vec<String>,
     pub instances: Vec<InstanceRow>,
+    pub director_base_url: String,
+    pub director_model: String,
+    /// Whether a key is stored — never the raw secret itself.
+    pub api_key_set: bool,
+    pub api_key_fingerprint: String,
 }
 
 impl SettingsView {
@@ -52,6 +57,8 @@ impl SettingsView {
         last_payload: Option<String>,
         installed: Vec<String>,
         instances: Vec<InstanceRow>,
+        api_key_set: bool,
+        api_key_fingerprint: String,
     ) -> Self {
         Self {
             director_enabled: settings.director_enabled,
@@ -66,6 +73,10 @@ impl SettingsView {
             last_payload,
             installed,
             instances,
+            director_base_url: settings.director_base_url.clone(),
+            director_model: settings.director_model.clone(),
+            api_key_set,
+            api_key_fingerprint,
         }
     }
 
@@ -122,12 +133,16 @@ impl SettingsSession {
             .lock()
             .ok()
             .and_then(|inspect| inspect.last_payload.clone());
+        // Key presence comes from the secret store in a later task; the view
+        // must still build until that seam is wired.
         SettingsView::from_parts(
             &settings,
             &self.memory_path,
             last_payload,
             self.installed.clone(),
             instances,
+            false,
+            String::new(),
         )
     }
 
@@ -195,6 +210,12 @@ pub struct SettingsPatch {
     pub launch_at_login: Option<bool>,
     pub excluded_applications: Option<Vec<String>>,
     pub character: Option<String>,
+    pub director_base_url: Option<String>,
+    pub director_model: Option<String>,
+    /// Present so callers can write the store; `Settings::apply` ignores it
+    /// because the key is not a file field. Task 4 reads this.
+    #[expect(dead_code)]
+    pub director_api_key: Option<String>,
 }
 
 impl Settings {
@@ -226,6 +247,14 @@ impl Settings {
         if let Some(value) = patch.character {
             self.character = value;
         }
+        if let Some(value) = patch.director_base_url {
+            self.director_base_url = value;
+        }
+        if let Some(value) = patch.director_model {
+            self.director_model = value;
+        }
+        // director_api_key is intentionally ignored: the key lives in the
+        // secret store, never in the JSON document.
     }
 }
 
@@ -257,6 +286,10 @@ pub struct Settings {
     pub character: String,
     /// Instances to spawn on launch. Empty means the one buddy first-run runs.
     pub instances: Vec<InstanceSpec>,
+    /// Empty means unset — Completer resolution falls through to env then defaults.
+    pub director_base_url: String,
+    /// Empty means unset — Completer resolution falls through to env then defaults.
+    pub director_model: String,
 }
 
 impl Default for Settings {
@@ -272,6 +305,8 @@ impl Default for Settings {
             excluded_applications: Vec::new(),
             character: String::new(),
             instances: Vec::new(),
+            director_base_url: String::new(),
+            director_model: String::new(),
         }
     }
 }
@@ -427,10 +462,79 @@ mod tests {
                 character: "bmo".to_string(),
                 name: "Beemo".to_string(),
             }],
+            director_base_url: "https://api.x.ai".into(),
+            director_model: "grok-4.6".into(),
         };
         settings.save(&path).expect("save");
 
         assert_eq!(Settings::load(&path), settings);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_partial_document_fills_missing_director_endpoint_from_defaults() {
+        let path = temp_path();
+        fs::write(&path, r#"{"director_enabled":false}"#).expect("write");
+        let settings = Settings::load(&path);
+        assert!(settings.director_base_url.is_empty());
+        assert!(settings.director_model.is_empty());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_saved_document_does_not_carry_an_api_key() {
+        let path = temp_path();
+        let settings = Settings {
+            director_base_url: "https://api.x.ai".to_string(),
+            director_model: "grok-4.6".to_string(),
+            ..Settings::default()
+        };
+        settings.save(&path).expect("save");
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(!text.contains("api_key"), "{text}");
+        assert!(!text.contains("sk-"), "{text}");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_settings_view_never_holds_the_raw_key() {
+        let settings = Settings {
+            director_base_url: "https://api.x.ai".to_string(),
+            director_model: "grok-4.6".to_string(),
+            ..Settings::default()
+        };
+        let view = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/ai-buddy/memory.md"),
+            Some("You are Nim.".to_string()),
+            vec!["nim".to_string()],
+            Vec::new(),
+            true,
+            "len=12 last=key1".to_string(),
+        );
+        assert_eq!(view.director_base_url, "https://api.x.ai");
+        assert_eq!(view.director_model, "grok-4.6");
+        assert!(view.api_key_set);
+        assert_eq!(view.api_key_fingerprint, "len=12 last=key1");
+        let dump = format!("{view:?}");
+        assert!(!dump.contains("sk-"), "{dump}");
+    }
+
+    #[test]
+    fn apply_ignores_the_api_key_patch_on_the_file() {
+        let mut settings = Settings::default();
+        settings.apply(SettingsPatch {
+            director_base_url: Some("https://api.x.ai".to_string()),
+            director_model: Some("grok-4.6".to_string()),
+            director_api_key: Some("sk-should-not-land".to_string()),
+            ..SettingsPatch::default()
+        });
+        assert_eq!(settings.director_base_url, "https://api.x.ai");
+        assert_eq!(settings.director_model, "grok-4.6");
+        let path = temp_path();
+        settings.save(&path).expect("save");
+        let text = fs::read_to_string(&path).expect("read");
+        assert!(!text.contains("sk-should-not-land"), "{text}");
         let _ = fs::remove_file(&path);
     }
 
@@ -542,6 +646,8 @@ mod tests {
             excluded_applications: vec!["1Password".to_string(), "Keychain Access".to_string()],
             character: "nim".to_string(),
             instances: Vec::new(),
+            director_base_url: String::new(),
+            director_model: String::new(),
         };
         let view = SettingsView::from_parts(
             &settings,
@@ -553,6 +659,8 @@ mod tests {
                 name: "Nim".to_string(),
                 character: "nim".to_string(),
             }],
+            false,
+            String::new(),
         );
         assert!(!view.director_enabled);
         assert!(!view.ambient_wakes);
@@ -567,6 +675,7 @@ mod tests {
         assert_eq!(view.installed, ["bmo", "nim"]);
         assert_eq!(view.instances[0].name, "Nim");
         assert_eq!(view.instance_lines(), ["Nim (nim)"]);
+        assert!(!view.api_key_set);
     }
 
     /// The Instances list is this view. After a dismiss the window must
@@ -585,6 +694,8 @@ mod tests {
             None,
             vec!["Trump".to_string(), "Cat".to_string()],
             remaining,
+            false,
+            String::new(),
         );
         assert_eq!(view.instance_lines(), ["Trump (Trump)"]);
         assert!(
