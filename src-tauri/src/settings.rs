@@ -387,7 +387,15 @@ fn open_in_editor(path: &Path) -> Result<(), String> {
     if !path.exists() {
         fs::write(path, "").map_err(|error| error.to_string())?;
     }
-    std::process::Command::new("open")
+
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let opener = "xdg-open";
+    #[cfg(not(unix))]
+    let opener = "start";
+
+    std::process::Command::new(opener)
         .arg(path)
         .spawn()
         .map(|_| ())

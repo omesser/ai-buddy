@@ -124,6 +124,18 @@ pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const LAUNCH_ID: &str = "launch";
 
+/// Platform-specific help text for excluded applications.
+fn excluded_help() -> String {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        "One application name per line, matched against X11 WM_CLASS. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.".to_string()
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        "One application name per line. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.".to_string()
+    }
+}
+
 /// Describe the settings form. The AppKit window builds from this.
 pub fn describe() -> FormDescription {
     let sections = vec![
@@ -283,7 +295,7 @@ pub fn describe() -> FormDescription {
             rows: vec![FormRow::Multiline {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
-                help: Some("One application name per line. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.".to_string()),
+                help: Some(excluded_help()),
                 editable: true,
             }],
         },
@@ -739,5 +751,36 @@ mod tests {
             description.actions.get(CONSENT_SCREEN_RECORDING_ID),
             Some(&RowAction::PatchField("use_screen_recording".to_string()))
         );
+    }
+
+    #[test]
+    fn excluded_help_is_platform_specific() {
+        let description = describe();
+        let excluded = description
+            .sections
+            .iter()
+            .find(|s| s.heading == "Excluded applications")
+            .expect("Excluded applications section");
+
+        let help = match &excluded.rows[0] {
+            FormRow::Multiline { help, .. } => help.as_ref().expect("help text present"),
+            _ => panic!("Excluded row must be Multiline"),
+        };
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            assert!(
+                help.contains("WM_CLASS"),
+                "Linux help must mention X11 WM_CLASS, got: {help}"
+            );
+        }
+
+        #[cfg(not(all(unix, not(target_os = "macos"))))]
+        {
+            assert!(
+                !help.contains("WM_CLASS"),
+                "Non-Linux help must not mention WM_CLASS, got: {help}"
+            );
+        }
     }
 }
