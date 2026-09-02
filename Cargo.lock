@@ -22,7 +22,7 @@ name = "ai-buddy"
 version = "0.1.0"
 dependencies = [
  "ai-buddy-core",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytemuck",
  "keyring",
  "objc2",
