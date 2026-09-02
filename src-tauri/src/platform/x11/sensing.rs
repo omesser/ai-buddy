@@ -43,18 +43,10 @@ fn frontmost_window_class() -> Option<String> {
     let root = screen.root;
 
     let active_atom = intern_atom(conn, "_NET_ACTIVE_WINDOW").ok()?;
-    let reply = xproto::get_property(
-        conn,
-        false,
-        root,
-        active_atom,
-        AtomEnum::WINDOW,
-        0,
-        1,
-    )
-    .ok()?
-    .reply()
-    .ok()?;
+    let reply = xproto::get_property(conn, false, root, active_atom, AtomEnum::WINDOW, 0, 1)
+        .ok()?
+        .reply()
+        .ok()?;
 
     if reply.format != 32 || reply.value.len() != 4 {
         return None;
