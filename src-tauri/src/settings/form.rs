@@ -5,11 +5,32 @@
 //! Windows consume the same description when they ship, so labels cannot
 //! drift.
 
+use std::collections::HashMap;
+
+/// What a settings row writes when changed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RowAction {
+    /// Writes to a SettingsPatch field.
+    PatchField(String),
+    /// Sends a SettingsOp.
+    Operation(RowOperation),
+}
+
+/// Operations the settings window requests.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RowOperation {
+    Spawn,
+    OpenMemory,
+    WipeMemory,
+    ClearKey,
+}
+
 /// One section of the settings form.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FormSection {
     pub heading: String,
     pub rows: Vec<FormRow>,
+    pub comment: Option<String>,
 }
 
 /// One row of the settings form, as data.
@@ -21,11 +42,7 @@ pub enum FormRow {
         label: String,
         frozen: bool,
         help: Option<String>,
-    },
-    /// An inspect-only text field showing current state.
-    InspectLine {
-        id: String,
-        label: Option<String>,
+        comment: Option<String>,
     },
     /// An inspect-only text block showing current state.
     InspectBlock {
@@ -33,11 +50,10 @@ pub enum FormRow {
         label: Option<String>,
         help: Option<String>,
     },
+    /// An inspect-only wrapping label showing a path.
+    InspectPath { id: String },
     /// A popup menu for choosing between options.
-    Popup {
-        id: String,
-        label: Option<String>,
-    },
+    Popup { id: String, label: Option<String> },
     /// A multiline text field that writes to Settings.
     Multiline {
         id: String,
@@ -45,11 +61,16 @@ pub enum FormRow {
         help: Option<String>,
         editable: bool,
     },
-    /// A button that performs an action.
-    Button {
+    /// An editable text field that writes a string to Settings.
+    TextField {
         id: String,
-        label: String,
+        label: Option<String>,
+        placeholder: String,
     },
+    /// A secure text field for passwords/keys.
+    SecureField { id: String, label: Option<String> },
+    /// A scrollable list of items with dismiss buttons.
+    List { id: String, dismiss_label: String },
     /// A row of multiple controls (e.g., new instance spawn row).
     Composite {
         id: String,
@@ -65,21 +86,24 @@ pub enum CompositeControl {
     Button { id: String, label: String },
 }
 
-/// A scrollable list of items (e.g., instances).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ListRow {
-    pub id: String,
-}
-
-/// The whole settings form as data: sections, rows, and help text.
+/// The whole settings form as data: sections, rows, and what they write.
+///
+/// Everything here is owned, so this crosses a thread boundary. That is the
+/// point of it: the description is built where the state lives, and the
+/// platform window builds from it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FormDescription {
     pub sections: Vec<FormSection>,
+    pub actions: HashMap<String, RowAction>,
 }
 
 /// Row ids for the settings form controls.
 pub const DIRECTOR_ID: &str = "director";
 pub const AMBIENT_ID: &str = "ambient";
+pub const DIRECTOR_BASE_URL_ID: &str = "director_base_url";
+pub const DIRECTOR_MODEL_ID: &str = "director_model";
+pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
+pub const CLEAR_KEY_ID: &str = "clear_key";
 pub const DND_ID: &str = "dnd";
 pub const HIDDEN_ID: &str = "hidden";
 pub const FULLSCREEN_ID: &str = "fullscreen";
@@ -98,55 +122,82 @@ pub const LAUNCH_ID: &str = "launch";
 
 /// Describe the settings form. The AppKit window builds from this.
 pub fn describe() -> FormDescription {
-    let mut sections = Vec::new();
-
-    sections.push(FormSection {
-        heading: "Director".to_string(),
-        rows: vec![
-            FormRow::Checkbox {
-                id: DIRECTOR_ID.to_string(),
-                label: "Director on".to_string(),
-                frozen: false,
-                help: Some("Off leaves Static weights running the life. No session calls.".to_string()),
-            },
-            FormRow::Checkbox {
-                id: AMBIENT_ID.to_string(),
-                label: "Ambient session wakes".to_string(),
-                frozen: false,
-                help: Some("Off keeps Poke and Summon on the session path. Idle life stays Static.".to_string()),
-            },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Last user turn".to_string(),
-        rows: vec![
-            FormRow::InspectBlock {
+    let sections = vec![
+        FormSection {
+            heading: "Director".to_string(),
+            comment: None,
+            rows: vec![
+                FormRow::Checkbox {
+                    id: DIRECTOR_ID.to_string(),
+                    label: "Director on".to_string(),
+                    frozen: false,
+                    help: Some(
+                        "Off leaves Static weights running the life. No session calls.".to_string(),
+                    ),
+                    comment: None,
+                },
+                FormRow::Checkbox {
+                    id: AMBIENT_ID.to_string(),
+                    label: "Ambient session wakes".to_string(),
+                    frozen: false,
+                    help: Some(
+                        "Off keeps Poke and Summon on the session path. Idle life stays Static."
+                            .to_string(),
+                    ),
+                    comment: None,
+                },
+                FormRow::TextField {
+                    id: DIRECTOR_BASE_URL_ID.to_string(),
+                    label: Some("Base URL".to_string()),
+                    placeholder: "https://api.openai.com".to_string(),
+                },
+                FormRow::TextField {
+                    id: DIRECTOR_MODEL_ID.to_string(),
+                    label: Some("Model".to_string()),
+                    placeholder: "gpt-4o-mini".to_string(),
+                },
+                FormRow::SecureField {
+                    id: DIRECTOR_API_KEY_ID.to_string(),
+                    label: Some("API key".to_string()),
+                },
+                FormRow::Composite {
+                    id: "api_key_actions".to_string(),
+                    controls: vec![CompositeControl::Button {
+                        id: CLEAR_KEY_ID.to_string(),
+                        label: "Clear key".to_string(),
+                    }],
+                },
+            ],
+        },
+        FormSection {
+            heading: "Last user turn".to_string(),
+            comment: None,
+            rows: vec![FormRow::InspectBlock {
                 id: PAYLOAD_ID.to_string(),
                 label: None,
-                help: Some("Inspect only. The last session turn, opening Character Prompt or follow-up.".to_string()),
-            },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Character".to_string(),
-        rows: vec![
-            FormRow::Popup {
+                help: Some(
+                    "Inspect only. The last session turn, opening Character Prompt or follow-up."
+                        .to_string(),
+                ),
+            }],
+        },
+        FormSection {
+            heading: "Character".to_string(),
+            comment: None,
+            rows: vec![FormRow::Popup {
                 id: CHARACTER_ID.to_string(),
                 label: None,
-            },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Instances".to_string(),
-        rows: vec![
-            FormRow::InspectLine {
-                id: INSTANCES_ID.to_string(),
-                label: None,
-            },
-            FormRow::Composite {
+            }],
+        },
+        FormSection {
+            heading: "Instances".to_string(),
+            comment: None,
+            rows: vec![
+                FormRow::List {
+                    id: INSTANCES_ID.to_string(),
+                    dismiss_label: "Dismiss".to_string(),
+                },
+                FormRow::Composite {
                 id: "new_instance".to_string(),
                 controls: vec![
                     CompositeControl::TextField {
@@ -162,50 +213,51 @@ pub fn describe() -> FormDescription {
                     },
                 ],
             },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Do Not Disturb".to_string(),
-        rows: vec![
-            FormRow::Checkbox {
+            ],
+        },
+        FormSection {
+            heading: "Do Not Disturb".to_string(),
+            comment: Some("DESIGN.md: quiet is not gone. A Hide heading would teach the opposite.".to_string()),
+            rows: vec![FormRow::Checkbox {
                 id: DND_ID.to_string(),
                 label: "Do Not Disturb".to_string(),
                 frozen: false,
                 help: Some("On screen, not starting things.".to_string()),
-            },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Hide".to_string(),
-        rows: vec![
-            FormRow::Checkbox {
-                id: HIDDEN_ID.to_string(),
-                label: "Go away".to_string(),
-                frozen: false,
-                help: None,
-            },
-            FormRow::Checkbox {
-                id: FULLSCREEN_ID.to_string(),
-                label: "Hide in fullscreen apps".to_string(),
-                frozen: false,
-                help: None,
-            },
-            FormRow::InspectLine {
-                id: HOTKEY_ID.to_string(),
-                label: Some("Hotkey".to_string()),
-            },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Memory".to_string(),
-        rows: vec![
-            FormRow::InspectLine {
-                id: MEMORY_PATH_ID.to_string(),
-                label: None,
-            },
+                comment: None,
+            }],
+        },
+        FormSection {
+            heading: "Hide".to_string(),
+            comment: None,
+            rows: vec![
+                FormRow::Checkbox {
+                    id: HIDDEN_ID.to_string(),
+                    label: "Go away".to_string(),
+                    frozen: false,
+                    help: None,
+                    comment: None,
+                },
+                FormRow::Checkbox {
+                    id: FULLSCREEN_ID.to_string(),
+                    label: "Hide in fullscreen apps".to_string(),
+                    frozen: false,
+                    help: None,
+                    comment: None,
+                },
+                FormRow::InspectBlock {
+                    id: HOTKEY_ID.to_string(),
+                    label: Some("Hotkey".to_string()),
+                    help: Some("Shown, not edited. A string field is not a key recorder.".to_string()),
+                },
+            ],
+        },
+        FormSection {
+            heading: "Memory".to_string(),
+            comment: None,
+            rows: vec![
+                FormRow::InspectPath {
+                    id: MEMORY_PATH_ID.to_string(),
+                },
             FormRow::Composite {
                 id: "memory_actions".to_string(),
                 controls: vec![
@@ -219,34 +271,96 @@ pub fn describe() -> FormDescription {
                     },
                 ],
             },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Excluded applications".to_string(),
-        rows: vec![
-            FormRow::Multiline {
+            ],
+        },
+        FormSection {
+            heading: "Excluded applications".to_string(),
+            comment: None,
+            rows: vec![FormRow::Multiline {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
                 help: Some("One application name per line. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.".to_string()),
                 editable: true,
-            },
-        ],
-    });
-
-    sections.push(FormSection {
-        heading: "Launch".to_string(),
-        rows: vec![
-            FormRow::Checkbox {
+            }],
+        },
+        FormSection {
+            heading: "Launch".to_string(),
+            comment: None,
+            rows: vec![FormRow::Checkbox {
                 id: LAUNCH_ID.to_string(),
                 label: "Launch at login (unimplemented)".to_string(),
                 frozen: true,
                 help: None,
-            },
-        ],
-    });
+                comment: Some("A Launch Agent on `cargo run` is not launch-at-login. There is no bundled app to start, on any OS.".to_string()),
+            }],
+        },
+    ];
 
-    FormDescription { sections }
+    let mut actions = HashMap::new();
+
+    // Register what each control writes
+    actions.insert(
+        DIRECTOR_ID.to_string(),
+        RowAction::PatchField("director_enabled".to_string()),
+    );
+    actions.insert(
+        AMBIENT_ID.to_string(),
+        RowAction::PatchField("ambient_wakes".to_string()),
+    );
+    actions.insert(
+        DND_ID.to_string(),
+        RowAction::PatchField("do_not_disturb".to_string()),
+    );
+    actions.insert(
+        HIDDEN_ID.to_string(),
+        RowAction::PatchField("hidden".to_string()),
+    );
+    actions.insert(
+        FULLSCREEN_ID.to_string(),
+        RowAction::PatchField("hide_in_fullscreen".to_string()),
+    );
+    actions.insert(
+        EXCLUDED_ID.to_string(),
+        RowAction::PatchField("excluded_applications".to_string()),
+    );
+    actions.insert(
+        CHARACTER_ID.to_string(),
+        RowAction::PatchField("character".to_string()),
+    );
+    actions.insert(
+        LAUNCH_ID.to_string(),
+        RowAction::PatchField("launch_at_login".to_string()),
+    );
+    actions.insert(
+        SPAWN_ID.to_string(),
+        RowAction::Operation(RowOperation::Spawn),
+    );
+    actions.insert(
+        MEMORY_OPEN_ID.to_string(),
+        RowAction::Operation(RowOperation::OpenMemory),
+    );
+    actions.insert(
+        MEMORY_WIPE_ID.to_string(),
+        RowAction::Operation(RowOperation::WipeMemory),
+    );
+    actions.insert(
+        DIRECTOR_BASE_URL_ID.to_string(),
+        RowAction::PatchField("director_base_url".to_string()),
+    );
+    actions.insert(
+        DIRECTOR_MODEL_ID.to_string(),
+        RowAction::PatchField("director_model".to_string()),
+    );
+    actions.insert(
+        DIRECTOR_API_KEY_ID.to_string(),
+        RowAction::PatchField("director_api_key".to_string()),
+    );
+    actions.insert(
+        CLEAR_KEY_ID.to_string(),
+        RowAction::Operation(RowOperation::ClearKey),
+    );
+
+    FormDescription { sections, actions }
 }
 
 #[cfg(test)]
@@ -333,11 +447,7 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(
-            frozen_rows,
-            vec![LAUNCH_ID],
-            "only Launch should be frozen"
-        );
+        assert_eq!(frozen_rows, vec![LAUNCH_ID], "only Launch should be frozen");
     }
 
     #[test]
@@ -386,10 +496,13 @@ mod tests {
             .expect("Instances section");
 
         assert_eq!(instances.rows.len(), 2);
-        assert!(matches!(
-            instances.rows[0],
-            FormRow::InspectLine { ref id, .. } if id == INSTANCES_ID
-        ));
+        assert!(
+            matches!(
+                instances.rows[0],
+                FormRow::List { ref id, .. } if id == INSTANCES_ID
+            ),
+            "Instances row must be a List"
+        );
         assert!(matches!(instances.rows[1], FormRow::Composite { .. }));
     }
 
@@ -403,10 +516,13 @@ mod tests {
             .expect("Memory section");
 
         assert_eq!(memory.rows.len(), 2);
-        assert!(matches!(
-            memory.rows[0],
-            FormRow::InspectLine { ref id, .. } if id == MEMORY_PATH_ID
-        ));
+        assert!(
+            matches!(
+                memory.rows[0],
+                FormRow::InspectPath { ref id } if id == MEMORY_PATH_ID
+            ),
+            "Memory path must be InspectPath"
+        );
         assert!(matches!(memory.rows[1], FormRow::Composite { .. }));
     }
 
@@ -438,13 +554,13 @@ mod tests {
                 .and_then(|s| {
                     s.rows.iter().find(|r| match r {
                         FormRow::Checkbox { id, help, .. } => {
-                            id == row_id && help.as_ref().map_or(false, |h| !h.is_empty())
+                            id == row_id && help.as_ref().is_some_and(|h| !h.is_empty())
                         }
                         FormRow::InspectBlock { id, help, .. } => {
-                            id == row_id && help.as_ref().map_or(false, |h| !h.is_empty())
+                            id == row_id && help.as_ref().is_some_and(|h| !h.is_empty())
                         }
                         FormRow::Multiline { id, help, .. } => {
-                            id == row_id && help.as_ref().map_or(false, |h| !h.is_empty())
+                            id == row_id && help.as_ref().is_some_and(|h| !h.is_empty())
                         }
                         _ => false,
                     })
@@ -457,5 +573,54 @@ mod tests {
         assert!(has_help("Last user turn", PAYLOAD_ID));
         assert!(has_help("Do Not Disturb", DND_ID));
         assert!(has_help("Excluded applications", EXCLUDED_ID));
+    }
+
+    #[test]
+    fn every_control_has_an_action() {
+        let description = describe();
+
+        for section in &description.sections {
+            for row in &section.rows {
+                match row {
+                    FormRow::Checkbox { id, .. }
+                    | FormRow::Popup { id, .. }
+                    | FormRow::Multiline { id, .. } => {
+                        assert!(
+                            description.actions.contains_key(id),
+                            "Row {id} has no action"
+                        );
+                    }
+                    FormRow::Composite { controls, .. } => {
+                        for control in controls {
+                            if let CompositeControl::Button { id, .. } = control {
+                                assert!(
+                                    description.actions.contains_key(id),
+                                    "Button {id} has no action"
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn actions_map_to_patches_or_ops() {
+        let description = describe();
+
+        assert_eq!(
+            description.actions.get(DIRECTOR_ID),
+            Some(&RowAction::PatchField("director_enabled".to_string()))
+        );
+        assert_eq!(
+            description.actions.get(SPAWN_ID),
+            Some(&RowAction::Operation(RowOperation::Spawn))
+        );
+        assert_eq!(
+            description.actions.get(MEMORY_OPEN_ID),
+            Some(&RowAction::Operation(RowOperation::OpenMemory))
+        );
     }
 }

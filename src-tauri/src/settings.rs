@@ -5,12 +5,9 @@
 //! editor, the same deal Memory already makes. Missing keys take their
 //! defaults, so an older file keeps working when a field is added.
 
-<<<<<<< HEAD
-use std::fmt;
-=======
 pub mod form;
 
->>>>>>> d25122c (refactor(settings): Describe the settings form as data, the way the menu already is)
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
