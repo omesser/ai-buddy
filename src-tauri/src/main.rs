@@ -405,20 +405,6 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-fn open_in_editor(path: &std::path::Path) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    if !path.exists() {
-        std::fs::write(path, "").map_err(|error| error.to_string())?;
-    }
-    std::process::Command::new("open")
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
-
 /// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux).
 /// SPEC gives the webview to the sprite and chat, so this is opened on the
 /// toolkit main thread where the native objects live.
@@ -823,7 +809,7 @@ fn apply_menu_action(
             }
         }
         menu::MenuAction::OpenMemory => {
-            let _ = open_in_editor(&memory::shared_path());
+            let _ = platform::open_path(&memory::shared_path());
         }
         menu::MenuAction::OpenSettings => show_settings(app),
         menu::MenuAction::Quit => quit_now(),
