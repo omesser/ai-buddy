@@ -455,6 +455,7 @@ impl Endpoint {
             .headers(ureq::get(url))
             .config()
             .http_status_as_error(false)
+            .timeout_global(Some(self.timeout))
             .build();
         match request.call() {
             Ok(response) => read_response(response),
@@ -476,9 +477,10 @@ impl Endpoint {
         let body = request_body(&self.model, &snapshot, uses_responses(url), self.max_tokens);
         let request = self
             .headers(ureq::post(url))
-            .set("Content-Type", "application/json")
+            .header("Content-Type", "application/json")
             .config()
             .http_status_as_error(false)
+            .timeout_global(Some(self.timeout))
             .build();
         let text = match request.send_json(body) {
             Ok(response) => {
@@ -512,18 +514,17 @@ impl Endpoint {
 
     fn headers<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
         let mut request = request
-            .set("User-Agent", "ai-buddy")
-            .set("Accept", "application/json")
-            .timeout(self.timeout);
+            .header("User-Agent", "ai-buddy")
+            .header("Accept", "application/json");
         if !self.api_key.is_empty() {
-            request = request.set("Authorization", &format!("Bearer {}", self.api_key));
+            request = request.header("Authorization", &format!("Bearer {}", self.api_key));
         }
         // Anthropic's OpenAI layer accepts Bearer; the native Messages path
         // wants these two. Sending both covers either.
         if self.url.contains("api.anthropic.com") {
-            request = request.set("anthropic-version", "2023-06-01");
+            request = request.header("anthropic-version", "2023-06-01");
             if !self.api_key.is_empty() {
-                request = request.set("x-api-key", &self.api_key);
+                request = request.header("x-api-key", &self.api_key);
             }
         }
         request
@@ -614,7 +615,7 @@ fn status_error(url: &str, code: u16, body: &str) -> String {
     }
 }
 
-fn read_response(mut response: http::Response<ureq::Body>) -> Result<(u16, String), String> {
+fn read_response(mut response: ureq::http::Response<ureq::Body>) -> Result<(u16, String), String> {
     let code = response.status().as_u16();
     let text = response
         .body_mut()
