@@ -44,24 +44,38 @@ What ships where, read from the platform seam rather than from intent. Windows
 is deferred by [docs/SPEC.md](./docs/SPEC.md), so its column is what the code
 says and not what anyone has run.
 
-| Capability | macOS | Linux X11 | Linux Wayland | Windows |
-|---|---|---|---|---|
-| Overlay that never takes focus | yes | yes | degraded | degraded |
-| Click-through off the sprite | yes | yes | degraded | yes |
-| Grab, Throw and Poke | yes | yes | degraded | degraded |
-| Perch on window edges | yes | yes | degraded | degraded |
-| Dock or panel as a Perch | yes | degraded | degraded | degraded |
-| Fade out for a fullscreen app | yes | yes | degraded | degraded |
-| Frontmost app and idle sensing | yes | yes | degraded | stub |
-| Never captured in a screen share | yes | degraded | degraded | stub |
-| Native settings window | yes | yes | yes | stub |
-| Tray or menu bar icon | yes | yes | degraded | yes |
-| Open Memory in an editor | yes | yes | yes | yes |
+| Capability | macOS | Linux | Windows |
+|---|---|---|---|
+| Overlay that never takes focus | yes | yes † | degraded |
+| Click-through off the sprite | yes | yes † | yes |
+| Grab, Throw and Poke | yes | yes † | degraded |
+| Perch on window edges | yes | yes † | degraded |
+| Dock or panel as a Perch | yes | degraded | degraded |
+| Fade out for a fullscreen app | yes | yes † | degraded |
+| Frontmost app and idle sensing | yes | yes † | stub |
+| Never captured in a screen share | yes | degraded | stub |
+| Native settings window | yes | yes | stub |
+| Tray or menu bar icon | yes | yes † | yes |
+| Open Memory in an editor | yes | yes | yes |
 
 - `yes` — implemented.
 - `degraded` — runs in reduced form, because nothing on the platform provides
   the rest. A supported mode, not an error.
 - `stub` — the arm compiles and does nothing. Windows only.
+- `†` — needs an X11 session. Degraded under Wayland, which withholds the
+  capability from clients by design.
+
+Linux is one column because it is one build. There is a single non-macOS arm
+behind `cfg(all(unix, not(target_os = "macos")))`, and it picks its lane at
+runtime on `WAYLAND_DISPLAY` — an X11 path where the protocol answers, and a
+fallback that declares the capability absent. X11 and Wayland are display
+servers a Linux user is already running one of, not platforms to port to.
+
+A daggered row costs the same thing every time: Wayland will not tell a client
+about other windows' geometry, the pointer outside its own surface, the
+frontmost application, or idle. The sprite keeps its window, its art and its
+menu. XWayland runs the X11 path but gives it a private view, so it is not a
+way back to the full answer.
 
 What the cells leave out:
 
