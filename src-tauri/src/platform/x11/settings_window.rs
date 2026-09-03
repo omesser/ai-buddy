@@ -38,7 +38,7 @@ enum Control {
     TextView(gtk::TextView),
     Label(gtk::Label),
     List(gtk::Box, String),
-    CharacterPicker(gtk::ListBox),
+    CharacterPicker(gtk::Box, Vec<String>),
 }
 
 impl SettingsWindow {
@@ -495,21 +495,14 @@ impl SettingsWindow {
                                 .insert(id.clone(), Control::Entry(entry));
                         }
                         CompositeControl::Popup { id } => {
-                            let scrolled = gtk::ScrolledWindow::new(
-                                None::<&gtk::Adjustment>,
-                                None::<&gtk::Adjustment>,
+                            let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                            radio_box.set_size_request(180, -1);
+
+                            hbox.pack_start(&radio_box, false, false, 0);
+                            self.controls.borrow_mut().insert(
+                                id.clone(),
+                                Control::CharacterPicker(radio_box, Vec::new()),
                             );
-                            scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-                            scrolled.set_size_request(180, 120);
-
-                            let list_box = gtk::ListBox::new();
-                            list_box.set_selection_mode(gtk::SelectionMode::Single);
-
-                            scrolled.add(&list_box);
-                            hbox.pack_start(&scrolled, false, false, 0);
-                            self.controls
-                                .borrow_mut()
-                                .insert(id.clone(), Control::CharacterPicker(list_box));
                         }
                         CompositeControl::Button { id, label } => {
                             let button = gtk::Button::with_label(label);
@@ -545,11 +538,15 @@ impl SettingsWindow {
                                                         let character = ctrl
                                                             .get(&new_char_id)
                                                             .and_then(|c| {
-                                                                if let Control::CharacterPicker(list_box) = c {
-                                                                    list_box.selected_row().and_then(|row| {
-                                                                        row.child()
-                                                                            .and_then(|w| w.downcast::<gtk::Label>().ok())
-                                                                            .map(|label| label.text().to_string())
+                                                                if let Control::CharacterPicker(radio_box, _) = c {
+                                                                    radio_box.children().into_iter().find_map(|child| {
+                                                                        child.downcast::<gtk::RadioButton>().ok().and_then(|radio| {
+                                                                            if radio.is_active() {
+                                                                                Some(radio.label().unwrap().to_string())
+                                                                            } else {
+                                                                                None
+                                                                            }
+                                                                        })
                                                                     })
                                                                 } else {
                                                                     None
@@ -623,54 +620,12 @@ impl SettingsWindow {
                 container.pack_start(&hbox, false, false, 0);
             }
             FormRow::Popup { id, .. } => {
-                let scrolled = gtk::ScrolledWindow::new(
-                    None::<&gtk::Adjustment>,
-                    None::<&gtk::Adjustment>,
-                );
-                scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-                scrolled.set_size_request(-1, 150);
+                let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
 
-                let list_box = gtk::ListBox::new();
-                list_box.set_selection_mode(gtk::SelectionMode::Single);
-
-                if let Some(action) = actions.get(id) {
-                    let action = action.clone();
-                    let session = Arc::clone(&self.session);
-                    let refreshing = self.refreshing.clone();
-                    list_box.connect_row_selected(move |_, row| {
-                        if refreshing.get() {
-                            return;
-                        }
-                        if let Some(row) = row {
-                            if let Some(label) =
-                                row.child().and_then(|w| w.downcast::<gtk::Label>().ok())
-                            {
-                                let text = label.text().to_string();
-                                if let Ok(guard) = session.lock() {
-                                    if let Some(sess) = guard.as_ref() {
-                                        if let RowAction::PatchField(field) = &action {
-                                            if field == "character" {
-                                                let patch = SettingsPatch {
-                                                    character: Some(text),
-                                                    ..SettingsPatch::default()
-                                                };
-                                                if let Err(e) = sess.apply(patch) {
-                                                    eprintln!("settings: {e}");
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-
-                scrolled.add(&list_box);
-                container.pack_start(&scrolled, false, false, 0);
+                container.pack_start(&radio_box, false, false, 0);
                 self.controls
                     .borrow_mut()
-                    .insert(id.clone(), Control::CharacterPicker(list_box));
+                    .insert(id.clone(), Control::CharacterPicker(radio_box, Vec::new()));
             }
         }
     }
@@ -700,7 +655,7 @@ impl SettingsWindow {
 
         self.refreshing.set(true);
 
-        let controls = self.controls.borrow();
+        let mut controls = self.controls.borrow_mut();
 
         if let Some(Control::CheckButton(check)) = controls.get(form::DIRECTOR_ID) {
             check.set_active(view.director_enabled);
@@ -747,50 +702,115 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::HOTKEY_ID) {
             label.set_text(&view.hide_hotkey);
         }
-        if let Some(Control::CharacterPicker(list_box)) = controls.get(form::CHARACTER_ID) {
-            for child in list_box.children() {
-                list_box.remove(&child);
-            }
-            for name in &view.installed {
-                let label = gtk::Label::new(Some(name));
-                label.set_halign(Align::Start);
-                label.set_xalign(0.0);
-                let row = gtk::ListBoxRow::new();
-                row.add(&label);
-                list_box.add(&row);
-                if name == &view.character {
-                    list_box.select_row(Some(&row));
+        if let Some(Control::CharacterPicker(radio_box, cached_installed)) =
+            controls.get_mut(form::CHARACTER_ID)
+        {
+            if cached_installed != &view.installed {
+                for child in radio_box.children() {
+                    radio_box.remove(&child);
+                }
+
+                let mut group: Option<gtk::RadioButton> = None;
+                for name in &view.installed {
+                    let radio = if let Some(ref first) = group {
+                        gtk::RadioButton::from_widget(first)
+                    } else {
+                        gtk::RadioButton::with_label(name)
+                    };
+                    if group.is_none() {
+                        group = Some(radio.clone());
+                    } else {
+                        radio.set_label(name);
+                    }
+
+                    if name == &view.character {
+                        radio.set_active(true);
+                    }
+
+                    let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
+                    let character = name.clone();
+                    radio.connect_toggled(move |radio| {
+                        if refreshing.get() {
+                            return;
+                        }
+                        if radio.is_active() {
+                            if let Ok(guard) = session.lock() {
+                                if let Some(sess) = guard.as_ref() {
+                                    let patch = SettingsPatch {
+                                        character: Some(character.clone()),
+                                        ..SettingsPatch::default()
+                                    };
+                                    if let Err(e) = sess.apply(patch) {
+                                        eprintln!("settings: {e}");
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    radio_box.pack_start(&radio, false, false, 0);
+                }
+
+                radio_box.show_all();
+                *cached_installed = view.installed.clone();
+            } else {
+                for child in radio_box.children() {
+                    if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
+                        if let Some(label) = radio.label() {
+                            if label == view.character {
+                                radio.set_active(true);
+                            }
+                        }
+                    }
                 }
             }
-            list_box.show_all();
         }
-        if let Some(Control::CharacterPicker(list_box)) = controls.get(form::NEW_CHARACTER_ID) {
-            let current_selection = list_box.selected_row().and_then(|row| {
-                row.child()
-                    .and_then(|w| w.downcast::<gtk::Label>().ok())
-                    .map(|label| label.text().to_string())
+        if let Some(Control::CharacterPicker(radio_box, cached_installed)) =
+            controls.get_mut(form::NEW_CHARACTER_ID)
+        {
+            let current_selection = radio_box.children().into_iter().find_map(|child| {
+                child.downcast::<gtk::RadioButton>().ok().and_then(|radio| {
+                    if radio.is_active() {
+                        radio.label().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
             });
 
-            for child in list_box.children() {
-                list_box.remove(&child);
-            }
-            for name in &view.installed {
-                let label = gtk::Label::new(Some(name));
-                label.set_halign(Align::Start);
-                label.set_xalign(0.0);
-                let row = gtk::ListBoxRow::new();
-                row.add(&label);
-                list_box.add(&row);
-
-                if let Some(ref selected) = current_selection {
-                    if name == selected {
-                        list_box.select_row(Some(&row));
-                    }
-                } else if name == &view.character {
-                    list_box.select_row(Some(&row));
+            if cached_installed != &view.installed {
+                for child in radio_box.children() {
+                    radio_box.remove(&child);
                 }
+
+                let mut group: Option<gtk::RadioButton> = None;
+                for name in &view.installed {
+                    let radio = if let Some(ref first) = group {
+                        gtk::RadioButton::from_widget(first)
+                    } else {
+                        gtk::RadioButton::with_label(name)
+                    };
+                    if group.is_none() {
+                        group = Some(radio.clone());
+                    } else {
+                        radio.set_label(name);
+                    }
+
+                    if let Some(ref selected) = current_selection {
+                        if name == selected {
+                            radio.set_active(true);
+                        }
+                    } else if name == &view.character {
+                        radio.set_active(true);
+                    }
+
+                    radio_box.pack_start(&radio, false, false, 0);
+                }
+
+                radio_box.show_all();
+                *cached_installed = view.installed.clone();
             }
-            list_box.show_all();
         }
         if let Some(Control::List(list_box, dismiss_label)) = controls.get(form::INSTANCES_ID) {
             for child in list_box.children() {
