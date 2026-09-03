@@ -293,9 +293,10 @@ Smoothness is the renderer's responsibility. The Engine interpolates between pol
 than depending on event fidelity.
 
 Each platform implementation declares its capabilities rather than assuming them.
-`window_geometry` and `absolute_positioning` are declared capabilities. Under Wayland both
-are unavailable, and the Spatial Layer degrades to screen-edge physics only. This is a
-supported degraded mode, not an error state.
+`window_geometry` and `absolute_positioning` are declared capabilities. The Wayland arm
+declares neither, and the Spatial Layer degrades to screen-edge physics only. This is a
+supported degraded mode, not an error state. Geometry is permanent. Positioning is
+`zwlr_layer_shell_v1`, unwired here and absent on Mutter (`DESIGN.md` decision 3).
 
 Multi-monitor uses one coordinate space. Physics clamps to the union of visible display
 frames rather than to its bounding rectangle, so the sprite cannot enter gaps between

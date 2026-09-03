@@ -84,12 +84,28 @@ read-only with respect to the system and needs no permissions.
 macOS is the first implemented platform because it is the development machine.
 Windows is stubbed behind the same platform interface and implemented later.
 
-**Linux is not one platform.** The *native Wayland protocol* gives a client no
-way to query other windows' geometry, to position itself at absolute screen
-coordinates, or to reliably pin itself over the desktop. X11 supports all of it.
-The spatial layer is therefore an *optional capability the platform declares*,
-not an assumption, and where the protocol withholds it the buddy degrades rather
-than fails.
+**Linux is not one platform.** X11 supports everything the spatial layer wants.
+Under the native Wayland protocol each limit belongs to a different layer:
+
+- **Other windows' geometry is permanent.** No compositor offers it.
+  `ext-foreign-toplevel-list-v1` carries an identifier, a title and an app id
+  and no rectangle. `wlr-foreign-toplevel-management`'s `set_rectangle` is a
+  hint the client sends the compositor for its minimize animation, not a query.
+  GNOME's private `org.gnome.Shell.Introspect.GetWindows` returns width and
+  height off `get_frame_rect()` but no x or y, and its sender allowlist holds
+  the two portal backends and nothing else.
+- **Placement over the desktop is GNOME's.** `zwlr_layer_shell_v1` anchors a
+  surface to screen edges with margins and keeps it above the desktop, which
+  is absolute positioning and pinning in one protocol. KWin, Sway, Hyprland,
+  niri, river, COSMIC and Mir implement it. Mutter does not.
+- **Per-pixel click-through is ours.** `wl_surface.set_input_region` with a
+  `wl_region` is core Wayland, and `wl_region.add` takes the same rectangles
+  `x11/overlay.rs` hands `XShapeCombineMask`. tao hands us the `wl_surface`
+  through `raw_window_handle` (`gdk_wayland_window_get_wl_surface` in tao's
+  `linux/window.rs`). The 1x1 input shape it sets for `CursorIgnoreEvents`
+  ([research](./docs/research/event-driven-input-vs-polling.md)) is itself a
+  `set_input_region` call through GDK. `x11/overlay.rs` matches only Xlib and
+  Xcb handles and drops the Wayland one. Wiring it is our work.
 
 A *Wayland session* is a different question from that protocol. Mutter and KWin
 both run XWayland, which proxies the X11 requests this app makes, so a GNOME or
@@ -97,6 +113,10 @@ KDE desktop takes the X11 lane: the lane is chosen on whether an X server
 answers, not on `WAYLAND_DISPLAY`. Degradation is for a session where none does.
 XWayland leaves one hole — it does not list native Wayland clients, so Perches
 on those stay impossible.
+
+The spatial layer is therefore an *optional capability the platform declares*,
+not an assumption, and where the protocol withholds it the buddy degrades rather
+than fails.
 
 ### 4. Tauri, greenfield
 
