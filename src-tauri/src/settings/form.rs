@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use crate::consent;
+use crate::dev_flags;
 use crate::model;
 
 /// What a settings row writes when changed.
@@ -108,15 +109,37 @@ pub enum CompositeControl {
     },
 }
 
-/// The whole settings form as data: sections, rows, and what they write.
+/// One tab of the settings form, holding the sections that belong together.
+///
+/// The grouping is data here rather than a layout decision in each renderer,
+/// so AppKit's `NSTabView` and GTK's `gtk::Notebook` cannot disagree about
+/// which heading sits where.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FormTab {
+    pub title: String,
+    pub sections: Vec<FormSection>,
+}
+
+/// The whole settings form as data: tabs, sections, rows, and what they write.
 ///
 /// Everything here is owned, so this crosses a thread boundary. That is the
 /// point of it: the description is built where the state lives, and the
 /// platform window builds from it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FormDescription {
-    pub sections: Vec<FormSection>,
+    pub tabs: Vec<FormTab>,
     pub actions: HashMap<String, RowAction>,
+}
+
+impl FormDescription {
+    /// Every section, in tab order. For the parts of a renderer that want the
+    /// rows and not the grouping, such as finding one row by id.
+    // AppKit is the last caller: the GTK window builds a page per tab, so the
+    // binary's dead-code lint sees no caller on the other targets.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn sections(&self) -> impl Iterator<Item = &FormSection> + '_ {
+        self.tabs.iter().flat_map(|tab| &tab.sections)
+    }
 }
 
 /// Row ids for the settings form controls.
@@ -144,6 +167,13 @@ pub const MEMORY_WIPE_ID: &str = "memory_wipe";
 pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const LAUNCH_ID: &str = "launch";
+pub const TRACE_FRAMES_ID: &str = "trace_frames";
+pub const TRACE_HITTEST_ID: &str = "trace_hittest";
+pub const TRACE_DIRECTOR_ID: &str = "trace_director";
+#[cfg(target_os = "macos")]
+pub const CAPTURABLE_ID: &str = "capturable";
+pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
+pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
 
 /// Platform-specific help text for excluded applications.
 fn excluded_help() -> String {
@@ -157,24 +187,40 @@ fn excluded_help() -> String {
     }
 }
 
-/// The label of a Director endpoint row, and whether the env owns it.
+/// The label of a row an environment variable can own, and whether it does.
 ///
 /// A frozen row says it is overridden and names the variable doing it, so both
 /// the reason it takes no edit and the export to drop are on screen beside it.
-fn endpoint_row(label: &str, var: &str) -> (String, bool) {
+/// The one ownership question, for every row a variable can own: the Director
+/// endpoint, the Completer limits, and the development switches.
+fn env_row(label: &str, var: &str) -> (String, bool) {
     match model::env_override(var) {
         Some(_) => (format!("{label} (overridden by env: {var})"), true),
         None => (label.to_string(), false),
     }
 }
 
-/// Describe the settings form. The AppKit and Linux GTK windows build from this.
-pub fn describe() -> FormDescription {
-    let (base_url_label, base_url_frozen) = endpoint_row("Base URL", model::BASE_URL);
-    let (model_label, model_frozen) = endpoint_row("Model", model::MODEL);
-    let (api_key_label, api_key_frozen) = endpoint_row("API key", model::API_KEY);
+/// A checkbox for one development switch.
+///
+/// Frozen when the process exported the variable: `dev_flags::Flag::env_value`
+/// gives the variable the value, so the click would change nothing.
+fn flag_row(id: &str, flag: &dev_flags::Flag, label: &str, help: &str) -> FormRow {
+    let (label, frozen) = env_row(label, flag.var());
+    FormRow::Checkbox {
+        id: id.to_string(),
+        label,
+        frozen,
+        help: Some(help.to_string()),
+        comment: None,
+    }
+}
 
-    let sections = vec![
+fn director_sections() -> Vec<FormSection> {
+    let (base_url_label, base_url_frozen) = env_row("Base URL", model::BASE_URL);
+    let (model_label, model_frozen) = env_row("Model", model::MODEL);
+    let (api_key_label, api_key_frozen) = env_row("API key", model::API_KEY);
+
+    vec![
         FormSection {
             heading: "Director".to_string(),
             comment: None,
@@ -239,6 +285,11 @@ pub fn describe() -> FormDescription {
                 ),
             }],
         },
+    ]
+}
+
+fn character_sections() -> Vec<FormSection> {
+    vec![
         FormSection {
             heading: "Character".to_string(),
             comment: None,
@@ -256,27 +307,35 @@ pub fn describe() -> FormDescription {
                     dismiss_label: "Dismiss".to_string(),
                 },
                 FormRow::Composite {
-                id: "new_instance".to_string(),
-                controls: vec![
-                    CompositeControl::TextField {
-                        id: NEW_NAME_ID.to_string(),
-                        placeholder: "Name".to_string(),
-                    },
-                    CompositeControl::Popup {
-                        id: NEW_CHARACTER_ID.to_string(),
-                    },
-                    CompositeControl::Button {
-                        id: SPAWN_ID.to_string(),
-                        label: "New".to_string(),
-                        frozen: false,
-                    },
-                ],
-            },
+                    id: "new_instance".to_string(),
+                    controls: vec![
+                        CompositeControl::TextField {
+                            id: NEW_NAME_ID.to_string(),
+                            placeholder: "Name".to_string(),
+                        },
+                        CompositeControl::Popup {
+                            id: NEW_CHARACTER_ID.to_string(),
+                        },
+                        CompositeControl::Button {
+                            id: SPAWN_ID.to_string(),
+                            label: "New".to_string(),
+                            frozen: false,
+                        },
+                    ],
+                },
             ],
         },
+    ]
+}
+
+fn presence_sections() -> Vec<FormSection> {
+    vec![
         FormSection {
             heading: "Do Not Disturb".to_string(),
-            comment: Some("DESIGN.md: quiet is not gone. A Hide heading would teach the opposite.".to_string()),
+            comment: Some(
+                "DESIGN.md: quiet is not gone. A Hide heading would teach the opposite."
+                    .to_string(),
+            ),
             rows: vec![
                 FormRow::Checkbox {
                     id: DND_ID.to_string(),
@@ -318,44 +377,28 @@ pub fn describe() -> FormDescription {
                 FormRow::InspectBlock {
                     id: HOTKEY_ID.to_string(),
                     label: Some("Hotkey".to_string()),
-                    help: Some("Shown, not edited. A string field is not a key recorder.".to_string()),
+                    help: Some(
+                        "Shown, not edited. A string field is not a key recorder.".to_string(),
+                    ),
                 },
             ],
         },
         FormSection {
-            heading: "Memory".to_string(),
+            heading: "Launch".to_string(),
             comment: None,
-            rows: vec![
-                FormRow::InspectPath {
-                    id: MEMORY_PATH_ID.to_string(),
-                },
-            FormRow::Composite {
-                id: "memory_actions".to_string(),
-                controls: vec![
-                    CompositeControl::Button {
-                        id: MEMORY_OPEN_ID.to_string(),
-                        label: "Open in editor".to_string(),
-                        frozen: false,
-                    },
-                    CompositeControl::Button {
-                        id: MEMORY_WIPE_ID.to_string(),
-                        label: "Wipe".to_string(),
-                        frozen: false,
-                    },
-                ],
-            },
-            ],
-        },
-        FormSection {
-            heading: "Excluded applications".to_string(),
-            comment: None,
-            rows: vec![FormRow::Multiline {
-                id: EXCLUDED_ID.to_string(),
-                label: None,
-                help: Some(excluded_help()),
-                editable: true,
+            rows: vec![FormRow::Checkbox {
+                id: LAUNCH_ID.to_string(),
+                label: "Launch at login (unimplemented)".to_string(),
+                frozen: true,
+                help: None,
+                comment: Some("A Launch Agent on `cargo run` is not launch-at-login. There is no bundled app to start, on any OS.".to_string()),
             }],
         },
+    ]
+}
+
+fn privacy_sections() -> Vec<FormSection> {
+    vec![
         FormSection {
             heading: "What the buddy can see".to_string(),
             comment: Some(consent::pane_intro(&consent::process_listed_as())),
@@ -377,18 +420,136 @@ pub fn describe() -> FormDescription {
             ],
         },
         FormSection {
-            heading: "Launch".to_string(),
+            heading: "Excluded applications".to_string(),
             comment: None,
-            rows: vec![FormRow::Checkbox {
-                id: LAUNCH_ID.to_string(),
-                label: "Launch at login (unimplemented)".to_string(),
-                frozen: true,
-                help: None,
-                comment: Some("A Launch Agent on `cargo run` is not launch-at-login. There is no bundled app to start, on any OS.".to_string()),
+            rows: vec![FormRow::Multiline {
+                id: EXCLUDED_ID.to_string(),
+                label: None,
+                help: Some(excluded_help()),
+                editable: true,
             }],
         },
+        FormSection {
+            heading: "Memory".to_string(),
+            comment: None,
+            rows: vec![
+                FormRow::InspectPath {
+                    id: MEMORY_PATH_ID.to_string(),
+                },
+                FormRow::Composite {
+                    id: "memory_actions".to_string(),
+                    controls: vec![
+                        CompositeControl::Button {
+                            id: MEMORY_OPEN_ID.to_string(),
+                            label: "Open in editor".to_string(),
+                            frozen: false,
+                        },
+                        CompositeControl::Button {
+                            id: MEMORY_WIPE_ID.to_string(),
+                            label: "Wipe".to_string(),
+                            frozen: false,
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+}
+
+fn development_sections() -> Vec<FormSection> {
+    let rows = vec![
+        flag_row(
+            TRACE_FRAMES_ID,
+            &dev_flags::TRACE_FRAMES,
+            "Trace frames",
+            "Traces the Engine's per-frame decisions. Takes effect on the next tick.",
+        ),
+        flag_row(
+            TRACE_HITTEST_ID,
+            &dev_flags::TRACE_HITTEST,
+            "Trace hit-test",
+            "Traces the click-through decision. Takes effect on the next tick.",
+        ),
+        flag_row(
+            TRACE_DIRECTOR_ID,
+            &dev_flags::TRACE_DIRECTOR,
+            "Trace Director",
+            "Prints each session wake, prompt and reply. Takes effect on the next wake.",
+        ),
+        // Only AppKit has a capture exclusion to drop. Gating the element
+        // rather than pushing it keeps the binding immutable on the platforms
+        // that skip it, which `-D warnings` insists on.
+        #[cfg(target_os = "macos")]
+        flag_row(
+            CAPTURABLE_ID,
+            &dev_flags::CAPTURABLE,
+            "Capturable",
+            // `configure_overlay` reads this when a window is built, and only
+            // the Linux frame loop re-runs it. Honest rather than silently
+            // inert.
+            "Drops the capture exclusion, so the overlay shows in a screen share. Takes effect on the next launch.",
+        ),
     ];
 
+    let (timeout_label, timeout_frozen) = env_row("Timeout, in seconds", model::TIMEOUT_SECS);
+    let (max_tokens_label, max_tokens_frozen) = env_row("Reply cap, in tokens", model::MAX_TOKENS);
+
+    vec![
+        FormSection {
+            heading: "Development".to_string(),
+            comment: Some(
+                "These are for development and testing. None of them is recommended on."
+                    .to_string(),
+            ),
+            rows,
+        },
+        FormSection {
+            heading: "Completer limits".to_string(),
+            comment: Some(
+                "Also for development and testing: the session call's timeout and the tokens a reply may take. Blank is the default, which is larger on both counts for a server on this machine. A change retargets the running Director and drops its session history.".to_string(),
+            ),
+            rows: vec![
+                FormRow::TextField {
+                    id: DIRECTOR_TIMEOUT_SECS_ID.to_string(),
+                    label: Some(timeout_label),
+                    placeholder: model::timeout_placeholder(),
+                    frozen: timeout_frozen,
+                },
+                FormRow::TextField {
+                    id: DIRECTOR_MAX_TOKENS_ID.to_string(),
+                    label: Some(max_tokens_label),
+                    placeholder: model::max_tokens_placeholder(),
+                    frozen: max_tokens_frozen,
+                },
+            ],
+        },
+    ]
+}
+
+/// Describe the settings form. The AppKit and Linux GTK windows build from this.
+pub fn describe() -> FormDescription {
+    let tabs = vec![
+        FormTab {
+            title: "Director".to_string(),
+            sections: director_sections(),
+        },
+        FormTab {
+            title: "Character".to_string(),
+            sections: character_sections(),
+        },
+        FormTab {
+            title: "Presence".to_string(),
+            sections: presence_sections(),
+        },
+        FormTab {
+            title: "Privacy".to_string(),
+            sections: privacy_sections(),
+        },
+        FormTab {
+            title: "Development".to_string(),
+            sections: development_sections(),
+        },
+    ];
     let mut actions = HashMap::new();
 
     // Register what each control writes
@@ -457,6 +618,31 @@ pub fn describe() -> FormDescription {
         RowAction::Operation(RowOperation::ClearKey),
     );
     actions.insert(
+        TRACE_FRAMES_ID.to_string(),
+        RowAction::PatchField("trace_frames".to_string()),
+    );
+    actions.insert(
+        TRACE_HITTEST_ID.to_string(),
+        RowAction::PatchField("trace_hittest".to_string()),
+    );
+    actions.insert(
+        TRACE_DIRECTOR_ID.to_string(),
+        RowAction::PatchField("trace_director".to_string()),
+    );
+    #[cfg(target_os = "macos")]
+    actions.insert(
+        CAPTURABLE_ID.to_string(),
+        RowAction::PatchField("capturable".to_string()),
+    );
+    actions.insert(
+        DIRECTOR_TIMEOUT_SECS_ID.to_string(),
+        RowAction::PatchField("director_timeout_secs".to_string()),
+    );
+    actions.insert(
+        DIRECTOR_MAX_TOKENS_ID.to_string(),
+        RowAction::PatchField("director_max_tokens".to_string()),
+    );
+    actions.insert(
         CONSENT_ACCESSIBILITY_ID.to_string(),
         RowAction::PatchField("use_accessibility".to_string()),
     );
@@ -465,7 +651,7 @@ pub fn describe() -> FormDescription {
         RowAction::PatchField("use_screen_recording".to_string()),
     );
 
-    FormDescription { sections, actions }
+    FormDescription { tabs, actions }
 }
 
 #[cfg(test)]
@@ -480,42 +666,70 @@ mod tests {
         assert_send::<FormRow>();
 
         let description = describe();
-        let moved = std::thread::spawn(move || description.sections.len());
+        let moved = std::thread::spawn(move || description.sections().count());
         assert!(moved.join().expect("thread panicked") > 0);
     }
 
+    /// A heading that lost its tab, or landed in two, is the failure this
+    /// catches.
     #[test]
-    fn all_sections_are_present() {
+    fn every_section_is_on_exactly_one_tab() {
         let description = describe();
-        let headings: Vec<&str> = description
-            .sections
-            .iter()
-            .map(|s| s.heading.as_str())
+        let mut headings: Vec<&str> = description
+            .sections()
+            .map(|section| section.heading.as_str())
             .collect();
+        let placed = headings.len();
+        headings.sort_unstable();
+        headings.dedup();
+        assert_eq!(placed, headings.len(), "a heading is on two tabs");
 
+        let mut expected = vec![
+            "Character",
+            "Completer limits",
+            "Development",
+            "Director",
+            "Do Not Disturb",
+            "Excluded applications",
+            "Hide",
+            "Instances",
+            "Last user turn",
+            "Launch",
+            "Memory",
+            "What the buddy can see",
+        ];
+        expected.sort_unstable();
+        assert_eq!(headings, expected);
+    }
+
+    #[test]
+    fn every_tab_has_a_section() {
+        let description = describe();
+        let titles: Vec<&str> = description
+            .tabs
+            .iter()
+            .map(|tab| tab.title.as_str())
+            .collect();
         assert_eq!(
-            headings,
+            titles,
             vec![
                 "Director",
-                "Last user turn",
                 "Character",
-                "Instances",
-                "Do Not Disturb",
-                "Hide",
-                "Memory",
-                "Excluded applications",
-                "What the buddy can see",
-                "Launch",
+                "Presence",
+                "Privacy",
+                "Development"
             ]
         );
+        for tab in &description.tabs {
+            assert!(!tab.sections.is_empty(), "{} has no section", tab.title);
+        }
     }
 
     #[test]
     fn launch_row_is_frozen() {
         let description = describe();
         let launch_section = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Launch")
             .expect("Launch section exists");
 
@@ -540,30 +754,109 @@ mod tests {
         }
     }
 
+    /// Under the env lock, which clears every Development variable: a shell
+    /// that exported one freezes its row, and excluding those rows instead
+    /// would leave the one test that can catch a stray `frozen: true` blind
+    /// to the whole tab.
     #[test]
     fn no_other_frozen_checkboxes() {
-        let description = describe();
-        let frozen_rows: Vec<&String> = description
-            .sections
-            .iter()
-            .flat_map(|s| &s.rows)
-            .filter_map(|r| match r {
-                FormRow::Checkbox { id, frozen, .. } if *frozen => Some(id),
-                _ => None,
-            })
-            .collect();
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe();
+            let frozen_rows: Vec<&String> = description
+                .sections()
+                .flat_map(|s| &s.rows)
+                .filter_map(|r| match r {
+                    FormRow::Checkbox { id, frozen, .. } if *frozen => Some(id),
+                    _ => None,
+                })
+                .collect();
 
-        assert_eq!(
-            frozen_rows,
-            vec![LAUNCH_ID],
-            "only Launch should be a frozen checkbox"
-        );
+            assert_eq!(
+                frozen_rows,
+                vec![LAUNCH_ID],
+                "only Launch should be a frozen checkbox"
+            );
+        });
+    }
+
+    /// Whether the control carrying this id writes a bool, or `None` when no
+    /// writing control claims it.
+    ///
+    /// Composite controls count: a `PatchField` registered against one is
+    /// dispatched by the same two setters, so leaving them out would let the
+    /// next composite text field ship inert.
+    fn writes_bool(description: &FormDescription, id: &str) -> Option<bool> {
+        for row in description.sections().flat_map(|section| &section.rows) {
+            match row {
+                FormRow::Checkbox { id: row_id, .. } if row_id == id => return Some(true),
+                FormRow::TextField { id: row_id, .. }
+                | FormRow::SecureField { id: row_id, .. }
+                | FormRow::Multiline { id: row_id, .. }
+                | FormRow::Popup { id: row_id, .. }
+                    if row_id == id =>
+                {
+                    return Some(false)
+                }
+                FormRow::Composite { controls, .. } => {
+                    for control in controls {
+                        match control {
+                            CompositeControl::TextField { id: c_id, .. }
+                            | CompositeControl::Popup { id: c_id, .. }
+                                if c_id == id =>
+                            {
+                                return Some(false)
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Every registered `PatchField` has to reach that field through the
+    /// setter its own control calls.
+    ///
+    /// The mapping is by name, so a field name no setter knows compiles clean
+    /// and ships a control that writes nothing. Each renderer picks the setter
+    /// from the control kind — `set_bool` for a `Checkbox`, `set_text` for a
+    /// field — and returns when it refuses the name, so a name only the other
+    /// setter knows lands just as inert (#273).
+    ///
+    /// Walking the actions map rather than the rows is what catches a field
+    /// registered against an id no writing control carries, which reaches
+    /// neither setter and so cannot be caught by looking at rows alone.
+    #[test]
+    fn every_patch_field_reaches_the_setter_its_control_calls() {
+        let description = describe();
+        let mut checked = 0;
+        for (id, action) in &description.actions {
+            let RowAction::PatchField(name) = action else {
+                continue;
+            };
+            let Some(writes_bool) = writes_bool(&description, id) else {
+                panic!("{id} writes {name}, but no writing control carries that id");
+            };
+            let mut patch = crate::settings::SettingsPatch::default();
+            let (took, setter) = if writes_bool {
+                (patch.set_bool(name, true), "set_bool")
+            } else {
+                (patch.set_text(name, "value"), "set_text")
+            };
+            assert!(
+                took,
+                "{id} writes {name}, which SettingsPatch::{setter} — the setter its control calls — does not know"
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "no writing control was checked");
     }
 
     fn described_row(description: &FormDescription, id: &str) -> (String, bool) {
         description
-            .sections
-            .iter()
+            .sections()
             .flat_map(|section| &section.rows)
             .find_map(|row| match row {
                 FormRow::TextField {
@@ -628,8 +921,7 @@ mod tests {
     fn director_section_has_two_checkboxes() {
         let description = describe();
         let director = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Director")
             .expect("Director section");
 
@@ -666,8 +958,7 @@ mod tests {
     fn do_not_disturb_section_has_dnd_then_sound() {
         let description = describe();
         let section = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Do Not Disturb")
             .expect("Do Not Disturb section");
 
@@ -686,8 +977,7 @@ mod tests {
     fn character_section_has_popup() {
         let description = describe();
         let character = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Character")
             .expect("Character section");
 
@@ -702,8 +992,7 @@ mod tests {
     fn instances_section_has_list_and_new() {
         let description = describe();
         let instances = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Instances")
             .expect("Instances section");
 
@@ -722,8 +1011,7 @@ mod tests {
     fn memory_section_has_path_and_actions() {
         let description = describe();
         let memory = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Memory")
             .expect("Memory section");
 
@@ -742,8 +1030,7 @@ mod tests {
     fn excluded_section_has_multiline() {
         let description = describe();
         let excluded = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Excluded applications")
             .expect("Excluded applications section");
 
@@ -760,8 +1047,7 @@ mod tests {
 
         let has_help = |section: &str, row_id: &str| -> bool {
             description
-                .sections
-                .iter()
+                .sections()
                 .find(|s| s.heading == section)
                 .and_then(|s| {
                     s.rows.iter().find(|r| match r {
@@ -792,7 +1078,7 @@ mod tests {
     fn every_control_has_an_action() {
         let description = describe();
 
-        for section in &description.sections {
+        for section in description.sections() {
             for row in &section.rows {
                 match row {
                     FormRow::Checkbox { id, .. }
@@ -847,8 +1133,7 @@ mod tests {
     fn consent_section_has_two_checkboxes() {
         let description = describe();
         let consent = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "What the buddy can see")
             .expect("Consent section exists");
 
@@ -913,8 +1198,7 @@ mod tests {
     fn excluded_help_is_platform_specific() {
         let description = describe();
         let excluded = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Excluded applications")
             .expect("Excluded applications section");
 
@@ -937,6 +1221,122 @@ mod tests {
                 !help.contains("WM_CLASS"),
                 "Non-Linux help must not mention WM_CLASS, got: {help}"
             );
+        }
+    }
+    fn development_tab(description: &FormDescription) -> &FormTab {
+        description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "Development")
+            .expect("the Development tab exists")
+    }
+
+    fn row_id(row: &FormRow) -> Option<&str> {
+        match row {
+            FormRow::Checkbox { id, .. } | FormRow::TextField { id, .. } => Some(id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Every section, not the first one: acceptance box 3 asks for a warning
+    /// on the tab, and a reader who scrolls to a later heading has left the
+    /// first section's comment behind (#273).
+    #[test]
+    fn the_development_tab_warns_and_registers_every_row() {
+        let description = describe();
+        let tab = development_tab(&description);
+
+        for section in &tab.sections {
+            let warning = section
+                .comment
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} carries no warning", section.heading));
+            assert!(
+                warning.contains("for development and testing"),
+                "{} has to say what its rows are for, got {warning:?}",
+                section.heading
+            );
+            for row in &section.rows {
+                let id = row_id(row).expect("every development row is a control");
+                assert!(
+                    description.actions.contains_key(id),
+                    "development row {id} has no action"
+                );
+            }
+        }
+    }
+
+    /// A switch the env owns names the variable it answers to, so the export
+    /// to drop is on screen, and takes no click.
+    ///
+    /// Every exported value freezes the row, `0` included, which is the
+    /// ownership half of `dev_flags::Flag::env_value`'s convention.
+    #[test]
+    fn an_env_owned_flag_row_is_frozen_and_names_its_variable() {
+        crate::model::tests::with_env(None, None, None, || {
+            let var = dev_flags::TRACE_FRAMES.var();
+            for exported in [Some("1"), Some("0"), Some("true"), None] {
+                match exported {
+                    Some(value) => std::env::set_var(var, value),
+                    None => std::env::remove_var(var),
+                }
+                let description = describe();
+
+                let row = development_tab(&description)
+                    .sections
+                    .iter()
+                    .flat_map(|section| &section.rows)
+                    .find(|row| row_id(row) == Some(TRACE_FRAMES_ID))
+                    .expect("the trace-frames row exists");
+
+                match row {
+                    FormRow::Checkbox { label, frozen, .. } => {
+                        assert_eq!(
+                            *frozen,
+                            exported.is_some(),
+                            "exported {exported:?} decides the click"
+                        );
+                        assert_eq!(
+                            label.contains(var),
+                            exported.is_some(),
+                            "exported {exported:?} decides the label, got {label:?}"
+                        );
+                    }
+                    _ => panic!("the trace-frames row is a checkbox"),
+                }
+            }
+            std::env::remove_var(var);
+        });
+    }
+
+    #[test]
+    fn the_completer_limits_show_their_defaults_as_placeholders() {
+        let description = describe();
+        let rows: Vec<&FormRow> = development_tab(&description)
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .filter(|row| {
+                matches!(
+                    row_id(row),
+                    Some(DIRECTOR_TIMEOUT_SECS_ID) | Some(DIRECTOR_MAX_TOKENS_ID)
+                )
+            })
+            .collect();
+
+        assert_eq!(rows.len(), 2, "both limits are on the tab");
+        for row in rows {
+            match row {
+                FormRow::TextField {
+                    id, placeholder, ..
+                } => {
+                    assert!(
+                        !placeholder.is_empty(),
+                        "{id} needs a placeholder, so blank reads as the default"
+                    );
+                }
+                _ => panic!("a limit is a text field"),
+            }
         }
     }
 }

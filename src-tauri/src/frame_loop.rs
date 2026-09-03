@@ -17,7 +17,7 @@ use tauri::{Emitter, Manager};
 
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, describe_menu, env_util, menu, model, overlay_label, place_overlays,
+    apply_menu_action, describe_menu, dev_flags, menu, model, overlay_label, place_overlays,
     platform, publish_instances, remember_instances, spawn_live, switch_instance, tray,
     DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed,
     Placement, SpritePlacement, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
@@ -136,22 +136,6 @@ pub(crate) fn run_frame_loop(
         // and so the only place that knows when this is true again.
         let covered = Arc::new(Mutex::new(covered));
 
-        // Click-through is invisible: nothing on screen says whether the overlay
-        // is currently swallowing clicks or passing them on. This trace is the
-        // only way to watch the decision without a human clicking. Off unless
-        // asked for; see scripts/verify-overlay.sh.
-        let tracing = env_util::env_flag_is_on("AI_BUDDY_TRACE_HITTEST");
-
-        // Likewise for the Frame: where the sprite is and what it is doing is
-        // the loop's only output, and a screenshot cannot say whether it got
-        // there by falling.
-        let tracing_frames = env_util::env_flag_is_on("AI_BUDDY_TRACE_FRAMES");
-        // A click is two edges. The periodic hit-test line only prints on a
-        // click-through flip or every two seconds, so a press that did not
-        // flip — already over the sprite, or never over it — left no record
-        // of whether the button was seen or the hit-test agreed.
-        let tracing_director = model::tracing();
-        let tracing_clicks = tracing || tracing_frames || tracing_director;
         let mut button_was_down = false;
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
@@ -159,6 +143,27 @@ pub(crate) fn run_frame_loop(
 
         loop {
             thread::sleep(ENGINE_TICK);
+
+            // Read per tick, not once at setup: the Development tab can flip
+            // these while the loop runs, and an atomic load is nothing beside
+            // a frame. See `dev_flags`.
+            //
+            // Click-through is invisible: nothing on screen says whether the
+            // overlay is currently swallowing clicks or passing them on. This
+            // trace is the only way to watch the decision without a human
+            // clicking. Off unless asked for; see scripts/verify-overlay.sh.
+            let tracing = dev_flags::TRACE_HITTEST.is_on();
+
+            // Likewise for the Frame: where the sprite is and what it is doing
+            // is the loop's only output, and a screenshot cannot say whether it
+            // got there by falling.
+            let tracing_frames = dev_flags::TRACE_FRAMES.is_on();
+            // A click is two edges. The periodic hit-test line only prints on a
+            // click-through flip or every two seconds, so a press that did not
+            // flip — already over the sprite, or never over it — left no record
+            // of whether the button was seen or the hit-test agreed.
+            let tracing_director = model::tracing();
+            let tracing_clicks = tracing || tracing_frames || tracing_director;
 
             let Ok(cursor) = app.cursor_position() else {
                 continue;

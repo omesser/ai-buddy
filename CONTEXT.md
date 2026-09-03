@@ -141,6 +141,13 @@ An external agent runtime the user attaches, which reasons and acts on their
 behalf. Supplied by the user, never bundled.
 _Avoid_: Backend, provider, model
 
+**Completer**:
+An HTTP chat-completions endpoint standing in for a Harness until one is
+attached, behind the same session trait
+([ADR-0008](./docs/adr/0008-one-harness-session.md)). Settings names its timeout
+and reply cap, which is where the word reaches the screen.
+_Avoid_: Model, LLM, provider, API
+
 **Executor**:
 Whatever posts synthetic mouse and keyboard events to the operating system.
 Owned by the Harness or a desktop-control MCP server, not by ai-buddy.

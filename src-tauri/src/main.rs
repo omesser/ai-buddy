@@ -25,7 +25,7 @@
 // it to `mod form` and the view types when a Windows-only item first lands.
 #[cfg_attr(not(unix), allow(dead_code))]
 mod consent;
-mod env_util;
+mod dev_flags;
 mod frame_loop;
 mod menu;
 mod model;
@@ -1383,6 +1383,9 @@ fn main() {
             // user asked for would be worse than saying so.
             let settings_file = settings::settings_path(&memory::data_dir());
             let mut settings = Settings::load(&settings_file);
+            // Before anything reads a development switch: the frame loop and
+            // the overlay panel load them from `dev_flags`, not the env.
+            dev_flags::seed(&settings);
             consent::set_wanted(
                 consent::CapabilityId::Accessibility,
                 settings.use_accessibility,

@@ -22,13 +22,11 @@ use serde::Serialize;
 /// think, and 8s was enough to lose a Grok wake to Static.
 pub const TIMEOUT: Duration = Duration::from_secs(20);
 
-const TRACE: &str = "AI_BUDDY_TRACE_DIRECTOR";
-
 /// Prompt, raw reply, and parse. Off unless asked: a Character Prompt is
 /// a paragraph, and printing it sixty times a minute would bury everything
 /// else. Same gate as the hit-test and frame traces.
 pub fn tracing() -> bool {
-    crate::env_util::env_flag_is_on(TRACE)
+    crate::dev_flags::TRACE_DIRECTOR.is_on()
 }
 
 fn trace_block(which: &str, text: &str) {
@@ -51,8 +49,11 @@ const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
 /// Completer timeout, in seconds, and the reply cap, in tokens. Both have a
 /// local default that differs from the hosted one; these override either.
-const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
-const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
+///
+/// `pub(crate)` for the same reason as the three above: the settings window
+/// names the variable that owns a frozen row.
+pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
+pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
@@ -184,6 +185,14 @@ fn resolve_string(var: &str, persisted: &str, default: &str) -> String {
 /// unset: a `$VAR` that expanded to nothing is a mistake, not an override.
 pub(crate) fn env_override(var: &str) -> Option<String> {
     std::env::var(var).ok().filter(|value| !value.is_empty())
+}
+
+/// The value in force for `var`: the exported one, else the file's.
+///
+/// `resolve_string` without a default, for the rows whose blank means "the
+/// default, whichever the endpoint turns out to be".
+pub(crate) fn env_or_file(var: &str, file: &str) -> String {
+    env_override(var).unwrap_or_else(|| file.to_string())
 }
 
 /// Build Director on/off from already-resolved settings.
@@ -353,8 +362,10 @@ fn is_local(base: &str) -> bool {
 }
 
 fn timeout_for(local: bool) -> Duration {
-    if let Some(secs) = env_secs(TIMEOUT_SECS) {
-        return secs;
+    // `dev_flags` holds the value the variable or the file settled on, so the
+    // precedence is not re-decided here (#273).
+    if let Some(secs) = crate::dev_flags::director_timeout_secs() {
+        return Duration::from_secs(secs);
     }
     if local {
         LOCAL_TIMEOUT
@@ -364,13 +375,9 @@ fn timeout_for(local: bool) -> Duration {
 }
 
 fn max_tokens_for(local: bool) -> u32 {
-    // Guarded like `env_secs`: a zero cap would ask for a reply with no room
-    // to answer in.
-    if let Some(cap) = std::env::var(MAX_TOKENS)
-        .ok()
-        .and_then(|raw| raw.parse::<u32>().ok())
-        .filter(|&cap| cap > 0)
-    {
+    // As with the timeout, decided in `dev_flags::seed`. A zero cap is unset
+    // there: a reply with no room to answer in is not a value to keep.
+    if let Some(cap) = crate::dev_flags::director_max_tokens() {
         return cap;
     }
     if local {
@@ -378,6 +385,24 @@ fn max_tokens_for(local: bool) -> u32 {
     } else {
         HOSTED_MAX_TOKENS
     }
+}
+
+/// What an empty Completer-timeout field means, in seconds.
+///
+/// Both defaults, because `describe` builds the form without settings and so
+/// cannot know whether the endpoint is local. Naming one of them would make
+/// the placeholder wrong for half the users.
+pub(crate) fn timeout_placeholder() -> String {
+    format!(
+        "{} ({} for a local server)",
+        TIMEOUT.as_secs(),
+        LOCAL_TIMEOUT.as_secs()
+    )
+}
+
+/// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
+pub(crate) fn max_tokens_placeholder() -> String {
+    format!("{HOSTED_MAX_TOKENS} ({LOCAL_MAX_TOKENS} for a local server)")
 }
 
 /// An OpenAI-compatible chat Completer, or `None` when a remote host has no
@@ -739,6 +764,9 @@ const PING: &str = "Reply with the single word pong and nothing else.";
 /// `scripts/probe-model.sh` is the face of this. Later a Harness attach
 /// (#16) can share the command: same env, same exit codes, a second hop.
 pub fn run_probe() -> i32 {
+    // No settings file on this path, and `dev_flags::seed` is where the
+    // exported timeout and reply cap are read (#273).
+    crate::dev_flags::seed(&crate::settings::Settings::default());
     let Some(endpoint) = endpoint() else {
         eprintln!(
             "probe-model: no AI_BUDDY_DIRECTOR_API_KEY, and \
@@ -984,28 +1012,18 @@ pub(crate) mod tests {
         static ENV: Mutex<()> = Mutex::new(());
         let _lock = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        struct Guard {
-            key: Option<String>,
-            base: Option<String>,
-            model: Option<String>,
-        }
+        struct Guard(Vec<(&'static str, Option<String>)>);
 
         impl Drop for Guard {
             fn drop(&mut self) {
-                restore(API_KEY, self.key.take());
-                restore(BASE_URL, self.base.take());
-                restore(MODEL, self.model.take());
-            }
-        }
-
-        fn save(var: &str) -> Option<String> {
-            std::env::var(var).ok()
-        }
-
-        fn restore(var: &str, previous: Option<String>) {
-            match previous {
-                Some(value) => std::env::set_var(var, value),
-                None => std::env::remove_var(var),
+                // The Development variables are still cleared here, so this
+                // leaves the live `dev_flags` values on the file defaults.
+                // Seeding after the restore below would load the shell's
+                // exports into them instead.
+                crate::dev_flags::seed(&crate::settings::Settings::default());
+                for (var, previous) in self.0.drain(..) {
+                    apply(var, previous.as_deref());
+                }
             }
         }
 
@@ -1016,14 +1034,31 @@ pub(crate) mod tests {
             }
         }
 
-        let _guard = Guard {
-            key: save(API_KEY),
-            base: save(BASE_URL),
-            model: save(MODEL),
-        };
-        apply(API_KEY, key);
-        apply(BASE_URL, base);
-        apply(MODEL, model);
+        // The three the caller sets, and every Development variable: a shell
+        // that exported one of those would otherwise freeze a row or seed a
+        // switch in a test that never mentions it (#273).
+        //
+        // The live `dev_flags` values those variables govern are
+        // process-global too, so the lock owns them as well: seeded to the
+        // defaults on the way in and again on the way out, no test has to
+        // hand-restore them.
+        let mut wanted = vec![(API_KEY, key), (BASE_URL, base), (MODEL, model)];
+        wanted.extend(
+            crate::dev_flags::test_vars()
+                .into_iter()
+                .map(|var| (var, None)),
+        );
+
+        let _guard = Guard(
+            wanted
+                .iter()
+                .map(|(var, _)| (*var, std::env::var(var).ok()))
+                .collect(),
+        );
+        for (var, value) in wanted {
+            apply(var, value);
+        }
+        crate::dev_flags::seed(&crate::settings::Settings::default());
         body();
     }
 
@@ -1358,10 +1393,39 @@ pub(crate) mod tests {
         assert!(is_local("http://localhost.:11434"), "fully qualified");
     }
 
+    /// The env keeps the last word over the file for these two, the same
+    /// precedence `resolve` gives the endpoint (#272). Read here, decided in
+    /// `dev_flags::seed`, so each export needs a re-seed to reach a read site.
+    #[test]
+    fn an_exported_limit_outranks_the_persisted_one() {
+        with_env(None, None, None, || {
+            let file = crate::settings::Settings {
+                director_timeout_secs: "45".into(),
+                director_max_tokens: "300".into(),
+                ..Default::default()
+            };
+            crate::dev_flags::seed(&file);
+            assert_eq!(timeout_for(false), Duration::from_secs(45));
+            assert_eq!(max_tokens_for(false), 300);
+
+            std::env::set_var(TIMEOUT_SECS, "7");
+            std::env::set_var(MAX_TOKENS, "11");
+            crate::dev_flags::seed(&file);
+            assert_eq!(timeout_for(false), Duration::from_secs(7));
+            assert_eq!(max_tokens_for(false), 11);
+            std::env::remove_var(TIMEOUT_SECS);
+            std::env::remove_var(MAX_TOKENS);
+        });
+    }
+
+    /// Under the env lock because both functions read the live `dev_flags`
+    /// values, which another test in this binary sets and clears.
     #[test]
     fn a_cold_local_model_gets_room_a_hosted_one_does_not_need() {
-        assert!(timeout_for(true) > timeout_for(false));
-        assert!(max_tokens_for(true) > max_tokens_for(false));
+        with_env(None, None, None, || {
+            assert!(timeout_for(true) > timeout_for(false));
+            assert!(max_tokens_for(true) > max_tokens_for(false));
+        });
     }
 
     #[test]
@@ -1596,6 +1660,8 @@ pub(crate) mod tests {
             .filter(|&n: &usize| n > 0)
             .unwrap_or(40);
 
+        // For the exported timeout, as `run_probe` does.
+        crate::dev_flags::seed(&crate::settings::Settings::default());
         let endpoint = endpoint().expect("AI_BUDDY_DIRECTOR_BASE_URL and _MODEL in the env");
         let model = endpoint.model().to_string();
         let origin = endpoint.origin();

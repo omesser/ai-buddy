@@ -103,7 +103,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// Whether this run lets itself be captured. See `configure_overlay`.
 fn sharing_type() -> NSWindowSharingType {
-    if crate::env_util::env_flag_is_on("AI_BUDDY_CAPTURABLE") {
+    if crate::dev_flags::CAPTURABLE.is_on() {
         NSWindowSharingType::ReadOnly
     } else {
         NSWindowSharingType::None

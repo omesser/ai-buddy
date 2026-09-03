@@ -88,6 +88,8 @@ objc2-app-kit = {version = "0.3", features = [
   "NSMenu",
   "NSMenuItem",
   "NSScrollView",
+  "NSTabView",
+  "NSTabViewItem",
   "NSView",
   "NSColor",
   "NSFont",
