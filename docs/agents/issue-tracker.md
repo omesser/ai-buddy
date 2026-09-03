@@ -13,7 +13,7 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
-An agent signs every body it writes through these commands, because they run under the maintainer's account. See `docs/agents/writing.md`.
+An agent signs every body it writes through these commands, because they run under a human's account. See `docs/agents/writing.md`.
 
 ## Pull requests as a triage surface
 

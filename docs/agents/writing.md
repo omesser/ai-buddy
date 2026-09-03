@@ -82,7 +82,7 @@ agent writes with one line of its own:
 _— Cursor agent, on @omesser's behalf._
 ```
 
-An agent writes through the maintainer's account, so the author name never says
+When an agent writes through an owner's account, the author name never says
 who wrote a comment. A reader following a back-and-forth needs that: which line
 to argue with, and which is a decision already taken. `Co-authored-by` records
 authorship on commits only, and GitHub has no author field an agent can set.
