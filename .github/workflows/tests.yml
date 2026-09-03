@@ -4,17 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
-    # The default three, plus `labeled` so the `windows` job's label escape
-    # hatch can actually fire. A re-run replays the original payload, so
-    # without this a label applied after the fact is never seen. The cost is
-    # that labelling any pull request starts a run; the changed-files gates
-    # keep a docs-only one down to the hooks.
+    # `labeled` is what makes the `windows` job's label escape hatch fire at
+    # all. A re-run replays the original payload, so a label applied after the
+    # fact is invisible without it. The cost is that labelling a pull request
+    # for any other reason starts a run too; the changed-files gates below keep
+    # a docs-only one down to the hooks.
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  # Every event but a label supersedes the run before it. A label does not: the
+  # five triage labels land on pull requests mid-run, and cancelling live CI to
+  # re-run the same commit is the one case where superseding destroys work
+  # rather than saving it.
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
   # One job, both platforms. The differences between them are tool installation
@@ -260,28 +264,27 @@ jobs:
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
 
-  # A job of its own, not a third matrix entry. The job above is one definition
-  # for two platforms because the only differences are tool installation and two
-  # hooks that guard themselves on uname. Windows breaks that premise: shfmt,
-  # shellcheck, `sudo mv`, the apt step and the shell hooks are all
-  # inapplicable, and a matrix entry would inherit every one of them.
+  # A job of its own, not a third matrix entry. Windows breaks the premise the
+  # job above rests on: shfmt, shellcheck, `sudo mv`, the apt step and the shell
+  # hooks are all inapplicable there, and a matrix entry would inherit every one
+  # of them.
   #
   # So this job runs no pre-commit and installs no Python, Node, shfmt or
   # shellcheck. Formatting, whitespace, codespell and the YAML/JSON/TOML hooks
   # are settled on Linux and macOS; a third runner would check the same bytes
   # and give the same answer. The one question it can ask that they cannot is
-  # whether the code compiles for Windows — and nothing compiles it today.
+  # whether the code compiles for Windows, and nothing compiles it today.
   # platform.rs carries seven `not(unix)` arms and sensing.rs one, and the
   # opener #195 added rests on reading. That is the position the x11 arm was in
-  # before the review the comment above describes.
+  # before the review described above.
   #
   # Cross-checking does not stand in for it. A Tauri target needs the MSVC
   # toolchain and WebView2, so `cargo check --target x86_64-pc-windows-msvc`
   # from another runner cannot compile what this does. #247.
   windows:
     runs-on: windows-latest
-    # Longer than the 30 above. This is a cold-cache MSVC build of the whole
-    # workspace on the slowest of the three runners.
+    # A cold-cache MSVC build of the whole workspace, on the slowest of the
+    # three runners.
     timeout-minutes: 45
 
     steps:
@@ -301,8 +304,15 @@ jobs:
         # The manifests and the lockfile are in because they decide what Windows
         # links: keyring already carries `windows-native`, and a feature or
         # version change there lands on this job and nowhere else. This workflow
-        # is in for the reason the `files_ignore` comment gives — a change to the
+        # is in for the reason the `files_ignore` comment gives: a change to the
         # gate cannot switch the gate off.
+        #
+        # A named list is the one thing `files_ignore` is not, so a `not(unix)`
+        # arm added to a third file escapes this gate until someone adds the
+        # file. The `windows` label is the cover for that, and a rotted arm
+        # reaches main the moment nobody suspects one. Inverting to an ignore
+        # list would run a Windows build on every code change instead, which is
+        # the cost this gate exists to avoid.
         #
         # Same commit pin, same CVE-2025-30066 reason.
         uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
@@ -353,8 +363,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
-          # Its own key: this target directory shares nothing with the two
-          # platforms above.
           key: windows-latest
           # Same reason as above — the run that fails clippy is the one about to
           # be pushed again.
@@ -365,9 +373,10 @@ jobs:
         # where a rotted arm shows up. clippy costs what cargo check does and
         # catches more, so there is no reason to run the cheaper one.
         #
-        # Compilation only. Turning on `cargo test` is a follow-up: a first
-        # Windows suite is red for reasons unrelated to the platform arms —
-        # path separators in fixtures, the macOS-gated tests in the shell crate
-        # — and a suite red on day one buries the signal this job exists for.
+        # Compilation only. A first Windows suite is red for reasons that have
+        # nothing to do with the platform arms, path separators in fixtures and
+        # the macOS-gated tests in the shell crate among them, and a suite red
+        # on day one buries the signal this job exists to give. Turning
+        # `cargo test` on is a follow-up, once someone knows what fails.
         if: steps.changes.outputs.windows == 'true'
         run: cargo clippy --workspace --all-targets -- -D warnings
