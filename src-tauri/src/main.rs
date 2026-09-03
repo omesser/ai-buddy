@@ -1392,10 +1392,10 @@ fn main() {
             app.manage(ArtUrls { characters });
             let installed: Vec<String> = character_cache.keys().cloned().collect();
 
-            // Keep ai-buddy out of the Dock and the application switcher. The
-            // overlay is furniture, not an app you switch to.
+            // Show in the Dock so users have a findable anchor when the menu
+            // bar is crowded. The tray icon remains the settings door.
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
             // Read before the overlays are built rather than after the loop
             // starts: reading which part of a display is usable means asking
@@ -1561,6 +1561,8 @@ fn main() {
                     &settings_now,
                     rules_now.as_deref().unwrap_or(&HideRules::default()),
                 );
+                #[cfg(target_os = "macos")]
+                platform::seed_tray_position();
                 match tray::install(app.handle(), &description) {
                     Ok(icon) => Some(icon),
                     Err(why) => {
