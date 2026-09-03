@@ -18,4 +18,5 @@ pub use pointer::{primary_button_down, secondary_button_down};
 pub use sensing::X11ActivitySource;
 pub use settings_window::{refresh_if_showing as refresh_settings, show as show_settings};
 
+pub(super) use connection::connection;
 pub(super) use window_source::X11WindowSource;

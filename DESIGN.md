@@ -84,11 +84,19 @@ read-only with respect to the system and needs no permissions.
 macOS is the first implemented platform because it is the development machine.
 Windows is stubbed behind the same platform interface and implemented later.
 
-**Linux is not one platform.** Under Wayland a client cannot query other
-windows' geometry, cannot position itself at absolute screen coordinates, and
-cannot reliably pin itself over the desktop. X11 supports all of it. The spatial
-layer is therefore an *optional capability the platform declares*, not an
-assumption. On Wayland the buddy degrades rather than fails.
+**Linux is not one platform.** The *native Wayland protocol* gives a client no
+way to query other windows' geometry, to position itself at absolute screen
+coordinates, or to reliably pin itself over the desktop. X11 supports all of it.
+The spatial layer is therefore an *optional capability the platform declares*,
+not an assumption, and where the protocol withholds it the buddy degrades rather
+than fails.
+
+A *Wayland session* is a different question from that protocol. Mutter and KWin
+both run XWayland, which proxies the X11 requests this app makes, so a GNOME or
+KDE desktop takes the X11 lane: the lane is chosen on whether an X server
+answers, not on `WAYLAND_DISPLAY`. Degradation is for a session where none does.
+XWayland leaves one hole — it does not list native Wayland clients, so Perches
+on those stay impossible.
 
 ### 4. Tauri, greenfield
 

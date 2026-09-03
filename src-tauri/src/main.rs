@@ -1343,6 +1343,10 @@ fn main() {
         std::process::exit(model::run_probe());
     }
 
+    // Before the builder, because the builder is where GTK initializes and GDK
+    // reads GDK_BACKEND once, when it opens the display. A no-op off Linux.
+    platform::prefer_x11_backend();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             character,
