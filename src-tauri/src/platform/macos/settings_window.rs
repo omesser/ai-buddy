@@ -21,7 +21,7 @@ use objc2_foundation::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow};
-use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{key_was_typed, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
@@ -130,9 +130,38 @@ define_class!(
             self.apply(patch);
         }
 
-        #[unsafe(method(excludedEnded:))]
-        fn excluded_ended(&self, _sender: Option<&AnyObject>) {
-            self.commit_excluded();
+        #[unsafe(method(endpointEnded:))]
+        fn endpoint_ended(&self, sender: Option<&AnyObject>) {
+            let Some(field) = sender.and_then(|s| s.downcast_ref::<NSTextField>()) else {
+                return;
+            };
+            let tag = field.tag();
+            let tag_to_id = self.ivars().tag_to_id.borrow();
+            let Some(id) = tag_to_id.get(&tag) else {
+                return;
+            };
+
+            let description = form::describe();
+            let Some(form::RowAction::PatchField(field_name)) = description.actions.get(id) else {
+                return;
+            };
+
+            let text = field.stringValue().to_string();
+            let mut patch = SettingsPatch::default();
+            match field_name.as_str() {
+                "director_base_url" => patch.director_base_url = Some(text),
+                "director_model" => patch.director_model = Some(text),
+                "director_api_key" if key_was_typed(&text) => patch.director_api_key = Some(text),
+                _ => return,
+            }
+            let committed_key = patch.director_api_key.is_some();
+            self.apply(patch);
+            if committed_key {
+                // The store has it now. Refresh takes the typed key out of the
+                // field and prints its fingerprint, so the next blur is not a
+                // second commit — and not a second dropped session.
+                self.refresh();
+            }
         }
 
         #[unsafe(method(characterPicked:))]
@@ -342,14 +371,8 @@ impl SettingsController {
             field.setStringValue(&NSString::from_str(&view.director_model));
         }
         if let Some(field) = self.ivars().api_key.borrow().clone() {
-            let display = if view.api_key_set {
-                view.api_key_fingerprint.clone()
-            } else if !view.api_key_error.is_empty() {
-                format!("(error: {})", view.api_key_error)
-            } else {
-                String::new()
-            };
-            field.setStringValue(&NSString::from_str(&display));
+            field.setPlaceholderString(Some(&NSString::from_str(&view.api_key_placeholder())));
+            field.setStringValue(&NSString::from_str(""));
         }
         if let Some(field) = self.ivars().memory_path.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.memory_path));
@@ -528,13 +551,16 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                     id,
                     label,
                     placeholder,
+                    frozen,
                 } => {
                     if let Some(label_text) = label {
                         let lbl =
                             NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
                         cursor.place(&lbl, 18.0);
                     }
-                    let field = endpoint_field(placeholder, &controller, mtm);
+                    let field = endpoint_field(placeholder, mtm);
+                    tag_field(&field, id, &mut next_tag, &controller);
+                    freeze_or_bind(&field, *frozen, &controller);
                     cursor.place(&field, 24.0);
 
                     match id.as_str() {
@@ -543,7 +569,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         _ => {}
                     }
                 }
-                FormRow::SecureField { id, label } => {
+                FormRow::SecureField { id, label, frozen } => {
                     if let Some(label_text) = label {
                         let lbl =
                             NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
@@ -554,7 +580,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
                     )
                     .into_super();
-                    bind_commit(&field, &controller);
+                    tag_field(&field, id, &mut next_tag, &controller);
+                    freeze_or_bind(&field, *frozen, &controller);
                     cursor.place(&field, 24.0);
 
                     if id == form::DIRECTOR_API_KEY_ID {
@@ -669,7 +696,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     new_character_popup = Some(pop);
                                 }
                             }
-                            CompositeControl::Button { id, label } => {
+                            CompositeControl::Button { id, label, frozen } => {
                                 let tag = next_tag;
                                 next_tag += 1;
                                 controller
@@ -687,6 +714,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     )
                                 };
                                 btn.setTag(tag);
+                                btn.setEnabled(!frozen);
                                 btn.setFrame(NSRect::new(
                                     NSPoint::new(x, cursor.y),
                                     NSSize::new(if label.len() > 10 { 140.0 } else { 72.0 }, 24.0),
@@ -881,17 +909,35 @@ fn inspect_block(mtm: MainThreadMarker) -> Retained<NSTextField> {
     field
 }
 
-fn endpoint_field(
-    placeholder: &str,
-    controller: &SettingsController,
-    mtm: MainThreadMarker,
-) -> Retained<NSTextField> {
+fn endpoint_field(placeholder: &str, mtm: MainThreadMarker) -> Retained<NSTextField> {
     let field = NSTextField::textFieldWithString(&NSString::from_str(""), mtm);
     field.setPlaceholderString(Some(&NSString::from_str(placeholder)));
-    bind_commit(&field, controller);
     field
 }
 
+/// Tag the field with a fresh number and record which row it is, so
+/// `endpointEnded:` can tell one field from another.
+fn tag_field(field: &NSTextField, id: &str, next_tag: &mut isize, controller: &SettingsController) {
+    let tag = *next_tag;
+    *next_tag += 1;
+    field.setTag(tag);
+    controller
+        .ivars()
+        .tag_to_id
+        .borrow_mut()
+        .insert(tag, id.to_string());
+}
+
+/// Read-only rather than disabled, so the value stays legible and copyable.
+fn freeze_or_bind(field: &NSTextField, frozen: bool, controller: &SettingsController) {
+    if frozen {
+        field.setEditable(false);
+    } else {
+        bind_commit(field, controller);
+    }
+}
+
+/// Commit on Return and on blur.
 fn bind_commit(field: &NSTextField, controller: &SettingsController) {
     unsafe {
         field.setDelegate(Some(ProtocolObject::from_ref(controller)));
@@ -903,7 +949,7 @@ fn bind_commit(field: &NSTextField, controller: &SettingsController) {
     }
     unsafe {
         field.setTarget(Some(controller));
-        field.setAction(Some(sel!(excludedEnded:)));
+        field.setAction(Some(sel!(endpointEnded:)));
     }
 }
 

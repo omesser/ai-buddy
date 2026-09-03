@@ -40,9 +40,11 @@ fn trace_block(which: &str, text: &str) {
     eprintln!("director: --- end {which} ---");
 }
 
-const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
-const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
-const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
+/// `pub(crate)` so the settings window can name the variable that owns a row
+/// (#272).
+pub(crate) const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
+pub(crate) const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
+pub(crate) const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
 const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// First ambient session wait, in seconds. Not a heartbeat.
 const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
@@ -168,11 +170,20 @@ pub fn resolve(
 }
 
 fn resolve_string(var: &str, persisted: &str, default: &str) -> String {
-    match std::env::var(var) {
-        Ok(value) if !value.is_empty() => value,
-        _ if !persisted.is_empty() => persisted.to_string(),
-        _ => default.to_string(),
+    match env_override(var) {
+        Some(value) => value,
+        None if !persisted.is_empty() => persisted.to_string(),
+        None => default.to_string(),
     }
+}
+
+/// What `var` will impose on the file, if the process exported one.
+///
+/// The one place that decides env precedence, so the settings window can ask
+/// the same question `resolve` answers instead of guessing at it. Empty is
+/// unset: a `$VAR` that expanded to nothing is a mistake, not an override.
+pub(crate) fn env_override(var: &str) -> Option<String> {
+    std::env::var(var).ok().filter(|value| !value.is_empty())
 }
 
 /// Build Director on/off from already-resolved settings.
@@ -943,10 +954,20 @@ pub fn retarget_model(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn with_env(key: Option<&str>, base: Option<&str>, model: Option<&str>, body: impl FnOnce()) {
+    /// Run `body` with the three Director vars set as given, then restored.
+    ///
+    /// One lock for the whole test binary: `settings` and `settings::form`
+    /// test env-owned rows against the same vars, and a second mutex would
+    /// not serialise against this one.
+    pub(crate) fn with_env(
+        key: Option<&str>,
+        base: Option<&str>,
+        model: Option<&str>,
+        body: impl FnOnce(),
+    ) {
         // Concurrent setenv/getenv is undefined behaviour. These three vars are
         // process-global and the resolve tests share them; serialise mutation.
         static ENV: Mutex<()> = Mutex::new(());
@@ -1413,7 +1434,9 @@ mod tests {
         }
     }
 
-    fn wake_context() -> Context {
+    /// A Context to stand in for a wake already on the wire. `pub(crate)` for
+    /// the `settings` tests, which retarget through the same call.
+    pub(crate) fn wake_context() -> Context {
         use ai_buddy_core::engine::State;
         use ai_buddy_core::sensing::Activity;
         use std::time::UNIX_EPOCH;

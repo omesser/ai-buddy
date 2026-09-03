@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use crate::consent;
+use crate::model;
 
 /// What a settings row writes when changed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,9 +69,18 @@ pub enum FormRow {
         id: String,
         label: Option<String>,
         placeholder: String,
+        /// Read-only: the value shown is not the user's to change. True when
+        /// an exported variable owns the field, since `model::resolve` gives
+        /// it the last word and would discard an edit made here (#272).
+        frozen: bool,
     },
     /// A secure text field for passwords/keys.
-    SecureField { id: String, label: Option<String> },
+    SecureField {
+        id: String,
+        label: Option<String>,
+        /// Read-only, for the same reason as `TextField::frozen`.
+        frozen: bool,
+    },
     /// A scrollable list of items with dismiss buttons.
     List { id: String, dismiss_label: String },
     /// A row of multiple controls (e.g., new instance spawn row).
@@ -83,9 +93,19 @@ pub enum FormRow {
 /// One control in a composite row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CompositeControl {
-    TextField { id: String, placeholder: String },
-    Popup { id: String },
-    Button { id: String, label: String },
+    TextField {
+        id: String,
+        placeholder: String,
+    },
+    Popup {
+        id: String,
+    },
+    Button {
+        id: String,
+        label: String,
+        /// Disabled, for the same reason as `FormRow::TextField::frozen`.
+        frozen: bool,
+    },
 }
 
 /// The whole settings form as data: sections, rows, and what they write.
@@ -136,8 +156,23 @@ fn excluded_help() -> String {
     }
 }
 
+/// The label of a Director endpoint row, and whether the env owns it.
+///
+/// A frozen row says it is overridden and names the variable doing it, so both
+/// the reason it takes no edit and the export to drop are on screen beside it.
+fn endpoint_row(label: &str, var: &str) -> (String, bool) {
+    match model::env_override(var) {
+        Some(_) => (format!("{label} (overridden by env: {var})"), true),
+        None => (label.to_string(), false),
+    }
+}
+
 /// Describe the settings form. The AppKit and Linux GTK windows build from this.
 pub fn describe() -> FormDescription {
+    let (base_url_label, base_url_frozen) = endpoint_row("Base URL", model::BASE_URL);
+    let (model_label, model_frozen) = endpoint_row("Model", model::MODEL);
+    let (api_key_label, api_key_frozen) = endpoint_row("API key", model::API_KEY);
+
     let sections = vec![
         FormSection {
             heading: "Director".to_string(),
@@ -164,23 +199,29 @@ pub fn describe() -> FormDescription {
                 },
                 FormRow::TextField {
                     id: DIRECTOR_BASE_URL_ID.to_string(),
-                    label: Some("Base URL".to_string()),
+                    label: Some(base_url_label),
                     placeholder: "https://api.openai.com".to_string(),
+                    frozen: base_url_frozen,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MODEL_ID.to_string(),
-                    label: Some("Model".to_string()),
+                    label: Some(model_label),
                     placeholder: "gpt-4o-mini".to_string(),
+                    frozen: model_frozen,
                 },
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
-                    label: Some("API key".to_string()),
+                    label: Some(api_key_label),
+                    frozen: api_key_frozen,
                 },
                 FormRow::Composite {
                     id: "api_key_actions".to_string(),
+                    // Clearing the store while a variable supplies the key
+                    // would change nothing the Director can see (#272).
                     controls: vec![CompositeControl::Button {
                         id: CLEAR_KEY_ID.to_string(),
                         label: "Clear key".to_string(),
+                        frozen: api_key_frozen,
                     }],
                 },
             ],
@@ -226,6 +267,7 @@ pub fn describe() -> FormDescription {
                     CompositeControl::Button {
                         id: SPAWN_ID.to_string(),
                         label: "New".to_string(),
+                        frozen: false,
                     },
                 ],
             },
@@ -280,10 +322,12 @@ pub fn describe() -> FormDescription {
                     CompositeControl::Button {
                         id: MEMORY_OPEN_ID.to_string(),
                         label: "Open in editor".to_string(),
+                        frozen: false,
                     },
                     CompositeControl::Button {
                         id: MEMORY_WIPE_ID.to_string(),
                         label: "Wipe".to_string(),
+                        frozen: false,
                     },
                 ],
             },
@@ -480,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn no_other_frozen_rows() {
+    fn no_other_frozen_checkboxes() {
         let description = describe();
         let frozen_rows: Vec<&String> = description
             .sections
@@ -492,7 +536,75 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(frozen_rows, vec![LAUNCH_ID], "only Launch should be frozen");
+        assert_eq!(
+            frozen_rows,
+            vec![LAUNCH_ID],
+            "only Launch should be a frozen checkbox"
+        );
+    }
+
+    fn described_row(description: &FormDescription, id: &str) -> (String, bool) {
+        description
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField {
+                    id: row_id,
+                    label,
+                    frozen,
+                    ..
+                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
+                FormRow::SecureField {
+                    id: row_id,
+                    label,
+                    frozen,
+                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
+                _ => None,
+            })
+            .expect("the endpoint row exists")
+    }
+
+    const ENDPOINT_ROWS: [(&str, &str); 3] = [
+        (DIRECTOR_BASE_URL_ID, crate::model::BASE_URL),
+        (DIRECTOR_MODEL_ID, crate::model::MODEL),
+        (DIRECTOR_API_KEY_ID, crate::model::API_KEY),
+    ];
+
+    /// #272: `model::resolve` gives the env the last word, so a field the env
+    /// owns cannot be offered as editable — the window took the edit and the
+    /// Director ignored it. Described here so both windows inherit it.
+    #[test]
+    fn an_env_owned_endpoint_row_is_read_only_and_names_its_variable() {
+        crate::model::tests::with_env(
+            Some("sk-env-key"),
+            Some("https://api.x.ai"),
+            Some("grok-4.6"),
+            || {
+                let description = describe();
+                for (id, var) in ENDPOINT_ROWS {
+                    let (label, frozen) = described_row(&description, id);
+                    assert!(frozen, "{id} must not accept an edit the env discards");
+                    assert!(
+                        label.contains("(overridden by env"),
+                        "{id} must say it is overridden, not {label:?}"
+                    );
+                    assert!(label.contains(var), "{id} must name {var}, not {label:?}");
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn endpoint_rows_are_editable_when_no_variable_is_exported() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe();
+            for (id, var) in ENDPOINT_ROWS {
+                let (label, frozen) = described_row(&description, id);
+                assert!(!frozen, "{id} is the user's to edit when the env is unset");
+                assert!(!label.contains(var), "{id} must not mention {var}");
+            }
+        });
     }
 
     #[test]
