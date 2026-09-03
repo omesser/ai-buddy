@@ -99,6 +99,12 @@ jobs:
         # Same set tests.yml uses to link the shell. patchelf is what the
         # AppImage bundler patches with; skip it and the Linux job dies
         # after compiling. Not cached: unpacking WebKit headers dominates.
+        #
+        # libayatana-appindicator3-dev is a packaging decision, not just a
+        # build one. Tauri derives the .deb's Depends from whichever
+        # appindicator is linked here, and the README promises the ayatana
+        # one. Swapping it for libappindicator3-dev changes what users are
+        # required to install, silently.
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update

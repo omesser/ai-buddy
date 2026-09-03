@@ -106,9 +106,9 @@ What the cells leave out:
   Elsewhere the sprite keeps out of the reserved strip and cannot ride it.
 - **Never captured in a screen share** — no platform but macOS lets a window
   declare that it must never be captured.
-- **Tray or menu bar icon** — Linux needs a StatusNotifier host, and the
-  sprite's right-click menu is the settings door without one. See
-  [Linux](#linux).
+- **Tray or menu bar icon** — the expected door to Settings, Character, Memory,
+  and Quit. The Linux package requires the appindicator library, and the panel
+  must run a StatusNotifier host no package can require. See [Linux](#linux).
 
 ## Install
 
@@ -146,13 +146,19 @@ which is a supported mode rather than an error. X11 gets both.
 [Platform support](#platform-support) lists everything the session type
 decides.
 
-At runtime, one of `libayatana-appindicator3-1` or `libappindicator3-1`
-must be installed if you want a tray icon. `libayatana` is preferred.
-The tray also needs a StatusNotifier host in the panel (GNOME Shell, KDE
-Plasma, XFCE's Status Tray plugin). A dock such as Plank is not one —
-the tray installs, and no icon appears. On Wayland, a compositor without
-a tray protocol shows no icon; the sprite's context menu (right-click)
-is then the settings door.
+The tray icon is required, not a preference: it is how you reach Settings,
+Character, Memory, and Quit without hunting the sprite. The `.deb` therefore
+depends on `libayatana-appindicator3-1`, and `apt` pulls it in with the
+package. The older `libappindicator3-1` is not an accepted alternative;
+`Depends` names the `libayatana` one alone. The AppImage carries its own
+copy, so it needs no appindicator package.
+
+Displaying that icon is a second requirement, and no package can declare it:
+the panel must run a StatusNotifier host, which the desktop environment
+provides rather than `apt`. GNOME Shell, KDE Plasma, and XFCE's Status Tray
+plugin are hosts. A dock such as Plank is not one, and neither is a Wayland
+compositor with no tray protocol — the tray installs and no icon appears.
+Where no host answers, the sprite's right-click menu opens the same menu.
 
 ```sh
 # Debian/Ubuntu .deb
@@ -421,11 +427,13 @@ cargo run -p ai-buddy
 ### Linux dependencies
 
 The tray icon requires `libayatana-appindicator3-dev` (or the older
-`libappindicator3-dev`) at build time. A StatusNotifier host in the desktop
-environment displays the icon at runtime; without one the tray silently
-installs but shows no icon. Plank is not a host. `xfce4-panel` (Status Tray
-plugin) is. On Wayland, tray availability depends on the compositor's tray
-protocol support.
+`libappindicator3-dev`) at build time. Which of the two is installed decides
+what a `.deb` built here requires at runtime, so the Release workflow installs
+the `libayatana` one and the packages it ships name that library. A
+StatusNotifier host in the desktop environment displays the icon at runtime;
+without one the tray silently installs but shows no icon. Plank is not a host.
+`xfce4-panel` (Status Tray plugin) is. On Wayland, tray availability depends on
+the compositor's tray protocol support.
 
 ```sh
 # Debian/Ubuntu
