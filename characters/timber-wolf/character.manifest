@@ -87,8 +87,8 @@ fps = 4
 
 # The mech never sleeps. Power down is idle plus torso twists: scanning.
 [animations.sleep]
-frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
-fps = 1
+frames = ["frames/sleep-0.png", "frames/sleep-1.png", "frames/sleep-2.png", "frames/sleep-3.png"]
+fps = 3
 
 # Full-frontal weapon raise from the turn recording: contact acquired.
 [animations.react]
