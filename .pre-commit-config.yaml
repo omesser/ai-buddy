@@ -39,9 +39,8 @@ repos:
     hooks:
       - id: codespell
         additional_dependencies: ["tomli"]
-        # "crate" is Rust vocabulary, not a misspelling of "create", and
-        # "paeth" is the PNG filter named for Alan W. Paeth, not "path".
-        args: ["--ignore-words-list=crate,crates,paeth"]
+        # "crate" is Rust vocabulary, not a misspelling of "create".
+        args: ["--ignore-words-list=crate,crates"]
         exclude: ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
