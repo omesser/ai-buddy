@@ -6,7 +6,7 @@ VPet-Simulator, Shimeji-ee ecosystem, Desktop Pet (desktoppet.app), OpenPets,
 MateEngine. Matrix rows are capabilities that matter for this product, using
 CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
-**Legend:** ✓ present, ~ documented not shipped OR partial, ❌ absent
+**Legend:** ✅ present, ~ documented not shipped OR partial, ❌ absent
 
 ## Feature matrix
 
@@ -14,63 +14,63 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Overlay (always-on-top) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Click-through (per-pixel) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Physics (gravity, throw) | ✓ (ballistic Perch gate) | ❌ | ❌ | ~ (Fall/gravity lineage) | ❌ | ~ (gravity overlay) | ❌ |
-| Perches (window top edges) | ✓ | ✓ | ❌ | ✓ | ❌ | ❌ | ✓ |
-| Hide rules (fullscreen, hotkey) | ✓ | ❌ | ❌ | ✓ (Boss mode) | ❌ | ❌ | ❌ |
-| Capture exclusion (no screen share) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Multi-instance (several buddies) | ✓ | ✓ | ✓ | ✓ | ❌ | ✓ | ✓ |
-| Multi-monitor | ✓ | ✓ | ✓ | ✓ (toggle) | ✓ | ✓ | ✓ |
+| Overlay (always-on-top) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Click-through (per-pixel) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Physics (gravity, throw) | ✅ (ballistic Perch gate) | ❌ | ❌ | ~ (Fall/gravity lineage) | ❌ | ~ (gravity overlay) | ❌ |
+| Perches (window top edges) | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ |
+| Hide rules (fullscreen, hotkey) | ✅ | ❌ | ❌ | ✅ (Boss mode) | ❌ | ❌ | ❌ |
+| Capture exclusion (no screen share) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Multi-instance (several buddies) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Multi-monitor | ✅ | ✅ | ✅ | ✅ (toggle) | ✅ | ✅ | ✅ |
 
 ### Character & art
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Character Packages (first-class) | ✓ | ✓ (DLC) | ✓ (Workshop) | ✓ (community) | ✓ (beta, +2 soon) | ✓ (catalog) | ✓ (VRM + Workshop) |
-| Art ecosystem / gallery | ✓ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
+| Character Packages (first-class) | ✅ | ✅ (DLC) | ✅ (Workshop) | ✅ (community) | ✅ (beta, +2 soon) | ✅ (catalog) | ✅ (VRM + Workshop) |
+| Art ecosystem / gallery | ✅ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
 | Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp | ❌ (VRM rigged) |
-| Declarative Behaviors | ✓ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✓ (plugins) | ❌ |
+| Declarative Behaviors | ✅ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✅ (plugins) | ❌ |
 
 ### Behavior & personality
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| AI-powered behavior | ✓ (Director + personality.txt + spoken lines) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat window) | ✓ (plugin SDK + MCP say) | ✓ (QWEN 2.5 1.5b) |
-| Personality-driven idle AI (no chat window) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Authored personality file | ✓ (personality.txt) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Spoken lines / talk bubble | ✓ (Director with Completer) | ❌ | ❌ | ❌ | ❌ | ✓ (MCP say, plugin-driven) | ❌ |
-| Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Reacts to user (Poke, Grab) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Window awareness | ✓ (app name, geometry) | ✓ | ❌ | ✓ (edges) | ❌ | ❌ | ✓ |
+| AI-powered behavior | ✅ (Director + personality.txt + spoken lines) | ❌ | ❌ | ❌ (deterministic XML) | ✅ (OpenAI chat window) | ✅ (plugin SDK + MCP say) | ✅ (QWEN 2.5 1.5b) |
+| Personality-driven idle AI (no chat window) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Authored personality file | ✅ (personality.txt) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Spoken lines / talk bubble | ✅ (Director with Completer) | ❌ | ❌ | ❌ | ❌ | ✅ (MCP say, plugin-driven) | ❌ |
+| Idle life (model-free) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Reacts to user (Poke, Grab) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Window awareness | ✅ (app name, geometry) | ✅ | ❌ | ✅ (edges) | ❌ | ❌ | ✅ |
 
 ### Agent integrations
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ | ❌ |
-| MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ | ❌ |
-| AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (plugin + ctx.ai) | ✓ (built-in LLM) |
-| BYO model / API key | ✓ (env vars) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (Anthropic/OpenAI/Ollama) | ❌ |
+| Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
+| BYO model / API key | ✅ (env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
 
 ### Memory & privacy
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Memory (shared, user-editable) | ✓ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✓ (plugin storage) | ❌ |
+| Memory (shared, user-editable) | ✅ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✅ (plugin storage) | ❌ |
 | Ambient Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | On-Demand Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Local-first (no cloud required) | ✓ (Spatial) | ✓ | ✓ | ✓ | ✓ (Spatial) | ✓ | ✓ |
-| Consent-per-feature (opt-in gates) | ✓ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✓ (permissions) | ❌ |
+| Local-first (no cloud required) | ✅ (Spatial) | ✅ | ✅ | ✅ | ✅ (Spatial) | ✅ | ✅ |
+| Consent-per-feature (opt-in gates) | ✅ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✅ (permissions) | ❌ |
 | Denylist (excluded apps) | ~ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### Platforms
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| macOS | ✓ | ✓ (beta, June 2026) | ❌ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) | ~ (PR #551 open) |
-| Windows | ~ (stubbed deliberately) | ✓ | ✓ | ✓ | ✓ (10/11) | ✓ (signed) | ✓ (11) |
-| Linux | ✓ (X11), ~ (Wayland) | ❌ | ❌ | ✓ (community forks) | ❌ | ✓ (AppImage, Wayland issues) | ❌ official (~unofficial port) |
+| macOS | ✅ | ✅ (beta, June 2026) | ❌ | ✅ (patched forks) | ✅ (10.15+) | ✅ (arm64/x64) | ~ (PR #551 open) |
+| Windows | ~ (stubbed deliberately) | ✅ | ✅ | ✅ | ✅ (10/11) | ✅ (signed) | ✅ (11) |
+| Linux | ✅ (X11), ~ (Wayland) | ❌ | ❌ | ✅ (community forks) | ❌ | ✅ (AppImage, Wayland issues) | ❌ official (~unofficial port) |
 
 ### Pricing & distribution
 
@@ -466,7 +466,7 @@ same Character don't move or speak in lockstep.
 
 ## Evidence footer
 
-- **✓** = present in running app / cited source (Steam page, GitHub README,
+- **✅** = present in running app / cited source (Steam page, GitHub README,
   review/issue citation, vendor homepage).
 - **~** = documented not shipped (ai-buddy MCP/Harness per ADR-0008; MateEngine
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
@@ -478,7 +478,7 @@ same Character don't move or speak in lockstep.
 
 ## Sources
 
-Capabilities marked ✓, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
+Capabilities marked ✅, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
 DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 3, 2026.
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
