@@ -17,6 +17,12 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+// The native settings window is macOS and Linux only. On Windows
+// platform::show_settings is a stub, so the form these three modules build for
+// it, and the secret writes its rows perform, are unreachable there by design
+// (docs/SPEC.md:569) rather than rotted. Scoped to non-unix, so the two
+// platforms that do build the window still have the lint. #247.
+#[cfg_attr(not(unix), allow(dead_code))]
 mod consent;
 mod env_util;
 mod frame_loop;
@@ -24,7 +30,9 @@ mod menu;
 mod model;
 mod package;
 mod platform;
+#[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod secrets;
+#[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
 mod tray;
 
