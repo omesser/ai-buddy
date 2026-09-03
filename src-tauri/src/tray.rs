@@ -32,12 +32,12 @@ pub fn install(
         .show_menu_on_left_click(true)
         .tooltip("ai-buddy")
         .build(app)?;
-    
+
     #[cfg(target_os = "macos")]
     if let Err(why) = crate::platform::tune_tray_icon(&icon) {
         eprintln!("tray: tune icon: {why}");
     }
-    
+
     Ok(icon)
 }
 
