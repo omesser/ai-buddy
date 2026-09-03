@@ -184,3 +184,197 @@ body {
      way to being hidden. */
   opacity: 0;
 }
+
+/* Cues: one per interaction, drawn over the sprite and gone in under half a
+   second (#277). Ported value for value from the reviewed proposal in
+   docs/design/cues.html — every keyframe, duration and easing curve here is a
+   decision taken there rather than a default.
+
+   White on ink, the pair the speech bubble already uses, so a cue reads on any
+   wallpaper and introduces no colour to the overlay. Opacity and transform
+   only: the overlay sits on top of everything the user is doing, so nothing
+   here may cost a repaint. */
+:root {
+  --cue-stroke: #ffffff;
+  --cue-ink: #24262c;
+}
+
+/* One layer per Instance, so a dismissed buddy takes its cues with it and the
+   z-index written every tick stacks them with its sprite. Zero-sized and
+   anchored at the origin: its children carry overlay coordinates, the same
+   space the bubble is placed in. */
+.cue-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* Never a hit target. The Rust side hit-tests the sprite's alpha mask and
+     main.js captures the pointer on whatever it lands on, so a cue under the
+     cursor that took the press would hold a capture and then be reaped
+     mid-drag. */
+  pointer-events: none;
+}
+
+.cue {
+  position: absolute;
+  pointer-events: none;
+}
+
+.cue-ring {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--cue-stroke);
+  box-shadow: 0 0 0 1.5px var(--cue-ink), inset 0 0 0 1.5px var(--cue-ink);
+  transform: translate(-50%, -50%) scale(1);
+  animation: cue-poke 260ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes cue-poke {
+  from {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(3.4);
+    opacity: 0;
+  }
+}
+
+/* Summon is Poke played backwards, twice: the double, and a pull toward the
+   sprite rather than away from it. */
+.cue-ring.in {
+  animation: cue-summon 340ms cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+
+.cue-ring.in.second {
+  animation-delay: 90ms;
+  opacity: 0;
+}
+
+@keyframes cue-summon {
+  from {
+    transform: translate(-50%, -50%) scale(5);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes cue-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Menu: a filled ring segment sweeping the whole way round, a radial menu's
+   silhouette. A conic gradient the script advances per frame, masked to a
+   thin donut, so it is vector-crisp at any DPI with no SVG stroke to smear
+   across pixel boundaries. */
+.cue-wedge {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(var(--cue-ink) var(--sweep, 0deg), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 20px, #000 20.5px 25px, transparent 25.5px);
+  mask: radial-gradient(circle, transparent 0 20px, #000 20.5px 25px, transparent 25.5px);
+  opacity: 0.85;
+}
+
+.cue-wedge.fading {
+  animation: cue-fade 150ms ease-in forwards;
+}
+
+/* Its white hairlines, a sibling under the same sweep, so the segment has an
+   edge on a dark wallpaper too. */
+.cue-wedge-edge {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(var(--cue-stroke) var(--sweep, 0deg), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 19px, #000 19.5px 20.5px, transparent 21px 24.5px, #000 25px 26px, transparent 26.5px);
+  mask: radial-gradient(circle, transparent 0 19px, #000 19.5px 20.5px, transparent 21px 24.5px, #000 25px 26px, transparent 26.5px);
+}
+
+.cue-wedge-edge.fading {
+  animation: cue-fade 150ms ease-in forwards;
+}
+
+.cue-dash {
+  width: 3px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--cue-stroke);
+  box-shadow: 0 0 0 1.2px var(--cue-ink);
+  transform: translate(-50%, 0);
+  animation: cue-lift 320ms cubic-bezier(0.2, 0.6, 0.2, 1) forwards;
+}
+
+@keyframes cue-lift {
+  from {
+    transform: translate(-50%, 0) scaleY(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -30px) scaleY(0.5);
+    opacity: 0;
+  }
+}
+
+.cue-puff {
+  width: 20px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--cue-stroke);
+  box-shadow: 0 0 0 1.5px var(--cue-ink), inset 0 0 0 1.5px var(--cue-ink);
+  transform: translate(-50%, -50%) scale(1);
+  animation: cue-land 280ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes cue-land {
+  from {
+    transform: translate(-50%, -50%) scaleX(1) scaleY(1);
+    opacity: 0.95;
+  }
+  to {
+    transform: translate(-50%, -50%) scaleX(4.6) scaleY(1.3);
+    opacity: 0;
+  }
+}
+
+/* A Throw is the Drop shape with more force behind it, not a sixth shape. */
+.cue-puff.hard {
+  animation-duration: 340ms;
+  animation-name: cue-land-hard;
+}
+
+@keyframes cue-land-hard {
+  from {
+    transform: translate(-50%, -50%) scaleX(1) scaleY(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scaleX(6.5) scaleY(1.6);
+    opacity: 0;
+  }
+}
+
+/* Collapsed rather than removed: the cue still marks the gesture, and `reap`
+   waits on `animationend` to take the element away. A cue that never animated
+   would never be reaped. */
+@media (prefers-reduced-motion: reduce) {
+  .cue-ring,
+  .cue-wedge,
+  .cue-wedge-edge,
+  .cue-dash,
+  .cue-puff {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}

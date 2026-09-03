@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::director::{self, Context, Director, Happened, Wake};
-use ai_buddy_core::engine::{State, Verb};
+use ai_buddy_core::engine::{Cue, State, Verb};
 use ai_buddy_core::input::press_target;
 use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use ai_buddy_core::roster::{InstanceId, Roster};
@@ -1053,6 +1053,7 @@ pub(crate) fn run_frame_loop(
                     facing: frame.facing as i8,
                     dialogue,
                     thinking,
+                    cue: frame.cue,
                     owner,
                     mask: drawn.mask.clone(),
                 });
@@ -1204,8 +1205,10 @@ pub(crate) fn run_frame_loop(
                             dialogue: instance.dialogue.clone(),
                             thinking: instance.thinking,
                             // Every overlay draws the art; one draws the
-                            // bubble (#178, `bubble_owner`).
+                            // bubble (#178, `bubble_owner`), and `forOverlay`
+                            // strips the rest from the ones that lost.
                             bubble: instance.owner == Some(index),
+                            cue: instance.cue.map(Cue::name),
                         }
                     })
                     .collect();

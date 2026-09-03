@@ -84,6 +84,66 @@ pub enum Verb {
     Summon,
 }
 
+/// The one cue an interaction earned this tick, for the Shell to draw and to
+/// sound.
+///
+/// The Engine picks it because it is the only place that knows both the verbs
+/// and the `State::Dragged` transitions, and because it is pure — the choice is
+/// decided where a test can reach it without a window. The drawing and the
+/// synthesis are the webview's, so a cue costs no Character art and no manifest
+/// field, the way the speech bubble already costs none. The vocabulary is
+/// global: no Character declares a pitch or a colour. #277.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cue {
+    /// A left click.
+    Poke,
+    /// A double click. The Shell plays it over a Poke cue still in flight: the
+    /// first click of the pair emitted its Poke before anything could know a
+    /// second was coming.
+    Summon,
+    /// A right click.
+    Menu,
+    /// The sprite left its footing for the cursor.
+    Pickup,
+    /// The sprite was let go standing still.
+    Drop,
+    /// The sprite was let go moving. The Drop cue played harder rather than a
+    /// sixth shape and a sixth sound.
+    Throw,
+}
+
+impl Cue {
+    /// The name the webview's cue machine keys its visual and its sound by.
+    ///
+    /// A name rather than a serialized enum, following `Frame::animation`: what
+    /// crosses to the webview is already a table lookup on the other side.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Poke => "poke",
+            Self::Summon => "summon",
+            Self::Menu => "menu",
+            Self::Pickup => "pickup",
+            Self::Drop => "drop",
+            Self::Throw => "throw",
+        }
+    }
+
+    /// The cue a verb carries on its own.
+    ///
+    /// `Grab` and `Throw` carry none: a cue keyed on `Grab` would fire on every
+    /// tick of a drag, and a `Throw` is answered by the transition out of
+    /// `Dragged` — which a slow release, emitting no verb at all, has to be
+    /// answered by anyway.
+    fn of_verb(verb: &Verb) -> Option<Self> {
+        match verb {
+            Verb::Poke => Some(Self::Poke),
+            Verb::Summon => Some(Self::Summon),
+            Verb::Menu => Some(Self::Menu),
+            Verb::Grab | Verb::Throw { .. } => None,
+        }
+    }
+}
+
 /// What the Director proposed since the previous tick.
 ///
 /// Advisory: the Engine plays the named Behavior if the Character declares one
@@ -160,6 +220,9 @@ pub struct Frame {
     /// Whether the user addressed the buddy this tick: a Poke, a Summon, a
     /// Menu or a Dwell. The Shell wakes the session Director from this bit.
     pub addressed: bool,
+    /// The cue this interaction earned, if one landed. A one-tick pulse like
+    /// `dialogue`, and at most one a tick — the precedence is in `tick`. #277.
+    pub cue: Option<Cue>,
 }
 
 /// How long one Primitive holds the screen.
@@ -511,12 +574,28 @@ impl Engine {
         // somewhere legal, because falling ends on the usable floor like any
         // other fall — so the reserved strip is somewhere the sprite can be
         // put and not somewhere it can come to rest. #39.
+        //
+        // The pickup and the drop cue are decided here rather than from a verb,
+        // and this is the only place they can be: `Verb::Grab` is present on
+        // every tick the sprite is held, and a slow release emits no verb at
+        // all. The transition is the edge, and both States are in hand only
+        // between `on_verbs` above and `on_contact` below. #277.
+        let mut cue = None;
         if state == State::Dragged {
+            if self.state != State::Dragged {
+                cue = Some(Cue::Pickup);
+            }
             self.position = snapshot.cursor;
             self.velocity = Point::default();
         } else if self.state == State::Dragged {
             // Let go. With velocity that is a Throw; without, it simply drops.
-            self.velocity = thrown_velocity(snapshot).unwrap_or_default();
+            let thrown = thrown_velocity(snapshot);
+            cue = Some(if thrown.is_some() {
+                Cue::Throw
+            } else {
+                Cue::Drop
+            });
+            self.velocity = thrown.unwrap_or_default();
         }
 
         // The cursor already arrives every tick for hit-testing, so noticing
@@ -847,6 +926,13 @@ impl Engine {
             .iter()
             .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Menu));
 
+        // One cue a tick, and a hand transition outranks a click: the verb that
+        // shares a tick with a pickup or a drop is the incidental one — a
+        // right-click during a drag, say — and the hand is what the user is
+        // plainly doing. Among the click verbs the first is taken, which is
+        // every case there is: two clicks cannot land inside one tick.
+        let cue = cue.or_else(|| snapshot.verbs.iter().find_map(Cue::of_verb));
+
         // A Behavior is drawn over whatever the sprite is doing, so a Poke shows
         // even mid-fall. It changes nothing about where the sprite is.
         let animation = match self.on_screen() {
@@ -899,6 +985,7 @@ impl Engine {
             riding: self.riding,
             facing: self.facing,
             addressed,
+            cue,
         }
     }
 
@@ -2284,6 +2371,93 @@ mod tests {
             ..snapshot(100)
         });
         assert_eq!(summoned.animation, "react");
+    }
+
+    /// #277: the cue is the Engine's to pick, because it is the only place that
+    /// knows both the verbs and the `Dragged` transitions. A click verb carries
+    /// its own cue, and it is a pulse — the tick after is silent, or a single
+    /// click would sound for as long as the reaction plays.
+    #[test]
+    fn a_click_verb_carries_its_own_cue() {
+        for (verb, cue) in [
+            (Verb::Poke, Cue::Poke),
+            (Verb::Summon, Cue::Summon),
+            (Verb::Menu, Cue::Menu),
+        ] {
+            let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+            settle(&mut engine, &snapshot(100));
+
+            let clicked = engine.tick(&WorldSnapshot {
+                verbs: vec![verb],
+                ..snapshot(100)
+            });
+            assert_eq!(clicked.cue, Some(cue), "{verb:?}");
+
+            let after = engine.tick(&snapshot(100));
+            assert_eq!(after.cue, None, "and rides one tick only, after {verb:?}");
+        }
+    }
+
+    /// #277: `Verb::Grab` is present on every tick the sprite is held, so a cue
+    /// keyed on the verb would sound sixty times a second for as long as the
+    /// drag lasts. The pickup cue keys on entering `Dragged`.
+    #[test]
+    fn the_pickup_cue_fires_on_the_transition_and_not_every_held_tick() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let held = WorldSnapshot {
+            cursor: Point { x: 200.0, y: 200.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        };
+        let grabbed = engine.tick(&held);
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(grabbed.cue, Some(Cue::Pickup));
+
+        let carried: Vec<Option<Cue>> = (0..5).map(|_| engine.tick(&held).cue).collect();
+        assert!(
+            carried.iter().all(Option::is_none),
+            "held, and cued once: {carried:?}"
+        );
+    }
+
+    /// #277: there is no drop verb and a sixth is not allowed, so both cues key
+    /// on leaving `Dragged` — which is also what tells them apart, a throw
+    /// being the only one of the two that carries a velocity.
+    #[test]
+    fn letting_go_cues_a_drop_and_letting_go_moving_cues_a_throw() {
+        for (release, cue) in [
+            (Vec::new(), Cue::Drop),
+            (
+                vec![Verb::Throw {
+                    velocity: Point {
+                        x: 400.0,
+                        y: -200.0,
+                    },
+                }],
+                Cue::Throw,
+            ),
+        ] {
+            let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+            settle(&mut engine, &snapshot(100));
+            engine.tick(&WorldSnapshot {
+                cursor: Point { x: 200.0, y: 200.0 },
+                verbs: vec![Verb::Grab],
+                ..snapshot(100)
+            });
+
+            let released = engine.tick(&WorldSnapshot {
+                cursor: Point { x: 200.0, y: 200.0 },
+                verbs: release.clone(),
+                ..snapshot(100)
+            });
+            assert_eq!(released.state, State::Falling);
+            assert_eq!(released.cue, Some(cue), "released with {release:?}");
+
+            let falling = engine.tick(&snapshot(100));
+            assert_eq!(falling.cue, None, "and once, after {release:?}");
+        }
     }
 
     /// Menu plays nothing. The tray menu opening is its response, and a

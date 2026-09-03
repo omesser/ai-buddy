@@ -192,7 +192,11 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds, ceilingCleara
 // per Instance (#178, `bubble_owner`), and stripping the bubble fields before
 // the placement is latched or drawn keeps a losing overlay from arming the
 // thinking grace off a `thinking` it was never meant to show.
+//
+// The cue goes with them, for a louder reason (#277): every overlay is told
+// where every sprite is, so a cue every overlay played would be drawn once per
+// display the sprite touches and — worse — heard once per display.
 export function forOverlay(placement) {
   if (placement.bubble) return placement;
-  return { ...placement, dialogue: null, thinking: false };
+  return { ...placement, dialogue: null, thinking: false, cue: null };
 }
