@@ -126,7 +126,7 @@ impl SettingsView {
         if model::env_override(model::API_KEY).is_some() {
             // The variable's key is the one `resolve` hands the Completer, so
             // the stored fingerprint would name a key nothing uses (#272).
-            "Set by the environment".to_string()
+            "Overridden by env".to_string()
         } else if !self.api_key_error.is_empty() {
             format!("Unavailable — {}", self.api_key_error)
         } else if self.api_key_set {
@@ -1359,7 +1359,7 @@ mod tests {
                 let view = endpoint_view(&settings);
                 assert_eq!(view.director_base_url, "https://api.x.ai");
                 assert_eq!(view.director_model, "grok-4.6");
-                assert_eq!(view.api_key_placeholder(), "Set by the environment");
+                assert_eq!(view.api_key_placeholder(), "Overridden by env");
             },
         );
         model::tests::with_env(None, None, None, || {

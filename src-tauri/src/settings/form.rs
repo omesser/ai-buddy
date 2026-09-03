@@ -158,11 +158,11 @@ fn excluded_help() -> String {
 
 /// The label of a Director endpoint row, and whether the env owns it.
 ///
-/// A frozen row names the variable that took it over, so the reason it will
-/// not take an edit is on screen beside it.
+/// A frozen row says it is overridden and names the variable doing it, so both
+/// the reason it takes no edit and the export to drop are on screen beside it.
 fn endpoint_row(label: &str, var: &str) -> (String, bool) {
     match model::env_override(var) {
-        Some(_) => (format!("{label} (set by {var})"), true),
+        Some(_) => (format!("{label} (overridden by env: {var})"), true),
         None => (label.to_string(), false),
     }
 }
@@ -585,6 +585,10 @@ mod tests {
                 for (id, var) in ENDPOINT_ROWS {
                     let (label, frozen) = described_row(&description, id);
                     assert!(frozen, "{id} must not accept an edit the env discards");
+                    assert!(
+                        label.contains("(overridden by env"),
+                        "{id} must say it is overridden, not {label:?}"
+                    );
                     assert!(label.contains(var), "{id} must name {var}, not {label:?}");
                 }
             },
