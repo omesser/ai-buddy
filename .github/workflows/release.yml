@@ -3,12 +3,13 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -19,6 +20,10 @@ jobs:
   # The human cuts the Release in GitHub's UI (which creates the tag).
   # This job attaches the installers to that Release; it does not create
   # one. tests.yml already gated the merge.
+  #
+  # A manual run builds the same bundles and leaves them on the run as
+  # workflow artifacts, so the packaging path can be exercised without
+  # cutting a Release nobody wanted.
   package:
     strategy:
       fail-fast: false
@@ -39,10 +44,18 @@ jobs:
         # The published Release's tag is the version that ships. Stripping
         # the leading v hands that to Tauri so artifact names follow the
         # tag, not the copy of version sitting in tauri.conf.json.
+        #
+        # A manual run has no tag, so it keeps that copy. Overriding with a
+        # placeholder would only put a version nobody chose on a bundle.
         id: ver
         env:
           TAG: ${{ github.event.release.tag_name }}
-        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ -n "$TAG" ]; then
+            echo "args=--config '{\"version\":\"${TAG#v}\"}'" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -79,6 +92,10 @@ jobs:
         # the conf lists all three so a local `tauri build` matches CI.
         #
         # releaseId attaches to the Release the human already published.
+        # Both release inputs are empty on a manual run, which is how the
+        # action is told to build and upload nothing — the bundles land as
+        # workflow artifacts instead, independent of the release config.
+        #
         # No updater signing key: updater signatures are #200, and
         # createUpdaterArtifacts is false until that key exists. No Apple
         # certificate: signingIdentity "-" in tauri.conf.json is ad-hoc
@@ -90,4 +107,5 @@ jobs:
           projectPath: src-tauri
           releaseId: ${{ github.event.release.id }}
           tagName: ${{ github.event.release.tag_name }}
-          args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
+          uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}
+          args: --bundles ${{ matrix.bundles }} ${{ steps.ver.outputs.args }}

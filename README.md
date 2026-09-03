@@ -91,7 +91,7 @@ sudo apt install ./ai-buddy_*.deb
 # chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
 ```
 
-Windows is stubbed; there is no Windows package.
+Windows is stubbed for now; there is no Windows package yet (coming soon).
 
 ## Running it
 
