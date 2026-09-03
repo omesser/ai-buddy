@@ -5,7 +5,7 @@
 //! properties that require no consent, exactly like macOS's CGWindowListCopyWindowInfo.
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
+use x11rb::protocol::xproto::{self, AtomEnum, Window};
 use x11rb::rust_connection::RustConnection;
 
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
@@ -87,7 +87,7 @@ fn visible_windows() -> Vec<WindowRect> {
 
 /// Read _NET_CLIENT_LIST_STACKING: windows in stacking order, bottom to top.
 fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
-    let stacking_atom = intern_atom(conn, "_NET_CLIENT_LIST_STACKING").ok()?;
+    let stacking_atom = super::atoms::atoms()?.net_client_list_stacking;
     let reply = xproto::get_property(
         conn,
         false,
@@ -120,7 +120,7 @@ fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Windo
 /// Order is undefined, so z-order occlusion may be incorrect, but some Perches
 /// are better than none.
 fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
-    let list_atom = intern_atom(conn, "_NET_CLIENT_LIST").ok()?;
+    let list_atom = super::atoms::atoms()?.net_client_list;
     let reply = xproto::get_property(conn, false, root, list_atom, AtomEnum::WINDOW, 0, u32::MAX)
         .ok()?
         .reply()
@@ -186,16 +186,21 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
 /// Skip docks, desktops, and menus: `_NET_WM_WINDOW_TYPE_NORMAL` only.
 /// Missing type is treated as normal — older windows omit it.
 fn is_normal_window(conn: &RustConnection, window: Window) -> bool {
-    let Ok(type_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE") else {
-        return false;
-    };
-    let Ok(normal_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE_NORMAL") else {
+    let Some(atoms) = super::atoms::atoms() else {
         return false;
     };
 
-    let reply = match xproto::get_property(conn, false, window, type_atom, AtomEnum::ATOM, 0, 32)
-        .ok()
-        .and_then(|cookie| cookie.reply().ok())
+    let reply = match xproto::get_property(
+        conn,
+        false,
+        window,
+        atoms.net_wm_window_type,
+        AtomEnum::ATOM,
+        0,
+        32,
+    )
+    .ok()
+    .and_then(|cookie| cookie.reply().ok())
     {
         Some(r) => r,
         None => return true,
@@ -209,10 +214,10 @@ fn is_normal_window(conn: &RustConnection, window: Window) -> bool {
         return false;
     }
 
-    reply
-        .value
-        .chunks_exact(4)
-        .any(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == normal_atom)
+    reply.value.chunks_exact(4).any(|chunk| {
+        u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+            == atoms.net_wm_window_type_normal
+    })
 }
 
 /// Include decorations: Perch is the outer top edge, and XGetWindowAttributes
@@ -225,18 +230,25 @@ fn frame_geometry(
     width: u16,
     height: u16,
 ) -> (i16, i16, u16, u16) {
-    let Ok(extents_atom) = intern_atom(conn, "_NET_FRAME_EXTENTS") else {
+    let Some(atoms) = super::atoms::atoms() else {
         return (x, y, width, height);
     };
 
-    let reply =
-        match xproto::get_property(conn, false, window, extents_atom, AtomEnum::CARDINAL, 0, 4)
-            .ok()
-            .and_then(|cookie| cookie.reply().ok())
-        {
-            Some(r) => r,
-            None => return (x, y, width, height),
-        };
+    let reply = match xproto::get_property(
+        conn,
+        false,
+        window,
+        atoms.net_frame_extents,
+        AtomEnum::CARDINAL,
+        0,
+        4,
+    )
+    .ok()
+    .and_then(|cookie| cookie.reply().ok())
+    {
+        Some(r) => r,
+        None => return (x, y, width, height),
+    };
 
     if reply.format != 32 || reply.value.len() != 16 {
         return (x, y, width, height);
@@ -306,15 +318,6 @@ fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
         })
 }
 
-/// Intern an atom, reusing it if it already exists.
-fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
-    xproto::intern_atom(conn, false, name.as_bytes())
-        .ok()
-        .and_then(|cookie| cookie.reply().ok())
-        .map(|reply| reply.atom)
-        .ok_or(())
-}
-
 /// Read _NET_WM_STRUT_PARTIAL from dock/panel windows to find the panel bounds.
 ///
 /// EWMH _NET_WM_STRUT_PARTIAL is 12 CARDINALs: [left, right, top, bottom,
@@ -356,16 +359,21 @@ fn strut_panel_bounds() -> Option<Rect> {
 
 /// Only `_NET_WM_WINDOW_TYPE_DOCK` publishes a strut we can treat as the Dock.
 fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
-    let Ok(type_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE") else {
-        return false;
-    };
-    let Ok(dock_atom) = intern_atom(conn, "_NET_WM_WINDOW_TYPE_DOCK") else {
+    let Some(atoms) = super::atoms::atoms() else {
         return false;
     };
 
-    let reply = match xproto::get_property(conn, false, window, type_atom, AtomEnum::ATOM, 0, 32)
-        .ok()
-        .and_then(|cookie| cookie.reply().ok())
+    let reply = match xproto::get_property(
+        conn,
+        false,
+        window,
+        atoms.net_wm_window_type,
+        AtomEnum::ATOM,
+        0,
+        32,
+    )
+    .ok()
+    .and_then(|cookie| cookie.reply().ok())
     {
         Some(r) => r,
         None => return false,
@@ -375,15 +383,15 @@ fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
         return false;
     }
 
-    reply
-        .value
-        .chunks_exact(4)
-        .any(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == dock_atom)
+    reply.value.chunks_exact(4).any(|chunk| {
+        u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+            == atoms.net_wm_window_type_dock
+    })
 }
 
 /// Read _NET_WM_STRUT_PARTIAL property as 12 u32 values.
 fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]> {
-    let strut_atom = intern_atom(conn, "_NET_WM_STRUT_PARTIAL").ok()?;
+    let strut_atom = super::atoms::atoms()?.net_wm_strut_partial;
 
     let reply = xproto::get_property(conn, false, window, strut_atom, AtomEnum::CARDINAL, 0, 12)
         .ok()?
