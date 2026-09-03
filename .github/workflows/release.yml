@@ -4,6 +4,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp on the bundles. Default: the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
+        type: string
 
 permissions:
   contents: write
@@ -17,13 +21,10 @@ jobs:
   # window Perches on X11, degraded Spatial Layer on Wayland. Windows is
   # stubbed in v1 (SPEC) and is not a bundle target, so it has no row.
   #
-  # The human cuts the Release in GitHub's UI (which creates the tag).
-  # This job attaches the installers to that Release; it does not create
-  # one. tests.yml already gated the merge.
-  #
-  # A manual run builds the same bundles and leaves them on the run as
-  # workflow artifacts, so the packaging path can be exercised without
-  # cutting a Release nobody wanted.
+  # Every run builds the same bundles and leaves them on the run page. A
+  # Release run additionally attaches them to the Release the human
+  # published in GitHub's UI, which is also what created the tag; this job
+  # never creates either. tests.yml already gated the merge.
   package:
     strategy:
       fail-fast: false
@@ -46,26 +47,37 @@ jobs:
           fetch-tags: true
 
       - name: The version that ships
-        # git names the version, never tauri.conf.json. A published Release
-        # already has the name: its tag. A manual run gets pointed at a
-        # branch or a commit, so the tag on that commit is the name; with no
-        # tag there, the highest release tag plus a -dev prerelease says
-        # "after that release, not yet a release". The short SHA keeps two
-        # dev bundles off the same filename.
+        # git names the version, never tauri.conf.json. Three sources, in
+        # order: the version input, for a run that has to stamp a specific
+        # number; the Release's tag; the tag on the commit the run was
+        # pointed at. Falling off the end, the highest release tag plus a
+        # -dev prerelease reads as "after that release, not yet a release",
+        # and the short SHA keeps two dev bundles off one filename.
         #
         # 0.0.0 covers a repo with no tags at all, which is today.
         id: ver
         env:
           TAG: ${{ github.event.release.tag_name }}
+          OVERRIDE: ${{ inputs.version }}
         run: |
-          [ -n "$TAG" ] || TAG=$(git tag --points-at HEAD --sort=-v:refname | head -n 1)
-          if [ -n "$TAG" ]; then
-            version="${TAG#v}"
-          else
-            base=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
-            base="${base#v}"
-            version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
+          version="${OVERRIDE#v}"
+          if [ -z "$version" ]; then
+            [ -n "$TAG" ] || TAG=$(git tag --points-at HEAD --sort=-v:refname | head -n 1)
+            if [ -n "$TAG" ]; then
+              version="${TAG#v}"
+            else
+              base=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+              base="${base#v}"
+              version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
+            fi
           fi
+          # A typo in the input reaches the bundle filenames and the macOS
+          # Info.plist, where it is nobody's idea of a version. This checks
+          # semver's shape, not every rule in it.
+          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || {
+            echo "::error::version '$version' is not semver: expected 1.2.3, 1.2.3-dev.gabc1234"
+            exit 1
+          }
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building \`$version\`" >> "$GITHUB_STEP_SUMMARY"
 
@@ -97,16 +109,16 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Build and attach packages
+      - name: Build the packages
         # projectPath is src-tauri so the action uses this app's
         # tauri.conf.json rather than walking the repo and guessing.
         # --bundles keeps each OS on the installer that OS can produce;
         # the conf lists all three so a local `tauri build` matches CI.
         #
-        # releaseId attaches to the Release the human already published.
-        # Both release inputs are empty on a manual run, which is how the
-        # action is told to build and upload nothing — the bundles land as
-        # workflow artifacts instead, independent of the release config.
+        # Workflow artifacts are unconditional: every run's bundles belong
+        # on its own run page, whatever triggered it. The release inputs
+        # are all a Release run adds, and they are empty otherwise, which
+        # is how the action is told there is no Release to attach to.
         #
         # No updater signing key: updater signatures are #200, and
         # createUpdaterArtifacts is false until that key exists. No Apple
@@ -119,5 +131,5 @@ jobs:
           projectPath: src-tauri
           releaseId: ${{ github.event.release.id }}
           tagName: ${{ github.event.release.tag_name }}
-          uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}
+          uploadWorkflowArtifacts: true
           args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
