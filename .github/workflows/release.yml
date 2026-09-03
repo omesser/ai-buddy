@@ -39,23 +39,35 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
+        with:
+          # A manual run reads its version off the commit it was pointed at,
+          # which takes tags, and checkout fetches none by default. Tags
+          # only, not fetch-depth: 0 — this repo's history is ~900 MB.
+          fetch-tags: true
 
-      - name: Version from the git tag
-        # The published Release's tag is the version that ships. Stripping
-        # the leading v hands that to Tauri so artifact names follow the
-        # tag, not the copy of version sitting in tauri.conf.json.
+      - name: The version that ships
+        # git names the version, never tauri.conf.json. A published Release
+        # already has the name: its tag. A manual run gets pointed at a
+        # branch or a commit, so the tag on that commit is the name; with no
+        # tag there, the highest release tag plus a -dev prerelease says
+        # "after that release, not yet a release". The short SHA keeps two
+        # dev bundles off the same filename.
         #
-        # A manual run has no tag, so it keeps that copy. Overriding with a
-        # placeholder would only put a version nobody chose on a bundle.
+        # 0.0.0 covers a repo with no tags at all, which is today.
         id: ver
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
+          [ -n "$TAG" ] || TAG=$(git tag --points-at HEAD --sort=-v:refname | head -n 1)
           if [ -n "$TAG" ]; then
-            echo "args=--config '{\"version\":\"${TAG#v}\"}'" >> "$GITHUB_OUTPUT"
+            version="${TAG#v}"
           else
-            echo "args=" >> "$GITHUB_OUTPUT"
+            base=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+            base="${base#v}"
+            version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building \`$version\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -108,4 +120,4 @@ jobs:
           releaseId: ${{ github.event.release.id }}
           tagName: ${{ github.event.release.tag_name }}
           uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}
-          args: --bundles ${{ matrix.bundles }} ${{ steps.ver.outputs.args }}
+          args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
