@@ -126,11 +126,11 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
 }
 
 #[test]
-fn timber_wolf_uses_scale_3_for_readability() {
+fn timber_wolf_uses_scale_1_for_captured_frames() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert_eq!(
-        character.scale, 3,
-        "Timber Wolf is a heavy mech but stays companion-sized at scale 3"
+        character.scale, 1,
+        "Timber Wolf uses scale 1: frames are ~192px 3D captures like Jotaro, not tiny pixel art"
     );
 }

@@ -1,14 +1,17 @@
-# Timber Wolf (Mad Cat) OmniMech from Battletech, generated pixel art.
-# Inner Sphere designation Mad Cat; Clan designation Timber Wolf.
-# Charcoal gray frame with orange stripes, cyan cockpit, digitigrade legs,
-# shoulder-mounted LRM pods, arm-mounted weapon barrels.
-# License: development asset. Battletech IP; this repository's license
-# does not cover the art. Generated for ai-buddy Character Package
-# development.
+# Timber Wolf (Mad Cat) OmniMech from Battletech.
+# Art: frame captures from Oded's Sketchfab viewer recording of
+# https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f
+# (Clans Timberwolf Battlemech by oded1africa, CC BY 4.0).
+# Keyed dark schematic background, cropped UI, padded to shared canvas,
+# flipped to face right. Development asset: Battletech IP; this repository's
+# license does not cover the art.
+#
+# Scale 1: frames are ~192px tall 3D captures (like Jotaro at scale 1), not
+# pixel art scaled up (Black Mage at 37px uses scale 3). Render smooth.
 
 name = "Timber Wolf"
 render_mode = "smooth"
-scale = 3
+scale = 1
 
 # Proactive model calls: a combat mech patrols and reports. One and one
 # keeps every two minutes.
@@ -17,40 +20,50 @@ scale = 3
 model_base = 1
 model_power = 1
 
+# Side profile from the idle hold (0-6s of the side clip).
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
 
+# Side stride, facing right for engine mirroring. Oded's recut will have
+# more frames than the initial 8-frame capture for a smoother, centered walk.
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
-fps = 6
+fps = 8
 
+# Reuses walk frames with raised leg.
 [animations.fall]
-frames = ["frames/fall-0.png", "frames/fall-1.png"]
+frames = ["frames/walk-1.png", "frames/walk-2.png"]
 fps = 6
 
+# Reuses idle (convention: closest pose when sheet lacks dedicated frames).
 [animations.land]
-frames = ["frames/land-0.png", "frames/land-1.png"]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 8
 loop = "once"
 
+# Reuses idle.
 [animations.sit]
-frames = ["frames/sit-0.png"]
+frames = ["frames/idle-0.png"]
 fps = 2
 
+# Reuses idle.
 [animations.hold]
-frames = ["frames/hold-0.png", "frames/hold-1.png"]
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 4
 
+# Reuses idle.
 [animations.sleep]
-frames = ["frames/sleep-0.png"]
+frames = ["frames/idle-0.png"]
 fps = 1
 
+# Full-frontal stand from the turn clip.
 [animations.react]
 frames = ["frames/react-0.png", "frames/react-1.png"]
 fps = 8
 loop = "once"
 
+# Full-frontal stand.
 [animations.talk]
 frames = ["frames/talk-0.png", "frames/talk-1.png"]
 fps = 4
