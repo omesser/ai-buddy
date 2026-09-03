@@ -290,7 +290,7 @@ pub fn describe() -> FormDescription {
                     label: "Sound".to_string(),
                     frozen: false,
                     help: Some(
-                        "Off silences the cues a gesture plays. Do Not Disturb silences them too; the visual cue stays."
+                        "Off silences the cues a gesture plays. Do Not Disturb silences them too; the visual cue stays. A machine with no sound device stays silent the same way."
                             .to_string(),
                     ),
                     comment: None,

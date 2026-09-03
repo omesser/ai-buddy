@@ -160,6 +160,21 @@ plugin are hosts. A dock such as Plank is not one, and neither is a Wayland
 compositor with no tray protocol — the tray installs and no icon appears.
 Where no host answers, the sprite's right-click menu opens the same menu.
 
+Cue audio is Web Audio in WebKitGTK, which plays through GStreamer. The `.deb`
+does not name a GStreamer package of its own: `libwebkit2gtk-4.1-0` already
+Depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (the
+latter ships `pulsesink`). That is enough on a session with PipeWire-pulse or
+PulseAudio. An ALSA-only machine also wants `gstreamer1.0-alsa`, which WebKit
+only Suggests. A machine with no sound device stays silent and still draws the
+visual cue.
+
+The AppImage copies `libgstreamer` with WebKit and does **not** ship the plugin
+pack (`bundleMediaFramework` stays off, or the image grows by tens of
+megabytes). Cue audio then needs the host's `gstreamer1.0-plugins-good` (and
+`gstreamer1.0-alsa` on a box with no Pulse/PipeWire) plus a running sink. If
+those are installed and the AppImage is still mute, GStreamer is looking inside
+the image for plugins that are not there.
+
 ```sh
 # Debian/Ubuntu .deb
 sudo apt install ./ai-buddy_*.deb
@@ -279,7 +294,9 @@ that named app on in Privacy & Security.
 
 Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect
 on the next frame, no restart. Do Not Disturb also silences the buddy while it
-is on, and leaves the visual cues (#277).
+is on, and leaves the visual cues (#277). A machine that cannot start an audio
+context does the same: one warning in the webview console, then silence, with
+the visual still playing (#292).
 
 A Character that should grow faster or slower than doubling says so:
 
@@ -462,6 +479,11 @@ the compositor's tray protocol support.
 # Debian/Ubuntu
 sudo apt install libayatana-appindicator3-dev
 ```
+
+Cue audio at runtime is the GStreamer plugins WebKitGTK already Depends on,
+plus a working sink. Development builds use the host WebKit, so
+`gstreamer1.0-plugins-good` (and a Pulse/PipeWire/ALSA session) is enough to
+hear them. The AppImage is the exception; see [Install](#install).
 
 ### Toolchains
 
