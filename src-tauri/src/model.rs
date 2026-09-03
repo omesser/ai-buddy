@@ -1235,16 +1235,6 @@ pub(crate) mod tests {
         assert!(matches!(key_from_raw(Some("sk-abc")), KeyRead::Present(_)));
     }
 
-    /// A blank export is still an override, so the store stays out of it —
-    /// otherwise the mistake `key_invalid` exists to report would be papered
-    /// over by a saved key, and paid for with a Keychain prompt.
-    #[test]
-    fn an_exported_key_owns_the_answer_even_when_it_is_blank() {
-        with_env(Some("sk-abc"), None, None, || assert!(env_owns_key()));
-        with_env(Some("  "), None, None, || assert!(env_owns_key()));
-        with_env(None, None, None, || assert!(!env_owns_key()));
-    }
-
     #[test]
     fn startup_always_names_the_director_mode() {
         let static_only = DirectorConfig {

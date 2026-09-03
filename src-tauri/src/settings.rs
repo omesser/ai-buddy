@@ -1300,6 +1300,24 @@ mod tests {
         });
     }
 
+    /// A blank export is a mistake — `$XAI_API_KEY` that expanded to nothing —
+    /// and the warning that names it is what the launch owes the user. A
+    /// stored key must not answer in its place, quietly or at the price of a
+    /// prompt.
+    #[test]
+    fn a_blank_exported_key_leaves_the_store_unread_and_still_warns() {
+        let settings = endpoint_settings();
+        model::tests::with_env(Some("  "), None, None, || {
+            let resolved = director_settings(&settings, &FailingStore)
+                .expect("a blank export is still the env answering");
+            assert!(resolved.api_key.is_empty());
+            assert!(
+                resolved.key_invalid,
+                "the blank export must still reach the startup warning"
+            );
+        });
+    }
+
     #[test]
     fn a_store_get_error_is_not_presented_as_unset() {
         let (set, fingerprint, error) = stored_key_status(&FailingStore);
