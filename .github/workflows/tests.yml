@@ -4,21 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
-    # `labeled` is what makes the `windows` job's label escape hatch fire at
-    # all. A re-run replays the original payload, so a label applied after the
-    # fact is invisible without it. The cost is that labelling a pull request
-    # for any other reason starts a run too; the changed-files gates below keep
-    # a docs-only one down to the hooks.
-    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  # Every event but a label supersedes the run before it. A label does not: the
-  # five triage labels land on pull requests mid-run, and cancelling live CI to
-  # re-run the same commit is the one case where superseding destroys work
-  # rather than saving it.
-  cancel-in-progress: ${{ github.event.action != 'labeled' }}
+  cancel-in-progress: true
 
 jobs:
   # One job, both platforms. The differences between them are tool installation
@@ -280,6 +270,18 @@ jobs:
   # Cross-checking does not stand in for it. A Tauri target needs the MSVC
   # toolchain and WebView2, so `cargo check --target x86_64-pc-windows-msvc`
   # from another runner cannot compile what this does. #247.
+  #
+  # No path gate. One over the files that hold the arms let a `not(unix)` arm
+  # added to any other file escape it silently, which is the exact failure this
+  # job exists to prevent. #258 carries that design forward for a Windows test
+  # job, which is long enough for gating to buy something.
+  #
+  # Here it bought nothing. The repository is public, so hosted runners are free
+  # with unlimited minutes and the 2x Windows multiplier bills private repos
+  # only. Warm, the job is 1.4-1.8 min against `checks` at 1.4-2.0, so it
+  # finishes first and adds nothing to the critical path; cold, it is 3.1 min
+  # and extends a run by about a minute. Running it on every push is what keeps
+  # the cache warm, so the cold case gets rarer rather than more common.
   windows:
     runs-on: windows-latest
     # A cold-cache MSVC build of the whole workspace, on the slowest of the
@@ -292,72 +294,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find what this run changed
-        id: changed
-        # `files` here, where the job above uses `files_ignore`. There are no
-        # Windows-only files to match: every Windows arm is a `not(unix)` block
-        # inside a file the other platforms share. So the filter names the files
-        # that hold the arms, and `platform/windows/**` matches nothing today —
-        # it is the point at which this gate keeps working without an edit.
-        #
-        # The manifests and the lockfile are in because they decide what Windows
-        # links: keyring already carries `windows-native`, and a feature or
-        # version change there lands on this job and nowhere else. This workflow
-        # is in for the reason the `files_ignore` comment gives: a change to the
-        # gate cannot switch the gate off.
-        #
-        # The gap this leaves: a `not(unix)` arm added to a fourth file escapes
-        # the gate until someone lists the file. The label covers that only
-        # where a reviewer already suspects the arm. Inverting to `files_ignore`
-        # would close the gap by running an MSVC build on every code change,
-        # which is the cost the gate exists to avoid.
-        #
-        # Same commit pin, same CVE-2025-30066 reason.
-        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
-        continue-on-error: true
-        with:
-          files: |
-            src-tauri/src/platform.rs
-            src-tauri/src/platform/windows/**
-            crates/core/src/sensing.rs
-            src-tauri/Cargo.toml
-            crates/core/Cargo.toml
-            Cargo.toml
-            Cargo.lock
-            .github/workflows/tests.yml
-
-      - name: Decide whether this run touches Windows
-        id: changes
-        # Fails open the way the job above does: the only path to
-        # `windows=false` is a pull request where the action ran and matched
-        # nothing.
-        #
-        # A gate this narrow will be wrong sometimes, so the `windows` label is
-        # the escape hatch — a reviewer who suspects the arm asks for the job
-        # instead of pushing a no-op commit to platform.rs. workflow_dispatch is
-        # deliberate, and a push to main is the merged state that ships.
-        env:
-          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
-          OUTCOME: ${{ steps.changed.outcome }}
-          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'windows') }}
-        # bash, not the runner's default PowerShell, so this reads as the same
-        # gate as the one above rather than a translation of it.
-        shell: bash
-        run: |
-          windows=true
-          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
-            [ "$LABELED" = false ] && [ "${{ github.event_name }}" = pull_request ]; then
-            windows=false
-          fi
-          echo "touches Windows: $windows"
-          echo "windows=$windows" >> "$GITHUB_OUTPUT"
-
       - name: Install Rust
-        if: steps.changes.outputs.windows == 'true'
         run: rustup toolchain install stable --profile minimal --component clippy
 
       - name: Cache cargo build
-        if: steps.changes.outputs.windows == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
@@ -376,5 +316,4 @@ jobs:
         # the macOS-gated tests in the shell crate among them, and a suite red
         # on day one buries the signal this job exists to give. Turning
         # `cargo test` on is a follow-up, once someone knows what fails.
-        if: steps.changes.outputs.windows == 'true'
         run: cargo clippy --workspace --all-targets -- -D warnings
