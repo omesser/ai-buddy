@@ -10,9 +10,10 @@ what is and is not built.
 
 ## Feature matrix
 
+### Spatial capabilities
+
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
 |---|---|---|---|---|---|---|
-| **Spatial Layer** | — | — | — | — | — | — |
 | Overlay (always-on-top) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Click-through (per-pixel) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Physics (gravity, throw) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -21,35 +22,57 @@ what is and is not built.
 | Capture exclusion (no screen share) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Multi-instance (several buddies) | ✓ | ✓ | ✓ | ✓ | ❌ | ✓ |
 | Multi-monitor | ✓ | ✓ | ✓ | ✓ (toggle) | ✓ | ✓ |
-| **Character & Art** | — | — | — | — | — | — |
+
+### Character & art
+
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
+|---|---|---|---|---|---|---|
 | Character Packages (first-class) | ✓ | ✓ (DLC) | ✓ (Workshop) | ✓ (community) | ✓ (beta, +2 soon) | ✓ (catalog) |
 | Art ecosystem / gallery | ✓ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog |
 | Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp |
 | Declarative Behaviors | ✓ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✓ (plugins) |
-| **Liveliness** | — | — | — | — | — | — |
-| Director (proposes Behaviors) | ✓ (Static + HTTP) | ❌ | ❌ | ❌ (XML) | ❌ | ~ (plugins) |
+
+### Behavior & personality
+
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
+|---|---|---|---|---|---|---|
+| AI-powered behavior | ✓ (Director + personality.txt) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat) | ✓ (plugin SDK + MCP) |
 | Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Reacts to user (Poke, Grab) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Window awareness | ✓ (app name, geometry) | ✓ | ❌ | ✓ (edges) | ❌ | ❌ |
-| **Functional Layer** | — | — | — | — | — | — |
-| Harness / agent runtime | ~ (MCP attach) | ❌ | ❌ | ❌ | ~ (OpenAI API) | ✓ (MCP optional) |
+
+### Agent integrations
+
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
+|---|---|---|---|---|---|---|
+| Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ |
 | MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ |
-| Executor (synthetic input) | ❌ (Harness owns) | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Chat surface | ~ (#17, #119) | ❌ | ❌ | ❌ | ✓ (voice or text) | ~ (plugin) |
-| **Memory & Context** | — | — | — | — | — | — |
+| AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (plugin + ctx.ai) |
+| BYO model / API key | ✓ (env vars) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (Anthropic/OpenAI/Ollama) |
+
+### Memory & privacy
+
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
+|---|---|---|---|---|---|---|
 | Memory (shared, user-editable) | ✓ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✓ (plugin storage) |
 | Ambient Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ |
 | On-Demand Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Privacy & Control** | — | — | — | — | — | — |
 | Local-first (no cloud required) | ✓ (Spatial) | ✓ | ✓ | ✓ | ✓ (Spatial) | ✓ |
-| BYO model / API key | ✓ (env vars) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (Anthropic/OpenAI/Ollama) |
 | Consent-per-feature (opt-in gates) | ✓ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✓ (permissions) |
 | Denylist (excluded apps) | ~ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Platforms** | — | — | — | — | — | — |
+
+### Platforms
+
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
+|---|---|---|---|---|---|---|
 | macOS | ✓ | ✓ (beta, June 2026) | ✓ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) |
 | Windows | ~ (stubbed deliberately) | ✓ | ✓ | ✓ | ✓ (10/11) | ✓ (signed) |
 | Linux | ✓ (X11), ~ (Wayland) | ✓ | ✓ | ✓ (community forks) | ❌ | ✓ (AppImage) |
-| **Pricing & Distribution** | — | — | — | — | — | — |
+
+### Pricing & distribution
+
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
+|---|---|---|---|---|---|---|
 | Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) |
 | Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) |
 | Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -95,10 +118,11 @@ models, not sprites).
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
 packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, an internal
 package format (undocumented until v2), and import adapters for petdex / Pets
-Codex and Shimeji-ee ecosystems. Desktop Mate has no physics, no functional
-layer, and no BYO character creation. ai-buddy's Spatial Layer includes physics
-and Perch riding/dropping under a gate, and its planned Functional Layer (MCP +
-Harness attach) targets agent capabilities Desktop Mate does not attempt.
+Codex and Shimeji-ee ecosystems. Desktop Mate has no physics, no agent
+integrations, and no BYO character creation. ai-buddy's Spatial Layer includes
+physics and Perch riding/dropping under a gate, and its planned agent
+integrations (MCP + Harness attach) target capabilities Desktop Mate does not
+attempt.
 
 ### VPet-Simulator
 
@@ -130,8 +154,8 @@ hotkey hide mentioned in Steam page or README).
 **Differences.** VPet's Workshop ecosystem is live and massive (open source +
 Steam Workshop), while ai-buddy's Character Package format is internal and
 undocumented until v2. VPet has no window awareness or Perches, no physics, and
-no agent / MCP layer. ai-buddy's Director + Harness attach targets capabilities
-VPet does not have.
+no agent integrations or MCP layer. ai-buddy's Director + Harness attach targets
+capabilities VPet does not have.
 
 ### Shimeji-ee ecosystem
 
@@ -158,14 +182,14 @@ Standard sprite set required (shime1.png - shime46.png).
 
 **Absent.** No physics (ai-buddy's gravity/ballistic throw model). No capture
 exclusion. No hide rules in base version (no auto-hide on fullscreen); Boss mode
-is manual toggle. No agent capabilities, MCP, or chat. No Memory. No functional
-layer. Behavior system is XML graphs, not TOML declarative Behaviors.
+is manual toggle. No agent capabilities, MCP, or chat. No Memory. No agent
+integrations. Behavior system is XML graphs, not TOML declarative Behaviors.
 
 **Differences.** Shimeji-ee's community character ecosystem (1000s of free
 packs) offers direct distribution; ai-buddy imports from Shimeji-ee via
 `scripts/import-pet.py` adapter plus petdex / Pets Codex, translating into
 Character Packages once (authoring-time, not live bridge). Shimeji-ee has no
-window awareness beyond edges, no physics, no agent layer, and no functional
+window awareness beyond edges, no physics, no agent integrations, and no AI
 capabilities. ai-buddy adds physics (gravity, throw, Perches under acceleration
 gate), window app name tracking, planned MCP + Harness attach, Memory, and BYO
 model. Shimeji-ee's XML graph behavior system versus ai-buddy's Director +
@@ -259,10 +283,10 @@ local-first, no accounts.
 
 What ai-buddy does differently (as specced):
 
-1. **Spatial Layer + Functional Layer together.** Desktop pets (Desktop Mate,
-   VPet, Shimeji-ee) have presence and idle life; Desktop Pet and OpenPets add
-   AI chat or plugins. None combine spatial physics with window awareness and a
-   BYO general-purpose agent runtime. ai-buddy's planned MCP + Harness attach
+1. **Spatial capabilities + agent integrations together.** Desktop pets (Desktop
+   Mate, VPet, Shimeji-ee) have presence and idle life; Desktop Pet and OpenPets
+   add AI chat or plugins. None combine spatial physics with window awareness and
+   a BYO general-purpose agent runtime. ai-buddy's planned MCP + Harness attach
    lets users bring their own agent.
 2. **Physics.** Gravity + ballistic throw + Perch riding under an acceleration
    gate. No other desktop pet has physics.
@@ -288,9 +312,9 @@ What other projects have that ai-buddy doesn't (yet):
    (`scripts/import-pet.py`) for petdex / Pets Codex and Shimeji-ee ecosystems
    (authoring-time translation into Character Packages, not live bridge or
    first-party gallery). Package format is internal and undocumented until v2.
-2. **Functional Layer shipped.** Desktop Pet has OpenAI chat, OpenPets has MCP +
-   plugin SDK v3 + 9 official plugins. ai-buddy's MCP + Harness is specced, not
-   built.
+2. **Agent integrations shipped.** Desktop Pet has OpenAI chat, OpenPets has MCP
+   + plugin SDK v3 + 9 official plugins. ai-buddy's MCP + Harness is specced,
+   not built.
 3. **Distribution reach.** Desktop Mate and VPet are on Steam, OpenPets has
    signed Windows builds and catalog. ai-buddy is GitHub releases with no store
    presence.
