@@ -171,9 +171,11 @@ DPI/monitor changes (issue #546).
 **Differences.** VPet's Workshop ecosystem is live and massive (98% of 51,678
 reviews), while ai-buddy's Character Package format is internal and undocumented
 until v2. VPet has no window awareness or Perches, no ballistic physics, and no
-agent integrations or MCP layer. ai-buddy's Director + Harness attach targets
-capabilities VPet does not have. Buyer job: care-sim + Workshop-open vs
-ai-buddy's physics + BYO Harness model.
+agent integrations or MCP layer. ai-buddy ships Director + authored
+personality-driven idle speech (VPet has no personality file or non-deterministic
+speech; its behavior is Workshop-defined animations). Harness is specced (~), not
+shipped. Buyer job: care-sim + Workshop-open vs ai-buddy's personality-driven
+idle life + physics.
 
 ### Shimeji-ee ecosystem
 
@@ -251,13 +253,15 @@ GitHub community, no public customer voice). Vendor-only homepage and feature
 list.
 
 **Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
-chat via user's OpenAI key, while ai-buddy separates Spatial (local, no model)
-from agent integrations (BYO Harness). Desktop Pet is beta with limited
-character selection (1 shipped, +2 soon) and no public validation; ai-buddy has
-two shipped Characters, internal package format, and import adapters for petdex
-/ Pets Codex and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches,
-no window awareness. ai-buddy's MCP + Harness model targets general agent
-capabilities; Desktop Pet's OpenAI integration is chat-only.
+chat via user's OpenAI key, while ai-buddy ships Director + authored
+personality-driven idle speech (Character talks in-character while living on
+windows, not a chat window). Desktop Pet is beta with limited character selection
+(1 shipped, +2 soon) and no public validation; ai-buddy has two shipped
+Characters, internal package format, and import adapters for petdex / Pets Codex
+and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
+awareness. Desktop Pet's AI is an OpenAI chat window; ai-buddy's Director drives
+idle speech from personality. Agent integrations (Harness/MCP) are specced (~)
+for ai-buddy, not shipped.
 
 ### OpenPets
 
@@ -357,18 +361,19 @@ buy mate engine" in Desktop Mate negative cluster.
 Linux unofficial port requires X11, has Wayland issues.
 
 **Differences.** MateEngine is the user-owned VRM/Workshop answer to Desktop
-Mate's SKU lock. Both sit on windows (Perches), but MateEngine is VRM-driven
-(user's 3D rigged models) and ai-buddy is 2D sprite + ballistic physics.
-MateEngine has Steam Workshop + mods (the capability Desktop Mate removed);
-ai-buddy has import adapters for petdex + Shimeji-ee (authoring-time, not live
-Workshop). MateEngine's AI is built-in local LLM (QWEN 2.5 1.5b); ai-buddy's
-Director is BYO (env vars for OpenAI/Anthropic/Ollama, and planned Harness/MCP
-attach for agent capabilities). MateEngine has no ballistic physics (no
-gravity/throw arcs), no hide rules, no capture exclusion, no MCP, no agent
-Harness. ai-buddy's Spatial Layer ships ballistic Perch riding + acceleration
-gate + hide rules + capture exclusion; ai-buddy's Functional Layer (MCP +
-Harness attach) is specced. Buyer job split: MateEngine is *my VRM* after
-Desktop Mate's mod removal; ai-buddy is physics + BYO agent attach.
+Mate's SKU lock. ai-buddy ships authored personality + Director-driven idle
+speech (Character talks from personality while living on windows); MateEngine has
+built-in local LLM (QWEN 2.5 1.5b) but no authored personality file or
+Director-driven idle speech. Both sit on windows (Perches), but MateEngine is
+VRM-driven (user's 3D rigged models) and ai-buddy is 2D sprite + ballistic
+physics. MateEngine has Steam Workshop + mods (the capability Desktop Mate
+removed); ai-buddy has import adapters for petdex + Shimeji-ee (authoring-time,
+not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
+no hide rules, no capture exclusion, no MCP, no agent Harness. ai-buddy's Spatial
+Layer ships ballistic Perch riding + acceleration gate + hide rules + capture
+exclusion; ai-buddy's Functional Layer (MCP + Harness attach) is specced (~), not
+shipped. Buyer job split: MateEngine is *my VRM* after Desktop Mate's mod
+removal; ai-buddy is authored personality + idle speech + physics.
 
 ## Physics note (kind matters)
 
