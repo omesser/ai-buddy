@@ -5,7 +5,6 @@
 //! putting settings and quit on a menu bar icon; this is our menu, not theirs.
 
 use crate::menu::{self, MenuDescription};
-use image::GenericImageView;
 use tauri::image::Image;
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
