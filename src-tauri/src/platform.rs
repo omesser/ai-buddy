@@ -9,6 +9,9 @@
 //! The dispatch lives here rather than in `main.rs` so that adding a platform is
 //! one edit in one file.
 
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 #[cfg(unix)]
@@ -235,6 +238,54 @@ pub fn show_settings(_session: crate::settings::SettingsSession) {
 
 #[cfg(not(unix))]
 pub fn refresh_settings() {}
+
+/// Hand a file the user owns to whatever the desktop opens it with.
+///
+/// The file is created empty first because Memory has no file until the
+/// Director has something to remember, and an opener given a path that is not
+/// there reports it missing instead of giving the user something to write in.
+pub fn open_path(path: &Path) -> Result<(), String> {
+    ensure_file(path)?;
+    opener(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Not platform-specific, so it is written once rather than in each arm below.
+fn ensure_file(path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    if !path.exists() {
+        fs::write(path, "").map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn opener(path: &Path) -> Command {
+    let mut command = Command::new("open");
+    command.arg(path);
+    command
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn opener(path: &Path) -> Command {
+    let mut command = Command::new("xdg-open");
+    command.arg(path);
+    command
+}
+
+/// The empty string after `start` is the window title, which `cmd` otherwise
+/// takes the first quoted argument for — a path with a space in it becomes a
+/// title and nothing opens.
+#[cfg(not(unix))]
+fn opener(path: &Path) -> Command {
+    let mut command = Command::new("cmd");
+    command.args(["/C", "start", ""]).arg(path);
+    command
+}
 
 /// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.
 /// The plain Tauri window is what every other platform gets.
@@ -718,6 +769,56 @@ mod tests {
         assert!(
             !button.take(),
             "click-through means the overlay is not a witness, so a lost pointerup must not keep the latch"
+        );
+    }
+
+    /// Memory has no file until the Director has something to remember, so
+    /// the opener is handed a path that does not exist yet. Spawning the real
+    /// opener is not something a test does; the step that has to happen before
+    /// it is.
+    #[test]
+    fn the_file_is_there_before_the_opener_is() {
+        let dir = std::env::temp_dir().join(format!(
+            "ai-buddy-open-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("memory.md");
+
+        ensure_file(&path).expect("a missing Memory Manifest is created, not an error");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "");
+
+        fs::write(&path, "remembered").unwrap();
+        ensure_file(&path).unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "remembered",
+            "opening Memory must not blank it"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A path with a space in it is the case that breaks: on Windows the
+    /// empty title has to stand between `start` and the path, or `cmd` reads
+    /// the path as the title. The path is the last argument on every platform;
+    /// what precedes it is what each arm has to get right.
+    #[test]
+    fn the_opener_is_handed_the_whole_path() {
+        let path = Path::new("/tmp/ai buddy/memory.md");
+        let command = opener(path);
+
+        assert_eq!(command.get_args().last(), Some(path.as_os_str()));
+        #[cfg(target_os = "macos")]
+        assert_eq!(command.get_program(), "open");
+        #[cfg(all(unix, not(target_os = "macos")))]
+        assert_eq!(command.get_program(), "xdg-open");
+        #[cfg(not(unix))]
+        assert_eq!(
+            command.get_args().count(),
+            4,
+            "the empty title is an argument of its own"
         );
     }
 

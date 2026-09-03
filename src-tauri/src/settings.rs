@@ -362,7 +362,7 @@ impl SettingsSession {
     }
 
     pub fn open_memory(&self) -> Result<(), String> {
-        open_in_editor(&self.memory_path)
+        crate::platform::open_path(&self.memory_path)
     }
 
     pub fn wipe_memory(&self) -> Result<(), String> {
@@ -379,28 +379,6 @@ impl SettingsSession {
     pub fn dismiss(&self, id: String) {
         let _ = self.ops.send(SettingsOp::Dismiss { id });
     }
-}
-
-fn open_in_editor(path: &Path) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    if !path.exists() {
-        fs::write(path, "").map_err(|error| error.to_string())?;
-    }
-
-    #[cfg(target_os = "macos")]
-    let opener = "open";
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let opener = "xdg-open";
-    #[cfg(not(unix))]
-    let opener = "start";
-
-    std::process::Command::new(opener)
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
 }
 
 /// What the settings window can change in one call.
