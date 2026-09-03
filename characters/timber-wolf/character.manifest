@@ -110,11 +110,6 @@ play = ["walk", "idle", "walk"]
 weight = 3
 when = "idle over 30s"
 
-[behaviors.scan]
-play = ["idle"]
-weight = 2
-when = "idle over 30s"
-
 [behaviors.report]
 play = ["talk", "idle"]
 weight = 3
