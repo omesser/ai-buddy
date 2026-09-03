@@ -258,6 +258,10 @@ Recording. The pane names the row macOS will show: a `cargo run` from Cursor
 is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn
 that named app on in Privacy & Security.
 
+Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect
+on the next frame, no restart. Do Not Disturb also silences the buddy while it
+is on, and leaves the visual cues (#277).
+
 A Character that should grow faster or slower than doubling says so:
 
 ```toml

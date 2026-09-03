@@ -39,6 +39,7 @@ pub struct SettingsView {
     pub director_enabled: bool,
     pub ambient_wakes: bool,
     pub do_not_disturb: bool,
+    pub sound: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
     pub hide_hotkey: String,
@@ -75,6 +76,7 @@ impl SettingsView {
             director_enabled: settings.director_enabled,
             ambient_wakes: settings.ambient_wakes,
             do_not_disturb: settings.do_not_disturb,
+            sound: settings.sound,
             hidden: settings.hidden,
             hide_in_fullscreen: settings.hide_in_fullscreen,
             hide_hotkey: display_hotkey(&settings.hide_hotkey),
@@ -408,6 +410,7 @@ pub struct SettingsPatch {
     pub director_enabled: Option<bool>,
     pub ambient_wakes: Option<bool>,
     pub do_not_disturb: Option<bool>,
+    pub sound: Option<bool>,
     pub hidden: Option<bool>,
     pub hide_in_fullscreen: Option<bool>,
     pub hide_hotkey: Option<String>,
@@ -429,6 +432,7 @@ impl fmt::Debug for SettingsPatch {
             .field("director_enabled", &self.director_enabled)
             .field("ambient_wakes", &self.ambient_wakes)
             .field("do_not_disturb", &self.do_not_disturb)
+            .field("sound", &self.sound)
             .field("hidden", &self.hidden)
             .field("hide_in_fullscreen", &self.hide_in_fullscreen)
             .field("hide_hotkey", &self.hide_hotkey)
@@ -448,6 +452,13 @@ impl fmt::Debug for SettingsPatch {
 }
 
 impl Settings {
+    /// Whether a frame may make a sound. Do Not Disturb is quiet but not
+    /// gone (#84), so it takes the audio cue and leaves the visual one; the
+    /// webview is told the answer and never works it out itself (#277).
+    pub fn sound_allowed(&self) -> bool {
+        self.sound && !self.do_not_disturb
+    }
+
     pub fn apply(&mut self, patch: SettingsPatch) {
         if let Some(value) = patch.director_enabled {
             self.director_enabled = value;
@@ -457,6 +468,9 @@ impl Settings {
         }
         if let Some(value) = patch.do_not_disturb {
             self.do_not_disturb = value;
+        }
+        if let Some(value) = patch.sound {
+            self.sound = value;
         }
         if let Some(value) = patch.hidden {
             self.hidden = value;
@@ -518,6 +532,8 @@ pub struct Settings {
     pub ambient_wakes: bool,
     /// Quiet: on screen, not starting things. Persists so a restart stays quiet.
     pub do_not_disturb: bool,
+    /// The cues a gesture plays are heard, not only seen (#277).
+    pub sound: bool,
     /// Off screen, same flag the hotkey flips.
     pub hidden: bool,
     /// Fade away when a fullscreen application is frontmost.
@@ -553,6 +569,7 @@ impl Default for Settings {
             director_enabled: true,
             ambient_wakes: true,
             do_not_disturb: false,
+            sound: true,
             hidden: false,
             hide_in_fullscreen: true,
             hide_hotkey: DEFAULT_HIDE_HOTKEY.to_string(),
@@ -771,6 +788,7 @@ mod tests {
         assert!(Settings::default().director_enabled);
         assert!(Settings::default().ambient_wakes);
         assert!(Settings::default().hide_in_fullscreen);
+        assert!(Settings::default().sound);
         assert!(!Settings::default().do_not_disturb);
         assert!(!Settings::default().hidden);
         assert!(!Settings::default().launch_at_login);
@@ -787,6 +805,7 @@ mod tests {
             director_enabled: false,
             ambient_wakes: false,
             do_not_disturb: true,
+            sound: false,
             hidden: true,
             hide_in_fullscreen: false,
             hide_hotkey: "Control-Shift-H".to_string(),
@@ -806,6 +825,37 @@ mod tests {
 
         assert_eq!(Settings::load(&path), settings);
         let _ = fs::remove_file(&path);
+    }
+
+    /// Do Not Disturb is quiet but not gone (#84): it takes the sound and
+    /// leaves the visual cue, and it never turns the sound back on (#277).
+    #[test]
+    fn sound_is_allowed_only_when_on_and_not_disturbing() {
+        let mut settings = Settings::default();
+        assert!(settings.sound_allowed());
+        settings.do_not_disturb = true;
+        assert!(!settings.sound_allowed());
+        settings.sound = false;
+        assert!(!settings.sound_allowed());
+        settings.do_not_disturb = false;
+        assert!(!settings.sound_allowed());
+    }
+
+    /// The window toggles one field at a time, and the mute has to land
+    /// without a restart, so the patch is the whole path (#277).
+    #[test]
+    fn a_patch_can_mute_and_unmute() {
+        let mut settings = Settings::default();
+        settings.apply(SettingsPatch {
+            sound: Some(false),
+            ..SettingsPatch::default()
+        });
+        assert!(!settings.sound);
+        settings.apply(SettingsPatch {
+            sound: Some(true),
+            ..SettingsPatch::default()
+        });
+        assert!(settings.sound);
     }
 
     #[test]
@@ -960,6 +1010,10 @@ mod tests {
         let settings = Settings::load(&path);
         assert!(!settings.director_enabled);
         assert!(settings.ambient_wakes, "unset ambient stays on");
+        assert!(
+            settings.sound,
+            "a file from before the setting stays audible"
+        );
         assert!(settings.hide_in_fullscreen);
         let _ = fs::remove_file(&path);
     }
@@ -1038,6 +1092,7 @@ mod tests {
             director_enabled: false,
             ambient_wakes: false,
             do_not_disturb: true,
+            sound: false,
             hidden: true,
             hide_in_fullscreen: false,
             hide_hotkey: "Control-Shift-H".to_string(),
@@ -1066,6 +1121,7 @@ mod tests {
         assert!(!view.director_enabled);
         assert!(!view.ambient_wakes);
         assert!(view.do_not_disturb);
+        assert!(!view.sound);
         assert!(view.hidden);
         assert!(!view.hide_in_fullscreen);
         assert_eq!(view.hide_hotkey, display_hotkey("Control-Shift-H"));

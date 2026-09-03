@@ -127,6 +127,7 @@ pub const DIRECTOR_MODEL_ID: &str = "director_model";
 pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
 pub const CLEAR_KEY_ID: &str = "clear_key";
 pub const DND_ID: &str = "dnd";
+pub const SOUND_ID: &str = "sound";
 pub const HIDDEN_ID: &str = "hidden";
 pub const FULLSCREEN_ID: &str = "fullscreen";
 pub const HOTKEY_ID: &str = "hotkey";
@@ -276,13 +277,25 @@ pub fn describe() -> FormDescription {
         FormSection {
             heading: "Do Not Disturb".to_string(),
             comment: Some("DESIGN.md: quiet is not gone. A Hide heading would teach the opposite.".to_string()),
-            rows: vec![FormRow::Checkbox {
-                id: DND_ID.to_string(),
-                label: "Do Not Disturb".to_string(),
-                frozen: false,
-                help: Some("On screen, not starting things.".to_string()),
-                comment: None,
-            }],
+            rows: vec![
+                FormRow::Checkbox {
+                    id: DND_ID.to_string(),
+                    label: "Do Not Disturb".to_string(),
+                    frozen: false,
+                    help: Some("On screen, not starting things.".to_string()),
+                    comment: None,
+                },
+                FormRow::Checkbox {
+                    id: SOUND_ID.to_string(),
+                    label: "Sound".to_string(),
+                    frozen: false,
+                    help: Some(
+                        "Off silences the cues a gesture plays. Do Not Disturb silences them too; the visual cue stays."
+                            .to_string(),
+                    ),
+                    comment: None,
+                },
+            ],
         },
         FormSection {
             heading: "Hide".to_string(),
@@ -390,6 +403,10 @@ pub fn describe() -> FormDescription {
     actions.insert(
         DND_ID.to_string(),
         RowAction::PatchField("do_not_disturb".to_string()),
+    );
+    actions.insert(
+        SOUND_ID.to_string(),
+        RowAction::PatchField("sound".to_string()),
     );
     actions.insert(
         HIDDEN_ID.to_string(),
@@ -643,6 +660,28 @@ mod tests {
         ));
     }
 
+    /// Mute sits under Do Not Disturb because that is the heading a user
+    /// reads as "quieter", and DND takes the sound with it (#277).
+    #[test]
+    fn do_not_disturb_section_has_dnd_then_sound() {
+        let description = describe();
+        let section = description
+            .sections
+            .iter()
+            .find(|s| s.heading == "Do Not Disturb")
+            .expect("Do Not Disturb section");
+
+        assert_eq!(section.rows.len(), 2);
+        assert!(matches!(
+            section.rows[0],
+            FormRow::Checkbox { ref id, .. } if id == DND_ID
+        ));
+        assert!(matches!(
+            section.rows[1],
+            FormRow::Checkbox { ref id, .. } if id == SOUND_ID
+        ));
+    }
+
     #[test]
     fn character_section_has_popup() {
         let description = describe();
@@ -745,6 +784,7 @@ mod tests {
         assert!(has_help("Director", AMBIENT_ID));
         assert!(has_help("Last user turn", PAYLOAD_ID));
         assert!(has_help("Do Not Disturb", DND_ID));
+        assert!(has_help("Do Not Disturb", SOUND_ID));
         assert!(has_help("Excluded applications", EXCLUDED_ID));
     }
 
@@ -788,6 +828,10 @@ mod tests {
         assert_eq!(
             description.actions.get(DIRECTOR_ID),
             Some(&RowAction::PatchField("director_enabled".to_string()))
+        );
+        assert_eq!(
+            description.actions.get(SOUND_ID),
+            Some(&RowAction::PatchField("sound".to_string()))
         );
         assert_eq!(
             description.actions.get(SPAWN_ID),
