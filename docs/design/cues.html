@@ -1,0 +1,484 @@
+<!doctype html>
+<!--
+  The cue proposal for omesser/ai-buddy#277: one visual and one sound per
+  interaction, drawn and synthesized by the Shell so no Character Package
+  changes. The <style> block marked "cues" and the <script> block marked
+  "Cues" are the spec src/main.css and src/main.js port from; the rest is the
+  page that lets a reviewer play them.
+
+  Self-contained on purpose. BMO's idle frame is inlined so the page opens
+  from a clone, a Pages deploy, or an attachment with no other file beside it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buddy Cues</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #3FB3A0;
+    --accent-ink: #0F3F38;
+    --accent-soft: #D6F1EB;
+    --desk-light: linear-gradient(160deg, #F7F8FA, #DCE1EA);
+    --desk-dark: linear-gradient(160deg, #262A36, #101218);
+    --desk-busy: repeating-linear-gradient(45deg, #C86B4A 0 18px, #E8A66B 18px 36px, #3E7C8B 36px 54px, #EFD7A8 54px 72px);
+    --cue-stroke: #FFFFFF;
+    --cue-ink: #24262C;
+    --radius: 10px;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1F232D;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      --accent-ink: #0F3F38;
+      --accent-soft: #1F3A37;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --paper-2: #1F232D;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    --accent-ink: #0F3F38;
+    --accent-soft: #1F3A37;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 28px; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  .lede { color: var(--ink-2); max-width: 62ch; margin: 0; }
+  .lede code, td code, .spec code { font-family: var(--mono); font-size: 0.92em; }
+
+  /* ---- the desktop ---- */
+  .desk-wrap { display: grid; gap: 12px; margin-bottom: 40px; }
+  .desk-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .desk-bar .hint { color: var(--ink-2); font-size: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper-2); gap: 2px; }
+  .seg button {
+    font: inherit; font-weight: 700; font-size: 13px;
+    border: 0; background: transparent; color: var(--ink-2);
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg button:focus-visible, .play:focus-visible, .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .desk {
+    position: relative; height: 300px; border-radius: 14px; overflow: hidden;
+    background: var(--desk-light);
+    border: 1px solid var(--line);
+    touch-action: none;
+  }
+  .desk[data-wall="dark"] { background: var(--desk-dark); }
+  .desk[data-wall="busy"] { background: var(--desk-busy); }
+  .desk .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgba(0,0,0,.18); }
+  .desk[data-wall="dark"] .floor { background: rgba(255,255,255,.18); }
+
+  .sprite {
+    position: absolute; left: 0; top: 0;
+    width: 126px; height: 128px;
+    transform-origin: center;
+    cursor: grab; user-select: none; -webkit-user-drag: none;
+    will-change: transform;
+  }
+  .sprite.held { cursor: grabbing; }
+  .sprite img { display: block; width: 126px; height: 128px; pointer-events: none; }
+
+  /* ---- cues: this block ports to src/main.css ---- */
+  .cue { position: absolute; pointer-events: none; }
+  .cue-ring {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid var(--cue-stroke);
+    box-shadow: 0 0 0 1.5px var(--cue-ink), inset 0 0 0 1.5px var(--cue-ink);
+    transform: translate(-50%, -50%) scale(1);
+    animation: cue-poke 260ms cubic-bezier(.2,.7,.3,1) forwards;
+  }
+  @keyframes cue-poke {
+    from { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+    to   { transform: translate(-50%,-50%) scale(3.4); opacity: 0; }
+  }
+  .cue-ring.in {
+    animation: cue-summon 340ms cubic-bezier(.3,.0,.2,1) forwards;
+  }
+  .cue-ring.in.second { animation-delay: 90ms; opacity: 0; }
+  @keyframes cue-summon {
+    from { transform: translate(-50%,-50%) scale(5); opacity: 0; }
+    30%  { opacity: 1; }
+    to   { transform: translate(-50%,-50%) scale(1.1); opacity: 0; }
+  }
+  @keyframes cue-fade { to { opacity: 0; } }
+
+  /* Menu: a filled ring segment sweeping the whole way round, a radial menu's
+     silhouette. A conic gradient the script advances per frame, masked to a
+     thin donut, so it is vector-crisp at any DPI with no SVG stroke to smear
+     across pixel boundaries. */
+  .cue-wedge {
+    width: 58px; height: 58px; border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: conic-gradient(var(--cue-ink) var(--sweep, 0deg), transparent 0);
+    -webkit-mask: radial-gradient(circle, transparent 0 20px, #000 20.5px 25px, transparent 25.5px);
+            mask: radial-gradient(circle, transparent 0 20px, #000 20.5px 25px, transparent 25.5px);
+    opacity: .85;
+  }
+  .cue-wedge.fading { animation: cue-fade 150ms ease-in forwards; }
+  /* Its white hairlines, a sibling under the same sweep, so the segment has an
+     edge on a dark wallpaper too. */
+  .cue-wedge-edge {
+    width: 58px; height: 58px; border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: conic-gradient(var(--cue-stroke) var(--sweep, 0deg), transparent 0);
+    -webkit-mask: radial-gradient(circle, transparent 0 19px, #000 19.5px 20.5px, transparent 21px 24.5px, #000 25px 26px, transparent 26.5px);
+            mask: radial-gradient(circle, transparent 0 19px, #000 19.5px 20.5px, transparent 21px 24.5px, #000 25px 26px, transparent 26.5px);
+  }
+  .cue-wedge-edge.fading { animation: cue-fade 150ms ease-in forwards; }
+
+  .cue-dash {
+    width: 3px; height: 11px; border-radius: 2px;
+    background: var(--cue-stroke);
+    box-shadow: 0 0 0 1.2px var(--cue-ink);
+    transform: translate(-50%, 0);
+    animation: cue-lift 320ms cubic-bezier(.2,.6,.2,1) forwards;
+  }
+  @keyframes cue-lift {
+    from { transform: translate(-50%, 0) scaleY(1); opacity: 1; }
+    to   { transform: translate(-50%, -30px) scaleY(.5); opacity: 0; }
+  }
+  .cue-puff {
+    width: 20px; height: 8px; border-radius: 50%;
+    border: 2px solid var(--cue-stroke);
+    box-shadow: 0 0 0 1.5px var(--cue-ink), inset 0 0 0 1.5px var(--cue-ink);
+    transform: translate(-50%, -50%) scale(1);
+    animation: cue-land 280ms cubic-bezier(.2,.7,.3,1) forwards;
+  }
+  .cue-puff.hard { animation-duration: 340ms; }
+  @keyframes cue-land {
+    from { transform: translate(-50%,-50%) scaleX(1) scaleY(1); opacity: .95; }
+    to   { transform: translate(-50%,-50%) scaleX(4.6) scaleY(1.3); opacity: 0; }
+  }
+  .cue-puff.hard { animation-name: cue-land-hard; }
+  @keyframes cue-land-hard {
+    from { transform: translate(-50%,-50%) scaleX(1) scaleY(1); opacity: 1; }
+    to   { transform: translate(-50%,-50%) scaleX(6.5) scaleY(1.6); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cue-ring, .cue-wedge, .cue-wedge-edge, .cue-dash, .cue-puff { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  }
+
+  /* ---- the table of cues ---- */
+  h2 { font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px; }
+  .cues { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .row {
+    display: grid; grid-template-columns: 44px 150px 1fr 1fr; gap: 16px; align-items: center;
+    padding: 14px 16px; background: var(--paper);
+  }
+  .row .name { font-weight: 800; font-size: 16px; }
+  .row .gesture { color: var(--ink-3); font-size: 13px; display: block; font-weight: 600; }
+  .row .spec { color: var(--ink-2); font-size: 14px; }
+  .row .spec b { color: var(--ink); font-weight: 700; }
+  .play {
+    width: 40px; height: 40px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center;
+  }
+  .play:active { transform: scale(.94); }
+  .play svg { width: 16px; height: 16px; fill: currentColor; }
+  .row.hard { grid-template-columns: 44px 150px 1fr 1fr; }
+  .row.hard .name { font-weight: 700; color: var(--ink-2); }
+
+  .foot { margin-top: 28px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; color: var(--ink-2); font-size: 14px; }
+  .toggle { font: inherit; font-weight: 700; font-size: 13px; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+  .toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; }
+  .toast { font-family: var(--mono); font-size: 13px; color: var(--ink-2); min-height: 1.5em; }
+
+  @media (max-width: 720px) {
+    .row, .row.hard { grid-template-columns: 44px 1fr; }
+    .row .spec:last-child { grid-column: 2; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Buddy Cues</h1>
+    <p class="lede">Five cues for #277, one per interaction. Click, double-click, right-click, and drag BMO on the desk below. The Summon cue cancels a Poke still in flight; a fast release is a Throw. Every stroke is white on ink, the same pair the speech bubble already uses, so nothing new is introduced to the overlay.</p>
+  </header>
+
+  <section class="desk-wrap">
+    <div class="desk-bar">
+      <span class="hint">Try each gesture on BMO. The wallpaper changes to check that the cues read on any desktop.</span>
+      <div class="seg" role="group" aria-label="Wallpaper">
+        <button data-wall="light" aria-pressed="true">Light</button>
+        <button data-wall="dark" aria-pressed="false">Dark</button>
+        <button data-wall="busy" aria-pressed="false">Busy</button>
+      </div>
+    </div>
+    <div class="desk" id="desk" data-wall="light">
+      <div class="floor"></div>
+      <div class="sprite" id="sprite"><img alt="BMO" src="data:image/png;base64,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"></div>
+    </div>
+    <div class="toast" id="toast">Waiting for the first click.</div>
+  </section>
+
+  <h2>The set</h2>
+  <div class="cues">
+    <div class="row">
+      <button class="play" data-cue="poke" aria-label="Play the Poke cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <div><span class="name">Poke</span><span class="gesture">Left click</span></div>
+      <div class="spec"><b>Ring, outward.</b> One ring grows from the sprite's centre, 24 to 82 px, and fades. <code>260 ms</code>.</div>
+      <div class="spec"><b>Tap.</b> Sine <code>660→600 Hz</code>, 4 ms attack, 140 ms decay. A fingertip on a box.</div>
+    </div>
+    <div class="row">
+      <button class="play" data-cue="summon" aria-label="Play the Summon cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <div><span class="name">Summon</span><span class="gesture">Double click</span></div>
+      <div class="spec"><b>Two rings, inward.</b> Poke played backwards, twice, 90 ms apart — the double, and a pull toward the sprite. <code>430 ms</code>.</div>
+      <div class="spec"><b>Call.</b> Two triangle notes, <code>C5</code> then <code>G5</code>, 130 ms each, the second at 110 ms. Rises, like asking.</div>
+    </div>
+    <div class="row">
+      <button class="play" data-cue="menu" aria-label="Play the Menu cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <div><span class="name">Menu</span><span class="gesture">Right click</span></div>
+      <div class="spec"><b>Filled sweep.</b> A thin dark ring segment, 4.5 px in a 58 px circle, sweeps the whole way round from twelve and fades — a radial menu's silhouette. Conic gradient, no SVG stroke, so it is crisp at any DPI. <code>240 + 150 ms</code>.</div>
+      <div class="spec"><b>Latch.</b> Two square-wave ticks, <code>320 Hz</code> then <code>240 Hz</code>, 35 ms each through a low-pass. Mechanical, unlike Poke's soft tap.</div>
+    </div>
+    <div class="row">
+      <button class="play" data-cue="pickup" aria-label="Play the Pickup cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <div><span class="name">Pickup</span><span class="gesture">Drag begins</span></div>
+      <div class="spec"><b>Dashes, upward.</b> Four short dashes leave the feet and rise 30 px, staggered 25 ms. The ground letting go. <code>320 ms</code>.</div>
+      <div class="spec"><b>Lift.</b> Sine sweep <code>280→720 Hz</code> over 140 ms. Up, the direction the sprite went.</div>
+    </div>
+    <div class="row">
+      <button class="play" data-cue="drop" aria-label="Play the Drop cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <div><span class="name">Drop</span><span class="gesture">Drag ends, still</span></div>
+      <div class="spec"><b>Puff, sideways.</b> A flat ellipse at the feet spreads to 92 px wide and fades. Dust on landing. <code>280 ms</code>.</div>
+      <div class="spec"><b>Thud.</b> Sine <code>160→55 Hz</code> over 120 ms, 160 ms decay. Down, and heavier than anything else in the set.</div>
+    </div>
+    <div class="row hard">
+      <button class="play" data-cue="throw" aria-label="Play the Throw cue"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg></button>
+      <div><span class="name">Throw</span><span class="gesture">Drag ends, moving</span></div>
+      <div class="spec"><b>Drop, harder.</b> Same puff, 130 px wide, 340 ms. Not a sixth shape — the same shape with more force behind it.</div>
+      <div class="spec"><b>Thud, harder.</b> <code>220→55 Hz</code>, 1.6× the gain, 200 ms decay.</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <button class="toggle" id="sound" aria-pressed="true">Sound on</button>
+    <button class="toggle" id="sequence">Play the set in order</button>
+    <span>Master gain is 0.5. Timings are the proposal, not the ceiling — every number here is a knob.</span>
+  </div>
+</div>
+
+<script>
+// ---- Cues. This block ports to src/ as the cue machine. ----
+// Every visual is one element added and removed on animationend; every sound
+// is one oscillator with a gain envelope. Nothing is loaded, nothing persists.
+
+const MASTER = 0.5;
+let ctx = null;
+let soundOn = true;
+function audio() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+// A voice is a gain node the cue can be cut through. Summon cuts a Poke that
+// is still sounding; the cut is a 15 ms ramp so it does not click.
+function voice(gain) {
+  const ac = audio();
+  const g = ac.createGain();
+  g.gain.value = 0;
+  g.connect(ac.destination);
+  return { ac, g, cut() { const t = ac.currentTime; g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0, t + 0.015); } };
+}
+function tone(v, { type = "sine", from, to = from, at = 0, attack = 0.004, hold = 0, decay = 0.14, peak = 0.25, lowpass = null }) {
+  const { ac, g } = v;
+  const t0 = ac.currentTime + at;
+  const osc = ac.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(from, t0);
+  if (to !== from) osc.frequency.exponentialRampToValueAtTime(to, t0 + attack + hold + decay);
+  let out = osc;
+  if (lowpass) { const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = lowpass; osc.connect(f); out = f; }
+  // Per-note envelope on its own gain so two notes in one voice do not fight;
+  // the voice gain above them is the one a cancel cuts.
+  const env = ac.createGain();
+  out.connect(env); env.connect(g);
+  env.gain.setValueAtTime(0, t0);
+  env.gain.linearRampToValueAtTime(peak * MASTER, t0 + attack);
+  env.gain.setValueAtTime(peak * MASTER, t0 + attack + hold);
+  env.gain.exponentialRampToValueAtTime(0.0005, t0 + attack + hold + decay);
+  g.gain.setValueAtTime(1, t0);
+  osc.start(t0);
+  osc.stop(t0 + attack + hold + decay + 0.02);
+}
+
+const SOUNDS = {
+  poke:   v => tone(v, { from: 660, to: 600, decay: 0.14, peak: 0.25 }),
+  summon: v => { tone(v, { type: "triangle", from: 523.25, attack: 0.008, decay: 0.13, peak: 0.22 });
+                 tone(v, { type: "triangle", from: 783.99, attack: 0.008, decay: 0.16, peak: 0.22, at: 0.11 }); },
+  menu:   v => { tone(v, { type: "square", from: 320, attack: 0.002, decay: 0.035, peak: 0.12, lowpass: 1200 });
+                 tone(v, { type: "square", from: 240, attack: 0.002, decay: 0.035, peak: 0.08, lowpass: 1200, at: 0.06 }); },
+  pickup: v => tone(v, { from: 280, to: 720, attack: 0.006, decay: 0.14, peak: 0.2 }),
+  drop:   v => tone(v, { from: 160, to: 55, attack: 0.004, decay: 0.16, peak: 0.3 }),
+  throw:  v => tone(v, { from: 220, to: 55, attack: 0.004, decay: 0.2, peak: 0.48 }),
+};
+
+function el(cls, x, y, tag = "div") {
+  const e = tag === "svg" ? document.createElementNS("http://www.w3.org/2000/svg", "svg") : document.createElement(tag);
+  e.setAttribute("class", "cue " + cls);
+  e.style.left = x + "px"; e.style.top = y + "px";
+  return e;
+}
+function reap(node, child) {
+  // Remove on the last animation to end, so a stagger does not cut its siblings.
+  let pending = child ? child.length : 1;
+  const done = () => { if (--pending <= 0) node.remove(); };
+  (child || [node]).forEach(c => c.addEventListener("animationend", done, { once: true }));
+}
+
+const VISUALS = {
+  poke(stage, c) { const r = el("cue-ring", c.x, c.y); stage.append(r); reap(r); return r; },
+  summon(stage, c) {
+    const a = el("cue-ring in", c.x, c.y); const b = el("cue-ring in second", c.x, c.y);
+    stage.append(a, b); reap(a); reap(b); return a;
+  },
+  menu(stage, c) {
+    // Whole pixels: a ring this thin smears when its centre sits between them.
+    const x = Math.round(c.x), y = Math.round(c.y);
+    const fill = el("cue-wedge", x, y), edge = el("cue-wedge-edge", x, y);
+    stage.append(fill, edge);
+    // Advance the sweep by hand: a custom property cannot be keyframed
+    // without @property, and this stays portable to the GTK WebKit.
+    const t0 = performance.now(), sweepMs = 240;
+    const ease = p => 1 - Math.pow(1 - p, 3);
+    const step = now => {
+      const p = Math.min(1, (now - t0) / sweepMs);
+      const deg = (ease(p) * 360).toFixed(1) + "deg";
+      fill.style.setProperty("--sweep", deg); edge.style.setProperty("--sweep", deg);
+      if (p < 1) requestAnimationFrame(step);
+      else { fill.classList.add("fading"); edge.classList.add("fading"); reap(fill); reap(edge); }
+    };
+    requestAnimationFrame(step);
+    return fill;
+  },
+  pickup(stage, c) {
+    const ds = [-30, -10, 10, 30].map((dx, i) => { const d = el("cue-dash", c.feetX + dx, c.feetY - 12); d.style.animationDelay = (i * 25) + "ms"; return d; });
+    const g = document.createElement("div"); g.className = "cue"; g.append(...ds); stage.append(g); reap(g, ds); return g;
+  },
+  drop(stage, c)  { const p = el("cue-puff", c.feetX, c.feetY - 2); stage.append(p); reap(p); return p; },
+  throw(stage, c) { const p = el("cue-puff hard", c.feetX, c.feetY - 2); stage.append(p); reap(p); return p; },
+};
+
+// One in-flight Poke at a time is remembered, because Summon has to cancel it.
+let inflightPoke = null;
+function play(name, stage, anchor) {
+  if (name === "summon" && inflightPoke) { inflightPoke.node.remove(); inflightPoke.voice.cut(); inflightPoke = null; }
+  const node = VISUALS[name](stage, anchor);
+  let v = null;
+  if (soundOn) { v = voice(); SOUNDS[name](v); }
+  if (name === "poke") { inflightPoke = { node, voice: v || { cut() {} } }; setTimeout(() => { if (inflightPoke && inflightPoke.node === node) inflightPoke = null; }, 400); }
+  toast(name);
+}
+
+// ---- Demo plumbing: the desk, the sprite, and the gesture decoder. ----
+// Mirrors crates/core/src/input.rs: a press is a Poke until it moves 4 px or
+// is held 180 ms, then it is a Grab; a second release within 400 ms is a
+// Summon alone; a release faster than 80 px/s is a Throw.
+const desk = document.getElementById("desk");
+const sprite = document.getElementById("sprite");
+const toastEl = document.getElementById("toast");
+const W = 126, H = 128;
+let pos = { x: 0, y: 0 };
+function place() { sprite.style.transform = `translate(${pos.x}px, ${pos.y}px)`; }
+function floorY() { return desk.clientHeight - H; }
+function ground() { pos.y = floorY(); place(); }
+pos.x = Math.round(desk.clientWidth / 2 - W / 2); ground();
+window.addEventListener("resize", () => { pos.x = Math.min(pos.x, desk.clientWidth - W); if (!held) ground(); });
+
+function anchor() { return { x: pos.x + W / 2, y: pos.y + H / 2, feetX: pos.x + W / 2, feetY: pos.y + H }; }
+function toast(name) {
+  const said = { poke: "Poke", summon: "Summon — cancelled the Poke still in flight", menu: "Menu", pickup: "Pickup", drop: "Drop", throw: "Throw" };
+  toastEl.textContent = said[name];
+}
+
+let held = false, phase = "idle", pressAt = null, pressT = 0, lastClickT = -Infinity, summoned = false;
+let samples = [];
+sprite.addEventListener("contextmenu", e => e.preventDefault());
+desk.addEventListener("contextmenu", e => e.preventDefault());
+sprite.addEventListener("pointerdown", e => {
+  if (e.button === 2) { play("menu", desk, anchor()); return; }
+  if (e.button !== 0) return;
+  sprite.setPointerCapture(e.pointerId);
+  phase = "pressed"; pressAt = { x: e.clientX, y: e.clientY, sx: pos.x, sy: pos.y }; pressT = performance.now(); samples = [];
+  holdTimer = setTimeout(() => { if (phase === "pressed") grab(); }, 180);
+});
+let holdTimer = null;
+function grab() { phase = "grabbing"; held = true; sprite.classList.add("held"); play("pickup", desk, anchor()); }
+sprite.addEventListener("pointermove", e => {
+  if (phase === "pressed" && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) >= 4) { clearTimeout(holdTimer); grab(); }
+  if (phase !== "grabbing") return;
+  pos.x = Math.max(0, Math.min(desk.clientWidth - W, pressAt.sx + e.clientX - pressAt.x));
+  pos.y = Math.max(0, Math.min(floorY(), pressAt.sy + e.clientY - pressAt.y));
+  place();
+  const now = performance.now(); samples.push({ t: now, x: e.clientX, y: e.clientY }); samples = samples.filter(s => now - s.t <= 60);
+});
+sprite.addEventListener("pointerup", e => {
+  if (e.button !== 0) return;
+  clearTimeout(holdTimer);
+  if (phase === "pressed") {
+    const now = performance.now();
+    const paired = now - lastClickT <= 400;
+    lastClickT = now;
+    if (!paired) summoned = false;
+    if (paired && !summoned) { summoned = true; play("summon", desk, anchor()); }
+    else play("poke", desk, anchor());
+  } else if (phase === "grabbing") {
+    lastClickT = -Infinity;
+    let speed = 0;
+    if (samples.length >= 2) { const a = samples[0], b = samples[samples.length - 1]; const dt = (b.t - a.t) / 1000; if (dt > 0) speed = Math.hypot(b.x - a.x, b.y - a.y) / dt; }
+    held = false; sprite.classList.remove("held");
+    ground();
+    play(speed >= 80 ? "throw" : "drop", desk, anchor());
+  }
+  phase = "idle";
+});
+
+// Replay buttons, wallpaper, sound, and the sequence.
+document.querySelectorAll(".play").forEach(b => b.addEventListener("click", () => play(b.dataset.cue, desk, anchor())));
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+  desk.dataset.wall = b.dataset.wall;
+  document.querySelectorAll(".seg button").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+}));
+const soundBtn = document.getElementById("sound");
+soundBtn.addEventListener("click", () => { soundOn = !soundOn; soundBtn.setAttribute("aria-pressed", String(soundOn)); soundBtn.textContent = soundOn ? "Sound on" : "Sound off"; });
+document.getElementById("sequence").addEventListener("click", () => {
+  ["poke", "summon", "menu", "pickup", "drop", "throw"].forEach((n, i) => setTimeout(() => play(n, desk, anchor()), i * 900));
+});
+</script>
+</body>
+</html>
