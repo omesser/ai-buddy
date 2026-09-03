@@ -16,15 +16,20 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "targets": [
-      "app"
+      "dmg",
+      "appimage",
+      "deb"
     ],
     "icon": [
       "icons/icon.png"
     ],
     "resources": {
       "../characters": "characters"
+    },
+    "macOS": {
+      "signingIdentity": "-"
     }
   },
   "plugins": {

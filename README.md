@@ -103,25 +103,68 @@ What the cells leave out:
   sprite's right-click menu is the settings door without one. See
   [Linux](#linux).
 
-## Running it
+## Install
 
-macOS, Linux (X11), and Windows (stubbed deliberately — see
-[docs/SPEC.md](./docs/SPEC.md)).
+Download a build from
+[GitHub Releases](https://github.com/omesser/ai-buddy/releases).
+
+Or clone and run from the repo root (macOS, Linux, Windows stub):
 
 ```sh
-cd src-tauri
-cargo run
+git clone https://github.com/omesser/ai-buddy.git
+cd ai-buddy
+cargo run -p ai-buddy
 ```
+
+Linux packages, toolchains, and hooks are under
+[Development](#development).
+
+### macOS
+
+Apple Silicon. The Release ships a `.dmg`. Open it and copy `ai-buddy`
+to Applications.
+
+The build is ad-hoc signed, not notarized, so Gatekeeper will warn on
+the first open. Double-click the app, dismiss the dialog, then System
+Settings → Privacy & Security → Open Anyway. Note the button is
+time-limited after the blocked launch. Developer ID and notarization are
+a follow-up.
 
 ### Linux
 
-On Linux, the tray icon requires a StatusNotifier host (typically provided by
-the desktop panel: GNOME Shell, KDE Plasma, XFCE panel). A dock such as Plank
-is not one — the tray installs, and no icon appears. On Debian/Ubuntu,
-`xfce4-panel` (Status Tray plugin) is a host that works. At runtime, one
-of `libayatana-appindicator3-1` or `libappindicator3-1` must be installed.
-`libayatana` is preferred and is the one Tauri detects first when both are
-present.
+The Release ships an AppImage and a `.deb` (x86_64).
+
+Under Wayland the sprite keeps to screen edges and loses window Perches,
+which is a supported mode rather than an error. X11 gets both.
+[Platform support](#platform-support) lists everything the session type
+decides.
+
+At runtime, one of `libayatana-appindicator3-1` or `libappindicator3-1`
+must be installed if you want a tray icon. `libayatana` is preferred.
+The tray also needs a StatusNotifier host in the panel (GNOME Shell, KDE
+Plasma, XFCE's Status Tray plugin). A dock such as Plank is not one —
+the tray installs, and no icon appears. On Wayland, a compositor without
+a tray protocol shows no icon; the sprite's context menu (right-click)
+is then the settings door.
+
+```sh
+# Debian/Ubuntu .deb
+sudo apt install ./ai-buddy_*.deb
+# or: AppImage (needs libfuse2 on Ubuntu 22.04, libfuse2t64 on 24.04+)
+# sudo apt install libfuse2    # or libfuse2t64
+# chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
+```
+
+Windows is stubbed for now; there is no Windows package yet (coming soon).
+
+## Running it
+
+Download a build from [Install](#install) or build from a checkout as in
+[Development](#development).
+
+### Linux
+
+Tray and Wayland notes are under [Install](#install).
 
 For development, install `libayatana-appindicator3-dev`:
 
@@ -129,10 +172,6 @@ For development, install `libayatana-appindicator3-dev`:
 # Debian/Ubuntu
 sudo apt install libayatana-appindicator3-dev
 ```
-
-**Wayland**: A compositor without a tray protocol shows no icon. The sprite's
-context menu (right-click) remains the only settings door until a panel
-exists. This is a degraded mode, not an error.
 
 No bundler: the front end is static files under `src/`, which Tauri embeds at
 build time.
@@ -359,6 +398,12 @@ before it writes anything. That is why the local cap defaults to 512 rather
 than 80.
 
 ## Development
+
+From a clone, with a Rust toolchain:
+
+```sh
+cargo run -p ai-buddy
+```
 
 ### Linux dependencies
 

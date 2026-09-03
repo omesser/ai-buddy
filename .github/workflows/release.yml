@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version-override:
+        description: 'Stamp this version on the bundles. Leave empty to use the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Two runners, two installers. macOS is the real overlay; Linux supports
+  # window Perches on X11, degraded Spatial Layer on Wayland. Windows is
+  # stubbed in v1 (SPEC) and is not a bundle target, so it has no row.
+  #
+  # Every run builds the same bundles and leaves them on the run page. A
+  # Release run additionally attaches them to the Release the human
+  # published in GitHub's UI, which is also what created the tag; this job
+  # never creates either. tests.yml already gated the merge.
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            bundles: dmg
+          - os: ubuntu-latest
+            bundles: appimage,deb
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          # A manual run reads its version off the commit it was pointed at,
+          # which takes tags, and checkout fetches none by default. Tags
+          # only, not fetch-depth: 0 — this repo's history is ~900 MB.
+          fetch-tags: true
+
+      - name: The version that ships
+        # git names the version, never tauri.conf.json. Three sources, in
+        # order: version-override, for a run that has to stamp a specific
+        # number; the Release's tag; the tag on the commit the run was
+        # pointed at. Falling off the end, the highest release tag plus a
+        # -dev prerelease reads as "after that release, not yet a release",
+        # and the short SHA keeps two dev bundles off one filename.
+        #
+        # 0.0.0 covers a repo with no tags at all, which is today.
+        id: ver
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          # Bracket syntax, not inputs.version-override: an expression reads
+          # the hyphen as subtraction and yields nothing.
+          OVERRIDE: ${{ inputs['version-override'] }}
+        run: |
+          version="${OVERRIDE#v}"
+          if [ -z "$version" ]; then
+            [ -n "$TAG" ] || TAG=$(git tag --points-at HEAD --sort=-v:refname | head -n 1)
+            if [ -n "$TAG" ]; then
+              version="${TAG#v}"
+            else
+              base=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+              base="${base#v}"
+              version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
+            fi
+          fi
+          # A typo in the input reaches the bundle filenames and the macOS
+          # Info.plist, where it is nobody's idea of a version. This checks
+          # semver's shape, not every rule in it.
+          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || {
+            echo "::error::version '$version' is not semver: expected 1.2.3, 1.2.3-dev.gabc1234"
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building \`$version\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: release-${{ matrix.os }}
+          cache-on-failure: true
+
+      - name: Install the Linux system packages
+        # Same set tests.yml uses to link the shell. patchelf is what the
+        # AppImage bundler patches with; skip it and the Linux job dies
+        # after compiling. Not cached: unpacking WebKit headers dominates.
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev
+
+      - name: Set up Node
+        # tauri-action installs @tauri-apps/cli through npm. The app itself
+        # has no Node build step (frontendDist is static files under src/).
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+
+      - name: Build the packages
+        # projectPath is src-tauri so the action uses this app's
+        # tauri.conf.json rather than walking the repo and guessing.
+        # --bundles keeps each OS on the installer that OS can produce;
+        # the conf lists all three so a local `tauri build` matches CI.
+        #
+        # Workflow artifacts are unconditional: every run's bundles belong
+        # on its own run page, whatever triggered it. The release inputs
+        # are all a Release run adds, and they are empty otherwise, which
+        # is how the action is told there is no Release to attach to.
+        #
+        # No updater signing key: updater signatures are #200, and
+        # createUpdaterArtifacts is false until that key exists. No Apple
+        # certificate: signingIdentity "-" in tauri.conf.json is ad-hoc
+        # (#132's signed-enough first drop; notarization is a follow-up).
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: src-tauri
+          releaseId: ${{ github.event.release.id }}
+          tagName: ${{ github.event.release.tag_name }}
+          uploadWorkflowArtifacts: true
+          args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
