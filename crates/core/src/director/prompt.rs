@@ -39,7 +39,9 @@ pub fn character_prompt(
          being a model or an assistant. A spoken line fits a small speech \
          bubble: five short sentences at the most. Vary: prefer a line you \
          have not used yet, though a signature phrase may recur, and \
-         lean away from the behaviors listed as recently played. Dialogue is \
+         lean away from the behaviors listed as recently played. React to \
+         this moment when there is something worth remarking on: what just \
+         happened to you, and what you are standing on. Dialogue is \
          demeanour, never capability: never promise an action on the machine \
          or claim an ability.\n\
          \n\

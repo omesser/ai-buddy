@@ -1256,8 +1256,16 @@ mod tests {
             "demeanour, not capability: {payload}"
         );
         assert!(
+            payload.contains("React to this moment when there is something worth remarking on"),
+            "the wake facts are material to play off, not background: {payload}"
+        );
+        assert!(
             !follow_up(&moment).contains("always in character"),
             "the rules ride the opening only; later wakes stay cheap"
+        );
+        assert!(
+            !follow_up(&moment).contains("React to this moment"),
+            "the nudge is a rule too, and rides the opening with the rest"
         );
     }
 
