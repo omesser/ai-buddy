@@ -215,13 +215,25 @@ pub fn refresh_settings() {
     macos::refresh_settings()
 }
 
-/// v1 settings is AppKit. Other platforms have no window until they have one.
-#[cfg(not(target_os = "macos"))]
-pub fn show_settings(_session: crate::settings::SettingsSession) {
-    eprintln!("settings: the native window is macOS in v1");
+/// Open the native GTK settings window on Linux. Main thread only.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn show_settings(session: crate::settings::SettingsSession) {
+    x11::show_settings(session)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Redraw the GTK settings window from the live roster. Main thread only.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn refresh_settings() {
+    x11::refresh_settings()
+}
+
+/// Windows is stubbed: `docs/SPEC.md` puts it out of scope for v1.
+#[cfg(not(unix))]
+pub fn show_settings(_session: crate::settings::SettingsSession) {
+    eprintln!("settings: the native window is Windows in a later version");
+}
+
+#[cfg(not(unix))]
 pub fn refresh_settings() {}
 
 /// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.

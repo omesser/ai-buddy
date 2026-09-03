@@ -24,6 +24,7 @@ dependencies = [
  "ai-buddy-core",
  "base64 0.23.1",
  "bytemuck",
+ "gtk",
  "keyring",
  "objc2",
  "objc2-app-kit",

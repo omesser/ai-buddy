@@ -96,6 +96,7 @@ impl SettingsView {
 
     /// The pane copy. The listed name is live: a `cargo run` from Cursor is
     /// Cursor, a packaged build is ai-buddy.
+    #[cfg(target_os = "macos")]
     pub fn consent_intro(&self) -> String {
         consent::pane_intro(&self.consent_listed_as)
     }
@@ -387,7 +388,15 @@ fn open_in_editor(path: &Path) -> Result<(), String> {
     if !path.exists() {
         fs::write(path, "").map_err(|error| error.to_string())?;
     }
-    std::process::Command::new("open")
+
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let opener = "xdg-open";
+    #[cfg(not(unix))]
+    let opener = "start";
+
+    std::process::Command::new(opener)
         .arg(path)
         .spawn()
         .map(|_| ())
@@ -948,6 +957,7 @@ mod tests {
             use_accessibility: true,
             use_screen_recording: false,
         };
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
         let mut view = SettingsView::from_parts(
             &settings,
             Path::new("/tmp/ai-buddy/memory.md"),
@@ -983,12 +993,15 @@ mod tests {
             "the checkbox follows settings intent, not the OS grant"
         );
         assert!(!view.consent[1].granted);
-        view.consent_listed_as = "Cursor".into();
-        assert!(
-            view.consent_intro().contains("Cursor"),
-            "the pane has to name the TCC row, got {:?}",
-            view.consent_intro()
-        );
+        #[cfg(target_os = "macos")]
+        {
+            view.consent_listed_as = "Cursor".into();
+            assert!(
+                view.consent_intro().contains("Cursor"),
+                "the pane has to name the TCC row, got {:?}",
+                view.consent_intro()
+            );
+        }
     }
 
     #[test]

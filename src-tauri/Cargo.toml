@@ -54,6 +54,9 @@ x11rb = {version = "0.14", features = ["allow-unsafe-code", "randr", "xfixes", "
 raw-window-handle = "0.6"
 # Cast atom arrays to bytes for X11 property changes.
 bytemuck = "1.16"
+# GTK 3 for native Linux settings window. Tauri 2's WebKitGTK uses GTK 3,
+# so this adds no second GTK major version.
+gtk = "0.18"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The context menu (#155) is not here: `tauri::menu` already wraps the menu
