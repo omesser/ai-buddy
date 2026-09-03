@@ -483,8 +483,8 @@ impl Settings {
 ///
 /// Three modifiers, because a global shortcut is taken from every application
 /// on the machine and B alone belongs to most of them. One canonical spelling
-/// that `parse_hotkey` reads on every OS — what a user *reads* is
-/// `Hotkey::display`, which asks the platform for its own words (#194).
+/// that `parse_hotkey` reads on every OS; what a user reads is
+/// `display_hotkey`, in the words that OS gives the keys (#194).
 pub const DEFAULT_HIDE_HOTKEY: &str = "Control-Option-Command-B";
 
 /// Everything settings owns. Defaults are the v1 first-run answers.
@@ -502,7 +502,13 @@ pub struct Settings {
     /// Fade away when a fullscreen application is frontmost.
     pub hide_in_fullscreen: bool,
     /// One canonical spec, in any platform's words. Read with `parse_hotkey`
-    /// and shown with `display_hotkey` — never printed raw (#194).
+    /// and shown to a user with `display_hotkey`, never raw (#194).
+    ///
+    /// A string rather than the `Hotkey` it parses into, which would otherwise
+    /// be the honest type: `load` turns any parse failure into whole-file
+    /// defaults, so a struct-shaped field meeting a string in an installed
+    /// `settings.json` would silently reset every other setting with it.
+    /// Persist the struct only behind a deserializer that accepts both shapes.
     pub hide_hotkey: String,
     pub launch_at_login: bool,
     pub excluded_applications: Vec<String>,
@@ -586,6 +592,9 @@ pub struct Hotkey {
 
 /// Read `Control-Option-Command-B` into parts. Unknown tokens refuse the
 /// whole string so a typo cannot silently drop a modifier.
+///
+/// Each alias set is one key under every OS's name for it, `Win` included, so
+/// that everything `Hotkey::display` prints is something this reads back.
 pub fn parse_hotkey(spec: &str) -> Option<Hotkey> {
     let mut hotkey = Hotkey {
         control: false,
@@ -646,25 +655,13 @@ impl ModifierWords {
         }
     }
 
-    fn control(self) -> &'static str {
+    /// Control, Option and Command under these words. Shift is Shift
+    /// everywhere, so it is not in the table.
+    fn names(self) -> (&'static str, &'static str, &'static str) {
         match self {
-            Self::Mac => "Control",
-            Self::Linux | Self::Windows => "Ctrl",
-        }
-    }
-
-    fn option(self) -> &'static str {
-        match self {
-            Self::Mac => "Option",
-            Self::Linux | Self::Windows => "Alt",
-        }
-    }
-
-    fn command(self) -> &'static str {
-        match self {
-            Self::Mac => "Command",
-            Self::Linux => "Super",
-            Self::Windows => "Win",
+            Self::Mac => ("Control", "Option", "Command"),
+            Self::Linux => ("Ctrl", "Alt", "Super"),
+            Self::Windows => ("Ctrl", "Alt", "Win"),
         }
     }
 }
@@ -676,18 +673,19 @@ impl Hotkey {
     /// Every spelling it prints is one `parse_hotkey` reads back, because the
     /// settings hotkey field shows this string and takes it again on rebind.
     pub fn display(&self, words: ModifierWords) -> String {
+        let (control, option, command) = words.names();
         let mut parts = Vec::with_capacity(5);
         if self.control {
-            parts.push(words.control());
+            parts.push(control);
         }
         if self.option {
-            parts.push(words.option());
+            parts.push(option);
         }
         if self.shift {
             parts.push("Shift");
         }
         if self.command {
-            parts.push(words.command());
+            parts.push(command);
         }
         let letter = self.key.to_ascii_uppercase().to_string();
         parts.push(&letter);
@@ -1041,7 +1039,7 @@ mod tests {
         assert!(view.do_not_disturb);
         assert!(view.hidden);
         assert!(!view.hide_in_fullscreen);
-        assert_eq!(view.hide_hotkey, "Control-Shift-H");
+        assert_eq!(view.hide_hotkey, display_hotkey("Control-Shift-H"));
         assert_eq!(view.excluded_text(), "1Password\nKeychain Access");
         assert_eq!(view.character, "nim");
         assert_eq!(view.memory_path, "/tmp/ai-buddy/memory.md");
@@ -1356,8 +1354,8 @@ mod tests {
         assert_eq!(parse_hotkey(""), None);
     }
 
-    /// The words are the whole change: one chord, four spellings, and the file
-    /// keeps whichever of them the user last named.
+    /// One chord in four spellings, because the file keeps whichever of them
+    /// the user last named.
     #[test]
     fn one_chord_parses_the_same_from_every_platforms_words() {
         let mac = parse_hotkey("Control-Option-Command-B").expect("mac words");
@@ -1366,35 +1364,23 @@ mod tests {
         assert_eq!(parse_hotkey("Ctrl-Alt-Meta-B"), Some(mac));
     }
 
-    #[test]
-    fn the_shipped_default_still_reads_as_a_mac_chord_on_a_mac() {
-        let hotkey = parse_hotkey(DEFAULT_HIDE_HOTKEY).expect("default parses");
-        assert_eq!(
-            hotkey.display(ModifierWords::Mac),
-            "Control-Option-Command-B"
-        );
-    }
-
     /// #194: the menu used to print the stored Mac spelling everywhere, which
-    /// names keys a Linux keyboard does not have.
+    /// names keys a Linux or Windows keyboard does not have.
     #[test]
-    fn the_shipped_default_reads_as_a_linux_chord_for_linux() {
-        let printed = parse_hotkey(DEFAULT_HIDE_HOTKEY)
-            .expect("default parses")
-            .display(ModifierWords::Linux);
-        assert_eq!(printed, "Ctrl-Alt-Super-B");
-        assert!(!printed.contains("Option"));
-        assert!(!printed.contains("Command"));
-    }
-
-    #[test]
-    fn the_shipped_default_reads_as_a_windows_chord_for_windows() {
-        let printed = parse_hotkey(DEFAULT_HIDE_HOTKEY)
-            .expect("default parses")
-            .display(ModifierWords::Windows);
-        assert_eq!(printed, "Ctrl-Alt-Win-B");
-        assert!(!printed.contains("Option"));
-        assert!(!printed.contains("Command"));
+    fn the_shipped_default_reads_as_each_platforms_own_chord() {
+        let default = parse_hotkey(DEFAULT_HIDE_HOTKEY).expect("default parses");
+        for (words, expected) in [
+            (ModifierWords::Mac, "Control-Option-Command-B"),
+            (ModifierWords::Linux, "Ctrl-Alt-Super-B"),
+            (ModifierWords::Windows, "Ctrl-Alt-Win-B"),
+        ] {
+            assert_eq!(default.display(words), expected);
+        }
+        for words in [ModifierWords::Linux, ModifierWords::Windows] {
+            let printed = default.display(words);
+            assert!(!printed.contains("Option"), "{printed} names a Mac key");
+            assert!(!printed.contains("Command"), "{printed} names a Mac key");
+        }
     }
 
     /// What `display` prints is also what the hotkey field accepts back, or a
