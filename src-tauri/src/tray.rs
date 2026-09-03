@@ -21,8 +21,7 @@ pub fn install(
     let menu = menu::build(app, description)?;
 
     let tray_icon_bytes = include_bytes!("../icons/tray.png");
-    let decoded = image::load_from_memory(tray_icon_bytes)
-        .expect("Failed to decode tray icon PNG");
+    let decoded = image::load_from_memory(tray_icon_bytes).expect("Failed to decode tray icon PNG");
     let rgba = decoded.to_rgba8();
     let (width, height) = rgba.dimensions();
     let tray_icon = Image::new_owned(rgba.into_raw(), width, height);
