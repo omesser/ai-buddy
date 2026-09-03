@@ -22,4 +22,5 @@ Comments say why, not what, and earn their length. See `docs/agents/comments.md`
 
 ## Writing
 
-Squash merges make the pull request title the only line that reaches `git log`. See `docs/agents/writing.md`.
+Squash merges make the pull request title the only line that reaches `git log`.
+An agent signs every comment it writes on GitHub. See `docs/agents/writing.md`.

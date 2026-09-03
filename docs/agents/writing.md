@@ -72,3 +72,21 @@ makes them reconstruct the problem from the diff.
 
 A pull request small enough that all three answers are one sentence each should
 give one sentence each. The template is a floor, not a quota.
+
+## An agent signs what it writes on GitHub
+
+End every issue comment, pull request description, review and inline reply an
+agent writes with one line of its own:
+
+```
+_— Cursor agent, on @omesser's behalf._
+```
+
+An agent writes through the maintainer's account, so the author name never says
+who wrote a comment. A reader following a back-and-forth needs that: which line
+to argue with, and which is a decision already taken. `Co-authored-by` records
+authorship on commits only, and GitHub has no author field an agent can set.
+
+Sign once per body, at the end. What the maintainer writes stays unsigned, so
+the missing line carries meaning too. If an agent revises a body the maintainer
+wrote, leave that text unsigned and say what changed in a comment of its own.
