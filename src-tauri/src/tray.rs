@@ -26,27 +26,19 @@ pub fn install(
     let (width, height) = rgba.dimensions();
     let tray_icon = Image::new_owned(rgba.into_raw(), width, height);
 
-    TrayIconBuilder::new()
+    let icon = TrayIconBuilder::new()
         .menu(&menu)
         .icon(tray_icon)
         .show_menu_on_left_click(true)
-<<<<<<< HEAD
-        .tooltip("ai-buddy");
-
-    if let Some(icon) = app.default_window_icon() {
-        builder = builder.icon(icon.clone());
-    }
-
-    let icon = builder.build(app)?;
+        .tooltip("ai-buddy")
+        .build(app)?;
+    
     #[cfg(target_os = "macos")]
     if let Err(why) = crate::platform::tune_tray_icon(&icon) {
         eprintln!("tray: tune icon: {why}");
     }
+    
     Ok(icon)
-=======
-        .tooltip("ai-buddy")
-        .build(app)
->>>>>>> dcafb7d (Wire Oded's product logo and tray mark into the app)
 }
 
 /// Rebuild the tray menu after a toggle, so the checkboxes match the Engine.
