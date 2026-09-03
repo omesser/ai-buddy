@@ -133,3 +133,8 @@ when = "idle over 3m"
 play = ["sit", "sleep"]
 weight = 4
 when = "idle over 5m"
+
+[behaviors.pursue]
+play = ["chase"]
+weight = 3
+when = "idle over 30s"
