@@ -1,16 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
@@ -18,10 +16,9 @@ jobs:
   # window Perches on X11, degraded Spatial Layer on Wayland. Windows is
   # stubbed in v1 (SPEC) and is not a bundle target, so it has no row.
   #
-  # Trigger is a version tag, not every push to main: a Release is a
-  # published artifact, and tests.yml already gates the merge. Draft so a
-  # human publishes — the first drop is unsigned-by-Apple (ad-hoc only)
-  # and should not go live by the act of pushing a tag.
+  # The human cuts the Release in GitHub's UI (which creates the tag).
+  # This job attaches the installers to that Release; it does not create
+  # one. tests.yml already gated the merge.
   package:
     strategy:
       fail-fast: false
@@ -39,14 +36,16 @@ jobs:
         uses: actions/checkout@v7
 
       - name: The tag and the app version agree
-        # Artifact filenames come from tauri.conf.json, the release name from the
-        # tag. Nothing reconciles them, so a tag that ran ahead of the version
-        # ships ai-buddy_0.1.0_*.dmg inside a release called v0.2.0.
-        if: github.event_name == 'push'
+        # Artifact filenames come from tauri.conf.json, the Release title
+        # from the human. Nothing reconciles them, so a tag that ran ahead
+        # of the version ships ai-buddy_0.1.0_*.dmg inside a Release called
+        # v0.2.0.
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           conf=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
-          [ "v$conf" = "${{ github.ref_name }}" ] || {
-            echo "tag ${{ github.ref_name }} != tauri.conf.json $conf"; exit 1; }
+          [ "v$conf" = "$TAG" ] || {
+            echo "tag $TAG != tauri.conf.json $conf"; exit 1; }
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -76,40 +75,22 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Build and attach packages (tag push)
+      - name: Build and attach packages
         # projectPath is src-tauri so the action uses this app's
         # tauri.conf.json rather than walking the repo and guessing.
         # --bundles keeps each OS on the installer that OS can produce;
         # the conf lists all three so a local `tauri build` matches CI.
         #
+        # releaseId attaches to the Release the human already published.
         # No updater signing key: updater signatures are #200, and
         # createUpdaterArtifacts is false until that key exists. No Apple
         # certificate: signingIdentity "-" in tauri.conf.json is ad-hoc
         # (#132's signed-enough first drop; notarization is a follow-up).
-        if: github.event_name == 'push'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: src-tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: ai-buddy ${{ github.ref_name }}
-          releaseBody: |
-            See the README for install notes.
-
-            Under Wayland the Spatial Layer is degraded: screen-edge physics,
-            no window Perches. Under X11 the overlay reads window geometry and
-            Perches work.
-          releaseDraft: true
-          prerelease: false
-          args: --bundles ${{ matrix.bundles }}
-
-      - name: Build packages (workflow_dispatch)
-        # Same build but no GitHub Release creation - artifacts go to
-        # workflow artifacts for testing the packaging path.
-        if: github.event_name == 'workflow_dispatch'
-        uses: tauri-apps/tauri-action@v1
-        with:
-          projectPath: src-tauri
-          uploadArtifacts: true
+          releaseId: ${{ github.event.release.id }}
+          tagName: ${{ github.event.release.tag_name }}
           args: --bundles ${{ matrix.bundles }}
