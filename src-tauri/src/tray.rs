@@ -19,10 +19,10 @@ pub fn install(
     description: &MenuDescription,
 ) -> Result<tauri::tray::TrayIcon, tauri::Error> {
     let menu = menu::build(app, description)?;
-    
+
     let tray_icon_bytes = include_bytes!("../icons/tray.png");
     let tray_icon = Image::from_bytes(tray_icon_bytes)?;
-    
+
     TrayIconBuilder::new()
         .menu(&menu)
         .icon(tray_icon)
