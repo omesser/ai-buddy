@@ -1,0 +1,17 @@
+# branding/_b64 MANIFEST
+# Concat parts in order, base64 -d, write dest PNG. ASCII parts only (MCP corrupts raw PNG).
+# Chunk=2000 chars. Name=<id>.partNN (0-padded).
+#
+# DONE+VERIFIED 2026-09-03 PT: tray-256.png parts 01-16 (git blob SHA==hash-object).
+# NOT PUSHED: 19 other unique PNGs (980 parts) ready locally /workspace/logo-art-for-pr/_b64/parts/
+# IGNORE prior-drop leftovers: logo-512.png.b64.pXX (8000ch) and tray-32/48/64.partN (800ch).
+#
+# unique_id bytes sha256 parts dests
+tray-256.png 22861 d7e4ef71e39a6c6bd92106dd6d1ff81c8360bbf4ac6ced733b6abbdfbed4d9f7 16 branding/logo-art/desktop-pet-ai-icons/tray-256.png,branding/logo-art/desktop-pet-ai-tray-icon.png,src-tauri/icons/tray.png
+logo-512.png 156479 2ab978410e2863e3ff8dc5b8a300f3e75c10056d6bb10f5644d853acbc84f956 105 branding/logo-art/desktop-pet-ai-icons/logo-512.png
+logo-1024.png 550450 d197db0cb2b01d6cb961c4ff6c92572d4d2c99eb8e4c8bf8a33c896e1169263a 367 branding/logo-art/desktop-pet-ai-icons/logo-1024.png,branding/logo-art/desktop-pet-ai-logo.png
+logo-1024-transparent.png 452850 6d6c14aaf3193c32fb3dcb3923e774cab7219e88d8be0c5f0e817ae233329398 302 branding/logo-art/desktop-pet-ai-icons/logo-1024-transparent.png,branding/logo-art/desktop-pet-ai-logo-transparent.png
+#
+# DECODE tray:
+# cat branding/_b64/parts/tray-256.png.part{01..16} | tr -d '\n' | base64 -d > src-tauri/icons/tray.png
+# expect sha256 d7e4ef71e39a6c6bd92106dd6d1ff81c8360bbf4ac6ced733b6abbdfbed4d9f7
