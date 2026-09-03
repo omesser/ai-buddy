@@ -55,17 +55,18 @@ Apple Silicon. The Release ships a `.dmg`. Open it and copy `ai-buddy`
 to Applications.
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on
-the first open. Right-click the app, choose Open, and confirm. Developer
-ID and notarization are a follow-up.
+the first open. Double-click the app, dismiss the dialog, then System
+Settings → Privacy & Security → Open Anyway. Note the button is
+time-limited after the blocked launch. Developer ID and notarization are
+a follow-up.
 
 ### Linux
 
 The Release ships an AppImage and a `.deb` (x86_64).
 
-The Spatial Layer is degraded: screen-edge physics, no window Perches.
-That is a supported mode, not an error. Under Wayland, window geometry
-is unavailable; under X11 the overlay still has no window Perches in
-v1. The Engine and the sprite run either way.
+Under Wayland the Spatial Layer is degraded: screen-edge physics, no
+window Perches. That is a supported mode, not an error. Under X11 the
+overlay reads window geometry and Perches work.
 
 At runtime, one of `libayatana-appindicator3-1` or `libappindicator3-1`
 must be installed if you want a tray icon. `libayatana` is preferred.
@@ -77,8 +78,10 @@ is then the settings door.
 
 ```sh
 # Debian/Ubuntu .deb
-sudo dpkg -i ai-buddy_*.deb
-# or: chmod +x the AppImage and run it
+sudo apt install ./ai-buddy_*.deb
+# or: AppImage (needs libfuse2 on Ubuntu 22.04, libfuse2t64 on 24.04+)
+# sudo apt install libfuse2    # or libfuse2t64
+# chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
 ```
 
 Windows is stubbed; there is no Windows package.

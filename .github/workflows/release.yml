@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Two runners, two installers. macOS is the real overlay; Linux is the
-  # supported degraded Spatial Layer. Windows is stubbed in v1 (SPEC) and
-  # is not a bundle target, so it has no row.
+  # Two runners, two installers. macOS is the real overlay; Linux supports
+  # window Perches on X11, degraded Spatial Layer on Wayland. Windows is
+  # stubbed in v1 (SPEC) and is not a bundle target, so it has no row.
   #
   # Trigger is a version tag, not every push to main: a Release is a
   # published artifact, and tests.yml already gates the merge. Draft so a
@@ -36,6 +37,16 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
+
+      - name: The tag and the app version agree
+        # Artifact filenames come from tauri.conf.json, the release name from the
+        # tag. Nothing reconciles them, so a tag that ran ahead of the version
+        # ships ai-buddy_0.1.0_*.dmg inside a release called v0.2.0.
+        if: github.event_name == 'push'
+        run: |
+          conf=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          [ "v$conf" = "${{ github.ref_name }}" ] || {
+            echo "tag ${{ github.ref_name }} != tauri.conf.json $conf"; exit 1; }
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -65,7 +76,7 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Build and attach packages
+      - name: Build and attach packages (tag push)
         # projectPath is src-tauri so the action uses this app's
         # tauri.conf.json rather than walking the repo and guessing.
         # --bundles keeps each OS on the installer that OS can produce;
@@ -75,6 +86,7 @@ jobs:
         # createUpdaterArtifacts is false until that key exists. No Apple
         # certificate: signingIdentity "-" in tauri.conf.json is ad-hoc
         # (#132's signed-enough first drop; notarization is a follow-up).
+        if: github.event_name == 'push'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -85,8 +97,19 @@ jobs:
           releaseBody: |
             See the README for install notes.
 
-            Linux ships a degraded Spatial Layer: screen-edge physics, no
-            window Perches.
+            Under Wayland the Spatial Layer is degraded: screen-edge physics, 
+            no window Perches. Under X11 the overlay reads window geometry and
+            Perches work.
           releaseDraft: true
           prerelease: false
+          args: --bundles ${{ matrix.bundles }}
+
+      - name: Build packages (workflow_dispatch)
+        # Same build but no GitHub Release creation - artifacts go to
+        # workflow artifacts for testing the packaging path.
+        if: github.event_name == 'workflow_dispatch'
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: src-tauri
+          uploadArtifacts: true
           args: --bundles ${{ matrix.bundles }}
