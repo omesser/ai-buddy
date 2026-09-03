@@ -37,6 +37,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | AI-powered behavior | ✓ (Director + personality.txt + spoken lines) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat window) | ✓ (plugin SDK + MCP say) | ✓ (QWEN 2.5 1.5b) |
+| Personality-driven idle AI (no chat window) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Authored personality file | ✓ (personality.txt) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Spoken lines / talk bubble | ✓ (Director with Completer) | ❌ | ❌ | ❌ | ❌ | ✓ (MCP say, plugin-driven) | ❌ |
 | Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -84,13 +85,29 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Project | Target customer | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| ai-buddy | local 2D overlay fans; later attach own agent | personality-driven desktop mascot with physics | personality-driven speech & behavior via Director + Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows stubbed; two characters; GitHub-only | high for own spec/ship split |
+| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows stubbed; two characters; GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
 | Desktop Pet | productivity + BYO OpenAI (vendor claim) | Pomodoro + AI chat | privacy-first vendor claims; free beta | no independent reviews found; unsigned / Run anyway | low (vendor-only) |
 | OpenPets | developers, local agent sidekick | MCP + plugin SDK for coding agents | shipped MCP+SDK; 1,130 stars | Electron; Wayland overlay bugs; MCP is react/say not general harness; gravity ≠ Perch riding | GitHub stars + docs verifiable |
 | MateEngine | VRM fans after Desktop Mate mod removal | my VRM on the desktop, free | 3,532 stars + 974 Steam reviews 97%; Workshop + VRM; free on GitHub | no physics; Windows-only official; no official Linux/macOS; AI is local LLM, not BYO | Steam + GitHub strong |
+
+## How others use AI
+
+Desktop pets use AI differently than ai-buddy's personality-driven idle Director:
+
+- **Desktop Mate / VPet / Shimeji-ee**: No generative model for character behavior. MateEngine's comparison table: Desktop Mate AI Chat ❌. Shimeji-ee is deterministic XML behavior graphs. VPet is care-sim + Workshop animations, no personality prompt.
+
+- **Desktop Pet** ([desktoppet.app](https://desktoppet.app/)): BYO OpenAI **chat/voice assistant**. User opens Assistant Mode; wake word "Hey Pet". Vendor "personality traits" = pet-type copy (cats curious, dogs loyal), not an idle Director that picks Behaviors + spoken lines from authored personality. Chat window product wearing a roaming sprite.
+
+- **OpenPets**: Three different AI uses, none is idle Director: (1) **coding agent talks THROUGH the pet** via MCP `openpets_say` / `openpets_react` — agent-initiated, not idle; (2) **plugins use `ctx.ai`** gateway (Anthropic/OpenAI/Ollama keys) for plugin logic, not idle character speech; (3) host **Pet Assistant** chat/Talk loop ([#138](https://github.com/alvinunreal/openpets/issues/138), architecture.md) that injects owner-authored **personality profile as communication preferences** into conversation turns — profile is chat tone/style, not idle Director. Agent reactions via MCP `say` use validated **speech pools** (pre-approved phrases), not generative idle lines. OpenPets has personality (the profile); it's architecture is chat assistant + agent conduit, not idle personality-driven behavior.
+
+- **MateEngine**: Built-in QWEN 2.5 1.5b LLM. Steam page ([3625270](https://store.steampowered.com/app/3625270/MateEngine/)) CHATTING section: "You can chat with your pet anytime! Just note that it's a small, local AI with simple messages." README comparison table: AI Chat ✅. Steam-exclusive event-based "cute messages" on drag/dance/sit = interaction-triggered responses, not idle personality Director (unknown if those messages are LLM-generated or canned, vendor does not specify).
+
+**Related projects** (not in the six-alternative comparison): Phase Pal ([Steam 3655450](https://store.steampowered.com/app/3655450/Phase_Pal/)) AIGC disclosure = "real-time chatbot within a floating interface… guided by customizable prompts"; Pal Engine ([Steam 3868880](https://store.steampowered.com/app/3868880/Pal_Engine/)) = "The AI model is an agentic assistant" with personality+memory for chat, plus separate ambient animation behavior layer. Same pattern: chat assistant wearing a mascot overlay.
+
+**ai-buddy's difference**: Authored `personality.txt` (who they are, fixations, sample lines) drives Director that picks idle Behaviors + spoken lines non-deterministically, in-character. No chat window (#17 Summon is specced). The Character talks while living on your windows, not when you open a chat.
 
 ## Per-project notes
 
@@ -402,16 +419,18 @@ Completer stand-in with API key/local server, Harness will replace the stand-in
 (ADR-0008, specced). Each Instance has its own Director and seed — two of the
 same Character don't move or speak in lockstep.
 
-1. **Personality-driven, non-deterministic speech and behavior (shipped).**
-   Authored `personality.txt` (who they are, fixations, sample lines; loader
-   never interprets it). Director proposes Behaviors + spoken lines. Completer
-   contract: Behavior name on one line, optional spoken line on the next.
-   `talk` animation plays when a proposal includes it. Universal rules (stay in
-   character, bubble length, no claiming machine abilities) injected in
+1. **Personality-driven AI behavior (shipped).** Authored `personality.txt` (who
+   they are, fixations, sample lines; loader never interprets it) drives Director
+   that picks idle Behaviors + spoken lines non-deterministically, in-character.
+   Completer contract: Behavior name on one line, optional spoken line on the
+   next. `talk` animation plays when a proposal includes it. Universal rules
+   (stay in character, bubble length, no claiming machine abilities) injected in
    `character_prompt`, not in the file. Unparsable reply becomes speech; failed
    wake falls back to Static. Engine keeps the sprite alive while the model
-   thinks. No other desktop pet ships authored personality + Director-driven
-   non-deterministic idle speech.
+   thinks. Static weights when no Completer configured; HTTP Completer stand-in
+   with API key/local server; Harness will be another Completer that feeds the
+   same Director loop (ADR-0008, specced). No other desktop pet ships authored
+   personality + Director-driven non-deterministic idle speech.
 
 2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
    Perch acceleration gate). Capture exclusion (no screen share). Fullscreen
