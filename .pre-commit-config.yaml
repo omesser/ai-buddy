@@ -15,6 +15,7 @@ repos:
 
     # Common errors
       - id: end-of-file-fixer
+        exclude: ^(.*\.b64|branding/_b64/parts/.*)$
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
       - id: check-yaml
@@ -40,7 +41,7 @@ repos:
         additional_dependencies: ["tomli"]
         # "crate" is Rust vocabulary, not a misspelling of "create".
         args: ["--ignore-words-list=crate,crates"]
-        exclude: ^(Cargo\.lock|.*\.png)$
+        exclude: ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
