@@ -458,6 +458,13 @@ key, no subscription, no permission prompts. That state is the default demo.
 
 ## Prior art
 
+Feature comparison versus six software desktop pet alternatives (animated overlay
+characters, not chat apps or hardware robots) is in
+[docs/research/alternatives.md](./docs/research/alternatives.md): Desktop Mate,
+VPet-Simulator, Shimeji-ee, Desktop Pet, OpenPets, MateEngine.
+
+Technical references that informed design:
+
 - **[Shimeji-ee](https://kilkakon.com/shimeji/)** — New BSD, Java/Swing,
   Windows-first, macOS via patched forks. Originally Shimeji by Yuki Yamada,
   Group Finity, 2009, zlib/libpng. Per-character XML behavior graphs. Read for

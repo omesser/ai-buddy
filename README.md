@@ -11,6 +11,10 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 ## State
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+
+Feature comparison versus six software desktop pet alternatives is in
+[docs/research/alternatives.md](./docs/research/alternatives.md).
+
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, rides that edge when the window
 is dragged slowly, and drops when the window is yanked or closed, and it stands
@@ -27,9 +31,7 @@ A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-ses
 There is no chat surface yet: double-clicking is a Summon the Engine accepts
 and nothing answers (#17). Right-clicking the sprite and the tray / menu bar
 icon open the same menu: Character, Instances, Director, Do Not Disturb, Go
-away, Memory, Settings, Quit. The tray icon appears on Linux X11 with a
-StatusNotifier host; on Wayland without a tray protocol the sprite menu is
-the settings door.
+away, Memory, Settings, Quit.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
@@ -39,6 +41,67 @@ Behavior — all but `fall`, which is what losing your footing looks like rather
 than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into,
 and is refused or abandoned when the State the sprite is in does not permit it.
 `talk` plays when a proposal names a Behavior that includes it.
+
+## Platform support
+
+What ships where, read from the platform seam rather than from intent. Windows
+is deferred by [docs/SPEC.md](./docs/SPEC.md), so its column is what the code
+says and not what anyone has run.
+
+| Capability | macOS | Linux | Windows |
+|---|---|---|---|
+| Overlay that never takes focus | yes | yes † | degraded |
+| Click-through off the sprite | yes | yes † | yes |
+| Grab, Throw and Poke | yes | yes † | degraded |
+| Perch on window edges | yes | yes † | degraded |
+| Dock or panel as a Perch | yes | degraded | degraded |
+| Fade out for a fullscreen app | yes | yes † | degraded |
+| Frontmost app and idle sensing | yes | yes † | stub |
+| Never captured in a screen share | yes | degraded | stub |
+| Native settings window | yes | yes | stub |
+| Tray or menu bar icon | yes | yes † | yes |
+| Open Memory in an editor | yes | yes | yes |
+
+- `yes` — implemented.
+- `degraded` — runs in reduced form, because nothing on the platform provides
+  the rest. A supported mode, not an error.
+- `stub` — the arm compiles and does nothing. Windows only.
+- `†` — needs an X11 session. Degraded under Wayland, which withholds the
+  capability from clients by design.
+
+Linux is one column because it is one build. There is a single non-macOS arm
+behind `cfg(all(unix, not(target_os = "macos")))`, and it picks its lane at
+runtime on `WAYLAND_DISPLAY` — an X11 path where the protocol answers, and a
+fallback that declares the capability absent. X11 and Wayland are display
+servers a Linux user is already running one of, not platforms to port to.
+
+A daggered row costs the same thing every time: Wayland will not tell a client
+about other windows' geometry, the pointer outside its own surface, the
+frontmost application, or idle. The sprite keeps its window, its art and its
+menu. The dagger describes what ships, not a protocol limit alone — the lane is
+chosen on `WAYLAND_DISPLAY`, which a Wayland session sets even for an XWayland
+client, so the X11 path is never attempted there.
+
+What the cells leave out:
+
+- **Overlay that never takes focus** — every platform gets the same floating,
+  transparent, off-the-taskbar window from Tauri. Only macOS adds a
+  non-activating panel and X11 the EWMH states, and a Wayland compositor need
+  not honour even the placement.
+- **Click-through off the sprite** — X11 carves it per-pixel from the sprite's
+  alpha; macOS and Windows toggle Tauri's whole-window flag, the same answer at
+  coarser grain.
+- **Grab, Throw and Poke** — with no global pointer only the clicks the webview
+  witnesses count, so a Grab that outruns the art is lost.
+- **Perch on window edges**, **Fade out for a fullscreen app** — both need a
+  window list. Without one the world is screen edges alone.
+- **Dock or panel as a Perch** — only macOS reads the Dock's true bounds.
+  Elsewhere the sprite keeps out of the reserved strip and cannot ride it.
+- **Never captured in a screen share** — no platform but macOS lets a window
+  declare that it must never be captured.
+- **Tray or menu bar icon** — Linux needs a StatusNotifier host, and the
+  sprite's right-click menu is the settings door without one. See
+  [Linux](#linux).
 
 ## Install
 
@@ -71,9 +134,10 @@ a follow-up.
 
 The Release ships an AppImage and a `.deb` (x86_64).
 
-Under Wayland the Spatial Layer is degraded: screen-edge physics, no
-window Perches. That is a supported mode, not an error. Under X11 the
-overlay reads window geometry and Perches work.
+Under Wayland the sprite keeps to screen edges and loses window Perches,
+which is a supported mode rather than an error. X11 gets both.
+[Platform support](#platform-support) lists everything the session type
+decides.
 
 At runtime, one of `libayatana-appindicator3-1` or `libappindicator3-1`
 must be installed if you want a tray icon. `libayatana` is preferred.

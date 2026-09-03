@@ -218,6 +218,18 @@ pub fn refresh_settings() {
     macos::refresh_settings()
 }
 
+/// Nudge the menu bar icon toward the clock on first launch. Main thread only.
+#[cfg(target_os = "macos")]
+pub fn seed_tray_position() {
+    macos::seed_status_item_position();
+}
+
+/// Resize the tray icon to standard menu bar height. Main thread only.
+#[cfg(target_os = "macos")]
+pub fn tune_tray_icon(tray: &tauri::tray::TrayIcon) -> Result<(), tauri::Error> {
+    macos::tune_tray_icon(tray)
+}
+
 /// Open the native GTK settings window on Linux. Main thread only.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn show_settings(session: crate::settings::SettingsSession) {

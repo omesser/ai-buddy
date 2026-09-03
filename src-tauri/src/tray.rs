@@ -27,7 +27,12 @@ pub fn install(
         builder = builder.icon(icon.clone());
     }
 
-    builder.build(app)
+    let icon = builder.build(app)?;
+    #[cfg(target_os = "macos")]
+    if let Err(why) = crate::platform::tune_tray_icon(&icon) {
+        eprintln!("tray: tune icon: {why}");
+    }
+    Ok(icon)
 }
 
 /// Rebuild the tray menu after a toggle, so the checkboxes match the Engine.

@@ -89,7 +89,10 @@ objc2-app-kit = {version = "0.3", features = [
   "NSView",
   "NSColor",
   "NSFont",
-  "NSAlert"
+  "NSAlert",
+  "NSImage",
+  "NSStatusItem",
+  "NSStatusBarButton"
 ]}
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call
@@ -121,6 +124,7 @@ objc2-foundation = {version = "0.3", default-features = false, features = [
   "NSDictionary",
   "NSEnumerator",
   "NSString",
+  "NSUserDefaults",
   "NSValue",
   "NSURL"
 ]}
