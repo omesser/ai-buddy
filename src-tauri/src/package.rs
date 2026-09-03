@@ -822,6 +822,10 @@ mod tests {
         }
     }
 
+    /// Unix only. Making a file unreadable is the whole setup, and chmod 000 is
+    /// the only portable way to do it — on Windows the readonly flag still
+    /// permits reads, so there would be no refusal to assert. #247.
+    #[cfg(unix)]
     #[test]
     fn a_file_that_cannot_be_opened_is_reported_with_its_path() {
         use std::os::unix::fs::PermissionsExt;

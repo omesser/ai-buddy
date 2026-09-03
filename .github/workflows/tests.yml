@@ -307,12 +307,11 @@ jobs:
         # is in for the reason the `files_ignore` comment gives: a change to the
         # gate cannot switch the gate off.
         #
-        # A named list is the one thing `files_ignore` is not, so a `not(unix)`
-        # arm added to a third file escapes this gate until someone adds the
-        # file. The `windows` label is the cover for that, and a rotted arm
-        # reaches main the moment nobody suspects one. Inverting to an ignore
-        # list would run a Windows build on every code change instead, which is
-        # the cost this gate exists to avoid.
+        # The gap this leaves: a `not(unix)` arm added to a fourth file escapes
+        # the gate until someone lists the file. The label covers that only
+        # where a reviewer already suspects the arm. Inverting to `files_ignore`
+        # would close the gap by running an MSVC build on every code change,
+        # which is the cost the gate exists to avoid.
         #
         # Same commit pin, same CVE-2025-30066 reason.
         uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
