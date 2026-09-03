@@ -7,7 +7,8 @@ fn main() {
     println!("cargo:rerun-if-changed=../characters");
     // icons/icon.ico is a build input, not a bundle asset: targeting Windows,
     // tauri-build always compiles a Windows Resource file, errors out with no
-    // .ico to compile, and offers no opt-out. Generated from icons/icon.png;
-    // nothing regenerates it, so a redrawn .png leaves this stale. #247.
+    // .ico to compile, and offers no opt-out. scripts/make-app-icon.py writes
+    // it alongside icons/icon.png from the same art, so a redraw that goes
+    // through the script leaves neither stale. #247.
     tauri_build::build()
 }
