@@ -549,7 +549,7 @@ records it.
 |---|---|---|
 | 1 | Centre of gravity | Nostalgia companion first; productivity as a second layer |
 | 2 | Meaning of "interact with screen" | Spatial first (geometry, Perches); functional second (Summoned) |
-| 3 | Platforms | Cross-platform architecture, macOS first, Windows stubbed |
+| 3 | Platforms | Cross-platform architecture, macOS first, Windows stubbed; one Linux build takes the X11 lane — [ADR-0010](./docs/adr/0010-x11-lane-no-native-wayland.md) |
 | 4 | Harness | BYO via MCP — see decision 17 |
 | 5 | Runtime | Tauri (Rust + webview) — [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md) |
 | 6 | Model's role in idle | Director proposes Behaviors occasionally — [ADR-0004](./docs/adr/0004-director-outside-frame-loop.md) |
