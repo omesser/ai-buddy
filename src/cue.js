@@ -19,20 +19,47 @@ const MASTER = 0.5;
 export const POKE_WINDOW_MS = 400;
 
 let context = null;
+// A machine with no AudioContext, or one that throws, stays silent forever
+// after the first failure: retrying every cue would be the same error sixty
+// times a second. Visuals still play. #292.
+let audioFailed = false;
+let audioWarned = false;
+
+function warnAudio(why) {
+  if (audioWarned) return;
+  audioWarned = true;
+  console.warn("ai-buddy: cue audio is unavailable (" + why + "). Visuals still play.");
+}
 
 function audio() {
-  if (!context) context = new (window.AudioContext || window.webkitAudioContext)();
-  // Suspended until the page has been interacted with. Every cue follows a
-  // press on the sprite, which the overlay receives whenever click-through is
-  // off — so by the time one plays, the gesture that unlocks this has landed.
-  if (context.state === "suspended") context.resume();
-  return context;
+  if (audioFailed) return null;
+  try {
+    if (!context) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) {
+        audioFailed = true;
+        warnAudio("no AudioContext");
+        return null;
+      }
+      context = new Ctx();
+    }
+    // Suspended until the page has been interacted with. Every cue follows a
+    // press on the sprite, which the overlay receives whenever click-through is
+    // off — so by the time one plays, the gesture that unlocks this has landed.
+    if (context.state === "suspended") context.resume();
+    return context;
+  } catch (err) {
+    audioFailed = true;
+    warnAudio(err && err.message ? err.message : String(err));
+    return null;
+  }
 }
 
 // A voice is a gain node the cue can be cut through. Summon cuts a Poke that
 // is still sounding; the cut is a 15 ms ramp so it does not click.
 function voice() {
   const ac = audio();
+  if (!ac) return null;
   const g = ac.createGain();
   g.gain.value = 0;
   g.connect(ac.destination);
@@ -205,9 +232,18 @@ export function cueIo(layer, anchorOf) {
       return () => nodes.forEach((node) => node.remove());
     },
     sound(name) {
-      const v = voice();
-      SOUNDS[name](v);
-      return () => v.cut();
+      // A throw here used to kill the frame listener, so a mute machine also
+      // lost the visual. Swallow it: silence is the decided behaviour, not an
+      // accident. #292.
+      try {
+        const v = voice();
+        if (!v) return () => {};
+        SOUNDS[name](v);
+        return () => v.cut();
+      } catch (err) {
+        warnAudio(err && err.message ? err.message : String(err));
+        return () => {};
+      }
     },
   };
 }
@@ -254,7 +290,15 @@ export function createCueMachine(io) {
       // Sound is gated and the visual is not. Do Not Disturb is already folded
       // into this flag, along with the Settings mute (#280) — a cue that cannot
       // be heard still has to be seen, or a muted buddy stops answering.
-      const cutSound = placement.sound ? io.sound(name) : () => {};
+      // A throw from the audio graph is the same gate: keep the visual. #292.
+      let cutSound = () => {};
+      if (placement.sound) {
+        try {
+          cutSound = io.sound(name) || (() => {});
+        } catch {
+          // Mute-machine: silence, once, rather than taking the overlay with it.
+        }
+      }
 
       if (name === "poke") {
         // A second Poke replaces the record rather than joining it: the older

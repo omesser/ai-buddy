@@ -129,6 +129,22 @@ test("sound gates the audio only, and the visual still plays", () => {
   assert.deepEqual(calls, ["draw:poke", "undraw:poke", "draw:summon"]);
 });
 
+test("a sound that throws still leaves the visual", () => {
+  const calls = [];
+  const machine = createCueMachine({
+    draw(name) {
+      calls.push(`draw:${name}`);
+      return () => calls.push(`undraw:${name}`);
+    },
+    sound() {
+      throw new Error("no AudioContext");
+    },
+  });
+
+  machine.event({ cue: "poke", visible: true, sound: true });
+  assert.deepEqual(calls, ["draw:poke"]);
+});
+
 test("a hidden Character produces no cue of either kind", () => {
   const { machine, calls, placement } = machineHarness();
 

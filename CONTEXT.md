@@ -210,7 +210,7 @@ over the sprite and a synthesized sound, one pair per interaction — Poke,
 Summon, Menu, pickup, drop, and a throw that is the drop played harder. The
 Engine names the Cue on the frame; the webview draws and synthesizes it, so no
 Character declares one. Do Not Disturb silences the sound and keeps the visual.
-#277.
+A machine that cannot start an audio context does the same. #277, #292.
 _Avoid_: Effect, feedback, animation (the Character's art), SFX
 
 **Thinking ellipsis**:
