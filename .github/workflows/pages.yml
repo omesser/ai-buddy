@@ -1,0 +1,53 @@
+name: Pages
+
+# The published site is an allowlist, not a directory. `docs/` holds research
+# notes, agent instructions and pull request screenshots; serving all of it to
+# make one page reachable would put every one of those on a crawlable URL. So
+# the Assemble step names each file it publishes, and a page nobody added to
+# that list is not on the internet.
+#
+# Source is GitHub Actions rather than a branch, so there is no `gh-pages`
+# branch to keep in step with `main` — the deployment is this workflow's
+# artifact, built from the commit being deployed.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  # Deploying to Pages is an OIDC exchange, so the job needs to mint a token.
+  id-token: write
+
+# One deployment at a time, and never cancel one in flight: a cancelled deploy
+# can leave the site on the half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        # Flat: the landing page is the site root and every other page sits
+        # beside it, so a link is `/cues.html` rather than a path that has to
+        # mirror wherever the file happens to live in the repository.
+        run: |
+          mkdir -p _site
+          cp docs/design/index.html _site/index.html
+          cp docs/design/cues.html  _site/cues.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
