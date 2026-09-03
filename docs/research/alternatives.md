@@ -36,7 +36,9 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| AI-powered behavior | ✓ (Director + personality.txt) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat) | ✓ (plugin SDK + MCP) | ✓ (QWEN 2.5 1.5b) |
+| AI-powered behavior | ✓ (Director + personality.txt + spoken lines) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat window) | ✓ (plugin SDK + MCP say) | ✓ (QWEN 2.5 1.5b) |
+| Authored personality file | ✓ (personality.txt) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Spoken lines / talk bubble | ✓ (Director with Completer) | ❌ | ❌ | ❌ | ❌ | ✓ (MCP say, plugin-driven) | ❌ |
 | Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Reacts to user (Poke, Grab) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Window awareness | ✓ (app name, geometry) | ✓ | ❌ | ✓ (edges) | ❌ | ❌ | ✓ |
@@ -82,7 +84,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Project | Target customer | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| ai-buddy | local 2D overlay fans; later attach own agent | sits on real windows with physics; BYO Harness | shipped Spatial (Perches + hide + capture exclusion) | Harness not shipped; Windows stubbed; two characters; GitHub-only | high for own spec/ship split |
+| ai-buddy | local 2D overlay fans; later attach own agent | personality-driven desktop mascot with physics | personality-driven speech & behavior via Director + Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows stubbed; two characters; GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
@@ -385,18 +387,38 @@ sources).
 
 **What ai-buddy ships differently:**
 
-1. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
+The mascot has an authored personality file (`personality.txt`) and a Director
+that picks Behaviors and spoken lines non-deterministically. The Character talks
+in-character while living on your windows — not Clippy (no claiming machine
+abilities, no promising actions), not a chat app (no chat window, no
+back-and-forth; #17 Summon is specced). Director proposes a Behavior name and
+optional spoken line; Static weights when no Completer is configured, HTTP
+Completer stand-in with API key/local server, Harness will replace the stand-in
+(ADR-0008, specced). Each Instance has its own Director and seed — two of the
+same Character don't move or speak in lockstep.
+
+1. **Personality-driven, non-deterministic speech and behavior (shipped).**
+   Authored `personality.txt` (who they are, fixations, sample lines; loader
+   never interprets it). Director proposes Behaviors + spoken lines. Completer
+   contract: Behavior name on one line, optional spoken line on the next.
+   `talk` animation plays when a proposal includes it. Universal rules (stay in
+   character, bubble length, no claiming machine abilities) injected in
+   `character_prompt`, not in the file. Unparsable reply becomes speech; failed
+   wake falls back to Static. Engine keeps the sprite alive while the model
+   thinks. No other desktop pet ships authored personality + Director-driven
+   non-deterministic idle speech.
+
+2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
    Perch acceleration gate). Capture exclusion (no screen share). Fullscreen
    fade + hotkey hide. Window app name tracking. Local idle life without model.
-   No other desktop pet ships all five.
 
-2. **Agent integrations (specced, not shipped).** MCP + BYO Harness attach.
+3. **Agent integrations (specced, not shipped).** MCP + BYO Harness attach.
    README/ADR-0008: HTTP Completer is a stand-in; Harness *will* replace it; no
    chat surface yet (#17). OpenPets *already ships* overlay pet + MCP
    (`openpets_status` / `openpets_react` / `openpets_say`) + plugin SDK. Closest
-   *shipped* agent-pet is OpenPets; closest *shipped* Spatial differentiators are
-   ai-buddy's capture exclusion, fullscreen fade, hotkey hide, Perch
-   acceleration-gate.
+   *shipped* agent-pet is OpenPets; ai-buddy's shipped differentiators are
+   personality-driven Director speech + Spatial (capture exclusion, fullscreen
+   fade, hotkey hide, Perch acceleration-gate).
 
 **What other projects have that ai-buddy doesn't (yet):**
 
