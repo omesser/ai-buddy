@@ -2,6 +2,11 @@
 
 Product logo and tray icon art package from Oded.
 
+`app-icon-preview.png` shows what the app icon is supposed to look like — the
+grid, the Dock slot it sits in against the square it replaced, and every size
+the `.ico` carries. Regenerate it when the art changes, so a reviewer can see
+the change rather than take the diff's word for it.
+
 ## Structure
 
 ### `logo-art/`
