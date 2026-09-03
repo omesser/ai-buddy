@@ -974,6 +974,7 @@ fn describe_menu(
     rules: &HideRules,
 ) -> menu::MenuDescription {
     let instances = roster.list();
+    let hide_hotkey = settings::display_hotkey(&settings.hide_hotkey);
     menu::describe(menu::MenuSnapshot {
         installed,
         current_character: current,
@@ -985,7 +986,7 @@ fn describe_menu(
             .unwrap_or(false),
         hidden: rules.is_away(),
         hide_in_fullscreen: rules.hide_in_fullscreen(),
-        hide_hotkey: &settings.hide_hotkey,
+        hide_hotkey: &hide_hotkey,
     })
 }
 

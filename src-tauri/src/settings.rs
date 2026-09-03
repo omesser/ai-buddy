@@ -77,7 +77,7 @@ impl SettingsView {
             do_not_disturb: settings.do_not_disturb,
             hidden: settings.hidden,
             hide_in_fullscreen: settings.hide_in_fullscreen,
-            hide_hotkey: settings.hide_hotkey.clone(),
+            hide_hotkey: display_hotkey(&settings.hide_hotkey),
             excluded_applications: settings.excluded_applications.clone(),
             character: settings.character.clone(),
             memory_path: memory_path.display().to_string(),
@@ -482,8 +482,9 @@ impl Settings {
 /// The hide hotkey shipped until the user binds another.
 ///
 /// Three modifiers, because a global shortcut is taken from every application
-/// on the machine and B alone belongs to most of them. Spelled the way a Mac
-/// keyboard names the keys, which is also what the menu prints.
+/// on the machine and B alone belongs to most of them. One canonical spelling
+/// that `parse_hotkey` reads on every OS; what a user reads is
+/// `display_hotkey`, in the words that OS gives the keys (#194).
 pub const DEFAULT_HIDE_HOTKEY: &str = "Control-Option-Command-B";
 
 /// Everything settings owns. Defaults are the v1 first-run answers.
@@ -500,6 +501,14 @@ pub struct Settings {
     pub hidden: bool,
     /// Fade away when a fullscreen application is frontmost.
     pub hide_in_fullscreen: bool,
+    /// One canonical spec, in any platform's words. Read with `parse_hotkey`
+    /// and shown to a user with `display_hotkey`, never raw (#194).
+    ///
+    /// A string rather than the `Hotkey` it parses into, which would otherwise
+    /// be the honest type: `load` turns any parse failure into whole-file
+    /// defaults, so a struct-shaped field meeting a string in an installed
+    /// `settings.json` would silently reset every other setting with it.
+    /// Persist the struct only behind a deserializer that accepts both shapes.
     pub hide_hotkey: String,
     pub launch_at_login: bool,
     pub excluded_applications: Vec<String>,
@@ -583,6 +592,9 @@ pub struct Hotkey {
 
 /// Read `Control-Option-Command-B` into parts. Unknown tokens refuse the
 /// whole string so a typo cannot silently drop a modifier.
+///
+/// Each alias set is one key under every OS's name for it, `Win` included, so
+/// that everything `Hotkey::display` prints is something this reads back.
 pub fn parse_hotkey(spec: &str) -> Option<Hotkey> {
     let mut hotkey = Hotkey {
         control: false,
@@ -601,7 +613,7 @@ pub fn parse_hotkey(spec: &str) -> Option<Hotkey> {
             "Control" | "Ctrl" => hotkey.control = true,
             "Option" | "Alt" => hotkey.option = true,
             "Shift" => hotkey.shift = true,
-            "Command" | "Super" | "Meta" => hotkey.command = true,
+            "Command" | "Super" | "Meta" | "Win" => hotkey.command = true,
             one if one.len() == 1 => {
                 let letter = one.chars().next()?.to_ascii_uppercase();
                 if !letter.is_ascii_alphabetic() {
@@ -617,6 +629,80 @@ pub fn parse_hotkey(spec: &str) -> Option<Hotkey> {
     }
     hotkey.key = key?;
     Some(hotkey)
+}
+
+/// How the keyboard in front of a user names the modifier keys.
+///
+/// The chord is the same three modifiers on every OS — the plugin registers
+/// one binding — so this is a spelling, not a second hotkey. Taking the words
+/// as an argument is what lets a Mac test assert what Linux would read (#194).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModifierWords {
+    Mac,
+    Linux,
+    Windows,
+}
+
+impl ModifierWords {
+    /// The words this build's OS uses. X11 and Wayland both say Super.
+    pub fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Mac
+        } else if cfg!(target_os = "windows") {
+            Self::Windows
+        } else {
+            Self::Linux
+        }
+    }
+
+    /// Control, Option and Command under these words. Shift is Shift
+    /// everywhere, so it is not in the table.
+    fn names(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Mac => ("Control", "Option", "Command"),
+            Self::Linux => ("Ctrl", "Alt", "Super"),
+            Self::Windows => ("Ctrl", "Alt", "Win"),
+        }
+    }
+}
+
+impl Hotkey {
+    /// Print the chord in `words`, e.g. `Control-Option-Command-B` on a Mac
+    /// and `Ctrl-Alt-Super-B` on Linux.
+    ///
+    /// Every spelling it prints is one `parse_hotkey` reads back, because the
+    /// settings hotkey field shows this string and takes it again on rebind.
+    pub fn display(&self, words: ModifierWords) -> String {
+        let (control, option, command) = words.names();
+        let mut parts = Vec::with_capacity(5);
+        if self.control {
+            parts.push(control);
+        }
+        if self.option {
+            parts.push(option);
+        }
+        if self.shift {
+            parts.push("Shift");
+        }
+        if self.command {
+            parts.push(command);
+        }
+        let letter = self.key.to_ascii_uppercase().to_string();
+        parts.push(&letter);
+        parts.join("-")
+    }
+}
+
+/// The hotkey `spec` names, in the words of the OS this build runs on.
+///
+/// A hand-edited or older file may name the keys in any platform's words, so
+/// the stored string is parsed rather than printed. An unreadable one falls
+/// back to the default, the same binding the shell registers for it.
+pub fn display_hotkey(spec: &str) -> String {
+    parse_hotkey(spec)
+        .or_else(|| parse_hotkey(DEFAULT_HIDE_HOTKEY))
+        .map(|hotkey| hotkey.display(ModifierWords::current()))
+        .unwrap_or_default()
 }
 
 /// Flip Go-away and keep `Settings.hidden` on the same flag, so a restart or
@@ -953,7 +1039,7 @@ mod tests {
         assert!(view.do_not_disturb);
         assert!(view.hidden);
         assert!(!view.hide_in_fullscreen);
-        assert_eq!(view.hide_hotkey, "Control-Shift-H");
+        assert_eq!(view.hide_hotkey, display_hotkey("Control-Shift-H"));
         assert_eq!(view.excluded_text(), "1Password\nKeychain Access");
         assert_eq!(view.character, "nim");
         assert_eq!(view.memory_path, "/tmp/ai-buddy/memory.md");
@@ -1266,5 +1352,100 @@ mod tests {
         assert_eq!(parse_hotkey("Control-F1"), None);
         assert_eq!(parse_hotkey("Control-B-C"), None);
         assert_eq!(parse_hotkey(""), None);
+    }
+
+    /// One chord in four spellings, because the file keeps whichever of them
+    /// the user last named.
+    #[test]
+    fn one_chord_parses_the_same_from_every_platforms_words() {
+        let mac = parse_hotkey("Control-Option-Command-B").expect("mac words");
+        assert_eq!(parse_hotkey("Ctrl-Alt-Super-B"), Some(mac.clone()));
+        assert_eq!(parse_hotkey("Ctrl-Alt-Win-B"), Some(mac.clone()));
+        assert_eq!(parse_hotkey("Ctrl-Alt-Meta-B"), Some(mac));
+    }
+
+    /// #194: the menu used to print the stored Mac spelling everywhere, which
+    /// names keys a Linux or Windows keyboard does not have.
+    #[test]
+    fn the_shipped_default_reads_as_each_platforms_own_chord() {
+        let default = parse_hotkey(DEFAULT_HIDE_HOTKEY).expect("default parses");
+        for (words, expected) in [
+            (ModifierWords::Mac, "Control-Option-Command-B"),
+            (ModifierWords::Linux, "Ctrl-Alt-Super-B"),
+            (ModifierWords::Windows, "Ctrl-Alt-Win-B"),
+        ] {
+            assert_eq!(default.display(words), expected);
+        }
+        for words in [ModifierWords::Linux, ModifierWords::Windows] {
+            let printed = default.display(words);
+            assert!(!printed.contains("Option"), "{printed} names a Mac key");
+            assert!(!printed.contains("Command"), "{printed} names a Mac key");
+        }
+    }
+
+    /// What `display` prints is also what the hotkey field accepts back, or a
+    /// user who retypes what the settings window shows them loses the binding.
+    #[test]
+    fn every_platforms_words_parse_back_to_the_chord_they_printed() {
+        let chord = Hotkey {
+            control: true,
+            option: true,
+            shift: true,
+            command: true,
+            key: 'B',
+        };
+        for words in [
+            ModifierWords::Mac,
+            ModifierWords::Linux,
+            ModifierWords::Windows,
+        ] {
+            let printed = chord.display(words);
+            assert_eq!(
+                parse_hotkey(&printed),
+                Some(chord.clone()),
+                "{printed} did not parse back"
+            );
+        }
+    }
+
+    /// The window renders the view verbatim, so the view is where the stored
+    /// spec becomes this machine's words — whichever words the file used.
+    #[test]
+    fn the_view_shows_the_hotkey_in_this_machines_words() {
+        let settings = Settings {
+            hide_hotkey: "Ctrl-Alt-Super-B".to_string(),
+            ..Settings::default()
+        };
+        let view = SettingsView::from_parts(
+            &settings,
+            Path::new("/tmp/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (false, String::new(), String::new()),
+        );
+        let expected = parse_hotkey("Ctrl-Alt-Super-B")
+            .expect("stored spec parses")
+            .display(ModifierWords::current());
+        assert_eq!(view.hide_hotkey, expected);
+    }
+
+    /// A file nobody can parse must still name the chord the shell registers.
+    #[test]
+    fn an_unreadable_spec_is_shown_as_the_default_the_shell_binds() {
+        assert_eq!(
+            display_hotkey("Control-F1"),
+            parse_hotkey(DEFAULT_HIDE_HOTKEY)
+                .expect("default parses")
+                .display(ModifierWords::current())
+        );
+    }
+
+    #[test]
+    fn a_chord_with_no_modifiers_prints_just_the_letter() {
+        let printed = parse_hotkey("H")
+            .expect("letter")
+            .display(ModifierWords::Mac);
+        assert_eq!(printed, "H");
     }
 }

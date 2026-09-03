@@ -53,6 +53,7 @@ pub struct MenuSnapshot<'a> {
     pub do_not_disturb: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
+    /// Already in this machine's words — `settings::display_hotkey` printed it.
     pub hide_hotkey: &'a str,
 }
 
