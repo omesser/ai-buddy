@@ -11,6 +11,10 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 ## State
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+
+Feature comparison versus six software desktop pet alternatives is in
+[docs/research/alternatives.md](./docs/research/alternatives.md).
+
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, rides that edge when the window
 is dragged slowly, and drops when the window is yanked or closed, and it stands
