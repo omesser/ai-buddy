@@ -116,6 +116,16 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
         engage.primitives.contains(&character::Primitive::React),
         "engage includes react (weapon raise)"
     );
+
+    assert!(
+        character.behaviors.contains_key("pursue"),
+        "pursue behavior exists for walk-toward-cursor"
+    );
+    let pursue = &character.behaviors["pursue"];
+    assert!(
+        pursue.primitives.contains(&character::Primitive::Chase),
+        "pursue includes Chase primitive for walk-toward-cursor movement"
+    );
 }
 
 #[test]
