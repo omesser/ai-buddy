@@ -193,11 +193,18 @@ pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Res
 
 /// Env, then the file, then the store. A store read error is `Err`, not Unset:
 /// treating it as no key would drop a remote Completer to Static on Retarget.
+///
+/// The store is left untouched when the env already owns the key: `resolve`
+/// would discard what it returned, and the read is a Keychain prompt on macOS.
 pub fn director_settings(
     settings: &Settings,
     secrets: &dyn SecretStore,
 ) -> Result<DirectorSettings, String> {
-    let stored = secrets.get(DIRECTOR_API_KEY)?;
+    let stored = if model::env_owns_key() {
+        None
+    } else {
+        secrets.get(DIRECTOR_API_KEY)?
+    };
     Ok(model::resolve(
         &settings.director_base_url,
         &settings.director_model,
@@ -1277,6 +1284,19 @@ mod tests {
                 !model::config_from(&unset).configured,
                 "precondition: unset remote is Static"
             );
+        });
+    }
+
+    /// A store read is a Keychain prompt on macOS, and one whose answer
+    /// `resolve` throws away is a prompt for nothing. `FailingStore` is the
+    /// assertion: this can only resolve if nothing consulted the store.
+    #[test]
+    fn an_exported_key_leaves_the_store_unread() {
+        let settings = endpoint_settings();
+        model::tests::with_env(Some("sk-env-key"), None, None, || {
+            let resolved = director_settings(&settings, &FailingStore)
+                .expect("the env owns the key, so the store has nothing to say");
+            assert_eq!(resolved.api_key, "sk-env-key");
         });
     }
 
