@@ -8,6 +8,7 @@
 #
 # Scale 1: frames are ~192px tall 3D captures (like Jotaro at scale 1), not
 # pixel art scaled up (Black Mage at 37px uses scale 3). Render smooth.
+# Walk is a 20-frame two-step loop (seam last→first MSE within 20% of median).
 
 name = "Timber Wolf"
 render_mode = "smooth"
@@ -25,36 +26,51 @@ model_power = 1
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
 
-# Side stride, facing right for engine mirroring. Oded's recut will have
-# more frames than the initial 8-frame capture for a smoother, centered walk.
+# Side stride, facing right for engine mirroring. 20 unique poses, 8 fps.
 [animations.walk]
-frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png"]
+frames = [
+  "frames/walk-0.png",
+  "frames/walk-1.png",
+  "frames/walk-2.png",
+  "frames/walk-3.png",
+  "frames/walk-4.png",
+  "frames/walk-5.png",
+  "frames/walk-6.png",
+  "frames/walk-7.png",
+  "frames/walk-8.png",
+  "frames/walk-9.png",
+  "frames/walk-10.png",
+  "frames/walk-11.png",
+  "frames/walk-12.png",
+  "frames/walk-13.png",
+  "frames/walk-14.png",
+  "frames/walk-15.png",
+  "frames/walk-16.png",
+  "frames/walk-17.png",
+  "frames/walk-18.png",
+  "frames/walk-19.png",
+]
 fps = 8
 
-# Reuses walk frames with raised leg.
 [animations.fall]
-frames = ["frames/walk-1.png", "frames/walk-2.png"]
+frames = ["frames/fall-0.png", "frames/fall-1.png"]
 fps = 6
 
-# Reuses idle (convention: closest pose when sheet lacks dedicated frames).
 [animations.land]
-frames = ["frames/idle-0.png", "frames/idle-1.png"]
+frames = ["frames/land-0.png", "frames/land-1.png"]
 fps = 8
 loop = "once"
 
-# Reuses idle.
 [animations.sit]
-frames = ["frames/idle-0.png"]
+frames = ["frames/sit-0.png"]
 fps = 2
 
-# Reuses idle.
 [animations.hold]
-frames = ["frames/idle-0.png", "frames/idle-1.png"]
+frames = ["frames/hold-0.png", "frames/hold-1.png"]
 fps = 4
 
-# Reuses idle.
 [animations.sleep]
-frames = ["frames/idle-0.png"]
+frames = ["frames/sleep-0.png"]
 fps = 1
 
 # Full-frontal stand from the turn clip.
