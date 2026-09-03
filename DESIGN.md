@@ -458,12 +458,10 @@ key, no subscription, no permission prompts. That state is the default demo.
 
 ## Prior art
 
-Feature comparison versus similar projects is in
-[docs/research/](./docs/research/): [market.md](./docs/research/market.md)
-sizes the desktop pet category, identifies six widely used alternatives (Desktop
-Mate, VPet-Simulator, Shimeji-ee, Desktop Pet, OpenPets, MateEngine), and
-[alternatives.md](./docs/research/alternatives.md) compares ai-buddy's
-capabilities against them.
+Feature comparison versus six software desktop pet alternatives (animated overlay
+characters, not chat apps or hardware robots) is in
+[docs/research/alternatives.md](./docs/research/alternatives.md): Desktop Mate,
+VPet-Simulator, Shimeji-ee, Desktop Pet, OpenPets, MateEngine.
 
 Technical references that informed design:
 

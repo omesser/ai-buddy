@@ -1,10 +1,10 @@
 # ai-buddy versus six desktop pet alternatives — feature comparison
 
-Comparison against six widely used desktop pet projects (see
-[market.md](./market.md)): Desktop Mate, VPet-Simulator, Shimeji-ee ecosystem,
-Desktop Pet (desktoppet.app), OpenPets, MateEngine. Matrix rows are capabilities
-that matter for this product, using CONTEXT.md vocabulary. ai-buddy column is
-honest about what is and is not built.
+Comparison against six widely used software desktop pet projects (animated
+overlay characters, not chat apps or hardware robots): Desktop Mate,
+VPet-Simulator, Shimeji-ee ecosystem, Desktop Pet (desktoppet.app), OpenPets,
+MateEngine. Matrix rows are capabilities that matter for this product, using
+CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 **Legend:** ✓ present, ~ documented not shipped OR partial, ❌ absent
 

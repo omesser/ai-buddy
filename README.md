@@ -12,10 +12,8 @@ decisions that carry lock-in in [docs/adr/](./docs/adr/).
 
 Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
 
-Feature comparison and market context are in [docs/research/](./docs/research/):
-[market.md](./docs/research/market.md) sizes the category and identifies five
-well-known alternatives, [alternatives.md](./docs/research/alternatives.md)
-compares ai-buddy's shipped and specced features against them.
+Feature comparison versus six software desktop pet alternatives is in
+[docs/research/alternatives.md](./docs/research/alternatives.md).
 
 The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
 on the top edge of whatever window is under it, rides that edge when the window
