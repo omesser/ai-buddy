@@ -8,9 +8,9 @@
 //! change can break the other. A broken shipped package is a shipping defect,
 //! not a unit test failure. These tests catch that before release.
 //!
-//! Each character gets its own test because each has different constraints:
-//! pixel art scale, personality presence, specific behaviors. The required
-//! animation set is a shared contract.
+//! Character-specific tests cover constraints unique to that character. Every
+//! shipped character's load and required animations are covered by the shell
+//! crate's integration test.
 
 use ai_buddy_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
 use std::collections::BTreeMap;
@@ -70,26 +70,6 @@ fn assert_required_animations(character: &character::Character) {
 }
 
 #[test]
-fn cat_package_loads_with_all_required_animations() {
-    let character = load_package("cat").expect("Cat package is valid");
-
-    assert_eq!(character.name, "Cat");
-    assert_required_animations(&character);
-}
-
-#[test]
-fn black_mage_package_loads_with_all_required_animations() {
-    let character = load_package("black-mage").expect("Black Mage package is valid");
-
-    assert_eq!(character.name, "Black Mage");
-    assert_required_animations(&character);
-    assert_eq!(
-        character.scale, 3,
-        "Black Mage uses scale 3 for readability"
-    );
-}
-
-#[test]
 fn timber_wolf_package_loads_with_all_required_animations() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
@@ -131,6 +111,10 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
     assert!(
         engage.primitives.len() >= 2,
         "engage composes multiple primitives"
+    );
+    assert!(
+        engage.primitives.contains(&character::Primitive::React),
+        "engage includes react (weapon raise)"
     );
 }
 

@@ -102,8 +102,8 @@ frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
 # A heavy assault mech's life: patrol the perimeter, report status, hold
-# position, engage threats. The shooting behavior composes react (muzzle
-# flash) with idle for a mech emote without adding engine Primitives.
+# position, engage threats. The shooting behavior composes react (weapon
+# raise) with idle for a mech emote without adding engine Primitives.
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
@@ -135,8 +135,3 @@ when = "idle over 3m"
 play = ["sit", "sleep"]
 weight = 4
 when = "idle over 5m"
-
-[behaviors.pursue]
-play = ["chase"]
-weight = 3
-when = "idle over 30s"
