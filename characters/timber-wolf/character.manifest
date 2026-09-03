@@ -14,7 +14,7 @@
 # ~136px at its tallest, so a 75-ton OmniMech reads heavier than Jotaro's 110px
 # without dwarfing the desktop.
 # Quiet-art remat (tw-cr2): sleep/talk crotch+armpit plate cleared; sit crouches
-# via thigh shorten at full torso scale (same width as idle).
+# via thigh shorten at full torso scale (same width as idle). Armpit punch keeps dark camo weapon arms (weak inner-pocket fringe only).
 # Every pose stands on the canvas floor: the lowest opaque pixel is the bottom
 # row, and a foot is planted in every walk frame. Only fall hangs in the air.
 # Walk is a 20-frame two-step loop (seam last→first MSE within 20% of median).
