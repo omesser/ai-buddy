@@ -6,12 +6,14 @@
 //! required animations, and (for pixel art) walk frames face right so the
 //! engine's mirroring works.
 
-use ai_buddy_core::character::{self, REQUIRED_ANIMATIONS};
+use ai_buddy_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
 use std::collections::BTreeMap;
+use std::io::Cursor;
 use std::path::Path;
 
-/// Load a Character Package from a directory in the workspace root.
-fn load_package(name: &str) -> Result<character::Character, Vec<String>> {
+/// Read a Character Package directory in the workspace root into the same
+/// `PackageBytes` map `character::load` takes.
+fn package_bytes(name: &str) -> BTreeMap<String, Vec<u8>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("core is in crates/")
@@ -22,8 +24,12 @@ fn load_package(name: &str) -> Result<character::Character, Vec<String>> {
     let mut files = BTreeMap::new();
     collect(&package_dir, &package_dir, &mut files)
         .unwrap_or_else(|e| panic!("{}: {}", package_dir.display(), e));
+    files
+}
 
-    character::load(&files)
+/// Load a Character Package from a directory in the workspace root.
+fn load_package(name: &str) -> Result<character::Character, Vec<String>> {
+    character::load(&package_bytes(name))
 }
 
 /// Recursively read a directory into a `PackageBytes` map.
@@ -131,6 +137,187 @@ fn timber_wolf_uses_scale_1_for_captured_frames() {
 
     assert_eq!(
         character.scale, 1,
-        "Timber Wolf uses scale 1: frames are ~192px 3D captures like Jotaro, not tiny pixel art"
+        "Timber Wolf uses scale 1: frames are ~148px captures on a 176x160 canvas like Jotaro, not tiny pixel art"
+    );
+}
+
+/// A pixel the eye can see, rather than the feathered edge of the matte.
+const VISIBLE: u8 = 32;
+
+/// How many visible pixels a row needs before it counts as a foot on the
+/// floor, so a stray speck left by the matte cannot ground a frame.
+const FOOT_PIXELS: usize = 3;
+
+/// The canvas size and alpha channel of one frame PNG, row-major.
+fn frame_alpha(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
+    let mut reader = png::Decoder::new(Cursor::new(bytes))
+        .read_info()
+        .expect("every frame is a PNG");
+
+    let info = reader.info();
+    let color_type = info.color_type;
+    let bit_depth = info.bit_depth;
+    let (width, height) = (info.width as usize, info.height as usize);
+    assert_eq!(color_type, png::ColorType::Rgba, "frames carry alpha");
+    assert_eq!(
+        bit_depth,
+        png::BitDepth::Eight,
+        "frames are 8 bits a channel"
+    );
+
+    let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
+    let frame = reader.next_frame(&mut buf).expect("frame decodes");
+    let alpha = buf[..frame.buffer_size()]
+        .chunks_exact(4)
+        .map(|pixel| pixel[3])
+        .collect();
+
+    (width, height, alpha)
+}
+
+/// The first and last rows carrying visible pixels, and how many the last row
+/// carries — the sprite's silhouette reduced to where it starts and stands.
+fn silhouette(width: usize, height: usize, alpha: &[u8]) -> (usize, usize, usize) {
+    let mut top = None;
+    let mut bottom = 0;
+    let mut bottom_pixels = 0;
+
+    for row in 0..height {
+        let visible = alpha[row * width..(row + 1) * width]
+            .iter()
+            .filter(|&&a| a >= VISIBLE)
+            .count();
+        if visible > 0 {
+            top = top.or(Some(row));
+            bottom = row;
+            bottom_pixels = visible;
+        }
+    }
+
+    (top.expect("frame is not blank"), bottom, bottom_pixels)
+}
+
+/// Every frame of a package, in `(animation, frame name, bytes)` order.
+fn frames_of(name: &str) -> Vec<(String, String, Vec<u8>)> {
+    let character = load_package(name).unwrap_or_else(|e| panic!("{name} is valid: {e:?}"));
+    let files = package_bytes(name);
+
+    let mut frames = Vec::new();
+    for (animation, declared) in &character.animations {
+        for frame in &declared.frames {
+            let bytes = files
+                .get(frame)
+                .unwrap_or_else(|| panic!("{animation} declares {frame}, which the package holds"))
+                .clone();
+            frames.push((animation.clone(), frame.clone(), bytes));
+        }
+    }
+    frames
+}
+
+/// #161 review: "the mech needs to be placed on the frame's floor so it won't
+/// float. at least 1 leg on the floor at all times (since it's not running)."
+/// The canvas bottom row is that floor, so every grounded pose has a foot on
+/// it. Only `fall` is airborne.
+#[test]
+fn timber_wolf_stands_on_the_canvas_floor() {
+    for (animation, frame, bytes) in frames_of("timber-wolf") {
+        let (width, height, alpha) = frame_alpha(&bytes);
+        let (_, bottom, bottom_pixels) = silhouette(width, height, &alpha);
+        let gap = height - 1 - bottom;
+
+        if animation == "fall" {
+            assert!(
+                (1..=20).contains(&gap),
+                "{frame} is a fall frame, so it hangs clear of the floor by 1-20px, not {gap}px"
+            );
+            continue;
+        }
+
+        assert_eq!(
+            gap, 0,
+            "{animation} frame {frame} floats {gap}px above the canvas floor"
+        );
+        assert!(
+            bottom_pixels >= FOOT_PIXELS,
+            "{animation} frame {frame} touches the floor with only {bottom_pixels} pixels, \
+             which is a speck and not a leg"
+        );
+    }
+}
+
+/// #161 review: "The mech is too big, needs scaling down." One canvas for the
+/// whole package, and a silhouette that reads as a heavy mech beside Jotaro's
+/// 110px without dwarfing the desktop.
+#[test]
+fn timber_wolf_frames_share_one_canvas_at_a_desktop_scale() {
+    let frames = frames_of("timber-wolf");
+    let mut canvas = None;
+    let mut tallest = 0;
+
+    for (animation, frame, bytes) in &frames {
+        let (width, height, alpha) = frame_alpha(bytes);
+        let size = (width, height);
+        match canvas {
+            None => canvas = Some(size),
+            Some(first) => assert_eq!(
+                size, first,
+                "{animation} frame {frame} is {width}x{height}, and the package's other \
+                 frames are {}x{}",
+                first.0, first.1
+            ),
+        }
+
+        let (top, bottom, _) = silhouette(width, height, &alpha);
+        tallest = tallest.max(bottom - top + 1);
+    }
+
+    assert!(
+        (120..=152).contains(&tallest),
+        "the tallest Timber Wolf pose is {tallest}px, and a 75-ton mech reads between \
+         120px (taller than Jotaro's 110px) and 152px (short of dwarfing the desktop)"
+    );
+}
+
+/// #161 review: idle, land, sit, sleep and hold all shipped as copies of one
+/// side-profile pose, and "the mech never sleeps - so we can just use idle +
+/// torso twists". Each of those poses, plus react and talk, is its own art.
+#[test]
+fn timber_wolf_poses_are_not_copies_of_each_other() {
+    let posed = ["idle", "land", "sit", "sleep", "hold", "react", "talk"];
+    let frames: Vec<_> = frames_of("timber-wolf")
+        .into_iter()
+        .filter(|(animation, _, _)| posed.contains(&animation.as_str()))
+        .collect();
+
+    for (i, (animation, frame, bytes)) in frames.iter().enumerate() {
+        for (other_animation, other_frame, other_bytes) in &frames[i + 1..] {
+            if animation == other_animation {
+                continue;
+            }
+            assert!(
+                bytes != other_bytes,
+                "{animation} frame {frame} is the same art as {other_animation} \
+                 frame {other_frame}"
+            );
+        }
+    }
+}
+
+/// #161 review: "Missing reactions". A patrol mech tracks a contact rather
+/// than closing on it, and a rush at the chassis earns a weapon raise.
+#[test]
+fn timber_wolf_declares_cursor_reactions() {
+    let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
+
+    assert_eq!(
+        character.near_reaction,
+        CursorReaction::Face,
+        "the cursor entering the Near radius turns the mech to track it"
+    );
+    assert_eq!(
+        character.rush_reaction,
+        CursorReaction::React,
+        "a cursor rushing the chassis plays react, the weapon raise"
     );
 }
