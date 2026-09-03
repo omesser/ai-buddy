@@ -28,10 +28,10 @@ Startup stops if no package loads, because a companion with no Character has
 nothing to be. A Director proposes Behaviors: Static weights with nothing
 configured, or an HTTP stand-in if you set a key (see [Running it](#running-it)).
 A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)).
-There is no chat surface yet: double-clicking is a Summon the Engine accepts
-and nothing answers (#17). Right-clicking the sprite and the tray / menu bar
-icon open the same menu: Character, Instances, Director, Do Not Disturb, Go
-away, Memory, Settings, Quit.
+There is no chat surface yet: double-clicking is a Summon, the sprite reacts to
+it, and nothing else answers (#17). Right-clicking the sprite and the tray /
+menu bar icon open the same menu: Character, Instances, Director, Do Not
+Disturb, Go away, Memory, Settings, Quit.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`

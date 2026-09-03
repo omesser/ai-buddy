@@ -189,10 +189,13 @@ impl Pointer {
             // landed on it is a click on it. Requiring the release to be over
             // the art as well would make a falling sprite impossible to prod.
             //
-            // Twice in quick succession it is also a Summon. The Poke stays:
-            // swallowing the reaction to the second click while waiting to see
-            // whether a third arrives would leave the sprite looking dead for
-            // as long as it took to decide.
+            // Twice in quick succession the second click is a Summon instead,
+            // not as well. The Engine answers a Summon with the same reaction
+            // a Poke gets, so nothing is lost on screen, and a cue keyed on
+            // the verb stream (#277) hears one gesture rather than two. The
+            // first click has already gone out as a Poke by then: holding it
+            // back for DOUBLE_CLICK_MS to see whether a partner arrives would
+            // make every single click feel broken.
             (Phase::Pressed, false) => {
                 self.phase = Phase::Idle;
                 let paired = self.since_click_ms <= DOUBLE_CLICK_MS;
@@ -201,7 +204,7 @@ impl Pointer {
                 self.summoned &= paired;
                 if paired && !self.summoned {
                     self.summoned = true;
-                    vec![Verb::Poke, Verb::Summon]
+                    vec![Verb::Summon]
                 } else {
                     vec![Verb::Poke]
                 }
@@ -339,15 +342,15 @@ mod tests {
     /// #6: two clicks in quick succession are a Summon, the deliberate act that
     /// opens the chat surface.
     ///
-    /// The second click is still a Poke. A double-click is two clicks, and
-    /// swallowing the reaction to the first would leave the sprite looking dead
-    /// for as long as it took to decide.
+    /// The first click is still a Poke — nothing knows a second is coming — and
+    /// the second is the Summon alone. #277: one verb per gesture, so a cue
+    /// keyed on the verb stream is not told twice about one double-click.
     #[test]
-    fn two_quick_clicks_poke_twice_and_summon() {
+    fn two_quick_clicks_poke_then_summon() {
         let mut pointer = Pointer::default();
 
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
-        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+        assert_eq!(click(&mut pointer), vec![Verb::Summon]);
     }
 
     /// The interval is the whole of what separates prodding the sprite twice
@@ -374,7 +377,7 @@ mod tests {
             drummed,
             vec![
                 vec![Verb::Poke],
-                vec![Verb::Poke, Verb::Summon],
+                vec![Verb::Summon],
                 vec![Verb::Poke],
                 vec![Verb::Poke],
                 vec![Verb::Poke],
@@ -389,13 +392,13 @@ mod tests {
     fn a_pause_re_arms_the_double_click() {
         let mut pointer = Pointer::default();
         click(&mut pointer);
-        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+        assert_eq!(click(&mut pointer), vec![Verb::Summon]);
         click(&mut pointer);
 
         pause(&mut pointer);
 
         assert_eq!(click(&mut pointer), vec![Verb::Poke]);
-        assert_eq!(click(&mut pointer), vec![Verb::Poke, Verb::Summon]);
+        assert_eq!(click(&mut pointer), vec![Verb::Summon]);
     }
 
     /// Clicking, picking the sprite up and putting it down, then clicking again

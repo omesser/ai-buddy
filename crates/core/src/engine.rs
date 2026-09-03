@@ -157,8 +157,8 @@ pub struct Frame {
     /// horizontal travel turns it, so a stop keeps the last heading and the
     /// renderer can mirror the art by it without flicker at rest.
     pub facing: f64,
-    /// Whether the user addressed the buddy this tick. A Poke or a Dwell.
-    /// The Shell wakes the session Director from this bit.
+    /// Whether the user addressed the buddy this tick: a Poke, a Summon, a
+    /// Menu or a Dwell. The Shell wakes the session Director from this bit.
     pub addressed: bool,
 }
 
@@ -655,8 +655,8 @@ impl Engine {
         // so the velocity holds when the Behavior that started it is over.
         // What does stop it is a Primitive that is the sprite standing still
         // (`walk sit` would otherwise slide along the edge it sat down on),
-        // and a Poke — answered with the other verbs further down — which
-        // zeroes the feet and starts the cooldown (#177).
+        // and a Poke or a Summon — answered with the other verbs further down —
+        // which zeroes the feet and starts the cooldown (#177).
         //
         // Chase (#153) steers walk velocity toward the cursor's x along the
         // ground: y is a fall, not a pursuit. Arrival is a swat, not overlap;
@@ -819,7 +819,16 @@ impl Engine {
         // one thing a companion must never ignore, and it reads as alive
         // exactly because it interrupts — including a Behavior, and including
         // its own reaction: prodded again, it reacts again from the beginning.
-        if snapshot.verbs.contains(&Verb::Poke) {
+        //
+        // A Summon is the second click of a pair, emitted in place of that
+        // click's Poke (#277), so it is answered the same way — a double-click
+        // that did visibly less than a single click would read as a miss.
+        // Menu is not: the tray menu opening is its response.
+        if snapshot
+            .verbs
+            .iter()
+            .any(|verb| matches!(verb, Verb::Poke | Verb::Summon))
+        {
             // On its feet, a Poke also stops them: the reaction is the
             // character noticing you, and a character that notices you does
             // not keep strolling past. Mid-air it changes nothing about the
@@ -829,10 +838,14 @@ impl Engine {
                 self.poke_cooldown_ms = POKE_COOLDOWN_MS;
             }
             started |= self.play(&[Primitive::React]);
-            // A click is how the user tests the Director. Dwell sets the
-            // same bit; the Shell reads one field for both.
-            addressed = true;
         }
+        // A click is how the user tests the Director, and a Summon or a Menu
+        // is the same reach for the sprite. Dwell sets the same bit; the Shell
+        // reads one field for all of them.
+        addressed |= snapshot
+            .verbs
+            .iter()
+            .any(|verb| matches!(verb, Verb::Poke | Verb::Summon | Verb::Menu));
 
         // A Behavior is drawn over whatever the sprite is doing, so a Poke shows
         // even mid-fall. It changes nothing about where the sprite is.
@@ -2225,11 +2238,13 @@ mod tests {
 
     /// #6 fixes the verb set at five so no Character ever has to grow another
     /// Animation for a sixth. Summon opens the chat surface (#17) and Menu opens
-    /// the tray's menu (#18); neither exists, so both are accepted and show
-    /// nothing. They are still the user reaching for the sprite, so a sleeping
-    /// one wakes — an interaction that left it snoring would read as ignored.
+    /// the tray's menu (#18); neither is here, and neither moves the sprite.
+    /// They are still the user reaching for it, so a sleeping one wakes — an
+    /// interaction that left it snoring would read as ignored — and the
+    /// Director hears it, or the loudest interactions there are would be the
+    /// ones it never learned of (#277).
     #[test]
-    fn a_summon_or_a_menu_wakes_the_sprite_without_moving_it() {
+    fn a_summon_or_a_menu_wakes_the_sprite_and_addresses_the_director() {
         for verb in [Verb::Summon, Verb::Menu] {
             let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
             let resting = settle(&mut engine, &snapshot(100));
@@ -2249,8 +2264,40 @@ mod tests {
                 addressed.position, resting.position,
                 "{verb:?} does not walk the sprite to the cursor"
             );
-            assert_eq!(addressed.animation, "idle", "and nothing is played for it");
+            assert!(
+                addressed.addressed,
+                "{verb:?} is the user reaching for the sprite"
+            );
         }
+    }
+
+    /// #277: a double-click is a Poke and then a Summon, and the Summon stands
+    /// where the second click's Poke used to. It plays the reaction that Poke
+    /// brought, or a double-click would visibly do less than a single click.
+    #[test]
+    fn a_summon_plays_the_reaction() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let summoned = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Summon],
+            ..snapshot(100)
+        });
+        assert_eq!(summoned.animation, "react");
+    }
+
+    /// Menu plays nothing. The tray menu opening is its response, and a
+    /// reaction under a context menu would be a sprite gesturing at a list.
+    #[test]
+    fn a_menu_plays_nothing() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let menu_opened = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Menu],
+            ..snapshot(100)
+        });
+        assert_eq!(menu_opened.animation, "idle");
     }
 
     /// Menu interrupts what the sprite is doing, not where it is going: the
@@ -2786,6 +2833,33 @@ mod tests {
         assert_eq!(
             woken.animation, "react",
             "the greeting is played: {woken:?}"
+        );
+    }
+
+    /// #277: the Summon that replaced the second click's Poke keeps its stop
+    /// and its cooldown too, so a double-click on a strolling sprite holds it
+    /// exactly as it did before. Menu is the verb that lets the walk carry on.
+    #[test]
+    fn a_summon_mid_stroll_stops_the_walk_like_a_poke() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+        engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        assert_eq!(engine.tick(&a_long_perch()).velocity.x, WALK_SPEED);
+
+        let summoned = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Summon],
+            ..a_long_perch()
+        });
+        assert_eq!(summoned.velocity.x, 0.0, "the summon stops the feet");
+
+        let held: Vec<Frame> = (0..24).map(|_| engine.tick(&a_long_perch())).collect();
+        assert!(
+            held.iter()
+                .all(|frame| frame.position.x == summoned.position.x),
+            "it stays put through the cooldown: {held:?}"
         );
     }
 
