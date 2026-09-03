@@ -5,9 +5,11 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to stamp on the bundles. Default: the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
+      version-override:
+        description: 'Stamp this version on the bundles. Leave empty to use the tag on the chosen commit, else <latest tag>-dev.g<sha>.'
         type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -48,7 +50,7 @@ jobs:
 
       - name: The version that ships
         # git names the version, never tauri.conf.json. Three sources, in
-        # order: the version input, for a run that has to stamp a specific
+        # order: version-override, for a run that has to stamp a specific
         # number; the Release's tag; the tag on the commit the run was
         # pointed at. Falling off the end, the highest release tag plus a
         # -dev prerelease reads as "after that release, not yet a release",
@@ -58,7 +60,9 @@ jobs:
         id: ver
         env:
           TAG: ${{ github.event.release.tag_name }}
-          OVERRIDE: ${{ inputs.version }}
+          # Bracket syntax, not inputs.version-override: an expression reads
+          # the hyphen as subtraction and yields nothing.
+          OVERRIDE: ${{ inputs['version-override'] }}
         run: |
           version="${OVERRIDE#v}"
           if [ -z "$version" ]; then
