@@ -297,14 +297,14 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
 /// launched it — Cursor, Terminal — not to "ai-buddy". A packaged
 /// `.app` is listed under its own name.
 pub fn listed_under_hint(name: &str) -> String {
-    format!("macOS lists this process as {name}. That is the row to turn on in Privacy & Security.")
+    format!("macOS lists this app as {name}, under Privacy & Security.")
 }
 
 /// The pane copy. The listed name is live: a `cargo run` from Cursor is
 /// Cursor, a packaged build is ai-buddy.
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
-        "First run grants nothing. Check a box to ask macOS. {} Unchecking stops the buddy using it; turn it off in Privacy & Security to revoke.",
+        "Checking a box asks macOS for the permission. {}",
         listed_under_hint(listed_as)
     )
 }

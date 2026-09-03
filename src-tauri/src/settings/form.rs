@@ -179,11 +179,11 @@ pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
 fn excluded_help() -> String {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        "One application name per line, matched against X11 WM_CLASS. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.".to_string()
+        "One app name per line, matched on WM_CLASS.".to_string()
     }
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     {
-        "One application name per line. Those windows stay out of MCP sensing, and the Director is not told they are frontmost. The buddy can still sit on them.".to_string()
+        "One app name per line.".to_string()
     }
 }
 
@@ -229,19 +229,14 @@ fn director_sections() -> Vec<FormSection> {
                     id: DIRECTOR_ID.to_string(),
                     label: "Director on".to_string(),
                     frozen: false,
-                    help: Some(
-                        "Off leaves Static weights running the life. No session calls.".to_string(),
-                    ),
+                    help: Some("The model picks what happens next.".to_string()),
                     comment: None,
                 },
                 FormRow::Checkbox {
                     id: AMBIENT_ID.to_string(),
                     label: "Ambient session wakes".to_string(),
                     frozen: false,
-                    help: Some(
-                        "Off keeps Poke and Summon on the session path. Idle life stays Static."
-                            .to_string(),
-                    ),
+                    help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
                 },
                 FormRow::TextField {
@@ -279,10 +274,7 @@ fn director_sections() -> Vec<FormSection> {
             rows: vec![FormRow::InspectBlock {
                 id: PAYLOAD_ID.to_string(),
                 label: None,
-                help: Some(
-                    "Inspect only. The last session turn, opening Character Prompt or follow-up."
-                        .to_string(),
-                ),
+                help: Some("The last thing sent to the model.".to_string()),
             }],
         },
     ]
@@ -332,26 +324,22 @@ fn presence_sections() -> Vec<FormSection> {
     vec![
         FormSection {
             heading: "Do Not Disturb".to_string(),
-            comment: Some(
-                "DESIGN.md: quiet is not gone. A Hide heading would teach the opposite."
-                    .to_string(),
-            ),
+            // Named for quiet rather than for hiding: Do Not Disturb leaves the
+            // buddy on screen, and a Hide heading would teach the opposite.
+            comment: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: DND_ID.to_string(),
                     label: "Do Not Disturb".to_string(),
                     frozen: false,
-                    help: Some("On screen, not starting things.".to_string()),
+                    help: Some("Stays on screen. Stops starting things.".to_string()),
                     comment: None,
                 },
                 FormRow::Checkbox {
                     id: SOUND_ID.to_string(),
                     label: "Sound".to_string(),
                     frozen: false,
-                    help: Some(
-                        "Off silences the cues a gesture plays. Do Not Disturb silences them too; the visual cue stays. A machine with no sound device stays silent the same way."
-                            .to_string(),
-                    ),
+                    help: Some("Plays a sound on poke and summon.".to_string()),
                     comment: None,
                 },
             ],
@@ -364,22 +352,20 @@ fn presence_sections() -> Vec<FormSection> {
                     id: HIDDEN_ID.to_string(),
                     label: "Go away".to_string(),
                     frozen: false,
-                    help: None,
+                    help: Some("Off screen. Still running.".to_string()),
                     comment: None,
                 },
                 FormRow::Checkbox {
                     id: FULLSCREEN_ID.to_string(),
                     label: "Hide in fullscreen apps".to_string(),
                     frozen: false,
-                    help: None,
+                    help: Some("Steps aside for fullscreen apps.".to_string()),
                     comment: None,
                 },
                 FormRow::InspectBlock {
                     id: HOTKEY_ID.to_string(),
-                    label: Some("Hotkey".to_string()),
-                    help: Some(
-                        "Shown, not edited. A string field is not a key recorder.".to_string(),
-                    ),
+                    label: Some("Hide/Show Toggle".to_string()),
+                    help: Some("Hides or shows from any app.".to_string()),
                 },
             ],
         },
@@ -390,8 +376,11 @@ fn presence_sections() -> Vec<FormSection> {
                 id: LAUNCH_ID.to_string(),
                 label: "Launch at login (unimplemented)".to_string(),
                 frozen: true,
-                help: None,
-                comment: Some("A Launch Agent on `cargo run` is not launch-at-login. There is no bundled app to start, on any OS.".to_string()),
+                // No installed app on any OS yet, so there is nothing for the
+                // system to start: a Launch Agent pointing at `cargo run` is
+                // not launch-at-login.
+                help: Some("Not available yet.".to_string()),
+                comment: None,
             }],
         },
     ]
@@ -407,14 +396,14 @@ fn privacy_sections() -> Vec<FormSection> {
                     id: CONSENT_ACCESSIBILITY_ID.to_string(),
                     label: "Accessibility".to_string(),
                     frozen: false,
-                    help: Some("Exact Dock geometry, so the sprite does not walk into the Dock. macOS Accessibility. The buddy reads the Dock's bounds; it does not control your computer.".to_string()),
+                    help: Some("Reads the Dock's position.".to_string()),
                     comment: None,
                 },
                 FormRow::Checkbox {
                     id: CONSENT_SCREEN_RECORDING_ID.to_string(),
                     label: "Screen Recording".to_string(),
                     frozen: false,
-                    help: Some("Window titles, and Capture when it ships. macOS Screen Recording, which can see the screen.".to_string()),
+                    help: Some("Reads window titles.".to_string()),
                     comment: None,
                 },
             ],
@@ -430,8 +419,8 @@ fn privacy_sections() -> Vec<FormSection> {
             }],
         },
         FormSection {
-            heading: "Memory".to_string(),
-            comment: None,
+            heading: "Memory File".to_string(),
+            comment: Some("What your buddy remembers between runs.".to_string()),
             rows: vec![
                 FormRow::InspectPath {
                     id: MEMORY_PATH_ID.to_string(),
@@ -462,19 +451,19 @@ fn development_sections() -> Vec<FormSection> {
             TRACE_FRAMES_ID,
             &dev_flags::TRACE_FRAMES,
             "Trace frames",
-            "Traces the Engine's per-frame decisions. Takes effect on the next tick.",
+            "Prints each frame.",
         ),
         flag_row(
             TRACE_HITTEST_ID,
             &dev_flags::TRACE_HITTEST,
             "Trace hit-test",
-            "Traces the click-through decision. Takes effect on the next tick.",
+            "Prints where each click went.",
         ),
         flag_row(
             TRACE_DIRECTOR_ID,
             &dev_flags::TRACE_DIRECTOR,
             "Trace Director",
-            "Prints each session wake, prompt and reply. Takes effect on the next wake.",
+            "Prints each model call.",
         ),
         // Only AppKit has a capture exclusion to drop. Gating the element
         // rather than pushing it keeps the binding immutable on the platforms
@@ -487,7 +476,7 @@ fn development_sections() -> Vec<FormSection> {
             // `configure_overlay` reads this when a window is built, and only
             // the Linux frame loop re-runs it. Honest rather than silently
             // inert.
-            "Drops the capture exclusion, so the overlay shows in a screen share. Takes effect on the next launch.",
+            "Shows in screenshots. Needs a restart.",
         ),
     ];
 
@@ -496,18 +485,13 @@ fn development_sections() -> Vec<FormSection> {
 
     vec![
         FormSection {
-            heading: "Development".to_string(),
-            comment: Some(
-                "These are for development and testing. None of them is recommended on."
-                    .to_string(),
-            ),
+            heading: "Traces".to_string(),
+            comment: Some("Switches for development and testing.".to_string()),
             rows,
         },
         FormSection {
             heading: "Completer limits".to_string(),
-            comment: Some(
-                "Also for development and testing: the session call's timeout and the tokens a reply may take. Blank is the default, which is larger on both counts for a server on this machine. A change retargets the running Director and drops its session history.".to_string(),
-            ),
+            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
             rows: vec![
                 FormRow::TextField {
                     id: DIRECTOR_TIMEOUT_SECS_ID.to_string(),
@@ -530,16 +514,16 @@ fn development_sections() -> Vec<FormSection> {
 pub fn describe() -> FormDescription {
     let tabs = vec![
         FormTab {
-            title: "Director".to_string(),
-            sections: director_sections(),
+            title: "Presence".to_string(),
+            sections: presence_sections(),
         },
         FormTab {
             title: "Character".to_string(),
             sections: character_sections(),
         },
         FormTab {
-            title: "Presence".to_string(),
-            sections: presence_sections(),
+            title: "Director".to_string(),
+            sections: director_sections(),
         },
         FormTab {
             title: "Privacy".to_string(),
@@ -687,7 +671,6 @@ mod tests {
         let mut expected = vec![
             "Character",
             "Completer limits",
-            "Development",
             "Director",
             "Do Not Disturb",
             "Excluded applications",
@@ -695,7 +678,8 @@ mod tests {
             "Instances",
             "Last user turn",
             "Launch",
-            "Memory",
+            "Memory File",
+            "Traces",
             "What the buddy can see",
         ];
         expected.sort_unstable();
@@ -713,9 +697,9 @@ mod tests {
         assert_eq!(
             titles,
             vec![
-                "Director",
-                "Character",
                 "Presence",
+                "Character",
+                "Director",
                 "Privacy",
                 "Development"
             ]
@@ -1012,8 +996,8 @@ mod tests {
         let description = describe();
         let memory = description
             .sections()
-            .find(|s| s.heading == "Memory")
-            .expect("Memory section");
+            .find(|s| s.heading == "Memory File")
+            .expect("Memory File section");
 
         assert_eq!(memory.rows.len(), 2);
         assert!(

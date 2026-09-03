@@ -20,6 +20,14 @@ use crate::settings::{SettingsPatch, SettingsSession};
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
 const MARGIN: i32 = 28;
+/// The gap above a row, and the smaller one above a help line. The ratio
+/// between them is the only thing that says which control a help line
+/// describes; equal gaps read as a caption for the row below.
+const ROW_GAP: i32 = 12;
+const HINT_GAP: i32 = 4;
+/// A section break: the rule above a heading and the heading's own gap. Larger
+/// than `ROW_GAP`, so a heading groups with the rows under it.
+const SECTION_GAP: i32 = 24;
 
 thread_local! {
     static WINDOW: RefCell<Option<Rc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -88,14 +96,17 @@ impl SettingsWindow {
                 gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
             scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
 
-            let vbox = gtk::Box::new(gtk::Orientation::Vertical, 16);
+            // No box spacing: every row carries its own gap, because a box's
+            // spacing is uniform and a help line needs a smaller one.
+            let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
             vbox.set_margin_start(MARGIN);
             vbox.set_margin_end(MARGIN);
             vbox.set_margin_top(MARGIN);
             vbox.set_margin_bottom(MARGIN);
 
+            let mut drawn = false;
             for section in &tab.sections {
-                self.build_section(&vbox, section, &description.actions);
+                drawn |= self.build_section(&vbox, section, &description.actions, drawn);
             }
 
             scrolled.add(&vbox);
@@ -105,12 +116,15 @@ impl SettingsWindow {
         self.window.add(&notebook);
     }
 
+    /// Returns whether the section drew anything, so the caller knows whether
+    /// the next one is still the first on its page.
     fn build_section(
         &self,
         container: &gtk::Box,
         section: &form::FormSection,
         actions: &HashMap<String, RowAction>,
-    ) {
+        rule: bool,
+    ) -> bool {
         let visible_rows: Vec<&FormRow> = section
             .rows
             .iter()
@@ -118,7 +132,18 @@ impl SettingsWindow {
             .collect();
 
         if visible_rows.is_empty() {
-            return;
+            return false;
+        }
+
+        // A rule above every heading but a page's first, so the heading reads
+        // as the start of the group below it rather than another row in the one
+        // above.
+        if rule {
+            pack(
+                container,
+                &gtk::Separator::new(gtk::Orientation::Horizontal),
+                SECTION_GAP,
+            );
         }
 
         let heading = gtk::Label::new(Some(&section.heading));
@@ -127,7 +152,7 @@ impl SettingsWindow {
             "<span size='large' weight='bold'>{}</span>",
             gtk::glib::markup_escape_text(&section.heading)
         ));
-        container.pack_start(&heading, false, false, 8);
+        pack(container, &heading, SECTION_GAP);
 
         if let Some(comment) = &section.comment {
             let comment_label = gtk::Label::new(Some(comment));
@@ -138,12 +163,14 @@ impl SettingsWindow {
                 "<span size='small' foreground='#888888'>{}</span>",
                 gtk::glib::markup_escape_text(comment)
             ));
-            container.pack_start(&comment_label, false, false, 0);
+            pack(container, &comment_label, HINT_GAP);
         }
 
         for row in &visible_rows {
             self.build_row(container, row, actions);
         }
+
+        true
     }
 
     fn should_omit_row(&self, row: &FormRow) -> bool {
@@ -181,10 +208,10 @@ impl SettingsWindow {
                         "<span size='small' foreground='#888888'>{}</span>",
                         gtk::glib::markup_escape_text(help_text)
                     ));
-                    container.pack_start(&check, false, false, 0);
-                    container.pack_start(&help_label, false, false, 0);
+                    pack(container, &check, ROW_GAP);
+                    pack(container, &help_label, HINT_GAP);
                 } else {
-                    container.pack_start(&check, false, false, 0);
+                    pack(container, &check, ROW_GAP);
                 }
 
                 // Frozen like the field arms below, so refresh's `set_active`
@@ -227,7 +254,7 @@ impl SettingsWindow {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
-                    container.pack_start(&label_widget, false, false, 0);
+                    pack(container, &label_widget, ROW_GAP);
                 }
 
                 let entry = gtk::Entry::new();
@@ -274,7 +301,7 @@ impl SettingsWindow {
                     });
                 }
 
-                container.pack_start(&entry, false, false, 0);
+                pack(container, &entry, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
@@ -283,7 +310,7 @@ impl SettingsWindow {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
-                    container.pack_start(&label_widget, false, false, 0);
+                    pack(container, &label_widget, ROW_GAP);
                 }
 
                 let entry = gtk::Entry::new();
@@ -334,7 +361,7 @@ impl SettingsWindow {
                     });
                 }
 
-                container.pack_start(&entry, false, false, 0);
+                pack(container, &entry, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
@@ -343,20 +370,7 @@ impl SettingsWindow {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
-                    container.pack_start(&label_widget, false, false, 0);
-                }
-
-                if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_margin_start(24);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    container.pack_start(&help_label, false, false, 0);
+                    pack(container, &label_widget, ROW_GAP);
                 }
 
                 if id == form::HOTKEY_ID || id == form::PAYLOAD_ID {
@@ -366,7 +380,7 @@ impl SettingsWindow {
                     label.set_selectable(true);
                     label.set_line_wrap(true);
 
-                    container.pack_start(&label, false, false, 0);
+                    pack(container, &label, ROW_GAP);
                     self.controls
                         .borrow_mut()
                         .insert(id.clone(), Control::Label(label));
@@ -384,10 +398,23 @@ impl SettingsWindow {
                     text_view.set_monospace(true);
 
                     scrolled.add(&text_view);
-                    container.pack_start(&scrolled, false, false, 0);
+                    pack(container, &scrolled, ROW_GAP);
                     self.controls
                         .borrow_mut()
                         .insert(id.clone(), Control::TextView(text_view));
+                }
+
+                if let Some(help_text) = help {
+                    let help_label = gtk::Label::new(Some(help_text));
+                    help_label.set_halign(Align::Start);
+                    help_label.set_line_wrap(true);
+                    help_label.set_xalign(0.0);
+                    help_label.set_margin_start(24);
+                    help_label.set_markup(&format!(
+                        "<span size='small' foreground='#888888'>{}</span>",
+                        gtk::glib::markup_escape_text(help_text)
+                    ));
+                    pack(container, &help_label, HINT_GAP);
                 }
             }
             FormRow::InspectPath { id } => {
@@ -397,7 +424,7 @@ impl SettingsWindow {
                 label.set_xalign(0.0);
                 label.set_selectable(true);
 
-                container.pack_start(&label, false, false, 0);
+                pack(container, &label, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Label(label));
@@ -406,7 +433,7 @@ impl SettingsWindow {
                 let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 list_box.set_size_request(-1, 80);
 
-                container.pack_start(&list_box, false, false, 0);
+                pack(container, &list_box, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::List(list_box, dismiss_label.clone()));
@@ -414,18 +441,6 @@ impl SettingsWindow {
             FormRow::Multiline {
                 id, help, editable, ..
             } => {
-                if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    container.pack_start(&help_label, false, false, 0);
-                }
-
                 let scrolled =
                     gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
                 scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
@@ -466,10 +481,22 @@ impl SettingsWindow {
                 }
 
                 scrolled.add(&text_view);
-                container.pack_start(&scrolled, false, false, 0);
+                pack(container, &scrolled, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::TextView(text_view));
+
+                if let Some(help_text) = help {
+                    let help_label = gtk::Label::new(Some(help_text));
+                    help_label.set_halign(Align::Start);
+                    help_label.set_line_wrap(true);
+                    help_label.set_xalign(0.0);
+                    help_label.set_markup(&format!(
+                        "<span size='small' foreground='#888888'>{}</span>",
+                        gtk::glib::markup_escape_text(help_text)
+                    ));
+                    pack(container, &help_label, HINT_GAP);
+                }
             }
             FormRow::Composite { controls, .. } => {
                 let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -610,12 +637,12 @@ impl SettingsWindow {
                     }
                 }
 
-                container.pack_start(&hbox, false, false, 0);
+                pack(container, &hbox, ROW_GAP);
             }
             FormRow::Popup { id, .. } => {
                 let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
 
-                container.pack_start(&radio_box, false, false, 0);
+                pack(container, &radio_box, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::CharacterPicker(radio_box, Vec::new()));
@@ -857,6 +884,12 @@ impl SettingsWindow {
 
         self.refreshing.set(false);
     }
+}
+
+/// Add a widget to a page with `gap` of space above it.
+fn pack(container: &gtk::Box, widget: &impl gtk::glib::IsA<gtk::Widget>, gap: i32) {
+    widget.set_margin_top(gap);
+    container.pack_start(widget, false, false, 0);
 }
 
 fn confirm_wipe(parent: &Window) -> bool {

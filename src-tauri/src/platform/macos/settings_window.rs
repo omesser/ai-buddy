@@ -11,9 +11,9 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
-    NSBackingStoreType, NSButton, NSColor, NSControlStateValueOff, NSControlStateValueOn,
-    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
-    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
+    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControlStateValueOff,
+    NSControlStateValueOn, NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView,
+    NSSecureTextField, NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
     NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
     NSWindowLevel, NSWindowStyleMask,
 };
@@ -29,6 +29,14 @@ const WINDOW_HEIGHT: f64 = 720.0;
 const DOC_HEIGHT: f64 = 1600.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
+/// The gap above a row, and the smaller one above a help line. The ratio
+/// between them is the only thing that says which control a help line
+/// describes; equal gaps read as a caption for the row below.
+const ROW_GAP: f64 = 12.0;
+const HINT_GAP: f64 = 4.0;
+/// A section break: the rule above a heading and the heading's own leading
+/// gap. Larger than `ROW_GAP`, so a heading groups with the rows under it.
+const SECTION_GAP: f64 = 24.0;
 thread_local! {
     static CONTROLLER: RefCell<Option<Retained<SettingsController>>> = const { RefCell::new(None) };
 }
@@ -544,12 +552,15 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
             ),
         );
         let mut cursor = Cursor {
-            y: DOC_HEIGHT - 16.0,
+            y: DOC_HEIGHT,
             parent: document.clone(),
             mtm,
         };
 
-        for section in &tab.sections {
+        for (index, section) in tab.sections.iter().enumerate() {
+            if index > 0 {
+                cursor.rule();
+            }
             cursor.heading(&section.heading);
             if let Some(comment) = &section.comment {
                 let field = cursor.section_comment(comment);
@@ -680,10 +691,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
                             cursor.place(&lbl, 18.0);
                         }
-                        if let Some(help_text) = help {
-                            cursor.hint(help_text);
-                        }
-
                         match id.as_str() {
                             form::PAYLOAD_ID => {
                                 let field = inspect_block(mtm);
@@ -697,6 +704,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             }
                             _ => {}
                         }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
                     }
                     FormRow::Popup { id, .. } => {
                         let pop = popup(&controller, sel!(characterPicked:), mtm);
@@ -709,9 +720,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                     FormRow::Multiline {
                         id, help, editable, ..
                     } => {
-                        if let Some(help_text) = help {
-                            cursor.hint(help_text);
-                        }
                         if *editable {
                             let text = editable_block(&controller, mtm);
                             cursor.place(&text, 88.0);
@@ -722,9 +730,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             let field = inspect_block(mtm);
                             cursor.place(&field, 88.0);
                         }
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
                     }
                     FormRow::Composite { controls, .. } => {
-                        cursor.y -= 24.0;
+                        cursor.y -= 24.0 + ROW_GAP;
                         let mut x = MARGIN;
 
                         for control in controls {
@@ -800,7 +811,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 }
                             }
                         }
-                        cursor.y -= 16.0;
                     }
                 }
             }
@@ -916,8 +926,8 @@ struct Cursor {
 }
 
 impl Cursor {
-    fn place(&mut self, widget: &NSView, height: f64) {
-        self.y -= height;
+    fn put(&mut self, widget: &NSView, height: f64, gap: f64) {
+        self.y -= height + gap;
         widget.setFrame(NSRect::new(
             NSPoint::new(MARGIN, self.y),
             NSSize::new(FIELD_WIDTH, height),
@@ -926,38 +936,43 @@ impl Cursor {
         self.parent.addSubview(widget);
     }
 
+    fn place(&mut self, widget: &NSView, height: f64) {
+        self.put(widget, height, ROW_GAP);
+    }
+
     fn heading(&mut self, title: &str) {
-        self.y -= 28.0;
         let label = NSTextField::labelWithString(&NSString::from_str(title), self.mtm);
         label.setFont(Some(&NSFont::boldSystemFontOfSize(14.0)));
-        label.setFrame(NSRect::new(
-            NSPoint::new(MARGIN, self.y),
-            NSSize::new(FIELD_WIDTH, 20.0),
-        ));
-        stretch_x(&label);
-        self.parent.addSubview(&label);
+        self.put(&label, 20.0, SECTION_GAP);
+    }
+
+    /// A rule above every heading but a tab's first, so the heading reads as
+    /// the start of the group below it rather than another row in the one
+    /// above.
+    fn rule(&mut self) {
+        let rule = NSBox::initWithFrame(
+            NSBox::alloc(self.mtm),
+            NSRect::new(NSPoint::new(MARGIN, 0.0), NSSize::new(FIELD_WIDTH, 1.0)),
+        );
+        rule.setBoxType(NSBoxType::Separator);
+        self.put(&rule, 1.0, SECTION_GAP);
     }
 
     fn section_comment(&mut self, text: &str) -> Retained<NSTextField> {
         let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
         label.setTextColor(Some(&NSColor::secondaryLabelColor()));
         label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
-        label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
-        self.place(&label, 64.0);
+        let height = wrapped_height(&label);
+        self.put(&label, height, HINT_GAP);
         label
     }
 
     fn hint(&mut self, text: &str) {
-        self.y -= 14.0;
-        let label = NSTextField::labelWithString(&NSString::from_str(text), self.mtm);
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
         label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
         label.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        label.setFrame(NSRect::new(
-            NSPoint::new(MARGIN, self.y),
-            NSSize::new(FIELD_WIDTH, 12.0),
-        ));
-        stretch_x(&label);
-        self.parent.addSubview(&label);
+        let height = wrapped_height(&label);
+        self.put(&label, height, HINT_GAP);
     }
 }
 
@@ -978,6 +993,23 @@ fn checkbox(
     button.setButtonType(objc2_app_kit::NSButtonType::Switch);
     button.setTag(tag);
     button
+}
+
+/// How tall a wrapping label has to be to show all of its text at
+/// `FIELD_WIDTH`.
+///
+/// Measured rather than assumed: help text is written in `settings::form` and
+/// a fixed height silently clips the sentence when someone lengthens it.
+/// Widening the window only ever frees space, since `stretch_x` lets the label
+/// grow and wrap into fewer lines.
+///
+/// Untested, and not testable in this harness: `fittingSize` drives autolayout,
+/// which aborts the process off the main thread, and `cargo test` runs on a
+/// worker. `Cursor` carries a `MainThreadMarker`, so a caller cannot reach here
+/// from anywhere else.
+fn wrapped_height(label: &NSTextField) -> f64 {
+    label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
+    label.fittingSize().height.ceil()
 }
 
 fn inspect_line(mtm: MainThreadMarker) -> Retained<NSTextField> {

@@ -76,6 +76,7 @@ objc2-app-kit = {version = "0.3", features = [
   "NSRunningApplication",
   # Native settings window. SPEC gives the webview to the sprite and chat, not
   # to checkboxes.
+  "NSBox",
   "NSButton",
   "NSButtonCell",
   "NSCell",
