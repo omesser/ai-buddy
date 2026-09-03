@@ -694,9 +694,8 @@ Some notes I typed at the top, under no heading at all.
     /// they have narrowed who can read it, replacing the file must not hand that
     /// back — a new file starts from the umask, not from what stood there.
     ///
-    /// Unix only. The claim is about a POSIX mode, and Windows has no bits to
-    /// preserve: `set_permissions` there toggles a readonly flag and nothing
-    /// this asserts would mean anything. #247.
+    /// Unix only: the claim is about POSIX mode bits, which Windows has no
+    /// equivalent for. #247.
     #[cfg(unix)]
     #[test]
     fn a_write_keeps_the_permissions_the_user_set() {

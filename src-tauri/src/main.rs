@@ -17,16 +17,11 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
-// The native settings window is macOS and Linux only. On Windows
-// platform::show_settings is a stub, so the form these three modules build for
-// it, and the secret writes its rows perform, are unreachable there by design
-// rather than rotted. `docs/SPEC.md` puts Windows out of v1. #247.
+// The settings window is unix-only and Windows stubs platform::show_settings,
+// so nothing there calls into the form these three modules build. #247.
 //
-// ponytail: module-wide, where only part of each module is actually dead on
-// Windows. `settings` in particular is about half live, since main.rs uses
-// Settings, parse_hotkey, toggle_away and settings_path on every platform. The
-// ceiling is that dead code added inside these three goes unwarned on Windows;
-// it costs nothing today because macOS and Linux still lint every item. Narrow
+// ponytail: module-wide, though only part of each module is dead on Windows.
+// The ceiling is that dead code added inside them goes unwarned there; narrow
 // it to `mod form` and the view types when a Windows-only item first lands.
 #[cfg_attr(not(unix), allow(dead_code))]
 mod consent;

@@ -254,38 +254,17 @@ jobs:
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
 
-  # A job of its own, not a third matrix entry. Windows breaks the premise the
-  # job above rests on: shfmt, shellcheck, `sudo mv`, the apt step and the shell
-  # hooks are all inapplicable there, and a matrix entry would inherit every one
-  # of them.
+  # A job of its own rather than a third matrix entry: Windows cannot run shfmt,
+  # shellcheck, `sudo mv` or the apt step that `checks` rests on. The one
+  # question it can answer that the other two cannot is whether the `not(unix)`
+  # arms in platform.rs and sensing.rs still compile.
   #
-  # So this job runs no pre-commit and installs no Python, Node, shfmt or
-  # shellcheck. Formatting, whitespace, codespell and the YAML/JSON/TOML hooks
-  # are settled on Linux and macOS; a third runner would check the same bytes
-  # and give the same answer. The one question it can ask that they cannot is
-  # whether the code compiles for Windows, and nothing compiles it today.
-  # platform.rs carries seven `not(unix)` arms and sensing.rs one, and the
-  # opener #195 added rests on reading.
-  #
-  # Cross-checking does not stand in for it. A Tauri target needs the MSVC
-  # toolchain and WebView2, so `cargo check --target x86_64-pc-windows-msvc`
-  # from another runner cannot compile what this does. #247.
-  #
-  # No path gate. One over the files that hold the arms let a `not(unix)` arm
-  # added to any other file escape it silently, which is the exact failure this
-  # job exists to prevent. #258 carries that design forward for a Windows test
-  # job, which is long enough for gating to buy something.
-  #
-  # Here it bought nothing. The repository is public, so hosted runners are free
-  # with unlimited minutes and the 2x Windows multiplier bills private repos
-  # only. Warm, the job is 1.4-1.8 min against `checks` at 1.4-2.0, so it
-  # finishes first and adds nothing to the critical path; cold, it is 3.1 min
-  # and extends a run by about a minute. Running it on every push is what keeps
-  # the cache warm, so the cold case gets rarer rather than more common.
+  # Ungated: a path gate over the files holding those arms would let an arm
+  # added anywhere else escape it, which is the failure this job exists to
+  # catch. #247.
   windows:
     runs-on: windows-latest
-    # A cold-cache MSVC build of the whole workspace, on the slowest of the
-    # three runners.
+    # A cold-cache MSVC build of the whole workspace on the slowest runner.
     timeout-minutes: 45
 
     steps:
@@ -302,18 +281,11 @@ jobs:
         with:
           workspaces: .
           key: windows-latest
-          # Same reason as above — the run that fails clippy is the one about to
-          # be pushed again.
+          # Same reason as the `checks` job above.
           cache-on-failure: true
 
       - name: Compile the workspace for Windows
-        # --all-targets, because it type-checks the test targets and that is
-        # where a rotted arm shows up. clippy costs what cargo check does and
-        # catches more, so there is no reason to run the cheaper one.
-        #
-        # Compilation only. A first Windows suite is red for reasons that have
-        # nothing to do with the platform arms, path separators in fixtures and
-        # the macOS-gated tests in the shell crate among them, and a suite red
-        # on day one buries the signal this job exists to give. Turning
-        # `cargo test` on is a follow-up, once someone knows what fails.
+        # --all-targets to type-check the test targets, where a rotted arm shows
+        # up. Compilation only: a first Windows `cargo test` is red for reasons
+        # unrelated to the platform arms, so turning it on is #258.
         run: cargo clippy --workspace --all-targets -- -D warnings
