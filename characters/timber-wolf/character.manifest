@@ -21,6 +21,12 @@ scale = 1
 model_base = 1
 model_power = 1
 
+# Cursor reactions: patrol mech tracks contacts and raises a weapon when
+# something rushes it.
+[cursor]
+near_reaction = "face"
+rush_reaction = "react"
+
 # Side profile from the idle hold (0-6s of the side clip).
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
