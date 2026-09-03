@@ -822,9 +822,12 @@ mod tests {
         }
     }
 
-    /// Unix only. Making a file unreadable is the whole setup, and chmod 000 is
-    /// the only portable way to do it — on Windows the readonly flag still
-    /// permits reads, so there would be no refusal to assert. #247.
+    /// Unix only. The arm under test is the `fs::read` in `read_directory`, so
+    /// the setup needs a path that is a file and still refuses to open. Windows
+    /// has no such state for a file's owner: readonly still permits reads, and
+    /// an ACL is more setup than a test should own. Substituting a directory
+    /// does not stand in, because the walker recurses into one instead of
+    /// reading it. #247, and #258 if this ever runs on Windows.
     #[cfg(unix)]
     #[test]
     fn a_file_that_cannot_be_opened_is_reported_with_its_path() {

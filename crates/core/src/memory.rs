@@ -693,6 +693,7 @@ Some notes I typed at the top, under no heading at all.
     /// Memory is the user's file and holds what the buddies know about them. If
     /// they have narrowed who can read it, replacing the file must not hand that
     /// back — a new file starts from the umask, not from what stood there.
+    ///
     /// Unix only. The claim is about a POSIX mode, and Windows has no bits to
     /// preserve: `set_permissions` there toggles a readonly flag and nothing
     /// this asserts would mean anything. #247.

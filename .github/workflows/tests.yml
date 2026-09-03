@@ -275,8 +275,7 @@ jobs:
   # and give the same answer. The one question it can ask that they cannot is
   # whether the code compiles for Windows, and nothing compiles it today.
   # platform.rs carries seven `not(unix)` arms and sensing.rs one, and the
-  # opener #195 added rests on reading. That is the position the x11 arm was in
-  # before the review described above.
+  # opener #195 added rests on reading.
   #
   # Cross-checking does not stand in for it. A Tauri target needs the MSVC
   # toolchain and WebView2, so `cargo check --target x86_64-pc-windows-msvc`
