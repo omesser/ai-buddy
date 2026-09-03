@@ -38,7 +38,7 @@ enum Control {
     TextView(gtk::TextView),
     Label(gtk::Label),
     List(gtk::Box, String),
-    Popup(gtk::ComboBoxText),
+    CharacterPicker(gtk::ListBox),
 }
 
 impl SettingsWindow {
@@ -50,6 +50,7 @@ impl SettingsWindow {
         window.set_deletable(true);
 
         window.connect_delete_event(|window, _| {
+            window.set_keep_above(false);
             window.hide();
             gtk::glib::Propagation::Stop
         });
@@ -494,14 +495,21 @@ impl SettingsWindow {
                                 .insert(id.clone(), Control::Entry(entry));
                         }
                         CompositeControl::Popup { id } => {
-                            let combo = gtk::ComboBoxText::new();
-                            combo.set_size_request(180, -1);
-                            combo.connect_scroll_event(|_, _| gtk::glib::Propagation::Stop);
+                            let scrolled = gtk::ScrolledWindow::new(
+                                None::<&gtk::Adjustment>,
+                                None::<&gtk::Adjustment>,
+                            );
+                            scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+                            scrolled.set_size_request(180, 120);
 
-                            hbox.pack_start(&combo, false, false, 0);
+                            let list_box = gtk::ListBox::new();
+                            list_box.set_selection_mode(gtk::SelectionMode::Single);
+
+                            scrolled.add(&list_box);
+                            hbox.pack_start(&scrolled, false, false, 0);
                             self.controls
                                 .borrow_mut()
-                                .insert(id.clone(), Control::Popup(combo));
+                                .insert(id.clone(), Control::CharacterPicker(list_box));
                         }
                         CompositeControl::Button { id, label } => {
                             let button = gtk::Button::with_label(label);
@@ -537,9 +545,12 @@ impl SettingsWindow {
                                                         let character = ctrl
                                                             .get(&new_char_id)
                                                             .and_then(|c| {
-                                                                if let Control::Popup(p) = c {
-                                                                    p.active_text()
-                                                                        .map(|s| s.to_string())
+                                                                if let Control::CharacterPicker(list_box) = c {
+                                                                    list_box.selected_row().and_then(|row| {
+                                                                        row.child()
+                                                                            .and_then(|w| w.downcast::<gtk::Label>().ok())
+                                                                            .map(|label| label.text().to_string())
+                                                                    })
                                                                 } else {
                                                                     None
                                                                 }
@@ -612,28 +623,40 @@ impl SettingsWindow {
                 container.pack_start(&hbox, false, false, 0);
             }
             FormRow::Popup { id, .. } => {
-                let combo = gtk::ComboBoxText::new();
-                combo.set_hexpand(true);
+                let scrolled = gtk::ScrolledWindow::new(
+                    None::<&gtk::Adjustment>,
+                    None::<&gtk::Adjustment>,
+                );
+                scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+                scrolled.set_size_request(-1, 150);
+
+                let list_box = gtk::ListBox::new();
+                list_box.set_selection_mode(gtk::SelectionMode::Single);
 
                 if let Some(action) = actions.get(id) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
-                    combo.connect_changed(move |combo| {
+                    list_box.connect_row_selected(move |_, row| {
                         if refreshing.get() {
                             return;
                         }
-                        if let Some(text) = combo.active_text() {
-                            if let Ok(guard) = session.lock() {
-                                if let Some(sess) = guard.as_ref() {
-                                    if let RowAction::PatchField(field) = &action {
-                                        if field == "character" {
-                                            let patch = SettingsPatch {
-                                                character: Some(text.to_string()),
-                                                ..SettingsPatch::default()
-                                            };
-                                            if let Err(e) = sess.apply(patch) {
-                                                eprintln!("settings: {e}");
+                        if let Some(row) = row {
+                            if let Some(label) =
+                                row.child().and_then(|w| w.downcast::<gtk::Label>().ok())
+                            {
+                                let text = label.text().to_string();
+                                if let Ok(guard) = session.lock() {
+                                    if let Some(sess) = guard.as_ref() {
+                                        if let RowAction::PatchField(field) = &action {
+                                            if field == "character" {
+                                                let patch = SettingsPatch {
+                                                    character: Some(text),
+                                                    ..SettingsPatch::default()
+                                                };
+                                                if let Err(e) = sess.apply(patch) {
+                                                    eprintln!("settings: {e}");
+                                                }
                                             }
                                         }
                                     }
@@ -643,17 +666,17 @@ impl SettingsWindow {
                     });
                 }
 
-                combo.connect_scroll_event(|_, _| gtk::glib::Propagation::Stop);
-
-                container.pack_start(&combo, false, false, 0);
+                scrolled.add(&list_box);
+                container.pack_start(&scrolled, false, false, 0);
                 self.controls
                     .borrow_mut()
-                    .insert(id.clone(), Control::Popup(combo));
+                    .insert(id.clone(), Control::CharacterPicker(list_box));
             }
         }
     }
 
     fn show(&self) {
+        self.window.set_keep_above(true);
         self.window.show_all();
         self.window.present();
     }
@@ -724,28 +747,50 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::HOTKEY_ID) {
             label.set_text(&view.hide_hotkey);
         }
-        if let Some(Control::Popup(combo)) = controls.get(form::CHARACTER_ID) {
-            combo.remove_all();
-            for name in &view.installed {
-                combo.append(Some(name), name);
+        if let Some(Control::CharacterPicker(list_box)) = controls.get(form::CHARACTER_ID) {
+            for child in list_box.children() {
+                list_box.remove(&child);
             }
-            combo.set_active_id(Some(&view.character));
-        }
-        if let Some(Control::Popup(combo)) = controls.get(form::NEW_CHARACTER_ID) {
-            let current_selection = combo.active_id().map(|s| s.to_string());
-            combo.remove_all();
             for name in &view.installed {
-                combo.append(Some(name), name);
-            }
-            if let Some(selected) = current_selection {
-                if view.installed.contains(&selected) {
-                    combo.set_active_id(Some(&selected));
-                } else {
-                    combo.set_active_id(Some(&view.character));
+                let label = gtk::Label::new(Some(name));
+                label.set_halign(Align::Start);
+                label.set_xalign(0.0);
+                let row = gtk::ListBoxRow::new();
+                row.add(&label);
+                list_box.add(&row);
+                if name == &view.character {
+                    list_box.select_row(Some(&row));
                 }
-            } else {
-                combo.set_active_id(Some(&view.character));
             }
+            list_box.show_all();
+        }
+        if let Some(Control::CharacterPicker(list_box)) = controls.get(form::NEW_CHARACTER_ID) {
+            let current_selection = list_box.selected_row().and_then(|row| {
+                row.child()
+                    .and_then(|w| w.downcast::<gtk::Label>().ok())
+                    .map(|label| label.text().to_string())
+            });
+
+            for child in list_box.children() {
+                list_box.remove(&child);
+            }
+            for name in &view.installed {
+                let label = gtk::Label::new(Some(name));
+                label.set_halign(Align::Start);
+                label.set_xalign(0.0);
+                let row = gtk::ListBoxRow::new();
+                row.add(&label);
+                list_box.add(&row);
+
+                if let Some(ref selected) = current_selection {
+                    if name == selected {
+                        list_box.select_row(Some(&row));
+                    }
+                } else if name == &view.character {
+                    list_box.select_row(Some(&row));
+                }
+            }
+            list_box.show_all();
         }
         if let Some(Control::List(list_box, dismiss_label)) = controls.get(form::INSTANCES_ID) {
             for child in list_box.children() {
@@ -829,7 +874,9 @@ fn show_internal(session: SettingsSession) {
 pub fn refresh_if_showing() {
     WINDOW.with(|cell| {
         if let Some(window) = cell.borrow().as_ref() {
-            window.refresh();
+            if window.window.is_visible() {
+                window.refresh();
+            }
         }
     });
 }
