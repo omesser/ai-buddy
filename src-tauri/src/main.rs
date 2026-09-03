@@ -275,6 +275,10 @@ struct Placement<'a> {
     /// all session.
     visible: bool,
     fade_ms: u32,
+    /// Whether a cue this frame may be heard as well as seen. Decided in
+    /// Settings, where Do Not Disturb takes part (#277); the webview only
+    /// obeys.
+    sound: bool,
 }
 
 /// What one Instance's tick decided to draw, in the space every display shares.

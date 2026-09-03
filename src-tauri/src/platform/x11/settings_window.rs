@@ -198,6 +198,10 @@ impl SettingsWindow {
                                             do_not_disturb: Some(value),
                                             ..SettingsPatch::default()
                                         },
+                                        "sound" => SettingsPatch {
+                                            sound: Some(value),
+                                            ..SettingsPatch::default()
+                                        },
                                         "hidden" => SettingsPatch {
                                             hidden: Some(value),
                                             ..SettingsPatch::default()
@@ -674,6 +678,9 @@ impl SettingsWindow {
         }
         if let Some(Control::CheckButton(check)) = controls.get(form::DND_ID) {
             check.set_active(view.do_not_disturb);
+        }
+        if let Some(Control::CheckButton(check)) = controls.get(form::SOUND_ID) {
+            check.set_active(view.sound);
         }
         if let Some(Control::CheckButton(check)) = controls.get(form::HIDDEN_ID) {
             check.set_active(view.hidden);

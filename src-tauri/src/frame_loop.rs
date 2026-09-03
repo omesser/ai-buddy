@@ -153,6 +153,7 @@ pub(crate) fn run_frame_loop(
         let tracing_director = model::tracing();
         let tracing_clicks = tracing || tracing_frames || tracing_director;
         let mut button_was_down = false;
+        let mut sound_allowed = true;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
 
@@ -517,6 +518,9 @@ pub(crate) fn run_frame_loop(
                 config.ambient_allowed = settings.ambient_wakes;
                 config.enabled = settings.director_enabled && config.configured;
                 let dnd = settings.do_not_disturb;
+                // Reread every tick, like the flags above, so a mute in
+                // Settings lands on the next frame and not the next launch.
+                sound_allowed = settings.sound_allowed();
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
                     inspect.ambient_wakes = settings.ambient_wakes;
@@ -1213,6 +1217,7 @@ pub(crate) fn run_frame_loop(
                         sprites,
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
+                        sound: sound_allowed,
                     },
                 );
 

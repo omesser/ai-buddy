@@ -44,6 +44,7 @@ struct Ivars {
     clear_key: RefCell<Option<Retained<NSButton>>>,
     ambient: RefCell<Option<Retained<NSButton>>>,
     dnd: RefCell<Option<Retained<NSButton>>>,
+    sound: RefCell<Option<Retained<NSButton>>>,
     hidden: RefCell<Option<Retained<NSButton>>>,
     fullscreen: RefCell<Option<Retained<NSButton>>>,
     tag_to_id: RefCell<HashMap<isize, String>>,
@@ -117,6 +118,7 @@ define_class!(
                     "director_enabled" => patch.director_enabled = Some(on),
                     "ambient_wakes" => patch.ambient_wakes = Some(on),
                     "do_not_disturb" => patch.do_not_disturb = Some(on),
+                    "sound" => patch.sound = Some(on),
                     "hidden" => patch.hidden = Some(on),
                     "hide_in_fullscreen" => patch.hide_in_fullscreen = Some(on),
                     "launch_at_login" => patch.launch_at_login = Some(on),
@@ -346,6 +348,7 @@ impl SettingsController {
         fill_checkbox(&self.ivars().director, view.director_enabled);
         fill_checkbox(&self.ivars().ambient, view.ambient_wakes);
         fill_checkbox(&self.ivars().dnd, view.do_not_disturb);
+        fill_checkbox(&self.ivars().sound, view.sound);
         fill_checkbox(&self.ivars().hidden, view.hidden);
         fill_checkbox(&self.ivars().fullscreen, view.hide_in_fullscreen);
         {
@@ -487,6 +490,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut api_key_field = None;
     let mut clear_key_button = None;
     let mut dnd_button = None;
+    let mut sound_button = None;
     let mut hidden_button = None;
     let mut fullscreen_button = None;
     let mut consent_buttons = Vec::new();
@@ -539,6 +543,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         form::DIRECTOR_ID => director_button = Some(btn.clone()),
                         form::AMBIENT_ID => ambient_button = Some(btn.clone()),
                         form::DND_ID => dnd_button = Some(btn.clone()),
+                        form::SOUND_ID => sound_button = Some(btn.clone()),
                         form::HIDDEN_ID => hidden_button = Some(btn.clone()),
                         form::FULLSCREEN_ID => fullscreen_button = Some(btn.clone()),
                         form::CONSENT_ACCESSIBILITY_ID | form::CONSENT_SCREEN_RECORDING_ID => {
@@ -744,6 +749,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().api_key.borrow_mut() = api_key_field;
     *controller.ivars().clear_key.borrow_mut() = clear_key_button;
     *controller.ivars().dnd.borrow_mut() = dnd_button;
+    *controller.ivars().sound.borrow_mut() = sound_button;
     *controller.ivars().hidden.borrow_mut() = hidden_button;
     *controller.ivars().fullscreen.borrow_mut() = fullscreen_button;
     *controller.ivars().consent.borrow_mut() = consent_buttons;
