@@ -1,6 +1,6 @@
-# ai-buddy versus five market competitors — feature matrix
+# ai-buddy versus five well-known alternatives — feature comparison
 
-Comparison against the five biggest by user base (see
+Comparison against five widely used projects in similar categories (see
 [market.md](./market.md)): Desktop Mate, VPet-Simulator, Shimeji-ee ecosystem,
 ChatGPT desktop, Microsoft Copilot. Matrix rows are capabilities that matter for
 this product, using CONTEXT.md vocabulary. Columns mark each feature as
@@ -55,7 +55,7 @@ planned). ai-buddy column is honest about what is and is not built.
 | Subscription model | absent | absent | absent | absent | $20/mo Plus, $200/mo Pro | $30/mo M365 Copilot (enterprise volume) |
 | Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | web + desktop app (July 2026) | Windows 11 OS bundle + M365 |
 
-## Per-competitor notes
+## Per-project notes
 
 ### Desktop Mate
 
@@ -86,7 +86,7 @@ was removed before or during Steam launch, which "upset the community" and is
 DLC," "exploitative"). No evidence of character behavior authoring (director,
 personality prompts, declarative Behaviors).
 
-**Gap vs ai-buddy.** Desktop Mate monetizes licensed character DLC ($14.99
+**Differences.** Desktop Mate monetizes licensed character DLC ($14.99
 each, 40+ available); ai-buddy has two shipped Characters and an internal
 package format (undocumented until v2). Desktop Mate has no physics, no
 functional layer, and no BYO character creation. ai-buddy's Spatial Layer
@@ -115,7 +115,7 @@ app. Cross-platform (Windows, Mac, Linux, Steam Deck). Open source on GitHub
 capabilities, MCP, chat, or Harness. No Memory system. No Ambient Capture. No
 evidence of screen-sharing exclusion or hide rules.
 
-**Gap vs ai-buddy.** VPet's Workshop ecosystem is live and massive (open source
+**Differences.** VPet's Workshop ecosystem is live and massive (open source
 + Steam Workshop), while ai-buddy's Character Package format is internal and
 undocumented until v2. VPet has no window awareness or Perches, no physics, and
 no agent / MCP layer. ai-buddy's Director + Harness attach targets capabilities
@@ -147,7 +147,7 @@ Behavior graphs are XML data but hard to author; DESIGN.md: "after fifteen
 years the overwhelming majority of community packages are art reskins of the
 default XML, because the graph was too hard to author."
 
-**Gap vs ai-buddy.** Shimeji-ee has decades of community content and proven
+**Differences.** Shimeji-ee has decades of community content and proven
 longevity, but behavior authoring is difficult (XML graphs, not declarative
 Primitives). ai-buddy's engine-owned Primitives and Character-declared Behaviors
 keep authoring simpler. Shimeji-ee has no functional layer, no MCP, no agent.
@@ -180,7 +180,7 @@ local-first mode (requires OpenAI account and API). No BYO model (OpenAI models
 only). No click-through (it is a window, not a transparent overlay). No
 multi-instance in the spatial sense (one chat window).
 
-**Gap vs ai-buddy.** ChatGPT desktop is capability-first with no spatial layer.
+**Differences.** ChatGPT desktop is capability-first with no spatial layer.
 ai-buddy's Spatial Layer (physics, Perches, idle life without a model) is a
 category ChatGPT does not enter. ChatGPT's Functional Layer is already shipped;
 ai-buddy's is specced (MCP server + BYO Harness attach). ChatGPT is cloud-only;
@@ -211,25 +211,24 @@ or window, not a sprite. No Character Packages. No idle life as a mascot. No
 local-first mode (cloud-required). No BYO model (Microsoft models only). No
 click-through (window-based). No multi-instance in the mascot sense.
 
-**Gap vs ai-buddy.** Copilot is bundled OS assistant with agent capabilities but
+**Differences.** Copilot is bundled OS assistant with agent capabilities but
 no spatial layer. ai-buddy's Spatial Layer is presence-first; Copilot is
 capability-first with no sprite, no physics, no window-edge awareness. Copilot
 is cloud-required; ai-buddy works offline. ai-buddy's BYO Harness model (MCP
 attach) vs Copilot's closed Microsoft runtime is the other divide.
 
-## Capability gaps summary
+## Differences from similar projects
 
-ai-buddy's unique combination as specced:
+What ai-buddy does differently (as specced):
 
-1. **Spatial Layer + Functional Layer together.** Every desktop pet (Desktop
-   Mate, VPet, Shimeji-ee) has presence and no agent. Every AI assistant
-   (ChatGPT, Copilot) has agent capabilities and no spatial layer. None combine
+1. **Spatial Layer + Functional Layer together.** Desktop pets (Desktop Mate,
+   VPet, Shimeji-ee) have presence and no agent. AI assistants (ChatGPT,
+   Copilot) have agent capabilities and no spatial layer. ai-buddy combines
    both.
 2. **Physics.** Gravity + ballistic throw + Perch riding under an acceleration
-   gate is ai-buddy only.
+   gate.
 3. **BYO Harness.** MCP server + user-attached agent runtime. ChatGPT and
-   Copilot are closed to their own models. Desktop pets have no agent layer at
-   all.
+   Copilot are closed to their own models. Desktop pets have no agent layer.
 4. **Local-first Spatial Layer.** Works offline, no permissions, no cloud, no
    API key required. ChatGPT and Copilot require accounts and cloud. Desktop
    pets are local but have no functional layer.
@@ -238,22 +237,22 @@ ai-buddy's unique combination as specced:
    while model thinks or is absent. Desktop pets have XML graphs (Shimeji-ee) or
    no liveliness system (Desktop Mate, VPet). AI assistants have no idle life.
 
-Gaps where competitors lead:
+What other projects have that ai-buddy doesn't (yet):
 
 1. **Character ecosystems.** Desktop Mate has 40+ licensed DLC, VPet has Steam
    Workshop, Shimeji-ee has 1000s of fan packs. ai-buddy's package format is
    internal and undocumented until v2, with two shipped Characters.
 2. **Functional Layer shipped.** ChatGPT and Copilot have agent runtimes, chat
    surfaces, and computer use today. ai-buddy's is specced, not built.
-3. **Distribution and discoverability.** Desktop Mate and VPet are on Steam,
-   Copilot is bundled in Windows, ChatGPT has 1B MAU. ai-buddy is GitHub
-   releases with no store presence.
+3. **Distribution reach.** Desktop Mate and VPet are on Steam, Copilot is
+   bundled in Windows, ChatGPT has 1B MAU. ai-buddy is GitHub releases with no
+   store presence.
 
 ## Sources
 
 Capabilities marked "shipped," "spec," or "absent" for ai-buddy are verified
 against docs/SPEC.md, DESIGN.md, README.md, and `git log` on main as of
-September 3, 2026. Competitors verified against Steam pages (Desktop Mate
+September 3, 2026. Similar projects verified against Steam pages (Desktop Mate
 [App ID 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/),
 VPet-Simulator [App ID
 1920960](https://store.steampowered.com/app/1920960/VPetSimulator/)), official

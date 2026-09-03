@@ -1,34 +1,35 @@
-# Desktop companion market — sizing and competitor selection
+# Desktop companion category — context and similar projects
 
 Research for feature comparison. Question: what category does ai-buddy sit in,
-how big is demand, and who are the five biggest real-world competitors by users
-or mindshare?
+how many people use similar projects, and which five projects are the most
+widely known?
 
-**Answer.** Two overlapping markets: traditional desktop pets (Shimeji-ee,
+**Answer.** Two overlapping categories: traditional desktop pets (Shimeji-ee,
 Desktop Mate, VPet) and AI desktop assistants (ChatGPT desktop, Microsoft
-Copilot). The desktop pet market is $14–590M globally in 2026 depending on
-scope, growing 5–11% CAGR. AI assistant market is orders of magnitude larger
-(420M–1B MAU) but distribution bundled rather than sold. The five biggest by
-evidence: Desktop Mate (2M+ downloads, Steam DLC revenue model), VPet-Simulator
-(51K reviews, 22K peak concurrent), Shimeji-ee ecosystem (500K+ Android, decades
-of fan content), ChatGPT desktop (1B MAU total, July 2026 unified desktop
-launch), Microsoft Copilot (420M MAU, 160M enterprise seats). Selection driven
-by documented download counts, Steam review volume, concurrent player peaks, and
-MAU disclosures, not by the prior-art list in DESIGN.md.
+Copilot). Desktop pet software ranges from hobbyist projects to commercial
+products; the category is estimated at $14–590M globally in 2026 depending on
+scope, growing 5–11% CAGR. AI assistant space is larger (420M–1B MAU) but
+bundled into operating systems rather than standalone. Five widely used
+alternatives selected by documented user counts: Desktop Mate (2M+ downloads,
+Steam), VPet-Simulator (51K reviews, 22K peak concurrent), Shimeji-ee ecosystem
+(500K+ Android, decades of fan content), ChatGPT desktop (1B MAU total, July
+2026 unified desktop launch), Microsoft Copilot (420M MAU, 160M enterprise
+seats). Selection based on documented download counts, Steam review volume,
+concurrent player peaks, and MAU disclosures, not by the prior-art list in
+DESIGN.md.
 
-## The category and its size
+## The category and its variants
 
 ai-buddy sits at the intersection of two categories that have not historically
 overlapped: **desktop pets / mascots** (presence-first, model-optional, Windows
 95 nostalgia) and **AI desktop assistants** (capability-first, no spatial
-layer, chat or command bar). The Spatial Layer competes with traditional
-desktop pets; the Functional Layer competes with AI assistants that can operate
-a computer. No shipped competitor combines both in one product as of September
-2026.
+layer, chat or command bar). The Spatial Layer is similar to traditional desktop
+pets; the Functional Layer is similar to AI assistants that can operate a
+computer. No other project combines both in one product as of September 2026.
 
 ### Desktop pets and mascots
 
-Market research firms sized the "Desktop AI Robot Pets" category at $14–590M
+Category sizing reports estimate the "Desktop AI Robot Pets" space at $14–590M
 USD in 2026, with 5.2–10.9% projected CAGR to 2032–2034, varying by scope and
 methodology:
 
@@ -52,7 +53,7 @@ The wide range reflects definitional ambiguity: the high estimates ($480–590M)
 include physical desktop robots (Living.AI, Sony Aibo, Misty Robotics), while
 the low estimates ($14–17M) track software-only desktop overlays. ai-buddy is
 software, so the relevant band is the lower one: **$14–24M annually, mid-single-digit
-growth**. Not a large TAM. Demand drivers cited across reports: urbanization,
+growth**. A niche category. Demand drivers cited across reports: urbanization,
 mental wellness / companionship, and "advancements in AI interaction"
 ([IntelMarketResearch](https://www.intelmarketresearch.com/desktop-ai-robot-pets-market-40998);
 [DataInsightsReports](https://www.datainsightsreports.com/reports/desktop-ai-robot-pet-400016)).
@@ -80,11 +81,9 @@ The unified ChatGPT desktop app for macOS and Windows launched July 9, 2026
 July 16–17 updates). OpenAI does not break out desktop-only download counts
 from the 1B total.
 
-Both are **distribution plays, not purchase decisions**. Copilot ships in
-Windows 11 and Microsoft 365; ChatGPT is free-to-paid SaaS. Neither is
-bought as "a desktop companion." Revenue is subscriptions (ChatGPT Plus $20/mo,
-Copilot for M365 enterprise seats) or bundled (Windows licensing). ai-buddy
-competes with their presence, not their go-to-market.
+Both are **bundled distribution**, not standalone downloads. Copilot ships in
+Windows 11 and Microsoft 365; ChatGPT is free-to-paid SaaS. Neither is acquired
+as "a desktop companion."
 
 ## How the five were chosen
 
@@ -95,7 +94,7 @@ ai-buddy or appearance on DESIGN.md's prior-art list. Criteria:
    releases, SourceForge), app store totals (Google Play), or platform-disclosed
    MAU (company earnings, press releases). No "popular on Reddit" without
    numbers.
-2. **Real competitor, not technical prior art.** desktop-homunculus (MIT/Apache,
+2. **Actually used, not technical prior art.** desktop-homunculus (MIT/Apache,
    Bevy, MCP server, MOD system) and UI-TARS-desktop (Apache-2.0, Electron,
    vision-only executor) are listed in DESIGN.md but have no published user
    base; they informed design. WindowPet (MIT, Tauri, 631
@@ -112,7 +111,7 @@ ai-buddy or appearance on DESIGN.md's prior-art list. Criteria:
 
 ### The five
 
-Listed in descending order by documented user base or market position:
+Listed in descending order by documented user counts:
 
 1. **Microsoft Copilot** — 420M MAU (Q1 2026), 160M enterprise licensed users.
    Bundled into Windows 11 desktop, rendered via WebView2, consumes 200MB–1GB

@@ -458,12 +458,12 @@ key, no subscription, no permission prompts. That state is the default demo.
 
 ## Prior art
 
-Market research versus real-world competitors is in
+Feature comparison versus similar projects is in
 [docs/research/](./docs/research/): [market.md](./docs/research/market.md)
-sizes the desktop pet and AI assistant markets, identifies the five biggest by
-user base (Desktop Mate, VPet-Simulator, Shimeji-ee, ChatGPT desktop, Microsoft
-Copilot), and [competitors.md](./docs/research/competitors.md) compares
-ai-buddy's capabilities against them.
+sizes the desktop pet and AI assistant categories, identifies five well-known
+alternatives (Desktop Mate, VPet-Simulator, Shimeji-ee, ChatGPT desktop,
+Microsoft Copilot), and [alternatives.md](./docs/research/alternatives.md)
+compares ai-buddy's capabilities against them.
 
 Technical references that informed design:
 
