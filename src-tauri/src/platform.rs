@@ -219,9 +219,13 @@ fn x11_answers() -> bool {
 /// GTK aborts when it cannot open the backend it was told to use, so forcing
 /// `x11` on a Wayland session with no XWayland would trade a degraded buddy for
 /// one that does not start.
+///
+/// A backend the user already named wins. `GDK_BACKEND=wayland` is how someone
+/// asks for the degraded lane on purpose — to test it, or because XWayland
+/// misbehaves on their desktop — and a preference is not ours to overwrite.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn prefer_x11_backend() {
-    if x11_answers() {
+    if std::env::var_os("GDK_BACKEND").is_none() && x11_answers() {
         std::env::set_var("GDK_BACKEND", "x11");
     }
 }
