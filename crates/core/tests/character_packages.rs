@@ -102,9 +102,10 @@ fn timber_wolf_package_loads_with_all_required_animations() {
     assert_required_animations(&character);
 
     let walk = &character.animations["walk"];
-    assert!(
-        walk.frames.len() >= 2,
-        "walk has at least 2 frames for animation"
+    assert_eq!(
+        walk.frames.len(),
+        20,
+        "walk must be the shipped 20-frame two-step loop"
     );
 }
 
