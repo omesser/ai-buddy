@@ -84,8 +84,13 @@ impl SettingsView {
             last_payload,
             installed,
             instances,
-            director_base_url: settings.director_base_url.clone(),
-            director_model: settings.director_model.clone(),
+            // The resolved endpoint, not the file's: an exported variable
+            // outranks the file in `model::resolve`, and a window that printed
+            // the file value would name a host the Director never calls (#272).
+            director_base_url: model::env_override(model::BASE_URL)
+                .unwrap_or_else(|| settings.director_base_url.clone()),
+            director_model: model::env_override(model::MODEL)
+                .unwrap_or_else(|| settings.director_model.clone()),
             api_key_set,
             api_key_fingerprint,
             api_key_error,
@@ -114,9 +119,15 @@ impl SettingsView {
             .collect()
     }
 
-    #[cfg(test)]
+    /// What the key field shows when it is empty. The placeholder, not the
+    /// value: a fingerprint sitting in the field would be committed as a key
+    /// on the next blur.
     pub fn api_key_placeholder(&self) -> String {
-        if !self.api_key_error.is_empty() {
+        if model::env_override(model::API_KEY).is_some() {
+            // The variable's key is the one `resolve` hands the Completer, so
+            // the stored fingerprint would name a key nothing uses (#272).
+            "Set by the environment".to_string()
+        } else if !self.api_key_error.is_empty() {
             format!("Unavailable — {}", self.api_key_error)
         } else if self.api_key_set {
             format!("Set — {}", self.api_key_fingerprint)
@@ -152,6 +163,16 @@ pub enum SettingsOp {
         ambient_allowed: bool,
         configured: bool,
     },
+}
+
+/// Whether what a secure field holds is a key somebody typed.
+///
+/// Both windows leave that field blank on refresh, so an empty one is an
+/// untouched one and a blur over it is not an edit. Empty reaching
+/// `write_director_key` deletes the stored key, which is what Clear key is
+/// for and never what tabbing past the field should mean.
+pub fn key_was_typed(text: &str) -> bool {
+    model::trim_key(text).is_some()
 }
 
 /// Write the Director API key to the secret store, never to the settings file.
@@ -196,8 +217,8 @@ fn apply_with_store(
 }
 
 /// `Some` on the key always retargets: we cannot compare a secret to the
-/// file. URL and model retarget only when the value actually changed —
-/// `commit_endpoint` sends `Some` on every blur, including an unchanged field.
+/// file. URL and model retarget only when the value actually changed — both
+/// windows commit on every blur, an untouched field included.
 fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
     patch.director_api_key.is_some()
         || patch
@@ -819,58 +840,66 @@ mod tests {
             director_model: "grok-4.6".to_string(),
             ..Settings::default()
         };
-        let view = SettingsView::from_parts(
-            &settings,
-            Path::new("/tmp/ai-buddy/memory.md"),
-            Some("You are Nim.".to_string()),
-            vec!["nim".to_string()],
-            Vec::new(),
-            (true, "len=12 last=key1".to_string(), String::new()),
-        );
-        assert_eq!(view.director_base_url, "https://api.x.ai");
-        assert_eq!(view.director_model, "grok-4.6");
-        assert!(view.api_key_set);
-        assert_eq!(view.api_key_fingerprint, "len=12 last=key1");
-        assert_eq!(view.api_key_placeholder(), "Set — len=12 last=key1");
-        let dump = format!("{view:?}");
-        assert!(!dump.contains("sk-"), "{dump}");
+        // The endpoint the view prints is the resolved one, so a var exported
+        // in the developer's shell would otherwise decide these two.
+        model::tests::with_env(None, None, None, || {
+            let view = SettingsView::from_parts(
+                &settings,
+                Path::new("/tmp/ai-buddy/memory.md"),
+                Some("You are Nim.".to_string()),
+                vec!["nim".to_string()],
+                Vec::new(),
+                (true, "len=12 last=key1".to_string(), String::new()),
+            );
+            assert_eq!(view.director_base_url, "https://api.x.ai");
+            assert_eq!(view.director_model, "grok-4.6");
+            assert!(view.api_key_set);
+            assert_eq!(view.api_key_fingerprint, "len=12 last=key1");
+            assert_eq!(view.api_key_placeholder(), "Set — len=12 last=key1");
+            let dump = format!("{view:?}");
+            assert!(!dump.contains("sk-"), "{dump}");
+        });
     }
 
     #[test]
     fn the_key_placeholder_is_not_set_when_unset() {
-        let view = SettingsView::from_parts(
-            &Settings::default(),
-            Path::new("/tmp/ai-buddy/memory.md"),
-            None,
-            Vec::new(),
-            Vec::new(),
-            (false, String::new(), String::new()),
-        );
-        assert_eq!(view.api_key_placeholder(), "Not set");
-        assert!(!view.clear_key_enabled());
+        model::tests::with_env(None, None, None, || {
+            let view = SettingsView::from_parts(
+                &Settings::default(),
+                Path::new("/tmp/ai-buddy/memory.md"),
+                None,
+                Vec::new(),
+                Vec::new(),
+                (false, String::new(), String::new()),
+            );
+            assert_eq!(view.api_key_placeholder(), "Not set");
+            assert!(!view.clear_key_enabled());
+        });
     }
 
     #[test]
     fn the_key_placeholder_is_unavailable_when_the_store_cannot_be_read() {
-        let view = SettingsView::from_parts(
-            &Settings::default(),
-            Path::new("/tmp/ai-buddy/memory.md"),
-            None,
-            Vec::new(),
-            Vec::new(),
-            (false, String::new(), "keychain locked".into()),
-        );
-        assert!(!view.api_key_set);
-        assert_eq!(view.api_key_placeholder(), "Unavailable — keychain locked");
-        assert!(
-            view.clear_key_enabled(),
-            "Clear stays offered so a key we could not read can still be wiped"
-        );
-        assert_ne!(
-            view.api_key_placeholder(),
-            "Not set",
-            "a locked store must not look like no key"
-        );
+        model::tests::with_env(None, None, None, || {
+            let view = SettingsView::from_parts(
+                &Settings::default(),
+                Path::new("/tmp/ai-buddy/memory.md"),
+                None,
+                Vec::new(),
+                Vec::new(),
+                (false, String::new(), "keychain locked".into()),
+            );
+            assert!(!view.api_key_set);
+            assert_eq!(view.api_key_placeholder(), "Unavailable — keychain locked");
+            assert!(
+                view.clear_key_enabled(),
+                "Clear stays offered so a key we could not read can still be wiped"
+            );
+            assert_ne!(
+                view.api_key_placeholder(),
+                "Not set",
+                "a locked store must not look like no key"
+            );
+        });
     }
 
     #[test]
@@ -1180,15 +1209,19 @@ mod tests {
             director_model: "gpt-4o-mini".into(),
             ..Settings::default()
         };
-        assert!(
-            director_settings(&settings, &FailingStore).is_err(),
-            "a store error must not resolve as no key"
-        );
-        let unset = model::resolve(&settings.director_base_url, &settings.director_model, None);
-        assert!(
-            !model::config_from(&unset).configured,
-            "precondition: unset remote is Static"
-        );
+        // A key exported in the developer's shell would resolve this remote
+        // as configured and take the precondition with it.
+        model::tests::with_env(None, None, None, || {
+            assert!(
+                director_settings(&settings, &FailingStore).is_err(),
+                "a store error must not resolve as no key"
+            );
+            let unset = model::resolve(&settings.director_base_url, &settings.director_model, None);
+            assert!(
+                !model::config_from(&unset).configured,
+                "precondition: unset remote is Static"
+            );
+        });
     }
 
     #[test]
@@ -1274,28 +1307,165 @@ mod tests {
 
     #[test]
     fn retarget_payload_carries_resolved_settings() {
-        let store = MemoryStore::new();
-        store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
+        // The payload is resolved, so an exported key would win over the
+        // store's and this would be asserting the shell's environment.
+        model::tests::with_env(None, None, None, || {
+            let store = MemoryStore::new();
+            store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
+            let settings = endpoint_settings();
+            match retarget_payload(&settings, &store).unwrap() {
+                SettingsOp::Retarget {
+                    settings,
+                    enabled,
+                    configured,
+                    ambient_allowed,
+                } => {
+                    assert_eq!(settings.api_key, "sk-stored-key");
+                    assert!(configured);
+                    assert!(enabled);
+                    assert!(ambient_allowed);
+                    let dump = format!("{settings:?}");
+                    assert!(
+                        !dump.contains("sk-stored-key"),
+                        "Retarget Debug must not echo the key: {dump}"
+                    );
+                }
+                other => panic!("expected Retarget, got {other:?}"),
+            }
+        });
+    }
+
+    fn endpoint_view(settings: &Settings) -> SettingsView {
+        SettingsView::from_parts(
+            settings,
+            Path::new("/tmp/ai-buddy/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (false, String::new(), String::new()),
+        )
+    }
+
+    /// #272: the window has to print the endpoint the Director will use. The
+    /// file value it used to print is the one `model::resolve` throws away.
+    #[test]
+    fn the_view_shows_the_endpoint_the_env_imposes() {
         let settings = endpoint_settings();
-        match retarget_payload(&settings, &store).unwrap() {
-            SettingsOp::Retarget {
-                settings,
-                enabled,
-                configured,
-                ambient_allowed,
-            } => {
-                assert_eq!(settings.api_key, "sk-stored-key");
-                assert!(configured);
-                assert!(enabled);
-                assert!(ambient_allowed);
-                let dump = format!("{settings:?}");
+        model::tests::with_env(
+            Some("sk-env-key"),
+            Some("https://api.x.ai"),
+            Some("grok-4.6"),
+            || {
+                let view = endpoint_view(&settings);
+                assert_eq!(view.director_base_url, "https://api.x.ai");
+                assert_eq!(view.director_model, "grok-4.6");
+                assert_eq!(view.api_key_placeholder(), "Set by the environment");
+            },
+        );
+        model::tests::with_env(None, None, None, || {
+            let view = endpoint_view(&settings);
+            assert_eq!(view.director_base_url, settings.director_base_url);
+            assert_eq!(view.director_model, settings.director_model);
+            assert_eq!(view.api_key_placeholder(), "Not set");
+        });
+    }
+
+    /// The hop the settings window makes, end to end, for each endpoint field:
+    /// the patch a committed field carries, the retarget decision, the payload
+    /// resolved off the frame thread, and the rebuild the frame loop does with
+    /// it (#272). The three fields took a route of their own, and only the
+    /// decision at the end of it was covered.
+    #[test]
+    fn a_committed_endpoint_field_rebuilds_the_completer_for_the_new_host() {
+        let edits = [
+            (
+                "base URL",
+                SettingsPatch {
+                    director_base_url: Some("https://api.x.ai".into()),
+                    ..SettingsPatch::default()
+                },
+                "https://api.x.ai/",
+                "grok-4.6",
+            ),
+            (
+                "model",
+                SettingsPatch {
+                    director_model: Some("gpt-5".into()),
+                    ..SettingsPatch::default()
+                },
+                "https://api.openai.com/",
+                "gpt-5",
+            ),
+            (
+                "API key",
+                SettingsPatch {
+                    director_api_key: Some("sk-typed-in-the-window".into()),
+                    ..SettingsPatch::default()
+                },
+                "https://api.openai.com/",
+                "grok-4.6",
+            ),
+        ];
+
+        model::tests::with_env(None, None, None, || {
+            for (field, patch, host, model_name) in edits {
+                let store = MemoryStore::new();
+                store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
+                let mut settings = Settings {
+                    director_model: "grok-4.6".into(),
+                    ..endpoint_settings()
+                };
                 assert!(
-                    !dump.contains("sk-stored-key"),
-                    "Retarget Debug must not echo the key: {dump}"
+                    completer_retargets(&settings, &patch),
+                    "{field} has to reach the running Director"
+                );
+                apply_with_store(&mut settings, &store, patch).unwrap();
+
+                let SettingsOp::Retarget {
+                    settings: director,
+                    configured,
+                    ..
+                } = retarget_payload(&settings, &store).unwrap()
+                else {
+                    panic!("an edited endpoint must send Retarget");
+                };
+
+                // What frame_loop.rs does with the payload.
+                let mut pending = model::InFlight::new();
+                let mut in_flight = Some(model::tests::wake_context());
+                let mut completer = None;
+                model::retarget_model(
+                    &mut pending,
+                    &mut in_flight,
+                    &mut completer,
+                    ["stroll"],
+                    &director,
+                    configured,
+                );
+                assert!(completer.is_some(), "{field} needs a Completer");
+                // ADR-0008: a Wake already on the wire cannot propose against
+                // the target that was just replaced.
+                assert!(in_flight.is_none(), "{field} must drop the open session");
+
+                let endpoint =
+                    model::endpoint_from(&director).expect("configured means a Completer");
+                assert!(
+                    endpoint.url().starts_with(host),
+                    "{field}: the next wake has to reach {host}, not {}",
+                    endpoint.url()
+                );
+                assert_eq!(endpoint.model(), model_name, "{field}: model");
+                assert_eq!(
+                    director.api_key,
+                    if field == "API key" {
+                        "sk-typed-in-the-window"
+                    } else {
+                        "sk-stored-key"
+                    },
+                    "{field}: key"
                 );
             }
-            other => panic!("expected Retarget, got {other:?}"),
-        }
+        });
     }
 
     #[test]

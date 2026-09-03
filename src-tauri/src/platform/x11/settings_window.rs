@@ -15,7 +15,7 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowAction, RowOperation};
-use crate::settings::{SettingsPatch, SettingsSession};
+use crate::settings::{key_was_typed, SettingsPatch, SettingsSession};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
@@ -229,6 +229,7 @@ impl SettingsWindow {
                 id,
                 label,
                 placeholder,
+                frozen,
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -239,8 +240,11 @@ impl SettingsWindow {
                 let entry = gtk::Entry::new();
                 entry.set_placeholder_text(Some(placeholder));
                 entry.set_hexpand(true);
+                // Read-only rather than insensitive, so the value stays
+                // legible and copyable.
+                entry.set_editable(!frozen);
 
-                if let Some(action) = actions.get(id) {
+                if let Some(action) = actions.get(id).filter(|_| !frozen) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
@@ -289,7 +293,7 @@ impl SettingsWindow {
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
             }
-            FormRow::SecureField { id, label } => {
+            FormRow::SecureField { id, label, frozen } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
@@ -299,8 +303,9 @@ impl SettingsWindow {
                 let entry = gtk::Entry::new();
                 entry.set_visibility(false);
                 entry.set_hexpand(true);
+                entry.set_editable(!frozen);
 
-                if let Some(action) = actions.get(id) {
+                if let Some(action) = actions.get(id).filter(|_| !frozen) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
@@ -313,6 +318,9 @@ impl SettingsWindow {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
+                                if !key_was_typed(&text) {
+                                    return;
+                                }
                                 if let RowAction::PatchField(field) = &action {
                                     if field == "director_api_key" {
                                         let patch = SettingsPatch {
@@ -504,8 +512,9 @@ impl SettingsWindow {
                                 Control::CharacterPicker(radio_box, Vec::new()),
                             );
                         }
-                        CompositeControl::Button { id, label } => {
+                        CompositeControl::Button { id, label, frozen } => {
                             let button = gtk::Button::with_label(label);
+                            button.set_sensitive(!frozen);
 
                             if let Some(action) = actions.get(id) {
                                 let action = action.clone();
@@ -679,14 +688,8 @@ impl SettingsWindow {
             entry.set_text(&view.director_model);
         }
         if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_API_KEY_ID) {
-            let display = if view.api_key_set {
-                view.api_key_fingerprint.clone()
-            } else if !view.api_key_error.is_empty() {
-                format!("(error: {})", view.api_key_error)
-            } else {
-                String::new()
-            };
-            entry.set_text(&display);
+            entry.set_placeholder_text(Some(&view.api_key_placeholder()));
+            entry.set_text("");
         }
         if let Some(Control::Label(label)) = controls.get(form::MEMORY_PATH_ID) {
             label.set_text(&view.memory_path);

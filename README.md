@@ -238,8 +238,14 @@ cargo run
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 Settings → Director persists base URL and model, and stores the API key in
-the OS secret store (Keychain on macOS). `cargo run` with those env vars
-unset uses the saved Completer. The env vars remain a one-process override.
+the OS secret store (Keychain on macOS). Editing one of the three retargets
+the running Director: the next wake reaches the new host, and the session in
+flight is dropped rather than answered against the old one. No restart.
+
+`cargo run` with those env vars unset uses the saved Completer. The env vars
+remain a one-process override, and the window says so: a field one of them
+owns shows that value, names the variable, and takes no edit, because the
+Director would ignore one.
 
 Settings → What the buddy can see is how you grant Accessibility and Screen
 Recording. The pane names the row macOS will show: a `cargo run` from Cursor
