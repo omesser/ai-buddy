@@ -28,6 +28,18 @@ impl X11WindowSource {
 }
 
 impl WindowSource for X11WindowSource {
+    /// `window_geometry` stays true under XWayland, where the list is partial.
+    ///
+    /// XWayland does not put native Wayland clients in `_NET_CLIENT_LIST`, so on
+    /// a Wayland session this reports the X11 clients only and Perches on a
+    /// native Wayland window stay impossible. True anyway, because the
+    /// capability answers "are the rectangles I am handed real geometry", and
+    /// they are: a window missing from the list costs one Perch, which is the
+    /// same shortfall an unmapped or unmanaged window already causes on a real
+    /// X11 session. Declaring it false would cost every Perch on every Wayland
+    /// desktop — the bug #266 exists to fix — to describe a smaller world more
+    /// precisely, and telling the two sessions apart would mean reading
+    /// `WAYLAND_DISPLAY` again, which is the test #266 removed.
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             window_geometry: true,

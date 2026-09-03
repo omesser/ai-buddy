@@ -66,21 +66,22 @@ says and not what anyone has run.
 - `degraded` — runs in reduced form, because nothing on the platform provides
   the rest. A supported mode, not an error.
 - `stub` — the arm compiles and does nothing. Windows only.
-- `†` — needs an X11 session. Degraded under Wayland, which withholds the
-  capability from clients by design.
+- `†` — needs an X server, which a Wayland session usually supplies through
+  XWayland. Degraded only where none answers.
 
 Linux is one column because it is one build. There is a single non-macOS arm
 behind `cfg(all(unix, not(target_os = "macos")))`, and it picks its lane at
-runtime on `WAYLAND_DISPLAY` — an X11 path where the protocol answers, and a
-fallback that declares the capability absent. X11 and Wayland are display
-servers a Linux user is already running one of, not platforms to port to.
+runtime on whether an X server answers — an X11 path where one does, including
+through the XWayland a GNOME or KDE session runs, and a fallback that declares
+the capability absent where none does. X11 and Wayland are display servers a
+Linux user is already running one of, not platforms to port to.
 
-A daggered row costs the same thing every time: Wayland will not tell a client
-about other windows' geometry, the pointer outside its own surface, the
-frontmost application, or idle. The sprite keeps its window, its art and its
-menu. The dagger describes what ships, not a protocol limit alone — the lane is
-chosen on `WAYLAND_DISPLAY`, which a Wayland session sets even for an XWayland
-client, so the X11 path is never attempted there.
+A daggered row costs the same thing every time: the native Wayland protocol
+will not tell a client about other windows' geometry, the pointer outside its
+own surface, the frontmost application, or idle. The sprite keeps its window,
+its art and its menu. A Wayland session usually pays none of it, because
+XWayland answers and the X11 lane is taken; what it does cost there is a window
+list without the native Wayland clients, so those windows are not Perches.
 
 What the cells leave out:
 

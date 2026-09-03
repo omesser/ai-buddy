@@ -203,6 +203,49 @@ mod macos;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod x11;
 
+/// Whether an X server answers this process — a real X11 session, or XWayland
+/// proxying for a Wayland one.
+///
+/// The question both Linux lane gates were reaching for. They used to read
+/// `WAYLAND_DISPLAY`, which every Wayland session sets even for its XWayland
+/// clients, so GNOME and KDE took the degraded lane without ever asking whether
+/// the X11 path would have worked — under XWayland it does, because Mutter and
+/// KWin proxy the EWMH states, the XShape input region and `query_pointer` this
+/// app asks for. #266.
+///
+/// `connection()` caches in a `OnceLock`, so the answer costs one round trip per
+/// process however many times it is asked.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn x11_answers() -> bool {
+    x11::connection().is_some()
+}
+
+/// Point GTK at its X11 backend when an X server answers.
+///
+/// GDK reads `GDK_BACKEND` once, when it opens the display, so this has to run
+/// before GTK initializes — for a Tauri app, before the builder runs. Without
+/// it a Wayland session hands `x11/overlay.rs` a Wayland `RawWindowHandle` and
+/// every X11 call downstream is unreachable, whatever the lane gate decided.
+///
+/// Conditional rather than unconditional, and that is the load-bearing part:
+/// GTK aborts when it cannot open the backend it was told to use, so forcing
+/// `x11` on a Wayland session with no XWayland would trade a degraded buddy for
+/// one that does not start.
+///
+/// A backend the user already named wins. `GDK_BACKEND=wayland` is how someone
+/// asks for the degraded lane on purpose — to test it, or because XWayland
+/// misbehaves on their desktop — and a preference is not ours to overwrite.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn prefer_x11_backend() {
+    if std::env::var_os("GDK_BACKEND").is_none() && x11_answers() {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+}
+
+/// Nothing to choose: macOS and Windows do not run GTK.
+#[cfg(any(target_os = "macos", not(unix)))]
+pub fn prefer_x11_backend() {}
+
 /// Make the overlay a floating, non-activating panel.
 #[cfg(target_os = "macos")]
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -400,13 +443,14 @@ pub fn activity_source() -> impl ActivitySource {
 }
 
 /// X11 on Linux: _NET_ACTIVE_WINDOW for frontmost, Xss for idle, DPMS for sleep.
-/// Wayland offers no global state, so it stays StubActivitySource.
+/// A Wayland session with no XWayland offers no global state, so it stays
+/// StubActivitySource.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn activity_source() -> LinuxActivitySource {
-    if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("DISPLAY").is_err() {
-        LinuxActivitySource::Wayland
-    } else {
+    if x11_answers() {
         LinuxActivitySource::X11(x11::X11ActivitySource)
+    } else {
+        LinuxActivitySource::Wayland
     }
 }
 
@@ -499,10 +543,11 @@ pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache)
 }
 
 /// X11 on Linux: read windows from _NET_CLIENT_LIST, with 500ms refresh for hot-plug.
-/// Wayland stays DisplayOnlySource: no global window list.
+/// A Wayland session with no XWayland stays DisplayOnlySource: no global window
+/// list.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn window_source(app: tauri::AppHandle) -> (LinuxWindowSource, DisplayCache) {
-    if std::env::var("WAYLAND_DISPLAY").is_ok() || std::env::var("DISPLAY").is_err() {
+    if !x11_answers() {
         let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
         return (
             LinuxWindowSource::Wayland(DisplayOnlySource(cache.clone())),
@@ -592,7 +637,7 @@ fn due(refreshed: &Mutex<Instant>) -> bool {
 #[cfg(all(unix, not(target_os = "macos")))]
 pub struct DisplayOnlySource(DisplayCache);
 
-/// Screen edges and nothing else, for Wayland or when DISPLAY is unset.
+/// Screen edges and nothing else, for a session where no X server answers.
 ///
 /// `Capabilities::default()` declares no `window_geometry`, so `snapshot()`
 /// clears the windows and the Engine is handed a world with a floor and walls
