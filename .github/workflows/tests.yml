@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+    # The default three, plus `labeled` so the `windows` job's label escape
+    # hatch can actually fire. A re-run replays the original payload, so
+    # without this a label applied after the fact is never seen. The cost is
+    # that labelling any pull request starts a run; the changed-files gates
+    # keep a docs-only one down to the hooks.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
@@ -253,3 +259,115 @@ jobs:
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
+
+  # A job of its own, not a third matrix entry. The job above is one definition
+  # for two platforms because the only differences are tool installation and two
+  # hooks that guard themselves on uname. Windows breaks that premise: shfmt,
+  # shellcheck, `sudo mv`, the apt step and the shell hooks are all
+  # inapplicable, and a matrix entry would inherit every one of them.
+  #
+  # So this job runs no pre-commit and installs no Python, Node, shfmt or
+  # shellcheck. Formatting, whitespace, codespell and the YAML/JSON/TOML hooks
+  # are settled on Linux and macOS; a third runner would check the same bytes
+  # and give the same answer. The one question it can ask that they cannot is
+  # whether the code compiles for Windows — and nothing compiles it today.
+  # platform.rs carries seven `not(unix)` arms and sensing.rs one, and the
+  # opener #195 added rests on reading. That is the position the x11 arm was in
+  # before the review the comment above describes.
+  #
+  # Cross-checking does not stand in for it. A Tauri target needs the MSVC
+  # toolchain and WebView2, so `cargo check --target x86_64-pc-windows-msvc`
+  # from another runner cannot compile what this does. #247.
+  windows:
+    runs-on: windows-latest
+    # Longer than the 30 above. This is a cold-cache MSVC build of the whole
+    # workspace on the slowest of the three runners.
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Find what this run changed
+        id: changed
+        # `files` here, where the job above uses `files_ignore`. There are no
+        # Windows-only files to match: every Windows arm is a `not(unix)` block
+        # inside a file the other platforms share. So the filter names the files
+        # that hold the arms, and `platform/windows/**` matches nothing today —
+        # it is the point at which this gate keeps working without an edit.
+        #
+        # The manifests and the lockfile are in because they decide what Windows
+        # links: keyring already carries `windows-native`, and a feature or
+        # version change there lands on this job and nowhere else. This workflow
+        # is in for the reason the `files_ignore` comment gives — a change to the
+        # gate cannot switch the gate off.
+        #
+        # Same commit pin, same CVE-2025-30066 reason.
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files: |
+            src-tauri/src/platform.rs
+            src-tauri/src/platform/windows/**
+            crates/core/src/sensing.rs
+            src-tauri/Cargo.toml
+            crates/core/Cargo.toml
+            Cargo.toml
+            Cargo.lock
+            .github/workflows/tests.yml
+
+      - name: Decide whether this run touches Windows
+        id: changes
+        # Fails open the way the job above does: the only path to
+        # `windows=false` is a pull request where the action ran and matched
+        # nothing.
+        #
+        # A gate this narrow will be wrong sometimes, so the `windows` label is
+        # the escape hatch — a reviewer who suspects the arm asks for the job
+        # instead of pushing a no-op commit to platform.rs. workflow_dispatch is
+        # deliberate, and a push to main is the merged state that ships.
+        env:
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'windows') }}
+        # bash, not the runner's default PowerShell, so this reads as the same
+        # gate as the one above rather than a translation of it.
+        shell: bash
+        run: |
+          windows=true
+          if [ "$OUTCOME" = success ] && [ "$ANY_CHANGED" = false ] &&
+            [ "$LABELED" = false ] && [ "${{ github.event_name }}" = pull_request ]; then
+            windows=false
+          fi
+          echo "touches Windows: $windows"
+          echo "windows=$windows" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        if: steps.changes.outputs.windows == 'true'
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Cache cargo build
+        if: steps.changes.outputs.windows == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          # Its own key: this target directory shares nothing with the two
+          # platforms above.
+          key: windows-latest
+          # Same reason as above — the run that fails clippy is the one about to
+          # be pushed again.
+          cache-on-failure: true
+
+      - name: Compile the workspace for Windows
+        # --all-targets, because it type-checks the test targets and that is
+        # where a rotted arm shows up. clippy costs what cargo check does and
+        # catches more, so there is no reason to run the cheaper one.
+        #
+        # Compilation only. Turning on `cargo test` is a follow-up: a first
+        # Windows suite is red for reasons unrelated to the platform arms —
+        # path separators in fixtures, the macOS-gated tests in the shell crate
+        # — and a suite red on day one buries the signal this job exists for.
+        if: steps.changes.outputs.windows == 'true'
+        run: cargo clippy --workspace --all-targets -- -D warnings
