@@ -27,9 +27,7 @@ A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-ses
 There is no chat surface yet: double-clicking is a Summon the Engine accepts
 and nothing answers (#17). Right-clicking the sprite and the tray / menu bar
 icon open the same menu: Character, Instances, Director, Do Not Disturb, Go
-away, Memory, Settings, Quit. The tray icon appears on Linux X11 with a
-StatusNotifier host; on Wayland without a tray protocol the sprite menu is
-the settings door.
+away, Memory, Settings, Quit.
 
 The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
 and `walk` each answer a State, `fall` covering being dragged as well; `land`
@@ -39,6 +37,49 @@ Behavior — all but `fall`, which is what losing your footing looks like rather
 than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into,
 and is refused or abandoned when the State the sprite is in does not permit it.
 `talk` plays when a proposal names a Behavior that includes it.
+
+## Platform support
+
+What ships where. Windows is deferred by [docs/SPEC.md](./docs/SPEC.md) and is
+not built in CI; Wayland lets no client see or place another client's windows.
+
+| Capability | macOS | Linux X11 | Linux Wayland | Windows |
+|---|---|---|---|---|
+| Overlay that never takes focus | yes | yes | degraded | stub |
+| Click-through off the sprite | yes | yes | degraded | yes |
+| Click, drag and Poke | yes | yes | degraded | stub |
+| Perch on window edges | yes | yes | degraded | stub |
+| Dock or panel as a Perch | yes | degraded | degraded | stub |
+| Fade out for a fullscreen app | yes | yes | degraded | stub |
+| Never captured in a screen share | yes | degraded | degraded | stub |
+| Frontmost app and idle sensing | yes | yes | degraded | stub |
+| Native settings window | yes | yes | yes | stub |
+| Tray or menu bar icon | yes | yes | yes | yes |
+| Open Memory in an editor | yes | yes | yes | yes |
+
+- `yes` — implemented.
+- `degraded` — the platform publishes no API for it, so the app runs without it
+  rather than failing.
+- `stub` — deliberately stubbed: compiles and does nothing.
+
+Where a cell cannot carry itself:
+
+- **Overlay that never takes focus** — the window is floating, transparent and
+  off the taskbar everywhere, through Tauri. Only macOS adds a non-activating
+  panel and X11 the EWMH states, so only there does a click on the sprite never
+  activate the app.
+- **Click-through off the sprite** — X11 carves it per-pixel from the sprite's
+  alpha. macOS and Windows toggle Tauri's whole-window flag, so a transparent
+  pixel inside the art's box still swallows a click.
+- **Click, drag and Poke** — with no global pointer, only the clicks the webview
+  witnesses become Pokes, so a drag that outruns the art is lost.
+- **Perch on window edges** — with no window list the world is screen edges
+  alone: no Perches, and no fullscreen application to fade for.
+- **Dock or panel as a Perch** — only macOS reads the Dock's true bounds.
+  Elsewhere the sprite still keeps out of the reserved strip and cannot ride it.
+- **Tray or menu bar icon** — Linux needs a StatusNotifier host, which desktop
+  panels provide and many Wayland compositors do not. Without one no icon
+  appears and the sprite's right-click menu is the settings door.
 
 ## Running it
 
