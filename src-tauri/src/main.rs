@@ -17,6 +17,13 @@
 //! is a clock. Static may wake often. A session wake is reactive or backed
 //! off (ADR-0008). What it proposes is `director`'s; when it is asked is here.
 
+// The settings window is unix-only and Windows stubs platform::show_settings,
+// so nothing there calls into the form these three modules build. #247.
+//
+// ponytail: module-wide, though only part of each module is dead on Windows.
+// The ceiling is that dead code added inside them goes unwarned there; narrow
+// it to `mod form` and the view types when a Windows-only item first lands.
+#[cfg_attr(not(unix), allow(dead_code))]
 mod consent;
 mod env_util;
 mod frame_loop;
@@ -24,7 +31,9 @@ mod menu;
 mod model;
 mod package;
 mod platform;
+#[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod secrets;
+#[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
 mod tray;
 

@@ -693,6 +693,10 @@ Some notes I typed at the top, under no heading at all.
     /// Memory is the user's file and holds what the buddies know about them. If
     /// they have narrowed who can read it, replacing the file must not hand that
     /// back — a new file starts from the umask, not from what stood there.
+    ///
+    /// Unix only: the claim is about POSIX mode bits, which Windows has no
+    /// equivalent for. #247.
+    #[cfg(unix)]
     #[test]
     fn a_write_keeps_the_permissions_the_user_set() {
         use std::os::unix::fs::PermissionsExt;
@@ -724,6 +728,8 @@ Some notes I typed at the top, under no heading at all.
     /// The backup holds exactly what Memory held. If the user narrowed who can
     /// read Memory, the copy left beside it has to be just as narrow — a wipe is
     /// not the moment to hand that back.
+    /// Unix only, for the reason the test above gives.
+    #[cfg(unix)]
     #[test]
     fn a_backup_keeps_the_permissions_the_user_set() {
         use std::os::unix::fs::PermissionsExt;

@@ -253,3 +253,39 @@ jobs:
 
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
+
+  # A job of its own rather than a third matrix entry: Windows cannot run shfmt,
+  # shellcheck, `sudo mv` or the apt step that `checks` rests on. The one
+  # question it can answer that the other two cannot is whether the `not(unix)`
+  # arms in platform.rs and sensing.rs still compile.
+  #
+  # Ungated: a path gate over the files holding those arms would let an arm
+  # added anywhere else escape it, which is the failure this job exists to
+  # catch. #247.
+  windows:
+    runs-on: windows-latest
+    # A cold-cache MSVC build of the whole workspace on the slowest runner.
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: windows-latest
+          # Same reason as the `checks` job above.
+          cache-on-failure: true
+
+      - name: Compile the workspace for Windows
+        # --all-targets to type-check the test targets, where a rotted arm shows
+        # up. Compilation only: a first Windows `cargo test` is red for reasons
+        # unrelated to the platform arms, so turning it on is #258.
+        run: cargo clippy --workspace --all-targets -- -D warnings

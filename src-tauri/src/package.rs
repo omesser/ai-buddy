@@ -822,6 +822,9 @@ mod tests {
         }
     }
 
+    /// Unix only: Windows has no equivalent of a file its owner cannot open, and
+    /// a directory does not stand in because the walker recurses into it. #247.
+    #[cfg(unix)]
     #[test]
     fn a_file_that_cannot_be_opened_is_reported_with_its_path() {
         use std::os::unix::fs::PermissionsExt;
