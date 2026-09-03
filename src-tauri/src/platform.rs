@@ -75,6 +75,18 @@ impl Witness {
 static OVERLAY_PRIMARY: Witness = Witness::new();
 static OVERLAY_SECONDARY: Witness = Witness::new();
 
+/// Which mouse buttons one tick found down.
+///
+/// Both answers in one type rather than a predicate each, because on X11 they
+/// come out of a single XQueryPointer reply and asking per button was two
+/// blocking round trips a tick (#268). It also puts the two consuming witness
+/// reads in one place, which is where the "once per tick" contract belongs.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ButtonsDown {
+    pub primary: bool,
+    pub secondary: bool,
+}
+
 /// The overlay heard the primary button go down or up.
 pub fn set_overlay_primary(down: bool) {
     OVERLAY_PRIMARY.report(down);
@@ -91,8 +103,8 @@ pub fn set_overlay_secondary(down: bool) {
 
 /// The overlay is passing clicks through, so it cannot still be holding a
 /// press. A pointerup the webview never delivered would otherwise leave the
-/// level set, and `primary_button_down` would stay true after the hand had
-/// gone — gluing the sprite to a button nobody is pressing.
+/// level set, and `buttons_down` would stay true after the hand had gone —
+/// gluing the sprite to a button nobody is pressing.
 ///
 /// This is the watchdog that must not look at the session poll: that poll is
 /// the one that misses a press our own window swallowed, which is exactly
@@ -336,51 +348,48 @@ pub fn update_input_region(
     Ok(())
 }
 
-/// Whether the primary mouse button is down, or was pressed since the last
-/// call.
+/// Which mouse buttons are down, or were pressed since the last call.
 ///
 /// The session poll sees a drag that outruns the art. The overlay witness
 /// sees a click the poll has missed on our own window, including one that
 /// began and ended between two polls. Either is a press.
 ///
-/// A consuming read: the overlay's edge is cleared by it. The frame loop asks
+/// A consuming read: the overlay's edges are cleared by it. The frame loop asks
 /// once per tick, which is what makes "since the last call" mean "since the
 /// last tick".
 #[cfg(target_os = "macos")]
-pub fn primary_button_down() -> bool {
-    overlay_primary_down() || macos::primary_button_down()
+pub fn buttons_down() -> ButtonsDown {
+    ButtonsDown {
+        primary: overlay_primary_down() || macos::primary_button_down(),
+        secondary: overlay_secondary_down() || macos::secondary_button_down(),
+    }
 }
 
-/// X11 on Linux: session poll (XQueryPointer) or overlay latch.
+/// X11 on Linux: one XQueryPointer for both buttons, or the overlay latch.
 /// Wayland has only the overlay latch (no global pointer).
+///
+/// The poll runs before the latches rather than between them, so the two
+/// consuming reads still happen exactly once each. It is asked even when a
+/// latch would have answered, where the `||` used to skip it — one round trip
+/// where the tick was paying two.
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn primary_button_down() -> bool {
-    overlay_primary_down() || x11::primary_button_down()
+pub fn buttons_down() -> ButtonsDown {
+    let session = x11::buttons_down();
+    ButtonsDown {
+        primary: overlay_primary_down() || session.primary,
+        secondary: overlay_secondary_down() || session.secondary,
+    }
 }
 
 /// Without a session poll there is only the overlay latch. A click that
 /// reaches the webview still pokes; one that never does is the supported
 /// degradation, like the missing window geometry beside it.
 #[cfg(not(unix))]
-pub fn primary_button_down() -> bool {
-    overlay_primary_down()
-}
-
-/// Whether the secondary mouse button (right-click) is down.
-#[cfg(target_os = "macos")]
-pub fn secondary_button_down() -> bool {
-    overlay_secondary_down() || macos::secondary_button_down()
-}
-
-/// X11 on Linux: XQueryPointer for Button3 (right-click).
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn secondary_button_down() -> bool {
-    overlay_secondary_down() || x11::secondary_button_down()
-}
-
-#[cfg(not(unix))]
-pub fn secondary_button_down() -> bool {
-    overlay_secondary_down()
+pub fn buttons_down() -> ButtonsDown {
+    ButtonsDown {
+        primary: overlay_primary_down(),
+        secondary: overlay_secondary_down(),
+    }
 }
 
 /// Where the Free tier comes from: what the user is in, and how long since they
@@ -723,13 +732,13 @@ mod tests {
 
     /// A press that lands on the overlay is one `CGEventSource` has been
     /// seen to miss. The overlay's own pointer events are the other half of
-    /// `primary_button_down`; without them a click on the sprite is silent.
+    /// `buttons_down`; without them a click on the sprite is silent.
     #[test]
     fn overlay_primary_is_enough_for_a_press() {
         set_overlay_primary(false);
         set_overlay_primary(true);
         assert!(
-            primary_button_down(),
+            buttons_down().primary,
             "a click the overlay felt must count as the button down"
         );
         set_overlay_primary(false);
@@ -770,7 +779,7 @@ mod tests {
 
     /// A pointerup the webview never delivered would leave the level set.
     /// Once the overlay is passing clicks through it cannot still be holding
-    /// a press, so both bits must drop — otherwise `primary_button_down`
+    /// a press, so both bits must drop — otherwise `buttons_down`
     /// stays true and the sprite glues to a button nobody is pressing. One
     /// `Witness` serves both buttons, so one test covers both.
     #[test]
@@ -841,7 +850,7 @@ mod tests {
         set_overlay_secondary(false);
         set_overlay_secondary(true);
         assert!(
-            secondary_button_down(),
+            buttons_down().secondary,
             "a right-click the overlay felt must count as the button down"
         );
         set_overlay_secondary(false);

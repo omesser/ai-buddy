@@ -7,7 +7,7 @@
 
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, SK};
-use x11rb::protocol::xproto::{self, Atom, AtomEnum, PropMode};
+use x11rb::protocol::xproto::{self, AtomEnum, PropMode};
 use x11rb::rust_connection::RustConnection;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -210,17 +210,18 @@ fn clear_input_region(conn: &RustConnection, window: u32) -> Result<(), String> 
 ///
 /// `_NET_WM_STATE_ABOVE`, `_NET_WM_STATE_SKIP_TASKBAR`, `_NET_WM_STATE_SKIP_PAGER`.
 fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
-    let net_wm_state = intern_atom(conn, "_NET_WM_STATE")?;
-    let above = intern_atom(conn, "_NET_WM_STATE_ABOVE")?;
-    let skip_taskbar = intern_atom(conn, "_NET_WM_STATE_SKIP_TASKBAR")?;
-    let skip_pager = intern_atom(conn, "_NET_WM_STATE_SKIP_PAGER")?;
+    let atoms = super::atoms::atoms().ok_or("Failed to intern EWMH atoms")?;
 
-    let states = [above, skip_taskbar, skip_pager];
+    let states = [
+        atoms.net_wm_state_above,
+        atoms.net_wm_state_skip_taskbar,
+        atoms.net_wm_state_skip_pager,
+    ];
     xproto::change_property(
         conn,
         PropMode::REPLACE,
         window,
-        net_wm_state,
+        atoms.net_wm_state,
         AtomEnum::ATOM,
         32,
         states.len() as u32,
@@ -233,13 +234,4 @@ fn set_ewmh_states(conn: &RustConnection, window: u32) -> Result<(), String> {
     conn.flush()
         .map_err(|e| format!("Failed to flush X11: {e}"))?;
     Ok(())
-}
-
-/// Intern an atom, reusing it if it already exists.
-fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, String> {
-    xproto::intern_atom(conn, false, name.as_bytes())
-        .map_err(|e| format!("Failed to intern atom {name}: {e}"))?
-        .reply()
-        .map(|reply| reply.atom)
-        .map_err(|e| format!("Failed to get atom reply for {name}: {e}"))
 }

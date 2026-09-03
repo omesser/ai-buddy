@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{self, Atom, AtomEnum, Window};
+use x11rb::protocol::xproto::{self, AtomEnum, Window};
 use x11rb::rust_connection::RustConnection;
 
 pub struct X11ActivitySource;
@@ -32,7 +32,7 @@ fn frontmost_window_class() -> Option<String> {
     let screen = &conn.setup().roots[0];
     let root = screen.root;
 
-    let active_atom = intern_atom(conn, "_NET_ACTIVE_WINDOW").ok()?;
+    let active_atom = super::atoms::atoms()?.net_active_window;
     let reply = xproto::get_property(conn, false, root, active_atom, AtomEnum::WINDOW, 0, 1)
         .ok()?
         .reply()
@@ -102,13 +102,4 @@ fn displays_sleeping() -> Option<bool> {
     let info = x11rb::protocol::dpms::info(conn).ok()?.reply().ok()?;
 
     Some(info.state && info.power_level != x11rb::protocol::dpms::DPMSMode::ON)
-}
-
-/// Intern an atom, reusing it if it already exists.
-fn intern_atom(conn: &RustConnection, name: &str) -> Result<Atom, ()> {
-    xproto::intern_atom(conn, false, name.as_bytes())
-        .ok()
-        .and_then(|cookie| cookie.reply().ok())
-        .map(|reply| reply.atom)
-        .ok_or(())
 }
