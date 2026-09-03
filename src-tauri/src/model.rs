@@ -293,6 +293,17 @@ fn key_from_env() -> KeyRead {
     }
 }
 
+/// Has the process already settled the key on its own?
+///
+/// `resolve` reaches for a stored key only when the env holds none, so a true
+/// answer here means reading the secret store cannot change the outcome. On
+/// macOS that read is a Keychain prompt at every launch, and one bought for an
+/// answer already known is the kind a user learns to click through. Set but
+/// unusable still counts: the process asked to override.
+pub(crate) fn env_owns_key() -> bool {
+    !matches!(key_from_env(), KeyRead::Unset)
+}
+
 fn off() -> bool {
     matches!(
         std::env::var(ENABLED).ok().as_deref(),

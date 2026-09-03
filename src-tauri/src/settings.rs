@@ -197,7 +197,11 @@ pub fn director_settings(
     settings: &Settings,
     secrets: &dyn SecretStore,
 ) -> Result<DirectorSettings, String> {
-    let stored = secrets.get(DIRECTOR_API_KEY)?;
+    let stored = if model::env_owns_key() {
+        None
+    } else {
+        secrets.get(DIRECTOR_API_KEY)?
+    };
     Ok(model::resolve(
         &settings.director_base_url,
         &settings.director_model,
@@ -1276,6 +1280,37 @@ mod tests {
             assert!(
                 !model::config_from(&unset).configured,
                 "precondition: unset remote is Static"
+            );
+        });
+    }
+
+    /// A store read is a Keychain prompt on macOS, and one whose answer
+    /// `resolve` throws away is a prompt for nothing. `FailingStore` is the
+    /// assertion: this can only resolve if nothing consulted the store.
+    #[test]
+    fn an_exported_key_leaves_the_store_unread() {
+        let settings = endpoint_settings();
+        model::tests::with_env(Some("sk-env-key"), None, None, || {
+            let resolved = director_settings(&settings, &FailingStore)
+                .expect("the env owns the key, so the store has nothing to say");
+            assert_eq!(resolved.api_key, "sk-env-key");
+        });
+    }
+
+    /// A blank export is a mistake — `$XAI_API_KEY` that expanded to nothing —
+    /// and the warning that names it is what the launch owes the user. A
+    /// stored key must not answer in its place, quietly or at the price of a
+    /// prompt.
+    #[test]
+    fn a_blank_exported_key_leaves_the_store_unread_and_still_warns() {
+        let settings = endpoint_settings();
+        model::tests::with_env(Some("  "), None, None, || {
+            let resolved = director_settings(&settings, &FailingStore)
+                .expect("a blank export is still the env answering");
+            assert!(resolved.api_key.is_empty());
+            assert!(
+                resolved.key_invalid,
+                "the blank export must still reach the startup warning"
             );
         });
     }

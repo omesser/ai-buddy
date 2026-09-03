@@ -251,7 +251,26 @@ flight is dropped rather than answered against the old one. No restart.
 `cargo run` with those env vars unset uses the saved Completer. The env vars
 remain a one-process override, and the window says so: a field one of them
 owns shows that value, names the variable, and takes no edit, because the
-Director would ignore one.
+Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps
+the Keychain out of the launch entirely — the env has already decided the key,
+so nothing reads the store.
+
+On macOS a saved key is guarded by an access control list naming the build that
+wrote it, and an ad-hoc signature names it by a hash that every `cargo build`
+changes — so a rebuilt app is a stranger to its own key and the launch costs
+two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the
+list can name instead, and its header carries the whole argument. From the
+repository root:
+
+```sh
+cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
+```
+
+A key saved before the first signed run keeps the old list — clear it in
+Settings and save it once more. Signing also changes the identity macOS grants
+Accessibility and Screen Recording to, so expect to grant those again, once.
+Released builds are ad-hoc signed too, so an update prompts the same way until
+there is a Developer ID to sign with (#283).
 
 Settings → What the buddy can see is how you grant Accessibility and Screen
 Recording. The pane names the row macOS will show: a `cargo run` from Cursor
