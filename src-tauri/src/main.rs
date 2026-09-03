@@ -48,7 +48,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::Character;
 use ai_buddy_core::director::{Context, Happened, ModelDirector, Pace, Seeded, StaticDirector};
-use ai_buddy_core::engine::{Point, State, Verb};
+use ai_buddy_core::engine::{Cue, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::memory::{self, MemoryManifest};
 use ai_buddy_core::overlay::SpriteRect;
@@ -248,6 +248,11 @@ struct SpritePlacement<'a> {
     thinking: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     bubble: bool,
+    /// The cue to play on this tick only, by the name the webview keys its
+    /// visual and its sound by. A pulse like `dialogue`, and like `dialogue`
+    /// only the bubble owner acts on it (`forOverlay`): every overlay draws the
+    /// art, so a cue played by all of them is one sound per display. #277.
+    cue: Option<&'static str>,
 }
 
 /// One tick's instruction to the renderer: every Instance's sprite, and whether
@@ -342,6 +347,7 @@ struct Placed {
     facing: i8,
     dialogue: Option<String>,
     thinking: bool,
+    cue: Option<Cue>,
     /// The overlay that draws the bubble, decided once from the feet
     /// (#178, `bubble_owner`); `None` while the feet are on no display.
     owner: Option<usize>,

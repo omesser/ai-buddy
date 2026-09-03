@@ -16,6 +16,7 @@ import {
   placeBubble,
   CEILING_CLEARANCE,
 } from "./bubble.js";
+import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
 const stage = document.getElementById("stage");
 
@@ -55,17 +56,25 @@ function createView(id) {
   }
   bubble.append(bubbleContent, dots);
 
-  // Both, in one call, because a sprite and its bubble are stacked by the
+  // The Instance's cues, in a layer of their own so a dismissed buddy takes
+  // any still playing with it. Last of the three, so a cue sharing the sprite's
+  // z-index is drawn over the art it marks rather than under it (#277).
+  const cueLayer = document.createElement("div");
+  cueLayer.className = "cue-layer";
+  cueLayer.dataset.instance = id;
+
+  // All three in one call, because a sprite and its bubble are stacked by the
   // z-index written every tick rather than by the order they were added. Append
   // order would put whichever Instance was seen first at the back regardless of
   // where the Rust side draws it, and a dismissed id reappearing would jump to
   // the front.
-  stage.append(bubble, sprite);
+  stage.append(bubble, sprite, cueLayer);
 
   const view = {
     sprite,
     bubble,
     bubbleContent,
+    cueLayer,
     // The two most recent placements and when each arrived. Drawing the latest
     // one the instant it lands would put the sprite wherever the Engine's tick
     // happened to fall relative to the display's refresh, which is a stutter
@@ -125,6 +134,11 @@ function createView(id) {
     bubble.classList.remove("visible");
   }
 
+  // Anchored when the cue fires rather than followed afterwards: a cue is a
+  // burst where the gesture landed, and the sprite it marks may be halfway to
+  // the cursor before it fades.
+  view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
+
   view.bubbles = createBubbleMachine({
     showSpeech(text) {
       const canvas = document.createElement("canvas");
@@ -161,6 +175,7 @@ function removeView(id) {
   view.bubbles.hideAllNow();
   view.sprite.remove();
   view.bubble.remove();
+  view.cueLayer.remove();
   views.delete(id);
 }
 
@@ -277,6 +292,7 @@ async function start() {
         // speaking it.
         view.bubble.style.zIndex = `${index * 2}`;
         view.sprite.style.zIndex = `${index * 2 + 1}`;
+        view.cueLayer.style.zIndex = `${index * 2 + 1}`;
 
         // One overlay owns each Instance's bubble (#178, `bubble_owner`).
         // Speech hides on its reading timer, not on the next frame, so the
@@ -290,6 +306,9 @@ async function start() {
           ...owned,
           visible: payload.visible,
           fade_ms: payload.fade_ms,
+          // Whether a cue may be heard as well as seen. Settings decides it and
+          // Do Not Disturb takes part; this only obeys (#277, #280).
+          sound: payload.sound,
           at: performance.now(),
         };
         // Dialogue rides exactly one tick, and `latest` keeps only the newest
@@ -297,6 +316,11 @@ async function start() {
         // overwrites some placements before `draw` ever reads them. The machine
         // latches the pulse here, where every delivery is seen.
         view.bubbles.event(owned);
+        // A cue is the same shape of pulse, latched in the same place. It reads
+        // `latest` rather than `owned` for the two answers that belong to the
+        // desktop rather than to the sprite: whether the Character is on screen
+        // at all, and whether it may be heard (#277).
+        view.cues.event(view.latest);
       });
 
       // An id that stopped arriving is an Instance that was dismissed, so its

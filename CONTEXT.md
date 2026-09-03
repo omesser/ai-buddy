@@ -204,6 +204,15 @@ A bubble above the sprite showing Speech, held for reading time (900ms
 Implemented in #119.
 _Avoid_: Chat bubble, message, tooltip
 
+**Cue**:
+The Shell's acknowledgement that one interaction landed: a procedural visual
+over the sprite and a synthesized sound, one pair per interaction — Poke,
+Summon, Menu, pickup, drop, and a throw that is the drop played harder. The
+Engine names the Cue on the frame; the webview draws and synthesizes it, so no
+Character declares one. Do Not Disturb silences the sound and keeps the visual.
+#277.
+_Avoid_: Effect, feedback, animation (the Character's art), SFX
+
 **Thinking ellipsis**:
 Three animated dots in a bubble above the sprite, shown while a reactive
 Director turn is in flight (Poke, Summon, Throw). Appears after 250ms grace,
