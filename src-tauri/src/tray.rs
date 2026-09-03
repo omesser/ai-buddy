@@ -5,6 +5,7 @@
 //! putting settings and quit on a menu bar icon; this is our menu, not theirs.
 
 use crate::menu::{self, MenuDescription};
+use image::GenericImageView;
 use tauri::image::Image;
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
@@ -21,7 +22,11 @@ pub fn install(
     let menu = menu::build(app, description)?;
 
     let tray_icon_bytes = include_bytes!("../icons/tray.png");
-    let tray_icon = Image::from_bytes(tray_icon_bytes)?;
+    let decoded = image::load_from_memory(tray_icon_bytes)
+        .expect("Failed to decode tray icon PNG");
+    let rgba = decoded.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let tray_icon = Image::new_owned(rgba.into_raw(), width, height);
 
     TrayIconBuilder::new()
         .menu(&menu)

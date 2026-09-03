@@ -44,6 +44,8 @@ serde_json = "1"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
 keyring = {version = "3", features = ["apple-native", "windows-native", "sync-secret-service"]}
+# PNG decoding for the tray icon.
+image = {version = "0.25", default-features = false, features = ["png"]}
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 # X11 for Linux: window list, pointer state, EWMH properties, idle time.
