@@ -97,7 +97,7 @@ jobs:
           releaseBody: |
             See the README for install notes.
 
-            Under Wayland the Spatial Layer is degraded: screen-edge physics, 
+            Under Wayland the Spatial Layer is degraded: screen-edge physics,
             no window Perches. Under X11 the overlay reads window geometry and
             Perches work.
           releaseDraft: true
