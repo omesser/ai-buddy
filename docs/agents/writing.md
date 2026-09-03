@@ -87,6 +87,6 @@ who wrote a comment. A reader following a back-and-forth needs that: which line
 to argue with, and which is a decision already taken. `Co-authored-by` records
 authorship on commits only, and GitHub has no author field an agent can set.
 
-Sign once per body, at the end. What the maintainer writes stays unsigned, so
-the missing line carries meaning too. If an agent revises a body the maintainer
-wrote, leave that text unsigned and say what changed in a comment of its own.
+Sign once per body, at the end. What the owner writes stays unsigned, so the
+missing line carries meaning too. If an agent revises a body the owner wrote,
+leave that text unsigned and say what changed in a comment of its own.
