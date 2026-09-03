@@ -1,10 +1,16 @@
 //! Integration tests for shipped Character Packages.
 //!
-//! These tests validate the characters in the `characters/` directory at the
-//! workspace root: Cat, Black Mage, and Timber Wolf. They test the public
-//! seam of `character::load` — that each package is accepted, carries its
-//! required animations, and (for pixel art) walk frames face right so the
-//! engine's mirroring works.
+//! These tests validate at the workspace layout seam: that the on-disk
+//! character packages in `characters/` can be loaded by the core crate's
+//! `character::load` parser and meet the contracts the engine depends on.
+//!
+//! The seam matters because the parser and the packages are separate: one
+//! change can break the other. A broken shipped package is a shipping defect,
+//! not a unit test failure. These tests catch that before release.
+//!
+//! Each character gets its own test because each has different constraints:
+//! pixel art scale, personality presence, specific behaviors. The required
+//! animation set is a shared contract.
 
 use ai_buddy_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
 use std::collections::BTreeMap;
@@ -52,17 +58,23 @@ fn collect(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> st
     Ok(())
 }
 
+/// Assert that a Character declares every required animation.
+fn assert_required_animations(character: &character::Character) {
+    for required in REQUIRED_ANIMATIONS {
+        assert!(
+            character.animations.contains_key(required),
+            "{} missing required animation: {required:?}",
+            character.name
+        );
+    }
+}
+
 #[test]
 fn cat_package_loads_with_all_required_animations() {
     let character = load_package("cat").expect("Cat package is valid");
 
     assert_eq!(character.name, "Cat");
-    for required in REQUIRED_ANIMATIONS {
-        assert!(
-            character.animations.contains_key(required),
-            "Cat declares {required:?}"
-        );
-    }
+    assert_required_animations(&character);
 }
 
 #[test]
@@ -70,12 +82,7 @@ fn black_mage_package_loads_with_all_required_animations() {
     let character = load_package("black-mage").expect("Black Mage package is valid");
 
     assert_eq!(character.name, "Black Mage");
-    for required in REQUIRED_ANIMATIONS {
-        assert!(
-            character.animations.contains_key(required),
-            "Black Mage declares {required:?}"
-        );
-    }
+    assert_required_animations(&character);
     assert_eq!(
         character.scale, 3,
         "Black Mage uses scale 3 for readability"
@@ -92,12 +99,7 @@ fn timber_wolf_package_loads_with_all_required_animations() {
         "Timber Wolf has a personality prompt"
     );
 
-    for required in REQUIRED_ANIMATIONS {
-        assert!(
-            character.animations.contains_key(required),
-            "Timber Wolf declares {required:?}"
-        );
-    }
+    assert_required_animations(&character);
 
     let walk = &character.animations["walk"];
     assert!(
