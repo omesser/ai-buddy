@@ -23,7 +23,7 @@ what is and is not built.
 | Multi-monitor | ✓ | ✓ | ✓ | ✓ (toggle) | ✓ | ✓ |
 | **Character & Art** | — | — | — | — | — | — |
 | Character Packages (first-class) | ✓ | ✓ (DLC) | ✓ (Workshop) | ✓ (community) | ✓ (beta, +2 soon) | ✓ (catalog) |
-| Art ecosystem / gallery | ❌ | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog |
+| Art ecosystem / gallery | ✓ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog |
 | Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp |
 | Declarative Behaviors | ✓ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✓ (plugins) |
 | **Liveliness** | — | — | — | — | — | — |
@@ -93,12 +93,12 @@ personality prompts, declarative Behaviors). No animation set requirement (3D
 models, not sprites).
 
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
-packs at $7.49–$14.99 each); ai-buddy has two shipped Characters and an internal
-package format (undocumented until v2). Desktop Mate has no physics, no
-functional layer, and no BYO character creation. ai-buddy's Spatial Layer
-includes physics and Perch riding/dropping under a gate, and its planned
-Functional Layer (MCP + Harness attach) targets agent capabilities Desktop Mate
-does not attempt.
+packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, an internal
+package format (undocumented until v2), and import adapters for petdex / Pets
+Codex and Shimeji-ee ecosystems. Desktop Mate has no physics, no functional
+layer, and no BYO character creation. ai-buddy's Spatial Layer includes physics
+and Perch riding/dropping under a gate, and its planned Functional Layer (MCP +
+Harness attach) targets agent capabilities Desktop Mate does not attempt.
 
 ### VPet-Simulator
 
@@ -162,8 +162,10 @@ is manual toggle. No agent capabilities, MCP, or chat. No Memory. No functional
 layer. Behavior system is XML graphs, not TOML declarative Behaviors.
 
 **Differences.** Shimeji-ee's community character ecosystem (1000s of free
-packs) dwarfs ai-buddy's two shipped Characters. Shimeji-ee has no window
-awareness beyond edges, no physics, no agent layer, and no functional
+packs) offers direct distribution; ai-buddy imports from Shimeji-ee via
+`scripts/import-pet.py` adapter plus petdex / Pets Codex, translating into
+Character Packages once (authoring-time, not live bridge). Shimeji-ee has no
+window awareness beyond edges, no physics, no agent layer, and no functional
 capabilities. ai-buddy adds physics (gravity, throw, Perches under acceleration
 gate), window app name tracking, planned MCP + Harness attach, Memory, and BYO
 model. Shimeji-ee's XML graph behavior system versus ai-buddy's Director +
@@ -199,10 +201,11 @@ sequences). No declarative Behaviors or Director.
 **Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
 chat via user's OpenAI key, while ai-buddy separates Spatial (local, no model)
 from Functional (BYO Harness). Desktop Pet is beta with limited character
-selection (1 shipped, +2 soon); ai-buddy has two shipped Characters with
-internal package format. Desktop Pet has no physics, no Perches, no window
-awareness. ai-buddy's MCP + Harness model targets general agent capabilities;
-Desktop Pet's OpenAI integration is chat-only.
+selection (1 shipped, +2 soon); ai-buddy has two shipped Characters, internal
+package format, and import adapters for petdex / Pets Codex and Shimeji-ee.
+Desktop Pet has no physics, no Perches, no window awareness. ai-buddy's MCP +
+Harness model targets general agent capabilities; Desktop Pet's OpenAI
+integration is chat-only.
 
 ### OpenPets
 
@@ -281,8 +284,10 @@ What other projects have that ai-buddy doesn't (yet):
 
 1. **Character ecosystems.** Desktop Mate has 40+ licensed DLC, VPet has Steam
    Workshop, Shimeji-ee has 1000s of fan packs, OpenPets has openpets.dev
-   catalog. ai-buddy's package format is internal and undocumented until v2,
-   with two shipped Characters.
+   catalog. ai-buddy has two shipped Characters and import adapters
+   (`scripts/import-pet.py`) for petdex / Pets Codex and Shimeji-ee ecosystems
+   (authoring-time translation into Character Packages, not live bridge or
+   first-party gallery). Package format is internal and undocumented until v2.
 2. **Functional Layer shipped.** Desktop Pet has OpenAI chat, OpenPets has MCP +
    plugin SDK v3 + 9 official plugins. ai-buddy's MCP + Harness is specced, not
    built.
