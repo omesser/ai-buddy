@@ -254,8 +254,10 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// X11 on Linux: EWMH states for floating, skip-taskbar, skip-pager, plus
 /// per-pixel click-through via XShapeCombineMask from the sprite alpha.
-/// Wayland offers no reliable compositor-independent way to configure these, so it
-/// stays degraded.
+///
+/// On GDK's Wayland backend tao's handle is a `wl_surface`, which the X11 arm
+/// does not match, so this returns Err. The input region is core Wayland and
+/// unwired here. DESIGN.md decision 3.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     x11::configure_overlay(window)
@@ -443,8 +445,10 @@ pub fn activity_source() -> impl ActivitySource {
 }
 
 /// X11 on Linux: _NET_ACTIVE_WINDOW for frontmost, Xss for idle, DPMS for sleep.
-/// A Wayland session with no XWayland offers no global state, so it stays
-/// StubActivitySource.
+///
+/// With no X server the arm stubs. Idle has two paths, `ext-idle-notify-v1` over
+/// Wayland on KWin, wlroots and COSMIC and `org.gnome.Mutter.IdleMonitor` over
+/// D-Bus on GNOME, with no portable one. Frontmost and display sleep have none.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn activity_source() -> LinuxActivitySource {
     if x11_answers() {

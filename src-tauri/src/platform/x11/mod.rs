@@ -1,8 +1,8 @@
 //! X11 implementation for Linux functional parity.
 //!
 //! Fills the same seams as `platform::macos`: pointer state, overlay configuration,
-//! window geometry, activity sensing. Wayland stays degraded by design; this is
-//! X11 only.
+//! window geometry, activity sensing. X11 only: where no X server answers,
+//! every seam declares its capability absent. DESIGN.md decision 3.
 
 #![cfg(all(unix, not(target_os = "macos")))]
 

@@ -67,7 +67,7 @@ says and not what anyone has run.
   the rest. A supported mode, not an error.
 - `stub` — the arm compiles and does nothing. Windows only.
 - `†` — needs an X server, which a Wayland session usually supplies through
-  XWayland. Degraded only where none answers.
+  XWayland. Degraded only where none answers, and then for one of three reasons.
 
 Linux is one column because it is one build. There is a single non-macOS arm
 behind `cfg(all(unix, not(target_os = "macos")))`, and it picks its lane at
@@ -76,12 +76,17 @@ through the XWayland a GNOME or KDE session runs, and a fallback that declares
 the capability absent where none does. X11 and Wayland are display servers a
 Linux user is already running one of, not platforms to port to.
 
-A daggered row costs the same thing every time: the native Wayland protocol
-will not tell a client about other windows' geometry, the pointer outside its
-own surface, the frontmost application, or idle. The sprite keeps its window,
-its art and its menu. A Wayland session usually pays none of it, because
-XWayland answers and the X11 lane is taken; what it does cost there is a window
-list without the native Wayland clients, so those windows are not Perches.
+Where no X server answers, a daggered row is degraded for one of three reasons.
+No compositor reports other windows' geometry or the pointer outside a client's
+own surface, and no protocol is coming for either. Frontmost and idle have no
+portable interface: idle is `ext-idle-notify-v1` on KWin, wlroots and COSMIC
+and the D-Bus `org.gnome.Mutter.IdleMonitor` on GNOME. Per-pixel click-through
+is core Wayland, `wl_surface.set_input_region`; tao hands us the `wl_surface`
+and `x11/overlay.rs` matches only X11 handles, so that row is ours to wire.
+Whichever a row costs, the sprite keeps its window, its art and its menu. A
+Wayland session usually pays none of it, because XWayland answers and the X11
+lane is taken; what it does cost there is a window list without the native
+Wayland clients, so those windows are not Perches.
 
 What the cells leave out:
 
@@ -91,7 +96,8 @@ What the cells leave out:
   not honour even the placement.
 - **Click-through off the sprite** — X11 carves it per-pixel from the sprite's
   alpha; macOS and Windows toggle Tauri's whole-window flag, the same answer at
-  coarser grain.
+  coarser grain. Wayland would carve it the same way, from the same rectangles,
+  once `x11/overlay.rs` takes the `wl_surface` tao already hands it.
 - **Grab, Throw and Poke** — with no global pointer only the clicks the webview
   witnesses count, so a Grab that outruns the art is lost.
 - **Perch on window edges**, **Fade out for a fullscreen app** — both need a

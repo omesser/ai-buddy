@@ -3,7 +3,8 @@
 //! GTK has no click-through finer than the whole window, so `XShapeCombineMask`
 //! carves the input region from the sprite's alpha mask. EWMH window states
 //! float the overlay above other windows and skip the taskbar and pager.
-//! Wayland stays degraded by design.
+//! On GDK's Wayland backend tao's handle is a `wl_surface`, which nothing here
+//! matches; the input region is core Wayland and unwired. DESIGN.md decision 3.
 
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::{self, SK};
@@ -28,7 +29,11 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
         RawWindowHandle::Xlib(xlib_window) => xlib_window.window as u32,
         RawWindowHandle::Xcb(xcb_window) => xcb_window.window.get(),
         _ => {
-            return Err("Not an X11 window (Wayland stays degraded by design)".to_string());
+            return Err("Wayland surface, not an X11 window (no X server answered, \
+                        or GDK_BACKEND names wayland): EWMH states and the \
+                        per-pixel input region are unwired for Wayland, so the \
+                        overlay keeps GTK's defaults"
+                .to_string());
         }
     };
 
@@ -63,7 +68,8 @@ pub fn update_input_region(
         RawWindowHandle::Xlib(xlib_window) => xlib_window.window as u32,
         RawWindowHandle::Xcb(xcb_window) => xcb_window.window.get(),
         _ => {
-            // Wayland or other: degraded by design, and an Err would retry forever.
+            // Wayland: the input region is unwired here, and an Err would retry
+            // forever.
             return Ok(());
         }
     };

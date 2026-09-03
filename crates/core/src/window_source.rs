@@ -22,9 +22,9 @@ pub const RIDE_POLL_INTERVAL: Duration = Duration::from_millis(16);
 
 /// What a platform can actually tell us about the desktop.
 ///
-/// Declared, never assumed. Under Wayland both of these are unavailable and the
-/// Spatial Layer degrades to screen-edge physics, which is a supported mode
-/// rather than an error state.
+/// Declared, never assumed. The Wayland arm declares neither and the Spatial
+/// Layer degrades to screen-edge physics, which is a supported mode rather
+/// than an error state. DESIGN.md decision 3 says which limit is permanent.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Capabilities {
     /// Whether the platform reports the rectangles of other applications'
