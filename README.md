@@ -40,25 +40,57 @@ than something a Behavior can ask for. A Behavior plays its Primitives in order 
 and is refused or abandoned when the State the sprite is in does not permit it.
 `talk` plays when a proposal names a Behavior that includes it.
 
-## Running it
+## Install
 
-macOS, Linux (X11), and Windows (stubbed deliberately — see
-[docs/SPEC.md](./docs/SPEC.md)).
+Download a build from
+[GitHub Releases](https://github.com/omesser/ai-buddy/releases).
+That is the path for using ai-buddy. Building from a checkout is
+[Development](#development).
 
-```sh
-cd src-tauri
-cargo run
-```
+Homebrew, Flathub, and AUR are not first-drop channels.
+
+### macOS
+
+Apple Silicon. The Release ships a `.dmg`. Open it and copy `ai-buddy`
+to Applications.
+
+The build is ad-hoc signed, not notarized, so Gatekeeper will warn on
+the first open. Right-click the app, choose Open, and confirm. Developer
+ID and notarization are a follow-up.
 
 ### Linux
 
-On Linux, the tray icon requires a StatusNotifier host (typically provided by
-the desktop panel: GNOME Shell, KDE Plasma, XFCE panel). A dock such as Plank
-is not one — the tray installs, and no icon appears. On Debian/Ubuntu,
-`xfce4-panel` (Status Tray plugin) is a host that works. At runtime, one
-of `libayatana-appindicator3-1` or `libappindicator3-1` must be installed.
-`libayatana` is preferred and is the one Tauri detects first when both are
-present.
+The Release ships an AppImage and a `.deb` (x86_64).
+
+The Spatial Layer is degraded: screen-edge physics, no window Perches.
+That is a supported mode, not an error. Under Wayland, window geometry
+is unavailable; under X11 the overlay still has no window Perches in
+v1. The Engine and the sprite run either way.
+
+At runtime, one of `libayatana-appindicator3-1` or `libappindicator3-1`
+must be installed if you want a tray icon. `libayatana` is preferred.
+The tray also needs a StatusNotifier host in the panel (GNOME Shell, KDE
+Plasma, XFCE's Status Tray plugin). A dock such as Plank is not one —
+the tray installs, and no icon appears. On Wayland, a compositor without
+a tray protocol shows no icon; the sprite's context menu (right-click)
+is then the settings door.
+
+```sh
+# Debian/Ubuntu .deb
+sudo dpkg -i ai-buddy_*.deb
+# or: chmod +x the AppImage and run it
+```
+
+Windows is stubbed; there is no Windows package.
+
+## Running it
+
+Download a build from [Install](#install) or build from a checkout as in
+[Development](#development).
+
+### Linux
+
+Tray and Wayland notes are under [Install](#install).
 
 For development, install `libayatana-appindicator3-dev`:
 
@@ -66,10 +98,6 @@ For development, install `libayatana-appindicator3-dev`:
 # Debian/Ubuntu
 sudo apt install libayatana-appindicator3-dev
 ```
-
-**Wayland**: A compositor without a tray protocol shows no icon. The sprite's
-context menu (right-click) remains the only settings door until a panel
-exists. This is a degraded mode, not an error.
 
 No bundler: the front end is static files under `src/`, which Tauri embeds at
 build time.
@@ -296,6 +324,13 @@ before it writes anything. That is why the local cap defaults to 512 rather
 than 80.
 
 ## Development
+
+From a clone, with a Rust toolchain:
+
+```sh
+cd src-tauri
+cargo run
+```
 
 ### Linux dependencies
 
