@@ -44,10 +44,17 @@ and is refused or abandoned when the State the sprite is in does not permit it.
 
 Download a build from
 [GitHub Releases](https://github.com/omesser/ai-buddy/releases).
-That is the path for using ai-buddy. Building from a checkout is
-[Development](#development).
 
-Homebrew, Flathub, and AUR are not first-drop channels.
+Or clone and run from the repo root (macOS, Linux, Windows stub):
+
+```sh
+git clone https://github.com/omesser/ai-buddy.git
+cd ai-buddy
+cargo run -p ai-buddy
+```
+
+Linux packages, toolchains, and hooks are under
+[Development](#development).
 
 ### macOS
 
@@ -331,8 +338,7 @@ than 80.
 From a clone, with a Rust toolchain:
 
 ```sh
-cd src-tauri
-cargo run
+cargo run -p ai-buddy
 ```
 
 ### Linux dependencies

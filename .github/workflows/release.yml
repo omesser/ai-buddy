@@ -35,17 +35,14 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v7
 
-      - name: The tag and the app version agree
-        # Artifact filenames come from tauri.conf.json, the Release title
-        # from the human. Nothing reconciles them, so a tag that ran ahead
-        # of the version ships ai-buddy_0.1.0_*.dmg inside a Release called
-        # v0.2.0.
+      - name: Version from the git tag
+        # The published Release's tag is the version that ships. Stripping
+        # the leading v hands that to Tauri so artifact names follow the
+        # tag, not the copy of version sitting in tauri.conf.json.
+        id: ver
         env:
           TAG: ${{ github.event.release.tag_name }}
-        run: |
-          conf=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
-          [ "v$conf" = "$TAG" ] || {
-            echo "tag $TAG != tauri.conf.json $conf"; exit 1; }
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -93,4 +90,4 @@ jobs:
           projectPath: src-tauri
           releaseId: ${{ github.event.release.id }}
           tagName: ${{ github.event.release.tag_name }}
-          args: --bundles ${{ matrix.bundles }}
+          args: --bundles ${{ matrix.bundles }} --config '{"version":"${{ steps.ver.outputs.version }}"}'
