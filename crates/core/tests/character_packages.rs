@@ -278,8 +278,58 @@ fn timber_wolf_frames_share_one_canvas_at_a_desktop_scale() {
     );
 }
 
+/// Decode RGBA8 pixels from a frame PNG.
+fn frame_rgba(bytes: &[u8]) -> (usize, usize, Vec<[u8; 4]>) {
+    let mut reader = png::Decoder::new(Cursor::new(bytes))
+        .read_info()
+        .expect("every frame is a PNG");
+    let info = reader.info();
+    let (width, height) = (info.width as usize, info.height as usize);
+    let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
+    let frame = reader.next_frame(&mut buf).expect("frame decodes");
+    let pixels = buf[..frame.buffer_size()]
+        .chunks_exact(4)
+        .map(|p| [p[0], p[1], p[2], p[3]])
+        .collect();
+    (width, height, pixels)
+}
+
+/// Mean absolute RGB distance over pixels visible in either frame.
+/// Near-duplicate frontals from the turn clip score ~1-3; distinct poses score >> 15.
+fn mean_rgb_distance(a: &[[u8; 4]], b: &[[u8; 4]]) -> f64 {
+    assert_eq!(a.len(), b.len(), "frames share one canvas");
+    let mut sum = 0.0;
+    let mut n = 0.0;
+    for (pa, pb) in a.iter().zip(b.iter()) {
+        let va = pa[3] >= VISIBLE;
+        let vb = pb[3] >= VISIBLE;
+        if !(va || vb) {
+            continue;
+        }
+        let (ra, ga, ba) = if va {
+            (pa[0] as f64, pa[1] as f64, pa[2] as f64)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let (rb, gb, bb) = if vb {
+            (pb[0] as f64, pb[1] as f64, pb[2] as f64)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        sum += ((ra - rb).abs() + (ga - gb).abs() + (ba - bb).abs()) / 3.0;
+        n += 1.0;
+    }
+    if n == 0.0 {
+        0.0
+    } else {
+        sum / n
+    }
+}
+
 /// #161: idle, land, sit, sleep, hold, react and talk must each be their own
-/// art — not copies of one shared stand.
+/// art — not byte-identical copies, and not near-duplicate frontals (mean RGB
+/// ~1-3) that look like one shared stand. Sit must also read as a hunker:
+/// clearly shorter silhouette than idle.
 #[test]
 fn timber_wolf_poses_are_not_copies_of_each_other() {
     let posed = ["idle", "land", "sit", "sleep", "hold", "react", "talk"];
@@ -288,6 +338,7 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
         .filter(|(animation, _, _)| posed.contains(&animation.as_str()))
         .collect();
 
+    // Byte-identity still fails exact copies.
     for (i, (animation, frame, bytes)) in frames.iter().enumerate() {
         for (other_animation, other_frame, other_bytes) in &frames[i + 1..] {
             if animation == other_animation {
@@ -295,11 +346,62 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
             }
             assert!(
                 bytes != other_bytes,
-                "{animation} frame {frame} is the same art as {other_animation} \
-                 frame {other_frame}"
+                "{animation} frame {frame} is the same art as {other_animation}                  frame {other_frame}"
             );
         }
     }
+
+    // First frame of each pose vs every other pose: near-duplicate frontals
+    // from the turn clip scored mean RGB ~1-3; distinct art clears 15+.
+    const MIN_MEAN_RGB: f64 = 12.0;
+    let first: Vec<_> = posed
+        .iter()
+        .map(|anim| {
+            let (frame, bytes) = frames
+                .iter()
+                .find(|(a, _, _)| a == anim)
+                .map(|(_, f, b)| (f.clone(), b.clone()))
+                .unwrap_or_else(|| panic!("{anim} has a first frame"));
+            let (_, _, rgba) = frame_rgba(&bytes);
+            ((*anim).to_string(), frame, rgba)
+        })
+        .collect();
+
+    for (i, (animation, frame, rgba)) in first.iter().enumerate() {
+        for (other_animation, other_frame, other_rgba) in &first[i + 1..] {
+            let d = mean_rgb_distance(rgba, other_rgba);
+            assert!(
+                d >= MIN_MEAN_RGB,
+                "{animation} frame {frame} is a near-copy of {other_animation}                  frame {other_frame} (mean RGB distance {d:.2}, need >= {MIN_MEAN_RGB})"
+            );
+        }
+    }
+
+    // Sit is a hunker: silhouette at least 12px shorter than idle.
+    let idle_h = {
+        let bytes = &frames
+            .iter()
+            .find(|(a, f, _)| a == "idle" && f.ends_with("idle-0.png"))
+            .expect("idle-0")
+            .2;
+        let (w, h, alpha) = frame_alpha(bytes);
+        let (top, bottom, _) = silhouette(w, h, &alpha);
+        bottom - top + 1
+    };
+    let sit_h = {
+        let bytes = &frames
+            .iter()
+            .find(|(a, f, _)| a == "sit" && f.ends_with("sit-0.png"))
+            .expect("sit-0")
+            .2;
+        let (w, h, alpha) = frame_alpha(bytes);
+        let (top, bottom, _) = silhouette(w, h, &alpha);
+        bottom - top + 1
+    };
+    assert!(
+        sit_h + 12 <= idle_h,
+        "sit silhouette is {sit_h}px and idle is {idle_h}px; sit must hunker at least 12px lower"
+    );
 }
 
 /// #161: a patrol mech tracks a near contact and raises a weapon on a rush.
