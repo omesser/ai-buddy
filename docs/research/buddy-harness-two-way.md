@@ -27,6 +27,28 @@ TCP MCP, and A2A. For #166, the loopback answer is MCP **Streamable HTTP** on
 `ai-buddy-mcp` stdio binary demoted to a thin shim that dials the running app —
 which is exactly what OpenPets ships.
 
+## What ACP is
+
+[ACP](https://agentclientprotocol.com/) is JSON-RPC between a **client** (an
+editor, or here ai-buddy) and an **agent** (the user's Harness). The client
+starts a session and sends user turns with `session/prompt`. The agent thinks,
+may call tools, and answers that prompt only when the turn is finished. Same
+split as an IDE driving a coding agent. MCP is a different axis: how that agent
+reaches tools. ai-buddy is the ACP client and, separately, the MCP server the
+agent is handed at `session/new`.
+
+```mermaid
+sequenceDiagram
+  participant Buddy as ai-buddy
+  participant Agent as Harness
+  Buddy->>Agent: ACP session/prompt
+  Agent->>Buddy: MCP speak / play_behavior
+  Agent-->>Buddy: ACP stopReason
+```
+
+A poke is the prompt. `speak` is a tool call *inside* that turn. Completer
+`complete()` is waiting for `stopReason`.
+
 ## MCP as a reverse channel
 
 The current protocol revision is **2026-07-28**: "The **current** protocol version
