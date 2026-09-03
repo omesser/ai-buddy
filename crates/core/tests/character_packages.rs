@@ -69,6 +69,7 @@ fn assert_required_animations(character: &character::Character) {
     }
 }
 
+/// Entry test: package parses, has personality, and walk is the shipped 20-frame loop.
 #[test]
 fn timber_wolf_package_loads_with_all_required_animations() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
@@ -104,7 +105,7 @@ fn timber_wolf_behaviors_compose_existing_primitives() {
     );
     assert!(
         character.behaviors.contains_key("engage"),
-        "engage behavior exists for shooting emote"
+        "engage behavior exists for weapon-raise emote"
     );
 
     let engage = &character.behaviors["engage"];
