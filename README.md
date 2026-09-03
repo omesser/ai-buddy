@@ -1037,6 +1037,12 @@ import was accepted with `--accept-license`. Jotaro Kujo is Shueisha /
 Hirohiko Araki IP and the pack is fan art; the character is a development
 asset, and none of this repository's license claims cover that art.
 
+Timber Wolf's frames are cut from a Sketchfab viewer recording of
+[Clans Timberwolf Battlemech](https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f)
+by `oded1africa`. The model is CC BY 4.0, so it is credited here and in the
+package manifest. The mech is BattleTech IP; the character is a development
+asset, and none of this repository's license claims cover that art.
+
 ## License
 
 MIT.
