@@ -1,59 +1,59 @@
-# ai-buddy versus five well-known alternatives — feature comparison
+# ai-buddy versus five desktop pet alternatives — feature comparison
 
-Comparison against five widely used projects in similar categories (see
+Comparison against five widely used desktop pet projects (see
 [market.md](./market.md)): Desktop Mate, VPet-Simulator, Shimeji-ee ecosystem,
-ChatGPT desktop, Microsoft Copilot. Matrix rows are capabilities that matter for
-this product, using CONTEXT.md vocabulary. Columns mark each feature as
-**shipped** (in production today), **spec** (documented in docs/SPEC.md or a
-closed issue, not shipped), or **absent** (no evidence of it existing or being
-planned). ai-buddy column is honest about what is and is not built.
+Desktop Pet (desktoppet.app), OpenPets. Matrix rows are capabilities that matter
+for this product, using CONTEXT.md vocabulary. ai-buddy column is honest about
+what is and is not built.
+
+**Legend:** ✓ present, ~ documented not shipped, ❌ absent
 
 ## Feature matrix
 
-| Capability | ai-buddy | Desktop Mate | VPet-Simulator | Shimeji-ee | ChatGPT desktop | MS Copilot |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
 |---|---|---|---|---|---|---|
-| **Spatial Layer** | | | | | | |
-| Overlay (always-on-top) | shipped | shipped | shipped | shipped | absent | shipped (taskbar) |
-| Click-through (per-pixel) | shipped | shipped | shipped | shipped | absent | absent |
-| Physics (gravity, throw) | shipped | absent | absent | absent | absent | absent |
-| Perches (window top edges) | shipped | shipped | absent | absent | absent | absent |
-| Hide rules (fullscreen, hotkey) | shipped | absent | spec | absent | absent | absent |
-| Capture exclusion (no screen share) | shipped | absent | absent | absent | absent | absent |
-| Multi-instance (several buddies) | shipped | shipped | shipped | shipped | absent | absent |
-| Multi-monitor | shipped | shipped | shipped | shipped | shipped | shipped |
-| **Character & Art** | | | | | | |
-| Character Packages (first-class) | shipped | shipped (DLC) | shipped (Workshop) | shipped (community) | absent | absent |
-| Art ecosystem / gallery | absent | 40+ official DLC | Steam Workshop | 1000s fan-made | absent | absent |
-| Required Animation Set | 9 animations | unknown | unknown | standard set | absent | absent |
-| Declarative Behaviors | shipped (TOML) | absent | absent | absent (XML graphs) | absent | absent |
-| **Liveliness** | | | | | | |
-| Director (proposes Behaviors) | shipped (Static + HTTP stand-in) | absent | absent | absent (XML-driven) | absent | absent |
-| Idle life (model-free) | shipped | shipped | shipped | shipped | absent | absent |
-| Reacts to user (Poke, Grab) | shipped | shipped | shipped | shipped | absent | absent |
-| Window awareness | shipped (app name, geometry) | shipped | absent | shipped (edges) | absent | absent |
-| **Functional Layer** | | | | | | |
-| Harness / agent runtime | spec (MCP attach) | absent | absent | absent | shipped | shipped |
-| MCP server (buddy-side tools) | spec | absent | absent | absent | absent | absent |
-| Executor (synthetic input) | absent (Harness owns) | absent | absent | absent | shipped (Cowork, computer use) | shipped (Agent 365) |
-| Chat surface | spec (#17, #119) | absent | absent | absent | shipped | shipped |
-| **Memory & Context** | | | | | | |
-| Memory (shared, user-editable) | shipped (Markdown file) | absent | absent | absent | shipped (conversation history) | shipped (M365 graph) |
-| Ambient Capture | spec (deferred v1) | absent | absent | absent | absent | shipped (Windows screenshots) |
-| On-Demand Capture | spec (deferred v1) | absent | absent | absent | absent | shipped |
-| **Privacy & Control** | | | | | | |
-| Local-first (no cloud required) | shipped (Spatial) | shipped | shipped | shipped | absent | absent |
-| BYO model / API key | shipped (env vars) | absent | absent | absent | absent (OpenAI only) | absent (MS only) |
-| Consent-per-feature (opt-in gates) | shipped (Settings UI) | absent | absent | absent | OS-level TCC | OS-level TCC |
-| Denylist (excluded apps) | spec | absent | absent | absent | absent | absent |
-| **Platforms** | | | | | | |
-| macOS | shipped | shipped (beta, June 2026) | shipped | shipped (patched forks) | shipped | shipped (11+) |
-| Windows | spec (stubbed deliberately) | shipped | shipped | shipped | shipped | shipped (11 bundled) |
-| Linux | shipped (X11), degraded (Wayland) | shipped | shipped | shipped (community forks) | absent | absent |
-| **Pricing & Distribution** | | | | | | |
-| Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free tier + $20/mo Plus | free (bundled) + $30/mo M365 Copilot |
-| Character DLC | absent | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | absent | absent |
-| Subscription model | absent | absent | absent | absent | $20/mo Plus, $200/mo Pro | $30/mo M365 Copilot (enterprise volume) |
-| Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | web + desktop app (July 2026) | Windows 11 OS bundle + M365 |
+| **Spatial Layer** | — | — | — | — | — | — |
+| Overlay (always-on-top) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Click-through (per-pixel) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Physics (gravity, throw) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Perches (window top edges) | ✓ | ✓ | ❌ | ✓ | ❌ | ❌ |
+| Hide rules (fullscreen, hotkey) | ✓ | ❌ | ❌ | ✓ (Boss mode) | ❌ | ❌ |
+| Capture exclusion (no screen share) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Multi-instance (several buddies) | ✓ | ✓ | ✓ | ✓ | ❌ | ✓ |
+| Multi-monitor | ✓ | ✓ | ✓ | ✓ (toggle) | ✓ | ✓ |
+| **Character & Art** | — | — | — | — | — | — |
+| Character Packages (first-class) | ✓ | ✓ (DLC) | ✓ (Workshop) | ✓ (community) | ✓ (beta, +2 soon) | ✓ (catalog) |
+| Art ecosystem / gallery | ❌ | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog |
+| Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp |
+| Declarative Behaviors | ✓ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✓ (plugins) |
+| **Liveliness** | — | — | — | — | — | — |
+| Director (proposes Behaviors) | ✓ (Static + HTTP) | ❌ | ❌ | ❌ (XML) | ❌ | ~ (plugins) |
+| Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Reacts to user (Poke, Grab) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Window awareness | ✓ (app name, geometry) | ✓ | ❌ | ✓ (edges) | ❌ | ❌ |
+| **Functional Layer** | — | — | — | — | — | — |
+| Harness / agent runtime | ~ (MCP attach) | ❌ | ❌ | ❌ | ~ (OpenAI API) | ✓ (MCP optional) |
+| MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ |
+| Executor (synthetic input) | ❌ (Harness owns) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Chat surface | ~ (#17, #119) | ❌ | ❌ | ❌ | ✓ (voice or text) | ~ (plugin) |
+| **Memory & Context** | — | — | — | — | — | — |
+| Memory (shared, user-editable) | ✓ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✓ (plugin storage) |
+| Ambient Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| On-Demand Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Privacy & Control** | — | — | — | — | — | — |
+| Local-first (no cloud required) | ✓ (Spatial) | ✓ | ✓ | ✓ | ✓ (Spatial) | ✓ |
+| BYO model / API key | ✓ (env vars) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (Anthropic/OpenAI/Ollama) |
+| Consent-per-feature (opt-in gates) | ✓ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✓ (permissions) |
+| Denylist (excluded apps) | ~ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Platforms** | — | — | — | — | — | — |
+| macOS | ✓ | ✓ (beta, June 2026) | ✓ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) |
+| Windows | ~ (stubbed deliberately) | ✓ | ✓ | ✓ | ✓ (10/11) | ✓ (signed) |
+| Linux | ✓ (X11), ~ (Wayland) | ✓ | ✓ | ✓ (community forks) | ❌ | ✓ (AppImage) |
+| **Pricing & Distribution** | — | — | — | — | — | — |
+| Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) |
+| Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) |
+| Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases |
 
 ## Per-project notes
 
@@ -69,25 +69,31 @@ react to mouse, include voice lines. Developed by Infinite Loop (Sapporo).
 "sitting on windows, jumping between them, and playfully interacting with your
 mouse"). Character sits on window top edges (same as ai-buddy Perches). Licensed
 characters (Hatsune Miku, Hello Kitty, Sanrio, VTuber personas, Touhou
-Project). Multi-instance not confirmed but implied by "add a wide variety of
-cute characters" language. Built-in alarm feature; some DLC include mascot
-characters that appear during alarms
+Project). Multi-Character Mode officially released (display up to two characters
+simultaneously, with special combo actions for certain pairs)
+([Steam Community](https://steamcommunity.com/app/3301060/allnews/)).
+Multi-instance (via third-party methods or native multi-character feature).
+Built-in alarm feature; some DLC include mascot characters that appear during
+alarms
 ([SNOW MIKU 2026 Ver. DLC](https://store.steampowered.com/app/4018720/Desktop_Mate_SNOW_MIKU_2026_Ver_DLC/)).
 Mac version (Apple Silicon, open beta) launched June 24, 2026
 ([HolidayTravel](https://www.haveagood-holiday.com/en/articles/desktop-mate-2-million-downloads-mac-beta-steam-sale)).
+Linux support verified (Steam lists Linux).
 
-**Absent.** No physics (gravity, throw). No hide rules mentioned (fullscreen,
+**Absent.** No physics (gravity, throw). No hide rules verified (fullscreen,
 screen sharing). No capture exclusion verified. No agent capabilities, no MCP,
-no chat. Characters are purchased DLC, not user-authorable packages. Mod support
-was removed before or during Steam launch, which "upset the community" and is
-"widely criticized as an expensive, aggressive cash grab"
+no chat. Characters are 3D models purchased as DLC, not user-authorable 2D
+sprite packages. Mod support was removed before or during Steam launch, which
+"upset the community" and is "widely criticized as an expensive, aggressive cash
+grab"
 ([GameBrain](https://gamebrain.co/game/desktop-mate): user reviews call it
 "obvious cash grab," "removed mod support to make you purchase the overpriced
 DLC," "exploitative"). No evidence of character behavior authoring (director,
-personality prompts, declarative Behaviors).
+personality prompts, declarative Behaviors). No animation set requirement (3D
+models, not sprites).
 
-**Differences.** Desktop Mate monetizes licensed character DLC ($14.99
-each, 40+ available); ai-buddy has two shipped Characters and an internal
+**Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
+packs at $7.49–$14.99 each); ai-buddy has two shipped Characters and an internal
 package format (undocumented until v2). Desktop Mate has no physics, no
 functional layer, and no BYO character creation. ai-buddy's Spatial Layer
 includes physics and Perch riding/dropping under a gate, and its planned
@@ -103,20 +109,26 @@ promote VUP Simulator; the desktop pet is extracted from that program.
 ([Steam](https://store.steampowered.com/app/1920960/VPetSimulator/);
 [GitHub](https://github.com/LorisYounger/VPet))
 
-**Verified present.** Overlay. Multi-instance implied ("spawn multiple pets").
-Extensive Steam Workshop support for community animations, interactions, skins
-(stated in Steam description and community discussions). Two paid DLC (ModMaker,
-Pancake Cat Skin package) plus free Workshop content. No purchase price for base
-app. Cross-platform (Windows, Mac, Linux, Steam Deck). Open source on GitHub
-([LorisYounger/VPet](https://github.com/LorisYounger/VPet)).
+**Verified present.** Overlay with click-through. Multi-instance (spawn multiple
+pets). Extensive Steam Workshop support for community animations, interactions,
+skins (stated in Steam description and community discussions). Two paid DLC
+(ModMaker, Pancake Cat Skin package) plus free Workshop content. No purchase
+price for base app. Cross-platform (Windows, Mac, Linux, Steam Deck). Open
+source on GitHub ([LorisYounger/VPet](https://github.com/LorisYounger/VPet)).
+Animation assets require specific PNG sequence-frame structure:
+`{status}/{type}/{name}_{action}_{time}.png` where status is happy/nomal/poorcondition/ill,
+action is a (start), b (loop), c (end), and time is frame duration in
+milliseconds (100-250ms typical). Each mod requires `info.lps` configuration
+file.
 
-**Absent.** No physics (gravity, throw) mentioned. No window top-edge Perches
-(sprite appears to rest on desktop floor, not on windows). No agent
-capabilities, MCP, chat, or Harness. No Memory system. No Ambient Capture. No
-evidence of screen-sharing exclusion or hide rules.
+**Absent.** No physics (gravity, throw). No window top-edge Perches (sprite
+appears to rest on desktop floor, not on windows). No agent capabilities, MCP,
+chat, or Harness. No Memory system. No Ambient Capture. No evidence of
+screen-sharing exclusion. Hide rules not verified (no fullscreen auto-hide or
+hotkey hide mentioned in Steam page or README).
 
-**Differences.** VPet's Workshop ecosystem is live and massive (open source
-+ Steam Workshop), while ai-buddy's Character Package format is internal and
+**Differences.** VPet's Workshop ecosystem is live and massive (open source +
+Steam Workshop), while ai-buddy's Character Package format is internal and
 undocumented until v2. VPet has no window awareness or Perches, no physics, and
 no agent / MCP layer. ai-buddy's Director + Harness attach targets capabilities
 VPet does not have.
@@ -132,137 +144,166 @@ port has 500K+ downloads. Character packs are community-created and shared on
 DeviantArt, Tumblr, dedicated archives.
 ([Kilkakon](https://kilkakon.com/shimeji/))
 
-**Verified present.** Overlay. Click-through (shimeji walk on windows, fall off
-edges). Multi-instance (spawn many shimeji). Window edge awareness (shimeji sit
-on window tops and move between them). Huge community art ecosystem (1000s of
-fan-made packs). Cross-platform via forks (macOS via shimeji4mac, Linux via
-linux-shimeji). Per-character XML behavior graphs declaring pose sequences.
-([Kilkakon site](https://kilkakon.com/shimeji/);
-[DESIGN.md](../../DESIGN.md) cites it as "per-character XML behavior graphs")
+**Verified present.** Overlay (always-on-top sprite). Click-through. Window
+edge awareness (sprites sit on window tops, similar to ai-buddy Perches).
+Multi-instance (many Shimeji at once; Image Set Chooser lets users select which
+character types to spawn). Multi-monitor support with toggle ("Move Between
+Screens" setting to prevent Shimeji changing screens unexpectedly)
+([DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop)).
+Character packages via community (1000s of free fan-made image sets). Idle life
+(wander, fall, climb). Reacts to user (throw, interact). "Boss mode" in
+DalekCraft2's fork (double middle-click tray icon to quickly hide all Shimeji)
+([kilkakon.txt](https://github.com/DalekCraft2/Shimeji-Desktop/blob/main/kilkakon.txt)).
+Standard sprite set required (shime1.png - shime46.png).
 
-**Absent.** No physics (gravity is present but no ballistic throw). No capture
-exclusion or hide rules documented. No agent capabilities, no MCP, no Harness.
-No Memory. No Ambient Capture. No personality prompts or model-driven Director.
-Behavior graphs are XML data but hard to author; DESIGN.md: "after fifteen
-years the overwhelming majority of community packages are art reskins of the
-default XML, because the graph was too hard to author."
+**Absent.** No physics (ai-buddy's gravity/ballistic throw model). No capture
+exclusion. No hide rules in base version (no auto-hide on fullscreen); Boss mode
+is manual toggle. No agent capabilities, MCP, or chat. No Memory. No functional
+layer. Behavior system is XML graphs, not TOML declarative Behaviors.
 
-**Differences.** Shimeji-ee has decades of community content and proven
-longevity, but behavior authoring is difficult (XML graphs, not declarative
-Primitives). ai-buddy's engine-owned Primitives and Character-declared Behaviors
-keep authoring simpler. Shimeji-ee has no functional layer, no MCP, no agent.
-ai-buddy's planned Harness attach is a category ai-buddy introduces.
+**Differences.** Shimeji-ee's community character ecosystem (1000s of free
+packs) dwarfs ai-buddy's two shipped Characters. Shimeji-ee has no window
+awareness beyond edges, no physics, no agent layer, and no functional
+capabilities. ai-buddy adds physics (gravity, throw, Perches under acceleration
+gate), window app name tracking, planned MCP + Harness attach, Memory, and BYO
+model. Shimeji-ee's XML graph behavior system versus ai-buddy's Director +
+declarative Behaviors is a design difference in how liveliness is authored.
 
-### ChatGPT desktop
+### Desktop Pet
 
-**What it is.** Unified desktop app for macOS and Windows, launched July 9,
-2026. Merges chat, ChatGPT Work (agent tasks), and Codex (coding assistant).
-Free tier, $20/mo Plus, $200/mo Pro. Global keyboard shortcut (Option+Space on
-macOS). Desktop-specific download counts not disclosed; 1B MAU total across all
-platforms (June 2026).
-([Archynewsy](https://www.archynewsy.com/openai-merges-codex-into-unified-chatgpt-desktop-app/);
-[QRCodePress](https://www.qrcodepress.com/one-billion-people-use-chatgpt-weekly/8545876/))
+**What it is.** Free beta desktop companion by independent developer, available
+at desktoppet.app. Windows 10/11 (~150MB zip, v1.1.1, Oct 19, 2025) and macOS
+10.15+ (~191MB dmg). Cats/dogs/bunnies with unique animations and personality; 1
+type shipped, +2 coming soon. Software overlay that roams the screen.
+([desktoppet.app](https://desktoppet.app/))
 
-**Verified present.** Desktop app (native, not Electron per
-[Archynewsy](https://www.archynewsy.com/openai-merges-codex-into-unified-chatgpt-desktop-app/)).
-Multi-monitor (inferred from "macOS and Windows" support). Harness / agent
-runtime (ChatGPT Work mode supports long-running agent tasks, Codex for coding).
-Executor (computer use via native integration, announced March 23–24, 2026;
-Cowork does computer use via Claude desktop per Microsoft Q4 2026 earnings).
-Chat surface (core feature). Memory (conversation history, synced across
-devices per July 16–17 update). Ambient and On-Demand Capture (computer use
-requires screen access). macOS and Windows.
-([CryptoBriefing](https://cryptobriefing.com/openai-chatgpt-desktop-sync-update/))
+**Verified present.** Overlay (desktop floater). Click/drag to move pet,
+right-click menu, double-click interact, Tab key to place. Idle life (pet roams
+screen). Reacts to user (responds to clicks, drag). Pomodoro focus timer.
+Break and hydration reminders. Sound effects. AI Assistant Mode (voice or text
+chat) with user's own OpenAI API key; wake word default "Hey Pet"; key stored
+locally. Voice commands: wake word detection, timer, reminders, weather. Privacy
+claims: data on device, no collection; conversations not saved permanently.
+Multi-monitor inferred (desktop app). Windows 10/11 and macOS 10.15+ (Catalina)
+supported. Free beta. DirectX 11 / Metal graphics. Unsigned builds. Character
+packages (1 type shipped, +2 coming soon per homepage).
 
-**Absent.** No spatial layer (overlay, physics, Perches). No Character Packages.
-No idle life or window awareness (the app is a chat window, not a sprite). No
-local-first mode (requires OpenAI account and API). No BYO model (OpenAI models
-only). No click-through (it is a window, not a transparent overlay). No
-multi-instance in the spatial sense (one chat window).
+**Absent.** No physics (gravity, throw). No Perches (window top edges). No hide
+rules (fullscreen auto-hide). No capture exclusion. No multi-instance verified
+(homepage shows singular "pet"). No agent runtime beyond OpenAI chat (no MCP, no
+Harness). No MCP server. No Executor. No Memory system (conversations not saved
+permanently per privacy policy). No Ambient or On-Demand Capture. No Linux
+version. No animation set requirement (procedural/model-driven, not sprite
+sequences). No declarative Behaviors or Director.
 
-**Differences.** ChatGPT desktop is capability-first with no spatial layer.
-ai-buddy's Spatial Layer (physics, Perches, idle life without a model) is a
-category ChatGPT does not enter. ChatGPT's Functional Layer is already shipped;
-ai-buddy's is specced (MCP server + BYO Harness attach). ChatGPT is cloud-only;
-ai-buddy works offline. ChatGPT is a window; ai-buddy is an overlay sprite.
+**Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
+chat via user's OpenAI key, while ai-buddy separates Spatial (local, no model)
+from Functional (BYO Harness). Desktop Pet is beta with limited character
+selection (1 shipped, +2 soon); ai-buddy has two shipped Characters with
+internal package format. Desktop Pet has no physics, no Perches, no window
+awareness. ai-buddy's MCP + Harness model targets general agent capabilities;
+Desktop Pet's OpenAI integration is chat-only.
 
-### Microsoft Copilot
+### OpenPets
 
-**What it is.** AI assistant bundled into Windows 11, Microsoft 365, Edge, Bing.
-420M MAU (Q1 2026), 160M enterprise licensed users. Rendered via WebView2 in
-Windows 11, consuming 200MB–1GB RAM while active. Free tier (bundled) plus
-$30/mo M365 Copilot for enterprise.
-([Stackmatix](https://www.stackmatix.com/blog/microsoft-copilot-adoption-statistics-2026);
-[MakeUseOf](https://www.makeuseof.com/i-disabled-copilot-in-windows-11/))
+**What it is.** Open source (MIT) desktop companion platform by Boring Dystopia
+Development, launched May 2026. 782 GitHub stars as of Sep 3, 2026. Electron
+app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated pets
+idle/wander/react out of the box; no agent required. Plugin SDK v3 for extending
+functionality.
+([GitHub](https://github.com/alvinunreal/openpets);
+[openpets.dev](https://openpets.dev/))
 
-**Verified present.** Desktop integration (Windows 11 taskbar icon, Copilot
-sidebar). Multi-monitor (inferred from OS-level integration). Harness / agent
-runtime (Copilot in M365 apps, Windows). Executor (Agent 365 announced;
-Microsoft Q4 2026 earnings: nearly 40 million agents across 10K+ companies).
-Chat surface (sidebar and standalone window). Memory (Microsoft 365 graph,
-chat history). Ambient Capture (Windows 11 Recall feature takes periodic
-screenshots; Copilot Vision reads screen during sessions). macOS 11+ and Windows
-11.
-([Stackmatix](https://www.stackmatix.com/blog/microsoft-copilot-adoption-statistics-2026);
-[Yahoo Tech](https://tech.yahoo.com/ai/copilot/articles/microsoft-says-workers-now-using-190007425.html))
+**Verified present.** Overlay (transparent, always-on-top pet windows).
+Click-through (per-pixel transparency). Multi-instance (multiple pet windows;
+agent pets routed by lease). Multi-monitor (display geometry helpers, pets roam
+across displays). Character packages via catalog (openpets.dev serves versioned
+pet catalog; pets are ZIP downloads with spritesheet.webp + manifest). Official
+plugins: Day Routine, Focus Buddy (Pomodoro), Fortune Cookie, Launch Buddy,
+Magic 8 Ball, Mood Check-in, Reminders, Virtual Pet (Tamagotchi-style stats),
+Water Reminder. Plugin SDK v3: sandboxed JS/TS runtime, permissions model
+(explicit consent for sensitive APIs), schedules, storage, commands, panels,
+audio, notifications, ctx.ai (Anthropic/OpenAI/Ollama with user-configured
+keys). MCP server (stdio, tools: `openpets_status`, `openpets_react`,
+`openpets_say`). Agent integrations: Claude Code, OpenCode, Cursor, Pi. Speech
+sanitized (redacts paths, secrets, code). Local-first (no accounts, no cloud
+required). BYO model via plugin SDK ctx.ai gateway. Consent-per-feature
+(permissions declared in manifest, approved at install, flagged sensitive APIs
+require explicit toggles). Memory via plugin storage (ctx.storage JSON key-value
+with change subscriptions). Idle life (pets animate continuously). Reacts to
+user (click, drag). Spritesheet.webp animation format. Declarative via plugins
+(SDK v3 allows defining pet behaviors).
 
-**Absent.** No spatial layer (overlay, physics, Perches). Copilot is a sidebar
-or window, not a sprite. No Character Packages. No idle life as a mascot. No
-local-first mode (cloud-required). No BYO model (Microsoft models only). No
-click-through (window-based). No multi-instance in the mascot sense.
+**Absent.** No physics (gravity, throw). No Perches (window top edges). No hide
+rules (fullscreen auto-hide, hotkey). No capture exclusion verified. No window
+awareness (pets don't track app names or geometry). No Executor (synthetic
+input). Chat surface exists via plugin but not core. No Ambient or On-Demand
+Capture. No Denylist (excluded apps).
 
-**Differences.** Copilot is bundled OS assistant with agent capabilities but
-no spatial layer. ai-buddy's Spatial Layer is presence-first; Copilot is
-capability-first with no sprite, no physics, no window-edge awareness. Copilot
-is cloud-required; ai-buddy works offline. ai-buddy's BYO Harness model (MCP
-attach) vs Copilot's closed Microsoft runtime is the other divide.
+**Differences.** OpenPets is the closest software alternative to ai-buddy on
+architecture: overlay pet + plugin/agent extensibility + MCP + local-first + BYO
+model. Both separate spatial presence from functional capabilities. OpenPets
+ships MCP and plugin SDK v3 today; ai-buddy's Harness + MCP is specced. OpenPets
+has mature catalog (openpets.dev) and 9 official plugins; ai-buddy has two
+Characters and no plugin system. ai-buddy adds physics (gravity, throw, Perches)
+and window awareness; OpenPets has neither. OpenPets plugin runtime is
+sandboxed Electron BrowserWindows with permissions; ai-buddy's Harness model is
+external (user attaches their own MCP-compatible agent). OpenPets ctx.ai is
+provider gateway; ai-buddy env vars are direct keys. Both MIT licensed,
+local-first, no accounts.
 
 ## Differences from similar projects
 
 What ai-buddy does differently (as specced):
 
 1. **Spatial Layer + Functional Layer together.** Desktop pets (Desktop Mate,
-   VPet, Shimeji-ee) have presence and no agent. AI assistants (ChatGPT,
-   Copilot) have agent capabilities and no spatial layer. ai-buddy combines
-   both.
+   VPet, Shimeji-ee) have presence and idle life; Desktop Pet and OpenPets add
+   AI chat or plugins. None combine spatial physics with window awareness and a
+   BYO general-purpose agent runtime. ai-buddy's planned MCP + Harness attach
+   lets users bring their own agent.
 2. **Physics.** Gravity + ballistic throw + Perch riding under an acceleration
-   gate.
-3. **BYO Harness.** MCP server + user-attached agent runtime. ChatGPT and
-   Copilot are closed to their own models. Desktop pets have no agent layer.
+   gate. No other desktop pet has physics.
+3. **BYO Harness.** MCP server + user-attached agent runtime. Desktop pets have
+   no agent layer (Desktop Mate, VPet, Shimeji-ee), are chat-specific (Desktop
+   Pet with OpenAI), or use a plugin SDK (OpenPets). ai-buddy's Harness model:
+   user attaches their own MCP-compatible agent, not a sandboxed plugin
+   platform.
 4. **Local-first Spatial Layer.** Works offline, no permissions, no cloud, no
-   API key required. ChatGPT and Copilot require accounts and cloud. Desktop
-   pets are local but have no functional layer.
+   API key required for idle life. Desktop pets are local but ai-buddy
+   explicitly separates the Spatial Layer (always local) from the Functional
+   Layer (BYO cloud or local model).
 5. **Director that proposes, never animates.** Static weights or session model
    proposes a Behavior; engine plays it locally. Character stays visibly alive
-   while model thinks or is absent. Desktop pets have XML graphs (Shimeji-ee) or
-   no liveliness system (Desktop Mate, VPet). AI assistants have no idle life.
+   while model thinks or is absent. Desktop pets have XML graphs (Shimeji-ee),
+   no visible liveliness system (Desktop Mate, VPet), or plugin-driven (OpenPets).
 
 What other projects have that ai-buddy doesn't (yet):
 
 1. **Character ecosystems.** Desktop Mate has 40+ licensed DLC, VPet has Steam
-   Workshop, Shimeji-ee has 1000s of fan packs. ai-buddy's package format is
-   internal and undocumented until v2, with two shipped Characters.
-2. **Functional Layer shipped.** ChatGPT and Copilot have agent runtimes, chat
-   surfaces, and computer use today. ai-buddy's is specced, not built.
-3. **Distribution reach.** Desktop Mate and VPet are on Steam, Copilot is
-   bundled in Windows, ChatGPT has 1B MAU. ai-buddy is GitHub releases with no
-   store presence.
+   Workshop, Shimeji-ee has 1000s of fan packs, OpenPets has openpets.dev
+   catalog. ai-buddy's package format is internal and undocumented until v2,
+   with two shipped Characters.
+2. **Functional Layer shipped.** Desktop Pet has OpenAI chat, OpenPets has MCP +
+   plugin SDK v3 + 9 official plugins. ai-buddy's MCP + Harness is specced, not
+   built.
+3. **Distribution reach.** Desktop Mate and VPet are on Steam, OpenPets has
+   signed Windows builds and catalog. ai-buddy is GitHub releases with no store
+   presence.
 
 ## Sources
 
-Capabilities marked "shipped," "spec," or "absent" for ai-buddy are verified
-against docs/SPEC.md, DESIGN.md, README.md, and `git log` on main as of
-September 3, 2026. Similar projects verified against Steam pages (Desktop Mate
-[App ID 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/),
+Capabilities marked ✓, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
+DESIGN.md, README.md, and `git log` on main as of September 3, 2026. Similar
+projects verified against Steam pages (Desktop Mate [App ID
+3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/),
 VPet-Simulator [App ID
 1920960](https://store.steampowered.com/app/1920960/VPetSimulator/)), official
-sites ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee), press
-releases and company disclosures (Microsoft Q4 2026 earnings via
-[Yahoo Tech](https://tech.yahoo.com/ai/copilot/articles/microsoft-says-workers-now-using-190007425.html);
-OpenAI July 2026 desktop launch via
-[Archynewsy](https://www.archynewsy.com/openai-merges-codex-into-unified-chatgpt-desktop-app/)
-and
-[CryptoBriefing](https://cryptobriefing.com/openai-chatgpt-desktop-sync-update/)),
-and third-party technical breakdowns
-([MakeUseOf](https://www.makeuseof.com/i-disabled-copilot-in-windows-11/) for
-Copilot RAM usage). No fabricated features.
+sites ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
+[desktoppet.app](https://desktoppet.app/) for Desktop Pet), GitHub repositories
+([alvinunreal/openpets](https://github.com/alvinunreal/openpets),
+[LorisYounger/VPet](https://github.com/LorisYounger/VPet),
+[DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop)),
+OpenPets documentation
+([docs/architecture.md](https://github.com/alvinunreal/openpets/blob/main/docs/architecture.md),
+[docs/desktop.md](https://github.com/alvinunreal/openpets/blob/main/docs/desktop.md)),
+and third-party coverage. No fabricated features.

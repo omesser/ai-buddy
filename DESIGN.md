@@ -460,10 +460,10 @@ key, no subscription, no permission prompts. That state is the default demo.
 
 Feature comparison versus similar projects is in
 [docs/research/](./docs/research/): [market.md](./docs/research/market.md)
-sizes the desktop pet and AI assistant categories, identifies five well-known
-alternatives (Desktop Mate, VPet-Simulator, Shimeji-ee, ChatGPT desktop,
-Microsoft Copilot), and [alternatives.md](./docs/research/alternatives.md)
-compares ai-buddy's capabilities against them.
+sizes the desktop pet category, identifies five widely used alternatives (Desktop
+Mate, VPet-Simulator, Shimeji-ee, Desktop Pet, OpenPets), and
+[alternatives.md](./docs/research/alternatives.md) compares ai-buddy's
+capabilities against them.
 
 Technical references that informed design:
 
