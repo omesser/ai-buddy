@@ -33,12 +33,12 @@ fn package_bytes(name: &str) -> BTreeMap<String, Vec<u8>> {
     files
 }
 
-/// Load a Character Package from a directory in the workspace root.
+/// Load a workspace Character Package, or panic with the loader's errors.
 fn load_package(name: &str) -> Result<character::Character, Vec<String>> {
     character::load(&package_bytes(name))
 }
 
-/// Recursively read a directory into a `PackageBytes` map.
+/// Walk a package directory into the path→bytes map `character::load` takes.
 fn collect(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
@@ -217,10 +217,8 @@ fn frames_of(name: &str) -> Vec<(String, String, Vec<u8>)> {
     frames
 }
 
-/// #161 review: "the mech needs to be placed on the frame's floor so it won't
-/// float. at least 1 leg on the floor at all times (since it's not running)."
-/// The canvas bottom row is that floor, so every grounded pose has a foot on
-/// it. Only `fall` is airborne.
+/// #161: every grounded pose has a foot on the canvas bottom row.
+/// Only `fall` is airborne.
 #[test]
 fn timber_wolf_stands_on_the_canvas_floor() {
     for (animation, frame, bytes) in frames_of("timber-wolf") {
@@ -248,9 +246,8 @@ fn timber_wolf_stands_on_the_canvas_floor() {
     }
 }
 
-/// #161 review: "The mech is too big, needs scaling down." One canvas for the
-/// whole package, and a silhouette that reads as a heavy mech beside Jotaro's
-/// 110px without dwarfing the desktop.
+/// #161: one canvas for the package, silhouette heavy beside Jotaro's 110px
+/// without dwarfing the desktop.
 #[test]
 fn timber_wolf_frames_share_one_canvas_at_a_desktop_scale() {
     let frames = frames_of("timber-wolf");
@@ -281,9 +278,8 @@ fn timber_wolf_frames_share_one_canvas_at_a_desktop_scale() {
     );
 }
 
-/// #161 review: idle, land, sit, sleep and hold all shipped as copies of one
-/// side-profile pose, and "the mech never sleeps - so we can just use idle +
-/// torso twists". Each of those poses, plus react and talk, is its own art.
+/// #161: idle, land, sit, sleep, hold, react and talk must each be their own
+/// art — not copies of one shared stand.
 #[test]
 fn timber_wolf_poses_are_not_copies_of_each_other() {
     let posed = ["idle", "land", "sit", "sleep", "hold", "react", "talk"];
@@ -306,8 +302,7 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     }
 }
 
-/// #161 review: "Missing reactions". A patrol mech tracks a contact rather
-/// than closing on it, and a rush at the chassis earns a weapon raise.
+/// #161: a patrol mech tracks a near contact and raises a weapon on a rush.
 #[test]
 fn timber_wolf_declares_cursor_reactions() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");

@@ -34,7 +34,7 @@ rush_reaction = "react"
 model_base = 1
 model_power = 1
 
-# Camera-facing stand from the turn clip, so idle meshes with talk and react.
+# Camera-facing stand from the turn recording, so idle meshes with talk and react.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
@@ -88,7 +88,7 @@ fps = 4
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 1
 
-# Full-frontal weapon raise from the turn clip: contact acquired.
+# Full-frontal weapon raise from the turn recording: contact acquired.
 [animations.react]
 frames = ["frames/react-0.png", "frames/react-1.png"]
 fps = 8
