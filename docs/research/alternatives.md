@@ -1,10 +1,10 @@
-# ai-buddy versus five desktop pet alternatives — feature comparison
+# ai-buddy versus six desktop pet alternatives — feature comparison
 
-Comparison against five widely used desktop pet projects (see
+Comparison against six widely used desktop pet projects (see
 [market.md](./market.md)): Desktop Mate, VPet-Simulator, Shimeji-ee ecosystem,
-Desktop Pet (desktoppet.app), OpenPets. Matrix rows are capabilities that matter
-for this product, using CONTEXT.md vocabulary. ai-buddy column is honest about
-what is and is not built.
+Desktop Pet (desktoppet.app), OpenPets, MateEngine. Matrix rows are capabilities
+that matter for this product, using CONTEXT.md vocabulary. ai-buddy column is
+honest about what is and is not built.
 
 **Legend:** ✓ present, ~ documented not shipped OR partial, ❌ absent
 
@@ -12,71 +12,71 @@ what is and is not built.
 
 ### Spatial capabilities
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| Overlay (always-on-top) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Click-through (per-pixel) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Physics (gravity, throw) | ✓ (ballistic Perch gate) | ❌ | ❌ | ~ (Fall/gravity lineage) | ❌ | ~ (gravity overlay) |
-| Perches (window top edges) | ✓ | ✓ | ❌ | ✓ | ❌ | ❌ |
-| Hide rules (fullscreen, hotkey) | ✓ | ❌ | ❌ | ✓ (Boss mode) | ❌ | ❌ |
-| Capture exclusion (no screen share) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Multi-instance (several buddies) | ✓ | ✓ | ✓ | ✓ | ❌ | ✓ |
-| Multi-monitor | ✓ | ✓ | ✓ | ✓ (toggle) | ✓ | ✓ |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| Overlay (always-on-top) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Click-through (per-pixel) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Physics (gravity, throw) | ✓ (ballistic Perch gate) | ❌ | ❌ | ~ (Fall/gravity lineage) | ❌ | ~ (gravity overlay) | ❌ |
+| Perches (window top edges) | ✓ | ✓ | ❌ | ✓ | ❌ | ❌ | ✓ |
+| Hide rules (fullscreen, hotkey) | ✓ | ❌ | ❌ | ✓ (Boss mode) | ❌ | ❌ | ❌ |
+| Capture exclusion (no screen share) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Multi-instance (several buddies) | ✓ | ✓ | ✓ | ✓ | ❌ | ✓ | ✓ |
+| Multi-monitor | ✓ | ✓ | ✓ | ✓ (toggle) | ✓ | ✓ | ✓ |
 
 ### Character & art
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| Character Packages (first-class) | ✓ | ✓ (DLC) | ✓ (Workshop) | ✓ (community) | ✓ (beta, +2 soon) | ✓ (catalog) |
-| Art ecosystem / gallery | ✓ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog |
-| Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp |
-| Declarative Behaviors | ✓ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✓ (plugins) |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| Character Packages (first-class) | ✓ | ✓ (DLC) | ✓ (Workshop) | ✓ (community) | ✓ (beta, +2 soon) | ✓ (catalog) | ✓ (VRM + Workshop) |
+| Art ecosystem / gallery | ✓ (import petdex + Shimeji-ee) | 40+ official DLC | Steam Workshop | 1000s fan-made | 1 shipped, +2 soon | openpets.dev catalog | Steam Workshop + VRM |
+| Required Animation Set | 9 animations | ❌ (3D models) | PNG sequences | sprite set | ❌ (procedural) | spritesheet.webp | ❌ (VRM rigged) |
+| Declarative Behaviors | ✓ (TOML) | ❌ | ❌ | ❌ (XML graphs) | ❌ | ✓ (plugins) | ❌ |
 
 ### Behavior & personality
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| AI-powered behavior | ✓ (Director + personality.txt) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat) | ✓ (plugin SDK + MCP) |
-| Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Reacts to user (Poke, Grab) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Window awareness | ✓ (app name, geometry) | ✓ | ❌ | ✓ (edges) | ❌ | ❌ |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| AI-powered behavior | ✓ (Director + personality.txt) | ❌ | ❌ | ❌ (deterministic XML) | ✓ (OpenAI chat) | ✓ (plugin SDK + MCP) | ✓ (QWEN 2.5 1.5b) |
+| Idle life (model-free) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Reacts to user (Poke, Grab) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Window awareness | ✓ (app name, geometry) | ✓ | ❌ | ✓ (edges) | ❌ | ❌ | ✓ |
 
 ### Agent integrations
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ |
-| MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ |
-| AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (plugin + ctx.ai) |
-| BYO model / API key | ✓ (env vars) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (Anthropic/OpenAI/Ollama) |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ | ❌ |
+| MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✓ | ❌ |
+| AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (plugin + ctx.ai) | ✓ (built-in LLM) |
+| BYO model / API key | ✓ (env vars) | ❌ | ❌ | ❌ | ✓ (OpenAI) | ✓ (Anthropic/OpenAI/Ollama) | ❌ |
 
 ### Memory & privacy
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| Memory (shared, user-editable) | ✓ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✓ (plugin storage) |
-| Ambient Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ |
-| On-Demand Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Local-first (no cloud required) | ✓ (Spatial) | ✓ | ✓ | ✓ | ✓ (Spatial) | ✓ |
-| Consent-per-feature (opt-in gates) | ✓ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✓ (permissions) |
-| Denylist (excluded apps) | ~ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| Memory (shared, user-editable) | ✓ (Markdown file) | ❌ | ❌ | ❌ | ❌ | ✓ (plugin storage) | ❌ |
+| Ambient Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| On-Demand Capture | ~ (deferred v1) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Local-first (no cloud required) | ✓ (Spatial) | ✓ | ✓ | ✓ | ✓ (Spatial) | ✓ | ✓ |
+| Consent-per-feature (opt-in gates) | ✓ (Settings UI) | ❌ | ❌ | ❌ | ❌ | ✓ (permissions) | ❌ |
+| Denylist (excluded apps) | ~ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### Platforms
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| macOS | ✓ | ✓ (beta, June 2026) | ❌ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) |
-| Windows | ~ (stubbed deliberately) | ✓ | ✓ | ✓ | ✓ (10/11) | ✓ (signed) |
-| Linux | ✓ (X11), ~ (Wayland) | ❌ | ❌ | ✓ (community forks) | ❌ | ✓ (AppImage, Wayland issues) |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| macOS | ✓ | ✓ (beta, June 2026) | ❌ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) | ~ (PR #551 open) |
+| Windows | ~ (stubbed deliberately) | ✓ | ✓ | ✓ | ✓ (10/11) | ✓ (signed) | ✓ (11) |
+| Linux | ✓ (X11), ~ (Wayland) | ❌ | ❌ | ✓ (community forks) | ❌ | ✓ (AppImage, Wayland issues) | ❌ official (~unofficial port) |
 
 ### Pricing & distribution
 
-| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
-|---|---|---|---|---|---|---|
-| Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) |
-| Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) |
-| Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases |
+| Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
+|---|---|---|---|---|---|---|---|
+| Base app price | free (OSS MIT) | free (Steam F2P) | free (OSS) | free | free (beta) | free (MIT) | free (GitHub) / $5.49 (Steam) |
+| Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) | free (VRM + Workshop) |
+| Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
 
 ## Buyer-language comparison
 
@@ -88,6 +88,7 @@ what is and is not built.
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
 | Desktop Pet | productivity + BYO OpenAI (vendor claim) | Pomodoro + AI chat | privacy-first vendor claims; free beta | no independent reviews found; unsigned / Run anyway | low (vendor-only) |
 | OpenPets | developers, local agent sidekick | MCP + plugin SDK for coding agents | shipped MCP+SDK; 1,130 stars | Electron; Wayland overlay bugs; MCP is react/say not general harness; gravity ≠ Perch riding | GitHub stars + docs verifiable |
+| MateEngine | VRM fans after Desktop Mate mod removal | my VRM on the desktop, free | 3,532 stars + 974 Steam reviews 97%; Workshop + VRM; free on GitHub | no physics; Windows-only official; no official Linux/macOS; AI is local LLM, not BYO | Steam + GitHub strong |
 
 ## Per-project notes
 
@@ -124,7 +125,7 @@ quotes: Kiraz!! 2026-08-29: customizability / $15 DLC / no Workshop
 2025-03-13 attached character stripped after update; GameBrain cluster: "obvious
 cash grab," "removed mod support to make you purchase the overpriced DLC,"
 "exploitative"; Steam discussion: "I've just uninstalled Desktop Mate because of
-this" (594014141938699644); VaporLens sentiment: 22% recommend Mate-Engine.
+this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
 packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, internal
@@ -311,17 +312,74 @@ runtime is sandboxed Electron BrowserWindows with permissions; ai-buddy's
 Harness model is external (user attaches their own MCP-compatible agent). Both
 MIT licensed, local-first, no accounts.
 
+### MateEngine
+
+**What it is.** Free and open source desktop companion (GitHub:
+shinyflvre/Mate-Engine, 3,532 stars as of Sep 3 2026), also on Steam (App ID
+3625270, launched April 16, 2025, $5.49). Positioned as free Desktop Mate
+alternative after DM charged $10–$25 per model and disabled mods. 974 Steam
+reviews, 97% positive, Overwhelmingly Positive (Steambase July 2026).
+([Steam](https://store.steampowered.com/app/3625270/MateEngine/);
+[GitHub](https://github.com/shinyflvre/Mate-Engine))
+
+**Verified present.** Overlay (always-on-top). Click-through. Window sitting
+(sits on window top edges, similar to ai-buddy Perches). Taskbar sitting. Idle
+animations. Drag animations. Dance to music. Custom VRM avatar support (user's
+own 3D VRM models). Steam Workshop support for mods, custom models, dances. Mod
+support (.ME file format). Multi-instance (inferred from VRM support +
+Workshop). Multi-monitor (inferred from desktop overlay). Always-on-top toggle.
+AI integration: QWEN 2.5 1.5b LLM (Apache License, built-in). Timer, alarm
+features. Screensaver mode. Touch regions. Avatar SFX. Particle effects. FPS
+control. Head tracking, spine tracking, eye tracking, hand movement. Custom
+shaders. Free on GitHub, $5.49 on Steam. Windows 11 official.
+
+**Absent.** No ballistic physics (gravity, throw) found in README comparison
+table. No hide rules (fullscreen auto-hide, hotkey, Boss mode). No capture
+exclusion. No agent integrations beyond built-in AI (no MCP, no Harness attach,
+no BYO model key — AI is local QWEN). No Memory system. No BYO OpenAI/Anthropic
+key (uses local LLM). No required animation set (VRM rigged models, not sprite
+sequences). **macOS:** ~ (PR #551 open as of May 2026, experimental). **Linux:**
+❌ official (issue #85 closed wontfix, "does not make sense" due to .NET/audio
+library incompatibilities); unofficial Linux port exists
+([Marksonthegamer/Mate-Engine-Linux-Port](https://github.com/Marksonthegamer/Mate-Engine-Linux-Port),
+269 stars, X11-only, Wayland transparency issues, window snapping/dock sitting
+don't work on XWayland).
+
+**Buyer language.** MateEngine README: "Desktop Mate charges $10–$25 USD for
+single character models... modding and custom models were disabled in later
+versions." VaporLens Desktop Mate sentiment: 22% recommend MateEngine; "fair and
+reasonable" pricing vs Desktop Mate's "high DLC prices." Steam reviews: "just
+buy mate engine" in Desktop Mate negative cluster.
+
+**Onboarding reality.** Windows 11 only official. macOS experimental (PR open).
+Linux unofficial port requires X11, has Wayland issues.
+
+**Differences.** MateEngine is the user-owned VRM/Workshop answer to Desktop
+Mate's SKU lock. Both sit on windows (Perches), but MateEngine is VRM-driven
+(user's 3D rigged models) and ai-buddy is 2D sprite + ballistic physics.
+MateEngine has Steam Workshop + mods (the capability Desktop Mate removed);
+ai-buddy has import adapters for petdex + Shimeji-ee (authoring-time, not live
+Workshop). MateEngine's AI is built-in local LLM (QWEN 2.5 1.5b); ai-buddy's
+Director is BYO (env vars for OpenAI/Anthropic/Ollama, and planned Harness/MCP
+attach for agent capabilities). MateEngine has no ballistic physics (no
+gravity/throw arcs), no hide rules, no capture exclusion, no MCP, no agent
+Harness. ai-buddy's Spatial Layer ships ballistic Perch riding + acceleration
+gate + hide rules + capture exclusion; ai-buddy's Functional Layer (MCP +
+Harness attach) is specced. Buyer job split: MateEngine is *my VRM* after
+Desktop Mate's mod removal; ai-buddy is physics + BYO agent attach.
+
 ## Physics note (kind matters)
 
 ai-buddy ships a ballistic integrator: gravity, throw arcs, and window-top
 Perches that the sprite rides until an acceleration gate drops it. That is not
 the same as (a) Shimeji-ee's required Fall/Thrown and gravity in Fall.java
 (sprite kinematics + throw/climb), or (b) OpenPets' gravity overlay / Walkabout
-roam (motion-engine). Desktop Mate sits on windows (Perch-like) without a
-documented ballistic throw-physics model. Do not mark Shimeji-ee or OpenPets as
-"no physics" — mark them ~ (partial) because they have gravity but not
-ai-buddy's ballistic Perch gate. Desktop Mate / VPet / Desktop Pet: ❌ (no
-ballistic throw / no gravity integrator found in cited sources).
+roam (motion-engine). Desktop Mate and MateEngine sit on windows (Perch-like)
+without a documented ballistic throw-physics model. Do not mark Shimeji-ee or
+OpenPets as "no physics" — mark them ~ (partial) because they have gravity but
+not ai-buddy's ballistic Perch gate. Desktop Mate / VPet / Desktop Pet /
+MateEngine: ❌ (no ballistic throw / no gravity integrator found in cited
+sources).
 
 ## Unique-combo reality check
 
@@ -345,27 +403,32 @@ ballistic throw / no gravity integrator found in cited sources).
 1. **Character ecosystems (who controls the pack).** Desktop Mate: official SKUs
    vs *my* character; Mixed reviews + DLC/mod removal through 2026. VPet
    Workshop-open is the actual ecosystem strength (98% of 51,678 reviews).
-   Shimeji-ee: 1000s free packs, community folklore. OpenPets: openpets.dev
-   catalog. ai-buddy: two shipped characters + `scripts/import-pet.py` (petdex +
-   Shimeji-ee) = authoring-time import, not a live gallery or first-party store.
+   MateEngine: VRM + Workshop-open, free, the switching target after Desktop
+   Mate disabled mods (3,532 stars + 974 Steam reviews 97%). Shimeji-ee: 1000s
+   free packs, community folklore. OpenPets: openpets.dev catalog. ai-buddy: two
+   shipped characters + `scripts/import-pet.py` (petdex + Shimeji-ee) =
+   authoring-time import, not a live gallery or first-party store.
 
 2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
    evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,130 stars,
-   verifiable). ai-buddy's MCP + Harness is specced, not built.
+   verifiable). MateEngine has built-in AI (QWEN 2.5 1.5b LLM), not BYO agent
+   attach. ai-buddy's MCP + Harness is specced, not built.
 
-3. **Distribution reach.** Desktop Mate and VPet are on Steam; OpenPets has
-   signed Windows builds and catalog. ai-buddy is GitHub releases with no store
-   presence.
+3. **Distribution reach.** Desktop Mate, VPet, and MateEngine are on Steam;
+   OpenPets has signed Windows builds and catalog. ai-buddy is GitHub releases
+   with no store presence.
 
 ## Evidence footer
 
 - **✓** = present in running app / cited source (Steam page, GitHub README,
   review/issue citation, vendor homepage).
-- **~** = documented not shipped (ai-buddy MCP/Harness per ADR-0008) OR partial
-  (Shimeji-ee/OpenPets physics kind: gravity but not ballistic Perch riding).
+- **~** = documented not shipped (ai-buddy MCP/Harness per ADR-0008; MateEngine
+  macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
+  not ballistic Perch riding).
 - **❌** = not found in cited sources as of 2026-09-03.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
-  cited. Desktop Pet has vendor-only evidence (no independent reviews).
+  cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
+  has Steam 974 reviews 97% + GitHub 3,532 stars.
 
 ## Sources
 
@@ -375,14 +438,19 @@ Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,278; VPet-Simulator [App ID
 1920960](https://store.steampowered.com/app/1920960/VPetSimulator/) 51,678
-reviews 98% positive, SteamPulse metadata platforms `mac: false`, `linux: false`),
-official sites ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
+reviews 98% positive, SteamPulse metadata platforms `mac: false`, `linux: false`;
+MateEngine [App ID 3625270](https://store.steampowered.com/app/3625270/MateEngine/)
+974 reviews 97% positive Steambase July 2026), official sites
+([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
 [desktoppet.app](https://desktoppet.app/) for Desktop Pet), GitHub repositories
 ([alvinunreal/openpets](https://github.com/alvinunreal/openpets) 1,130 stars as
 of Sep 3 2026, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
-[DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop)),
-OpenPets documentation
+[DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop),
+[shinyflvre/Mate-Engine](https://github.com/shinyflvre/Mate-Engine) 3,532 stars
+as of Sep 3 2026), OpenPets documentation
 ([docs/architecture.md](https://github.com/alvinunreal/openpets/blob/main/docs/architecture.md),
 [docs/desktop.md](https://github.com/alvinunreal/openpets/blob/main/docs/desktop.md)),
-Steam review sentiment (GameBrain, VaporLens analysis), and third-party coverage.
-No fabricated features.
+MateEngine unofficial Linux port
+([Marksonthegamer/Mate-Engine-Linux-Port](https://github.com/Marksonthegamer/Mate-Engine-Linux-Port)
+269 stars, issue #85 wontfix), Steam review sentiment (GameBrain, VaporLens
+analysis), and third-party coverage. No fabricated features.
