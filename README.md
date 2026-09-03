@@ -74,8 +74,9 @@ servers a Linux user is already running one of, not platforms to port to.
 A daggered row costs the same thing every time: Wayland will not tell a client
 about other windows' geometry, the pointer outside its own surface, the
 frontmost application, or idle. The sprite keeps its window, its art and its
-menu. XWayland runs the X11 path but gives it a private view, so it is not a
-way back to the full answer.
+menu. The dagger describes what ships, not a protocol limit alone — the lane is
+chosen on `WAYLAND_DISPLAY`, which a Wayland session sets even for an XWayland
+client, so the X11 path is never attempted there.
 
 What the cells leave out:
 
