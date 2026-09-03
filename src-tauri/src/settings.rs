@@ -193,9 +193,6 @@ pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Res
 
 /// Env, then the file, then the store. A store read error is `Err`, not Unset:
 /// treating it as no key would drop a remote Completer to Static on Retarget.
-///
-/// The store is left untouched when the env already owns the key: `resolve`
-/// would discard what it returned, and the read is a Keychain prompt on macOS.
 pub fn director_settings(
     settings: &Settings,
     secrets: &dyn SecretStore,

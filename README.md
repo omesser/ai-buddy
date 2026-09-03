@@ -255,20 +255,22 @@ Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps
 the Keychain out of the launch entirely — the env has already decided the key,
 so nothing reads the store.
 
-On macOS a build is ad-hoc signed, and its cdhash changes with every
-`cargo build`. That hash is how the Keychain names the app in the saved key's
-access control list, in two places, so the next build is a stranger to its own
-item and a launch that reads the key costs two dialogs. Always Allow only pins
-the hash about to be replaced. `scripts/dev-sign.sh` signs the build with a
-stable self-signed identity, which the list names instead:
+On macOS a saved key is guarded by an access control list naming the build that
+wrote it, and an ad-hoc signature names it by a hash that every `cargo build`
+changes — so a rebuilt app is a stranger to its own key and the launch costs
+two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the
+list can name instead, and its header carries the whole argument. From the
+repository root:
 
 ```sh
 cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
 ```
 
 A key saved before the first signed run keeps the old list — clear it in
-Settings and save it once more. Released builds are ad-hoc signed too, so an
-update prompts the same way until there is a Developer ID to sign with (#283).
+Settings and save it once more. Signing also changes the identity macOS grants
+Accessibility and Screen Recording to, so expect to grant those again, once.
+Released builds are ad-hoc signed too, so an update prompts the same way until
+there is a Developer ID to sign with (#283).
 
 Settings → What the buddy can see is how you grant Accessibility and Screen
 Recording. The pane names the row macOS will show: a `cargo run` from Cursor

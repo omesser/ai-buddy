@@ -45,7 +45,10 @@ if [[ ! -e $TARGET ]]; then
   exit 1
 fi
 
-if ! security find-certificate -c "$IDENTITY" "$KEYCHAIN" > /dev/null 2>&1; then
+# Identities, not certificates: a certificate whose private key never arrived
+# cannot sign. `-v` is wrong here too — it filters to trusted identities, and
+# this one is trusted by nothing, which codesign does not mind.
+if ! security find-identity "$KEYCHAIN" | grep -q "\"$IDENTITY\""; then
   echo "dev-sign: creating the '$IDENTITY' certificate in the login keychain"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
@@ -69,4 +72,6 @@ deep=()
 [[ $TARGET == *.app ]] && deep=(--deep)
 
 codesign --force "${deep[@]}" --sign "$IDENTITY" "$TARGET"
-codesign -dvvv "$TARGET" 2>&1 | grep -E '^(Authority|CDHash)='
+# Reporting only. A signature that succeeded must not fail the script because
+# codesign phrased its output differently.
+codesign -dvvv "$TARGET" 2>&1 | grep -E '^(Authority|CDHash)=' || true
