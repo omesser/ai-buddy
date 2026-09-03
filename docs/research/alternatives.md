@@ -6,7 +6,7 @@ Desktop Pet (desktoppet.app), OpenPets. Matrix rows are capabilities that matter
 for this product, using CONTEXT.md vocabulary. ai-buddy column is honest about
 what is and is not built.
 
-**Legend:** ✓ present, ~ documented not shipped, ❌ absent
+**Legend:** ✓ present, ~ documented not shipped OR partial, ❌ absent
 
 ## Feature matrix
 
@@ -16,7 +16,7 @@ what is and is not built.
 |---|---|---|---|---|---|---|
 | Overlay (always-on-top) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Click-through (per-pixel) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Physics (gravity, throw) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Physics (gravity, throw) | ✓ (ballistic Perch gate) | ❌ | ❌ | ~ (Fall/gravity lineage) | ❌ | ~ (gravity overlay) |
 | Perches (window top edges) | ✓ | ✓ | ❌ | ✓ | ❌ | ❌ |
 | Hide rules (fullscreen, hotkey) | ✓ | ❌ | ❌ | ✓ (Boss mode) | ❌ | ❌ |
 | Capture exclusion (no screen share) | ✓ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -65,9 +65,9 @@ what is and is not built.
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets |
 |---|---|---|---|---|---|---|
-| macOS | ✓ | ✓ (beta, June 2026) | ✓ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) |
+| macOS | ✓ | ✓ (beta, June 2026) | ❌ | ✓ (patched forks) | ✓ (10.15+) | ✓ (arm64/x64) |
 | Windows | ~ (stubbed deliberately) | ✓ | ✓ | ✓ | ✓ (10/11) | ✓ (signed) |
-| Linux | ✓ (X11), ~ (Wayland) | ✓ | ✓ | ✓ (community forks) | ❌ | ✓ (AppImage) |
+| Linux | ✓ (X11), ~ (Wayland) | ❌ | ❌ | ✓ (community forks) | ❌ | ✓ (AppImage, Wayland issues) |
 
 ### Pricing & distribution
 
@@ -78,58 +78,70 @@ what is and is not built.
 | Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases |
 
+## Buyer-language comparison
+
+| Project | Target customer | Core use case | Main strength | Main weakness | Evidence quality |
+|---|---|---|---|---|---|
+| ai-buddy | local 2D overlay fans; later attach own agent | sits on real windows with physics; BYO Harness | shipped Spatial (Perches + hide + capture exclusion) | Harness not shipped; Windows stubbed; two characters; GitHub-only | high for own spec/ship split |
+| Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
+| VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
+| Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
+| Desktop Pet | productivity + BYO OpenAI (vendor claim) | Pomodoro + AI chat | privacy-first vendor claims; free beta | no independent reviews found; unsigned / Run anyway | low (vendor-only) |
+| OpenPets | developers, local agent sidekick | MCP + plugin SDK for coding agents | shipped MCP+SDK; 1,130 stars | Electron; Wayland overlay bugs; MCP is react/say not general harness; gravity ≠ Perch riding | GitHub stars + docs verifiable |
+
 ## Per-project notes
 
 ### Desktop Mate
 
 **What it is.** Free-to-play Steam app (App ID 3301060, launched Jan 7, 2025)
-with 2M+ downloads by June 2026. 3D character mascots that sit on window edges,
-react to mouse, include voice lines. Developed by Infinite Loop (Sapporo).
+with 2M+ downloads claim by vendor Infinite Loop (June 2026 PR). 3D character
+mascots that sit on windows, react to mouse, include voice lines.
 ([Steam](https://store.steampowered.com/app/3301060/Desktop_Mate/))
 
-**Verified present.** Overlay with click-through
-([Steam page](https://store.steampowered.com/app/3301060/Desktop_Mate/):
-"sitting on windows, jumping between them, and playfully interacting with your
-mouse"). Character sits on window top edges (same as ai-buddy Perches). Licensed
-characters (Hatsune Miku, Hello Kitty, Sanrio, VTuber personas, Touhou
-Project). Multi-Character Mode officially released (display up to two characters
-simultaneously, with special combo actions for certain pairs)
-([Steam Community](https://steamcommunity.com/app/3301060/allnews/)).
-Multi-instance (via third-party methods or native multi-character feature).
-Built-in alarm feature; some DLC include mascot characters that appear during
-alarms
-([SNOW MIKU 2026 Ver. DLC](https://store.steampowered.com/app/4018720/Desktop_Mate_SNOW_MIKU_2026_Ver_DLC/)).
-Mac version (Apple Silicon, open beta) launched June 24, 2026
-([HolidayTravel](https://www.haveagood-holiday.com/en/articles/desktop-mate-2-million-downloads-mac-beta-steam-sale)).
-Linux support verified (Steam lists Linux).
+**Verified present.** Overlay with click-through. Character sits on window top
+edges (same as ai-buddy Perches). Licensed characters (Hatsune Miku, Hello
+Kitty, Sanrio, VTuber personas, Touhou Project). Multi-Character Mode officially
+released (display up to two characters simultaneously, with special combo actions
+for certain pairs). Built-in alarm feature; some DLC include mascot characters
+that appear during alarms. Mac version (Apple Silicon, open beta) launched June
+24, 2026. Multi-instance (via third-party methods or native multi-character
+feature).
 
-**Absent.** No physics (gravity, throw). No hide rules verified (fullscreen,
-screen sharing). No capture exclusion verified. No agent capabilities, no MCP,
-no chat. Characters are 3D models purchased as DLC, not user-authorable 2D
-sprite packages. Mod support was removed before or during Steam launch, which
-"upset the community" and is "widely criticized as an expensive, aggressive cash
-grab"
-([GameBrain](https://gamebrain.co/game/desktop-mate): user reviews call it
-"obvious cash grab," "removed mod support to make you purchase the overpriced
-DLC," "exploitative"). No evidence of character behavior authoring (director,
-personality prompts, declarative Behaviors). No animation set requirement (3D
-models, not sprites).
+**Absent.** No ballistic throw / gravity integrator found in cited sources (sits
+on windows Perch-like without documented physics model). No hide rules verified
+(fullscreen, screen sharing). No capture exclusion verified. No agent
+integrations, no MCP, no chat. Characters are 3D models purchased as DLC, not
+user-authorable 2D sprite packages. Mod support removed Feb 2025; anti-modding
+measures in place. No Steam Workshop. No animation set requirement (3D models,
+not sprites). **Linux:** ❌ official (Steam `platforms.linux=false`); Proton /
+community ports exist ("doesn't work on linux / black desktop" review cluster).
+
+**Review sentiment.** Steam English reviews: Mixed, 61% positive of 5,278 (all
+languages: 6,202 positive / 9,262 total as of 2026-09-03). Recurring complaints:
+DLC pricing ($7.49–$14.99 per character, 40+ SKUs); mod removal. Verified
+quotes: Kiraz!! 2026-08-29: customizability / $15 DLC / no Workshop
+(https://steamcommunity.com/id/nyatoi/recommended/3301060/); pyonpyonbun
+2025-03-13 attached character stripped after update; GameBrain cluster: "obvious
+cash grab," "removed mod support to make you purchase the overpriced DLC,"
+"exploitative"; Steam discussion: "I've just uninstalled Desktop Mate because of
+this" (594014141938699644); VaporLens sentiment: 22% recommend Mate-Engine.
 
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
-packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, an internal
+packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, internal
 package format (undocumented until v2), and import adapters for petdex / Pets
-Codex and Shimeji-ee ecosystems. Desktop Mate has no physics, no agent
-integrations, and no BYO character creation. ai-buddy's Spatial Layer includes
-physics and Perch riding/dropping under a gate, and its planned agent
-integrations (MCP + Harness attach) target capabilities Desktop Mate does not
-attempt.
+Codex and Shimeji-ee ecosystems. Buyer split: official SKUs vs *my* character.
+Desktop Mate has no ballistic physics, no agent integrations, no BYO character
+creation after mod removal. ai-buddy's Spatial Layer includes ballistic physics
+and Perch riding/dropping under a gate, and its planned agent integrations (MCP
++ Harness attach) target capabilities Desktop Mate does not attempt.
 
 ### VPet-Simulator
 
 **What it is.** Free and open source desktop pet on Steam (App ID 1920960,
-launched Aug 13, 2023). 50,795 reviews, 98% positive. 6,900 current players,
-22,071 tracked peak (August 2026). Windows, Mac, Linux, Steam Deck. Built to
-promote VUP Simulator; the desktop pet is extracted from that program.
+launched Aug 13, 2023). 51,678 reviews, 98% positive, Overwhelmingly Positive
+(August 2026). Steam Charts all-time peak 85,283 players. Windows only (official
+Steam platforms: `mac: false`, `linux: false`). Built to promote VUP Simulator;
+the desktop pet is extracted from that program.
 ([Steam](https://store.steampowered.com/app/1920960/VPetSimulator/);
 [GitHub](https://github.com/LorisYounger/VPet))
 
@@ -137,25 +149,28 @@ promote VUP Simulator; the desktop pet is extracted from that program.
 pets). Extensive Steam Workshop support for community animations, interactions,
 skins (stated in Steam description and community discussions). Two paid DLC
 (ModMaker, Pancake Cat Skin package) plus free Workshop content. No purchase
-price for base app. Cross-platform (Windows, Mac, Linux, Steam Deck). Open
-source on GitHub ([LorisYounger/VPet](https://github.com/LorisYounger/VPet)).
+price for base app. Cross-platform claim: Windows only official; GitHub
+https://github.com/LorisYounger/VPet is WPF Windows. Open source on GitHub.
 Animation assets require specific PNG sequence-frame structure:
-`{status}/{type}/{name}_{action}_{time}.png` where status is happy/nomal/poorcondition/ill,
-action is a (start), b (loop), c (end), and time is frame duration in
-milliseconds (100-250ms typical). Each mod requires `info.lps` configuration
-file.
+`{status}/{type}/{name}_{action}_{time}.png`.
 
-**Absent.** No physics (gravity, throw). No window top-edge Perches (sprite
-appears to rest on desktop floor, not on windows). No agent capabilities, MCP,
-chat, or Harness. No Memory system. No Ambient Capture. No evidence of
-screen-sharing exclusion. Hide rules not verified (no fullscreen auto-hide or
-hotkey hide mentioned in Steam page or README).
+**Absent.** No ballistic physics (gravity, throw). No window top-edge Perches
+(sprite appears to rest on desktop floor, not on windows). No agent
+integrations, MCP, chat, or Harness. No Memory system. No Ambient Capture. No
+evidence of screen-sharing exclusion. Hide rules not verified (no fullscreen
+auto-hide or hotkey hide mentioned in Steam page or README). **macOS:** ❌
+official Steam. **Linux:** ❌ official; Proton users report non-transparent /
+black background (ValveSoftware/Proton#8471).
 
-**Differences.** VPet's Workshop ecosystem is live and massive (open source +
-Steam Workshop), while ai-buddy's Character Package format is internal and
-undocumented until v2. VPet has no window awareness or Perches, no physics, and
-no agent integrations or MCP layer. ai-buddy's Director + Harness attach targets
-capabilities VPet does not have.
+**Onboarding reality.** "starts in Chinese" (review language); off-screen after
+DPI/monitor changes (issue #546).
+
+**Differences.** VPet's Workshop ecosystem is live and massive (98% of 51,678
+reviews), while ai-buddy's Character Package format is internal and undocumented
+until v2. VPet has no window awareness or Perches, no ballistic physics, and no
+agent integrations or MCP layer. ai-buddy's Director + Harness attach targets
+capabilities VPet does not have. Buyer job: care-sim + Workshop-open vs
+ai-buddy's physics + BYO Harness model.
 
 ### Shimeji-ee ecosystem
 
@@ -166,31 +181,35 @@ Kilkakon and others (New BSD). Distributed via
 [SourceForge](https://sourceforge.net/app/shimeji-ee/), and fan sites. Android
 port has 500K+ downloads. Character packs are community-created and shared on
 DeviantArt, Tumblr, dedicated archives.
-([Kilkakon](https://kilkakon.com/shimeji/))
 
 **Verified present.** Overlay (always-on-top sprite). Click-through. Window
 edge awareness (sprites sit on window tops, similar to ai-buddy Perches).
 Multi-instance (many Shimeji at once; Image Set Chooser lets users select which
 character types to spawn). Multi-monitor support with toggle ("Move Between
-Screens" setting to prevent Shimeji changing screens unexpectedly)
-([DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop)).
-Character packages via community (1000s of free fan-made image sets). Idle life
-(wander, fall, climb). Reacts to user (throw, interact). "Boss mode" in
-DalekCraft2's fork (double middle-click tray icon to quickly hide all Shimeji)
-([kilkakon.txt](https://github.com/DalekCraft2/Shimeji-Desktop/blob/main/kilkakon.txt)).
-Standard sprite set required (shime1.png - shime46.png).
+Screens" setting). Character packages via community (1000s of free fan-made
+image sets). Idle life (wander, fall, climb). Reacts to user (throw, interact).
+"Boss mode" in DalekCraft2's fork (double middle-click tray icon to quickly hide
+all Shimeji). Standard sprite set required (shime1.png - shime46.png). **Physics
+(kind matters).** Required Fall/Thrown actions; gravity integrator in the Java
+lineage (sprite kinematics + throw/climb; see DalekCraft2 Fall.java, kilkakon
+required actions). Not the same as ai-buddy's ballistic integrator with
+window-top Perches and acceleration gate.
 
-**Absent.** No physics (ai-buddy's gravity/ballistic throw model). No capture
-exclusion. No hide rules in base version (no auto-hide on fullscreen); Boss mode
-is manual toggle. No agent capabilities, MCP, or chat. No Memory. No agent
-integrations. Behavior system is XML graphs, not TOML declarative Behaviors.
+**Absent.** No ballistic Perch riding model (ai-buddy's gravity/throw arcs with
+Perch acceleration gate). No capture exclusion. No hide rules in base version
+(no auto-hide on fullscreen); Boss mode is manual toggle. No agent integrations,
+MCP, or chat. No Memory. Behavior system is XML graphs, not TOML declarative
+Behaviors.
+
+**Onboarding reality.** Folklore (Java, img/ folders, not in Downloads).
 
 **Differences.** Shimeji-ee's community character ecosystem (1000s of free
 packs) offers direct distribution; ai-buddy imports from Shimeji-ee via
 `scripts/import-pet.py` adapter plus petdex / Pets Codex, translating into
-Character Packages once (authoring-time, not live bridge). Shimeji-ee has no
-window awareness beyond edges, no physics, no agent integrations, and no AI
-capabilities. ai-buddy adds physics (gravity, throw, Perches under acceleration
+Character Packages once (authoring-time, not live bridge). Shimeji-ee has
+Fall/gravity (sprite kinematics) but not ai-buddy's ballistic Perch model; no
+window awareness beyond edges; no agent integrations or AI capabilities.
+ai-buddy adds ballistic physics (gravity arcs, throw, Perches under acceleration
 gate), window app name tracking, planned MCP + Harness attach, Memory, and BYO
 model. Shimeji-ee's XML graph behavior system versus ai-buddy's Director +
 declarative Behaviors is a design difference in how liveliness is authored.
@@ -199,45 +218,51 @@ declarative Behaviors is a design difference in how liveliness is authored.
 
 **What it is.** Free beta desktop companion by independent developer, available
 at desktoppet.app. Windows 10/11 (~150MB zip, v1.1.1, Oct 19, 2025) and macOS
-10.15+ (~191MB dmg). Cats/dogs/bunnies with unique animations and personality; 1
-type shipped, +2 coming soon. Software overlay that roams the screen.
+10.15+ (~191MB dmg). Homepage (as of 2026-09-03): "0 Downloads / Free (Beta) / 1
+Pet Type +2 Coming Soon."
 ([desktoppet.app](https://desktoppet.app/))
 
-**Verified present.** Overlay (desktop floater). Click/drag to move pet,
-right-click menu, double-click interact, Tab key to place. Idle life (pet roams
-screen). Reacts to user (responds to clicks, drag). Pomodoro focus timer.
-Break and hydration reminders. Sound effects. AI Assistant Mode (voice or text
-chat) with user's own OpenAI API key; wake word default "Hey Pet"; key stored
-locally. Voice commands: wake word detection, timer, reminders, weather. Privacy
-claims: data on device, no collection; conversations not saved permanently.
-Multi-monitor inferred (desktop app). Windows 10/11 and macOS 10.15+ (Catalina)
-supported. Free beta. DirectX 11 / Metal graphics. Unsigned builds. Character
-packages (1 type shipped, +2 coming soon per homepage).
+**Verified present (vendor claims only).** Overlay (desktop floater).
+Click/drag to move pet, right-click menu, double-click interact, Tab key to
+place. Idle life (pet roams screen). Reacts to user (responds to clicks, drag).
+Pomodoro focus timer. Break and hydration reminders. Sound effects. AI Assistant
+Mode (voice or text chat) with user's own OpenAI API key; wake word default "Hey
+Pet"; key stored locally. Voice commands: wake word detection, timer, reminders,
+weather. Privacy claims: data on device, no collection; conversations not saved
+permanently. Multi-monitor inferred (desktop app). Windows 10/11 and macOS 10.15+
+(Catalina) supported. Free beta. DirectX 11 / Metal graphics. Unsigned builds
+(vendor copy: "More info" → "Run anyway"). Character packages (1 type shipped,
++2 coming soon per homepage).
 
-**Absent.** No physics (gravity, throw). No Perches (window top edges). No hide
-rules (fullscreen auto-hide). No capture exclusion. No multi-instance verified
-(homepage shows singular "pet"). No agent runtime beyond OpenAI chat (no MCP, no
-Harness). No MCP server. No Executor. No Memory system (conversations not saved
-permanently per privacy policy). No Ambient or On-Demand Capture. No Linux
-version. No animation set requirement (procedural/model-driven, not sprite
-sequences). No declarative Behaviors or Director.
+**Absent.** No ballistic physics (gravity, throw). No Perches (window top
+edges). No hide rules (fullscreen auto-hide). No capture exclusion. No
+multi-instance verified (homepage shows singular "pet"). No agent runtime beyond
+OpenAI chat (no MCP, no Harness). No MCP server. No Memory system
+(conversations not saved permanently per privacy policy). No Ambient or
+On-Demand Capture. No Linux version. No animation set requirement
+(procedural/model-driven, not sprite sequences). No declarative Behaviors or
+Director.
+
+**Evidence quality.** Low. No independent reviews found (no Steam page, no
+GitHub community, no public customer voice). Vendor-only homepage and feature
+list.
 
 **Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
 chat via user's OpenAI key, while ai-buddy separates Spatial (local, no model)
-from Functional (BYO Harness). Desktop Pet is beta with limited character
-selection (1 shipped, +2 soon); ai-buddy has two shipped Characters, internal
-package format, and import adapters for petdex / Pets Codex and Shimeji-ee.
-Desktop Pet has no physics, no Perches, no window awareness. ai-buddy's MCP +
-Harness model targets general agent capabilities; Desktop Pet's OpenAI
-integration is chat-only.
+from agent integrations (BYO Harness). Desktop Pet is beta with limited
+character selection (1 shipped, +2 soon) and no public validation; ai-buddy has
+two shipped Characters, internal package format, and import adapters for petdex
+/ Pets Codex and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches,
+no window awareness. ai-buddy's MCP + Harness model targets general agent
+capabilities; Desktop Pet's OpenAI integration is chat-only.
 
 ### OpenPets
 
 **What it is.** Open source (MIT) desktop companion platform by Boring Dystopia
-Development, launched May 2026. 782 GitHub stars as of Sep 3, 2026. Electron
-app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated pets
-idle/wander/react out of the box; no agent required. Plugin SDK v3 for extending
-functionality.
+Development, launched May 2026. 1,130 GitHub stars as of September 3, 2026.
+Electron app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated
+pets idle/wander/react out of the box; no agent required. Plugin SDK v3 for
+extending functionality.
 ([GitHub](https://github.com/alvinunreal/openpets);
 [openpets.dev](https://openpets.dev/))
 
@@ -259,80 +284,105 @@ required). BYO model via plugin SDK ctx.ai gateway. Consent-per-feature
 require explicit toggles). Memory via plugin storage (ctx.storage JSON key-value
 with change subscriptions). Idle life (pets animate continuously). Reacts to
 user (click, drag). Spritesheet.webp animation format. Declarative via plugins
-(SDK v3 allows defining pet behaviors).
+(SDK v3 allows defining pet behaviors). **Physics (kind matters).** Gravity
+overlay + Walkabout roam (motion-engine in desktop.md / docs/desktop.md); not
+window-edge Perch riding.
 
-**Absent.** No physics (gravity, throw). No Perches (window top edges). No hide
-rules (fullscreen auto-hide, hotkey). No capture exclusion verified. No window
-awareness (pets don't track app names or geometry). No Executor (synthetic
-input). Chat surface exists via plugin but not core. No Ambient or On-Demand
-Capture. No Denylist (excluded apps).
+**Absent.** No ballistic Perch riding model (ai-buddy's throw arcs + window-top
+Perches with acceleration gate). No hide rules (fullscreen auto-hide, hotkey).
+No capture exclusion verified. No window awareness (pets don't track app names
+or geometry). No Ambient or On-Demand Capture. No Denylist (excluded apps).
 
-**Differences.** OpenPets is the closest software alternative to ai-buddy on
-architecture: overlay pet + plugin/agent extensibility + MCP + local-first + BYO
-model. Both separate spatial presence from functional capabilities. OpenPets
-ships MCP and plugin SDK v3 today; ai-buddy's Harness + MCP is specced. OpenPets
-has mature catalog (openpets.dev) and 9 official plugins; ai-buddy has two
-Characters and no plugin system. ai-buddy adds physics (gravity, throw, Perches)
-and window awareness; OpenPets has neither. OpenPets plugin runtime is
-sandboxed Electron BrowserWindows with permissions; ai-buddy's Harness model is
-external (user attaches their own MCP-compatible agent). OpenPets ctx.ai is
-provider gateway; ai-buddy env vars are direct keys. Both MIT licensed,
-local-first, no accounts.
+**Linux reality.** AppImage available; Wayland overlay issues reported (focus
+steal #32, invisible pet / tray-only #108/#141).
 
-## Differences from similar projects
+**Onboarding reality.** Unsigned macOS builds may trigger quarantine warning
+(vendor docs: `xattr -dr com.apple.quarantine /Applications/OpenPets.app`).
 
-What ai-buddy does differently (as specced):
+**Differences.** OpenPets is the closest shipped agent-pet alternative to
+ai-buddy on architecture: overlay pet + plugin/agent extensibility + MCP +
+local-first + BYO model. OpenPets ships MCP (`openpets_status`, `openpets_react`,
+`openpets_say`) and plugin SDK v3 today; ai-buddy's Harness + MCP is specced.
+OpenPets has mature catalog (openpets.dev) and 9 official plugins; ai-buddy has
+two Characters and no plugin system. ai-buddy adds ballistic physics (gravity
+arcs, throw, Perches with acceleration gate) and window awareness; OpenPets has
+gravity overlay but no Perch riding or window app name tracking. OpenPets plugin
+runtime is sandboxed Electron BrowserWindows with permissions; ai-buddy's
+Harness model is external (user attaches their own MCP-compatible agent). Both
+MIT licensed, local-first, no accounts.
 
-1. **Spatial capabilities + agent integrations together.** Desktop pets (Desktop
-   Mate, VPet, Shimeji-ee) have presence and idle life; Desktop Pet and OpenPets
-   add AI chat or plugins. None combine spatial physics with window awareness and
-   a BYO general-purpose agent runtime. ai-buddy's planned MCP + Harness attach
-   lets users bring their own agent.
-2. **Physics.** Gravity + ballistic throw + Perch riding under an acceleration
-   gate. No other desktop pet has physics.
-3. **BYO Harness.** MCP server + user-attached agent runtime. Desktop pets have
-   no agent layer (Desktop Mate, VPet, Shimeji-ee), are chat-specific (Desktop
-   Pet with OpenAI), or use a plugin SDK (OpenPets). ai-buddy's Harness model:
-   user attaches their own MCP-compatible agent, not a sandboxed plugin
-   platform.
-4. **Local-first Spatial Layer.** Works offline, no permissions, no cloud, no
-   API key required for idle life. Desktop pets are local but ai-buddy
-   explicitly separates the Spatial Layer (always local) from the Functional
-   Layer (BYO cloud or local model).
-5. **Director that proposes, never animates.** Static weights or session model
-   proposes a Behavior; engine plays it locally. Character stays visibly alive
-   while model thinks or is absent. Desktop pets have XML graphs (Shimeji-ee),
-   no visible liveliness system (Desktop Mate, VPet), or plugin-driven (OpenPets).
+## Physics note (kind matters)
 
-What other projects have that ai-buddy doesn't (yet):
+ai-buddy ships a ballistic integrator: gravity, throw arcs, and window-top
+Perches that the sprite rides until an acceleration gate drops it. That is not
+the same as (a) Shimeji-ee's required Fall/Thrown and gravity in Fall.java
+(sprite kinematics + throw/climb), or (b) OpenPets' gravity overlay / Walkabout
+roam (motion-engine). Desktop Mate sits on windows (Perch-like) without a
+documented ballistic throw-physics model. Do not mark Shimeji-ee or OpenPets as
+"no physics" — mark them ~ (partial) because they have gravity but not
+ai-buddy's ballistic Perch gate. Desktop Mate / VPet / Desktop Pet: ❌ (no
+ballistic throw / no gravity integrator found in cited sources).
 
-1. **Character ecosystems.** Desktop Mate has 40+ licensed DLC, VPet has Steam
-   Workshop, Shimeji-ee has 1000s of fan packs, OpenPets has openpets.dev
-   catalog. ai-buddy has two shipped Characters and import adapters
-   (`scripts/import-pet.py`) for petdex / Pets Codex and Shimeji-ee ecosystems
-   (authoring-time translation into Character Packages, not live bridge or
-   first-party gallery). Package format is internal and undocumented until v2.
-2. **Agent integrations shipped.** Desktop Pet has OpenAI chat, OpenPets has MCP
-   + plugin SDK v3 + 9 official plugins. ai-buddy's MCP + Harness is specced,
-   not built.
-3. **Distribution reach.** Desktop Mate and VPet are on Steam, OpenPets has
+## Unique-combo reality check
+
+**What ai-buddy ships differently:**
+
+1. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
+   Perch acceleration gate). Capture exclusion (no screen share). Fullscreen
+   fade + hotkey hide. Window app name tracking. Local idle life without model.
+   No other desktop pet ships all five.
+
+2. **Agent integrations (specced, not shipped).** MCP + BYO Harness attach.
+   README/ADR-0008: HTTP Completer is a stand-in; Harness *will* replace it; no
+   chat surface yet (#17). OpenPets *already ships* overlay pet + MCP
+   (`openpets_status` / `openpets_react` / `openpets_say`) + plugin SDK. Closest
+   *shipped* agent-pet is OpenPets; closest *shipped* Spatial differentiators are
+   ai-buddy's capture exclusion, fullscreen fade, hotkey hide, Perch
+   acceleration-gate.
+
+**What other projects have that ai-buddy doesn't (yet):**
+
+1. **Character ecosystems (who controls the pack).** Desktop Mate: official SKUs
+   vs *my* character; Mixed reviews + DLC/mod removal through 2026. VPet
+   Workshop-open is the actual ecosystem strength (98% of 51,678 reviews).
+   Shimeji-ee: 1000s free packs, community folklore. OpenPets: openpets.dev
+   catalog. ai-buddy: two shipped characters + `scripts/import-pet.py` (petdex +
+   Shimeji-ee) = authoring-time import, not a live gallery or first-party store.
+
+2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
+   evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,130 stars,
+   verifiable). ai-buddy's MCP + Harness is specced, not built.
+
+3. **Distribution reach.** Desktop Mate and VPet are on Steam; OpenPets has
    signed Windows builds and catalog. ai-buddy is GitHub releases with no store
    presence.
+
+## Evidence footer
+
+- **✓** = present in running app / cited source (Steam page, GitHub README,
+  review/issue citation, vendor homepage).
+- **~** = documented not shipped (ai-buddy MCP/Harness per ADR-0008) OR partial
+  (Shimeji-ee/OpenPets physics kind: gravity but not ballistic Perch riding).
+- **❌** = not found in cited sources as of 2026-09-03.
+- Alternative columns are vendor claims unless a review/issue/Steam page is
+  cited. Desktop Pet has vendor-only evidence (no independent reviews).
 
 ## Sources
 
 Capabilities marked ✓, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
-DESIGN.md, README.md, and `git log` on main as of September 3, 2026. Similar
-projects verified against Steam pages (Desktop Mate [App ID
-3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/),
-VPet-Simulator [App ID
-1920960](https://store.steampowered.com/app/1920960/VPetSimulator/)), official
-sites ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
+DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 3, 2026.
+Similar projects verified against Steam pages (Desktop Mate [App ID
+3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
+reviews Mixed 61% of 5,278; VPet-Simulator [App ID
+1920960](https://store.steampowered.com/app/1920960/VPetSimulator/) 51,678
+reviews 98% positive, SteamPulse metadata platforms `mac: false`, `linux: false`),
+official sites ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
 [desktoppet.app](https://desktoppet.app/) for Desktop Pet), GitHub repositories
-([alvinunreal/openpets](https://github.com/alvinunreal/openpets),
-[LorisYounger/VPet](https://github.com/LorisYounger/VPet),
+([alvinunreal/openpets](https://github.com/alvinunreal/openpets) 1,130 stars as
+of Sep 3 2026, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
 [DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop)),
 OpenPets documentation
 ([docs/architecture.md](https://github.com/alvinunreal/openpets/blob/main/docs/architecture.md),
 [docs/desktop.md](https://github.com/alvinunreal/openpets/blob/main/docs/desktop.md)),
-and third-party coverage. No fabricated features.
+Steam review sentiment (GameBrain, VaporLens analysis), and third-party coverage.
+No fabricated features.
