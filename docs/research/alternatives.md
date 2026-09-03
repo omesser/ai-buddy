@@ -51,7 +51,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
-| BYO model / API key | ✅ (env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
+| BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
 
 ### Memory & privacy
 
@@ -81,9 +81,9 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
 
-## Buyer-language comparison
+## User-language comparison
 
-| Project | Target customer | Core use case | Main strength | Main weakness | Evidence quality |
+| Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
 | ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows stubbed; two characters; GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
@@ -149,7 +149,7 @@ this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
 packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, internal
 package format (undocumented until v2), and import adapters for petdex / Pets
-Codex and Shimeji-ee ecosystems. Buyer split: official SKUs vs *my* character.
+Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
 Desktop Mate has no ballistic physics, no agent integrations, no BYO character
 creation after mod removal. ai-buddy's Spatial Layer includes ballistic physics
 and Perch riding/dropping under a gate, and its planned agent integrations (MCP
@@ -191,7 +191,7 @@ until v2. VPet has no window awareness or Perches, no ballistic physics, and no
 agent integrations or MCP layer. ai-buddy ships Director + authored
 personality-driven idle speech (VPet has no personality file or non-deterministic
 speech; its behavior is Workshop-defined animations). Harness is specced (~), not
-shipped. Buyer job: care-sim + Workshop-open vs ai-buddy's personality-driven
+shipped. User need: care-sim + Workshop-open vs ai-buddy's personality-driven
 idle life + physics.
 
 ### Shimeji-ee ecosystem
@@ -266,7 +266,7 @@ On-Demand Capture. No Linux version. No animation set requirement
 Director.
 
 **Evidence quality.** Low. No independent reviews found (no Steam page, no
-GitHub community, no public customer voice). Vendor-only homepage and feature
+GitHub community, no public user feedback). Vendor-only homepage and feature
 list.
 
 **Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
@@ -368,7 +368,7 @@ library incompatibilities); unofficial Linux port exists
 269 stars, X11-only, Wayland transparency issues, window snapping/dock sitting
 don't work on XWayland).
 
-**Buyer language.** MateEngine README: "Desktop Mate charges $10–$25 USD for
+**User perspective.** MateEngine README: "Desktop Mate charges $10–$25 USD for
 single character models... modding and custom models were disabled in later
 versions." VaporLens Desktop Mate sentiment: 22% recommend MateEngine; "fair and
 reasonable" pricing vs Desktop Mate's "high DLC prices." Steam reviews: "just
@@ -389,7 +389,7 @@ not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
 no hide rules, no capture exclusion, no MCP, no agent Harness. ai-buddy's Spatial
 Layer ships ballistic Perch riding + acceleration gate + hide rules + capture
 exclusion; ai-buddy's Functional Layer (MCP + Harness attach) is specced (~), not
-shipped. Buyer job split: MateEngine is *my VRM* after Desktop Mate's mod
+shipped. User need: MateEngine is *my VRM* after Desktop Mate's mod
 removal; ai-buddy is authored personality + idle speech + physics.
 
 ## Physics note (kind matters)
