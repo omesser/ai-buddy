@@ -73,6 +73,21 @@ makes them reconstruct the problem from the diff.
 A pull request small enough that all three answers are one sentence each should
 give one sentence each. The template is a floor, not a quota.
 
+## A visual change shows itself
+
+When a pull request changes what the product looks like, the description
+carries the artifact: the new asset, and the old one beside it when the change
+*is* the difference between them. A reviewer who would have to build the branch
+to see a corner radius does not build the branch — they approve on the diff,
+which is the one thing that cannot show them a corner radius. Motion is no
+exception; a contact sheet of frames says more than a sentence about timing.
+
+Check the image into the repository and link it by commit SHA.
+`branding/app-icon-preview.png` is the worked example. GitHub's own attachment
+upload is a browser affordance no agent can reach, a link to a branch dies with
+that branch on the squash merge, and an image worth showing a reviewer is
+usually worth keeping beside the asset it documents.
+
 ## An agent signs what it writes on GitHub
 
 End every issue comment, pull request description, review and inline reply an
