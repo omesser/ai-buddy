@@ -146,7 +146,9 @@ impl SettingsView {
     ) -> Self {
         let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
         Self {
-            director_enabled: settings.director_enabled,
+            // The value in force, as the Development rows show theirs: a
+            // vetoed Director reads off however the file has it.
+            director_enabled: settings.director_enabled && !model::env_vetoes_director(),
             ambient_wakes: settings.ambient_wakes,
             do_not_disturb: settings.do_not_disturb,
             sound: settings.sound,
@@ -351,10 +353,11 @@ fn stored_key_status(store: &dyn SecretStore) -> (bool, String, String) {
 /// Resolve Director settings on the settings thread. The frame loop only applies them.
 fn retarget_payload(settings: &Settings, store: &dyn SecretStore) -> Result<SettingsOp, String> {
     let director = director_settings(settings, store)?;
-    let cfg = model::config_from(&director);
+    let mut cfg = model::config_from(&director);
+    cfg.apply_switch(settings.director_enabled);
     Ok(SettingsOp::Retarget {
         settings: director,
-        enabled: settings.director_enabled && cfg.configured,
+        enabled: cfg.enabled,
         ambient_allowed: settings.ambient_wakes,
         configured: cfg.configured,
     })
@@ -1641,6 +1644,53 @@ mod tests {
                 }
                 other => panic!("expected Retarget, got {other:?}"),
             }
+        });
+    }
+
+    /// Saving is when the file's switch reaches the frame loop, so it is
+    /// where a vetoed Director would come back on.
+    #[test]
+    fn retarget_cannot_switch_on_a_director_the_process_vetoed() {
+        model::tests::with_director_off(|| {
+            let store = MemoryStore::new();
+            store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
+            let settings = endpoint_settings();
+            assert!(settings.director_enabled, "precondition: the file says on");
+            match retarget_payload(&settings, &store).unwrap() {
+                SettingsOp::Retarget {
+                    enabled,
+                    configured,
+                    ..
+                } => {
+                    assert!(configured, "the stored key still configures it");
+                    assert!(!enabled, "AI_BUDDY_DIRECTOR=off outranks the file");
+                }
+                other => panic!("expected Retarget, got {other:?}"),
+            }
+        });
+    }
+
+    /// The row is frozen, so the box it draws has to be the value in force.
+    #[test]
+    fn a_vetoed_director_reads_off_in_the_window() {
+        model::tests::with_director_off(|| {
+            let settings = Settings {
+                director_enabled: true,
+                ..Settings::default()
+            };
+            let view = SettingsView::from_parts(
+                &settings,
+                Path::new("/tmp/ai-buddy/memory.md"),
+                None,
+                Vec::new(),
+                Vec::new(),
+                (false, String::new(), String::new()),
+            );
+
+            assert!(
+                !view.director_enabled,
+                "the file says on, the env vetoed it"
+            );
         });
     }
 

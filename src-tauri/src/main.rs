@@ -782,7 +782,7 @@ fn apply_menu_action(
         menu::MenuAction::ToggleDirector => {
             if let Ok(mut settings) = settings.lock() {
                 settings.director_enabled = !settings.director_enabled;
-                config.enabled = settings.director_enabled && config.configured;
+                config.apply_switch(settings.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
                 }
@@ -990,6 +990,7 @@ fn describe_menu(
         current_character: current,
         instances: &instances,
         director_enabled: settings.director_enabled,
+        director_vetoed: model::env_vetoes_director(),
         do_not_disturb: roster
             .get(instance_id)
             .map(|instance| instance.do_not_disturb())
@@ -1513,7 +1514,7 @@ fn main() {
                 }
             };
             let mut config = model::config_from(&director);
-            config.enabled = settings.director_enabled && config.configured;
+            config.apply_switch(settings.director_enabled);
             config.ambient_allowed = settings.ambient_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect()));
             app.manage(Arc::clone(&inspect));

@@ -521,7 +521,7 @@ pub(crate) fn run_frame_loop(
 
             if let Ok(settings) = settings.lock() {
                 config.ambient_allowed = settings.ambient_wakes;
-                config.enabled = settings.director_enabled && config.configured;
+                config.apply_switch(settings.director_enabled);
                 let dnd = settings.do_not_disturb;
                 // Reread every tick, like the flags above, so a mute in
                 // Settings lands on the next frame and not the next launch.

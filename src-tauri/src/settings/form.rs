@@ -216,6 +216,12 @@ fn director_sections() -> Vec<FormSection> {
     let (base_url_label, base_url_frozen) = env_row("Base URL", model::BASE_URL);
     let (model_label, model_frozen) = env_row("Model", model::MODEL);
     let (api_key_label, api_key_frozen) = env_row("API key", model::API_KEY);
+    // Not `env_row` alone: it freezes on any exported value, and only the off
+    // values veto — `AI_BUDDY_DIRECTOR=on` leaves the switch to the user.
+    let (director_label, director_frozen) = match model::env_vetoes_director() {
+        true => env_row("Director on", model::ENABLED),
+        false => ("Director on".to_string(), false),
+    };
 
     vec![
         FormSection {
@@ -224,8 +230,8 @@ fn director_sections() -> Vec<FormSection> {
             rows: vec![
                 FormRow::Checkbox {
                     id: DIRECTOR_ID.to_string(),
-                    label: "Director on".to_string(),
-                    frozen: false,
+                    label: director_label,
+                    frozen: director_frozen,
                     help: Some("The model picks what happens next.".to_string()),
                     comment: None,
                 },
@@ -764,6 +770,30 @@ mod tests {
                 frozen_rows,
                 vec![LAUNCH_ID],
                 "only Launch should be a frozen checkbox"
+            );
+        });
+    }
+
+    /// #272's rule for a row the env owns: no edit, and name the variable.
+    #[test]
+    fn a_vetoed_director_row_is_read_only_and_names_its_variable() {
+        crate::model::tests::with_director_off(|| {
+            let description = describe();
+            let (label, frozen) = description
+                .sections()
+                .flat_map(|section| &section.rows)
+                .find_map(|row| match row {
+                    FormRow::Checkbox {
+                        id, label, frozen, ..
+                    } if id == DIRECTOR_ID => Some((label.clone(), *frozen)),
+                    _ => None,
+                })
+                .expect("the Director row exists");
+
+            assert!(frozen, "a switch the env owns takes no edit");
+            assert!(
+                label.contains(crate::model::ENABLED),
+                "the row must name the variable, not {label:?}"
             );
         });
     }
