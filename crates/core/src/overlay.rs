@@ -570,6 +570,61 @@ mod tests {
         );
     }
 
+    /// Why the edge above is a floor a Character rests on and not a coordinate
+    /// physics never produces — on the display with the Dock as much as on the
+    /// one without. Once the Dock's true bounds are readable it becomes a
+    /// Perch, and `floor_under_dock` hands the floor beside it back at the
+    /// display's own bottom edge. So the excluded edge is where feet come to
+    /// rest on both screens, and the bubble is unplaceable on both without the
+    /// second pass (#288).
+    #[test]
+    fn the_dock_rests_feet_on_the_very_edge_its_own_display_excludes() {
+        use crate::window_source::{floor_under_dock, plausible_dock};
+
+        let displays = two_displays();
+        // This desktop as the window server reports it: a Dock strip near the
+        // bottom of the first display, and work areas reserving the menu bar on
+        // both with the Dock's thickness on the first alone.
+        let dock = rect(120.0, 978.0, 1680.0, 92.0);
+        let work = [
+            rect(0.0, 30.0, 1920.0, 952.0),
+            rect(1920.0, 32.0, 1728.0, 1085.0),
+        ];
+
+        assert!(
+            plausible_dock(&dock, displays[0], work[0]),
+            "the Dock read is believed, so the floor below is built from it"
+        );
+
+        let floors = [
+            floor_under_dock(work[0], displays[0], &dock),
+            floor_under_dock(work[1], displays[1], &dock),
+        ];
+        let feet = |floor: Rect, x: f64| (x, floor.y + floor.height);
+
+        assert_eq!(
+            feet(floors[0], 960.0).1,
+            1080.0,
+            "the Dock's display rests feet on its own bottom edge, not above the Dock"
+        );
+        assert_eq!(
+            feet(floors[1], 2784.0).1,
+            1117.0,
+            "and a display reserving nothing below already did"
+        );
+
+        assert_eq!(
+            bubble_owner(feet(floors[0], 960.0), &displays),
+            Some(0),
+            "a Character idling beside the Dock owns the bubble on the Dock's display"
+        );
+        assert_eq!(
+            bubble_owner(feet(floors[1], 2784.0), &displays),
+            Some(1),
+            "and one on the second screen's floor owns it there — #178 as reported"
+        );
+    }
+
     /// #163 with #178: several Instances are several bubbles. Ownership is a
     /// function of one Instance's feet, so two characters standing on two
     /// displays each own a bubble on their own display at the same time —
