@@ -213,7 +213,7 @@ mod tests {
     /// Linux Secret Service tests. Run on a Linux desktop with Secret Service
     /// (GNOME Keyring, KWallet) or kernel keyutils via:
     ///
-    ///     cargo test -p ai-buddy --test secrets -- --ignored
+    ///     cargo test -p ai-buddy -- secrets -- --ignored
     ///
     /// Tests save and restore any pre-existing `director-api-key` credential.
     #[cfg(target_os = "linux")]
