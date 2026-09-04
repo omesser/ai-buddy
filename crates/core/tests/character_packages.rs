@@ -400,28 +400,19 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
-/// TAC laser must show where the mech actually rests. Perched (on a window)
-/// draws `sit`, not idle — baking into idle alone left the laser invisible.
-/// Sit bakes the sweep; scan variants off sit; the scan behavior holds
-/// consecutive Sit so animation_ms can finish the ring.
+/// TAC laser: one path — baked into the sit strip (perched rest). No scan
+/// Behavior, no variant_of. scan-0 is a dupe of idle-0 and must not appear.
 #[test]
-fn timber_wolf_tac_laser_scan_is_visible_on_perched_sit() {
+fn timber_wolf_tac_laser_is_baked_into_sit() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
-        character.animations.contains_key("scan"),
-        "scan animation is declared"
-    );
-    assert_eq!(
-        character.animations["scan"].frames.len(),
-        4,
-        "scan is a four-frame TAC laser loop (scan-1..3 ping-pong; scan-0 was a dupe of idle-0)"
+        !character.animations.contains_key("scan"),
+        "no separate scan animation — laser lives only in the sit strip"
     );
     assert!(
-        character.animations["sit"]
-            .variants
-            .contains(&"scan".to_string()),
-        "scan rings on sit — Perched rest is sit, not idle"
+        !character.behaviors.contains_key("scan"),
+        "no scan Behavior — perched rest already loops sit"
     );
 
     let sit_frames = &character.animations["sit"].frames;
@@ -432,45 +423,16 @@ fn timber_wolf_tac_laser_scan_is_visible_on_perched_sit() {
     ] {
         assert!(
             sit_frames.iter().any(|f| f == name),
-            "sit strip bakes {name} so perched rest shows the laser"
+            "sit strip bakes {name}"
         );
     }
     assert!(
         sit_frames.iter().all(|f| f != "frames/scan-0.png"),
         "sit must not reference scan-0 (byte-identical to idle-0)"
     );
-
-    let drawn = character
-        .draw("scan", 0)
-        .expect("scan draws when asked for by name");
-    assert_eq!(drawn.animation, "scan");
-
-    let scan_behavior = &character.behaviors["scan"];
     assert!(
-        scan_behavior.primitives.len() >= 20,
-        "scan behavior holds Sit long enough for the variant ring (~16s), got {}",
-        scan_behavior.primitives.len()
-    );
-    assert!(
-        scan_behavior
-            .primitives
-            .iter()
-            .all(|p| *p == character::Primitive::Sit),
-        "scan behavior is Sit-only so animation_ms accumulates on the sit ring"
-    );
-    assert_eq!(
-        scan_behavior.weight, 4,
-        "scan outranks patrol so the laser is picked"
-    );
-
-    let engage = &character.behaviors["engage"];
-    assert!(
-        engage.primitives.contains(&character::Primitive::Sit),
-        "engage parks on sit around the weapon raise (perch rest art)"
-    );
-    assert!(
-        engage.primitives.contains(&character::Primitive::React),
-        "engage still raises weapons"
+        character.animations["sit"].variants.is_empty(),
+        "sit has no variants — bake is the only laser path"
     );
 
     assert!(character.behaviors.contains_key("patrol"), "patrol stays");
