@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # Verify X11 overlay functional parity: Perch, ride, drop, Poke, EWMH states.
 #
-# Runs under Xvfb with mesa/EGL support. Fails if any behavior is not observed.
-# Run with: scripts/verify-overlay-x11.sh
+# Xvfb has no window manager. _NET_CLIENT_LIST (and therefore Perches) comes
+# from one, so a bare server is not a sufficient desktop. The sprite starts at
+# the display centre and lands in under a second, so the Perch window has to
+# exist before the app does — a window opened afterwards sits above the sprite,
+# which is not a surface from below. Same reason as scripts/verify-overlay.sh.
+#
+# xprop exits 0 even when a property is missing (`not found.`), so a property
+# check cannot be the process status.
+#
+# Run with: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-overlay-x11.sh
 
 set -euo pipefail
 
@@ -11,7 +19,7 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 log_info() {
   echo -e "${GREEN}[INFO]${NC} $*"
@@ -23,139 +31,211 @@ log_error() {
 
 fail() {
   log_error "$@"
+  if [ -n "${TRACE_LOG:-}" ] && [ -f "$TRACE_LOG" ]; then
+    log_error "Last 40 lines of trace log:"
+    tail -40 "$TRACE_LOG" >&2 || true
+  fi
   exit 1
+}
+
+# $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
+await() {
+  local file="$1" pattern="$2" attempts="$3"
+  local i
+  for i in $(seq 1 "$attempts"); do
+    grep -qE "$pattern" "$file" 2> /dev/null && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+has_supporting_wm() {
+  xprop -root _NET_SUPPORTING_WM_CHECK 2> /dev/null | grep -q 'window id'
 }
 
 [ -n "${DISPLAY:-}" ] || fail "DISPLAY not set. Run under X11 or Xvfb."
 
-for tool in xdotool xprop xwininfo; do
-  command -v "$tool" &> /dev/null || fail "$tool not found. Install: sudo apt-get install x11-utils xdotool"
+for tool in xdotool xprop xwininfo xterm; do
+  command -v "$tool" > /dev/null || fail "$tool not found. Install: sudo apt-get install x11-utils xdotool xterm"
 done
 
-# Xvfb has no window manager. EWMH (_NET_CLIENT_LIST, struts) needs one.
+cd "$WORKSPACE_ROOT"
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+OUT=".verify/x11-$STAMP"
+mkdir -p "$OUT"
+TRACE_LOG="$OUT/app.log"
+
 WM_STARTED=0
-if ! wmctrl -m &> /dev/null && ! xprop -root _NET_SUPPORTING_WM_CHECK &> /dev/null; then
-  command -v openbox &> /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
-  log_info "Starting openbox window manager..."
-  openbox --replace &
+if ! has_supporting_wm; then
+  command -v openbox > /dev/null || fail "openbox not found. Install: sudo apt-get install openbox"
+  log_info "Starting openbox (Xvfb has no window manager)..."
+  openbox --replace > /dev/null 2> "$OUT/openbox.err" &
   WM_PID=$!
   WM_STARTED=1
-  sleep 2
+  for _ in $(seq 1 40); do
+    has_supporting_wm && break
+    sleep 0.25
+  done
+  has_supporting_wm || fail "openbox did not publish _NET_SUPPORTING_WM_CHECK"
 fi
-
-log_info "Building ai-buddy..."
-cd "$WORKSPACE_ROOT"
-cargo build --release
-
-log_info "Starting ai-buddy in background with frame tracing..."
-export AI_BUDDY_TRACE_FRAMES=1
-export RUST_LOG=debug
-export LIBGL_ALWAYS_SOFTWARE=1
-TRACE_LOG="/tmp/ai-buddy-verify-$$.log"
-target/release/ai-buddy > "$TRACE_LOG" 2>&1 &
-APP_PID=$!
 
 cleanup() {
   log_info "Cleaning up..."
-  kill $APP_PID 2> /dev/null || true
-  if [ $WM_STARTED -eq 1 ]; then
+  if [ -n "${APP_PID:-}" ]; then
+    kill "$APP_PID" 2> /dev/null || true
+  fi
+  if [ -n "${TEST_WINDOW_PID:-}" ]; then
+    kill "$TEST_WINDOW_PID" 2> /dev/null || true
+  fi
+  if [ "$WM_STARTED" -eq 1 ] && [ -n "${WM_PID:-}" ]; then
     kill "$WM_PID" 2> /dev/null || true
   fi
 }
 trap cleanup EXIT
 
-log_info "Waiting for overlay window..."
-MAX_WAIT=15
-WAITED=0
-WINDOW_ID=""
-while [ $WAITED -lt $MAX_WAIT ]; do
-  WINDOW_ID=$(xdotool search --name "ai-buddy" 2> /dev/null | head -1 || true)
-  [ -n "$WINDOW_ID" ] && break
-  sleep 1
-  WAITED=$((WAITED + 1))
-done
+ROOT_W=$(xwininfo -root | awk '/Width:/ {print $2}')
+ROOT_H=$(xwininfo -root | awk '/Height:/ {print $2}')
+# Halfway from the spawn (display centre) to the floor, and wide enough that a
+# short walk before the ride still leaves the sprite over the Perch.
+PERCH_Y=$((ROOT_H * 2 / 3))
+PERCH_X=$((ROOT_W / 8))
+log_info "Display ${ROOT_W}x${ROOT_H}; perch window at +${PERCH_X}+${PERCH_Y}"
 
-[ -n "$WINDOW_ID" ] || {
-  log_error "Could not find ai-buddy window after ${MAX_WAIT}s"
-  log_error "Last 30 lines of trace log:"
-  tail -30 "$TRACE_LOG"
-  exit 1
+# -e sleep: a login shell on Xvfb often exits immediately, taking the window
+# with it before the sprite can land.
+xterm -geometry "100x8+${PERCH_X}+${PERCH_Y}" -title "perch-prop" -e sleep 3600 > "$OUT/xterm.out" 2> "$OUT/xterm.err" &
+TEST_WINDOW_PID=$!
+TEST_WINDOW_ID=""
+for _ in $(seq 1 40); do
+  TEST_WINDOW_ID=$(xdotool search --name '^perch-prop$' 2> /dev/null | head -1 || true)
+  [ -n "$TEST_WINDOW_ID" ] && break
+  sleep 0.25
+done
+[ -n "$TEST_WINDOW_ID" ] || fail "Could not create perch window"
+log_info "Perch window ID: $TEST_WINDOW_ID"
+xwininfo -id "$TEST_WINDOW_ID" > "$OUT/perch-window.txt" || true
+
+log_info "Building ai-buddy..."
+cargo build --release
+
+log_info "Starting ai-buddy with frame tracing..."
+export AI_BUDDY_TRACE_FRAMES=1
+export AI_BUDDY_TRACE_HITTEST=1
+export RUST_LOG=debug
+export LIBGL_ALWAYS_SOFTWARE=1
+target/release/ai-buddy > "$TRACE_LOG" 2>&1 &
+APP_PID=$!
+
+await "$TRACE_LOG" '^overlay:' 80 || fail "App never published an overlay line"
+kill -0 "$APP_PID" 2> /dev/null || fail "App exited during startup"
+
+# GDK leaves a 10x10 placeholder with the same WM_CLASS; the overlay is the
+# display-sized one. xdotool search order is creation order, so head -1 is the dummy.
+find_overlay_window() {
+  local id w h
+  for id in $(xdotool search --class 'Ai-buddy' 2> /dev/null || true); do
+    w=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Width:/ {print $2; exit}')
+    h=$(xwininfo -id "$id" 2> /dev/null | awk '/^  Height:/ {print $2; exit}')
+    if [ -n "$w" ] && [ -n "$h" ] && [ "$w" -ge 200 ] && [ "$h" -ge 200 ]; then
+      echo "$id"
+      return 0
+    fi
+  done
+  return 1
 }
 
-log_info "Found window ID: $WINDOW_ID"
+log_info "Waiting for overlay window..."
+WINDOW_ID=""
+for _ in $(seq 1 60); do
+  WINDOW_ID=$(find_overlay_window || true)
+  [ -n "$WINDOW_ID" ] && break
+  sleep 0.25
+done
+[ -n "$WINDOW_ID" ] || fail "Could not find ai-buddy overlay window"
+log_info "Found overlay window ID: $WINDOW_ID"
 
-log_info "Checking EWMH window states..."
-WINDOW_PROPS=$(xprop -id "$WINDOW_ID" _NET_WM_STATE)
-echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" || fail "_NET_WM_STATE_ABOVE missing"
-echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR" || fail "_NET_WM_STATE_SKIP_TASKBAR missing"
-log_info "✓ EWMH states verified"
+log_info "Waiting for EWMH window states..."
+await "$TRACE_LOG" 'EWMH configured' 40 || fail "configure_overlay never succeeded"
+WINDOW_PROPS=""
+for _ in $(seq 1 40); do
+  WINDOW_PROPS=$(xprop -id "$WINDOW_ID" _NET_WM_STATE 2> /dev/null || true)
+  echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" &&
+    echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR" && break
+  sleep 0.25
+done
+echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_ABOVE" || fail "_NET_WM_STATE_ABOVE missing (${WINDOW_PROPS:-empty})"
+echo "$WINDOW_PROPS" | grep -q "_NET_WM_STATE_SKIP_TASKBAR" || fail "_NET_WM_STATE_SKIP_TASKBAR missing (${WINDOW_PROPS:-empty})"
+log_info "EWMH states verified"
 
-log_info "Waiting for sprite to initialize..."
-sleep 3
-
-grep -q "frame:.*\(Falling\|Grounded\)" "$TRACE_LOG" || fail "Sprite did not initialize (no Falling or Grounded state)"
-log_info "✓ Sprite initialized"
-
-# Get sprite position to place test window under it
-SPRITE_POS=$(tail -50 "$TRACE_LOG" | grep "frame:" | tail -1 | grep -oP 'sprite\(\K[0-9]+,[0-9]+' || echo "")
-[ -n "$SPRITE_POS" ] || fail "Could not determine sprite position from traces"
-SPRITE_X=$(echo "$SPRITE_POS" | cut -d, -f1)
-SPRITE_Y=$(echo "$SPRITE_POS" | cut -d, -f2)
-
-log_info "Sprite at ($SPRITE_X, $SPRITE_Y)"
-
-# Top edge below the sprite so it falls onto a Perch rather than landing beside it.
-WINDOW_Y=$((SPRITE_Y + 50))
-log_info "Creating test window at Y=$WINDOW_Y for Perch test..."
-xterm -geometry 80x24+$((SPRITE_X - 200))+$WINDOW_Y -title "ai-buddy-test-window" &
-TEST_WINDOW_PID=$!
-sleep 2
-
-TEST_WINDOW_ID=$(xdotool search --name "ai-buddy-test-window" | head -1 || true)
-[ -n "$TEST_WINDOW_ID" ] || fail "Could not create test window"
-log_info "Created test window ID: $TEST_WINDOW_ID"
+await "$TRACE_LOG" 'frame:.* (Falling|Grounded|Perched)' 40 ||
+  fail "Sprite did not initialize (no Falling/Grounded/Perched state)"
+log_info "Sprite initialized"
 
 log_info "Waiting for sprite to perch..."
-sleep 4
+await "$TRACE_LOG" 'frame: [0-9]+ Perched' 80 ||
+  fail "Sprite did not perch (no Perched state in traces)"
+log_info "Perched state verified"
 
-tail -100 "$TRACE_LOG" | grep -q "frame:.*Perched" || fail "Sprite did not perch (no Perched state in traces)"
-log_info "✓ Perched state verified"
-
-log_info "Moving test window to test ride behavior..."
-for i in {1..10}; do
-  xdotool windowmove "$TEST_WINDOW_ID" $((SPRITE_X - 200 + i * 10)) $WINDOW_Y
-  sleep 0.3
+# Last Perched pos() is the feet; a ride that yanks is a fall, so step slowly
+# relative to RIDE_ACCELERATION * YANK_WINDOW_S (1000 pt/s).
+log_info "Moving perch window to test ride..."
+PERCH_CUR_X=$(xwininfo -id "$TEST_WINDOW_ID" | awk '/Absolute upper-left X:/ {print $4}')
+PERCH_CUR_Y=$(xwininfo -id "$TEST_WINDOW_ID" | awk '/Absolute upper-left Y:/ {print $4}')
+HOLD_START_LINE=$(wc -l < "$TRACE_LOG")
+for i in $(seq 1 12); do
+  xdotool windowmove "$TEST_WINDOW_ID" $((PERCH_CUR_X + i * 8)) "$PERCH_CUR_Y"
+  sleep 0.4
 done
 
-tail -80 "$TRACE_LOG" | grep -qi "hold" || fail "Sprite did not ride (no Hold animation in traces)"
-log_info "✓ Ride behavior (Hold) verified"
+# Animation name is the token before '#'; Hold is still State::Perched.
+tail -n +"$HOLD_START_LINE" "$TRACE_LOG" | grep -qE 'frame:.*Perched pos.* hold#' ||
+  fail "Sprite did not ride (no Hold animation in traces after the move)"
+log_info "Ride behavior (Hold) verified"
 
-log_info "Closing test window to test drop..."
-kill $TEST_WINDOW_PID 2> /dev/null || true
-sleep 2
+log_info "Closing perch window to test drop..."
+DROP_START_LINE=$(wc -l < "$TRACE_LOG")
+kill "$TEST_WINDOW_PID" 2> /dev/null || true
+TEST_WINDOW_PID=""
+sleep 0.5
+xdotool windowkill "$TEST_WINDOW_ID" 2> /dev/null || true
 
-tail -50 "$TRACE_LOG" | grep -q "frame:.*Falling" || fail "Sprite did not drop (no Falling state after window close)"
-log_info "✓ Drop behavior (Falling) verified"
+# Falling at startup also matches `frame: N Falling`; only a new one after close counts.
+DROPPED=0
+for _ in $(seq 1 40); do
+  if tail -n +"$DROP_START_LINE" "$TRACE_LOG" | grep -qE 'frame: [0-9]+ Falling'; then
+    DROPPED=1
+    break
+  fi
+  sleep 0.25
+done
+[ "$DROPPED" -eq 1 ] || fail "Sprite did not drop (no new Falling state after window close)"
+log_info "Drop behavior (Falling) verified"
 
-sleep 2
-SPRITE_POS=$(tail -20 "$TRACE_LOG" | grep "frame:" | tail -1 | grep -oP 'sprite\(\K[0-9]+,[0-9]+' || echo "")
+# Feet are pos(); the body is above them. A click shorter than one 16ms tick
+# can miss XQueryPointer, so hold the button across a couple of polls. #182.
+sleep 0.5
+LAST_FRAME=$(grep 'frame:' "$TRACE_LOG" | tail -1)
+SPRITE_POS=$(echo "$LAST_FRAME" | grep -oE 'pos\([-0-9.]+,[-0-9.]+\)' | head -1 || true)
 [ -n "$SPRITE_POS" ] || fail "Could not determine sprite position for Poke test"
-SPRITE_X=$(echo "$SPRITE_POS" | cut -d, -f1)
-SPRITE_Y=$(echo "$SPRITE_POS" | cut -d, -f2)
+SPRITE_X=$(echo "$SPRITE_POS" | tr -d 'pos()' | cut -d, -f1 | cut -d. -f1)
+SPRITE_Y=$(echo "$SPRITE_POS" | tr -d 'pos()' | cut -d, -f2 | cut -d. -f1)
+CLICK_Y=$((SPRITE_Y - 40))
+log_info "Clicking sprite at ($SPRITE_X, $CLICK_Y) from $LAST_FRAME"
+xdotool mousemove --sync "$SPRITE_X" "$CLICK_Y"
+sleep 0.05
+xdotool mousedown 1
+sleep 0.12
+xdotool mouseup 1
+sleep 0.4
 
-log_info "Clicking sprite at ($SPRITE_X, $((SPRITE_Y + 30)))..."
-xdotool mousemove "$SPRITE_X" $((SPRITE_Y + 30))
-sleep 0.2
-xdotool click 1
-sleep 1
-
-tail -30 "$TRACE_LOG" | grep -q "verbs:.*Poke" || fail "Click did not produce Poke verb"
-log_info "✓ Poke verb verified"
+grep -qE 'verbs:.*Poke' "$TRACE_LOG" || fail "Click did not produce Poke verb"
+log_info "Poke verb verified"
 
 log_info ""
-log_info "✅ All X11 overlay behaviors verified:"
+log_info "All X11 overlay behaviors verified:"
 log_info "  - EWMH states (_NET_WM_STATE_ABOVE, SKIP_TASKBAR)"
-log_info "  - Sprite initialization (Falling/Grounded)"
+log_info "  - Sprite initialization (Falling/Grounded/Perched)"
 log_info "  - Perch (sprite on window top edge)"
 log_info "  - Ride (Hold animation on window move)"
 log_info "  - Drop (Falling state on window close)"
