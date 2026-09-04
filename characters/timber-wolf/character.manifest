@@ -85,10 +85,22 @@ fps = 2
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
 fps = 4
 
-# The mech never sleeps. Power down is idle plus torso twists: scanning.
+# The mech never sleeps. Power-down is a slow torso twist on station.
 [animations.sleep]
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 1
+
+# TAC laser sweep: optional idle variant. The renderer rings idle (longer) then
+# scan, so a parked mech occasionally paints the sector without a new Primitive.
+[animations.scan]
+frames = [
+  "frames/scan-0.png",
+  "frames/scan-1.png",
+  "frames/scan-2.png",
+  "frames/scan-3.png",
+]
+fps = 4
+variant_of = "idle"
 
 # Full-frontal weapon raise from the turn recording: contact acquired.
 [animations.react]
@@ -102,8 +114,9 @@ frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
 # A heavy assault mech's life: patrol the perimeter, report status, hold
-# position, engage threats. The engage behavior composes react (weapon raise)
-# with idle for a threat-assessment emote without adding engine Primitives.
+# position, engage threats. Engage and report both step through idle, so the
+# TAC laser scan rides those beats via the idle variant ring — no new Primitive,
+# and pursue/chase, patrol, near=face, rush=react stay as they are.
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
@@ -116,7 +129,7 @@ weight = 3
 when = "idle under 2m"
 
 [behaviors.engage]
-play = ["react", "idle", "react"]
+play = ["idle", "react", "idle"]
 weight = 2
 when = "idle over 2m"
 
