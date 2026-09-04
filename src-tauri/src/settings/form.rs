@@ -27,6 +27,10 @@ pub enum RowOperation {
     OpenMemory,
     WipeMemory,
     ClearKey,
+    /// Send the whole Director tab as one patch.
+    Apply,
+    /// Redraw the Director tab from live state, writing nothing.
+    Cancel,
 }
 
 /// One section of the settings form.
@@ -78,8 +82,22 @@ pub enum FormRow {
         /// an exported variable owns the field, since `model::resolve` gives
         /// it the last word and would discard an edit made here (#272).
         frozen: bool,
+        /// Committed by Apply rather than on every blur.
+        ///
+        /// Declared here so neither renderer decides it for itself. The
+        /// Director's four controls only mean anything together: committing
+        /// one at a time points the Completer at a host and model that were
+        /// never meant to go together, and every commit drops the in-flight
+        /// session history with it (#279).
+        batched: bool,
     },
     /// A secure text field for passwords/keys.
+    ///
+    /// Always batched, so it carries no flag of its own. A secret cannot be
+    /// compared to the file, so a secure field committed on blur retargets
+    /// every single time — which is the cost `TextField::batched` exists to
+    /// avoid, and there is no value of it that makes a blur-committed key
+    /// correct (#279).
     SecureField {
         id: String,
         label: Option<String>,
@@ -149,6 +167,41 @@ impl FormDescription {
     pub fn sections(&self) -> impl Iterator<Item = &FormSection> + '_ {
         self.tabs.iter().flat_map(|tab| &tab.sections)
     }
+
+    /// Whether the control carrying this id is the environment's rather than
+    /// the user's. False for an id no control with a `frozen` field carries.
+    ///
+    /// Both windows ask this before they read a batched field: a frozen row is
+    /// never dirty and never applies, because `model::resolve` would discard
+    /// the edit (#272). Asked of the description rather than remembered beside
+    /// the widget, so the two answers cannot drift.
+    pub fn frozen(&self, id: &str) -> bool {
+        self.sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::Checkbox {
+                    id: row_id, frozen, ..
+                }
+                | FormRow::TextField {
+                    id: row_id, frozen, ..
+                }
+                | FormRow::SecureField {
+                    id: row_id, frozen, ..
+                } if row_id == id => Some(*frozen),
+                FormRow::Composite { controls, .. } => {
+                    controls.iter().find_map(|control| match control {
+                        CompositeControl::Button {
+                            id: control_id,
+                            frozen,
+                            ..
+                        } if control_id == id => Some(*frozen),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
 }
 
 /// Row ids for the settings form controls.
@@ -158,6 +211,8 @@ pub const DIRECTOR_BASE_URL_ID: &str = "director_base_url";
 pub const DIRECTOR_MODEL_ID: &str = "director_model";
 pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
 pub const CLEAR_KEY_ID: &str = "clear_key";
+pub const APPLY_ID: &str = "director_apply";
+pub const CANCEL_ID: &str = "director_cancel";
 pub const DND_ID: &str = "dnd";
 pub const SOUND_ID: &str = "sound";
 pub const HIDDEN_ID: &str = "hidden";
@@ -247,12 +302,14 @@ fn director_sections() -> Vec<FormSection> {
                     label: Some(base_url_label),
                     placeholder: "https://api.openai.com".to_string(),
                     frozen: base_url_frozen,
+                    batched: true,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MODEL_ID.to_string(),
                     label: Some(model_label),
                     placeholder: "gpt-4o-mini".to_string(),
                     frozen: model_frozen,
+                    batched: true,
                 },
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
@@ -269,6 +326,26 @@ fn director_sections() -> Vec<FormSection> {
                         label: "Clear key".to_string(),
                         frozen: api_key_frozen,
                     }],
+                },
+                // A row of their own rather than beside Clear key: these two
+                // answer for the four rows above, and Clear key is one of the
+                // four. Never frozen, because Cancel has to stay reachable
+                // even when a variable owns every field it would restore.
+                FormRow::Composite {
+                    id: "director_actions".to_string(),
+                    help: Some("The rows above take effect on Apply.".to_string()),
+                    controls: vec![
+                        CompositeControl::Button {
+                            id: APPLY_ID.to_string(),
+                            label: "Apply".to_string(),
+                            frozen: false,
+                        },
+                        CompositeControl::Button {
+                            id: CANCEL_ID.to_string(),
+                            label: "Cancel".to_string(),
+                            frozen: false,
+                        },
+                    ],
                 },
             ],
         },
@@ -509,12 +586,14 @@ fn development_sections() -> Vec<FormSection> {
                     label: Some(timeout_label),
                     placeholder: model::timeout_placeholder(),
                     frozen: timeout_frozen,
+                    batched: false,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MAX_TOKENS_ID.to_string(),
                     label: Some(max_tokens_label),
                     placeholder: model::max_tokens_placeholder(),
                     frozen: max_tokens_frozen,
+                    batched: false,
                 },
             ],
         },
@@ -611,6 +690,14 @@ pub fn describe() -> FormDescription {
     actions.insert(
         CLEAR_KEY_ID.to_string(),
         RowAction::Operation(RowOperation::ClearKey),
+    );
+    actions.insert(
+        APPLY_ID.to_string(),
+        RowAction::Operation(RowOperation::Apply),
+    );
+    actions.insert(
+        CANCEL_ID.to_string(),
+        RowAction::Operation(RowOperation::Cancel),
     );
     actions.insert(
         TRACE_FRAMES_ID.to_string(),
@@ -888,6 +975,7 @@ mod tests {
                     id: row_id,
                     label,
                     frozen,
+                    ..
                 } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
                 _ => None,
             })
@@ -915,6 +1003,10 @@ mod tests {
                     let (label, frozen) = described_row(&description, id);
                     assert!(frozen, "{id} must not accept an edit the env discards");
                     assert!(
+                        description.frozen(id),
+                        "{id} is what a renderer asks before it reads the field"
+                    );
+                    assert!(
                         label.contains("(overridden by env"),
                         "{id} must say it is overridden, not {label:?}"
                     );
@@ -931,8 +1023,13 @@ mod tests {
             for (id, var) in ENDPOINT_ROWS {
                 let (label, frozen) = described_row(&description, id);
                 assert!(!frozen, "{id} is the user's to edit when the env is unset");
+                assert!(!description.frozen(id));
                 assert!(!label.contains(var), "{id} must not mention {var}");
             }
+            assert!(
+                !description.frozen(CLEAR_KEY_ID),
+                "Clear key answers to the key row's variable"
+            );
         });
     }
 
@@ -944,7 +1041,7 @@ mod tests {
             .find(|s| s.heading == "Director")
             .expect("Director section");
 
-        assert_eq!(director.rows.len(), 6);
+        assert_eq!(director.rows.len(), 7);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -969,6 +1066,40 @@ mod tests {
             director.rows[5],
             FormRow::Composite { ref id, .. } if id == "api_key_actions"
         ));
+        assert!(matches!(
+            director.rows[6],
+            FormRow::Composite { ref id, .. } if id == "director_actions"
+        ));
+    }
+
+    /// The Director endpoint, and no other editable row in the window.
+    ///
+    /// The Completer limits are the ones this test is really about: #273
+    /// landed them to be changed and watched, and a button between a limit
+    /// and its effect would undo that.
+    ///
+    /// Clear key is the fourth batched control and is absent here, because it
+    /// is an operation rather than a value: `RowOperation::ClearKey` stages,
+    /// and that is the whole of what it means. `actions_map_to_patches_or_ops`
+    /// is what holds that end (#279).
+    #[test]
+    fn only_the_director_endpoint_batches() {
+        let description = describe();
+        let mut batched: Vec<&str> = Vec::new();
+        for row in description.sections().flat_map(|section| &section.rows) {
+            match row {
+                FormRow::TextField {
+                    id, batched: true, ..
+                } => batched.push(id),
+                // No flag of its own: every secure field batches.
+                FormRow::SecureField { id, .. } => batched.push(id),
+                _ => {}
+            }
+        }
+        batched.sort_unstable();
+        let mut expected = vec![DIRECTOR_API_KEY_ID, DIRECTOR_BASE_URL_ID, DIRECTOR_MODEL_ID];
+        expected.sort_unstable();
+        assert_eq!(batched, expected);
     }
 
     /// Mute sits under Do Not Disturb because that is the heading a user
@@ -1175,6 +1306,14 @@ mod tests {
         assert_eq!(
             description.actions.get(MEMORY_OPEN_ID),
             Some(&RowAction::Operation(RowOperation::OpenMemory))
+        );
+        assert_eq!(
+            description.actions.get(APPLY_ID),
+            Some(&RowAction::Operation(RowOperation::Apply))
+        );
+        assert_eq!(
+            description.actions.get(CANCEL_ID),
+            Some(&RowAction::Operation(RowOperation::Cancel))
         );
     }
 

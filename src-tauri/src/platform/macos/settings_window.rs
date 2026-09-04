@@ -3,7 +3,7 @@
 //! SPEC gives the webview to the sprite and the chat surface. Settings is
 //! Shell furniture, the same as the tray menu, so it is AppKit.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use objc2::rc::Retained;
@@ -22,7 +22,7 @@ use objc2_foundation::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow};
-use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
@@ -53,6 +53,12 @@ struct Ivars {
     model: RefCell<Option<Retained<NSTextField>>>,
     api_key: RefCell<Option<Retained<NSTextField>>>,
     clear_key: RefCell<Option<Retained<NSButton>>>,
+    apply: RefCell<Option<Retained<NSButton>>>,
+    cancel: RefCell<Option<Retained<NSButton>>>,
+    /// Clear key was clicked and Apply has not run yet. The whole of the
+    /// staged delete: the key field itself is blank either way, so nothing
+    /// else could tell a staged clear from an untouched field (#279).
+    clear_pending: Cell<bool>,
     ambient: RefCell<Option<Retained<NSButton>>>,
     dnd: RefCell<Option<Retained<NSButton>>>,
     sound: RefCell<Option<Retained<NSButton>>>,
@@ -95,6 +101,15 @@ define_class!(
         fn did_resize(&self, _notification: &NSNotification) {
             self.fit_to_window();
         }
+
+        /// Nothing staged outlives the tab. The window is only ordered out,
+        /// never destroyed — `show` reuses this controller — so without this
+        /// a typed key would sit in the secure field until the next reopen,
+        /// one Apply click from the store (#279).
+        #[unsafe(method(windowWillClose:))]
+        fn will_close(&self, _notification: &NSNotification) {
+            self.draw(true);
+        }
     }
 
     unsafe impl NSTextDelegate for SettingsController {
@@ -106,7 +121,12 @@ define_class!(
 
     unsafe impl NSTextViewDelegate for SettingsController {}
 
-    unsafe impl NSControlTextEditingDelegate for SettingsController {}
+    unsafe impl NSControlTextEditingDelegate for SettingsController {
+        #[unsafe(method(controlTextDidChange:))]
+        fn control_text_did_change(&self, _notification: &NSNotification) {
+            self.update_director_buttons();
+        }
+    }
 
     unsafe impl NSTextFieldDelegate for SettingsController {}
 
@@ -160,14 +180,7 @@ define_class!(
             if !patch.set_text(field_name, &text) {
                 return;
             }
-            let committed_key = patch.director_api_key.is_some();
             self.apply(patch);
-            if committed_key {
-                // The store has it now. Refresh takes the typed key out of the
-                // field and prints its fingerprint, so the next blur is not a
-                // second commit — and not a second dropped session.
-                self.refresh();
-            }
         }
 
         #[unsafe(method(characterPicked:))]
@@ -214,6 +227,8 @@ define_class!(
                     form::RowOperation::OpenMemory => self.do_memory_open(),
                     form::RowOperation::WipeMemory => self.do_memory_wipe(),
                     form::RowOperation::ClearKey => self.do_clear_key(),
+                    form::RowOperation::Apply => self.do_apply(),
+                    form::RowOperation::Cancel => self.do_cancel(),
                 }
             }
         }
@@ -303,12 +318,83 @@ impl SettingsController {
         }
     }
 
+    /// Stage the delete rather than write it. Applying here would drop the
+    /// session history before the endpoint typed beside it was ever sent, and
+    /// Cancel could not take it back (#279).
     fn do_clear_key(&self) {
-        self.apply(SettingsPatch {
-            director_api_key: Some("".into()),
-            ..SettingsPatch::default()
-        });
-        self.refresh();
+        self.ivars().clear_pending.set(true);
+        if let Some(field) = self.ivars().api_key.borrow().clone() {
+            field.setStringValue(&NSString::from_str(""));
+        }
+        self.update_director_buttons();
+    }
+
+    /// The Director tab as the window holds it right now.
+    ///
+    /// The fields are read back here rather than mirrored in a draft buffer:
+    /// the typed key lives in the `NSSecureTextField` and nowhere else, so it
+    /// cannot reach the settings file, and closing the window resets it
+    /// (#279).
+    fn director_draft<'a>(&self, description: &'a form::FormDescription) -> DirectorDraft<'a> {
+        let ivars = self.ivars();
+        DirectorDraft {
+            base_url: field_text(&ivars.base_url),
+            model: field_text(&ivars.model),
+            key: field_text(&ivars.api_key),
+            clear_key: ivars.clear_pending.get(),
+            description,
+        }
+    }
+
+    /// Which fields a redraw must leave alone.
+    fn director_staged(&self, view: &SettingsView) -> crate::settings::Staged {
+        let description = form::describe();
+        self.director_draft(&description).staged(view)
+    }
+
+    /// Both buttons say whether there is anything to apply.
+    fn update_director_buttons(&self) {
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        self.set_director_buttons(&view);
+    }
+
+    /// The same, against a view the caller already holds: `draw` has one, and
+    /// must not take the session borrow a second time.
+    fn set_director_buttons(&self, view: &SettingsView) {
+        let description = form::describe();
+        let dirty = self.director_draft(&description).patch(view).is_some();
+        for cell in [&self.ivars().apply, &self.ivars().cancel] {
+            if let Some(button) = cell.borrow().clone() {
+                button.setEnabled(dirty);
+            }
+        }
+    }
+
+    /// Resets only once the write landed. A locked Keychain fails
+    /// `write_director_key` before the file is touched, and discarding the
+    /// typed endpoint on the way out would lose an edit nothing saved (#279).
+    fn do_apply(&self) {
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        let description = form::describe();
+        if let Some(patch) = self.director_draft(&description).patch(&view) {
+            if !self.apply(patch) {
+                return;
+            }
+        }
+        // Resets even though the store now holds what the key field still
+        // shows: only a reset takes the typed key back out of it.
+        self.draw(true);
+    }
+
+    /// Writes neither the file nor the store: the reset draws every field
+    /// from live state, and blanking the key field is what drops the typed
+    /// one on the floor.
+    fn do_cancel(&self) {
+        self.draw(true);
     }
 
     /// The field name comes off the row's own action, not a literal: a rename
@@ -334,24 +420,58 @@ impl SettingsController {
         self.apply(patch);
     }
 
-    fn apply(&self, patch: SettingsPatch) {
-        if let Some(session) = self.ivars().session.borrow().as_ref() {
-            if let Err(why) = session.apply(patch) {
+    /// Whether the write landed, so Apply knows not to discard a staged edit
+    /// nothing saved.
+    fn apply(&self, patch: SettingsPatch) -> bool {
+        let result = {
+            let session = self.ivars().session.borrow();
+            let Some(session) = session.as_ref() else {
+                return false;
+            };
+            session.apply(patch)
+        };
+        match result {
+            Ok(()) => true,
+            Err(why) => {
                 eprintln!("settings: {why}");
                 let alert = NSAlert::new(self.mtm());
                 alert.setMessageText(&NSString::from_str("Could not save settings"));
                 alert.setInformativeText(&NSString::from_str(&why));
                 alert.addButtonWithTitle(&NSString::from_str("OK"));
                 alert.runModal();
+                false
             }
         }
     }
 
+    /// Redraw from live state, leaving anything staged on the Director tab
+    /// alone.
+    ///
+    /// Every caller but Apply and Cancel arrives unasked: `windowDidBecomeKey`
+    /// fires on a click back into the window, and `frame_loop` refreshes after
+    /// any `SettingsOp`. Overwriting a half-typed endpoint on either would
+    /// make batching lossy in ordinary use — switch apps and the edit is gone
+    /// — so a dirty tab is the one thing a redraw does not touch (#279).
     fn refresh(&self) {
+        self.draw(false);
+    }
+
+    /// `reset_director` is Apply and Cancel: the two callers that mean to take
+    /// the staged fields back to live state.
+    fn draw(&self, reset_director: bool) {
         let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
             return;
         };
         let description = form::describe();
+        // Read before any setter, so this is what the fields held on entry.
+        let staged = if reset_director {
+            // The staged delete is part of what a reset drops: left set, it
+            // would outlive the reset and re-arm Apply on the next redraw.
+            self.ivars().clear_pending.set(false);
+            crate::settings::Staged::default()
+        } else {
+            self.director_staged(&view)
+        };
         let dismiss_label = description
             .sections()
             .find(|s| s.heading == "Instances")
@@ -385,15 +505,25 @@ impl SettingsController {
         if let Some(field) = self.ivars().hotkey.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.hide_hotkey));
         }
-        if let Some(field) = self.ivars().base_url.borrow().clone() {
-            field.setStringValue(&NSString::from_str(&view.director_base_url));
-        }
-        if let Some(field) = self.ivars().model.borrow().clone() {
-            field.setStringValue(&NSString::from_str(&view.director_model));
-        }
         if let Some(field) = self.ivars().api_key.borrow().clone() {
+            // The placeholder names the stored key, not the typed one, so it
+            // is safe to redraw over a staged edit.
             field.setPlaceholderString(Some(&NSString::from_str(&view.api_key_placeholder())));
-            field.setStringValue(&NSString::from_str(""));
+        }
+        if !staged.base_url {
+            if let Some(field) = self.ivars().base_url.borrow().clone() {
+                field.setStringValue(&NSString::from_str(&view.director_base_url));
+            }
+        }
+        if !staged.model {
+            if let Some(field) = self.ivars().model.borrow().clone() {
+                field.setStringValue(&NSString::from_str(&view.director_model));
+            }
+        }
+        if !staged.key {
+            if let Some(field) = self.ivars().api_key.borrow().clone() {
+                field.setStringValue(&NSString::from_str(""));
+            }
         }
         if let Some(field) = self.ivars().memory_path.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.memory_path));
@@ -427,6 +557,7 @@ impl SettingsController {
             &view.character,
         );
         self.fill_instances(&view, dismiss_label);
+        self.set_director_buttons(&view);
     }
 
     fn fit_to_window(&self) {
@@ -518,6 +649,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut model_field = None;
     let mut api_key_field = None;
     let mut clear_key_button = None;
+    let mut apply_button = None;
+    let mut cancel_button = None;
     let mut dnd_button = None;
     let mut sound_button = None;
     let mut hidden_button = None;
@@ -619,6 +752,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         label,
                         placeholder,
                         frozen,
+                        batched,
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -627,7 +761,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         }
                         let field = endpoint_field(placeholder, mtm);
                         tag_field(&field, id, &mut next_tag, &controller);
-                        freeze_or_bind(&field, *frozen, &controller);
+                        freeze_or_bind(&field, *frozen, *batched, &controller);
                         cursor.place(&field, 24.0);
 
                         controller
@@ -654,7 +788,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         )
                         .into_super();
                         tag_field(&field, id, &mut next_tag, &controller);
-                        freeze_or_bind(&field, *frozen, &controller);
+                        // Always batched: `FormRow::SecureField` offers no
+                        // other mode.
+                        freeze_or_bind(&field, *frozen, true, &controller);
                         cursor.place(&field, 24.0);
 
                         if id == form::DIRECTOR_API_KEY_ID {
@@ -814,8 +950,11 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     document.addSubview(&btn);
                                     x += if label.len() > 10 { 148.0 } else { 80.0 };
 
-                                    if id == form::CLEAR_KEY_ID {
-                                        clear_key_button = Some(btn);
+                                    match id.as_str() {
+                                        form::CLEAR_KEY_ID => clear_key_button = Some(btn),
+                                        form::APPLY_ID => apply_button = Some(btn),
+                                        form::CANCEL_ID => cancel_button = Some(btn),
+                                        _ => {}
                                     }
                                 }
                             }
@@ -859,6 +998,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().model.borrow_mut() = model_field;
     *controller.ivars().api_key.borrow_mut() = api_key_field;
     *controller.ivars().clear_key.borrow_mut() = clear_key_button;
+    *controller.ivars().apply.borrow_mut() = apply_button;
+    *controller.ivars().cancel.borrow_mut() = cancel_button;
     *controller.ivars().dnd.borrow_mut() = dnd_button;
     *controller.ivars().sound.borrow_mut() = sound_button;
     *controller.ivars().hidden.borrow_mut() = hidden_button;
@@ -1057,12 +1198,33 @@ fn tag_field(field: &NSTextField, id: &str, next_tag: &mut isize, controller: &S
 }
 
 /// Read-only rather than disabled, so the value stays legible and copyable.
-fn freeze_or_bind(field: &NSTextField, frozen: bool, controller: &SettingsController) {
+///
+/// A batched field gets the delegate and no target: `controlTextDidChange:`
+/// is what drives Apply and Cancel, and an action here would be the blur
+/// commit the tab no longer does (#279).
+fn freeze_or_bind(
+    field: &NSTextField,
+    frozen: bool,
+    batched: bool,
+    controller: &SettingsController,
+) {
     if frozen {
         field.setEditable(false);
+    } else if batched {
+        unsafe {
+            field.setDelegate(Some(ProtocolObject::from_ref(controller)));
+        }
     } else {
         bind_commit(field, controller);
     }
+}
+
+/// What a Director field holds, or `None` when a variable owns the row.
+fn field_text(cell: &RefCell<Option<Retained<NSTextField>>>) -> String {
+    cell.borrow()
+        .clone()
+        .map(|field| field.stringValue().to_string())
+        .unwrap_or_default()
 }
 
 /// Commit on Return and on blur.
