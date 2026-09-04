@@ -400,39 +400,60 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
-/// TAC laser: one path — baked into the sit strip (perched rest). No scan
-/// Behavior, no variant_of. scan-0 is a dupe of idle-0 and must not appear.
+/// TAC laser: optional idle variant only (scan-1..3; scan-0 is a dupe of
+/// idle-0). Not baked into sit — perched sit→idle escape is #311.
 #[test]
-fn timber_wolf_tac_laser_is_baked_into_sit() {
+fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
-        !character.animations.contains_key("scan"),
-        "no separate scan animation — laser lives only in the sit strip"
+        character.animations.contains_key("scan"),
+        "scan animation is declared"
+    );
+    let scan = &character.animations["scan"];
+    assert_eq!(scan.frames.len(), 4, "scan is a four-frame TAC loop");
+    assert!(
+        character.animations["idle"]
+            .variants
+            .contains(&"scan".to_string()),
+        "scan is an idle variant"
+    );
+    assert!(
+        character.animations["sit"].variants.is_empty(),
+        "sit is not where the laser lives"
     );
     assert!(
         !character.behaviors.contains_key("scan"),
-        "no scan Behavior — perched rest already loops sit"
+        "no scan Behavior — the variant ring is enough"
     );
-
-    let sit_frames = &character.animations["sit"].frames;
     for name in [
         "frames/scan-1.png",
         "frames/scan-2.png",
         "frames/scan-3.png",
     ] {
         assert!(
-            sit_frames.iter().any(|f| f == name),
-            "sit strip bakes {name}"
+            scan.frames.iter().any(|f| f == name),
+            "scan includes {name}"
         );
     }
     assert!(
-        sit_frames.iter().all(|f| f != "frames/scan-0.png"),
-        "sit must not reference scan-0 (byte-identical to idle-0)"
+        scan.frames.iter().all(|f| f != "frames/scan-0.png"),
+        "scan-0 is a dupe of idle-0 and must not be referenced"
+    );
+
+    let drawn = character
+        .draw("scan", 0)
+        .expect("scan draws when asked for by name");
+    assert_eq!(drawn.animation, "scan");
+
+    let engage = &character.behaviors["engage"];
+    assert!(
+        engage.primitives.contains(&character::Primitive::Idle),
+        "engage steps through idle so the scan ring can surface"
     );
     assert!(
-        character.animations["sit"].variants.is_empty(),
-        "sit has no variants — bake is the only laser path"
+        engage.primitives.contains(&character::Primitive::React),
+        "engage still raises weapons"
     );
 
     assert!(character.behaviors.contains_key("patrol"), "patrol stays");
