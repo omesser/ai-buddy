@@ -10,6 +10,21 @@ on:
         type: string
         required: false
         default: ''
+      linux:
+        description: 'Build Linux bundles'
+        type: boolean
+        required: false
+        default: true
+      macos:
+        description: 'Build macOS bundles'
+        type: boolean
+        required: false
+        default: true
+      windows:
+        description: 'Build Windows bundles'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: write
@@ -19,9 +34,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Two runners, two installers. macOS is the real overlay; Linux supports
-  # window Perches on X11, degraded Spatial Layer on Wayland. Windows is
-  # stubbed in v1 (SPEC) and is not a bundle target, so it has no row.
+  # Three runners, three installers. macOS is the real overlay; Linux supports
+  # window Perches on X11, degraded Spatial Layer on Wayland. Windows packages
+  # NSIS installers; runtime furniture (#197) is stubbed in SPEC.
   #
   # Every run builds the same bundles and leaves them on the run page. A
   # Release run additionally attaches them to the Release the human
@@ -34,9 +49,15 @@ jobs:
         include:
           - os: macos-latest
             bundles: dmg
+            key: macos
           - os: ubuntu-latest
             bundles: appimage,deb
+            key: linux
+          - os: windows-latest
+            bundles: nsis
+            key: windows
     runs-on: ${{ matrix.os }}
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && ((matrix.key == 'linux' && inputs.linux) || (matrix.key == 'macos' && inputs.macos) || (matrix.key == 'windows' && inputs.windows)))
     timeout-minutes: 45
 
     steps:
@@ -58,6 +79,7 @@ jobs:
         #
         # 0.0.0 covers a repo with no tags at all, which is today.
         id: ver
+        shell: bash
         env:
           TAG: ${{ github.event.release.tag_name }}
           # Bracket syntax, not inputs.version-override: an expression reads
