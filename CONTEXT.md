@@ -218,3 +218,10 @@ Three animated dots in a bubble above the sprite, shown while a reactive
 Director turn is in flight (Poke, Summon, Throw). Appears after 250ms grace,
 held ≥600ms once shown. Proactive wakes stay invisible. #119.
 _Avoid_: Loading, spinner, progress
+
+**Chat surface**:
+The window a Summon opens: where the user types to the attached Harness and
+reads the answers too long for a Speech bubble. Belongs to the Character
+Instance that was Summoned, and is drawn by ai-buddy rather than by the
+Harness. #17, ADR-0010.
+_Avoid_: Chat window, console, terminal, prompt box
