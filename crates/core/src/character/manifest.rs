@@ -506,3 +506,299 @@ fn parse_duration(text: &str) -> Option<Duration> {
         .checked_mul(seconds_each)
         .map(Duration::from_secs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::character::tests::{assert_names, declaring, errors, load_manifest};
+    use crate::character::REQUIRED_ANIMATIONS;
+
+    #[test]
+    fn a_weight_that_is_not_a_whole_number_is_rejected() {
+        let manifest = format!(
+            "{}[behaviors.greet]\nplay = [\"react\"]\nweight = \"lots\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let rejected = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            rejected,
+            vec!["weight for behavior \"greet\" is \"lots\", \
+                 which is not a whole number"
+                .to_string()]
+        );
+
+        // TOML has negative numbers where the old format had only digits, and
+        // a weight is a count.
+        let negative = format!(
+            "{}[behaviors.greet]\nplay = [\"react\"]\nweight = -3\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let rejected = errors(load_manifest(&negative));
+
+        assert_eq!(
+            rejected,
+            vec!["weight for behavior \"greet\" is -3, \
+                 which is not a whole number"
+                .to_string()]
+        );
+    }
+
+    #[test]
+    fn a_trigger_that_is_not_a_condition_is_rejected_with_the_conditions() {
+        let manifest = format!(
+            "{}[behaviors.greet]\nplay = [\"react\"]\nwhen = \"weather rain\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(errors.len(), 1, "{errors:#?}");
+        assert_names(&errors, "\"weather rain\"");
+        assert_names(&errors, "idle over 2m");
+        assert_names(&errors, "app Safari");
+    }
+
+    /// Hostile input: a duration whose last byte is the middle of a character.
+    /// Splitting it off by byte would panic and take the loader with it.
+    #[test]
+    fn a_duration_that_is_not_ascii_is_rejected_rather_than_crashing() {
+        let manifest = format!(
+            "{}[behaviors.nap]\nplay = [\"sit\"]\nwhen = \"idle over 2\u{043c}\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+
+        assert_names(&errors(load_manifest(&manifest)), "nap");
+    }
+
+    #[test]
+    fn an_unknown_primitive_is_rejected_by_name() {
+        let manifest = format!(
+            "{}[behaviors.greet]\nplay = [\"talk\", \"jump\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            errors,
+            vec![
+                "behavior \"greet\" declares \"jump\", which is not a Primitive; \
+                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase"
+                    .to_string()
+            ],
+            "the author is told the offending word and what they may write instead"
+        );
+    }
+
+    #[test]
+    fn an_unknown_declaration_is_rejected_by_name() {
+        // Before the tables: a root key written after one would land inside it.
+        let manifest = format!(
+            "capability = \"screen_recording\"\n{}",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            errors,
+            vec![
+                "unknown declaration \"capability\"; a Character Manifest declares \
+                 name, render_mode, scale, animations, behaviors, director and cursor"
+                    .to_string()
+            ],
+            "no package can invent a declaration, so none can grant itself anything"
+        );
+    }
+
+    #[test]
+    fn a_director_backoff_that_is_not_a_whole_number_from_one_is_rejected() {
+        let manifest = format!(
+            "{}\n[director]\nmodel_base = 0\nmodel_power = 1\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_names(&errors, "model_base");
+    }
+
+    #[test]
+    fn a_render_mode_that_is_neither_option_is_rejected_by_its_text() {
+        let manifest = format!(
+            "render_mode = \"blurry\"\n{}",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![
+                "\"render_mode\" is \"blurry\", and must be \"pixelated\" or \"smooth\""
+                    .to_string()
+            ],
+        );
+    }
+
+    #[test]
+    fn a_scale_outside_its_bounds_is_rejected_by_its_text() {
+        let manifest = format!("scale = 9\n{}", declaring(&REQUIRED_ANIMATIONS));
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec![format!(
+                "\"scale\" is 9, and must be a whole number from 1 to {MAX_SCALE}"
+            )],
+        );
+    }
+
+    /// A syntax mistake is one error naming its line, never a cascade: past it
+    /// the parser would be guessing, and a guess would report mistakes the
+    /// author has not made.
+    #[test]
+    fn a_manifest_that_is_not_toml_is_rejected_with_its_line() {
+        let manifest = format!("{}animation idle\n", declaring(&REQUIRED_ANIMATIONS));
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            errors.len(),
+            1,
+            "one syntax error, one message: {errors:#?}"
+        );
+        // Nine required Animations at two lines each follow the name line.
+        assert_names(&errors, "character.manifest is not TOML at line 20");
+    }
+
+    #[test]
+    fn an_animation_with_no_frames_is_rejected_by_name() {
+        // An empty list and no list at all are the same mistake to an author.
+        for wave in ["[animations.wave]\nframes = []\n", "[animations.wave]\n"] {
+            let empty = errors(load_manifest(&format!(
+                "{}{wave}",
+                declaring(&REQUIRED_ANIMATIONS)
+            )));
+            assert_eq!(
+                empty,
+                vec!["animation \"wave\" declares no frames".to_string()],
+                "the author is told which Animation has no art"
+            );
+        }
+    }
+
+    /// TOML itself refuses a duplicate key, so a declaration written twice is
+    /// a syntax error naming the key rather than a check of this module's.
+    #[test]
+    fn an_animation_or_behavior_declared_twice_is_rejected_by_name() {
+        let twice = errors(load_manifest(&format!(
+            "{}[animations.idle]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        )));
+        assert_names(&twice, "is not TOML");
+        assert_names(&twice, "idle");
+
+        let twice = errors(load_manifest(&format!(
+            "{}[behaviors.greet]\nplay = [\"talk\"]\n[behaviors.greet]\nplay = [\"sit\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        )));
+        assert_names(&twice, "is not TOML");
+        assert_names(&twice, "greet");
+    }
+
+    /// Hostile input: a frame reference is eight bytes of manifest and a whole
+    /// copy of the art in the renderer, so an unbounded frame count is a way to
+    /// hand the renderer an allocation it dies on. The bound is checked on both
+    /// sides so it cannot drift by one.
+    #[test]
+    fn an_animation_with_more_frames_than_the_bound_is_rejected_by_name() {
+        let repeat = |count: usize| {
+            format!(
+                "{}[animations.wave]\nframes = [{}]\n",
+                declaring(&REQUIRED_ANIMATIONS),
+                vec!["\"wave-0.png\""; count].join(", ")
+            )
+        };
+
+        let character = load_manifest(&repeat(MAX_FRAMES)).expect("the bound itself loads");
+        assert_eq!(character.animations["wave"].frames.len(), MAX_FRAMES);
+
+        let over = errors(load_manifest(&repeat(MAX_FRAMES + 1)));
+        assert_names(&over, "wave");
+        assert_names(&over, &format!("{} frames", MAX_FRAMES + 1));
+    }
+
+    /// Hostile input: declarations written to confuse the loader rather than
+    /// to declare anything — TOML the parser accepts and the domain does not.
+    /// Each one is rejected by name, and none of them is guessed at, ignored,
+    /// or allowed to panic.
+    #[test]
+    fn nonsense_declarations_are_each_rejected_by_name() {
+        let manifest = format!(
+            "{}\
+             [animations.wave]\n\
+             frames = \"wave-0.png\"\n\
+             mirrored = true\n\
+             [behaviors.chase]\n\
+             play = \"walk\"\n\
+             then = 3\n\
+             [behaviors.pounce]\n\
+             play = [\"react\", 7]\n\
+             when = 6\n\
+             [behaviors.\"фыр\"]\n\
+             play = [[]]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+
+        let errors = errors(load_manifest(&manifest));
+
+        // The whole set, not a count and a prefix: messages reading only
+        // "wrong type" would satisfy a structural check while telling the
+        // author nothing about what to change.
+        assert_eq!(
+            errors,
+            vec![
+                "frames for animation \"wave\" is \"wave-0.png\", and must be a list of \
+                 frame files, as frames = [\"idle-0.png\"]"
+                    .to_string(),
+                "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
+                 frames, fps, loop and variant_of"
+                    .to_string(),
+                "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
+                 as play = [\"react\", \"talk\"]"
+                    .to_string(),
+                "then for behavior \"chase\" is 3, and must name one Behavior, \
+                 as then = \"settle\""
+                    .to_string(),
+                "behavior \"pounce\" declares 7, which is not a Primitive; the Primitives \
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
+                    .to_string(),
+                "when for behavior \"pounce\" is 6, which is not a condition; a condition \
+                 reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\""
+                    .to_string(),
+                "behavior \"фыр\" declares [], which is not a Primitive; the Primitives \
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
+                    .to_string(),
+            ],
+            "each nonsense declaration is rejected by name, saying what is wrong"
+        );
+    }
+
+    #[test]
+    fn an_unplayable_fps_or_loop_mode_is_rejected_by_name() {
+        // Each case asks for the Animation at fault and what is wrong with
+        // it, so a message that says only "fps" cannot pass.
+        for (declaration, wanted) in [
+            (
+                "fps = 0",
+                &["animation \"idle\"", "is 0", "must be 1 to 60"][..],
+            ),
+            ("fps = \"soon\"", &["animation \"idle\"", "\"soon\""]),
+            ("fps = 240", &["animation \"idle\"", "is 240"]),
+            ("fps = 3.5", &["animation \"idle\"", "3.5", "whole number"]),
+            ("loop = \"maybe\"", &["animation \"idle\"", "\"maybe\""]),
+        ] {
+            let manifest = declaring(&REQUIRED_ANIMATIONS).replace(
+                "frames = [\"idle-0.png\"]",
+                &format!("frames = [\"idle-0.png\"]\n{declaration}"),
+            );
+            let errors = errors(load_manifest(&manifest));
+            for offender in wanted {
+                assert_names(&errors, offender);
+            }
+        }
+    }
+}
