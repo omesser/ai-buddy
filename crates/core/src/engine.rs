@@ -5923,6 +5923,43 @@ mod tests {
         );
     }
 
+    /// The resting inset grew with the art, and the wall did not move: a climb
+    /// still catches the outermost edge itself, so a frame drawn with the wall
+    /// running down its middle still lines up on one. Widening the inset would
+    /// otherwise have stranded the climb a half-sprite short of the wall, with
+    /// the sprite hugging nothing.
+    #[test]
+    fn a_wide_sprite_climbs_the_wall_it_rests_clear_of() {
+        const WIDTH: f64 = 176.0;
+        let mut engine = Engine::new(Point { x: 900.0, y: 400.0 }).with_sprite_width(WIDTH);
+        let right_edge = one_display().x + one_display().width;
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 900.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        let climbing = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 2000.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+
+        assert_eq!(climbing.state, State::Climbing, "it climbs: {climbing:?}");
+        assert_eq!(
+            climbing.position.x, right_edge,
+            "the climb holds the wall itself, whatever the art's width"
+        );
+
+        let at_rest = settle(&mut engine, &snapshot(100));
+        assert_eq!(
+            at_rest.position.x,
+            right_edge - WIDTH / 2.0,
+            "letting go of the wall stands it clear by its own half-width"
+        );
+    }
+
     #[test]
     fn dragging_to_the_edge_does_not_snap_position_or_facing() {
         let mut engine = Engine::new(Point { x: 900.0, y: 400.0 });
