@@ -220,6 +220,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         timeout: timeout_for(local),
         max_tokens: max_tokens_for(local),
         session: Mutex::new(Vec::new()),
+        agent: ureq::agent(),
     })
 }
 
@@ -438,6 +439,10 @@ pub struct Endpoint {
     max_tokens: u32,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
     session: Mutex<Vec<Message>>,
+    /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
+    /// use-once [Agent]", so each wake would throw away the pooled connection
+    /// and pay another TCP and TLS handshake to the model host.
+    agent: ureq::Agent,
 }
 
 impl Endpoint {
@@ -474,7 +479,7 @@ impl Endpoint {
     /// GET `url`. Non-2xx is still `Ok` — the status and body are the answer.
     pub fn get(&self, url: &str) -> Result<(u16, String), String> {
         let request = self
-            .headers(ureq::get(url))
+            .headers(self.agent.get(url))
             .config()
             .http_status_as_error(false)
             .timeout_global(Some(self.timeout))
@@ -498,7 +503,7 @@ impl Endpoint {
         };
         let body = request_body(&self.model, &snapshot, uses_responses(url), self.max_tokens);
         let request = self
-            .headers(ureq::post(url))
+            .headers(self.agent.post(url))
             .header("Content-Type", "application/json")
             .config()
             .http_status_as_error(false)
