@@ -37,6 +37,8 @@ model_base = 1
 model_power = 1
 
 # Camera-facing stand from the turn recording, so idle meshes with talk and react.
+# Stand. TAC laser is an idle variant (below). Perched rest is still sit until
+# #311 lets quiet perch switch to idle — then the scan ring can show on a window.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
@@ -90,14 +92,16 @@ fps = 4
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 1
 
-# TAC laser sweep: optional idle variant. The renderer rings idle (longer) then
-# scan, so a parked mech occasionally paints the sector without a new Primitive.
+
+# TAC laser sweep as an idle variant. scan-0.png is a byte-copy of idle-0 and
+# is omitted; the real sweep is scan-1..3. Visible whenever idle draws long
+# enough for the variant ring (floor rest today; perched rest after #311).
 [animations.scan]
 frames = [
-  "frames/scan-0.png",
   "frames/scan-1.png",
   "frames/scan-2.png",
   "frames/scan-3.png",
+  "frames/scan-2.png",
 ]
 fps = 4
 variant_of = "idle"
@@ -113,10 +117,8 @@ loop = "once"
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
-# A heavy assault mech's life: patrol the perimeter, report status, hold
-# position, engage threats. Engage and report both step through idle, so the
-# TAC laser scan rides those beats via the idle variant ring — no new Primitive,
-# and pursue/chase, patrol, near=face, rush=react stay as they are.
+# A heavy assault mech's life: patrol, report, engage. Scan is idle's variant
+# only — no sit bake, no scan Behavior.
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]

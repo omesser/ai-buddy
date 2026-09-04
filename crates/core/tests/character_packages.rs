@@ -400,8 +400,8 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
-/// TAC laser scan: optional idle variant, four frames, drawable by name.
-/// Engage steps through idle so the scan ring can surface on acquire beats.
+/// TAC laser: optional idle variant only (scan-1..3; scan-0 is a dupe of
+/// idle-0). Not baked into sit — perched sit→idle escape is #311.
 #[test]
 fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
@@ -411,25 +411,34 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
         "scan animation is declared"
     );
     let scan = &character.animations["scan"];
-    assert_eq!(
-        scan.frames.len(),
-        4,
-        "scan is the four-frame TAC laser sweep"
-    );
-    assert_eq!(
-        scan.frames,
-        vec![
-            "frames/scan-0.png".to_string(),
-            "frames/scan-1.png".to_string(),
-            "frames/scan-2.png".to_string(),
-            "frames/scan-3.png".to_string(),
-        ]
-    );
+    assert_eq!(scan.frames.len(), 4, "scan is a four-frame TAC loop");
     assert!(
         character.animations["idle"]
             .variants
             .contains(&"scan".to_string()),
-        "scan rings on idle so a parked mech paints the sector"
+        "scan is an idle variant"
+    );
+    assert!(
+        character.animations["sit"].variants.is_empty(),
+        "sit is not where the laser lives"
+    );
+    assert!(
+        !character.behaviors.contains_key("scan"),
+        "no scan Behavior — the variant ring is enough"
+    );
+    for name in [
+        "frames/scan-1.png",
+        "frames/scan-2.png",
+        "frames/scan-3.png",
+    ] {
+        assert!(
+            scan.frames.iter().any(|f| f == name),
+            "scan includes {name}"
+        );
+    }
+    assert!(
+        scan.frames.iter().all(|f| f != "frames/scan-0.png"),
+        "scan-0 is a dupe of idle-0 and must not be referenced"
     );
 
     let drawn = character
@@ -440,7 +449,7 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
     let engage = &character.behaviors["engage"];
     assert!(
         engage.primitives.contains(&character::Primitive::Idle),
-        "engage steps through idle so scan can ride the variant ring"
+        "engage steps through idle so the scan ring can surface"
     );
     assert!(
         engage.primitives.contains(&character::Primitive::React),
