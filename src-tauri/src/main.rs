@@ -46,7 +46,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy_core::character::Character;
+use ai_buddy_core::character::{Character, Primitive};
 use ai_buddy_core::director::{Context, Happened, ModelDirector, Pace, Seeded, StaticDirector};
 use ai_buddy_core::engine::{Cue, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
@@ -116,6 +116,21 @@ struct Drawn {
     mirrored: bool,
 }
 
+/// What the last `engine:` line said about an Instance.
+///
+/// The frame loop runs at display rate, and what the Engine is playing changes
+/// a handful of times a minute, so the trace prints on change and this is what
+/// "changed" is measured against. Everything the line carries is in here: a
+/// field the line prints and this does not would stop appearing after the
+/// first tick that moved only it.
+#[derive(PartialEq)]
+struct Traced {
+    behavior: Option<String>,
+    primitive: Option<Primitive>,
+    animation: &'static str,
+    state: State,
+}
+
 /// Everything one Instance keeps between ticks that belongs to the Shell rather
 /// than to its Engine.
 ///
@@ -152,6 +167,10 @@ struct InstanceState {
     /// carries it (#178). See `carry_line`.
     spoken: Option<Spoken>,
     drawn_last: Option<Drawn>,
+    /// The subject of the last `engine:` line. `None` while the switch is off,
+    /// so turning it on always opens with a line rather than waiting for the
+    /// sprite to do something new.
+    traced_last: Option<Traced>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -937,6 +956,7 @@ fn spawn_live(
         pointer: Pointer::default(),
         spoken: None,
         drawn_last: None,
+        traced_last: None,
         verbs: Vec::new(),
         menu_hold: None,
         character,
@@ -1199,6 +1219,7 @@ fn spawn_instances(
             pointer: Pointer::default(),
             spoken: None,
             drawn_last: None,
+            traced_last: None,
             verbs: Vec::new(),
             menu_hold: None,
         });

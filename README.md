@@ -602,8 +602,28 @@ There is one overlay per display and every one of them is told where the
 sprite is, so the trace is one line per tick rather than one per overlay. Which
 overlay the cursor is on is on the hit-test line.
 
+`AI_BUDDY_TRACE_ENGINE=1` answers the question the frame line cannot: not which
+Animation is on screen but what chose it. It prints a unix timestamp, the
+Behavior and the Primitive the Engine is playing, the Animation they resolve to,
+the State, and the Instance:
+
+```
+engine: 1757043169284 behavior(greet) primitive(React) animation(react) state(Grounded) 6f2a1c34-5b8e-4d21-9f70-2a4c8e1b3d55
+engine: 1757043169884 behavior(-) primitive(Land) animation(land) state(Grounded) 6f2a1c34-5b8e-4d21-9f70-2a4c8e1b3d55
+```
+
+A `-` is a thing with no name rather than a missing value. `behavior(-)` is a
+moment the Engine plays itself — a Land, a Hold, a startle at the cursor, the
+answer to a Poke — which no Director proposed and which therefore answers to
+nothing; `primitive(-)` is a chain that has run out, including a walk still
+travelling on the velocity it left behind. The line prints when one of those
+four changes and not once per tick, because the loop turns at display rate and
+an unconditional line would bury everything else in the log. The first tick
+after the switch goes on always prints, so the log never opens in silence about
+what was already playing. Off unless asked.
+
 Settings → Development carries the same switches, so a trace goes on without a
-relaunch: the three above take effect on the next tick or wake,
+relaunch: the four above take effect on the next tick or wake,
 `AI_BUDDY_CAPTURABLE` on the next launch. Exporting one of these variables
 freezes its row the way the Director's do, and `=0` pins the switch off the
 same way `=1` pins it on.

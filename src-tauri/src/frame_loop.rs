@@ -20,7 +20,7 @@ use super::{
     apply_menu_action, describe_menu, dev_flags, menu, model, overlay_label, place_overlays,
     platform, publish_instances, remember_instances, spawn_live, switch_instance, tray,
     DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed,
-    Placement, SpritePlacement, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
+    Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
     SENSE_INTERVAL,
 };
 
@@ -158,6 +158,10 @@ pub(crate) fn run_frame_loop(
             // is the loop's only output, and a screenshot cannot say whether it
             // got there by falling.
             let tracing_frames = dev_flags::TRACE_FRAMES.is_on();
+            // And for what the Engine is playing. The frame line above says
+            // which Animation is on screen but not what chose it: a `talk` is a
+            // proposed Behavior, a cursor reaction and a Dwell alike.
+            let tracing_engine = dev_flags::TRACE_ENGINE.is_on();
             // A click is two edges. The periodic hit-test line only prints on a
             // click-through flip or every two seconds, so a press that did not
             // flip — already over the sprite, or never over it — left no record
@@ -971,6 +975,47 @@ pub(crate) fn run_frame_loop(
                     if tracing_frames {
                         eprintln!("director: {} {played}", live.id);
                     }
+                }
+
+                // On change, not per tick: the loop turns at display rate and
+                // an unconditional line would bury every other trace in the
+                // log. Above the `draw` below rather than beside the frame
+                // line, so a Character whose art will not draw — the one case
+                // that skips the rest of this Instance — still says what its
+                // Engine was doing.
+                //
+                // A dash, not a blank, for the Engine's own moments: a Land or
+                // a startle has no Behavior name because no Director proposed
+                // it, and an empty pair of brackets reads as a bug in the
+                // trace rather than as the answer.
+                if tracing_engine {
+                    let now = Traced {
+                        behavior: frame.playing_behavior.clone(),
+                        primitive: frame.playing_primitive,
+                        animation: frame.animation,
+                        state: frame.state,
+                    };
+                    if live.traced_last.as_ref() != Some(&now) {
+                        let at_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_or(0, |since| since.as_millis());
+                        let primitive = match now.primitive {
+                            Some(primitive) => format!("{primitive:?}"),
+                            None => "-".to_string(),
+                        };
+                        eprintln!(
+                            "engine: {at_ms} behavior({}) primitive({primitive}) animation({}) state({:?}) {}",
+                            now.behavior.as_deref().unwrap_or("-"),
+                            now.animation,
+                            now.state,
+                            live.id,
+                        );
+                        live.traced_last = Some(now);
+                    }
+                } else {
+                    // Forgotten while off, so flipping the switch back on opens
+                    // with a line instead of waiting for the next change.
+                    live.traced_last = None;
                 }
 
                 // The Engine names an Animation and how long it has been

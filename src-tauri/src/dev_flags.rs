@@ -66,6 +66,7 @@ impl Flag {
 pub static TRACE_FRAMES: Flag = Flag::new("AI_BUDDY_TRACE_FRAMES");
 pub static TRACE_HITTEST: Flag = Flag::new("AI_BUDDY_TRACE_HITTEST");
 pub static TRACE_DIRECTOR: Flag = Flag::new("AI_BUDDY_TRACE_DIRECTOR");
+pub static TRACE_ENGINE: Flag = Flag::new("AI_BUDDY_TRACE_ENGINE");
 /// The capture exclusion is an AppKit window property; no other platform has
 /// one to drop.
 #[cfg(target_os = "macos")]
@@ -105,6 +106,7 @@ pub(crate) fn test_vars() -> Vec<&'static str> {
         TRACE_FRAMES.var(),
         TRACE_HITTEST.var(),
         TRACE_DIRECTOR.var(),
+        TRACE_ENGINE.var(),
         model::TIMEOUT_SECS,
         model::MAX_TOKENS,
         #[cfg(target_os = "macos")]
@@ -121,6 +123,7 @@ pub fn seed(settings: &Settings) {
     TRACE_FRAMES.seed(settings.trace_frames);
     TRACE_HITTEST.seed(settings.trace_hittest);
     TRACE_DIRECTOR.seed(settings.trace_director);
+    TRACE_ENGINE.seed(settings.trace_engine);
     #[cfg(target_os = "macos")]
     CAPTURABLE.seed(settings.capturable);
     TIMEOUT_SECS.store(
