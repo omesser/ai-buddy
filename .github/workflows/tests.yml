@@ -4,11 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
   # One job, both platforms. The differences between them are tool installation
@@ -260,9 +261,14 @@ jobs:
   # arms in platform.rs and sensing.rs still compile — and now tests, since
   # #247/#257/#258 confirmed the suite is green on Windows.
   #
-  # Ungated: a path gate over the files holding those arms would let an arm
-  # added anywhere else escape it, which is the failure this job exists to
-  # catch. #247.
+  # Clippy is ungated and always runs: a path gate on the compile check would
+  # let an arm added to an unlisted file escape silently, which is the failure
+  # this job exists to prevent. #247.
+  #
+  # The test suite is gated: it runs only when Windows-relevant paths change, or
+  # the `windows` label is present, or the event is not a pull_request (push to
+  # main and workflow_dispatch always test). This keeps the expensive Windows
+  # suite off the critical path for changes that cannot affect it. #258.
   windows:
     runs-on: windows-latest
     # A cold-cache MSVC build and test of the whole workspace on the slowest
@@ -274,6 +280,50 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Find what this run changed
+        id: changed
+        # The Windows test suite is expensive (several minutes on a cold cache)
+        # and runs on the slowest runner. Gate it on Windows-relevant paths: the
+        # files holding `not(unix)` arms, their manifests, and the workflow.
+        #
+        # Pinned to the same commit the `checks` job uses (CVE-2025-30066).
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files: |
+            src-tauri/src/platform.rs
+            src-tauri/src/platform/windows/**
+            crates/core/src/sensing.rs
+            src-tauri/Cargo.toml
+            crates/core/Cargo.toml
+            Cargo.toml
+            Cargo.lock
+            .github/workflows/tests.yml
+
+      - name: Decide whether this run should test
+        id: gate
+        # Run tests when: the listed paths changed, OR the PR has the `windows`
+        # label (the escape hatch for changes the path list missed), OR the event
+        # is not a pull_request (push to main and workflow_dispatch always test),
+        # OR the changed-files step failed (fail open, same as `checks`).
+        #
+        # Skip tests only on a pull_request where changed-files succeeded AND no
+        # listed paths changed AND the `windows` label is absent.
+        shell: pwsh
+        env:
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
+          EVENT: ${{ github.event_name }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          $run_tests = $true
+          if ($env:OUTCOME -eq "success" -and $env:ANY_CHANGED -eq "false" -and `
+              $env:EVENT -eq "pull_request" -and -not ($env:LABELS -like '*windows*')) {
+            $run_tests = $false
+          }
+          Write-Host "run tests: $run_tests"
+          "run_tests=$run_tests" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --component clippy
@@ -287,14 +337,22 @@ jobs:
           cache-on-failure: true
 
       - name: Clippy the workspace for Windows
-        # --all-targets to type-check the test targets, where a rotted arm shows
-        # up.
+        # Always runs (ungated). --all-targets makes Clippy check not just the
+        # main library and binary targets, but also tests, examples, and
+        # benchmarks. That matters for Windows because platform-specific code
+        # under `#[cfg(not(unix))]` often lives in test modules: without
+        # --all-targets, those Windows-only arms are never type-checked on
+        # windows-latest, so a compile break can land unnoticed until someone
+        # runs tests locally.
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
-        # --workspace to match the clippy scope and the verified local Windows
-        # catalogue. --doc as well as --all-targets: --all-targets excludes
-        # doctests, so a `///` example would otherwise never run anywhere.
+        # Gated (runs only when the paths above change, or the `windows` label is
+        # present, or non-PR events). --workspace to match the clippy scope and
+        # the verified local Windows catalogue. --doc as well as --all-targets:
+        # --all-targets excludes doctests, so a `///` example would otherwise
+        # never run anywhere.
+        if: steps.gate.outputs.run_tests == 'true'
         run: |
           cargo test --workspace --all-targets
           cargo test --workspace --doc
