@@ -21,10 +21,10 @@ Reference PNG assets:
 
 ## Usage
 
-The app icon (`src-tauri/icons/icon.png`) is 512×512 RGBA cut to Apple's macOS grid — an 824-of-1024 squircle body, scaled down, with the rest of the canvas transparent. Nothing downstream rounds a square icon: Tauri hands this file to `NSApp.setApplicationIconImage` on a dev run and lets tauri-bundler build the `.icns` from it for a packaged one, so the Dock draws whatever shape it is given.
+The app icon (`src-tauri/icons/icon.png`) is 512×512 RGBA, cut to Apple's macOS grid: a squircle body filling 824 of a 1024 canvas, scaled down to 512, with the margin around it transparent. Nothing downstream rounds a square icon — Tauri hands this file to `NSApp.setApplicationIconImage` on a dev run, and tauri-bundler builds the `.icns` from it for a packaged one — so the Dock draws whatever shape the file has.
 
-It ships at 512 rather than the 1024 master because both packagers narrow to that size: the `.icns` element table has no 1024-at-1x entry, so a 1024 PNG fails the macOS bundle outright, and the Linux packages file the icon under a `usr/share/icons/hicolor/<size>/` directory that has to be one `hicolor` lists, which stops at 512.
+512 is the largest size both packagers take. In the `.icns` format, 1024×1024 exists only as the 2x form of 512, which tauri-bundler asks for by filename, so a plain `icon.png` at 1024 matches no element type and the bundler errors out rather than skipping it. On Linux the icon is filed by its own dimensions, at `usr/share/icons/hicolor/<width>x<height>/apps/`, and the hicolor theme lists no directory above 512 — so an icon larger than that lands where nothing looks for it.
 
-`python3 scripts/make-app-icon.py` regenerates it, `logo-art/app-icon-1024.png` and `src-tauri/icons/icon.ico` from `logo-art/logo-512.png`.
+`python3 scripts/make-app-icon.py` regenerates this file, `logo-art/app-icon-1024.png` and `src-tauri/icons/icon.ico` from `logo-art/logo-512.png`.
 
 The tray icon (`src-tauri/icons/tray.png`) is a 256×256 template icon for the system menu bar, designed to adapt to light/dark themes.
