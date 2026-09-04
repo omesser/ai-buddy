@@ -601,6 +601,22 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
             .contains(&character::Primitive::Walk),
         "stroll is a Walk"
     );
+    assert_eq!(
+        character.behaviors["settle"].then.as_deref(),
+        Some("nap"),
+        "settle chains into nap so sitting leads to sleep"
+    );
+    assert_eq!(
+        character.behaviors["nap"].weight, 4,
+        "nap outranks late-band stroll/patrol so sleep is visible"
+    );
+    assert!(
+        matches!(
+            character.behaviors["nap"].trigger,
+            Some(character::Trigger::IdleOver(d)) if d == std::time::Duration::from_secs(120)
+        ),
+        "nap opens at idle over 2m (was 5m — too rare against walk)"
+    );
     assert!(
         character.behaviors["nap"]
             .primitives

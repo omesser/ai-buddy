@@ -141,8 +141,9 @@ loop = "once"
 # stroll (greet chains into walk — same pattern as BMO greet→patrol / cat
 # greet→inspect). Offer to help while they are still around, fidget in place,
 # stroll the desk when they pause, patrol when they have plainly gone, and
-# settle / nap last of all. Weights keep walk competitive with talk: help
-# must not starve stroll in the overlapping 30s–1m band.
+# settle into nap last of all (nap at 2m like cat, settle chains into it).
+# Weights keep walk competitive with talk: help must not starve stroll in
+# the overlapping 30s–1m band, and nap must outrank late patrol.
 
 [behaviors.greet]
 play = ["talk"]
@@ -168,15 +169,21 @@ when = "idle over 30s"
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
 then = "stroll"
-weight = 3
-when = "idle over 2m"
-
-[behaviors.settle]
-play = ["sit"]
 weight = 2
 when = "idle over 2m"
 
+# Sit, then chain into nap (trump settle→doze / timber-wolf standby→power_down).
+# Nap opens at 2m like cat — 5m meant sleep almost never won the late-band draw
+# against stroll/patrol, and Director proposals keep resetting the engine's
+# 60s auto-sleep timer.
+
+[behaviors.settle]
+play = ["sit"]
+then = "nap"
+weight = 3
+when = "idle over 1m"
+
 [behaviors.nap]
 play = ["sit", "sleep"]
-weight = 3
-when = "idle over 5m"
+weight = 4
+when = "idle over 2m"
