@@ -60,6 +60,14 @@ bytemuck = "1.16"
 # so this adds no second GTK major version.
 gtk = "0.18"
 
+[target.'cfg(windows)'.dependencies]
+# ShellExecuteW opens a file with the default application as a wide-string
+# parameter. The previous `cmd /C start` arm re-parsed `&` and `%` (#255).
+windows-sys = { version = "0.59", features = [
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # The context menu (#155) is not here: `tauri::menu` already wraps the menu
 # library Tauri ships with, so naming it again would put a second copy of it in

@@ -11,6 +11,7 @@
 
 use std::fs;
 use std::path::Path;
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -315,10 +316,17 @@ pub fn refresh_settings() {}
 /// there reports it missing instead of giving the user something to write in.
 pub fn open_path(path: &Path) -> Result<(), String> {
     ensure_file(path)?;
-    opener(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    #[cfg(unix)]
+    {
+        opener(path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(unix))]
+    {
+        opener(path)
+    }
 }
 
 /// Not platform-specific, so it is written once rather than in each arm below.
@@ -346,14 +354,49 @@ fn opener(path: &Path) -> Command {
     command
 }
 
-/// The empty string after `start` is the window title, which `cmd` otherwise
-/// takes the first quoted argument for — a path with a space in it becomes a
-/// title and nothing opens.
+/// Open with the default application via ShellExecuteW.
+///
+/// `cmd /C start` was the previous shape (#195). It works until the path holds
+/// `&` or `%`: Rust's `Command` quoting is not `cmd`'s, and `%VAR%` expands
+/// inside quotes. ShellExecuteW takes the path as a wide-string parameter, so
+/// neither metacharacter is syntax (#255).
 #[cfg(not(unix))]
-fn opener(path: &Path) -> Command {
-    let mut command = Command::new("cmd");
-    command.args(["/C", "start", ""]).arg(path);
-    command
+fn opener(path: &Path) -> Result<(), String> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let file = shell_execute_file_wide(path);
+    let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+
+    // Per MSDN, a return value greater than 32 means the call succeeded.
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (result as isize) > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "ShellExecuteW failed opening {} (code {})",
+            path.display(),
+            result as isize
+        ))
+    }
+}
+
+/// The NUL-terminated wide path ShellExecuteW receives. Kept as its own
+/// function so tests can assert `&`, `%`, and spaces reach the API intact
+/// without spawning a viewer.
+#[cfg(not(unix))]
+fn shell_execute_file_wide(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
 }
 
 /// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.
@@ -870,10 +913,10 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// A path with a space in it is the case that breaks: on Windows the
-    /// empty title has to stand between `start` and the path, or `cmd` reads
-    /// the path as the title. The path is the last argument on every platform;
-    /// what precedes it is what each arm has to get right.
+    /// A path with a space in it is the case that breaks on Unix openers if
+    /// the path is split into multiple arguments. The path is the last
+    /// argument; what precedes it is what each arm has to get right.
+    #[cfg(unix)]
     #[test]
     fn the_opener_is_handed_the_whole_path() {
         let path = Path::new("/tmp/ai buddy/memory.md");
@@ -884,12 +927,46 @@ mod tests {
         assert_eq!(command.get_program(), "open");
         #[cfg(all(unix, not(target_os = "macos")))]
         assert_eq!(command.get_program(), "xdg-open");
-        #[cfg(not(unix))]
+    }
+
+    /// `#255`: `&` and `%` are `cmd` metacharacters. ShellExecuteW must see
+    /// the literal path — including a space — as one wide string, not as
+    /// shell text. Encoding is the seam a unit test can observe without
+    /// launching a viewer.
+    #[cfg(not(unix))]
+    #[test]
+    fn windows_opener_keeps_ampersand_percent_and_space() {
+        let path = Path::new(r"C:\Users\a & b\100%\memory.md");
+        let wide = shell_execute_file_wide(path);
         assert_eq!(
-            command.get_args().count(),
-            4,
-            "the empty title is an argument of its own"
+            wide.last().copied(),
+            Some(0),
+            "ShellExecuteW needs a trailing NUL"
         );
+        let decoded = String::from_utf16(&wide[..wide.len() - 1]).expect("path is UTF-16");
+        assert_eq!(
+            decoded,
+            path.to_str().expect("test path is UTF-8"),
+            "the wide argument must be the path as written, not a cmd-escaped form"
+        );
+    }
+
+    /// Live check that ShellExecuteW accepts a path with all three
+    /// metacharacters. Opens the default `.md` handler briefly; the
+    /// acceptance criterion is a success return, not which app appears.
+    #[cfg(not(unix))]
+    #[test]
+    fn open_path_succeeds_for_metacharacter_path() {
+        let root = std::env::temp_dir().join(format!(
+            "ai-buddy-open-meta-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let path = root.join("a & b").join("100%").join("memory.md");
+        let _ = fs::remove_dir_all(&root);
+        open_path(&path).expect("ShellExecuteW must open a path that holds &, %, and a space");
+        assert!(path.is_file(), "ensure_file still creates Memory first");
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// A right-click on the overlay is the same miss as a left-click. Without
