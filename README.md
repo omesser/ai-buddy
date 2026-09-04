@@ -44,9 +44,9 @@ and is refused or abandoned when the State the sprite is in does not permit it.
 
 ## Platform support
 
-What ships where, read from the platform seam rather than from intent. Windows
-is deferred by [docs/SPEC.md](./docs/SPEC.md), so its column is what the code
-says and not what anyone has run.
+What ships where, read from the platform seam rather than from intent.
+Releases cover macOS, Linux, and Windows; the Windows column is still thin in
+places (`stub` / `degraded`), and those cells are what the code does today.
 
 | Capability | macOS | Linux | Windows |
 |---|---|---|---|
@@ -115,7 +115,7 @@ What the cells leave out:
 Download a build from
 [GitHub Releases](https://github.com/omesser/ai-buddy/releases).
 
-Or clone and run from the repo root (macOS, Linux, Windows stub):
+Or clone and run from the repo root (macOS, Linux, Windows):
 
 ```sh
 git clone https://github.com/omesser/ai-buddy.git
@@ -183,7 +183,16 @@ sudo apt install ./ai-buddy_*.deb
 # chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
 ```
 
-Windows is stubbed for now; there is no Windows package yet (coming soon).
+### Windows
+
+The Release ships an NSIS installer (x86_64). Run it and follow the prompts.
+
+SmartScreen may warn on the first open because the build is not Authenticode
+signed. Choose More info → Run anyway. Code signing is a follow-up.
+
+Some Windows platform cells are still `stub` or `degraded` — see
+[Platform support](#platform-support). The installer and the shell binary are
+real; those cells are about overlay and sensing depth, not the package.
 
 ## Running it
 
