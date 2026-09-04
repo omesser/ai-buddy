@@ -393,6 +393,22 @@ impl Character {
         })
     }
 
+    /// How wide the art is on screen, in points.
+    ///
+    /// The widest frame the Character declares, not the one drawing now: the
+    /// Engine is told this once and keeps the feet that far from a display
+    /// edge for the Character's whole life, so the number has to cover
+    /// whichever Animation it happens to be playing when it gets there.
+    pub fn sprite_width(&self) -> f64 {
+        let widest = self
+            .animations
+            .values()
+            .map(|animation| animation.frame_size.0)
+            .max()
+            .unwrap_or_default();
+        f64::from(widest) * f64::from(self.scale)
+    }
+
     /// Which Animation actually draws: the one asked for, its optional
     /// fallback, or — when it anchors a variant ring — whichever member the
     /// elapsed time has cycled to, with the time already spent in its slot.
@@ -713,6 +729,18 @@ mod tests {
             idle.looping,
             "an Animation repeats unless it says otherwise"
         );
+    }
+
+    /// The Engine keeps the feet half a sprite clear of a display edge, so the
+    /// width it is told is the one on screen: art at scale 3 is three times as
+    /// wide as the file, and a Character measured by its file would stand a
+    /// third of the way off the edge.
+    #[test]
+    fn a_sprite_is_as_wide_as_its_widest_frame_blown_up_by_its_own_scale() {
+        let character = load_manifest(&format!("scale = 3\n{}", declaring(&REQUIRED_ANIMATIONS)))
+            .expect("package is valid");
+
+        assert_eq!(character.sprite_width(), 6.0, "2px of art at scale 3");
     }
 
     #[test]

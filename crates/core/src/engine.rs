@@ -302,10 +302,17 @@ const GRAVITY: f64 = 3600.0;
 const CEILING_CLEARANCE: f64 = 128.0;
 
 /// How far from a horizontal display edge the feet must stay so the full
-/// sprite is on-screen when standing (not climbing). The Engine does not know
-/// the art's size; 64 is 16px at 4×, enough for a character of typical width.
+/// sprite is on-screen when standing (not climbing), for an Engine nobody told
+/// how wide its Character is. 64 is 16px at 4×, a character of typical width.
 /// Climb frames assume the wall is in the middle of the frame, so this inset
 /// applies only to non-climb states.
+///
+/// A default rather than the answer. The art is centred on the feet, so the
+/// half that hangs past the outermost edge is drawn by no overlay at all —
+/// there is no neighbouring display to finish it, the way there is at a seam.
+/// A guess that falls short of a Character's real half-width is that Character
+/// standing half off screen, which is what `Engine::with_sprite_width` exists
+/// to stop.
 const EDGE_CLEARANCE: f64 = 64.0;
 
 /// Points per second squared. The yank gate is this times `YANK_WINDOW_S`:
@@ -448,6 +455,10 @@ pub struct Engine {
     /// proposal that would move the sprite is refused; a Grab, a Throw or
     /// losing the ground ends it at once. #177.
     poke_cooldown_ms: u32,
+    /// Half the width of the art drawn over the feet, which is how far from a
+    /// display edge they must stay for all of it to be on screen.
+    /// `EDGE_CLEARANCE` until a Character says otherwise.
+    edge_clearance: f64,
 }
 
 impl Engine {
@@ -489,14 +500,35 @@ impl Engine {
             rush_reported: false,
             chase_ms: 0,
             poke_cooldown_ms: 0,
+            edge_clearance: EDGE_CLEARANCE,
         }
     }
 
-    /// The Behaviors this Character declares. Nothing else reaches the Engine
-    /// from a Character Package: art is the renderer's, and a Behavior is
-    /// Primitives the Engine already owns.
+    /// The Behaviors this Character declares. The art itself is the renderer's,
+    /// and a Behavior is Primitives the Engine already owns.
     pub fn with_behaviors(mut self, behaviors: BTreeMap<String, Behavior>) -> Self {
         self.behaviors = behaviors;
+        self
+    }
+
+    /// How wide the art drawn over the feet is, in points.
+    ///
+    /// The one measurement of the art the Engine needs: every edge it keeps the
+    /// sprite clear of — the display's and the Dock's — is a distance from the
+    /// feet, and how far that has to be is half a sprite. Without it the Engine
+    /// falls back to `EDGE_CLEARANCE`, which is a guess.
+    ///
+    /// The whole frame rather than the opaque pixels in it. A Character resting
+    /// with its padding off screen looks right and is drawn whole; one measured
+    /// by its ink would need remeasuring every frame, and the mask is the
+    /// renderer's business.
+    /// A width of zero or less is no measurement, and keeps the default: it
+    /// would otherwise read as a sprite of no width and stand the feet on the
+    /// display edge itself.
+    pub fn with_sprite_width(mut self, width: f64) -> Self {
+        if width > 0.0 {
+            self.edge_clearance = width / 2.0;
+        }
         self
     }
 
@@ -857,9 +889,11 @@ impl Engine {
             && !self.riding
             && self.coast_s == 0.0;
         if stationary {
-            if let Some((edge_x, face_direction)) = at_horizontal_edge(self.position.x, snapshot) {
-                // A Perch narrower than `EDGE_CLEARANCE` would lose the sprite
-                // if the inset ran anyway.
+            if let Some((edge_x, face_direction)) =
+                at_horizontal_edge(self.position.x, self.edge_clearance, snapshot)
+            {
+                // A Perch narrower than the clearance would lose the sprite if
+                // the inset ran anyway.
                 let can_inset = if self.state == State::Perched {
                     perch_at(
                         Point {
@@ -1074,7 +1108,14 @@ impl Engine {
                 self.position.x += self.velocity.x * dt;
 
                 if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot)
-                    .or_else(|| dock_side_reached(self.position, self.velocity.x, snapshot))
+                    .or_else(|| {
+                        dock_side_reached(
+                            self.position,
+                            self.velocity.x,
+                            self.edge_clearance,
+                            snapshot,
+                        )
+                    })
                 {
                     // Arriving at a screen edge sideways is a catch, not a stop.
                     // It also keeps the sprite inside the displays. The Dock's
@@ -1122,7 +1163,7 @@ impl Engine {
                 // Dock, not on it. #176.
                 if let Some(dock) = dock_in(snapshot) {
                     if self.position.y > dock.y && next_y <= dock.y {
-                        if let Some(x) = dock_top_at(self.position.x, dock) {
+                        if let Some(x) = dock_top_at(self.position.x, self.edge_clearance, dock) {
                             self.position = Point { x, y: dock.y };
                             return Some(Contact::Landed(Surface::Perch));
                         }
@@ -1160,7 +1201,12 @@ impl Engine {
                 // longer than the Dock is wide would cross it unseen; the
                 // snapshot assembler caps `elapsed_ms` at one poll interval,
                 // which is what keeps a step small.
-                if let Some(side) = dock_side_reached(self.position, self.velocity.x, snapshot) {
+                if let Some(side) = dock_side_reached(
+                    self.position,
+                    self.velocity.x,
+                    self.edge_clearance,
+                    snapshot,
+                ) {
                     self.position.x = side;
                     self.velocity = Point::default();
                     return Some(Contact::Wall);
@@ -5816,6 +5862,41 @@ mod tests {
             at_right_edge.position.x,
             right_edge - EDGE_CLEARANCE,
             "sprite position must be inset by EDGE_CLEARANCE from right edge"
+        );
+    }
+
+    /// `EDGE_CLEARANCE` promises the whole sprite is on screen when standing,
+    /// and guesses at how wide one is. A Character wider than the guess came to
+    /// rest with its art hanging over the outermost edge, where there is no
+    /// neighbouring display to draw the rest of it — half a mech, off screen,
+    /// for as long as it stood there.
+    #[test]
+    fn a_sprite_wider_than_the_default_clearance_rests_fully_on_screen() {
+        // Timber Wolf's canvas at scale 1: a half-width of 88, well over the 64
+        // an Engine that was never told assumes.
+        const WIDTH: f64 = 176.0;
+        let mut engine = Engine::new(Point { x: 950.0, y: 400.0 }).with_sprite_width(WIDTH);
+
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 950.0, y: 400.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 500.0, y: 0.0 },
+            }],
+            ..snapshot(100)
+        });
+
+        let at_rest = settle(&mut engine, &snapshot(100));
+        let right_edge = one_display().x + one_display().width;
+        assert_eq!(at_rest.state, State::Grounded, "it settles: {at_rest:?}");
+        assert!(
+            at_rest.position.x + WIDTH / 2.0 <= right_edge,
+            "the art's right edge is off screen: feet at {} put it at {}, past {right_edge}",
+            at_rest.position.x,
+            at_rest.position.x + WIDTH / 2.0,
         );
     }
 

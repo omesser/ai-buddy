@@ -1,6 +1,6 @@
 //! Spatial queries over a `WorldSnapshot`.
 
-use super::{Point, Rect, Window, WorldSnapshot, CEILING_CLEARANCE, EDGE_CLEARANCE};
+use super::{Point, Rect, Window, WorldSnapshot, CEILING_CLEARANCE};
 use crate::window_source::DOCK_PERCH_ID;
 
 /// A surface the sprite can come to rest on.
@@ -253,7 +253,7 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
 /// appear around a resting sprite when it unhides, and a dropped sprite
 /// arrives from above: on a walk the two are the same side, one step away.
 ///
-/// The wall stands `EDGE_CLEARANCE` out from the Dock's own edge — half a
+/// The wall stands `clearance` out from the Dock's own edge — half a
 /// sprite, the same half `at_horizontal_edge` keeps on screen — because a
 /// sprite centered on the edge is already half hidden, walking and climbing.
 /// Strictly inside that, so the sprite this puts on the line is beside the
@@ -273,13 +273,11 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
 pub(super) fn dock_side_reached(
     position: Point,
     velocity_x: f64,
+    clearance: f64,
     snapshot: &WorldSnapshot,
 ) -> Option<f64> {
     let dock = dock_in(snapshot)?;
-    let (left, right) = (
-        dock.x - EDGE_CLEARANCE,
-        dock.x + dock.width + EDGE_CLEARANCE,
-    );
+    let (left, right) = (dock.x - clearance, dock.x + dock.width + clearance);
     if position.y <= dock.y || position.x <= left || position.x >= right {
         return None;
     }
@@ -320,17 +318,17 @@ pub(super) fn dock_side_reached(
 
 /// Where a climb beside the Dock steps onto its top, once the feet reach it.
 ///
-/// `EDGE_CLEARANCE` in from the side it climbed, so the whole sprite stands on
+/// Half a sprite in from the side it climbed, so the whole sprite stands on
 /// the Dock rather than overhanging the corner — and so it stands somewhere
 /// `perch_at` agrees is the Dock, which is what keeps it there. Clamped to the
 /// far side for a Dock narrower than a sprite. `None` when the climb is
 /// nowhere near the Dock, which is every ordinary climb up a screen edge.
-pub(super) fn dock_top_at(x: f64, dock: Rect) -> Option<f64> {
+pub(super) fn dock_top_at(x: f64, clearance: f64, dock: Rect) -> Option<f64> {
     let (left, right) = (dock.x, dock.x + dock.width);
-    if (left - EDGE_CLEARANCE..=left + EDGE_CLEARANCE).contains(&x) {
-        Some((left + EDGE_CLEARANCE).min(right))
-    } else if (right - EDGE_CLEARANCE..=right + EDGE_CLEARANCE).contains(&x) {
-        Some((right - EDGE_CLEARANCE).max(left))
+    if (left - clearance..=left + clearance).contains(&x) {
+        Some((left + clearance).min(right))
+    } else if (right - clearance..=right + clearance).contains(&x) {
+        Some((right - clearance).max(left))
     } else if dock.spans_x(x) {
         Some(x)
     } else {
@@ -340,7 +338,11 @@ pub(super) fn dock_top_at(x: f64, dock: Rect) -> Option<f64> {
 
 /// Adjusted position and facing when at a horizontal display edge, so the full
 /// sprite stays on-screen and faces away from the wall.
-pub(super) fn at_horizontal_edge(x: f64, snapshot: &WorldSnapshot) -> Option<(f64, f64)> {
+pub(super) fn at_horizontal_edge(
+    x: f64,
+    clearance: f64,
+    snapshot: &WorldSnapshot,
+) -> Option<(f64, f64)> {
     let left = snapshot
         .displays
         .iter()
@@ -353,13 +355,13 @@ pub(super) fn at_horizontal_edge(x: f64, snapshot: &WorldSnapshot) -> Option<(f6
         .max_by(f64::total_cmp)?;
 
     // Only correct when very close to the boundary. Sprites that settled
-    // naturally within EDGE_CLEARANCE but not AT the edge should stay put.
-    const SNAP_THRESHOLD: f64 = EDGE_CLEARANCE / 2.0;
+    // naturally within a half-sprite of the edge but not AT it should stay put.
+    let snap_threshold = clearance / 2.0;
 
-    if x <= left + SNAP_THRESHOLD {
-        Some((left + EDGE_CLEARANCE, 1.0))
-    } else if x >= right - SNAP_THRESHOLD {
-        Some((right - EDGE_CLEARANCE, -1.0))
+    if x <= left + snap_threshold {
+        Some((left + clearance, 1.0))
+    } else if x >= right - snap_threshold {
+        Some((right - clearance, -1.0))
     } else {
         None
     }
