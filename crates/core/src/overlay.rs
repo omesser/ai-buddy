@@ -67,13 +67,31 @@ pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> 
 /// sprite that is off-screen — thrown past an edge, or on a display that was
 /// just unplugged — which is the very symptom this exists to remove.
 ///
-/// `covers` is half-open, so feet exactly on the bottom edge of an upper
-/// display in a vertical stack belong to the display below. The Engine's
-/// floors keep resting feet strictly inside a display, so the seam column
-/// is only ever crossed, never stood on.
+/// Two passes, because an edge is either a seam or a floor. Half-open first,
+/// so a seam resolves one way only: feet on the shared edge of a vertical
+/// stack belong to the display below. A floor is the edge #178 missed — a
+/// display reserving nothing along one, as a second screen does, puts the
+/// Engine's floor on it, and resting feet land exactly there. The second pass
+/// picks those up, `FLOOR_SLACK` wide.
 pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
-    displays.iter().position(|display| covers(feet, display))
+    displays
+        .iter()
+        .position(|display| covers(feet, display))
+        .or_else(|| {
+            displays
+                .iter()
+                .position(|display| outside_by(feet, display) <= FLOOR_SLACK * FLOOR_SLACK)
+        })
 }
+
+/// How far outside its display feet may be and still be standing on it, in
+/// points.
+///
+/// Slack rather than equality: the floor is the display rectangle scaled and
+/// clamped, which `usable_frame` argues need not land back on the edge it came
+/// from. A point is far short of off-screen, so a thrown sprite still owns no
+/// bubble. Squared at the call site, as `outside_by` is.
+const FLOOR_SLACK: f64 = 1.0;
 
 /// Whether a display's window has this point, right and bottom edges excluded.
 fn covers(point: (f64, f64), rect: &Rect) -> bool {
@@ -506,7 +524,7 @@ mod tests {
             "thrown past the right edge: no overlay draws a bubble"
         );
         assert_eq!(
-            bubble_owner((960.0, 1080.0), &displays),
+            bubble_owner((960.0, 1200.0), &displays),
             None,
             "below the first display's bottom edge, with nothing beneath it"
         );
@@ -514,6 +532,41 @@ mod tests {
             display_index_for((4000.0, 500.0), &displays),
             Some(1),
             "where the cursor's question still gets its nearest answer"
+        );
+    }
+
+    /// #178 read every edge as a seam. An edge with nothing beyond it is a
+    /// floor a Character comes to rest on instead — see `bubble_owner`.
+    #[test]
+    fn an_edge_is_a_seam_when_a_display_lies_beyond_it_and_a_floor_when_none_does() {
+        let displays = two_displays();
+
+        assert_eq!(
+            bubble_owner((960.0, 1080.0), &displays),
+            Some(0),
+            "standing on the first display's bottom edge, not off the desktop"
+        );
+        assert_eq!(
+            bubble_owner((3648.0, 500.0), &displays),
+            Some(1),
+            "and where a walk ends against the outermost side"
+        );
+
+        let a_hair_adrift = f64::from_bits(1080.0_f64.to_bits() + 1);
+        assert_eq!(
+            bubble_owner((960.0, a_hair_adrift), &displays),
+            Some(0),
+            "a floor one unit in the last place adrift is still that floor"
+        );
+
+        let stacked = [
+            rect(0.0, 0.0, 1920.0, 1080.0),
+            rect(0.0, 1080.0, 1920.0, 1080.0),
+        ];
+        assert_eq!(
+            bubble_owner((960.0, 1080.0), &stacked),
+            Some(1),
+            "and a display below turns that same edge back into a seam"
         );
     }
 
