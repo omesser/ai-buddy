@@ -179,6 +179,7 @@ pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
 pub const TRACE_DIRECTOR_ID: &str = "trace_director";
+pub const TRACE_ENGINE_ID: &str = "trace_engine";
 #[cfg(target_os = "macos")]
 pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
@@ -470,6 +471,12 @@ fn development_sections() -> Vec<FormSection> {
             "Trace Director",
             "Prints each model call.",
         ),
+        flag_row(
+            TRACE_ENGINE_ID,
+            &dev_flags::TRACE_ENGINE,
+            "Trace Engine",
+            "Prints each change of Behavior or Animation.",
+        ),
         // Only AppKit has a capture exclusion to drop. Gating the element
         // rather than pushing it keeps the binding immutable on the platforms
         // that skip it, which `-D warnings` insists on.
@@ -617,6 +624,10 @@ pub fn describe() -> FormDescription {
     actions.insert(
         TRACE_DIRECTOR_ID.to_string(),
         RowAction::PatchField("trace_director".to_string()),
+    );
+    actions.insert(
+        TRACE_ENGINE_ID.to_string(),
+        RowAction::PatchField("trace_engine".to_string()),
     );
     #[cfg(target_os = "macos")]
     actions.insert(

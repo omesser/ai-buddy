@@ -210,6 +210,25 @@ pub struct Frame {
     /// what the user actually saw are different lists, and repetition is
     /// suppressed on the second.
     pub behavior: Option<String>,
+    /// The Behavior whose Primitives are still playing, for every tick of the
+    /// span rather than the one it began on.
+    ///
+    /// A state where `behavior` above is an event, and the two answer
+    /// different questions: `behavior` says a proposal was taken *now*, which
+    /// is what records recency, and this says what the sprite is *in the
+    /// middle of*. A reader who conflated them would either report a Behavior
+    /// once and lose it, or record the same one as accepted on every tick it
+    /// ran for.
+    ///
+    /// `None` for the moments the Engine plays itself — a Land, a Hold, a
+    /// reaction to a Poke or to the cursor — which no Director named and which
+    /// are therefore nameless rather than anonymous.
+    pub playing_behavior: Option<String>,
+    /// The Primitive on screen: how far into its chain the Engine has got.
+    ///
+    /// `None` once a chain has run out, including while a walk it started
+    /// carries on under its own velocity.
+    pub playing_primitive: Option<Primitive>,
     /// Whether this tick carried the sprite with a moving Perch. The Shell
     /// polls the window list at the frame rate only then. #98.
     pub riding: bool,
@@ -342,6 +361,14 @@ pub struct Engine {
     /// standing, falling or perched, and giving it a State would mean deciding
     /// what it resumes as.
     playing: Vec<Primitive>,
+    /// The name of the Behavior `playing` was flattened from, while it lasts.
+    ///
+    /// The Primitives alone cannot be traced back to it: `chain` flattens a
+    /// Behavior and the Behaviors it links to into one list precisely so the
+    /// whole is one thing to abandon, and two Characters may declare the same
+    /// Primitives under different names. Kept beside `playing` and cleared
+    /// with it, so the pair is never half true.
+    playing_behavior: Option<String>,
     /// Milliseconds left of the Primitive being played.
     primitive_ms: u32,
     /// Which way the sprite is pointed, as -1 or 1. A walk needs a direction
@@ -420,6 +447,7 @@ impl Engine {
             previous_windows: Vec::new(),
             previous_position: position,
             playing: Vec::new(),
+            playing_behavior: None,
             primitive_ms: 0,
             facing: 1.0,
             riding: false,
@@ -498,8 +526,7 @@ impl Engine {
         self.behaviors = behaviors;
         self.near_reaction = near;
         self.rush_reaction = rush;
-        self.playing.clear();
-        self.primitive_ms = 0;
+        self.stop_playing();
     }
 
     pub fn tick(&mut self, snapshot: &WorldSnapshot) -> Frame {
@@ -560,8 +587,7 @@ impl Engine {
 
         // Any Verb aborts chase like it aborts walk (#153).
         if !snapshot.verbs.is_empty() && self.on_screen() == Some(Primitive::Chase) {
-            self.playing.clear();
-            self.primitive_ms = 0;
+            self.stop_playing();
             self.chase_ms = 0;
         }
 
@@ -750,13 +776,11 @@ impl Engine {
 
                     if distance_x < CHASE_ARRIVAL_THRESHOLD {
                         self.velocity.x = 0.0;
-                        self.playing.clear();
-                        self.primitive_ms = 0;
+                        self.stop_playing();
                         started |= self.play(&[Primitive::React]);
                     } else if self.chase_ms >= CHASE_TIMEOUT_MS {
                         self.velocity.x = 0.0;
-                        self.playing.clear();
-                        self.primitive_ms = 0;
+                        self.stop_playing();
                         started = true;
                     } else {
                         self.facing = if target_x > self.position.x {
@@ -828,8 +852,7 @@ impl Engine {
         // Losing its footing abandons the rest of a Behavior: what the sprite
         // was in the middle of doing was only ever a thing to do standing up.
         if !self.permitted(&self.playing) {
-            self.playing.clear();
-            self.primitive_ms = 0;
+            self.stop_playing();
             started = true;
         }
 
@@ -855,8 +878,7 @@ impl Engine {
                 started |= self.play(&[Primitive::Hold]);
             }
         } else if self.on_screen() == Some(Primitive::Hold) {
-            self.playing.clear();
-            self.primitive_ms = 0;
+            self.stop_playing();
             started = true;
         }
 
@@ -884,6 +906,10 @@ impl Engine {
                     if self.play(&primitives) {
                         started = true;
                         behavior = Some(proposal.behavior.clone());
+                        // The only place a name is attached: `play` is reached
+                        // by Engine-played moments too, and it clears the name
+                        // so that they cannot inherit the last proposal's.
+                        self.playing_behavior = behavior.clone();
                     }
                 } else if proposal.behavior.is_empty()
                     && proposal.dialogue.is_some()
@@ -982,6 +1008,8 @@ impl Engine {
                     .and_then(|proposal| proposal.dialogue.clone())
             },
             behavior,
+            playing_behavior: self.playing_behavior.clone(),
+            playing_primitive: self.on_screen(),
             riding: self.riding,
             facing: self.facing,
             addressed,
@@ -1300,12 +1328,28 @@ impl Engine {
             moved_on = true;
         }
         if self.playing.is_empty() {
+            // Draining is the ordinary end of a Behavior and the only one that
+            // is not an abort, so it drops the name here rather than through
+            // `stop_playing` like every other clear site.
             self.primitive_ms = 0;
+            self.playing_behavior = None;
         } else {
             self.primitive_ms -= left;
         }
 
         moved_on
+    }
+
+    /// Abandon whatever is playing, name included.
+    ///
+    /// One method rather than a `playing.clear()` at each abort site, because
+    /// the name and the Primitives it was flattened from have to go together:
+    /// a site that dropped only the list would leave the Engine reporting a
+    /// Behavior that stopped several ticks ago.
+    fn stop_playing(&mut self) {
+        self.playing.clear();
+        self.playing_behavior = None;
+        self.primitive_ms = 0;
     }
 
     /// Start playing `primitives`, unless the State the sprite is in forbids
@@ -1320,6 +1364,10 @@ impl Engine {
         }
         // Last first, so the Primitive on screen is the one on top.
         self.playing = primitives.iter().rev().copied().collect();
+        // Nameless until a caller says otherwise. Most callers are the Engine
+        // playing a moment of its own — a Land, a Hold, a startle — and the
+        // name of the Behavior they interrupted is not theirs to keep.
+        self.playing_behavior = None;
 
         // A new Chase is a new pursuit; leftover ms from the last one would
         // time out mid-stride (#153).
@@ -2133,6 +2181,81 @@ mod tests {
             None,
             "nor does a Behavior nobody declares count as played"
         );
+    }
+
+    /// The other half of the pair above: `behavior` is the tick a proposal was
+    /// taken, `playing_behavior` is every tick it runs for. A developer asking
+    /// what the sprite is doing gets one answer per tick, not one per Behavior.
+    #[test]
+    fn the_playing_behavior_is_reported_for_its_whole_span_and_not_past_it() {
+        let mut engine = a_resting_sprite();
+
+        // `greet` is React and Talk and chains into `settle`'s Sit and Sleep:
+        // four Primitives of PRIMITIVE_MS, so 100ms ticks 0..=23 are the span.
+        let started = engine.tick(&proposing("greet"));
+        assert_eq!(started.behavior.as_deref(), Some("greet"));
+        assert_eq!(started.playing_behavior.as_deref(), Some("greet"));
+        assert_eq!(started.playing_primitive, Some(Primitive::React));
+
+        for tick in 1..24 {
+            let frame = engine.tick(&snapshot(100));
+            assert_eq!(
+                frame.playing_behavior.as_deref(),
+                Some("greet"),
+                "tick {tick} is still greeting"
+            );
+            assert_eq!(frame.behavior, None, "tick {tick} started nothing");
+        }
+
+        let over = engine.tick(&snapshot(100));
+        assert_eq!(
+            over.playing_behavior, None,
+            "the chain ran out, so nothing is playing"
+        );
+        assert_eq!(over.playing_primitive, None);
+    }
+
+    /// Losing its footing abandons the rest of a Behavior, and the name has to
+    /// go with the Primitives: a Behavior reported as playing after the hand
+    /// took the sprite away is a trace that lies about the screen.
+    #[test]
+    fn a_grab_mid_behavior_drops_the_behavior_with_it() {
+        let mut engine = a_resting_sprite();
+        assert_eq!(
+            engine.tick(&proposing("greet")).playing_behavior.as_deref(),
+            Some("greet")
+        );
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 400.0, y: 200.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(grabbed.playing_behavior, None);
+        assert_eq!(grabbed.playing_primitive, None);
+    }
+
+    /// A Land, a Hold and the answer to a Poke are the Engine's own: no
+    /// Director proposes one in time, so there is no name to report. The
+    /// interrupted Behavior's name is not it — that Behavior is over.
+    #[test]
+    fn an_engine_played_moment_reports_no_behavior() {
+        let mut engine = a_resting_sprite();
+        assert_eq!(
+            engine
+                .tick(&proposing("settle"))
+                .playing_behavior
+                .as_deref(),
+            Some("settle")
+        );
+
+        let poked = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..snapshot(100)
+        });
+        assert_eq!(poked.playing_primitive, Some(Primitive::React));
+        assert_eq!(poked.playing_behavior, None);
     }
 
     #[test]

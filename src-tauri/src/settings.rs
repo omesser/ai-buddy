@@ -90,6 +90,10 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
             form::TRACE_DIRECTOR_ID.to_string(),
             dev_flags::TRACE_DIRECTOR.in_force(settings.trace_director),
         ),
+        (
+            form::TRACE_ENGINE_ID.to_string(),
+            dev_flags::TRACE_ENGINE.in_force(settings.trace_engine),
+        ),
         #[cfg(target_os = "macos")]
         (
             form::CAPTURABLE_ID.to_string(),
@@ -528,6 +532,7 @@ pub struct SettingsPatch {
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
+    pub trace_engine: Option<bool>,
     pub capturable: Option<bool>,
     /// Present so callers can write the store; `Settings::apply` ignores it
     /// because the key is not a file field.
@@ -556,6 +561,7 @@ impl SettingsPatch {
             "trace_frames" => self.trace_frames = Some(value),
             "trace_hittest" => self.trace_hittest = Some(value),
             "trace_director" => self.trace_director = Some(value),
+            "trace_engine" => self.trace_engine = Some(value),
             "capturable" => self.capturable = Some(value),
             "use_accessibility" => self.use_accessibility = Some(value),
             "use_screen_recording" => self.use_screen_recording = Some(value),
@@ -614,6 +620,7 @@ impl fmt::Debug for SettingsPatch {
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
+            .field("trace_engine", &self.trace_engine)
             .field("capturable", &self.capturable)
             .field(
                 "director_api_key",
@@ -684,6 +691,9 @@ impl Settings {
         }
         if let Some(value) = patch.trace_director {
             self.trace_director = value;
+        }
+        if let Some(value) = patch.trace_engine {
+            self.trace_engine = value;
         }
         if let Some(value) = patch.capturable {
             self.capturable = value;
@@ -758,6 +768,7 @@ pub struct Settings {
     pub trace_frames: bool,
     pub trace_hittest: bool,
     pub trace_director: bool,
+    pub trace_engine: bool,
     /// Drop the overlay's capture exclusion. macOS reads it; the field is
     /// unconditional so the document round-trips on every platform.
     pub capturable: bool,
@@ -788,6 +799,7 @@ impl Default for Settings {
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
+            trace_engine: false,
             capturable: false,
             use_accessibility: false,
             use_screen_recording: false,
@@ -1033,6 +1045,7 @@ mod tests {
             trace_frames: true,
             trace_hittest: true,
             trace_director: true,
+            trace_engine: true,
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
@@ -1323,6 +1336,7 @@ mod tests {
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
+            trace_engine: false,
             capturable: false,
             use_accessibility: true,
             use_screen_recording: false,
@@ -1944,6 +1958,34 @@ mod tests {
             )
             .unwrap();
             assert!(!model::tracing());
+
+            // Each switch is its own static, so one of them moving proves
+            // nothing about the next one being wired to anything (#273).
+            apply_with_store(
+                &mut settings,
+                &store,
+                SettingsPatch {
+                    trace_engine: Some(true),
+                    ..SettingsPatch::default()
+                },
+            )
+            .unwrap();
+            assert!(settings.trace_engine, "the file holds it");
+            assert!(
+                dev_flags::TRACE_ENGINE.is_on(),
+                "and the frame loop loads it"
+            );
+
+            apply_with_store(
+                &mut settings,
+                &store,
+                SettingsPatch {
+                    trace_engine: Some(false),
+                    ..SettingsPatch::default()
+                },
+            )
+            .unwrap();
+            assert!(!dev_flags::TRACE_ENGINE.is_on());
         });
     }
 
