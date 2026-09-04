@@ -184,18 +184,6 @@ pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
 pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
 
-/// Platform-specific help text for excluded applications.
-fn excluded_help() -> String {
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        "One app name per line, matched on WM_CLASS.".to_string()
-    }
-    #[cfg(not(all(unix, not(target_os = "macos"))))]
-    {
-        "One app name per line.".to_string()
-    }
-}
-
 /// The label of a row an environment variable can own, and whether it does.
 ///
 /// A frozen row says it is overridden and names the variable doing it, so both
@@ -345,14 +333,17 @@ fn presence_sections() -> Vec<FormSection> {
                     id: DND_ID.to_string(),
                     label: "Do Not Disturb".to_string(),
                     frozen: false,
-                    help: Some("Stays on screen. Stops starting things.".to_string()),
+                    help: Some(
+                        "Stays on screen. Silences sounds and stops initiating actions."
+                            .to_string(),
+                    ),
                     comment: None,
                 },
                 FormRow::Checkbox {
                     id: SOUND_ID.to_string(),
                     label: "Sound".to_string(),
                     frozen: false,
-                    help: Some("Plays a sound on poke and summon.".to_string()),
+                    help: Some("Off silences audio cues.".to_string()),
                     comment: None,
                 },
             ],
@@ -365,7 +356,7 @@ fn presence_sections() -> Vec<FormSection> {
                     id: HIDDEN_ID.to_string(),
                     label: "Go away".to_string(),
                     frozen: false,
-                    help: Some("Off screen. Still running.".to_string()),
+                    help: Some("Go off screen. But still exist.".to_string()),
                     comment: None,
                 },
                 FormRow::Checkbox {
@@ -427,7 +418,7 @@ fn privacy_sections() -> Vec<FormSection> {
             rows: vec![FormRow::Multiline {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
-                help: Some(excluded_help()),
+                help: Some("One application name per line. Those windows stay out of MCP sensing. The buddy can still sit on them.".to_string()),
                 editable: true,
             }],
         },
@@ -1222,35 +1213,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn excluded_help_is_platform_specific() {
-        let description = describe();
-        let excluded = description
-            .sections()
-            .find(|s| s.heading == "Excluded applications")
-            .expect("Excluded applications section");
-
-        let help = match &excluded.rows[0] {
-            FormRow::Multiline { help, .. } => help.as_ref().expect("help text present"),
-            _ => panic!("Excluded row must be Multiline"),
-        };
-
-        #[cfg(all(unix, not(target_os = "macos")))]
-        {
-            assert!(
-                help.contains("WM_CLASS"),
-                "Linux help must mention X11 WM_CLASS, got: {help}"
-            );
-        }
-
-        #[cfg(not(all(unix, not(target_os = "macos"))))]
-        {
-            assert!(
-                !help.contains("WM_CLASS"),
-                "Non-Linux help must not mention WM_CLASS, got: {help}"
-            );
-        }
-    }
     fn development_tab(description: &FormDescription) -> &FormTab {
         description
             .tabs
