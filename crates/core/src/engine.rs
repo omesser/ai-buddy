@@ -249,9 +249,18 @@ const POKE_COOLDOWN_MS: u32 = 2_500;
 const SLEEP_AFTER_MS: u32 = 60_000;
 
 /// How long a sprite rests quietly on a Perch before leaving sit and idling in
-/// place. Shorter than sleep: long enough to read as settled on the edge,
-/// clearly shorter than nodding off. #310.
-const PERCHED_IDLE_AFTER_MS: u32 = 10_000;
+/// place. Long enough to read as settling onto the edge, and far short of
+/// nodding off. #310.
+///
+/// The ceiling is arithmetic rather than taste, and it is tight. Perched rest
+/// ends at the next Static Director wake — `director::WAKE_EVERY`, less the
+/// Behavior it starts — so the quiet window is about 18s. A variant ring holds
+/// its base for `3 * VARIANT_HOLD_MS` before the first variant's slot opens,
+/// and `animation_ms` restarts when sit gives way to idle, so an idle variant
+/// needs 12s of that window to itself. Spend more than 6s on sit and no Perch
+/// ever reaches one, which is the idle life this constant exists to restore.
+/// #307.
+const PERCHED_IDLE_AFTER_MS: u32 = 4_000;
 
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
 const CLIMB_SPEED: f64 = 200.0;
@@ -960,7 +969,7 @@ impl Engine {
         let animation = match self.on_screen() {
             Some(primitive) => animation_of(primitive),
             // A walk outlasts the Primitive that starts it: the velocity holds
-            // until the sprite run out of Perch, so the Animation has to hold
+            // until the sprite runs out of Perch, so the Animation has to hold
             // with it rather than dropping back to standing mid-stride.
             None if self.is_walking() => "walk",
             // A sprite that rests quietly on a Perch idles in place: still
@@ -3749,6 +3758,27 @@ mod tests {
         assert_eq!(still.position.y, 380.0);
         assert_eq!(still.animation, "sit");
         assert!(!still.riding);
+    }
+
+    /// #307: what `PERCHED_IDLE_AFTER_MS` is actually bounded by, since the
+    /// number alone reads as taste and is not. Perched rest ends at the next
+    /// Static Director wake, and a variant ring holds its base for
+    /// `3 * VARIANT_HOLD_MS` before the first variant's slot opens. Sit too
+    /// long and the idle stretch left over never reaches that slot, so a
+    /// perched Character shows its base idle art and nothing else — which is
+    /// the state #310 was raised to end. Three Primitives is the longest
+    /// Behavior the shipped Characters declare.
+    #[test]
+    fn sit_leaves_a_perched_idle_long_enough_to_reach_a_variant() {
+        let quiet = crate::director::WAKE_EVERY.as_millis() as u32 - 3 * PRIMITIVE_MS;
+        let idling = quiet - PERCHED_IDLE_AFTER_MS;
+
+        assert!(
+            idling > 3 * crate::character::VARIANT_HOLD_MS,
+            "sit spends {PERCHED_IDLE_AFTER_MS}ms of a {quiet}ms window, leaving \
+             {idling}ms of idle against a base hold of {}ms",
+            3 * crate::character::VARIANT_HOLD_MS
+        );
     }
 
     /// #310: a sprite that rests quietly on a Perch for a while idles in
