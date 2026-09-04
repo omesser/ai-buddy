@@ -400,10 +400,13 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
-/// TAC laser scan: optional idle variant, four frames, drawable by name.
-/// Engage steps through idle so the scan ring can surface on acquire beats.
+/// TAC laser scan must be visible in normal play: Idle turns are only 600ms,
+/// and the idle variant ring holds the base for ~12s before scan — so a
+/// variant_of alone almost never appears under Director wakes. Idle bakes the
+/// sweep into its strip; a `scan` behavior holds consecutive Idle so the ring
+/// can complete; engage still parks on Idle around react.
 #[test]
-fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
+fn timber_wolf_tac_laser_scan_is_visible_in_idle_life() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
@@ -416,31 +419,53 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
         4,
         "scan is the four-frame TAC laser sweep"
     );
-    assert_eq!(
-        scan.frames,
-        vec![
-            "frames/scan-0.png".to_string(),
-            "frames/scan-1.png".to_string(),
-            "frames/scan-2.png".to_string(),
-            "frames/scan-3.png".to_string(),
-        ]
-    );
     assert!(
         character.animations["idle"]
             .variants
             .contains(&"scan".to_string()),
-        "scan rings on idle so a parked mech paints the sector"
+        "scan still rings on idle for long uninterrupted rests"
     );
+
+    let idle_frames = &character.animations["idle"].frames;
+    for name in [
+        "frames/scan-0.png",
+        "frames/scan-1.png",
+        "frames/scan-2.png",
+        "frames/scan-3.png",
+    ] {
+        assert!(
+            idle_frames.iter().any(|f| f == name),
+            "idle strip bakes {name} so short Idle turns still show the laser"
+        );
+    }
 
     let drawn = character
         .draw("scan", 0)
         .expect("scan draws when asked for by name");
     assert_eq!(drawn.animation, "scan");
 
+    let scan_behavior = &character.behaviors["scan"];
+    assert!(
+        scan_behavior.primitives.len() >= 20,
+        "scan behavior holds Idle long enough for the variant ring (~16s), got {}",
+        scan_behavior.primitives.len()
+    );
+    assert!(
+        scan_behavior
+            .primitives
+            .iter()
+            .all(|p| *p == character::Primitive::Idle),
+        "scan behavior is Idle-only so animation_ms accumulates into the ring"
+    );
+    assert_eq!(
+        scan_behavior.weight, 4,
+        "scan outranks patrol so the laser is picked"
+    );
+
     let engage = &character.behaviors["engage"];
     assert!(
         engage.primitives.contains(&character::Primitive::Idle),
-        "engage steps through idle so scan can ride the variant ring"
+        "engage parks on idle around the weapon raise"
     );
     assert!(
         engage.primitives.contains(&character::Primitive::React),

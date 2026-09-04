@@ -37,9 +37,23 @@ model_base = 1
 model_power = 1
 
 # Camera-facing stand from the turn recording, so idle meshes with talk and react.
+# Stand, then TAC laser sweep in the same strip. Idle Primitive turns are only
+# PRIMITIVE_MS (600ms); the variant ring needs ~12s of uninterrupted idle before
+# scan gets a slot — Director wakes every 20s and patrol interrupts — so a
+# variant_of alone is almost never seen. Baking the sweep into idle makes the
+# laser visible whenever the mech is parked on its feet.
 [animations.idle]
-frames = ["frames/idle-0.png", "frames/idle-1.png"]
-fps = 2
+frames = [
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/scan-0.png",
+  "frames/scan-1.png",
+  "frames/scan-2.png",
+  "frames/scan-3.png",
+]
+fps = 4
 
 # Side stride, facing right for engine mirroring. 20 unique poses, 8 fps.
 [animations.walk]
@@ -90,8 +104,8 @@ fps = 4
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 1
 
-# TAC laser sweep: optional idle variant. The renderer rings idle (longer) then
-# scan, so a parked mech occasionally paints the sector without a new Primitive.
+# Full-strip TAC sweep kept as its own Animation (and still an idle variant) so
+# a long uninterrupted rest also rings a dedicated scan slot after the base.
 [animations.scan]
 frames = [
   "frames/scan-0.png",
@@ -113,14 +127,20 @@ loop = "once"
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
-# A heavy assault mech's life: patrol the perimeter, report status, hold
-# position, engage threats. Engage and report both step through idle, so the
-# TAC laser scan rides those beats via the idle variant ring — no new Primitive,
-# and pursue/chase, patrol, near=face, rush=react stay as they are.
+# A heavy assault mech's life: patrol, report, scan the sector, engage.
+# `scan` holds Idle long enough for animation_ms to accumulate through the
+# variant ring (consecutive Idle keeps the same animation clock). Engage also
+# parks on Idle before/after the weapon raise so the baked idle strip and the
+# ring can paint. pursue/chase, patrol, near=face, rush=react stay.
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
-weight = 3
+weight = 2
+when = "idle over 30s"
+
+[behaviors.scan]
+play = ["idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle"]
+weight = 4
 when = "idle over 30s"
 
 [behaviors.report]
@@ -129,9 +149,9 @@ weight = 3
 when = "idle under 2m"
 
 [behaviors.engage]
-play = ["idle", "react", "idle"]
-weight = 2
-when = "idle over 2m"
+play = ["idle", "idle", "idle", "idle", "idle", "react", "idle", "idle", "idle"]
+weight = 3
+when = "idle over 1m"
 
 [behaviors.standby]
 play = ["sit"]
