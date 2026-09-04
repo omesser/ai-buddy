@@ -132,6 +132,9 @@ mod tests {
     #[cfg(windows)]
     mod windows_credential_manager {
         use super::*;
+        use std::sync::Mutex;
+
+        static CREDENTIAL_MANAGER_LOCK: Mutex<()> = Mutex::new(());
 
         struct CredentialGuard {
             store: KeyringStore,
@@ -166,6 +169,7 @@ mod tests {
 
         #[test]
         fn round_trip_director_key_through_credential_manager() {
+            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
             let guard = CredentialGuard::new(DIRECTOR_API_KEY);
             let store = &guard.store;
 
@@ -183,6 +187,7 @@ mod tests {
 
         #[test]
         fn missing_credential_is_none_not_error() {
+            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
             let guard = CredentialGuard::new(DIRECTOR_API_KEY);
             let store = &guard.store;
 
@@ -194,6 +199,7 @@ mod tests {
 
         #[test]
         fn deleting_missing_credential_is_ok() {
+            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
             let guard = CredentialGuard::new(DIRECTOR_API_KEY);
             let store = &guard.store;
 
