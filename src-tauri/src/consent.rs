@@ -291,34 +291,199 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
     }
 }
 
-/// The sentence settings prints so the user can find the row in System Settings.
+/// The sentence settings prints so the user can find the row the OS will show.
 ///
-/// A `cargo run` binary is unsigned, so TCC attributes the grant to whoever
-/// launched it — Cursor, Terminal — not to "ai-buddy". A packaged
-/// `.app` is listed under its own name.
+/// A `cargo run` binary is neither signed nor sandboxed, so the permission UI
+/// attributes the request to whoever launched it — Cursor, Terminal — not to
+/// "ai-buddy". A packaged build is listed under its own name. Each platform
+/// says this in its own words: naming a pane the user does not have is worse
+/// than naming none (#237).
 pub fn listed_under_hint(name: &str) -> String {
-    format!("macOS lists this app as {name}, under Privacy & Security.")
+    #[cfg(target_os = "macos")]
+    {
+        format!("macOS lists this app as {name}, under Privacy & Security.")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        format!("Your desktop will list this app as {name}.")
+    }
 }
 
 /// The pane copy. The listed name is live: a `cargo run` from Cursor is
 /// Cursor, a packaged build is ai-buddy.
 pub fn pane_intro(listed_as: &str) -> String {
-    format!(
-        "Checking a box asks macOS for the permission. {}",
-        listed_under_hint(listed_as)
-    )
+    let hint = listed_under_hint(listed_as);
+    #[cfg(target_os = "macos")]
+    {
+        format!("Checking a box asks macOS for the permission. {hint}")
+    }
+    // `live()` is `Null` off macOS: the boxes record intent and no grant is
+    // requested. Saying otherwise would promise a prompt that never comes.
+    #[cfg(not(target_os = "macos"))]
+    {
+        format!("Nothing here asks for a permission yet. {hint}")
+    }
 }
 
-/// The localized name TCC will show. Packaged builds are this app; `cargo run`
-/// is the responsible parent (the IDE or terminal that launched it).
+/// The name the OS permission UI will show. Packaged builds are this app;
+/// `cargo run` is whatever launched it — the IDE or terminal.
 pub fn process_listed_as() -> String {
     #[cfg(target_os = "macos")]
     {
         macos::tcc_list_name()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::desktop_list_name()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         "ai-buddy".into()
+    }
+}
+
+/// What a Linux desktop will call this process when a portal asks the user.
+///
+/// Built off Linux too, so the parsing can be tested without a live portal:
+/// only the `/proc` and environment reads are Linux-only.
+#[cfg(any(target_os = "linux", test))]
+mod linux {
+    /// Between the buddy and the terminal or IDE sit the build tool and a
+    /// shell, and neither is a row anyone will recognise.
+    ///
+    /// ponytail: a process name, where the portal shows a `.desktop` name. A
+    /// GNOME Terminal launch resolves to `gnome-terminal-server` and the
+    /// dialog says "Terminal", so the hint can name a row the user cannot
+    /// find. No skip list fixes that; the upgrade is asking the desktop which
+    /// app owns the pid, which needs a portal we do not yet talk to. Cheaper
+    /// and secondary: an unlisted wrapper (tmux, systemd-run) wins over what
+    /// launched it, and that one costs a string.
+    const PASS_THROUGH: &[&str] = &[
+        "cargo", "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "env", "sudo", "su", "login",
+    ];
+
+    /// `Name=` out of a `.desktop` entry, which is the string the portal
+    /// dialog shows. A localized `Name[de]=` is not ours to choose between.
+    pub fn desktop_entry_name(entry: &str) -> Option<String> {
+        entry
+            .lines()
+            .find_map(|line| line.strip_prefix("Name="))
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+    }
+
+    /// The parent pid from `/proc/<pid>/stat`.
+    ///
+    /// Read from the last `)` rather than by splitting the line: the second
+    /// field is the command in parentheses and may itself hold spaces and
+    /// parentheses, so field counting from the left lands on the wrong number.
+    pub fn stat_ppid(stat: &str) -> Option<i32> {
+        stat.rsplit_once(')')?
+            .1
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()
+    }
+
+    /// The command name from `/proc/<pid>/cmdline`. `comm` would be one read
+    /// fewer and the kernel truncates it to 15 bytes, which turns
+    /// gnome-terminal-server into "gnome-terminal-".
+    pub fn arg0_name(cmdline: &str) -> Option<String> {
+        let name = cmdline.split('\0').next()?.rsplit('/').next()?;
+        (!name.is_empty()).then(|| name.to_owned())
+    }
+
+    /// The nearest ancestor a desktop could plausibly have launched.
+    pub fn launcher_name(chain: impl IntoIterator<Item = String>) -> Option<String> {
+        chain
+            .into_iter()
+            .find(|name| !PASS_THROUGH.contains(&name.as_str()))
+    }
+
+    /// The installed entry's `Name=`, for a packaged build the desktop did
+    /// not launch through GLib.
+    ///
+    /// Without this a `.deb` started from KRunner or by path falls to the
+    /// parent walk and answers `plasmashell` or "Unknown" — a wrong name
+    /// rather than a missing one. The macOS side takes the same shape, asking
+    /// `packaged()` before it walks.
+    pub fn installed_entry_name(mut read: impl FnMut(&str) -> Option<String>) -> Option<String> {
+        read(&format!("/usr/share/applications/{IDENTIFIER}.desktop"))
+            .as_deref()
+            .and_then(desktop_entry_name)
+    }
+
+    /// The app-id Tauri packages under, so the entry we look for is our own.
+    const IDENTIFIER: &str = "dev.omesser.ai-buddy";
+
+    /// The name a desktop permission UI will show, in the order that decides
+    /// it. The two environment reads and the file read are arguments so the
+    /// whole order is testable off Linux; only the callers touch the world.
+    pub fn desktop_list_name_from(
+        flatpak_id: Option<String>,
+        launched_entry: Option<String>,
+        installed_entry: Option<String>,
+        ancestor: Option<String>,
+    ) -> String {
+        flatpak_id
+            .or(launched_entry)
+            .or(installed_entry)
+            .or(ancestor)
+            // What a portal shows for a process it cannot attribute to an app.
+            .unwrap_or_else(|| "Unknown".into())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn desktop_list_name() -> String {
+        desktop_list_name_from(
+            flatpak_id(),
+            launched_desktop_name(),
+            installed_entry_name(|path| std::fs::read_to_string(path).ok()),
+            launching_ancestor(),
+        )
+    }
+
+    /// Inside a Flatpak the portal keys off the app-id, and that is the name
+    /// it resolves the dialog's title from.
+    #[cfg(target_os = "linux")]
+    fn flatpak_id() -> Option<String> {
+        std::env::var("FLATPAK_ID").ok().filter(|id| !id.is_empty())
+    }
+
+    /// GLib exports this when the desktop launched us from a `.desktop` entry.
+    #[cfg(target_os = "linux")]
+    fn launched_desktop_name() -> Option<String> {
+        let path = std::env::var_os("GIO_LAUNCHED_DESKTOP_FILE")?;
+        desktop_entry_name(&std::fs::read_to_string(path).ok()?)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn launching_ancestor() -> Option<String> {
+        let mut pid = stat_ppid(&std::fs::read_to_string("/proc/self/stat").ok()?)?;
+        let mut chain = Vec::new();
+        // Bounded because a `/proc` walk reads a tree that is moving under it.
+        while pid > 1 && chain.len() < 24 {
+            let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+                break;
+            };
+            // A zombie or a kernel thread has no `cmdline`, and non-UTF-8
+            // argv reads as none. Step over it: the terminal may be one hop
+            // further up, and stopping here would answer "Unknown" instead.
+            if let Some(name) = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
+                .ok()
+                .as_deref()
+                .and_then(arg0_name)
+            {
+                chain.push(name);
+            }
+            let Some(parent) = stat_ppid(&stat) else {
+                break;
+            };
+            pid = parent;
+        }
+        launcher_name(chain)
     }
 }
 
@@ -430,23 +595,155 @@ mod tests {
     }
 
     /// A `cargo run` from Cursor is listed as Cursor, not ai-buddy. The
-    /// hint has to carry that name or the Accessibility list is a guessing game.
+    /// hint has to carry that name or the permission list is a guessing game.
     #[test]
-    fn the_grant_hint_names_the_app_macos_will_list() {
+    fn the_grant_hint_names_the_app_the_os_will_list() {
         let hint = listed_under_hint("Cursor");
         assert!(
             hint.contains("Cursor"),
-            "the user has to see the TCC row name, got {hint:?}"
+            "the user has to see the row name, got {hint:?}"
         );
+        assert!(!listed_under_hint("Terminal").contains("Cursor"));
+    }
+
+    /// TCC's pane is where the row is, and the words are macOS's own.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_grant_hint_says_where_to_look_on_macos() {
+        let hint = listed_under_hint("Cursor");
         assert!(
             hint.contains("Privacy & Security"),
             "the hint has to say where to look, got {hint:?}"
         );
-        assert!(!listed_under_hint("Terminal").contains("Cursor"));
+    }
+
+    /// No desktop has a Privacy & Security pane, and citing one sends the
+    /// user hunting for a window that does not exist. #237.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_grant_copy_does_not_cite_macos_off_macos() {
+        for copy in [listed_under_hint("Cursor"), pane_intro("Cursor")] {
+            assert!(
+                !copy.contains("macOS") && !copy.contains("Privacy & Security"),
+                "off macOS the copy has to stand on its own, got {copy:?}"
+            );
+        }
+    }
+
+    /// The pane copy has to carry the where-to-look sentence, not just the
+    /// name. Asserted here because `form.rs` only checks the name reaches the
+    /// section, so nothing else would notice `pane_intro` dropping the hint.
+    #[test]
+    fn the_pane_copy_carries_the_hint() {
+        assert!(pane_intro("Cursor").contains(&listed_under_hint("Cursor")));
+    }
+
+    /// The order that decides the name, exercised without a Linux host.
+    #[test]
+    fn a_flatpak_id_outranks_every_other_answer() {
+        assert_eq!(
+            linux::desktop_list_name_from(
+                Some("dev.omesser.ai-buddy".into()),
+                Some("Launched".into()),
+                Some("Installed".into()),
+                Some("Ancestor".into()),
+            ),
+            "dev.omesser.ai-buddy"
+        );
+    }
+
+    /// A packaged build the desktop did not launch through GLib still names
+    /// its own entry rather than falling to whatever process is above it.
+    #[test]
+    fn an_installed_entry_outranks_the_parent_walk() {
+        assert_eq!(
+            linux::desktop_list_name_from(
+                None,
+                None,
+                Some("ai-buddy".into()),
+                Some("plasmashell".into())
+            ),
+            "ai-buddy"
+        );
+    }
+
+    #[test]
+    fn a_process_no_entry_claims_falls_to_the_walk_then_unknown() {
+        assert_eq!(
+            linux::desktop_list_name_from(None, None, None, Some("Cursor".into())),
+            "Cursor"
+        );
+        assert_eq!(
+            linux::desktop_list_name_from(None, None, None, None),
+            "Unknown"
+        );
+    }
+
+    #[test]
+    fn the_installed_entry_is_read_from_our_own_app_id() {
+        let mut asked = String::new();
+        let name = linux::installed_entry_name(|path| {
+            asked = path.to_string();
+            Some("[Desktop Entry]\nName=ai-buddy\n".to_string())
+        });
+        assert_eq!(name.as_deref(), Some("ai-buddy"));
+        assert!(
+            asked.ends_with("dev.omesser.ai-buddy.desktop"),
+            "looked for the wrong entry: {asked}"
+        );
     }
 
     #[test]
     fn process_listed_as_is_not_empty() {
         assert!(!process_listed_as().is_empty());
+    }
+
+    /// The portal dialog shows `Name=`, not the app-id or a translation we
+    /// have no way to pick between.
+    #[test]
+    fn a_desktop_entry_yields_its_name() {
+        let entry =
+            "[Desktop Entry]\nType=Application\nName[de]=Kumpel\nName=ai-buddy\nExec=ai-buddy\n";
+        assert_eq!(
+            linux::desktop_entry_name(entry).as_deref(),
+            Some("ai-buddy")
+        );
+        assert_eq!(linux::desktop_entry_name("[Desktop Entry]\nName=\n"), None);
+    }
+
+    /// The command field is parenthesised and unescaped, so a process named
+    /// `foo bar) 9` shifts every field a left-to-right split would count.
+    #[test]
+    fn the_parent_pid_survives_a_command_full_of_parens() {
+        assert_eq!(stat_ppid_of("(cargo)", 4321), Some(4321));
+        assert_eq!(stat_ppid_of("(foo bar) 9)", 77), Some(77));
+        assert_eq!(linux::stat_ppid("nothing parseable"), None);
+    }
+
+    fn stat_ppid_of(comm: &str, ppid: i32) -> Option<i32> {
+        linux::stat_ppid(&format!("1234 {comm} S {ppid} 1234 1234 0 -1 4194304"))
+    }
+
+    /// `cargo run` puts the build tool and a shell between the buddy and the
+    /// terminal, and it is the terminal the desktop would name.
+    #[test]
+    fn the_launcher_is_the_first_ancestor_that_is_not_plumbing() {
+        let chain = ["cargo", "zsh", "gnome-terminal-server", "systemd"];
+        assert_eq!(
+            linux::launcher_name(chain.map(str::to_owned)).as_deref(),
+            Some("gnome-terminal-server")
+        );
+        assert_eq!(linux::launcher_name(["cargo".to_owned()]), None);
+    }
+
+    /// `comm` truncates at 15 bytes, so the name comes from `cmdline`, which
+    /// is NUL-separated and holds a path.
+    #[test]
+    fn the_process_name_is_the_basename_of_argv_zero() {
+        assert_eq!(
+            linux::arg0_name("/usr/libexec/gnome-terminal-server\0--foo\0").as_deref(),
+            Some("gnome-terminal-server")
+        );
+        assert_eq!(linux::arg0_name(""), None);
     }
 }

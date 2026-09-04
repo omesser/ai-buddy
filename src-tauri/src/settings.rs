@@ -68,7 +68,7 @@ pub struct SettingsView {
     pub development_texts: HashMap<String, String>,
     /// Live OS grants, not a file field. The window rereads them on become-key.
     pub consent: Vec<ConsentRow>,
-    /// The name Privacy & Security will show for this process.
+    /// The name the OS permission UI will show for this process.
     pub consent_listed_as: String,
 }
 

@@ -1352,8 +1352,8 @@ mod tests {
             consent
                 .comment
                 .as_ref()
-                .is_some_and(|c| { c.contains(&listed) && c.contains("Privacy & Security") }),
-            "Consent section has to name the TCC row ({listed}), got {:?}",
+                .is_some_and(|c| c.contains(&listed)),
+            "Consent section has to name the row the OS will list ({listed}), got {:?}",
             consent.comment
         );
 
