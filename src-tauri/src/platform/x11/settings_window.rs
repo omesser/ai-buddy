@@ -317,7 +317,7 @@ impl SettingsWindow {
             FormRow::SecureField {
                 id,
                 label,
-                writes,
+                writes: _,
                 frozen,
             } => {
                 if let Some(label_text) = label {

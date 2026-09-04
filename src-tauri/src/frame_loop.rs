@@ -24,6 +24,14 @@ use super::{
     SENSE_INTERVAL,
 };
 
+/// One overlay's last applied shape: the mask, then x, y, width and height.
+///
+/// Named because the tuple is three types deep and clippy's `type_complexity`
+/// rejects it inline. Only the X11 lane keeps one, since XShape is what has to
+/// be spared a rebuild every tick.
+#[cfg(all(unix, not(target_os = "macos")))]
+type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32);
+
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
 /// Applying a `Frame` is two things at once, which is why they share a loop.
@@ -128,7 +136,7 @@ pub(crate) fn run_frame_loop(
         // every 16ms. Only update XShape when mask data or position changes.
         // Shared with main thread so update_input_region can report success.
         #[cfg(all(unix, not(target_os = "macos")))]
-        let last_mask: Arc<Mutex<Vec<(Option<Vec<bool>>, i32, i32, i32, i32)>>> =
+        let last_mask: Arc<Mutex<Vec<MaskParams>>> =
             Arc::new(Mutex::new(vec![(None, 0, 0, 1, 1); covered.len()]));
 
         // The displays the overlays cover, as setup left them. Shared with the
