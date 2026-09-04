@@ -44,6 +44,7 @@ jobs:
           mkdir -p _site
           cp docs/design/index.html _site/index.html
           cp docs/design/cues.html  _site/cues.html
+          cp docs/design/chat-mockups.html _site/chat-mockups.html
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
