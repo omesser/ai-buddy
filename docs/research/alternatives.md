@@ -85,7 +85,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows planned, not implemented; two characters; GitHub-only | high for own spec/ship split |
+| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows planned, not implemented; eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
@@ -137,7 +137,7 @@ not sprites). **Linux:** ❌ official (Steam `platforms.linux=false`); Proton /
 community ports exist ("doesn't work on linux / black desktop" review cluster).
 
 **Review sentiment.** Steam English reviews: Mixed, 61% positive of 5,278 (all
-languages: 6,202 positive / 9,262 total as of 2026-09-03). Recurring complaints:
+languages: 6,202 positive / 9,262 total as of 2026-09-04). Recurring complaints:
 DLC pricing ($7.49–$14.99 per character, 40+ SKUs); mod removal. Verified
 quotes: Kiraz!! 2026-08-29: customizability / $15 DLC / no Workshop
 (https://steamcommunity.com/id/nyatoi/recommended/3301060/); pyonpyonbun
@@ -147,7 +147,7 @@ cash grab," "removed mod support to make you purchase the overpriced DLC,"
 this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
-packs at $7.49–$14.99 each); ai-buddy has two shipped Characters, internal
+packs at $7.49–$14.99 each); ai-buddy has eight Character Packages, internal
 package format (undocumented until v2), and import adapters for petdex / Pets
 Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
 Desktop Mate has no ballistic physics, no agent integrations, no BYO character
@@ -240,7 +240,7 @@ declarative Behaviors is a design difference in how liveliness is authored.
 
 **What it is.** Free beta desktop companion by independent developer, available
 at desktoppet.app. Windows 10/11 (~150MB zip, v1.1.1, Oct 19, 2025) and macOS
-10.15+ (~191MB dmg). Homepage (as of 2026-09-03): "0 Downloads / Free (Beta) / 1
+10.15+ (~191MB dmg). Homepage (as of 2026-09-04): "0 Downloads / Free (Beta) / 1
 Pet Type +2 Coming Soon."
 ([desktoppet.app](https://desktoppet.app/))
 
@@ -273,8 +273,8 @@ list.
 chat via user's OpenAI key, while ai-buddy ships Director + authored
 personality-driven idle speech (Character talks in-character while living on
 windows, not a chat window). Desktop Pet is beta with limited character selection
-(1 shipped, +2 soon) and no public validation; ai-buddy has two shipped
-Characters, internal package format, and import adapters for petdex / Pets Codex
+(1 shipped, +2 soon) and no public validation; ai-buddy has eight Character Packages,
+internal package format, and import adapters for petdex / Pets Codex
 and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
 awareness. Desktop Pet's AI is an OpenAI chat window; ai-buddy's Director drives
 idle speech from personality. Agent integrations (Harness/MCP) are specced (~)
@@ -283,7 +283,7 @@ for ai-buddy, not shipped.
 ### OpenPets
 
 **What it is.** Open source (MIT) desktop companion platform by Boring Dystopia
-Development, launched May 2026. 1,130 GitHub stars as of September 3, 2026.
+Development, launched May 2026. 1,130 GitHub stars as of September 4, 2026.
 Electron app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated
 pets idle/wander/react out of the box; no agent required. Plugin SDK v3 for
 extending functionality.
@@ -328,7 +328,7 @@ ai-buddy on architecture: overlay pet + plugin/agent extensibility + MCP +
 local-first + BYO model. OpenPets ships MCP (`openpets_status`, `openpets_react`,
 `openpets_say`) and plugin SDK v3 today; ai-buddy's Harness + MCP is specced.
 OpenPets has mature catalog (openpets.dev) and 9 official plugins; ai-buddy has
-two Characters and no plugin system. ai-buddy adds ballistic physics (gravity
+eight Character Packages and no plugin system. ai-buddy adds ballistic physics (gravity
 arcs, throw, Perches with acceleration gate) and window awareness; OpenPets has
 gravity overlay but no Perch riding or window app name tracking. OpenPets plugin
 runtime is sandboxed Electron BrowserWindows with permissions; ai-buddy's
@@ -451,8 +451,8 @@ same Character don't move or speak in lockstep.
    Workshop-open is the actual ecosystem strength (98% of 51,678 reviews).
    MateEngine: VRM + Workshop-open, free, the switching target after Desktop
    Mate disabled mods (3,532 stars + 974 Steam reviews 97%). Shimeji-ee: 1000s
-   free packs, community folklore. OpenPets: openpets.dev catalog. ai-buddy: two
-   shipped characters + `scripts/import-pet.py` (petdex + Shimeji-ee) =
+   free packs, community folklore. OpenPets: openpets.dev catalog. ai-buddy: eight
+   Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
    authoring-time import, not a live gallery or first-party store.
 
 2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
@@ -471,7 +471,7 @@ same Character don't move or speak in lockstep.
 - **~** = documented not shipped (ai-buddy MCP/Harness per ADR-0008; MateEngine
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
   not ballistic Perch riding).
-- **❌** = not found in cited sources as of 2026-09-03.
+- **❌** = not found in cited sources as of 2026-09-04.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
   has Steam 974 reviews 97% + GitHub 3,532 stars.
@@ -479,7 +479,7 @@ same Character don't move or speak in lockstep.
 ## Sources
 
 Capabilities marked ✅, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
-DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 3, 2026.
+DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 4, 2026.
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,278; VPet-Simulator [App ID
@@ -490,10 +490,10 @@ MateEngine [App ID 3625270](https://store.steampowered.com/app/3625270/MateEngin
 ([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
 [desktoppet.app](https://desktoppet.app/) for Desktop Pet), GitHub repositories
 ([alvinunreal/openpets](https://github.com/alvinunreal/openpets) 1,130 stars as
-of Sep 3 2026, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
+of Sep 4 2026, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
 [DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop),
 [shinyflvre/Mate-Engine](https://github.com/shinyflvre/Mate-Engine) 3,532 stars
-as of Sep 3 2026), OpenPets documentation
+as of Sep 4 2026), OpenPets documentation
 ([docs/architecture.md](https://github.com/alvinunreal/openpets/blob/main/docs/architecture.md),
 [docs/desktop.md](https://github.com/alvinunreal/openpets/blob/main/docs/desktop.md)),
 MateEngine unofficial Linux port
