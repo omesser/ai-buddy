@@ -921,7 +921,8 @@ pub(crate) fn run_frame_loop(
                                 inspect.last_payload = Some(payload);
                                 inspect.wake_secs = live.pace.wait().as_secs();
                             }
-                            live.pending.start(Arc::clone(model), context.clone());
+                            live.pending
+                                .start(live.id.clone(), Arc::clone(model), context.clone());
                             live.in_flight = Some(context);
                             was_addressed
                         } else {

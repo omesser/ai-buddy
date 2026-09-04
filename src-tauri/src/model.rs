@@ -14,6 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 use ai_buddy_core::director::{Completer, Context, ModelDirector, Pace, Wake, WAKE_EVERY};
+use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
 
 /// Completer timeout. After this, fall back to `StaticDirector`.
@@ -1354,6 +1355,19 @@ pub struct InFlight {
     abandoned: Arc<AtomicBool>,
 }
 
+/// The trace line for a proposed Behavior name nobody declared.
+///
+/// Carries the declared set because that is what makes the miss readable:
+/// `prowll` beside `prowl` is a typo, beside `wave` it is a model ignoring
+/// the contract (#243). Worker threads interleave, so the Instance id leads
+/// the line as it does every other Director trace.
+fn near_miss_line(id: &str, name: &str, behaviors: &[String]) -> String {
+    format!(
+        "director: {id} {name} is no declared Behavior; declared: {}",
+        behaviors.join(", ")
+    )
+}
+
 impl InFlight {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
@@ -1382,6 +1396,7 @@ impl InFlight {
 
     pub fn start<C: Completer + Send + Sync + 'static>(
         &self,
+        id: InstanceId,
         director: Arc<ModelDirector<C>>,
         context: Context,
     ) {
@@ -1392,9 +1407,19 @@ impl InFlight {
             ABANDONED.with_borrow_mut(|slot| *slot = Some(abandoned));
             // Always send. A panic here would leave `busy` set and skip
             // StaticDirector on later ticks.
-            let wake =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| director.wake(&context)))
-                    .unwrap_or(Wake::Failed);
+            let wake = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let (wake, near_miss) = director.wake_and_near_miss(&context);
+                // Traced here, beside the reply it came from, rather than in
+                // the frame loop: the Wake reaching the frame loop is speech,
+                // and speech is what a near miss is indistinguishable from.
+                if tracing() {
+                    if let Some(name) = near_miss {
+                        eprintln!("{}", near_miss_line(&id, &name, director.behaviors()));
+                    }
+                }
+                wake
+            }))
+            .unwrap_or(Wake::Failed);
             let _ = tx.send(wake);
         });
     }
@@ -2461,13 +2486,29 @@ pub(crate) mod tests {
         });
     }
 
+    /// The declared set is the half of the line #243 asks for: without it a
+    /// reader cannot tell a typo from a model ignoring the contract.
+    #[test]
+    fn a_near_miss_line_names_the_instance_and_what_was_declared() {
+        let line = near_miss_line(
+            "buddy-1",
+            "prowll",
+            &["prowl".to_string(), "wave".to_string()],
+        );
+
+        assert_eq!(
+            line,
+            "director: buddy-1 prowll is no declared Behavior; declared: prowl, wave"
+        );
+    }
+
     /// A switch must not apply the old Character's reply, and must be able
     /// to start the new opening before that POST returns.
     #[test]
     fn cancel_drops_a_wake_that_still_arrives() {
         let pending = InFlight::new();
         let director = Arc::new(ModelDirector::new(Slow, ["idle"]));
-        pending.start(director, wake_context());
+        pending.start("buddy-1".to_string(), director, wake_context());
         assert!(!pending.ready(), "the call is in flight");
 
         let mut pending = pending;
@@ -2511,6 +2552,7 @@ pub(crate) mod tests {
         let saw = Arc::new(AtomicBool::new(false));
         let mut pending = InFlight::new();
         pending.start(
+            "buddy-1".into(),
             Arc::new(ModelDirector::new(
                 Watchful {
                     saw: Arc::clone(&saw),

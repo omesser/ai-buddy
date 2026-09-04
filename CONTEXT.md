@@ -90,6 +90,13 @@ A Director session wake that fires because the buddy was left alone long
 enough, not because the user addressed it.
 _Avoid_: Unused model call, unused wake, active prompting
 
+**Near Miss**:
+A Behavior name the Director proposed that the Character declares none of —
+`prowll` for `prowl`. Reported, never corrected: it reaches the user as
+Speech like any other unparsed reply, and the Shell traces it so the miss is
+not invisible.
+_Avoid_: Typo, hallucination, invalid behavior
+
 **Perch**:
 A window's top edge treated as a one-way platform the sprite can land on, walk
 along, and fall off. Window sides and bottoms are not Perches, and neither is

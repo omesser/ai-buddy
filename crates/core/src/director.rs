@@ -133,6 +133,17 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     pub fn wake(&self, context: &Context) -> Wake {
+        self.wake_and_near_miss(context).0
+    }
+
+    /// The wake, and the Behavior name the reply proposed that this Character
+    /// declares none of.
+    ///
+    /// A near miss (`prowll`, `Inspectt`) is a contract miss, and it arrives
+    /// as speech exactly like a model that chose to talk — so without this it
+    /// is invisible, trace flag or not. Reported, never corrected; guessing
+    /// a correction is what #231 ruled out (#243).
+    pub fn wake_and_near_miss(&self, context: &Context) -> (Wake, Option<String>) {
         match self.completer.complete(&self.prompt(context)) {
             Ok(reply) => {
                 // The Completer has the opening; later turns stay short
@@ -144,26 +155,40 @@ impl<C: Completer> ModelDirector<C> {
                     // Engine looks a Behavior up by the name its Character
                     // declared (#231).
                     Ok(proposal) => match self.declared(&proposal.behavior) {
-                        Some(behavior) => Wake::Proposed(BehaviorProposal {
-                            behavior,
-                            dialogue: proposal.dialogue,
-                        }),
+                        Some(behavior) => (
+                            Wake::Proposed(BehaviorProposal {
+                                behavior,
+                                dialogue: proposal.dialogue,
+                            }),
+                            None,
+                        ),
                         None if proposal.behavior.eq_ignore_ascii_case("say") => {
                             match proposal.dialogue {
-                                Some(line) => Wake::Proposed(BehaviorProposal {
-                                    behavior: String::new(),
-                                    dialogue: Some(line),
-                                }),
-                                None => Wake::Failed,
+                                Some(line) => (
+                                    Wake::Proposed(BehaviorProposal {
+                                        behavior: String::new(),
+                                        dialogue: Some(line),
+                                    }),
+                                    None,
+                                ),
+                                None => (Wake::Failed, None),
                             }
                         }
-                        None => spoken_or_failed(&reply),
+                        // `parse_proposal` has already ruled the name a single
+                        // token, so this is the near miss and not prose.
+                        None => (spoken_or_failed(&reply), Some(proposal.behavior)),
                     },
-                    Err(_) => spoken_or_failed(&reply),
+                    Err(_) => (spoken_or_failed(&reply), None),
                 }
             }
-            Err(_) => Wake::Failed,
+            Err(_) => (Wake::Failed, None),
         }
+    }
+
+    /// What this Character declared, for a Shell reporting a near miss
+    /// against it.
+    pub fn behaviors(&self) -> &[String] {
+        &self.behaviors
     }
 
     /// The Character's own spelling of `name`, when it declared one.
@@ -1061,6 +1086,47 @@ mod tests {
             }
             other => panic!("unknown names become speech, not {other:?}"),
         }
+    }
+
+    /// #243: `prowll` and a model that simply chose to talk both arrive as
+    /// speech, so a contract miss is invisible in a trace. The name is handed
+    /// back rather than corrected — the Shell is what prints it.
+    #[test]
+    fn an_undeclared_name_is_handed_back_as_a_near_miss() {
+        let director = ModelDirector::new(Scripted::says("prowll\nMine now."), ["prowl", "wave"]);
+
+        let (wake, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
+
+        assert_eq!(near_miss.as_deref(), Some("prowll"));
+        match wake {
+            Wake::Proposed(proposal) => assert!(
+                proposal.behavior.is_empty(),
+                "a near miss still becomes speech: {proposal:?}"
+            ),
+            other => panic!("a near miss still becomes speech, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_declared_name_is_no_near_miss() {
+        for reply in ["prowl", "Prowl.", "PROWL:", "Prowl | hunting"] {
+            let director = ModelDirector::new(Scripted::says(reply), ["prowl", "wave"]);
+
+            let (_, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
+
+            assert_eq!(near_miss, None, "{reply:?} names something declared");
+        }
+    }
+
+    /// `say` is the keyword every Character gets, not one it declares, so it
+    /// takes its own arm above and must not be reported as a miss.
+    #[test]
+    fn the_say_keyword_is_no_near_miss() {
+        let director = ModelDirector::new(Scripted::says("say | hello"), ["prowl", "wave"]);
+
+        let (_, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
+
+        assert_eq!(near_miss, None);
     }
 
     #[test]
