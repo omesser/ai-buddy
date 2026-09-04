@@ -486,11 +486,11 @@ fn development_sections() -> Vec<FormSection> {
         flag_row(
             CAPTURABLE_ID,
             &dev_flags::CAPTURABLE,
-            "Capturable",
+            "Show in screenshots and shares",
             // `configure_overlay` reads this when a window is built, and only
             // the Linux frame loop re-runs it. Honest rather than silently
             // inert.
-            "Shows in screenshots. Needs a restart.",
+            "Normally left out of both. Needs a restart.",
         ),
     ];
 
