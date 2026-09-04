@@ -15,7 +15,7 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowAction, RowOperation};
-use crate::settings::{SettingsPatch, SettingsSession};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
@@ -45,6 +45,10 @@ struct SettingsWindow {
     /// dead, and `refresh` drawing the value an exported variable imposes made
     /// that a write of the override into the file (#273).
     refreshing: Rc<Cell<bool>>,
+    /// Clear key was clicked and Apply has not run yet. The whole of the
+    /// staged delete: the key entry is blank either way, so nothing else
+    /// could tell a staged clear from an untouched field (#279).
+    clear_pending: Rc<Cell<bool>>,
 }
 
 enum Control {
@@ -54,6 +58,9 @@ enum Control {
     Label(gtk::Label),
     List(gtk::Box, String),
     CharacterPicker(gtk::Box, Vec<String>),
+    /// A composite row's button, so `refresh` can reach Apply, Cancel and
+    /// Clear key by id rather than by walking the widget tree.
+    Button(gtk::Button),
 }
 
 impl SettingsWindow {
@@ -67,6 +74,11 @@ impl SettingsWindow {
         window.connect_delete_event(|window, _| {
             window.set_keep_above(false);
             window.hide();
+            // Nothing staged outlives the tab. The window is only hidden,
+            // never destroyed — `show_internal` reuses it — so without this a
+            // typed key would sit in the secure entry until the next reopen,
+            // one Apply click from the store (#279).
+            reset_director_tab();
             gtk::glib::Propagation::Stop
         });
 
@@ -75,6 +87,7 @@ impl SettingsWindow {
             session: Arc::new(Mutex::new(None)),
             controls: Rc::new(RefCell::new(HashMap::new())),
             refreshing: Rc::new(Cell::new(false)),
+            clear_pending: Rc::new(Cell::new(false)),
         });
 
         this.build_ui();
@@ -241,6 +254,7 @@ impl SettingsWindow {
                 label,
                 placeholder,
                 frozen,
+                batched,
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -255,7 +269,9 @@ impl SettingsWindow {
                 // legible and copyable.
                 entry.set_editable(!frozen);
 
-                if let Some(action) = actions.get(id).filter(|_| !frozen) {
+                if *batched {
+                    self.bind_batched(&entry);
+                } else if let Some(action) = actions.get(id).filter(|_| !frozen) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
@@ -309,47 +325,10 @@ impl SettingsWindow {
                 entry.set_hexpand(true);
                 entry.set_editable(!frozen);
 
-                if let Some(action) = actions.get(id).filter(|_| !frozen) {
-                    let action = action.clone();
-                    let session = Arc::clone(&self.session);
-                    let refreshing = self.refreshing.clone();
-                    let entry_clone = entry.clone();
-
-                    let apply_fn = move || {
-                        if refreshing.get() {
-                            return;
-                        }
-                        if let Ok(guard) = session.lock() {
-                            if let Some(sess) = guard.as_ref() {
-                                let text = entry_clone.text().to_string();
-                                if let RowAction::PatchField(field) = &action {
-                                    // A blank field is an untouched one, so
-                                    // `set_text` refuses the key and this is
-                                    // not a commit. Clear key is the button.
-                                    let mut patch = SettingsPatch::default();
-                                    if !patch.set_text(field, &text) {
-                                        return;
-                                    }
-                                    if let Err(e) = sess.apply(patch) {
-                                        eprintln!("settings: {e}");
-                                    }
-                                    // The store has it now; the field shows
-                                    // its fingerprint as a placeholder.
-                                    entry_clone.set_text("");
-                                }
-                            }
-                        }
-                    };
-
-                    let apply_fn_activate = apply_fn.clone();
-                    entry.connect_activate(move |_| {
-                        apply_fn_activate();
-                    });
-
-                    entry.connect_focus_out_event(move |_, _| {
-                        apply_fn();
-                        gtk::glib::Propagation::Proceed
-                    });
+                // Always batched: `FormRow::SecureField` offers no other mode,
+                // so there is no blur commit here to skip.
+                if !frozen {
+                    self.bind_batched(&entry);
                 }
 
                 pack(container, &entry, ROW_GAP);
@@ -513,6 +492,14 @@ impl SettingsWindow {
                                 let action = action.clone();
                                 let session = Arc::clone(&self.session);
                                 let window_weak = self.window.downgrade();
+                                let director = match &action {
+                                    RowAction::Operation(
+                                        op @ (RowOperation::ClearKey
+                                        | RowOperation::Apply
+                                        | RowOperation::Cancel),
+                                    ) => Some(op.clone()),
+                                    _ => None,
+                                };
 
                                 if id == form::SPAWN_ID {
                                     let new_name_id = form::NEW_NAME_ID.to_string();
@@ -570,6 +557,90 @@ impl SettingsWindow {
                                             }
                                         }
                                     });
+                                } else if let Some(op) = director {
+                                    // The Director tab's three writers. None
+                                    // of them may hold the session lock while
+                                    // the window redraws: `refresh` locks the
+                                    // same non-reentrant mutex (#279).
+                                    let controls = self.controls.clone();
+                                    let clear_pending = self.clear_pending.clone();
+
+                                    button.connect_clicked(move |_| {
+                                        let Some(view) = view_of(&session) else {
+                                            return;
+                                        };
+                                        match &op {
+                                            RowOperation::Apply => {
+                                                let description = form::describe();
+                                                let patch = director_draft(
+                                                    &controls.borrow(),
+                                                    clear_pending.get(),
+                                                    &description,
+                                                )
+                                                .patch(&view);
+                                                // Resets only once the write
+                                                // landed. A locked Keychain
+                                                // fails before the file is
+                                                // touched, and discarding the
+                                                // typed endpoint would lose an
+                                                // edit nothing saved (#279).
+                                                if let Some(patch) = patch {
+                                                    let result = match session.lock() {
+                                                        Ok(guard) => guard
+                                                            .as_ref()
+                                                            .map(|sess| sess.apply(patch)),
+                                                        Err(_) => None,
+                                                    };
+                                                    match result {
+                                                        Some(Err(e)) => {
+                                                            eprintln!("settings: {e}");
+                                                            return;
+                                                        }
+                                                        None => return,
+                                                        Some(Ok(())) => {}
+                                                    }
+                                                }
+                                                // Resets even though the store
+                                                // now holds what the key entry
+                                                // still shows: only a reset
+                                                // takes the typed key back out.
+                                                reset_director_tab();
+                                            }
+                                            // Writes neither the file nor the
+                                            // store: the reset draws every
+                                            // field from live state, and the
+                                            // key entry it blanks is the only
+                                            // place a typed key ever was.
+                                            RowOperation::Cancel => {
+                                                reset_director_tab();
+                                            }
+                                            // Staged, and no redraw: a
+                                            // `refresh` here would take a URL
+                                            // typed beside it back to the
+                                            // file's value.
+                                            RowOperation::ClearKey => {
+                                                clear_pending.set(true);
+                                                let key = match controls
+                                                    .borrow()
+                                                    .get(form::DIRECTOR_API_KEY_ID)
+                                                {
+                                                    Some(Control::Entry(entry)) => {
+                                                        Some(entry.clone())
+                                                    }
+                                                    _ => None,
+                                                };
+                                                if let Some(entry) = key {
+                                                    entry.set_text("");
+                                                }
+                                                update_director_buttons(
+                                                    &controls.borrow(),
+                                                    &view,
+                                                    clear_pending.get(),
+                                                );
+                                            }
+                                            _ => {}
+                                        }
+                                    });
                                 } else {
                                     button.connect_clicked(move |_| {
                                         if let Ok(guard) = session.lock() {
@@ -594,17 +665,6 @@ impl SettingsWindow {
                                                                 }
                                                             }
                                                         }
-                                                        RowOperation::ClearKey => {
-                                                            let patch = SettingsPatch {
-                                                                director_api_key: Some(
-                                                                    String::new(),
-                                                                ),
-                                                                ..SettingsPatch::default()
-                                                            };
-                                                            if let Err(e) = sess.apply(patch) {
-                                                                eprintln!("settings: {e}");
-                                                            }
-                                                        }
                                                         _ => {}
                                                     }
                                                 }
@@ -615,6 +675,9 @@ impl SettingsWindow {
                             }
 
                             hbox.pack_start(&button, false, false, 0);
+                            self.controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Button(button));
                         }
                     }
                 }
@@ -640,6 +703,25 @@ impl SettingsWindow {
         }
     }
 
+    /// A batched field gets no commit binding: the tab commits on Apply, and
+    /// `connect_changed` only keeps Apply and Cancel in step with what the
+    /// field holds (#279).
+    fn bind_batched(&self, entry: &gtk::Entry) {
+        let session = Arc::clone(&self.session);
+        let refreshing = self.refreshing.clone();
+        let controls = self.controls.clone();
+        let clear_pending = self.clear_pending.clone();
+        entry.connect_changed(move |_| {
+            if refreshing.get() {
+                return;
+            }
+            let Some(view) = view_of(&session) else {
+                return;
+            };
+            update_director_buttons(&controls.borrow(), &view, clear_pending.get());
+        });
+    }
+
     fn show(&self) {
         self.window.set_keep_above(true);
         self.window.show_all();
@@ -651,7 +733,20 @@ impl SettingsWindow {
         self.refresh();
     }
 
+    /// Redraw from live state, leaving anything staged on the Director tab
+    /// alone.
+    ///
+    /// Every caller but Apply and Cancel arrives unasked: the frame loop
+    /// refreshes after any `SettingsOp`. Overwriting a half-typed endpoint on
+    /// one of those would make batching lossy in ordinary use, so a dirty tab
+    /// is the one thing a redraw does not touch (#279).
     fn refresh(&self) {
+        self.draw(false);
+    }
+
+    /// `reset_director` is Apply and Cancel: the two callers that mean to take
+    /// the staged fields back to live state.
+    fn draw(&self, reset_director: bool) {
         // Snapshot session.view() while holding the lock, then drop the guard
         // before any GTK setter. Widget setters fire toggled/changed/activate
         // synchronously, and those handlers lock the same non-reentrant mutex.
@@ -666,6 +761,16 @@ impl SettingsWindow {
         self.refreshing.set(true);
 
         let mut controls = self.controls.borrow_mut();
+        // Read before any setter, so this is what the entries held on entry.
+        let staged = if reset_director {
+            // The staged delete is part of what a reset drops: left set, it
+            // would outlive the reset and re-arm Apply on the next redraw.
+            self.clear_pending.set(false);
+            crate::settings::Staged::default()
+        } else {
+            let description = form::describe();
+            director_draft(&controls, self.clear_pending.get(), &description).staged(&view)
+        };
 
         if let Some(Control::CheckButton(check)) = controls.get(form::DIRECTOR_ID) {
             check.set_active(view.director_enabled);
@@ -685,15 +790,25 @@ impl SettingsWindow {
         if let Some(Control::CheckButton(check)) = controls.get(form::FULLSCREEN_ID) {
             check.set_active(view.hide_in_fullscreen);
         }
-        if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_BASE_URL_ID) {
-            entry.set_text(&view.director_base_url);
-        }
-        if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_MODEL_ID) {
-            entry.set_text(&view.director_model);
-        }
         if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_API_KEY_ID) {
+            // The placeholder names the stored key, not the typed one, so it
+            // is safe to redraw over a staged edit.
             entry.set_placeholder_text(Some(&view.api_key_placeholder()));
-            entry.set_text("");
+        }
+        if !staged.base_url {
+            if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_BASE_URL_ID) {
+                entry.set_text(&view.director_base_url);
+            }
+        }
+        if !staged.model {
+            if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_MODEL_ID) {
+                entry.set_text(&view.director_model);
+            }
+        }
+        if !staged.key {
+            if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_API_KEY_ID) {
+                entry.set_text("");
+            }
         }
         if let Some(Control::Label(label)) = controls.get(form::MEMORY_PATH_ID) {
             label.set_text(&view.memory_path);
@@ -872,7 +987,61 @@ impl SettingsWindow {
             }
         }
 
+        update_director_buttons(&controls, &view, self.clear_pending.get());
+
         self.refreshing.set(false);
+    }
+}
+
+/// The live view, with the lock already released.
+///
+/// Every caller runs GTK setters next, and a setter fires its handlers
+/// synchronously against this same non-reentrant mutex.
+fn view_of(session: &Arc<Mutex<Option<SettingsSession>>>) -> Option<SettingsView> {
+    let guard = session.lock().ok()?;
+    guard.as_ref().map(|session| session.view())
+}
+
+/// The Director tab as the window holds it right now.
+///
+/// The fields are read back out of the widgets rather than mirrored in a
+/// draft: the typed key lives in the `gtk::Entry` and nowhere else, so it
+/// cannot reach the settings file, and closing the window resets it (#279).
+fn director_draft<'a>(
+    controls: &HashMap<String, Control>,
+    clear_pending: bool,
+    description: &'a form::FormDescription,
+) -> DirectorDraft<'a> {
+    let text = |id: &str| match controls.get(id) {
+        Some(Control::Entry(entry)) => entry.text().to_string(),
+        _ => String::new(),
+    };
+    DirectorDraft {
+        base_url: text(form::DIRECTOR_BASE_URL_ID),
+        model: text(form::DIRECTOR_MODEL_ID),
+        key: text(form::DIRECTOR_API_KEY_ID),
+        clear_key: clear_pending,
+        description,
+    }
+}
+
+/// Both buttons say whether there is anything to apply.
+///
+/// Takes the view rather than the session: `draw` calls this with the guard
+/// dropped, so locking here would be the deadlock that discipline avoids.
+fn update_director_buttons(
+    controls: &HashMap<String, Control>,
+    view: &SettingsView,
+    clear_pending: bool,
+) {
+    let description = form::describe();
+    let dirty = director_draft(controls, clear_pending, &description)
+        .patch(view)
+        .is_some();
+    for id in [form::APPLY_ID, form::CANCEL_ID] {
+        if let Some(Control::Button(button)) = controls.get(id) {
+            button.set_sensitive(dirty);
+        }
     }
 }
 
@@ -944,6 +1113,16 @@ pub fn refresh_if_showing() {
             if window.window.is_visible() {
                 window.refresh();
             }
+        }
+    });
+}
+
+/// Apply, Cancel and close: the redraw that does take the staged Director
+/// fields back to live state.
+fn reset_director_tab() {
+    WINDOW.with(|cell| {
+        if let Some(window) = cell.borrow().as_ref() {
+            window.draw(true);
         }
     });
 }

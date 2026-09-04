@@ -211,7 +211,8 @@ impl SettingsView {
         }
     }
 
-    #[cfg(test)]
+    /// Whether Clear key has anything to clear. A key the store would not
+    /// hand over counts: an unreadable one can still be wiped.
     pub fn clear_key_enabled(&self) -> bool {
         self.api_key_set || !self.api_key_error.is_empty()
     }
@@ -333,6 +334,117 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
+}
+
+/// Which of the Director tab's fields hold an edit.
+///
+/// A redraw asks this so it can leave a staged field alone and still take
+/// every other one from live state. Per field rather than per tab: a tab
+/// dirty only because a key was typed would otherwise freeze the endpoint
+/// text beside it, and Apply would write that stale text back (#279).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Staged {
+    pub base_url: bool,
+    pub model: bool,
+    pub key: bool,
+}
+
+impl Staged {
+    pub fn any(&self) -> bool {
+        self.base_url || self.model || self.key
+    }
+}
+
+/// What the Director tab holds right now, as the window reads it straight
+/// back off its own widgets.
+///
+/// Verbatim text, one field per batched row. Nothing here is filtered by the
+/// renderer: `patch` applies the frozen rule itself, from the description, so
+/// the two windows cannot disagree about which rows an exported variable owns
+/// (#272).
+pub struct DirectorDraft<'a> {
+    pub base_url: String,
+    pub model: String,
+    pub key: String,
+    pub clear_key: bool,
+    pub description: &'a form::FormDescription,
+}
+
+impl DirectorDraft<'_> {
+    /// The new Base URL, or `None` when the row is frozen or unchanged.
+    ///
+    /// A frozen row never applies: `model::resolve` gives the exported
+    /// variable the last word and would discard the edit (#272).
+    fn base_url_edit(&self, view: &SettingsView) -> Option<&str> {
+        self.edit(
+            form::DIRECTOR_BASE_URL_ID,
+            &self.base_url,
+            &view.director_base_url,
+        )
+    }
+
+    fn model_edit(&self, view: &SettingsView) -> Option<&str> {
+        self.edit(form::DIRECTOR_MODEL_ID, &self.model, &view.director_model)
+    }
+
+    fn edit<'t>(&self, id: &str, text: &'t str, live: &str) -> Option<&'t str> {
+        (!self.description.frozen(id) && text != live).then_some(text)
+    }
+
+    /// What the key field means: the typed key, or the empty string for a
+    /// staged delete. `None` when neither.
+    ///
+    /// A typed key beats a staged clear, because Clear key blanks the field
+    /// and text sitting in it afterwards is the later intent. A blank field is
+    /// an untouched one — `key_was_typed` is the whole of that test, and it is
+    /// what keeps tabbing past the field from meaning delete.
+    fn key_edit(&self, view: &SettingsView) -> Option<&str> {
+        if self.description.frozen(form::DIRECTOR_API_KEY_ID) {
+            return None;
+        }
+        if key_was_typed(&self.key) {
+            return Some(&self.key);
+        }
+        // Nothing stored is nothing to delete, so a staged clear of it is not
+        // an edit and must not read as dirty.
+        (self.clear_key && view.clear_key_enabled()).then_some("")
+    }
+
+    /// The patch one Apply sends: only the fields that changed, so at most one
+    /// `SettingsOp::Retarget` comes out of it. `None` when the tab is clean,
+    /// which is also what disables both buttons.
+    ///
+    /// Through `set_text` rather than by assignment, so the field names are
+    /// the ones every other control writes through. The one exception is the
+    /// staged delete: blank is the whole of what a delete is, and `set_text`
+    /// exists to refuse exactly that value.
+    pub fn patch(&self, view: &SettingsView) -> Option<SettingsPatch> {
+        let staged = self.staged(view);
+        if !staged.any() {
+            return None;
+        }
+        let mut patch = SettingsPatch::default();
+        if let Some(text) = self.base_url_edit(view) {
+            patch.set_text("director_base_url", text);
+        }
+        if let Some(text) = self.model_edit(view) {
+            patch.set_text("director_model", text);
+        }
+        if let Some(key) = self.key_edit(view) {
+            patch.director_api_key = Some(key.to_string());
+        }
+        Some(patch)
+    }
+
+    /// The same three decisions as `patch`, as booleans, so a redraw and an
+    /// Apply cannot disagree about what is staged.
+    pub fn staged(&self, view: &SettingsView) -> Staged {
+        Staged {
+            base_url: self.base_url_edit(view).is_some(),
+            model: self.model_edit(view).is_some(),
+            key: self.key_edit(view).is_some(),
+        }
+    }
 }
 
 /// Fingerprint plus an error string: a get `Err` is not Unset. Log like the
@@ -1564,6 +1676,226 @@ mod tests {
             director_model: "gpt-4o-mini".into(),
             ..Settings::default()
         }
+    }
+
+    /// The Director tab's live state, with or without a stored key.
+    fn director_view(api_key_set: bool) -> SettingsView {
+        let fingerprint = if api_key_set {
+            "len=12 last=key1".to_string()
+        } else {
+            String::new()
+        };
+        SettingsView::from_parts(
+            &endpoint_settings(),
+            Path::new("/tmp/ai-buddy/memory.md"),
+            None,
+            Vec::new(),
+            Vec::new(),
+            (api_key_set, fingerprint, String::new()),
+        )
+    }
+
+    /// One patch for the whole tab, so the three edits #279 opens with cost
+    /// one rebuild instead of three.
+    #[test]
+    fn one_apply_retargets_once_for_a_new_url_and_model() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(false);
+            let description = form::describe();
+            let patch = DirectorDraft {
+                base_url: "https://api.x.ai".into(),
+                model: "grok-4.6".into(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            }
+            .patch(&view)
+            .expect("a new URL and model is dirty");
+            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
+            assert_eq!(patch.director_model.as_deref(), Some("grok-4.6"));
+            assert!(
+                patch.director_api_key.is_none(),
+                "an untouched key field is not part of the batch"
+            );
+            assert!(
+                completer_retargets(&endpoint_settings(), &patch),
+                "the one patch has to carry the one Retarget"
+            );
+        });
+    }
+
+    /// #272: the window shows what the variable imposes, so the text in a
+    /// frozen field differs from the file and would otherwise read as dirty.
+    ///
+    /// The variable is exported for real here, so the frozen rule is tested
+    /// through the description both windows build from rather than through a
+    /// `None` a renderer had to remember to pass.
+    #[test]
+    fn a_frozen_row_never_applies_even_when_its_text_differs() {
+        model::tests::with_env(None, Some("https://env.example"), None, || {
+            let view = director_view(false);
+            let description = form::describe();
+            assert!(
+                description.frozen(form::DIRECTOR_BASE_URL_ID),
+                "precondition: the variable owns the URL row"
+            );
+            let draft = DirectorDraft {
+                base_url: "https://typed.example".into(),
+                model: "grok-4.6".into(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert!(
+                !draft.staged(&view).base_url,
+                "a frozen row is never staged, so a redraw always redraws it"
+            );
+            let patch = draft
+                .patch(&view)
+                .expect("the model row is still the user's");
+            assert!(patch.director_base_url.is_none());
+            assert_eq!(patch.director_model.as_deref(), Some("grok-4.6"));
+        });
+    }
+
+    /// Cancel builds no patch at all — it is `refresh()`. What this pins is
+    /// the state it leaves behind: a blank field is untouched, not a delete.
+    #[test]
+    fn a_cancelled_key_never_reaches_a_patch() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let typed = DirectorDraft {
+                base_url: view.director_base_url.clone(),
+                model: view.director_model.clone(),
+                key: "sk-typed-then-cancelled".into(),
+                clear_key: false,
+                description: &description,
+            };
+            assert!(
+                typed.patch(&view).is_some(),
+                "precondition: a typed key is dirty"
+            );
+            // What Cancel leaves behind: the blank field a redraw writes.
+            let after_cancel = DirectorDraft {
+                key: String::new(),
+                ..typed
+            };
+            assert!(
+                after_cancel.patch(&view).is_none(),
+                "a key never typed is not a delete"
+            );
+        });
+    }
+
+    #[test]
+    fn a_staged_clear_deletes_the_stored_key() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let patch = DirectorDraft {
+                base_url: view.director_base_url.clone(),
+                model: view.director_model.clone(),
+                key: String::new(),
+                clear_key: true,
+                description: &description,
+            }
+            .patch(&view)
+            .expect("a staged clear is dirty");
+            assert_eq!(patch.director_api_key.as_deref(), Some(""));
+        });
+    }
+
+    /// Nothing to clear is nothing to apply: the buttons would otherwise
+    /// offer a delete of a key that is not there.
+    #[test]
+    fn a_staged_clear_on_an_unset_key_is_not_a_change() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(false);
+            assert!(!view.clear_key_enabled(), "precondition: no key is stored");
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: view.director_base_url.clone(),
+                model: view.director_model.clone(),
+                key: String::new(),
+                clear_key: true,
+                description: &description,
+            };
+            assert!(draft.patch(&view).is_none());
+        });
+    }
+
+    /// Clear key blanks the field, so text in it afterwards is the later
+    /// intent.
+    #[test]
+    fn a_typed_key_beats_a_staged_clear() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let patch = DirectorDraft {
+                base_url: view.director_base_url.clone(),
+                model: view.director_model.clone(),
+                key: "sk-typed-after-clear".into(),
+                clear_key: true,
+                description: &description,
+            }
+            .patch(&view)
+            .expect("a typed key is dirty");
+            assert_eq!(
+                patch.director_api_key.as_deref(),
+                Some("sk-typed-after-clear")
+            );
+        });
+    }
+
+    /// A redraw asks per field, not per tab. Freezing the whole tab on a
+    /// typed key would hold stale endpoint text on screen, and Apply would
+    /// write it back (#279).
+    #[test]
+    fn a_typed_key_stages_the_key_alone() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let staged = DirectorDraft {
+                base_url: view.director_base_url.clone(),
+                model: view.director_model.clone(),
+                key: "sk-typed".into(),
+                clear_key: false,
+                description: &description,
+            }
+            .staged(&view);
+            assert_eq!(
+                staged,
+                Staged {
+                    base_url: false,
+                    model: false,
+                    key: true,
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn a_clean_tab_has_nothing_to_apply() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: view.director_base_url.clone(),
+                model: view.director_model.clone(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert!(
+                draft.patch(&view).is_none(),
+                "a clean tab is what disables both buttons"
+            );
+            assert!(
+                !draft.staged(&view).any(),
+                "and what lets a redraw take every field from live state"
+            );
+        });
     }
 
     #[test]
