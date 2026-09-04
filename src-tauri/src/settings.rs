@@ -150,9 +150,9 @@ impl SettingsView {
     ) -> Self {
         let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
         Self {
-            // The value in force, as the Development rows show theirs: a
-            // vetoed Director reads off however the file has it.
-            director_enabled: settings.director_enabled && !model::env_vetoes_director(),
+            // The value in force, as the Development rows show theirs: an
+            // exported switch reads as it exported, however the file has it.
+            director_enabled: model::director_in_force(settings.director_enabled),
             ambient_wakes: settings.ambient_wakes,
             do_not_disturb: settings.do_not_disturb,
             sound: settings.sound,
@@ -1997,7 +1997,7 @@ mod tests {
     /// where a vetoed Director would come back on.
     #[test]
     fn retarget_cannot_switch_on_a_director_the_process_vetoed() {
-        model::tests::with_director_off(|| {
+        model::tests::with_env_switch("off", || {
             let store = MemoryStore::new();
             store.set(DIRECTOR_API_KEY, "sk-stored-key").unwrap();
             let settings = endpoint_settings();
@@ -2016,28 +2016,32 @@ mod tests {
         });
     }
 
-    /// The row is frozen, so the box it draws has to be the value in force.
+    /// The row is frozen, so the box it draws has to be the value in force —
+    /// in both directions, since either can disagree with the file.
     #[test]
-    fn a_vetoed_director_reads_off_in_the_window() {
-        model::tests::with_director_off(|| {
-            let settings = Settings {
-                director_enabled: true,
-                ..Settings::default()
-            };
-            let view = SettingsView::from_parts(
-                &settings,
-                Path::new("/tmp/ai-buddy/memory.md"),
-                None,
-                Vec::new(),
-                Vec::new(),
-                (false, String::new(), String::new()),
-            );
+    fn an_env_owned_director_reads_as_exported_in_the_window() {
+        for (exported, saved) in [("off", true), ("on", false)] {
+            model::tests::with_env_switch(exported, || {
+                let settings = Settings {
+                    director_enabled: saved,
+                    ..Settings::default()
+                };
+                let view = SettingsView::from_parts(
+                    &settings,
+                    Path::new("/tmp/ai-buddy/memory.md"),
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    (false, String::new(), String::new()),
+                );
 
-            assert!(
-                !view.director_enabled,
-                "the file says on, the env vetoed it"
-            );
-        });
+                assert_eq!(
+                    view.director_enabled,
+                    exported == "on",
+                    "the file said {saved}, the process said {exported}"
+                );
+            });
+        }
     }
 
     fn endpoint_view(settings: &Settings) -> SettingsView {

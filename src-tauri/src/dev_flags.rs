@@ -47,14 +47,11 @@ impl Flag {
 
     /// What the exported variable says, if it is exported.
     ///
-    /// The whole convention, and the only place it is stated: any exported
-    /// value owns the switch, and on means the value is exactly `1`. So `=0`
-    /// pins a switch off, the same power `=1` has to pin it on. A second rule
-    /// for the value is how `=0` came to freeze a row that the file still
-    /// valued (#273). `form::env_row` reads the ownership half off the same
-    /// `model::env_override`.
+    /// `model::env_switch` holds the vocabulary, so a Development switch and
+    /// the Director's switch answer to the same words. `form::switch_row`
+    /// reads the ownership half off the same call.
     fn env_value(&self) -> Option<bool> {
-        model::env_override(self.var).map(|value| value == "1")
+        model::env_switch(self.var)
     }
 
     /// Load the switch from `persisted`, with an exported variable winning.
@@ -95,23 +92,37 @@ pub fn director_max_tokens() -> Option<u32> {
     (cap > 0).then_some(cap)
 }
 
-/// Every variable a Development row answers to.
-///
-/// `model::tests::with_env` clears these under the test binary's env lock: a
-/// shell that exported one would otherwise decide a frozen row or a seeded
-/// value in a test that never mentions it.
-#[cfg(test)]
-pub(crate) fn test_vars() -> Vec<&'static str> {
+/// One variable per switch on the Development tab.
+fn flag_vars() -> Vec<&'static str> {
     vec![
         TRACE_FRAMES.var(),
         TRACE_HITTEST.var(),
         TRACE_DIRECTOR.var(),
         TRACE_ENGINE.var(),
-        model::TIMEOUT_SECS,
-        model::MAX_TOKENS,
         #[cfg(target_os = "macos")]
         CAPTURABLE.var(),
     ]
+}
+
+/// Every variable naming a switch, the Director's included, for the launch
+/// check that each holds a value `model::env_switch` can read.
+pub fn switch_vars() -> Vec<&'static str> {
+    std::iter::once(model::ENABLED).chain(flag_vars()).collect()
+}
+
+/// Every variable a Development row answers to.
+///
+/// `model::tests::with_env` clears these under the test binary's env lock: a
+/// shell that exported one would otherwise decide a frozen row or a seeded
+/// value in a test that never mentions it. The Director's own switch is not
+/// here — `with_env` already owns that one, and clearing it twice would undo
+/// the value a caller asked for.
+#[cfg(test)]
+pub(crate) fn test_vars() -> Vec<&'static str> {
+    flag_vars()
+        .into_iter()
+        .chain([model::TIMEOUT_SECS, model::MAX_TOKENS])
+        .collect()
 }
 
 /// Load every switch from `settings`, with an exported variable winning.
@@ -146,10 +157,10 @@ pub fn seed(settings: &Settings) {
 mod tests {
     use super::*;
 
-    /// `Flag::env_value`'s convention, for every exported value the row can be
-    /// handed.
+    /// The vocabulary `model::env_switch` holds, seen through a switch: the
+    /// same words the Director's own variable answers to.
     #[test]
-    fn only_one_turns_an_exported_switch_on() {
+    fn an_exported_switch_reads_the_shared_vocabulary() {
         // `with_env` is the whole test binary's env lock; a second mutex would
         // not serialise against it, and concurrent setenv is undefined.
         model::tests::with_env(None, None, None, || {
@@ -160,11 +171,16 @@ mod tests {
             for (exported, on) in [
                 (None, true),
                 (Some("1"), true),
+                (Some("on"), true),
+                (Some("true"), true),
                 (Some("0"), false),
-                (Some("true"), false),
+                (Some("off"), false),
+                (Some("no"), false),
                 // An expansion that produced nothing is a mistake, not an
-                // override, so the file keeps the switch.
+                // override, and a word no switch knows is not an off. Both
+                // leave the file holding the switch.
                 (Some(""), true),
+                (Some("banana"), true),
             ] {
                 match exported {
                     Some(value) => std::env::set_var(TRACE_FRAMES.var(), value),

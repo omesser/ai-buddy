@@ -49,11 +49,12 @@ pub struct MenuSnapshot<'a> {
     pub installed: &'a [String],
     pub current_character: &'a str,
     pub instances: &'a [(String, String)],
+    /// The value in force, the file's or the variable's.
     pub director_enabled: bool,
-    /// `AI_BUDDY_DIRECTOR` said off. Passed in rather than read in `describe`,
-    /// which stays a pure function of this snapshot so it can cross to the
-    /// main thread and be compared against the last one.
-    pub director_vetoed: bool,
+    /// `AI_BUDDY_DIRECTOR` decided the line above. Passed in rather than read
+    /// in `describe`, which stays a pure function of this snapshot so it can
+    /// cross to the main thread and be compared against the last one.
+    pub director_env_owned: bool,
     pub do_not_disturb: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
@@ -207,16 +208,16 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         });
     }
 
-    // Disabled, not merely unchecked: clicking it would flip the saved value
-    // and change nothing the Director does.
+    // Disabled, not merely drawn: clicking it would flip the saved value and
+    // change nothing the Director does.
     entries.push(MenuEntry::Check {
         id: DIRECTOR_ID.to_string(),
-        label: match snapshot.director_vetoed {
-            true => format!("Director (off by {})", crate::model::ENABLED),
+        label: match snapshot.director_env_owned {
+            true => format!("Director (set by {})", crate::model::ENABLED),
             false => "Director".to_string(),
         },
-        enabled: !snapshot.director_vetoed,
-        checked: snapshot.director_enabled && !snapshot.director_vetoed,
+        enabled: !snapshot.director_env_owned,
+        checked: snapshot.director_enabled,
     });
     actions.insert(DIRECTOR_ID.to_string(), MenuAction::ToggleDirector);
 
@@ -418,7 +419,7 @@ mod tests {
             current_character: current,
             instances: &[],
             director_enabled: true,
-            director_vetoed: false,
+            director_env_owned: false,
             do_not_disturb,
             hidden: false,
             hide_in_fullscreen: true,
@@ -455,30 +456,33 @@ mod tests {
         })
     }
 
-    /// The tray must not offer a toggle that cannot take effect.
+    /// The tray must not offer a toggle that cannot take effect, and must
+    /// draw what is in force rather than what the file saved.
     #[test]
-    fn a_vetoed_director_is_named_and_not_offered() {
+    fn an_env_owned_director_is_named_and_not_offered() {
         let installed = names(&["bmo"]);
-        let mut vetoed = snapshot(&installed, "bmo", false);
-        assert!(vetoed.director_enabled, "precondition: the file says on");
-        vetoed.director_vetoed = true;
+        for in_force in [true, false] {
+            let mut owned = snapshot(&installed, "bmo", false);
+            owned.director_enabled = in_force;
+            owned.director_env_owned = true;
 
-        let description = describe(vetoed);
-        match entry_with_id(&description, DIRECTOR_ID).expect("the Director row exists") {
-            MenuEntry::Check {
-                label,
-                enabled,
-                checked,
-                ..
-            } => {
-                assert!(!enabled, "a vetoed switch must not be clickable");
-                assert!(!checked, "vetoed, whatever the saved value says");
-                assert!(
-                    label.contains(crate::model::ENABLED),
-                    "the row must name the variable, not {label:?}"
-                );
+            let description = describe(owned);
+            match entry_with_id(&description, DIRECTOR_ID).expect("the Director row exists") {
+                MenuEntry::Check {
+                    label,
+                    enabled,
+                    checked,
+                    ..
+                } => {
+                    assert!(!enabled, "a switch the env owns is not the user's");
+                    assert_eq!(*checked, in_force, "the tray draws the value in force");
+                    assert!(
+                        label.contains(crate::model::ENABLED),
+                        "the row must name the variable, not {label:?}"
+                    );
+                }
+                _ => panic!("the Director row must be a Check"),
             }
-            _ => panic!("the Director row must be a Check"),
         }
     }
 

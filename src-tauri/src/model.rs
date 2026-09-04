@@ -87,10 +87,10 @@ pub struct DirectorInspect {
 pub struct DirectorConfig {
     pub enabled: bool,
     pub configured: bool,
-    /// `AI_BUDDY_DIRECTOR` said off. Read here rather than in `apply_switch`,
-    /// which the frame loop calls every tick, and nothing sets the variable
-    /// once the process is running.
-    env_off: bool,
+    /// What `AI_BUDDY_DIRECTOR` says, if it says anything. Read here rather
+    /// than in `apply_switch`, which the frame loop calls every tick, and
+    /// nothing sets the variable once the process is running.
+    env_says: Option<bool>,
     /// The env var is set, but trim left nothing usable — `$XAI_API_KEY`
     /// expanding to empty used to look like the key was never offered.
     pub key_invalid: bool,
@@ -103,13 +103,13 @@ pub struct DirectorConfig {
 }
 
 impl DirectorConfig {
-    /// Fold the saved switch in: on only when the file says on, a key or a
-    /// local host makes it possible, and the env has not vetoed it.
+    /// Fold the saved switch in: the switch in force, and a key or a local
+    /// host to make a Completer exist.
     ///
-    /// The only place that composes the three. A caller that sets `enabled`
-    /// from `configured` alone loses the veto.
+    /// The only place that composes the two into what the Director does. A
+    /// caller that sets `enabled` from `configured` alone loses the variable.
     pub fn apply_switch(&mut self, saved_on: bool) {
-        self.enabled = saved_on && self.configured && !self.env_off;
+        self.enabled = self.env_says.unwrap_or(saved_on) && self.configured;
     }
 
     pub fn inspect(&self) -> DirectorInspect {
@@ -211,11 +211,11 @@ pub(crate) fn env_or_file(var: &str, file: &str) -> String {
 /// Build Director on/off from already-resolved settings.
 pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
     let configured = !settings.api_key.is_empty() || is_local(&settings.base_url);
-    let env_off = env_vetoes_director();
+    let env_says = env_switch(ENABLED);
     DirectorConfig {
-        enabled: configured && !env_off,
+        enabled: env_says.unwrap_or(true) && configured,
         configured,
-        env_off,
+        env_says,
         key_invalid: settings.key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
@@ -328,15 +328,50 @@ pub(crate) fn env_owns_key() -> bool {
     !matches!(key_from_env(), KeyRead::Unset)
 }
 
-/// Has `AI_BUDDY_DIRECTOR` forbidden the Director?
+/// The vocabulary every switch answers to, and the only place it is stated.
 ///
-/// `pub(crate)` like the endpoint variables: the window and the tray have to
-/// name a switch the env owns, not offer a toggle that does nothing (#272).
-pub(crate) fn env_vetoes_director() -> bool {
-    matches!(
-        std::env::var(ENABLED).ok().as_deref(),
-        Some("off" | "0" | "false")
-    )
+/// One vocabulary because two meant `=true` turning one switch on and another
+/// off: the Director read its own three words and ignored the rest, while a
+/// Development flag took any value at all and called everything but `1` off.
+///
+/// A word outside it is a typo rather than a choice, so it owns nothing and
+/// whoever held the switch keeps it. `env_switch_warnings` names it at launch,
+/// because a value quietly ignored looks exactly like one obeyed.
+fn switch_from(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "1" | "on" | "true" | "yes" => Some(true),
+        "0" | "off" | "false" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+/// What `var` says a switch should be, if it says anything a switch can hear.
+pub(crate) fn env_switch(var: &str) -> Option<bool> {
+    switch_from(&env_override(var)?)
+}
+
+/// One line per variable in `vars` holding a value no switch could read.
+pub fn env_switch_warnings(vars: &[&str]) -> Vec<String> {
+    vars.iter()
+        .filter_map(|var| {
+            let value = env_override(var)?;
+            switch_from(&value).is_none().then(|| {
+                format!(
+                    "env: warning: {var}={value} is not on or off (1/0, true/false, yes/no); ignoring it"
+                )
+            })
+        })
+        .collect()
+}
+
+/// The Director switch in force: the exported value, else the saved one.
+///
+/// What the window draws and the tray checks. Deliberately not folded with
+/// `configured` — the box has always shown the switch rather than whether a
+/// Completer answers, and a key lives in the secret store that this layer
+/// does not read (#291).
+pub(crate) fn director_in_force(saved_on: bool) -> bool {
+    env_switch(ENABLED).unwrap_or(saved_on)
 }
 
 /// A positive number of seconds from `var`, or nothing when it is unset,
@@ -1034,10 +1069,10 @@ pub(crate) mod tests {
         with_vars(key, base, model, None, body)
     }
 
-    /// Run `body` with the Director switched off and the other three cleared,
-    /// so the developer's shell cannot decide the result.
-    pub(crate) fn with_director_off(body: impl FnOnce()) {
-        with_vars(None, None, None, Some("off"), body)
+    /// Run `body` with `AI_BUDDY_DIRECTOR` exported as `value` and the other
+    /// three cleared, so the developer's shell cannot decide the result.
+    pub(crate) fn with_env_switch(value: &str, body: impl FnOnce()) {
+        with_vars(None, None, None, Some(value), body)
     }
 
     fn with_vars(
@@ -1161,12 +1196,103 @@ pub(crate) mod tests {
         });
     }
 
+    /// One vocabulary, so no word that reads like on is quietly off.
+    #[test]
+    fn a_switch_variable_reads_one_vocabulary() {
+        with_env(None, None, None, || {
+            for (exported, want) in [
+                (None, None),
+                (Some("1"), Some(true)),
+                (Some("on"), Some(true)),
+                (Some("true"), Some(true)),
+                (Some("yes"), Some(true)),
+                (Some("0"), Some(false)),
+                (Some("off"), Some(false)),
+                (Some("false"), Some(false)),
+                (Some("no"), Some(false)),
+                (Some("ON"), Some(true)),
+                (Some("Off"), Some(false)),
+                // An expansion that produced nothing is a mistake, not a
+                // choice, and a word no switch knows owns nothing.
+                (Some(""), None),
+                (Some("banana"), None),
+            ] {
+                match exported {
+                    Some(value) => std::env::set_var(ENABLED, value),
+                    None => std::env::remove_var(ENABLED),
+                }
+                assert_eq!(env_switch(ENABLED), want, "exported {exported:?}");
+            }
+            std::env::remove_var(ENABLED);
+        });
+    }
+
+    /// A value nothing obeyed must not pass for one that was.
+    #[test]
+    fn an_unreadable_switch_value_is_named_at_launch() {
+        with_env(None, None, None, || {
+            std::env::set_var(ENABLED, "banana");
+            let warnings = env_switch_warnings(&[ENABLED]);
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains(ENABLED), "{warnings:?}");
+            assert!(warnings[0].contains("banana"), "{warnings:?}");
+
+            std::env::set_var(ENABLED, "off");
+            assert!(
+                env_switch_warnings(&[ENABLED]).is_empty(),
+                "a word the vocabulary knows is not a warning"
+            );
+            std::env::remove_var(ENABLED);
+            assert!(
+                env_switch_warnings(&[ENABLED]).is_empty(),
+                "unset is silent"
+            );
+        });
+    }
+
+    /// The variable decides in both directions, which is the whole point of
+    /// one vocabulary: an exported on lifts a file that says off.
+    #[test]
+    fn an_exported_switch_decides_either_way() {
+        with_vars(None, None, None, Some("on"), || {
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&settings);
+            config.apply_switch(false);
+            assert!(config.enabled, "the file said off, the process said on");
+        });
+    }
+
+    /// On is still a request, not a Completer: the endpoint has to exist.
+    #[test]
+    fn an_exported_on_cannot_conjure_a_completer() {
+        with_vars(None, None, None, Some("on"), || {
+            let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
+            let mut config = config_from(&settings);
+            assert!(!config.configured, "a remote host with no key");
+            config.apply_switch(true);
+            assert!(!config.enabled);
+        });
+    }
+
+    /// A word no switch knows leaves the decision where it was.
+    #[test]
+    fn an_unreadable_switch_value_leaves_the_file_deciding() {
+        with_vars(None, None, None, Some("banana"), || {
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&settings);
+            config.apply_switch(true);
+            assert!(config.enabled, "the file said on");
+            config.apply_switch(false);
+            assert!(!config.enabled, "the file said off");
+        });
+    }
+
     /// The README's promise that `off` "keeps Static even when a key is set".
-    /// A local host is configured without a key, so nothing but the veto can
-    /// hold the Director back.
+    /// A local host is configured without a key, so nothing but the variable
+    /// can hold the Director back.
     #[test]
     fn the_env_switch_vetoes_a_director_the_file_would_allow() {
-        with_director_off(|| {
+        with_env_switch("off", || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
             let mut config = config_from(&settings);
             assert!(config.configured, "a local host needs no key");
@@ -1346,7 +1472,7 @@ pub(crate) mod tests {
         let static_only = DirectorConfig {
             enabled: false,
             configured: false,
-            env_off: false,
+            env_says: None,
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
@@ -1373,7 +1499,7 @@ pub(crate) mod tests {
         let model = DirectorConfig {
             enabled: true,
             configured: true,
-            env_off: false,
+            env_says: None,
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Duration::from_secs(45),
@@ -1387,7 +1513,7 @@ pub(crate) mod tests {
         let off = DirectorConfig {
             enabled: false,
             configured: true,
-            env_off: false,
+            env_says: None,
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
