@@ -13,12 +13,18 @@ the change rather than take the diff's word for it.
 Reference PNG assets:
 - `logo-512.png` — Product logo, 512×512 RGB, 153 KB. The source art
   `scripts/make-app-icon.py` cuts the app icon from; edit this, then rerun it.
+- `app-icon-1024.png` — The app icon on Apple's macOS grid, 1024×1024 RGBA,
+  318 KB. Generated from `logo-512.png`, not drawn.
 - `tray-256.png` — Tray mark, 256×256 RGBA, 23 KB
 - `tray-64.png` — Tray mark, 64×64 RGBA, 4.1 KB
 - `tray-32.png` — Tray mark, 32×32 RGBA, 1.8 KB
 
 ## Usage
 
-The product logo (`src-tauri/icons/icon.png`) is the 1024×1024 RGBA product icon for the application bundle, cut to Apple's macOS grid — an 824px squircle body on a transparent canvas. Nothing downstream rounds a square icon: Tauri hands this file to `NSApp.setApplicationIconImage` on a dev run and packs it into the `.icns` for a bundled one, so the Dock draws whatever shape it is given. `python3 scripts/make-app-icon.py` regenerates it, and `src-tauri/icons/icon.ico` with it, from `logo-art/logo-512.png`.
+The app icon (`src-tauri/icons/icon.png`) is 512×512 RGBA, cut to Apple's macOS grid: a squircle body filling 824 of a 1024 canvas, scaled down to 512, with the margin around it transparent. Nothing downstream rounds a square icon — Tauri hands this file to `NSApp.setApplicationIconImage` on a dev run, and tauri-bundler builds the `.icns` from it for a packaged one — so the Dock draws whatever shape the file has.
+
+512 is the largest size both packagers take. In the `.icns` format, 1024×1024 exists only as the 2x form of 512, which tauri-bundler asks for by filename, so a plain `icon.png` at 1024 matches no element type and the bundler errors out rather than skipping it. On Linux the icon is filed by its own dimensions, at `usr/share/icons/hicolor/<width>x<height>/apps/`, and the hicolor theme lists no directory above 512 — so an icon larger than that lands where nothing looks for it.
+
+`python3 scripts/make-app-icon.py` regenerates this file, `logo-art/app-icon-1024.png` and `src-tauri/icons/icon.ico` from `logo-art/logo-512.png`.
 
 The tray icon (`src-tauri/icons/tray.png`) is a 256×256 template icon for the system menu bar, designed to adapt to light/dark themes.
