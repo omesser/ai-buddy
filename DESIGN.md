@@ -170,6 +170,11 @@ Rejected:
 This is the decision that keeps the character visibly alive while the Functional
 Layer is thinking, which is exactly where a naive design looks broken.
 
+How a wake is actually sent — one call in flight per Instance, held by
+convention rather than by construction, uncancellable while it is on the wire,
+and what that costs the user in latency — is
+[research](./docs/research/director-in-flight-and-latency.md).
+
 ### 6. Characters are packages; the engine owns the vocabulary
 
 A Character Package contains animations, a Character Manifest, a Personality Prompt, and
