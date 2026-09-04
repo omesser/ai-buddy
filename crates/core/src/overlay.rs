@@ -67,24 +67,12 @@ pub fn display_index_for(point: (f64, f64), displays: &[Rect]) -> Option<usize> 
 /// sprite that is off-screen — thrown past an edge, or on a display that was
 /// just unplugged — which is the very symptom this exists to remove.
 ///
-/// An edge is one of two things, so it takes two passes. Half-open runs first,
-/// which settles a seam one way only: feet on the bottom edge of an upper
-/// display in a vertical stack belong to the display below, never to both.
-///
-/// An edge with no display beyond it is not a seam but a floor, and #178 read
-/// it as a seam. Nothing is reserved along such an edge — a secondary screen
-/// carries no Dock and no taskbar, and the Dock's own display gives its
-/// reservation up to `floor_under_dock` — so the usable frame reaches the edge
-/// and the floor the Engine derives is the display's own bottom. Feet come to
-/// rest there, the first pass reads that as off the desktop, and the Character
-/// idles with no bubble until a drag or a Perch lifts it clear.
-///
-/// The second pass therefore claims a display the feet are within a point of.
-/// Slack rather than equality, because the floor is this rectangle divided by
-/// a scale factor and clamped, and `usable_frame` already argues that such
-/// arithmetic need not land back on the edge it started from. A point is finer
-/// than anything a user can see, and nowhere near the distance a thrown sprite
-/// clears, so the `None` #178 exists for survives.
+/// Two passes, because an edge is either a seam or a floor. Half-open first,
+/// so a seam resolves one way only: feet on the shared edge of a vertical
+/// stack belong to the display below. A floor is the edge #178 missed — a
+/// display reserving nothing along one, as a second screen does, puts the
+/// Engine's floor on it, and resting feet land exactly there. The second pass
+/// picks those up, `FLOOR_SLACK` wide.
 pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
     displays
         .iter()
@@ -97,7 +85,12 @@ pub fn bubble_owner(feet: (f64, f64), displays: &[Rect]) -> Option<usize> {
 }
 
 /// How far outside its display feet may be and still be standing on it, in
-/// points. Squared at the call site, because `outside_by` is.
+/// points.
+///
+/// Slack rather than equality: the floor is the display rectangle scaled and
+/// clamped, which `usable_frame` argues need not land back on the edge it came
+/// from. A point is far short of off-screen, so a thrown sprite still owns no
+/// bubble. Squared at the call site, as `outside_by` is.
 const FLOOR_SLACK: f64 = 1.0;
 
 /// Whether a display's window has this point, right and bottom edges excluded.
@@ -556,15 +549,14 @@ mod tests {
         assert_eq!(
             bubble_owner((3648.0, 500.0), &displays),
             Some(1),
-            "and the same where a walk ends against the outermost side"
+            "and where a walk ends against the outermost side"
         );
 
         let a_hair_adrift = f64::from_bits(1080.0_f64.to_bits() + 1);
         assert_eq!(
             bubble_owner((960.0, a_hair_adrift), &displays),
             Some(0),
-            "a floor the arithmetic left one unit in the last place past its \
-             display is the same floor"
+            "a floor one unit in the last place adrift is still that floor"
         );
 
         let stacked = [
