@@ -11,23 +11,32 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
-    NSBackingStoreType, NSButton, NSColor, NSControlStateValueOff, NSControlStateValueOn,
-    NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
-    NSStatusWindowLevel, NSTextDelegate, NSTextField, NSTextFieldDelegate, NSTextView,
-    NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate, NSWindowLevel, NSWindowStyleMask,
+    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControlStateValueOff,
+    NSControlStateValueOn, NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView,
+    NSSecureTextField, NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
+    NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
+    NSWindowLevel, NSWindowStyleMask,
 };
 use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow};
-use crate::settings::{key_was_typed, SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
 const DOC_HEIGHT: f64 = 1600.0;
 const MARGIN: f64 = 28.0;
 const FIELD_WIDTH: f64 = WINDOW_WIDTH - MARGIN * 2.0;
+/// The gap above a row, and the smaller one above a help line. The ratio
+/// between them is the only thing that says which control a help line
+/// describes; equal gaps read as a caption for the row below.
+const ROW_GAP: f64 = 12.0;
+const HINT_GAP: f64 = 4.0;
+/// A section break: the rule above a heading and the heading's own leading
+/// gap. Larger than `ROW_GAP`, so a heading groups with the rows under it.
+const SECTION_GAP: f64 = 24.0;
 thread_local! {
     static CONTROLLER: RefCell<Option<Retained<SettingsController>>> = const { RefCell::new(None) };
 }
@@ -36,7 +45,9 @@ thread_local! {
 struct Ivars {
     session: RefCell<Option<SettingsSession>>,
     window: RefCell<Option<Retained<NSWindow>>>,
-    scroll: RefCell<Option<Retained<NSScrollView>>>,
+    tab_view: RefCell<Option<Retained<NSTabView>>>,
+    /// Each tab's scroll view and the height its rows need, in tab order.
+    panes: RefCell<Vec<(Retained<NSScrollView>, f64)>>,
     director: RefCell<Option<Retained<NSButton>>>,
     base_url: RefCell<Option<Retained<NSTextField>>>,
     model: RefCell<Option<Retained<NSTextField>>>,
@@ -48,6 +59,12 @@ struct Ivars {
     hidden: RefCell<Option<Retained<NSButton>>>,
     fullscreen: RefCell<Option<Retained<NSButton>>>,
     tag_to_id: RefCell<HashMap<isize, String>>,
+    /// Every checkbox and text field in the window, by row id, so `refresh`
+    /// can draw the rows `SettingsView` carries in a map rather than a named
+    /// field. A named ivar per Development switch is the same value written in
+    /// ten places (#273).
+    checkboxes: RefCell<Vec<(String, Retained<NSButton>)>>,
+    fields: RefCell<Vec<(String, Retained<NSTextField>)>>,
     consent: RefCell<Vec<Retained<NSButton>>>,
     consent_intro: RefCell<Option<Retained<NSTextField>>>,
     hotkey: RefCell<Option<Retained<NSTextField>>>,
@@ -112,21 +129,11 @@ define_class!(
                 return;
             };
 
+            let form::RowAction::PatchField(field_name) = action else {
+                return;
+            };
             let mut patch = SettingsPatch::default();
-            if let form::RowAction::PatchField(field_name) = action {
-                match field_name.as_str() {
-                    "director_enabled" => patch.director_enabled = Some(on),
-                    "ambient_wakes" => patch.ambient_wakes = Some(on),
-                    "do_not_disturb" => patch.do_not_disturb = Some(on),
-                    "sound" => patch.sound = Some(on),
-                    "hidden" => patch.hidden = Some(on),
-                    "hide_in_fullscreen" => patch.hide_in_fullscreen = Some(on),
-                    "launch_at_login" => patch.launch_at_login = Some(on),
-                    "use_accessibility" => patch.use_accessibility = Some(on),
-                    "use_screen_recording" => patch.use_screen_recording = Some(on),
-                    _ => return,
-                }
-            } else {
+            if !patch.set_bool(field_name, on) {
                 return;
             }
             self.apply(patch);
@@ -150,11 +157,8 @@ define_class!(
 
             let text = field.stringValue().to_string();
             let mut patch = SettingsPatch::default();
-            match field_name.as_str() {
-                "director_base_url" => patch.director_base_url = Some(text),
-                "director_model" => patch.director_model = Some(text),
-                "director_api_key" if key_was_typed(&text) => patch.director_api_key = Some(text),
-                _ => return,
+            if !patch.set_text(field_name, &text) {
+                return;
             }
             let committed_key = patch.director_api_key.is_some();
             self.apply(patch);
@@ -174,10 +178,17 @@ define_class!(
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
-            self.apply(SettingsPatch {
-                character: Some(title.to_string()),
-                ..SettingsPatch::default()
-            });
+            let description = form::describe();
+            let Some(form::RowAction::PatchField(field)) =
+                description.actions.get(form::CHARACTER_ID)
+            else {
+                return;
+            };
+            let mut patch = SettingsPatch::default();
+            if !patch.set_text(field, &title.to_string()) {
+                return;
+            }
+            self.apply(patch);
         }
 
         #[unsafe(method(handleAction:))]
@@ -300,6 +311,9 @@ impl SettingsController {
         self.refresh();
     }
 
+    /// The field name comes off the row's own action, not a literal: a rename
+    /// would leave a hand-matched name writing nothing, which is the class of
+    /// bug the action registry exists to close.
     fn commit_excluded(&self) {
         let text = self
             .ivars()
@@ -308,11 +322,16 @@ impl SettingsController {
             .as_ref()
             .map(|field| field.string().to_string())
             .unwrap_or_default();
-        let lines: Vec<String> = text.lines().map(|line| line.trim().to_string()).collect();
-        self.apply(SettingsPatch {
-            excluded_applications: Some(lines),
-            ..SettingsPatch::default()
-        });
+        let description = form::describe();
+        let Some(form::RowAction::PatchField(field)) = description.actions.get(form::EXCLUDED_ID)
+        else {
+            return;
+        };
+        let mut patch = SettingsPatch::default();
+        if !patch.set_text(field, &text) {
+            return;
+        }
+        self.apply(patch);
     }
 
     fn apply(&self, patch: SettingsPatch) {
@@ -334,8 +353,7 @@ impl SettingsController {
         };
         let description = form::describe();
         let dismiss_label = description
-            .sections
-            .iter()
+            .sections()
             .find(|s| s.heading == "Instances")
             .and_then(|s| {
                 s.rows.iter().find_map(|r| match r {
@@ -388,6 +406,20 @@ impl SettingsController {
         if let Some(text) = self.ivars().excluded.borrow().clone() {
             text.setString(&NSString::from_str(&view.excluded_text()));
         }
+        for (id, button) in self.ivars().checkboxes.borrow().iter() {
+            if let Some(&on) = view.development_switches.get(id) {
+                button.setState(if on {
+                    NSControlStateValueOn
+                } else {
+                    NSControlStateValueOff
+                });
+            }
+        }
+        for (id, field) in self.ivars().fields.borrow().iter() {
+            if let Some(text) = view.development_texts.get(id) {
+                field.setStringValue(&NSString::from_str(text));
+            }
+        }
         fill_popup(&self.ivars().character, &view.installed, &view.character);
         fill_popup(
             &self.ivars().new_character,
@@ -402,20 +434,34 @@ impl SettingsController {
         let Some(window) = ivars.window.borrow().clone() else {
             return;
         };
-        let Some(scroll) = ivars.scroll.borrow().clone() else {
+        let Some(tab_view) = ivars.tab_view.borrow().clone() else {
             return;
         };
         let Some(content) = window.contentView() else {
             return;
         };
-        scroll.setFrame(content.bounds());
-        let Some(document) = scroll.documentView() else {
-            return;
-        };
-        let width = scroll.contentSize().width;
-        document.setFrameSize(NSSize::new(width, DOC_HEIGHT));
+        tab_view.setFrame(content.bounds());
+        // An unselected tab's view is off the window, and AppKit sizes it only
+        // when it comes on. Every pane is sized here so the tab it belongs to
+        // is laid out before the user reaches it.
+        let pane_frame = tab_view.contentRect();
+        let panes = ivars.panes.borrow();
+        for (scroll, needed) in panes.iter() {
+            scroll.setFrame(pane_frame);
+            let Some(document) = scroll.documentView() else {
+                continue;
+            };
+            let visible = scroll.contentSize();
+            size_document(
+                &document,
+                NSSize::new(visible.width, needed.max(visible.height)),
+            );
+        }
         if let Some(field) = ivars.consent_intro.borrow().as_ref() {
-            field.setPreferredMaxLayoutWidth(width - MARGIN * 2.0);
+            // Every pane is the same width, so the first one's is the wrap width.
+            if let Some((scroll, _)) = panes.first() {
+                field.setPreferredMaxLayoutWidth(scroll.contentSize().width - MARGIN * 2.0);
+            }
         }
     }
 
@@ -464,23 +510,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
 
     let description = form::describe();
 
-    let document = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(0.0, 0.0),
-            NSSize::new(WINDOW_WIDTH, DOC_HEIGHT),
-        ),
-    );
-    let mut cursor = Cursor {
-        y: DOC_HEIGHT - 16.0,
-        parent: document.clone(),
-        mtm,
-    };
-
-    let title = NSTextField::labelWithString(&NSString::from_str("Settings"), mtm);
-    title.setFont(Some(&NSFont::boldSystemFontOfSize(20.0)));
-    cursor.place(&title, 28.0);
-
     let mut next_tag: isize = 1000;
 
     let mut director_button = None;
@@ -504,242 +533,324 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut new_name_field = None;
     let mut instances_view = None;
 
-    for section in &description.sections {
-        cursor.heading(&section.heading);
-        if let Some(comment) = &section.comment {
-            let field = cursor.section_comment(comment);
-            if section.heading == "What the buddy can see" {
-                consent_intro = Some(field);
+    let tab_view = NSTabView::initWithFrame(
+        NSTabView::alloc(mtm),
+        NSRect::new(
+            NSPoint::new(0.0, 0.0),
+            NSSize::new(WINDOW_WIDTH, WINDOW_HEIGHT),
+        ),
+    );
+    stretch_xy(&tab_view);
+    let mut panes = Vec::new();
+
+    for tab in &description.tabs {
+        let document = NSView::initWithFrame(
+            NSView::alloc(mtm),
+            NSRect::new(
+                NSPoint::new(0.0, 0.0),
+                NSSize::new(WINDOW_WIDTH, DOC_HEIGHT),
+            ),
+        );
+        let mut cursor = Cursor {
+            y: DOC_HEIGHT,
+            parent: document.clone(),
+            mtm,
+        };
+
+        for (index, section) in tab.sections.iter().enumerate() {
+            if index > 0 {
+                cursor.rule();
             }
-        }
+            cursor.heading(&section.heading);
+            if let Some(comment) = &section.comment {
+                let field = cursor.section_comment(comment);
+                if section.heading == "What the buddy can see" {
+                    consent_intro = Some(field);
+                }
+            }
 
-        for row in &section.rows {
-            match row {
-                FormRow::Checkbox {
-                    id,
-                    label,
-                    frozen,
-                    help,
-                    comment: _,
-                } => {
-                    let tag = next_tag;
-                    next_tag += 1;
-                    controller
-                        .ivars()
-                        .tag_to_id
-                        .borrow_mut()
-                        .insert(tag, id.clone());
+            for row in &section.rows {
+                match row {
+                    FormRow::Checkbox {
+                        id,
+                        label,
+                        frozen,
+                        help,
+                        comment: _,
+                    } => {
+                        let tag = next_tag;
+                        next_tag += 1;
+                        controller
+                            .ivars()
+                            .tag_to_id
+                            .borrow_mut()
+                            .insert(tag, id.clone());
 
-                    let btn = checkbox(label, tag, &controller, mtm);
-                    if *frozen {
-                        btn.setEnabled(false);
-                    }
-                    cursor.place(&btn, 22.0);
-                    if let Some(help_text) = help {
-                        cursor.hint(help_text);
-                    }
-
-                    match id.as_str() {
-                        form::DIRECTOR_ID => director_button = Some(btn.clone()),
-                        form::AMBIENT_ID => ambient_button = Some(btn.clone()),
-                        form::DND_ID => dnd_button = Some(btn.clone()),
-                        form::SOUND_ID => sound_button = Some(btn.clone()),
-                        form::HIDDEN_ID => hidden_button = Some(btn.clone()),
-                        form::FULLSCREEN_ID => fullscreen_button = Some(btn.clone()),
-                        form::CONSENT_ACCESSIBILITY_ID | form::CONSENT_SCREEN_RECORDING_ID => {
-                            consent_buttons.push(btn.clone());
+                        let btn = checkbox(label, tag, &controller, mtm);
+                        if *frozen {
+                            btn.setEnabled(false);
                         }
-                        _ => {}
-                    }
-                }
-                FormRow::TextField {
-                    id,
-                    label,
-                    placeholder,
-                    frozen,
-                } => {
-                    if let Some(label_text) = label {
-                        let lbl =
-                            NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
-                        cursor.place(&lbl, 18.0);
-                    }
-                    let field = endpoint_field(placeholder, mtm);
-                    tag_field(&field, id, &mut next_tag, &controller);
-                    freeze_or_bind(&field, *frozen, &controller);
-                    cursor.place(&field, 24.0);
+                        cursor.place(&btn, 22.0);
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
 
-                    match id.as_str() {
-                        form::DIRECTOR_BASE_URL_ID => base_url_field = Some(field),
-                        form::DIRECTOR_MODEL_ID => model_field = Some(field),
-                        _ => {}
-                    }
-                }
-                FormRow::SecureField { id, label, frozen } => {
-                    if let Some(label_text) = label {
-                        let lbl =
-                            NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
-                        cursor.place(&lbl, 18.0);
-                    }
-                    let field = NSSecureTextField::initWithFrame(
-                        NSSecureTextField::alloc(mtm),
-                        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
-                    )
-                    .into_super();
-                    tag_field(&field, id, &mut next_tag, &controller);
-                    freeze_or_bind(&field, *frozen, &controller);
-                    cursor.place(&field, 24.0);
+                        controller
+                            .ivars()
+                            .checkboxes
+                            .borrow_mut()
+                            .push((id.clone(), btn.clone()));
 
-                    if id == form::DIRECTOR_API_KEY_ID {
-                        api_key_field = Some(field);
+                        match id.as_str() {
+                            form::DIRECTOR_ID => director_button = Some(btn.clone()),
+                            form::AMBIENT_ID => ambient_button = Some(btn.clone()),
+                            form::DND_ID => dnd_button = Some(btn.clone()),
+                            form::SOUND_ID => sound_button = Some(btn.clone()),
+                            form::HIDDEN_ID => hidden_button = Some(btn.clone()),
+                            form::FULLSCREEN_ID => fullscreen_button = Some(btn.clone()),
+                            form::CONSENT_ACCESSIBILITY_ID | form::CONSENT_SCREEN_RECORDING_ID => {
+                                consent_buttons.push(btn.clone());
+                            }
+                            _ => {}
+                        }
                     }
-                }
-                FormRow::InspectPath { id } => {
-                    let path_field =
-                        NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
-                    path_field.setFont(NSFont::userFixedPitchFontOfSize(11.0).as_deref());
-                    cursor.place(&path_field, 36.0);
+                    FormRow::TextField {
+                        id,
+                        label,
+                        placeholder,
+                        frozen,
+                    } => {
+                        if let Some(label_text) = label {
+                            let lbl =
+                                NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
+                            cursor.place(&lbl, 18.0);
+                        }
+                        let field = endpoint_field(placeholder, mtm);
+                        tag_field(&field, id, &mut next_tag, &controller);
+                        freeze_or_bind(&field, *frozen, &controller);
+                        cursor.place(&field, 24.0);
 
-                    if id == form::MEMORY_PATH_ID {
-                        memory_path_field = Some(path_field);
-                    }
-                }
-                FormRow::List {
-                    id,
-                    dismiss_label: _,
-                } => {
-                    let view = NSView::initWithFrame(
-                        NSView::alloc(mtm),
-                        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 80.0)),
-                    );
-                    cursor.place(&view, 80.0);
+                        controller
+                            .ivars()
+                            .fields
+                            .borrow_mut()
+                            .push((id.clone(), field.clone()));
 
-                    if id == form::INSTANCES_ID {
-                        instances_view = Some(view);
+                        match id.as_str() {
+                            form::DIRECTOR_BASE_URL_ID => base_url_field = Some(field),
+                            form::DIRECTOR_MODEL_ID => model_field = Some(field),
+                            _ => {}
+                        }
                     }
-                }
-                FormRow::InspectBlock { id, label, help } => {
-                    if let Some(label_text) = label {
-                        let lbl =
-                            NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
-                        cursor.place(&lbl, 18.0);
-                    }
-                    if let Some(help_text) = help {
-                        cursor.hint(help_text);
-                    }
+                    FormRow::SecureField { id, label, frozen } => {
+                        if let Some(label_text) = label {
+                            let lbl =
+                                NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
+                            cursor.place(&lbl, 18.0);
+                        }
+                        let field = NSSecureTextField::initWithFrame(
+                            NSSecureTextField::alloc(mtm),
+                            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
+                        )
+                        .into_super();
+                        tag_field(&field, id, &mut next_tag, &controller);
+                        freeze_or_bind(&field, *frozen, &controller);
+                        cursor.place(&field, 24.0);
 
-                    match id.as_str() {
-                        form::PAYLOAD_ID => {
+                        if id == form::DIRECTOR_API_KEY_ID {
+                            api_key_field = Some(field);
+                        }
+                    }
+                    FormRow::InspectPath { id } => {
+                        let path_field =
+                            NSTextField::wrappingLabelWithString(&NSString::from_str(""), mtm);
+                        path_field.setFont(NSFont::userFixedPitchFontOfSize(11.0).as_deref());
+                        cursor.place(&path_field, 36.0);
+
+                        if id == form::MEMORY_PATH_ID {
+                            memory_path_field = Some(path_field);
+                        }
+                    }
+                    FormRow::List {
+                        id,
+                        dismiss_label: _,
+                        help,
+                    } => {
+                        let view = NSView::initWithFrame(
+                            NSView::alloc(mtm),
+                            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 80.0)),
+                        );
+                        cursor.place(&view, 80.0);
+
+                        if id == form::INSTANCES_ID {
+                            instances_view = Some(view);
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
+                    }
+                    FormRow::InspectBlock { id, label, help } => {
+                        if let Some(label_text) = label {
+                            let lbl =
+                                NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
+                            cursor.place(&lbl, 18.0);
+                        }
+                        match id.as_str() {
+                            form::PAYLOAD_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 88.0);
+                                payload_field = Some(field);
+                            }
+                            form::HOTKEY_ID => {
+                                let field = inspect_line(mtm);
+                                cursor.place(&field, 22.0);
+                                hotkey_field = Some(field);
+                            }
+                            _ => {}
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
+                    }
+                    FormRow::Popup { id, help, .. } => {
+                        let pop = popup(&controller, sel!(characterPicked:), mtm);
+                        cursor.place(&pop, 24.0);
+
+                        if id == form::CHARACTER_ID {
+                            character_popup = Some(pop);
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
+                    }
+                    FormRow::Multiline {
+                        id, help, editable, ..
+                    } => {
+                        if *editable {
+                            let text = editable_block(&controller, mtm);
+                            cursor.place(&text, 88.0);
+                            if id == form::EXCLUDED_ID {
+                                excluded_text = Some(text);
+                            }
+                        } else {
                             let field = inspect_block(mtm);
                             cursor.place(&field, 88.0);
-                            payload_field = Some(field);
                         }
-                        form::HOTKEY_ID => {
-                            let field = inspect_line(mtm);
-                            cursor.place(&field, 22.0);
-                            hotkey_field = Some(field);
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
                         }
-                        _ => {}
                     }
-                }
-                FormRow::Popup { id, .. } => {
-                    let pop = popup(&controller, sel!(characterPicked:), mtm);
-                    cursor.place(&pop, 24.0);
+                    FormRow::Composite { controls, help, .. } => {
+                        cursor.y -= 24.0 + ROW_GAP;
+                        let mut x = MARGIN;
 
-                    if id == form::CHARACTER_ID {
-                        character_popup = Some(pop);
-                    }
-                }
-                FormRow::Multiline {
-                    id, help, editable, ..
-                } => {
-                    if let Some(help_text) = help {
-                        cursor.hint(help_text);
-                    }
-                    if *editable {
-                        let text = editable_block(&controller, mtm);
-                        cursor.place(&text, 88.0);
-                        if id == form::EXCLUDED_ID {
-                            excluded_text = Some(text);
-                        }
-                    } else {
-                        let field = inspect_block(mtm);
-                        cursor.place(&field, 88.0);
-                    }
-                }
-                FormRow::Composite { controls, .. } => {
-                    cursor.y -= 24.0;
-                    let mut x = MARGIN;
-
-                    for control in controls {
-                        match control {
-                            CompositeControl::TextField { id, placeholder } => {
-                                let field =
-                                    NSTextField::textFieldWithString(&NSString::from_str(""), mtm);
-                                field.setPlaceholderString(Some(&NSString::from_str(placeholder)));
-                                field.setFrame(NSRect::new(
-                                    NSPoint::new(x, cursor.y),
-                                    NSSize::new(200.0, 24.0),
-                                ));
-                                document.addSubview(&field);
-                                x += 208.0;
-
-                                if id == form::NEW_NAME_ID {
-                                    new_name_field = Some(field);
-                                }
-                            }
-                            CompositeControl::Popup { id } => {
-                                let pop = popup_plain(mtm);
-                                pop.setFrame(NSRect::new(
-                                    NSPoint::new(x, cursor.y),
-                                    NSSize::new(180.0, 24.0),
-                                ));
-                                stretch_x(&pop);
-                                document.addSubview(&pop);
-                                x += 188.0;
-
-                                if id == form::NEW_CHARACTER_ID {
-                                    new_character_popup = Some(pop);
-                                }
-                            }
-                            CompositeControl::Button { id, label, frozen } => {
-                                let tag = next_tag;
-                                next_tag += 1;
-                                controller
-                                    .ivars()
-                                    .tag_to_id
-                                    .borrow_mut()
-                                    .insert(tag, id.clone());
-
-                                let btn = unsafe {
-                                    NSButton::buttonWithTitle_target_action(
-                                        &NSString::from_str(label),
-                                        Some(&*controller),
-                                        Some(sel!(handleAction:)),
+                        for control in controls {
+                            match control {
+                                CompositeControl::TextField { id, placeholder } => {
+                                    let field = NSTextField::textFieldWithString(
+                                        &NSString::from_str(""),
                                         mtm,
-                                    )
-                                };
-                                btn.setTag(tag);
-                                btn.setEnabled(!frozen);
-                                btn.setFrame(NSRect::new(
-                                    NSPoint::new(x, cursor.y),
-                                    NSSize::new(if label.len() > 10 { 140.0 } else { 72.0 }, 24.0),
-                                ));
-                                if id == form::SPAWN_ID {
-                                    pin_right(&btn);
-                                }
-                                document.addSubview(&btn);
-                                x += if label.len() > 10 { 148.0 } else { 80.0 };
+                                    );
+                                    field.setPlaceholderString(Some(&NSString::from_str(
+                                        placeholder,
+                                    )));
+                                    field.setFrame(NSRect::new(
+                                        NSPoint::new(x, cursor.y),
+                                        NSSize::new(200.0, 24.0),
+                                    ));
+                                    document.addSubview(&field);
+                                    x += 208.0;
 
-                                if id == form::CLEAR_KEY_ID {
-                                    clear_key_button = Some(btn);
+                                    if id == form::NEW_NAME_ID {
+                                        new_name_field = Some(field);
+                                    }
+                                }
+                                CompositeControl::Popup { id } => {
+                                    let pop = popup_plain(mtm);
+                                    pop.setFrame(NSRect::new(
+                                        NSPoint::new(x, cursor.y),
+                                        NSSize::new(180.0, 24.0),
+                                    ));
+                                    stretch_x(&pop);
+                                    document.addSubview(&pop);
+                                    x += 188.0;
+
+                                    if id == form::NEW_CHARACTER_ID {
+                                        new_character_popup = Some(pop);
+                                    }
+                                }
+                                CompositeControl::Button { id, label, frozen } => {
+                                    let tag = next_tag;
+                                    next_tag += 1;
+                                    controller
+                                        .ivars()
+                                        .tag_to_id
+                                        .borrow_mut()
+                                        .insert(tag, id.clone());
+
+                                    let btn = unsafe {
+                                        NSButton::buttonWithTitle_target_action(
+                                            &NSString::from_str(label),
+                                            Some(&*controller),
+                                            Some(sel!(handleAction:)),
+                                            mtm,
+                                        )
+                                    };
+                                    btn.setTag(tag);
+                                    btn.setEnabled(!frozen);
+                                    btn.setFrame(NSRect::new(
+                                        NSPoint::new(x, cursor.y),
+                                        NSSize::new(
+                                            if label.len() > 10 { 140.0 } else { 72.0 },
+                                            24.0,
+                                        ),
+                                    ));
+                                    if id == form::SPAWN_ID {
+                                        pin_right(&btn);
+                                    }
+                                    document.addSubview(&btn);
+                                    x += if label.len() > 10 { 148.0 } else { 80.0 };
+
+                                    if id == form::CLEAR_KEY_ID {
+                                        clear_key_button = Some(btn);
+                                    }
                                 }
                             }
                         }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
+                        }
                     }
-                    cursor.y -= 16.0;
                 }
             }
         }
+
+        // Rows count down from the top of a document whose height is a guess
+        // until the tab is finished. `fit_to_window` sizes each document from
+        // what its rows used, so a short tab does not scroll past its last row.
+        let needed = DOC_HEIGHT - cursor.y + MARGIN;
+
+        let scroll = NSScrollView::initWithFrame(
+            NSScrollView::alloc(mtm),
+            NSRect::new(
+                NSPoint::new(0.0, 0.0),
+                NSSize::new(WINDOW_WIDTH, WINDOW_HEIGHT),
+            ),
+        );
+        scroll.setDocumentView(Some(&document));
+        scroll.setHasVerticalScroller(true);
+        scroll.setHasHorizontalScroller(false);
+        stretch_xy(&scroll);
+
+        let item = NSTabViewItem::new();
+        item.setLabel(&NSString::from_str(&tab.title));
+        item.setView(Some(&scroll));
+        tab_view.addTabViewItem(&item);
+        panes.push((scroll, needed));
     }
 
     *controller.ivars().director.borrow_mut() = director_button;
@@ -763,18 +874,6 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().new_name.borrow_mut() = new_name_field;
     *controller.ivars().instances.borrow_mut() = instances_view;
 
-    let scroll = NSScrollView::initWithFrame(
-        NSScrollView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(0.0, 0.0),
-            NSSize::new(WINDOW_WIDTH, WINDOW_HEIGHT),
-        ),
-    );
-    scroll.setDocumentView(Some(&document));
-    scroll.setHasVerticalScroller(true);
-    scroll.setHasHorizontalScroller(false);
-    stretch_xy(&scroll);
-
     let window = unsafe {
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
@@ -791,7 +890,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
             false,
         );
         window.setTitle(&NSString::from_str("Settings"));
-        window.setContentView(Some(&scroll));
+        window.setContentView(Some(&tab_view));
         window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
         retain_after_close(&window);
         window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
@@ -799,7 +898,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     };
 
     *controller.ivars().window.borrow_mut() = Some(window.clone());
-    *controller.ivars().scroll.borrow_mut() = Some(scroll);
+    *controller.ivars().tab_view.borrow_mut() = Some(tab_view);
+    *controller.ivars().panes.borrow_mut() = panes;
     controller.fit_to_window();
     controller.refresh();
     raise(&window, mtm);
@@ -839,8 +939,8 @@ struct Cursor {
 }
 
 impl Cursor {
-    fn place(&mut self, widget: &NSView, height: f64) {
-        self.y -= height;
+    fn put(&mut self, widget: &NSView, height: f64, gap: f64) {
+        self.y -= height + gap;
         widget.setFrame(NSRect::new(
             NSPoint::new(MARGIN, self.y),
             NSSize::new(FIELD_WIDTH, height),
@@ -849,38 +949,43 @@ impl Cursor {
         self.parent.addSubview(widget);
     }
 
+    fn place(&mut self, widget: &NSView, height: f64) {
+        self.put(widget, height, ROW_GAP);
+    }
+
     fn heading(&mut self, title: &str) {
-        self.y -= 28.0;
         let label = NSTextField::labelWithString(&NSString::from_str(title), self.mtm);
         label.setFont(Some(&NSFont::boldSystemFontOfSize(14.0)));
-        label.setFrame(NSRect::new(
-            NSPoint::new(MARGIN, self.y),
-            NSSize::new(FIELD_WIDTH, 20.0),
-        ));
-        stretch_x(&label);
-        self.parent.addSubview(&label);
+        self.put(&label, 20.0, SECTION_GAP);
+    }
+
+    /// A rule above every heading but a tab's first, so the heading reads as
+    /// the start of the group below it rather than another row in the one
+    /// above.
+    fn rule(&mut self) {
+        let rule = NSBox::initWithFrame(
+            NSBox::alloc(self.mtm),
+            NSRect::new(NSPoint::new(MARGIN, 0.0), NSSize::new(FIELD_WIDTH, 1.0)),
+        );
+        rule.setBoxType(NSBoxType::Separator);
+        self.put(&rule, 1.0, SECTION_GAP);
     }
 
     fn section_comment(&mut self, text: &str) -> Retained<NSTextField> {
         let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
         label.setTextColor(Some(&NSColor::secondaryLabelColor()));
         label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
-        label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
-        self.place(&label, 64.0);
+        let height = wrapped_height(&label);
+        self.put(&label, height, HINT_GAP);
         label
     }
 
     fn hint(&mut self, text: &str) {
-        self.y -= 14.0;
-        let label = NSTextField::labelWithString(&NSString::from_str(text), self.mtm);
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
         label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
         label.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        label.setFrame(NSRect::new(
-            NSPoint::new(MARGIN, self.y),
-            NSSize::new(FIELD_WIDTH, 12.0),
-        ));
-        stretch_x(&label);
-        self.parent.addSubview(&label);
+        let height = wrapped_height(&label);
+        self.put(&label, height, HINT_GAP);
     }
 }
 
@@ -901,6 +1006,23 @@ fn checkbox(
     button.setButtonType(objc2_app_kit::NSButtonType::Switch);
     button.setTag(tag);
     button
+}
+
+/// How tall a wrapping label has to be to show all of its text at
+/// `FIELD_WIDTH`.
+///
+/// Measured rather than assumed: help text is written in `settings::form` and
+/// a fixed height silently clips the sentence when someone lengthens it.
+/// Widening the window only ever frees space, since `stretch_x` lets the label
+/// grow and wrap into fewer lines.
+///
+/// Untested, and not testable in this harness: `fittingSize` drives autolayout,
+/// which aborts the process off the main thread, and `cargo test` runs on a
+/// worker. `Cursor` carries a `MainThreadMarker`, so a caller cannot reach here
+/// from anywhere else.
+fn wrapped_height(label: &NSTextField) -> f64 {
+    label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
+    label.fittingSize().height.ceil()
 }
 
 fn inspect_line(mtm: MainThreadMarker) -> Retained<NSTextField> {
@@ -1026,6 +1148,20 @@ fn raise(window: &NSWindow, mtm: MainThreadMarker) {
         let _: () = msg_send![window, orderFrontRegardless];
     }
     window.makeKeyAndOrderFront(None);
+}
+
+/// Resize a document view without moving the rows already in it.
+///
+/// A row's frame is measured from the document's bottom edge, so growing the
+/// document would slide the whole form up out of the visible rectangle. Every
+/// row moves with the edge instead.
+fn size_document(document: &NSView, size: NSSize) {
+    let shift = size.height - document.frame().size.height;
+    for row in document.subviews() {
+        let origin = row.frame().origin;
+        row.setFrameOrigin(NSPoint::new(origin.x, origin.y + shift));
+    }
+    document.setFrameSize(size);
 }
 
 fn stretch_x(view: &NSView) {

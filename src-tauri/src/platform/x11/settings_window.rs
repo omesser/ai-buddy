@@ -3,7 +3,7 @@
 //! Consumes `settings::form::describe()`, the same data source macOS reads.
 //! GTK 3 because Tauri 2's WebKitGTK uses GTK 3.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -15,11 +15,19 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowAction, RowOperation};
-use crate::settings::{key_was_typed, SettingsPatch, SettingsSession};
+use crate::settings::{SettingsPatch, SettingsSession};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
 const MARGIN: i32 = 28;
+/// The gap above a row, and the smaller one above a help line. The ratio
+/// between them is the only thing that says which control a help line
+/// describes; equal gaps read as a caption for the row below.
+const ROW_GAP: i32 = 12;
+const HINT_GAP: i32 = 4;
+/// A section break: the rule above a heading and the heading's own gap. Larger
+/// than `ROW_GAP`, so a heading groups with the rows under it.
+const SECTION_GAP: i32 = 24;
 
 thread_local! {
     static WINDOW: RefCell<Option<Rc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -29,7 +37,14 @@ struct SettingsWindow {
     window: Window,
     session: Arc<Mutex<Option<SettingsSession>>>,
     controls: Rc<RefCell<HashMap<String, Control>>>,
-    refreshing: std::cell::Cell<bool>,
+    /// True while `refresh` is driving the widgets, so the handlers a setter
+    /// fires do not write what they were just handed back to the file.
+    ///
+    /// `Rc`, not a bare `Cell`: every handler takes it by `clone`, and cloning
+    /// a `Cell` copies the value into a cell nothing else reads. The guard was
+    /// dead, and `refresh` drawing the value an exported variable imposes made
+    /// that a write of the override into the file (#273).
+    refreshing: Rc<Cell<bool>>,
 }
 
 enum Control {
@@ -59,44 +74,57 @@ impl SettingsWindow {
             window,
             session: Arc::new(Mutex::new(None)),
             controls: Rc::new(RefCell::new(HashMap::new())),
-            refreshing: std::cell::Cell::new(false),
+            refreshing: Rc::new(Cell::new(false)),
         });
 
         this.build_ui();
         this
     }
 
+    /// Build one notebook page per `FormTab`.
+    ///
+    /// Each page scrolls on its own, so a long tab does not push the tab strip
+    /// off screen. `build_row` registers every control in `self.controls` by
+    /// id, and `refresh` looks them up there rather than by walking the widget
+    /// tree, so a control on a page that is not on top still refreshes.
     fn build_ui(&self) {
-        let scrolled = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
-        scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-
-        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 16);
-        vbox.set_margin_start(MARGIN);
-        vbox.set_margin_end(MARGIN);
-        vbox.set_margin_top(MARGIN);
-        vbox.set_margin_bottom(MARGIN);
-
-        let title = gtk::Label::new(Some("Settings"));
-        title.set_halign(Align::Start);
-        title.set_markup("<span size='xx-large' weight='bold'>Settings</span>");
-        vbox.pack_start(&title, false, false, 0);
-
+        let notebook = gtk::Notebook::new();
         let description = form::describe();
 
-        for section in &description.sections {
-            self.build_section(&vbox, section, &description.actions);
+        for tab in &description.tabs {
+            let scrolled =
+                gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+            scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+
+            // No box spacing: every row carries its own gap, because a box's
+            // spacing is uniform and a help line needs a smaller one.
+            let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            vbox.set_margin_start(MARGIN);
+            vbox.set_margin_end(MARGIN);
+            vbox.set_margin_top(MARGIN);
+            vbox.set_margin_bottom(MARGIN);
+
+            let mut drawn = false;
+            for section in &tab.sections {
+                drawn |= self.build_section(&vbox, section, &description.actions, drawn);
+            }
+
+            scrolled.add(&vbox);
+            notebook.append_page(&scrolled, Some(&gtk::Label::new(Some(&tab.title))));
         }
 
-        scrolled.add(&vbox);
-        self.window.add(&scrolled);
+        self.window.add(&notebook);
     }
 
+    /// Returns whether the section drew anything, so the caller knows whether
+    /// the next one is still the first on its page.
     fn build_section(
         &self,
         container: &gtk::Box,
         section: &form::FormSection,
         actions: &HashMap<String, RowAction>,
-    ) {
+        rule: bool,
+    ) -> bool {
         let visible_rows: Vec<&FormRow> = section
             .rows
             .iter()
@@ -104,7 +132,18 @@ impl SettingsWindow {
             .collect();
 
         if visible_rows.is_empty() {
-            return;
+            return false;
+        }
+
+        // A rule above every heading but a page's first, so the heading reads
+        // as the start of the group below it rather than another row in the one
+        // above.
+        if rule {
+            pack(
+                container,
+                &gtk::Separator::new(gtk::Orientation::Horizontal),
+                SECTION_GAP,
+            );
         }
 
         let heading = gtk::Label::new(Some(&section.heading));
@@ -113,7 +152,7 @@ impl SettingsWindow {
             "<span size='large' weight='bold'>{}</span>",
             gtk::glib::markup_escape_text(&section.heading)
         ));
-        container.pack_start(&heading, false, false, 8);
+        pack(container, &heading, SECTION_GAP);
 
         if let Some(comment) = &section.comment {
             let comment_label = gtk::Label::new(Some(comment));
@@ -124,12 +163,14 @@ impl SettingsWindow {
                 "<span size='small' foreground='#888888'>{}</span>",
                 gtk::glib::markup_escape_text(comment)
             ));
-            container.pack_start(&comment_label, false, false, 0);
+            pack(container, &comment_label, HINT_GAP);
         }
 
         for row in &visible_rows {
             self.build_row(container, row, actions);
         }
+
+        true
     }
 
     fn should_omit_row(&self, row: &FormRow) -> bool {
@@ -158,22 +199,16 @@ impl SettingsWindow {
                 check.set_sensitive(!frozen);
 
                 if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_margin_start(24);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    container.pack_start(&check, false, false, 0);
-                    container.pack_start(&help_label, false, false, 0);
+                    pack(container, &check, ROW_GAP);
+                    help_line(container, help_text);
                 } else {
-                    container.pack_start(&check, false, false, 0);
+                    pack(container, &check, ROW_GAP);
                 }
 
-                if let Some(action) = actions.get(id) {
+                // Frozen like the field arms below, so refresh's `set_active`
+                // has nothing to fire into. `set_sensitive(false)` stops a
+                // click; only an absent handler stops a programmatic set.
+                if let Some(action) = actions.get(id).filter(|_| !frozen) {
                     let action = action.clone();
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
@@ -184,38 +219,10 @@ impl SettingsWindow {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 if let RowAction::PatchField(field) = &action {
-                                    let value = check.is_active();
-                                    let patch = match field.as_str() {
-                                        "director_enabled" => SettingsPatch {
-                                            director_enabled: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "ambient_wakes" => SettingsPatch {
-                                            ambient_wakes: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "do_not_disturb" => SettingsPatch {
-                                            do_not_disturb: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "sound" => SettingsPatch {
-                                            sound: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "hidden" => SettingsPatch {
-                                            hidden: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "hide_in_fullscreen" => SettingsPatch {
-                                            hide_in_fullscreen: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "launch_at_login" => SettingsPatch {
-                                            launch_at_login: Some(value),
-                                            ..SettingsPatch::default()
-                                        },
-                                        _ => return,
-                                    };
+                                    let mut patch = SettingsPatch::default();
+                                    if !patch.set_bool(field, check.is_active()) {
+                                        return;
+                                    }
                                     if let Err(e) = sess.apply(patch) {
                                         eprintln!("settings: {e}");
                                     }
@@ -238,7 +245,7 @@ impl SettingsWindow {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
-                    container.pack_start(&label_widget, false, false, 0);
+                    pack(container, &label_widget, ROW_GAP);
                 }
 
                 let entry = gtk::Entry::new();
@@ -262,17 +269,10 @@ impl SettingsWindow {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
                                 if let RowAction::PatchField(field) = &action {
-                                    let patch = match field.as_str() {
-                                        "director_base_url" => SettingsPatch {
-                                            director_base_url: Some(text),
-                                            ..SettingsPatch::default()
-                                        },
-                                        "director_model" => SettingsPatch {
-                                            director_model: Some(text),
-                                            ..SettingsPatch::default()
-                                        },
-                                        _ => return,
-                                    };
+                                    let mut patch = SettingsPatch::default();
+                                    if !patch.set_text(field, &text) {
+                                        return;
+                                    }
                                     if let Err(e) = sess.apply(patch) {
                                         eprintln!("settings: {e}");
                                     }
@@ -292,7 +292,7 @@ impl SettingsWindow {
                     });
                 }
 
-                container.pack_start(&entry, false, false, 0);
+                pack(container, &entry, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
@@ -301,7 +301,7 @@ impl SettingsWindow {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
-                    container.pack_start(&label_widget, false, false, 0);
+                    pack(container, &label_widget, ROW_GAP);
                 }
 
                 let entry = gtk::Entry::new();
@@ -322,20 +322,20 @@ impl SettingsWindow {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
-                                if !key_was_typed(&text) {
-                                    return;
-                                }
                                 if let RowAction::PatchField(field) = &action {
-                                    if field == "director_api_key" {
-                                        let patch = SettingsPatch {
-                                            director_api_key: Some(text),
-                                            ..SettingsPatch::default()
-                                        };
-                                        if let Err(e) = sess.apply(patch) {
-                                            eprintln!("settings: {e}");
-                                        }
-                                        entry_clone.set_text("");
+                                    // A blank field is an untouched one, so
+                                    // `set_text` refuses the key and this is
+                                    // not a commit. Clear key is the button.
+                                    let mut patch = SettingsPatch::default();
+                                    if !patch.set_text(field, &text) {
+                                        return;
                                     }
+                                    if let Err(e) = sess.apply(patch) {
+                                        eprintln!("settings: {e}");
+                                    }
+                                    // The store has it now; the field shows
+                                    // its fingerprint as a placeholder.
+                                    entry_clone.set_text("");
                                 }
                             }
                         }
@@ -352,7 +352,7 @@ impl SettingsWindow {
                     });
                 }
 
-                container.pack_start(&entry, false, false, 0);
+                pack(container, &entry, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
@@ -361,20 +361,7 @@ impl SettingsWindow {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
-                    container.pack_start(&label_widget, false, false, 0);
-                }
-
-                if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_margin_start(24);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    container.pack_start(&help_label, false, false, 0);
+                    pack(container, &label_widget, ROW_GAP);
                 }
 
                 if id == form::HOTKEY_ID || id == form::PAYLOAD_ID {
@@ -384,7 +371,7 @@ impl SettingsWindow {
                     label.set_selectable(true);
                     label.set_line_wrap(true);
 
-                    container.pack_start(&label, false, false, 0);
+                    pack(container, &label, ROW_GAP);
                     self.controls
                         .borrow_mut()
                         .insert(id.clone(), Control::Label(label));
@@ -402,10 +389,14 @@ impl SettingsWindow {
                     text_view.set_monospace(true);
 
                     scrolled.add(&text_view);
-                    container.pack_start(&scrolled, false, false, 0);
+                    pack(container, &scrolled, ROW_GAP);
                     self.controls
                         .borrow_mut()
                         .insert(id.clone(), Control::TextView(text_view));
+                }
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
                 }
             }
             FormRow::InspectPath { id } => {
@@ -415,35 +406,31 @@ impl SettingsWindow {
                 label.set_xalign(0.0);
                 label.set_selectable(true);
 
-                container.pack_start(&label, false, false, 0);
+                pack(container, &label, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Label(label));
             }
-            FormRow::List { id, dismiss_label } => {
+            FormRow::List {
+                id,
+                dismiss_label,
+                help,
+            } => {
                 let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 list_box.set_size_request(-1, 80);
 
-                container.pack_start(&list_box, false, false, 0);
+                pack(container, &list_box, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::List(list_box, dismiss_label.clone()));
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
             FormRow::Multiline {
                 id, help, editable, ..
             } => {
-                if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    container.pack_start(&help_label, false, false, 0);
-                }
-
                 let scrolled =
                     gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
                 scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
@@ -454,11 +441,13 @@ impl SettingsWindow {
                 text_view.set_wrap_mode(gtk::WrapMode::Word);
                 text_view.set_monospace(true);
 
-                if *editable {
+                // The field name off the row's own action, not a literal: a
+                // rename would leave a hand-matched name writing nothing.
+                if let Some(RowAction::PatchField(field)) = actions.get(id).filter(|_| *editable) {
+                    let field = field.clone();
                     let buffer = text_view.buffer().expect("text buffer");
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
-                    let id = id.clone();
                     buffer.connect_changed(move |buffer| {
                         if refreshing.get() {
                             return;
@@ -469,16 +458,12 @@ impl SettingsWindow {
                                     .text(&buffer.start_iter(), &buffer.end_iter(), false)
                                     .map(|s| s.to_string())
                                     .unwrap_or_default();
-                                let lines: Vec<String> =
-                                    text.lines().map(|line| line.trim().to_string()).collect();
-                                if id == form::EXCLUDED_ID {
-                                    let patch = SettingsPatch {
-                                        excluded_applications: Some(lines),
-                                        ..SettingsPatch::default()
-                                    };
-                                    if let Err(e) = sess.apply(patch) {
-                                        eprintln!("settings: {e}");
-                                    }
+                                let mut patch = SettingsPatch::default();
+                                if !patch.set_text(&field, &text) {
+                                    return;
+                                }
+                                if let Err(e) = sess.apply(patch) {
+                                    eprintln!("settings: {e}");
                                 }
                             }
                         }
@@ -486,12 +471,16 @@ impl SettingsWindow {
                 }
 
                 scrolled.add(&text_view);
-                container.pack_start(&scrolled, false, false, 0);
+                pack(container, &scrolled, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::TextView(text_view));
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
-            FormRow::Composite { controls, .. } => {
+            FormRow::Composite { controls, help, .. } => {
                 let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
 
                 for control in controls {
@@ -630,15 +619,23 @@ impl SettingsWindow {
                     }
                 }
 
-                container.pack_start(&hbox, false, false, 0);
+                pack(container, &hbox, ROW_GAP);
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
-            FormRow::Popup { id, .. } => {
+            FormRow::Popup { id, help, .. } => {
                 let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
 
-                container.pack_start(&radio_box, false, false, 0);
+                pack(container, &radio_box, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::CharacterPicker(radio_box, Vec::new()));
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
         }
     }
@@ -712,6 +709,25 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::HOTKEY_ID) {
             label.set_text(&view.hide_hotkey);
         }
+        // The rows the view carries by id: every Development switch and limit.
+        // Bound here rather than one named lookup each, so a row added to
+        // `form.rs` is drawn from the value in force with no edit to this file.
+        for (id, on) in &view.development_switches {
+            if let Some(Control::CheckButton(check)) = controls.get(id) {
+                check.set_active(*on);
+            }
+        }
+        for (id, text) in &view.development_texts {
+            if let Some(Control::Entry(entry)) = controls.get(id) {
+                entry.set_text(text);
+            }
+        }
+        // The picker's own registered field, so the popup writes through the
+        // setter every other row uses rather than naming the field itself.
+        let character_field = match form::describe().actions.get(form::CHARACTER_ID) {
+            Some(RowAction::PatchField(field)) => field.clone(),
+            _ => String::new(),
+        };
         if let Some(Control::CharacterPicker(radio_box, cached_installed)) =
             controls.get_mut(form::CHARACTER_ID)
         {
@@ -740,6 +756,7 @@ impl SettingsWindow {
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
                     let character = name.clone();
+                    let character_field = character_field.clone();
                     radio.connect_toggled(move |radio| {
                         if refreshing.get() {
                             return;
@@ -747,10 +764,10 @@ impl SettingsWindow {
                         if radio.is_active() {
                             if let Ok(guard) = session.lock() {
                                 if let Some(sess) = guard.as_ref() {
-                                    let patch = SettingsPatch {
-                                        character: Some(character.clone()),
-                                        ..SettingsPatch::default()
-                                    };
+                                    let mut patch = SettingsPatch::default();
+                                    if !patch.set_text(&character_field, &character) {
+                                        return;
+                                    }
                                     if let Err(e) = sess.apply(patch) {
                                         eprintln!("settings: {e}");
                                     }
@@ -857,6 +874,26 @@ impl SettingsWindow {
 
         self.refreshing.set(false);
     }
+}
+
+/// Add a widget to a page with `gap` of space above it.
+/// A row's help line, packed close under the control it describes.
+fn help_line(container: &gtk::Box, text: &str) {
+    let label = gtk::Label::new(Some(text));
+    label.set_halign(Align::Start);
+    label.set_line_wrap(true);
+    label.set_xalign(0.0);
+    label.set_margin_start(24);
+    label.set_markup(&format!(
+        "<span size='small' foreground='#888888'>{}</span>",
+        gtk::glib::markup_escape_text(text)
+    ));
+    pack(container, &label, HINT_GAP);
+}
+
+fn pack(container: &gtk::Box, widget: &impl gtk::glib::IsA<gtk::Widget>, gap: i32) {
+    widget.set_margin_top(gap);
+    container.pack_start(widget, false, false, 0);
 }
 
 fn confirm_wipe(parent: &Window) -> bool {

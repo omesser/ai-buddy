@@ -259,9 +259,10 @@ cargo run
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 Settings → Director persists base URL and model, and stores the API key in
-the OS secret store (Keychain on macOS). Editing one of the three retargets
-the running Director: the next wake reaches the new host, and the session in
-flight is dropped rather than answered against the old one. No restart.
+the OS secret store (Keychain on macOS); Settings → Development persists the
+Completer timeout and reply cap. Editing any of the five retargets the running
+Director: the next wake reaches the new host, and the session in flight is
+dropped rather than answered against the old one. No restart.
 
 `cargo run` with those env vars unset uses the saved Completer. The env vars
 remain a one-process override, and the window says so: a field one of them
@@ -600,6 +601,12 @@ or place on a Perch to force a wake.
 There is one overlay per display and every one of them is told where the
 sprite is, so the trace is one line per tick rather than one per overlay. Which
 overlay the cursor is on is on the hit-test line.
+
+Settings → Development carries the same switches, so a trace goes on without a
+relaunch: the three above take effect on the next tick or wake,
+`AI_BUDDY_CAPTURABLE` on the next launch. Exporting one of these variables
+freezes its row the way the Director's do, and `=0` pins the switch off the
+same way `=1` pins it on.
 
 **A human** is still needed for the last step, because only the window server
 can answer it. Run the app, then confirm:

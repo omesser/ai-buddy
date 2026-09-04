@@ -7,6 +7,7 @@
 
 pub mod form;
 
+use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::consent::{self, CapabilityId, ConsentRow};
+use crate::dev_flags;
 use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
@@ -56,10 +58,81 @@ pub struct SettingsView {
     pub api_key_fingerprint: String,
     /// Non-empty when the last store read failed. Distinct from unset.
     pub api_key_error: String,
+    /// The Development rows, by form row id: the value in force, which is the
+    /// exported variable's where it owns the row and the file's otherwise.
+    ///
+    /// Keyed rather than one named field per row. Six switches would be six
+    /// fields here, six bindings in each window, and a seventh row would need
+    /// all of that again before it did anything (#273).
+    pub development_switches: HashMap<String, bool>,
+    pub development_texts: HashMap<String, String>,
     /// Live OS grants, not a file field. The window rereads them on become-key.
     pub consent: Vec<ConsentRow>,
     /// The name Privacy & Security will show for this process.
     pub consent_listed_as: String,
+}
+
+/// The Development switches, by row id, as the window must draw them.
+///
+/// Through `dev_flags`, which is the one place that decides what an exported
+/// variable does to a switch.
+fn development_switches(settings: &Settings) -> HashMap<String, bool> {
+    HashMap::from([
+        (
+            form::TRACE_FRAMES_ID.to_string(),
+            dev_flags::TRACE_FRAMES.in_force(settings.trace_frames),
+        ),
+        (
+            form::TRACE_HITTEST_ID.to_string(),
+            dev_flags::TRACE_HITTEST.in_force(settings.trace_hittest),
+        ),
+        (
+            form::TRACE_DIRECTOR_ID.to_string(),
+            dev_flags::TRACE_DIRECTOR.in_force(settings.trace_director),
+        ),
+        #[cfg(target_os = "macos")]
+        (
+            form::CAPTURABLE_ID.to_string(),
+            dev_flags::CAPTURABLE.in_force(settings.capturable),
+        ),
+    ])
+}
+
+/// The Completer limits, by row id, with the same precedence.
+fn development_texts(settings: &Settings) -> HashMap<String, String> {
+    HashMap::from([
+        (
+            form::DIRECTOR_TIMEOUT_SECS_ID.to_string(),
+            limit_in_force::<u64>(model::TIMEOUT_SECS, &settings.director_timeout_secs),
+        ),
+        (
+            form::DIRECTOR_MAX_TOKENS_ID.to_string(),
+            limit_in_force::<u32>(model::MAX_TOKENS, &settings.director_max_tokens),
+        ),
+    ])
+}
+
+/// One Completer limit as the window must show it, in the type the read site
+/// parses it as.
+///
+/// A value `dev_flags::seed` cannot use — blank, non-numeric, out of range, or
+/// zero, which it calls unset — shows blank, so the row's placeholder names
+/// the default that is in force instead. Showing it verbatim would name a
+/// timeout `model::timeout_for` never reaches, and a frozen row offers no way
+/// to correct that.
+///
+/// Blank is also what a blur over the row commits, so clicking into an
+/// unusable value and out again saves the emptiness. Nothing is lost:
+/// everything it can discard is a value `seed` already treats as unset, and a
+/// variable that owns the row freezes it before it can be clicked.
+fn limit_in_force<T>(var: &str, file: &str) -> String
+where
+    T: std::str::FromStr + fmt::Display + Default + PartialEq,
+{
+    match model::env_or_file(var, file).trim().parse::<T>() {
+        Ok(value) if value != T::default() => value.to_string(),
+        _ => String::new(),
+    }
 }
 
 impl SettingsView {
@@ -89,13 +162,13 @@ impl SettingsView {
             // The resolved endpoint, not the file's: an exported variable
             // outranks the file in `model::resolve`, and a window that printed
             // the file value would name a host the Director never calls (#272).
-            director_base_url: model::env_override(model::BASE_URL)
-                .unwrap_or_else(|| settings.director_base_url.clone()),
-            director_model: model::env_override(model::MODEL)
-                .unwrap_or_else(|| settings.director_model.clone()),
+            director_base_url: model::env_or_file(model::BASE_URL, &settings.director_base_url),
+            director_model: model::env_or_file(model::MODEL, &settings.director_model),
             api_key_set,
             api_key_fingerprint,
             api_key_error,
+            development_switches: development_switches(settings),
+            development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
         }
@@ -173,7 +246,7 @@ pub enum SettingsOp {
 /// untouched one and a blur over it is not an edit. Empty reaching
 /// `write_director_key` deletes the stored key, which is what Clear key is
 /// for and never what tabbing past the field should mean.
-pub fn key_was_typed(text: &str) -> bool {
+fn key_was_typed(text: &str) -> bool {
     model::trim_key(text).is_some()
 }
 
@@ -209,8 +282,22 @@ pub fn director_settings(
     ))
 }
 
+/// Fold a patch into `settings` and put the live development flags back in
+/// step with it.
+///
+/// A development switch is live state as well as a file field, so a patch that
+/// only reached the file is the relaunch #273 reports. Both `apply` paths go
+/// through here, so the test seam cannot pass while the seeding is gone.
+fn apply_and_seed(settings: &mut Settings, patch: SettingsPatch) {
+    settings.apply(patch);
+    dev_flags::seed(settings);
+}
+
 /// Write the key first so a store error cannot leave a URL in memory that
 /// was never saved or sent as Retarget.
+///
+/// The test seam for `SettingsSession::apply`, without the lock, the file and
+/// the ops channel.
 #[cfg(test)]
 fn apply_with_store(
     settings: &mut Settings,
@@ -218,7 +305,7 @@ fn apply_with_store(
     patch: SettingsPatch,
 ) -> Result<(), String> {
     write_director_key(store, &patch)?;
-    settings.apply(patch);
+    apply_and_seed(settings, patch);
     Ok(())
 }
 
@@ -235,6 +322,17 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_model
             .as_ref()
             .is_some_and(|model| model != &settings.director_model)
+        // The timeout and the reply cap are baked into the Endpoint by
+        // `model::endpoint_from`, so a change to either only reaches the
+        // Director through a rebuild.
+        || patch
+            .director_timeout_secs
+            .as_ref()
+            .is_some_and(|secs| secs != &settings.director_timeout_secs)
+        || patch
+            .director_max_tokens
+            .as_ref()
+            .is_some_and(|cap| cap != &settings.director_max_tokens)
 }
 
 /// Fingerprint plus an error string: a get `Err` is not Unset. Log like the
@@ -327,7 +425,9 @@ impl SettingsSession {
         let prompt_sr = patch.use_screen_recording == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
-        settings.apply(patch);
+        // Seeded before `retarget_payload`, which rebuilds the Endpoint from
+        // the live timeout and reply cap.
+        apply_and_seed(&mut settings, patch);
         consent::set_wanted(CapabilityId::Accessibility, settings.use_accessibility);
         consent::set_wanted(CapabilityId::ScreenRecording, settings.use_screen_recording);
         if let Ok(mut rules) = self.rules.lock() {
@@ -423,11 +523,75 @@ pub struct SettingsPatch {
     pub character: Option<String>,
     pub director_base_url: Option<String>,
     pub director_model: Option<String>,
+    pub director_timeout_secs: Option<String>,
+    pub director_max_tokens: Option<String>,
+    pub trace_frames: Option<bool>,
+    pub trace_hittest: Option<bool>,
+    pub trace_director: Option<bool>,
+    pub capturable: Option<bool>,
     /// Present so callers can write the store; `Settings::apply` ignores it
     /// because the key is not a file field.
     pub director_api_key: Option<String>,
     pub use_accessibility: Option<bool>,
     pub use_screen_recording: Option<bool>,
+}
+
+impl SettingsPatch {
+    /// Write the boolean field a `RowAction::PatchField` names, and say
+    /// whether it named one.
+    ///
+    /// The one place that turns a row's field name into a patch. Each window
+    /// hand-matched the names it knew and returned on the rest, so a row added
+    /// to `form.rs` compiled clean and landed inert — a click that reached
+    /// nothing (#273).
+    pub fn set_bool(&mut self, name: &str, value: bool) -> bool {
+        match name {
+            "director_enabled" => self.director_enabled = Some(value),
+            "ambient_wakes" => self.ambient_wakes = Some(value),
+            "do_not_disturb" => self.do_not_disturb = Some(value),
+            "sound" => self.sound = Some(value),
+            "hidden" => self.hidden = Some(value),
+            "hide_in_fullscreen" => self.hide_in_fullscreen = Some(value),
+            "launch_at_login" => self.launch_at_login = Some(value),
+            "trace_frames" => self.trace_frames = Some(value),
+            "trace_hittest" => self.trace_hittest = Some(value),
+            "trace_director" => self.trace_director = Some(value),
+            "capturable" => self.capturable = Some(value),
+            "use_accessibility" => self.use_accessibility = Some(value),
+            "use_screen_recording" => self.use_screen_recording = Some(value),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Write the text field a `RowAction::PatchField` names, and say whether
+    /// it took the value.
+    ///
+    /// False for a name that is no text field of ours, and for a blank API
+    /// key: both windows leave that field blank on refresh, so a blur over an
+    /// untouched one is not an edit, and blank reaching the store is what
+    /// Clear key means. `key_was_typed` is the whole of that test.
+    pub fn set_text(&mut self, name: &str, value: &str) -> bool {
+        match name {
+            // No `hide_hotkey`: the row is an `InspectBlock` with no action,
+            // because a string field is not a key recorder.
+            "character" => self.character = Some(value.to_string()),
+            "director_base_url" => self.director_base_url = Some(value.to_string()),
+            "director_model" => self.director_model = Some(value.to_string()),
+            "director_timeout_secs" => self.director_timeout_secs = Some(value.to_string()),
+            "director_max_tokens" => self.director_max_tokens = Some(value.to_string()),
+            "director_api_key" if key_was_typed(value) => {
+                self.director_api_key = Some(value.to_string())
+            }
+            // One name per line, the shape both windows' multiline field holds.
+            "excluded_applications" => {
+                self.excluded_applications =
+                    Some(value.lines().map(|line| line.trim().to_string()).collect())
+            }
+            _ => return false,
+        }
+        true
+    }
 }
 
 impl fmt::Debug for SettingsPatch {
@@ -445,6 +609,12 @@ impl fmt::Debug for SettingsPatch {
             .field("character", &self.character)
             .field("director_base_url", &self.director_base_url)
             .field("director_model", &self.director_model)
+            .field("director_timeout_secs", &self.director_timeout_secs)
+            .field("director_max_tokens", &self.director_max_tokens)
+            .field("trace_frames", &self.trace_frames)
+            .field("trace_hittest", &self.trace_hittest)
+            .field("trace_director", &self.trace_director)
+            .field("capturable", &self.capturable)
             .field(
                 "director_api_key",
                 &self.director_api_key.as_deref().map(model::key_fingerprint),
@@ -499,6 +669,24 @@ impl Settings {
         }
         if let Some(value) = patch.director_model {
             self.director_model = value;
+        }
+        if let Some(value) = patch.director_timeout_secs {
+            self.director_timeout_secs = value;
+        }
+        if let Some(value) = patch.director_max_tokens {
+            self.director_max_tokens = value;
+        }
+        if let Some(value) = patch.trace_frames {
+            self.trace_frames = value;
+        }
+        if let Some(value) = patch.trace_hittest {
+            self.trace_hittest = value;
+        }
+        if let Some(value) = patch.trace_director {
+            self.trace_director = value;
+        }
+        if let Some(value) = patch.capturable {
+            self.capturable = value;
         }
         if let Some(value) = patch.use_accessibility {
             self.use_accessibility = value;
@@ -561,6 +749,18 @@ pub struct Settings {
     pub director_base_url: String,
     /// Empty means unset — Completer resolution falls through to env then defaults.
     pub director_model: String,
+    /// Completer timeout, in seconds. Empty means unset, as on the two above.
+    pub director_timeout_secs: String,
+    /// Reply cap, in tokens. Empty means unset, as on the two above.
+    pub director_max_tokens: String,
+    /// Development switches. Off is the shipped answer for all of them; see
+    /// `dev_flags`, which holds the live value each read site loads.
+    pub trace_frames: bool,
+    pub trace_hittest: bool,
+    pub trace_director: bool,
+    /// Drop the overlay's capture exclusion. macOS reads it; the field is
+    /// unconditional so the document round-trips on every platform.
+    pub capturable: bool,
     /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
     pub use_accessibility: bool,
     /// Use Screen Recording where the OS has granted it. Off does not revoke TCC.
@@ -583,6 +783,12 @@ impl Default for Settings {
             instances: Vec::new(),
             director_base_url: String::new(),
             director_model: String::new(),
+            director_timeout_secs: String::new(),
+            director_max_tokens: String::new(),
+            trace_frames: false,
+            trace_hittest: false,
+            trace_director: false,
+            capturable: false,
             use_accessibility: false,
             use_screen_recording: false,
         }
@@ -822,6 +1028,12 @@ mod tests {
             }],
             director_base_url: "https://api.x.ai".into(),
             director_model: "grok-4.6".into(),
+            director_timeout_secs: "45".into(),
+            director_max_tokens: "300".into(),
+            trace_frames: true,
+            trace_hittest: true,
+            trace_director: true,
+            capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
         };
@@ -1106,6 +1318,12 @@ mod tests {
             instances: Vec::new(),
             director_base_url: String::new(),
             director_model: String::new(),
+            director_timeout_secs: String::new(),
+            director_max_tokens: String::new(),
+            trace_frames: false,
+            trace_hittest: false,
+            trace_director: false,
+            capturable: false,
             use_accessibility: true,
             use_screen_recording: false,
         };
@@ -1461,6 +1679,107 @@ mod tests {
         });
     }
 
+    /// Every Development control the window draws has to find its value in
+    /// the view. A row whose id is missing renders off while the switch is on
+    /// (#273), and the first click on a persisted `true` then sends
+    /// `Some(true)` — a no-op the user reads as a dead checkbox.
+    #[test]
+    fn every_development_row_has_a_value_in_the_view() {
+        model::tests::with_env(None, None, None, || {
+            let view = endpoint_view(&Settings::default());
+            let description = form::describe();
+            let development = description
+                .tabs
+                .iter()
+                .find(|tab| tab.title == "Development")
+                .expect("the Development tab exists");
+
+            for row in development
+                .sections
+                .iter()
+                .flat_map(|section| &section.rows)
+            {
+                match row {
+                    form::FormRow::Checkbox { id, .. } => {
+                        assert!(
+                            view.development_switches.contains_key(id),
+                            "{id} has no value to draw"
+                        )
+                    }
+                    form::FormRow::TextField { id, .. } => {
+                        assert!(
+                            view.development_texts.contains_key(id),
+                            "{id} has no value to draw"
+                        )
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    /// The value in force, not the file's: an exported variable freezes the
+    /// row, so printing the file's would draw a switch off while the trace it
+    /// names is running (#273).
+    #[test]
+    fn the_view_shows_the_switch_the_env_imposes() {
+        model::tests::with_env(None, None, None, || {
+            let off = Settings {
+                trace_frames: false,
+                director_timeout_secs: "45".into(),
+                ..Settings::default()
+            };
+            std::env::set_var(dev_flags::TRACE_FRAMES.var(), "1");
+            std::env::set_var(model::TIMEOUT_SECS, "7");
+            let view = endpoint_view(&off);
+            assert!(
+                view.development_switches[form::TRACE_FRAMES_ID],
+                "the exported variable wins"
+            );
+            assert_eq!(view.development_texts[form::DIRECTOR_TIMEOUT_SECS_ID], "7");
+
+            std::env::remove_var(dev_flags::TRACE_FRAMES.var());
+            std::env::remove_var(model::TIMEOUT_SECS);
+            let view = endpoint_view(&off);
+            assert!(
+                !view.development_switches[form::TRACE_FRAMES_ID],
+                "the file wins with nothing exported"
+            );
+            assert_eq!(view.development_texts[form::DIRECTOR_TIMEOUT_SECS_ID], "45");
+        });
+    }
+
+    /// A limit no read site can use has to read as unset, not as a number.
+    ///
+    /// `dev_flags::seed` parses the value and calls zero unset, so `=abc` and
+    /// `=0` both leave `model::timeout_for` on its default. The row showed the
+    /// export verbatim and named a timeout nothing waited that long for.
+    #[test]
+    fn an_unusable_limit_shows_as_blank_so_the_placeholder_names_the_default() {
+        model::tests::with_env(None, None, None, || {
+            let file = Settings {
+                director_timeout_secs: "45".into(),
+                ..Settings::default()
+            };
+            // Empty is no override at all, so the file's 45 stands there.
+            for exported in ["abc", "0", "-1", ""] {
+                std::env::set_var(model::TIMEOUT_SECS, exported);
+                dev_flags::seed(&file);
+                let expected = match dev_flags::director_timeout_secs() {
+                    Some(secs) => secs.to_string(),
+                    None => String::new(),
+                };
+                let view = endpoint_view(&file);
+                assert_eq!(
+                    view.development_texts[form::DIRECTOR_TIMEOUT_SECS_ID],
+                    expected,
+                    "exported {exported:?}"
+                );
+            }
+            std::env::remove_var(model::TIMEOUT_SECS);
+        });
+    }
+
     /// The hop the settings window makes, end to end, for each endpoint field:
     /// the patch a committed field carries, the retarget decision, the payload
     /// resolved off the frame thread, and the rebuild the frame loop does with
@@ -1556,6 +1875,75 @@ mod tests {
                     "{field}: key"
                 );
             }
+        });
+    }
+
+    /// #275 built the rebuild path. The two limits ride it because
+    /// `model::endpoint_from` bakes them into the Endpoint at construction, so
+    /// nothing else would carry a change to the Director already running.
+    #[test]
+    fn an_edited_limit_reaches_the_running_director() {
+        let settings = Settings {
+            director_timeout_secs: "20".into(),
+            director_max_tokens: "80".into(),
+            ..endpoint_settings()
+        };
+
+        for patch in [
+            SettingsPatch {
+                director_timeout_secs: Some("45".into()),
+                ..SettingsPatch::default()
+            },
+            SettingsPatch {
+                director_max_tokens: Some("300".into()),
+                ..SettingsPatch::default()
+            },
+        ] {
+            assert!(completer_retargets(&settings, &patch));
+        }
+
+        // Both windows commit every field on blur, so an unchanged value
+        // arrives as `Some` and must not drop the open session.
+        assert!(!completer_retargets(
+            &settings,
+            &SettingsPatch {
+                director_timeout_secs: Some("20".into()),
+                director_max_tokens: Some("80".into()),
+                ..SettingsPatch::default()
+            }
+        ));
+    }
+
+    /// The switch is only worth a checkbox if the read sites see it move
+    /// without a relaunch, which means the patch has to reach `dev_flags`.
+    #[test]
+    fn a_patched_switch_moves_the_live_flag() {
+        model::tests::with_env(None, None, None, || {
+            let mut settings = Settings::default();
+            let store = MemoryStore::new();
+
+            apply_with_store(
+                &mut settings,
+                &store,
+                SettingsPatch {
+                    trace_director: Some(true),
+                    ..SettingsPatch::default()
+                },
+            )
+            .unwrap();
+            assert!(settings.trace_director, "the file holds it");
+            assert!(model::tracing(), "and the read site loads it");
+
+            apply_with_store(
+                &mut settings,
+                &store,
+                SettingsPatch {
+                    trace_director: Some(false),
+                    ..SettingsPatch::default()
+                },
+            )
+            .unwrap();
+            assert!(!model::tracing());
         });
     }
 

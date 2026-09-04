@@ -1,0 +1,249 @@
+//! Live values for the development switches, so a toggle lands without a
+//! relaunch.
+//!
+//! A read site that reads its own environment variable cannot be turned on from
+//! a window, which is the whole of #273: the value has to live somewhere both
+//! the settings window and a frame-rate read site can reach. `Flag::env_value`
+//! holds what an exported variable does to a switch.
+//!
+//! One static per switch rather than a map. The set is fixed at compile time,
+//! and a static is what lets a read site load the value without a lock.
+
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+
+use crate::model;
+use crate::settings::Settings;
+
+/// One boolean development switch and the variable that can own it.
+pub struct Flag {
+    var: &'static str,
+    on: AtomicBool,
+}
+
+impl Flag {
+    const fn new(var: &'static str) -> Self {
+        Self {
+            var,
+            on: AtomicBool::new(false),
+        }
+    }
+
+    /// The environment variable this switch answers to. The settings window
+    /// names it in a frozen row's label.
+    pub fn var(&self) -> &'static str {
+        self.var
+    }
+
+    /// `Relaxed` is enough: a trace switch has nothing to synchronise with,
+    /// and the read sites want the value, not an ordering against it.
+    pub fn is_on(&self) -> bool {
+        self.on.load(Ordering::Relaxed)
+    }
+
+    /// What the settings window shows, and what `seed` stores.
+    pub fn in_force(&self, persisted: bool) -> bool {
+        self.env_value().unwrap_or(persisted)
+    }
+
+    /// What the exported variable says, if it is exported.
+    ///
+    /// The whole convention, and the only place it is stated: any exported
+    /// value owns the switch, and on means the value is exactly `1`. So `=0`
+    /// pins a switch off, the same power `=1` has to pin it on. A second rule
+    /// for the value is how `=0` came to freeze a row that the file still
+    /// valued (#273). `form::env_row` reads the ownership half off the same
+    /// `model::env_override`.
+    fn env_value(&self) -> Option<bool> {
+        model::env_override(self.var).map(|value| value == "1")
+    }
+
+    /// Load the switch from `persisted`, with an exported variable winning.
+    fn seed(&self, persisted: bool) {
+        self.on.store(self.in_force(persisted), Ordering::Relaxed);
+    }
+}
+
+pub static TRACE_FRAMES: Flag = Flag::new("AI_BUDDY_TRACE_FRAMES");
+pub static TRACE_HITTEST: Flag = Flag::new("AI_BUDDY_TRACE_HITTEST");
+pub static TRACE_DIRECTOR: Flag = Flag::new("AI_BUDDY_TRACE_DIRECTOR");
+/// The capture exclusion is an AppKit window property; no other platform has
+/// one to drop.
+#[cfg(target_os = "macos")]
+pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
+
+/// Completer timeout and reply cap, as the variable or the file gives them.
+///
+/// Zero is unset, and covers a blank field and a non-numeric one alike: a
+/// zero timeout could not complete and a zero cap leaves no room to answer in,
+/// so neither is a value worth telling apart from absent.
+///
+/// Numbers rather than `Flag`s. `model` still picks between the local and
+/// hosted default when neither the variable nor the file says anything.
+static TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
+static MAX_TOKENS: AtomicU32 = AtomicU32::new(0);
+
+/// The Completer timeout in force, in seconds.
+pub fn director_timeout_secs() -> Option<u64> {
+    let secs = TIMEOUT_SECS.load(Ordering::Relaxed);
+    (secs > 0).then_some(secs)
+}
+
+/// The reply cap in force, in tokens.
+pub fn director_max_tokens() -> Option<u32> {
+    let cap = MAX_TOKENS.load(Ordering::Relaxed);
+    (cap > 0).then_some(cap)
+}
+
+/// Every variable a Development row answers to.
+///
+/// `model::tests::with_env` clears these under the test binary's env lock: a
+/// shell that exported one would otherwise decide a frozen row or a seeded
+/// value in a test that never mentions it.
+#[cfg(test)]
+pub(crate) fn test_vars() -> Vec<&'static str> {
+    vec![
+        TRACE_FRAMES.var(),
+        TRACE_HITTEST.var(),
+        TRACE_DIRECTOR.var(),
+        model::TIMEOUT_SECS,
+        model::MAX_TOKENS,
+        #[cfg(target_os = "macos")]
+        CAPTURABLE.var(),
+    ]
+}
+
+/// Load every switch from `settings`, with an exported variable winning.
+///
+/// Called once at startup and again on each applied patch, so this has to be
+/// idempotent and cheap. Re-reading the environment every time costs nothing
+/// and keeps the precedence in one place.
+pub fn seed(settings: &Settings) {
+    TRACE_FRAMES.seed(settings.trace_frames);
+    TRACE_HITTEST.seed(settings.trace_hittest);
+    TRACE_DIRECTOR.seed(settings.trace_director);
+    #[cfg(target_os = "macos")]
+    CAPTURABLE.seed(settings.capturable);
+    TIMEOUT_SECS.store(
+        model::env_or_file(model::TIMEOUT_SECS, &settings.director_timeout_secs)
+            .trim()
+            .parse()
+            .unwrap_or(0),
+        Ordering::Relaxed,
+    );
+    MAX_TOKENS.store(
+        model::env_or_file(model::MAX_TOKENS, &settings.director_max_tokens)
+            .trim()
+            .parse()
+            .unwrap_or(0),
+        Ordering::Relaxed,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Flag::env_value`'s convention, for every exported value the row can be
+    /// handed.
+    #[test]
+    fn only_one_turns_an_exported_switch_on() {
+        // `with_env` is the whole test binary's env lock; a second mutex would
+        // not serialise against it, and concurrent setenv is undefined.
+        model::tests::with_env(None, None, None, || {
+            let persisted = Settings {
+                trace_frames: true,
+                ..Settings::default()
+            };
+            for (exported, on) in [
+                (None, true),
+                (Some("1"), true),
+                (Some("0"), false),
+                (Some("true"), false),
+                // An expansion that produced nothing is a mistake, not an
+                // override, so the file keeps the switch.
+                (Some(""), true),
+            ] {
+                match exported {
+                    Some(value) => std::env::set_var(TRACE_FRAMES.var(), value),
+                    None => std::env::remove_var(TRACE_FRAMES.var()),
+                }
+                seed(&persisted);
+                assert_eq!(TRACE_FRAMES.is_on(), on, "exported {exported:?}");
+            }
+            std::env::remove_var(TRACE_FRAMES.var());
+        });
+    }
+
+    #[test]
+    fn seeding_takes_the_env_over_the_file() {
+        model::tests::with_env(None, None, None, || {
+            let off = Settings {
+                trace_hittest: false,
+                ..Settings::default()
+            };
+            std::env::set_var(TRACE_HITTEST.var(), "1");
+            seed(&off);
+            std::env::remove_var(TRACE_HITTEST.var());
+            assert!(TRACE_HITTEST.is_on(), "the exported variable wins");
+
+            seed(&off);
+            assert!(!TRACE_HITTEST.is_on(), "the file wins with no variable set");
+        });
+    }
+
+    #[test]
+    fn a_patched_flag_moves_what_is_on_reports() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings {
+                trace_director: true,
+                ..Settings::default()
+            });
+            assert!(TRACE_DIRECTOR.is_on());
+            assert!(model::tracing(), "model::tracing reads the live flag");
+
+            seed(&Settings::default());
+            assert!(!TRACE_DIRECTOR.is_on());
+        });
+    }
+
+    #[test]
+    fn a_blank_number_is_unset() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings {
+                director_timeout_secs: String::new(),
+                director_max_tokens: "not a number".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(director_timeout_secs(), None);
+            assert_eq!(director_max_tokens(), None);
+
+            seed(&Settings {
+                director_timeout_secs: "45".to_string(),
+                director_max_tokens: "300".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(director_timeout_secs(), Some(45));
+            assert_eq!(director_max_tokens(), Some(300));
+        });
+    }
+
+    /// The exported limit is read where the file's is, so both reach the read
+    /// site through one decision rather than an if-cascade there.
+    #[test]
+    fn an_exported_limit_outranks_the_file() {
+        model::tests::with_env(None, None, None, || {
+            std::env::set_var(model::TIMEOUT_SECS, "7");
+            std::env::set_var(model::MAX_TOKENS, "11");
+            seed(&Settings {
+                director_timeout_secs: "45".to_string(),
+                director_max_tokens: "300".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(director_timeout_secs(), Some(7));
+            assert_eq!(director_max_tokens(), Some(11));
+
+            std::env::remove_var(model::TIMEOUT_SECS);
+            std::env::remove_var(model::MAX_TOKENS);
+        });
+    }
+}
