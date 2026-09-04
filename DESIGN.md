@@ -170,9 +170,10 @@ Rejected:
 This is the decision that keeps the character visibly alive while the Functional
 Layer is thinking, which is exactly where a naive design looks broken.
 
-How a wake is actually sent — one call in flight per Instance, held by
-convention rather than by construction, uncancellable while it is on the wire,
-and what that costs the user in latency — is
+How a wake is actually sent — one cancellable slot per Instance, where starting
+a call is the cancellation of that Instance's previous one — is
+[ADR-0011](./docs/adr/0011-one-cancellable-slot-per-instance.md). What the
+convention it replaced cost the user in latency, and what else buys any back, is
 [research](./docs/research/director-in-flight-and-latency.md).
 
 ### 6. Characters are packages; the engine owns the vocabulary
