@@ -242,3 +242,21 @@ reads the answers too long for a Speech bubble. Belongs to the Character
 Instance that was Summoned, and is drawn by ai-buddy rather than by the
 Harness. #17, ADR-0010.
 _Avoid_: Chat window, console, terminal, prompt box
+
+### The published site
+
+**Generated page**:
+A page on the published site built at deploy time by a script under `scripts/`
+from repository data, so its source is the thing it describes. ADR-0011.
+_Avoid_: Dynamic, templated, auto-generated
+
+**Dated page**:
+A hand-written proposal on the published site, frozen, carrying its issue number
+and approval date so it never claims to be current. ADR-0011.
+_Avoid_: Archived, versioned, historical
+
+**Described page**:
+The forbidden class: hand-written prose on the published site claiming to
+describe shipped behavior, with nothing checking that the two agree. Named so it
+can be rejected in review. ADR-0011.
+_Avoid_: Documentation page, reference page
