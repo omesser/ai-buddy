@@ -210,6 +210,12 @@ For development, install `libayatana-appindicator3-dev`:
 sudo apt install libayatana-appindicator3-dev
 ```
 
+The Director API key is stored via the OS secret store: Secret Service (GNOME
+Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building
+the shell requires `libdbus-1-dev` as a link dependency. No packaged secret
+store is required: keyutils is always available, and Secret Service is present
+when the desktop environment provides it.
+
 No bundler: the front end is static files under `src/`, which Tauri embeds at
 build time.
 

@@ -209,4 +209,94 @@ mod tests {
             assert!(result.is_ok());
         }
     }
+
+    /// Linux Secret Service tests. Run on a Linux desktop with Secret Service
+    /// (GNOME Keyring, KWallet) or kernel keyutils via:
+    ///
+    ///     cargo test -p ai-buddy --test secrets -- --ignored
+    ///
+    /// Tests save and restore any pre-existing `director-api-key` credential.
+    #[cfg(target_os = "linux")]
+    mod linux_secret_service {
+        use super::*;
+        use std::sync::Mutex;
+
+        static SECRET_SERVICE_LOCK: Mutex<()> = Mutex::new(());
+
+        struct CredentialGuard {
+            store: KeyringStore,
+            account: String,
+            original: Option<String>,
+        }
+
+        impl CredentialGuard {
+            fn new(account: &str) -> Self {
+                let store = KeyringStore::new();
+                let original = store.get(account).unwrap_or(None);
+                Self {
+                    store,
+                    account: account.to_string(),
+                    original,
+                }
+            }
+        }
+
+        impl Drop for CredentialGuard {
+            fn drop(&mut self) {
+                match &self.original {
+                    Some(value) => {
+                        let _ = self.store.set(&self.account, value);
+                    }
+                    None => {
+                        let _ = self.store.delete(&self.account);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        #[ignore]
+        fn round_trip_director_key_through_secret_service() {
+            let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
+            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
+            let store = &guard.store;
+
+            let sentinel = format!("sk-linux-ss-roundtrip-{}", uuid::Uuid::new_v4());
+
+            store.set(DIRECTOR_API_KEY, &sentinel).unwrap();
+
+            let retrieved = store.get(DIRECTOR_API_KEY).unwrap();
+            assert_eq!(retrieved.as_deref(), Some(sentinel.as_str()));
+
+            store.delete(DIRECTOR_API_KEY).unwrap();
+            let after_delete = store.get(DIRECTOR_API_KEY).unwrap();
+            assert_eq!(after_delete, None);
+        }
+
+        #[test]
+        #[ignore]
+        fn missing_credential_is_none_not_error() {
+            let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
+            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
+            let store = &guard.store;
+
+            store.delete(DIRECTOR_API_KEY).unwrap();
+
+            let result = store.get(DIRECTOR_API_KEY).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        #[ignore]
+        fn deleting_missing_credential_is_ok() {
+            let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
+            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
+            let store = &guard.store;
+
+            store.delete(DIRECTOR_API_KEY).unwrap();
+
+            let result = store.delete(DIRECTOR_API_KEY);
+            assert!(result.is_ok());
+        }
+    }
 }
