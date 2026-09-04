@@ -69,7 +69,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | macOS | ✅ | ✅ (beta, June 2026) | ❌ | ✅ (patched forks) | ✅ (10.15+) | ✅ (arm64/x64) | ~ (PR #551 open) |
-| Windows | ~ (planned, not implemented) | ✅ | ✅ | ✅ | ✅ (10/11) | ✅ (signed) | ✅ (11) |
+| Windows | ✅ (NSIS; some platform cells stub/degraded) | ✅ | ✅ | ✅ | ✅ (10/11) | ✅ (signed) | ✅ (11) |
 | Linux | ✅ (X11), ~ (Wayland) | ❌ | ❌ | ✅ (community forks) | ❌ | ✅ (AppImage, Wayland issues) | ❌ official (~unofficial port) |
 
 ### Pricing & distribution
@@ -85,7 +85,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows planned, not implemented; eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
+| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
