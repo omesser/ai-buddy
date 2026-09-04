@@ -41,6 +41,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-updater",
  "ureq",
+ "windows-sys 0.59.0",
  "x11rb 0.14.0",
  "zip 8.6.0",
 ]
