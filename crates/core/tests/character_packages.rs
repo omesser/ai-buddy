@@ -583,8 +583,23 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
     }
 
     assert_eq!(
-        character.behaviors["help"].weight, 4,
-        "help is the distinctive eager-offer weight"
+        character.behaviors["greet"].then.as_deref(),
+        Some("stroll"),
+        "greet chains into stroll so a hello is followed by a walk          (BMO greet→patrol / cat greet→inspect)"
+    );
+    assert_eq!(
+        character.behaviors["help"].weight, 2,
+        "help stays present but light enough that stroll can win the 30s–1m overlap"
+    );
+    assert_eq!(
+        character.behaviors["stroll"].weight, 3,
+        "stroll outranks fidget/help so the mascot actually walks the desk"
+    );
+    assert!(
+        character.behaviors["stroll"]
+            .primitives
+            .contains(&character::Primitive::Walk),
+        "stroll is a Walk"
     );
     assert!(
         character.behaviors["nap"]

@@ -137,20 +137,22 @@ frames = [
 fps = 8
 loop = "once"
 
-# A helpful buddy's life: say hello while someone is at the keyboard, offer
-# to help, fidget in place, stroll the desk when they pause, patrol when they
-# have plainly gone, and settle / nap last of all. Bands overlap so no idle
-# duration leaves it with nothing to do.
+# A helpful buddy's life: say hello while someone is at the keyboard, then
+# stroll (greet chains into walk — same pattern as BMO greet→patrol / cat
+# greet→inspect). Offer to help while they are still around, fidget in place,
+# stroll the desk when they pause, patrol when they have plainly gone, and
+# settle / nap last of all. Weights keep walk competitive with talk: help
+# must not starve stroll in the overlapping 30s–1m band.
 
 [behaviors.greet]
 play = ["talk"]
-then = "help"
+then = "stroll"
 weight = 4
 when = "idle under 10s"
 
 [behaviors.help]
 play = ["talk", "idle", "talk"]
-weight = 4
+weight = 2
 when = "idle under 1m"
 
 [behaviors.fidget]
@@ -160,7 +162,7 @@ when = "idle over 10s"
 
 [behaviors.stroll]
 play = ["walk"]
-weight = 1
+weight = 3
 when = "idle over 30s"
 
 [behaviors.patrol]
