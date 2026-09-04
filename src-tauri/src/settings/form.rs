@@ -244,21 +244,33 @@ pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
 ///
 /// A frozen row says it is overridden and names the variable doing it, so both
 /// the reason it takes no edit and the export to drop are on screen beside it.
-/// The one ownership question, for every row a variable can own: the Director
-/// endpoint, the Completer limits, and the development switches.
+/// The ownership question for a row holding text: the Director endpoint and
+/// the Completer limits, which take any value the process exports.
 fn env_row(label: &str, var: &str) -> (String, bool) {
-    match model::env_override(var) {
-        Some(_) => (format!("{label} (overridden by env: {var})"), true),
-        None => (label.to_string(), false),
+    owned_row(label, var, model::env_override(var).is_some())
+}
+
+/// The same question for a row holding a switch, which answers to a narrower
+/// set of values: one `model::env_switch` cannot read owns nothing, so the row
+/// stays the user's rather than freezing over a value nobody obeyed.
+fn switch_row(label: &str, var: &str) -> (String, bool) {
+    owned_row(label, var, model::env_switch(var).is_some())
+}
+
+/// One wording for both, so a frozen row reads the same wherever it is drawn.
+fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
+    match owned {
+        true => (format!("{label} (overridden by env: {var})"), true),
+        false => (label.to_string(), false),
     }
 }
 
 /// A checkbox for one development switch.
 ///
-/// Frozen when the process exported the variable: `dev_flags::Flag::env_value`
-/// gives the variable the value, so the click would change nothing.
+/// Frozen when the exported value is one `model::env_switch` reads: that
+/// value is the switch, so the click would change nothing.
 fn flag_row(id: &str, flag: &dev_flags::Flag, label: &str, help: &str) -> FormRow {
-    let (label, frozen) = env_row(label, flag.var());
+    let (label, frozen) = switch_row(label, flag.var());
     FormRow::Checkbox {
         id: id.to_string(),
         label,
@@ -272,12 +284,7 @@ fn director_sections() -> Vec<FormSection> {
     let (base_url_label, base_url_frozen) = env_row("Base URL", model::BASE_URL);
     let (model_label, model_frozen) = env_row("Model", model::MODEL);
     let (api_key_label, api_key_frozen) = env_row("API key", model::API_KEY);
-    // Not `env_row` alone: it freezes on any exported value, and only the off
-    // values veto — `AI_BUDDY_DIRECTOR=on` leaves the switch to the user.
-    let (director_label, director_frozen) = match model::env_vetoes_director() {
-        true => env_row("Director on", model::ENABLED),
-        false => ("Director on".to_string(), false),
-    };
+    let (director_label, director_frozen) = switch_row("Director on", model::ENABLED);
 
     vec![
         FormSection {
@@ -873,27 +880,30 @@ mod tests {
     }
 
     /// #272's rule for a row the env owns: no edit, and name the variable.
+    /// Either direction owns it — on is as much the variable's word as off.
     #[test]
-    fn a_vetoed_director_row_is_read_only_and_names_its_variable() {
-        crate::model::tests::with_director_off(|| {
-            let description = describe();
-            let (label, frozen) = description
-                .sections()
-                .flat_map(|section| &section.rows)
-                .find_map(|row| match row {
-                    FormRow::Checkbox {
-                        id, label, frozen, ..
-                    } if id == DIRECTOR_ID => Some((label.clone(), *frozen)),
-                    _ => None,
-                })
-                .expect("the Director row exists");
+    fn an_env_owned_director_row_is_read_only_and_names_its_variable() {
+        for exported in ["off", "on"] {
+            crate::model::tests::with_env_switch(exported, || {
+                let description = describe();
+                let (label, frozen) = description
+                    .sections()
+                    .flat_map(|section| &section.rows)
+                    .find_map(|row| match row {
+                        FormRow::Checkbox {
+                            id, label, frozen, ..
+                        } if id == DIRECTOR_ID => Some((label.clone(), *frozen)),
+                        _ => None,
+                    })
+                    .expect("the Director row exists");
 
-            assert!(frozen, "a switch the env owns takes no edit");
-            assert!(
-                label.contains(crate::model::ENABLED),
-                "the row must name the variable, not {label:?}"
-            );
-        });
+                assert!(frozen, "a switch the env owns takes no edit, {exported:?}");
+                assert!(
+                    label.contains(crate::model::ENABLED),
+                    "the row must name the variable, not {label:?}"
+                );
+            });
+        }
     }
 
     /// Whether the control carrying this id writes a bool, or `None` when no
@@ -1439,13 +1449,20 @@ mod tests {
     /// A switch the env owns names the variable it answers to, so the export
     /// to drop is on screen, and takes no click.
     ///
-    /// Every exported value freezes the row, `0` included, which is the
-    /// ownership half of `dev_flags::Flag::env_value`'s convention.
+    /// A value the vocabulary reads freezes the row, `0` included. One it
+    /// cannot read owns nothing, so that row stays the user's — freezing it
+    /// would claim an export the switch never obeyed.
     #[test]
     fn an_env_owned_flag_row_is_frozen_and_names_its_variable() {
         crate::model::tests::with_env(None, None, None, || {
             let var = dev_flags::TRACE_FRAMES.var();
-            for exported in [Some("1"), Some("0"), Some("true"), None] {
+            for (exported, owned) in [
+                (Some("1"), true),
+                (Some("0"), true),
+                (Some("true"), true),
+                (Some("banana"), false),
+                (None, false),
+            ] {
                 match exported {
                     Some(value) => std::env::set_var(var, value),
                     None => std::env::remove_var(var),
@@ -1461,14 +1478,10 @@ mod tests {
 
                 match row {
                     FormRow::Checkbox { label, frozen, .. } => {
-                        assert_eq!(
-                            *frozen,
-                            exported.is_some(),
-                            "exported {exported:?} decides the click"
-                        );
+                        assert_eq!(*frozen, owned, "exported {exported:?} decides the click");
                         assert_eq!(
                             label.contains(var),
-                            exported.is_some(),
+                            owned,
                             "exported {exported:?} decides the label, got {label:?}"
                         );
                     }

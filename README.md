@@ -248,12 +248,18 @@ AI_BUDDY_DIRECTOR_MODEL=gemma4 \
 cargo run
 ```
 
+Every variable that names a switch reads the same words: `1`, `on`, `true` or
+`yes` for on, `0`, `off`, `false` or `no` for off, in any case. Any other value
+is a typo rather than a choice — the switch stays as Settings has it, and the
+launch prints a line naming the variable it ignored. An empty value is an
+expansion that produced nothing, and is quietly no override at all.
+
 | Variable | What it does |
 |---|---|
 | `AI_BUDDY_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a [local](#a-local-model-server) server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
 | `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
 | `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
-| `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. The window and the tray name the variable and disable the toggle. |
+| `AI_BUDDY_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
@@ -625,8 +631,9 @@ what was already playing. Off unless asked.
 Settings → Development carries the same switches, so a trace goes on without a
 relaunch: the four above take effect on the next tick or wake,
 `AI_BUDDY_CAPTURABLE` on the next launch. Exporting one of these variables
-freezes its row the way the Director's do, and `=0` pins the switch off the
-same way `=1` pins it on.
+freezes its row the way the Director's does, and they read the same words every
+switch does: `1`, `on`, `true` or `yes` for on, `0`, `off`, `false` or `no` for
+off. Any other value is ignored, with a line at launch saying so.
 
 **A human** is still needed for the last step, because only the window server
 can answer it. Run the app, then confirm:

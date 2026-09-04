@@ -1009,8 +1009,8 @@ fn describe_menu(
         installed,
         current_character: current,
         instances: &instances,
-        director_enabled: settings.director_enabled,
-        director_vetoed: model::env_vetoes_director(),
+        director_enabled: model::director_in_force(settings.director_enabled),
+        director_env_owned: model::env_switch(model::ENABLED).is_some(),
         do_not_disturb: roster
             .get(instance_id)
             .map(|instance| instance.do_not_disturb())
@@ -1539,6 +1539,9 @@ fn main() {
             config.ambient_allowed = settings.ambient_wakes;
             let inspect = Arc::new(Mutex::new(config.inspect()));
             app.manage(Arc::clone(&inspect));
+            for line in model::env_switch_warnings(&dev_flags::switch_vars()) {
+                eprintln!("{line}");
+            }
             for line in model::startup_lines(&config) {
                 eprintln!("{line}");
             }
