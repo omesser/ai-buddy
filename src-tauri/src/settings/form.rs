@@ -57,7 +57,11 @@ pub enum FormRow {
     /// An inspect-only wrapping label showing a path.
     InspectPath { id: String },
     /// A popup menu for choosing between options.
-    Popup { id: String, label: Option<String> },
+    Popup {
+        id: String,
+        label: Option<String>,
+        help: Option<String>,
+    },
     /// A multiline text field that writes to Settings.
     Multiline {
         id: String,
@@ -83,11 +87,16 @@ pub enum FormRow {
         frozen: bool,
     },
     /// A scrollable list of items with dismiss buttons.
-    List { id: String, dismiss_label: String },
+    List {
+        id: String,
+        dismiss_label: String,
+        help: Option<String>,
+    },
     /// A row of multiple controls (e.g., new instance spawn row).
     Composite {
         id: String,
         controls: Vec<CompositeControl>,
+        help: Option<String>,
     },
 }
 
@@ -258,6 +267,7 @@ fn director_sections() -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "api_key_actions".to_string(),
+                    help: None,
                     // Clearing the store while a variable supplies the key
                     // would change nothing the Director can see (#272).
                     controls: vec![CompositeControl::Button {
@@ -288,6 +298,7 @@ fn character_sections() -> Vec<FormSection> {
             rows: vec![FormRow::Popup {
                 id: CHARACTER_ID.to_string(),
                 label: None,
+                help: Some("The character your buddy wears.".to_string()),
             }],
         },
         FormSection {
@@ -297,9 +308,11 @@ fn character_sections() -> Vec<FormSection> {
                 FormRow::List {
                     id: INSTANCES_ID.to_string(),
                     dismiss_label: "Dismiss".to_string(),
+                    help: Some("Buddies on screen now.".to_string()),
                 },
                 FormRow::Composite {
                     id: "new_instance".to_string(),
+                    help: Some("Adds another buddy.".to_string()),
                     controls: vec![
                         CompositeControl::TextField {
                             id: NEW_NAME_ID.to_string(),
@@ -427,6 +440,7 @@ fn privacy_sections() -> Vec<FormSection> {
                 },
                 FormRow::Composite {
                     id: "memory_actions".to_string(),
+                    help: None,
                     controls: vec![
                         CompositeControl::Button {
                             id: MEMORY_OPEN_ID.to_string(),
@@ -989,6 +1003,36 @@ mod tests {
             "Instances row must be a List"
         );
         assert!(matches!(instances.rows[1], FormRow::Composite { .. }));
+    }
+
+    /// Every row on the Character tab says what it does.
+    ///
+    /// `Popup`, `List` and `Composite` were the three kinds with nowhere to
+    /// put a help line, so this tab shipped without one.
+    #[test]
+    fn every_character_tab_row_has_help() {
+        let description = describe();
+        let tab = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "Character")
+            .expect("the Character tab exists");
+
+        for section in &tab.sections {
+            for row in &section.rows {
+                let help = match row {
+                    FormRow::Popup { id, help, .. }
+                    | FormRow::List { id, help, .. }
+                    | FormRow::Composite { id, help, .. } => (id, help),
+                    other => panic!("unexpected row kind on the Character tab: {other:?}"),
+                };
+                assert!(
+                    help.1.is_some(),
+                    "{} on the Character tab has no help",
+                    help.0
+                );
+            }
+        }
     }
 
     #[test]

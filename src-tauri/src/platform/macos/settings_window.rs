@@ -674,6 +674,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                     FormRow::List {
                         id,
                         dismiss_label: _,
+                        help,
                     } => {
                         let view = NSView::initWithFrame(
                             NSView::alloc(mtm),
@@ -683,6 +684,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
 
                         if id == form::INSTANCES_ID {
                             instances_view = Some(view);
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
                         }
                     }
                     FormRow::InspectBlock { id, label, help } => {
@@ -709,12 +714,16 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                     }
-                    FormRow::Popup { id, .. } => {
+                    FormRow::Popup { id, help, .. } => {
                         let pop = popup(&controller, sel!(characterPicked:), mtm);
                         cursor.place(&pop, 24.0);
 
                         if id == form::CHARACTER_ID {
                             character_popup = Some(pop);
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
                         }
                     }
                     FormRow::Multiline {
@@ -734,7 +743,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                     }
-                    FormRow::Composite { controls, .. } => {
+                    FormRow::Composite { controls, help, .. } => {
                         cursor.y -= 24.0 + ROW_GAP;
                         let mut x = MARGIN;
 
@@ -810,6 +819,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     }
                                 }
                             }
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
                         }
                     }
                 }

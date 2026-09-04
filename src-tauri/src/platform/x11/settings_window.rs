@@ -199,17 +199,8 @@ impl SettingsWindow {
                 check.set_sensitive(!frozen);
 
                 if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_margin_start(24);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
                     pack(container, &check, ROW_GAP);
-                    pack(container, &help_label, HINT_GAP);
+                    help_line(container, help_text);
                 } else {
                     pack(container, &check, ROW_GAP);
                 }
@@ -405,16 +396,7 @@ impl SettingsWindow {
                 }
 
                 if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_margin_start(24);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    pack(container, &help_label, HINT_GAP);
+                    help_line(container, help_text);
                 }
             }
             FormRow::InspectPath { id } => {
@@ -429,7 +411,11 @@ impl SettingsWindow {
                     .borrow_mut()
                     .insert(id.clone(), Control::Label(label));
             }
-            FormRow::List { id, dismiss_label } => {
+            FormRow::List {
+                id,
+                dismiss_label,
+                help,
+            } => {
                 let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 list_box.set_size_request(-1, 80);
 
@@ -437,6 +423,10 @@ impl SettingsWindow {
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::List(list_box, dismiss_label.clone()));
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
             FormRow::Multiline {
                 id, help, editable, ..
@@ -487,18 +477,10 @@ impl SettingsWindow {
                     .insert(id.clone(), Control::TextView(text_view));
 
                 if let Some(help_text) = help {
-                    let help_label = gtk::Label::new(Some(help_text));
-                    help_label.set_halign(Align::Start);
-                    help_label.set_line_wrap(true);
-                    help_label.set_xalign(0.0);
-                    help_label.set_markup(&format!(
-                        "<span size='small' foreground='#888888'>{}</span>",
-                        gtk::glib::markup_escape_text(help_text)
-                    ));
-                    pack(container, &help_label, HINT_GAP);
+                    help_line(container, help_text);
                 }
             }
-            FormRow::Composite { controls, .. } => {
+            FormRow::Composite { controls, help, .. } => {
                 let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
 
                 for control in controls {
@@ -638,14 +620,22 @@ impl SettingsWindow {
                 }
 
                 pack(container, &hbox, ROW_GAP);
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
-            FormRow::Popup { id, .. } => {
+            FormRow::Popup { id, help, .. } => {
                 let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
 
                 pack(container, &radio_box, ROW_GAP);
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::CharacterPicker(radio_box, Vec::new()));
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
         }
     }
@@ -887,6 +877,20 @@ impl SettingsWindow {
 }
 
 /// Add a widget to a page with `gap` of space above it.
+/// A row's help line, packed close under the control it describes.
+fn help_line(container: &gtk::Box, text: &str) {
+    let label = gtk::Label::new(Some(text));
+    label.set_halign(Align::Start);
+    label.set_line_wrap(true);
+    label.set_xalign(0.0);
+    label.set_margin_start(24);
+    label.set_markup(&format!(
+        "<span size='small' foreground='#888888'>{}</span>",
+        gtk::glib::markup_escape_text(text)
+    ));
+    pack(container, &label, HINT_GAP);
+}
+
 fn pack(container: &gtk::Box, widget: &impl gtk::glib::IsA<gtk::Widget>, gap: i32) {
     widget.set_margin_top(gap);
     container.pack_start(widget, false, false, 0);
