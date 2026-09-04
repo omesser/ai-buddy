@@ -215,15 +215,10 @@ fn frames_of(name: &str) -> Vec<(String, String, Vec<u8>)> {
 
 /// Mean x of cyan cheek-light pixels in an RGBA PNG (Buddy Bot status LED).
 fn cyan_cheek_light_x(bytes: &[u8]) -> f32 {
-    let mut reader = png::Decoder::new(Cursor::new(bytes))
-        .read_info()
-        .expect("every frame is a PNG");
-    let width = reader.info().width as usize;
-    let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
-    let frame = reader.next_frame(&mut buf).expect("frame decodes");
+    let (width, _, rgba) = frame_rgba(bytes);
     let mut sx = 0.0f32;
     let mut n = 0.0f32;
-    for (i, px) in buf[..frame.buffer_size()].chunks_exact(4).enumerate() {
+    for (i, px) in rgba.iter().enumerate() {
         let (r, g, b, a) = (px[0], px[1], px[2], px[3]);
         if a > 128 && b > 150 && r < 120 && g > 80 {
             sx += (i % width) as f32;
@@ -232,6 +227,69 @@ fn cyan_cheek_light_x(bytes: &[u8]) -> f32 {
     }
     assert!(n > 0.0, "expected cyan status-light pixels");
     sx / n
+}
+
+/// Mean squared RGB error between a frame and its horizontal mirror.
+/// Directional art scores high; a left-right symmetric sprite would score near 0.
+fn mse_to_horizontal_flip(width: usize, height: usize, rgba: &[[u8; 4]]) -> f64 {
+    let mut sum = 0.0f64;
+    let mut n = 0.0f64;
+    for y in 0..height {
+        for x in 0..width {
+            let i = y * width + x;
+            let j = y * width + (width - 1 - x);
+            if rgba[i][3] == 0 && rgba[j][3] == 0 {
+                continue;
+            }
+            for (left, right) in rgba[i][..3].iter().zip(rgba[j][..3].iter()) {
+                let d = *left as f64 - *right as f64;
+                sum += d * d;
+                n += 1.0;
+            }
+        }
+    }
+    assert!(n > 0.0, "frame has visible pixels to compare");
+    sum / n
+}
+
+/// 3/4-right walk: the near ear sits on the viewer's right and extends the
+/// opaque bbox, so dark facial features (eyes) land left of silhouette mid.
+/// Horizontally flipping the frame reverses the inequality — that is the
+/// regression against re-flipping walk art the engine already mirrors.
+fn dark_eyes_left_of_silhouette_mid(width: usize, height: usize, rgba: &[[u8; 4]]) -> (f32, f32) {
+    let mut x_min = width;
+    let mut x_max = 0usize;
+    for (i, px) in rgba.iter().enumerate() {
+        if px[3] > 128 {
+            let x = i % width;
+            x_min = x_min.min(x);
+            x_max = x_max.max(x);
+        }
+    }
+    assert!(x_min <= x_max, "walk frame has an opaque silhouette");
+    let sil_mid = (x_min + x_max) as f32 / 2.0;
+
+    let y0 = height * 30 / 108;
+    let y1 = height * 55 / 108;
+    let mut sx = 0.0f32;
+    let mut n = 0.0f32;
+    for (i, px) in rgba.iter().enumerate() {
+        let y = i / width;
+        if y < y0 || y > y1 {
+            continue;
+        }
+        let (r, g, b, a) = (px[0] as u16, px[1] as u16, px[2] as u16, px[3]);
+        let lum = (r + g + b) / 3;
+        if a > 128 && lum < 50 {
+            sx += (i % width) as f32;
+            n += 1.0;
+        }
+    }
+    assert!(
+        n > 10.0,
+        "expected dark eye pixels in the head band, got {n}"
+    );
+    (sx / n, sil_mid)
 }
 
 /// #161: every grounded pose has a foot on the canvas bottom row.
@@ -517,7 +575,7 @@ fn buddy_bot_package_loads_with_all_required_animations() {
     assert_required_animations(&character);
 
     let expected_frames = [
-        ("idle", 6),
+        ("idle", 16),
         ("walk", 8),
         ("talk", 6),
         ("sleep", 4),
@@ -542,7 +600,7 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 
     assert_eq!(
         character.scale, 1,
-        "Buddy Bot uses scale 1: 320×320 frames are already desktop-sized; \
+        "Buddy Bot uses scale 1: 108×108 frames are already desktop-sized; \
          the schema only allows whole-number scale 1–4"
     );
     assert!(
@@ -552,16 +610,16 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 }
 
 #[test]
-fn buddy_bot_frames_are_320_square_rgba() {
+fn buddy_bot_frames_are_108_square_rgba() {
     let frames = frames_of("buddy-bot");
-    assert_eq!(frames.len(), 47, "the pack ships 47 PNG frames");
+    assert_eq!(frames.len(), 57, "the pack ships 57 PNG frames");
 
     for (animation, frame, bytes) in frames {
         let (width, height, alpha) = frame_alpha(&bytes);
         assert_eq!(
             (width, height),
-            (320, 320),
-            "{animation} frame {frame} must be 320×320"
+            (108, 108),
+            "{animation} frame {frame} must be 108×108"
         );
         assert!(
             alpha.iter().any(|&a| a > 0),
@@ -574,28 +632,53 @@ fn buddy_bot_frames_are_320_square_rgba() {
     }
 }
 
-/// Walk art must face right (engine mirrors for left). The Imagine pack's walk
-/// faced left — cheek status light on the viewer's right — which read as
-/// moonwalking. After the package flip, the cyan cheek light sits in the left
-/// half like the front-facing idle frames (character's right cheek).
+/// Walk art must already face right (engine mirrors for left). Idle keeps the
+/// cyan cheek LED on the viewer's left (character's right cheek). Walk omits
+/// that LED per the art pack, so facing is pinned by silhouette: dark eyes sit
+/// left of the opaque mid because the near ear extends the right side — and a
+/// horizontal flip reverses that. MSE to the mirror stays high so the pose is
+/// directional, not symmetric.
 #[test]
-fn buddy_bot_walk_faces_right_like_idle_cheek_light() {
+fn buddy_bot_walk_faces_right_for_engine_mirroring() {
     let files = package_bytes("buddy-bot");
     let idle = files.get("frames/idle-0.png").expect("idle-0");
     let walk = files.get("frames/walk-0.png").expect("walk-0");
-    let (width, _, _) = frame_alpha(walk);
-    let mid = width as f32 / 2.0;
+    let (idle_w, _, _) = frame_alpha(idle);
+    let idle_mid = idle_w as f32 / 2.0;
 
     let idle_light = cyan_cheek_light_x(idle);
-    let walk_light = cyan_cheek_light_x(walk);
-
     assert!(
-        idle_light < mid,
-        "idle cheek light is on the viewer's left, got {idle_light} mid {mid}"
+        idle_light < idle_mid,
+        "idle cheek light is on the viewer's left, got {idle_light} mid {idle_mid}"
     );
+
+    let (width, height, rgba) = frame_rgba(walk);
+    let mse = mse_to_horizontal_flip(width, height, &rgba);
     assert!(
-        walk_light < mid,
-        "walk must face right: cheek light on viewer's left after flip, got {walk_light} mid {mid}"
+        mse > 500.0,
+        "walk must be left-right asymmetric (3/4 pose); MSE to mirror was {mse}"
+    );
+
+    let (eye_x, sil_mid) = dark_eyes_left_of_silhouette_mid(width, height, &rgba);
+    assert!(
+        eye_x < sil_mid,
+        "walk must face right: dark eyes left of silhouette mid          (near ear on viewer-right), got eye_x={eye_x} sil_mid={sil_mid}"
+    );
+
+    // Flipping the authored walk must break the facing cue — guards against
+    // re-flipping frames the engine already mirrors for leftward travel.
+    let mut flipped = rgba.clone();
+    for y in 0..height {
+        for x in 0..(width / 2) {
+            let left = y * width + x;
+            let right = y * width + (width - 1 - x);
+            flipped.swap(left, right);
+        }
+    }
+    let (flip_eye_x, flip_sil_mid) = dark_eyes_left_of_silhouette_mid(width, height, &flipped);
+    assert!(
+        flip_eye_x > flip_sil_mid,
+        "a horizontally flipped walk must fail the right-facing cue,          got eye_x={flip_eye_x} sil_mid={flip_sil_mid}"
     );
 }
 

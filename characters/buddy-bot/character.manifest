@@ -1,11 +1,11 @@
 # Buddy Bot — logo-inspired desktop AI mascot for ai-buddy.
-# Art: Grok Imagine–generated character pack (320×320 RGBA, transparent).
-# Walk faces RIGHT (frames were horizontally flipped from the Imagine pack,
-# which faced left); the Engine mirrors for leftward travel. Soft anti-aliased
+# Art: Grok Imagine–generated character pack (108×108 RGBA, transparent;
+# sprite height locked ~82px). Walk already faces RIGHT (3/4); the Engine
+# mirrors for leftward travel — do not flip walk frames again. Cheek LED is
+# omitted on walk only (per FRAME-MAP); other states keep it. Soft anti-aliased
 # lines, so render_mode is smooth (ADR-0006). Scale 1: frames are authored at
-# desktop size already (320px), like BMO/Cat/Timber Wolf — fractional scale is
-# not in the schema (whole numbers 1–4 only). The sprite reads larger than
-# BMO's ~126px shimeji, which fits a product mascot standing next to the logo.
+# desktop size already (108px), like BMO/Cat/Timber Wolf — fractional scale is
+# not in the schema (whole numbers 1–4 only).
 
 name = "Buddy Bot"
 render_mode = "smooth"
@@ -25,8 +25,7 @@ model_power = 1
 near_reaction = "speak"
 rush_reaction = "react"
 
-# Front-facing hover bob (sine). Six frames keep the float readable without
-# looking busy.
+# Front-facing hover bob (sine). Sixteen frames keep the float smooth.
 
 [animations.idle]
 frames = [
@@ -36,11 +35,21 @@ frames = [
   "frames/idle-3.png",
   "frames/idle-4.png",
   "frames/idle-5.png",
+  "frames/idle-6.png",
+  "frames/idle-7.png",
+  "frames/idle-8.png",
+  "frames/idle-9.png",
+  "frames/idle-10.png",
+  "frames/idle-11.png",
+  "frames/idle-12.png",
+  "frames/idle-13.png",
+  "frames/idle-14.png",
+  "frames/idle-15.png",
 ]
 fps = 5
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
-# Pack walk originally faced left; mirrored so facing=1 moves with the nose.
+# Walk already faces right; cheek LED omitted on walk only.
 
 [animations.walk]
 frames = [
