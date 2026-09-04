@@ -68,12 +68,7 @@ pub(crate) fn run_frame_loop(
             instances: instance_rows,
             ops,
         } = extras;
-
-        // One registry for every Instance, so that the question "how many calls
-        // may be on the wire at once" has somewhere to be asked. It is not asked
-        // yet — there is no cap, and N buddies make N calls, as before.
         let mut slots = model::Slots::new();
-
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
             let installed: Vec<String> = characters.keys().cloned().collect();

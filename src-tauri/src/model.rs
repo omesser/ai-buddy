@@ -246,7 +246,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         model: settings.model.clone(),
         timeout: timeout_for(local),
         max_tokens: max_tokens_for(local),
-        session: Mutex::new(Vec::new()),
+        session: Mutex::new(Session::default()),
         streams: AtomicBool::new(true),
         agent: ureq::agent(),
     })
@@ -514,6 +514,17 @@ struct Message {
     content: String,
 }
 
+/// The conversation, and which turn is open in it.
+///
+/// A counter rather than the position of the last message: two calls can be
+/// inside `post` at once now that a world event may supersede a wake (#312),
+/// nothing orders them, and so "the question at the end" does not say whose.
+#[derive(Default)]
+struct Session {
+    messages: Vec<Message>,
+    opened: u64,
+}
+
 pub struct Endpoint {
     api_key: String,
     url: String,
@@ -521,7 +532,7 @@ pub struct Endpoint {
     timeout: Duration,
     max_tokens: u32,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
-    session: Mutex<Vec<Message>>,
+    session: Mutex<Session>,
     /// Does this host stream? Starts optimistic and only ever falls, once a
     /// whole reply has succeeded where a stream did not (#302).
     ///
@@ -593,7 +604,7 @@ impl Endpoint {
     /// asking, rather than paying two POSTs on every wake for the rest of
     /// the session.
     pub fn post(&self, url: &str, prompt: &str) -> Result<String, String> {
-        let snapshot = self.open_turn(prompt);
+        let (turn, snapshot) = self.open_turn(prompt);
         let wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
         } else {
@@ -623,55 +634,60 @@ impl Endpoint {
                 };
             }
         }
-        self.close_turn(reply.map_err(Unsent::into_error))
+        self.close_turn(turn, reply.map_err(Unsent::into_error))
     }
 
     /// Paired with `close_turn`: the session only ever grows here and is only
-    /// ever trimmed there. Hands back a snapshot rather than holding the lock,
-    /// so the fallback retry asks the identical question.
+    /// ever trimmed there. Hands back the turn it opened, and a snapshot rather
+    /// than the lock, so the fallback retry asks the identical question.
     ///
     /// A trailing question is one a superseded call left open (#312): its
-    /// worker is still on the wire and will not touch the session again, so
-    /// withdrawing it here is what keeps the model from being asked two things
+    /// worker is still on the wire and no longer owns a turn here, so
+    /// withdrawing it is what keeps the Completer from being asked two things
     /// at once.
-    fn open_turn(&self, prompt: &str) -> Vec<Message> {
+    fn open_turn(&self, prompt: &str) -> (u64, Vec<Message>) {
         let mut session = self.session.lock().expect("session lock");
-        if session.last().is_some_and(|last| last.role == "user") {
-            session.pop();
+        if session
+            .messages
+            .last()
+            .is_some_and(|last| last.role == "user")
+        {
+            session.messages.pop();
         }
-        session.push(Message {
+        session.messages.push(Message {
             role: "user",
             content: prompt.to_string(),
         });
-        session.clone()
+        session.opened += 1;
+        (session.opened, session.messages.clone())
     }
 
     /// Record the reply, or take the question back out.
     ///
-    /// A turn that produced nothing pops the user message, because the
-    /// session is what the *next* prompt is built from: leaving the question
-    /// behind would ask the model to answer two things at once.
+    /// A turn that produced nothing pops the user message, because the session
+    /// is what the *next* prompt is built from: leaving the question behind
+    /// would ask the Completer to answer two things at once.
     ///
-    /// An abandoned call is no longer this Instance's turn, so it touches
-    /// nothing: the wake that superseded it owns the trailing question, and its
-    /// answer is one `Slots::take` will never hand out. Without that, the loser
-    /// pops the winner's question — the two calls overlap on one `Endpoint`
-    /// only because a world event may now supersede a wake (#312).
-    fn close_turn(&self, reply: Result<String, String>) -> Result<String, String> {
-        if abandoned() {
+    /// A turn some later `open_turn` has replaced touches nothing at all. Its
+    /// question is already gone and the one at the end belongs to the wake that
+    /// superseded it, so popping would take the winner's question out and
+    /// pushing would answer it with the loser's reply — a reply `Slots::take`
+    /// will never hand out anyway.
+    fn close_turn(&self, turn: u64, reply: Result<String, String>) -> Result<String, String> {
+        let mut session = self.session.lock().expect("session lock");
+        if session.opened != turn {
             return reply;
         }
-        let mut session = self.session.lock().expect("session lock");
         match reply {
             Ok(content) => {
-                session.push(Message {
+                session.messages.push(Message {
                     role: "assistant",
                     content: content.clone(),
                 });
                 Ok(content)
             }
             Err(error) => {
-                session.pop();
+                session.messages.pop();
                 Err(error)
             }
         }
@@ -1888,7 +1904,7 @@ pub(crate) mod tests {
             model: "gemma4".to_string(),
             timeout: TIMEOUT,
             max_tokens: HOSTED_MAX_TOKENS,
-            session: Mutex::new(Vec::new()),
+            session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
             agent: ureq::agent(),
         }
@@ -1901,36 +1917,25 @@ pub(crate) mod tests {
     fn a_turn_with_no_reply_leaves_no_half_answer_in_the_session() {
         let endpoint = local_endpoint();
 
-        let opening = endpoint.open_turn("hello");
-        assert_eq!(opening.len(), 1, "the opening turn is the prompt alone");
-        endpoint.close_turn(Ok("stroll".to_string())).unwrap();
-
-        endpoint.open_turn("what just happened: poked");
+        let (opening, asked) = endpoint.open_turn("hello");
+        assert_eq!(asked.len(), 1, "the opening turn is the prompt alone");
         endpoint
-            .close_turn(Err("abandoned".to_string()))
+            .close_turn(opening, Ok("stroll".to_string()))
+            .unwrap();
+
+        let (poked, _) = endpoint.open_turn("what just happened: poked");
+        endpoint
+            .close_turn(poked, Err("abandoned".to_string()))
             .unwrap_err();
 
-        let next = endpoint.open_turn("what just happened: thrown");
-        let turns: Vec<(&str, &str)> = next
-            .iter()
-            .map(|message| (message.role, message.content.as_str()))
-            .collect();
         assert_eq!(
-            turns,
+            spoken(&endpoint.open_turn("what just happened: thrown").1),
             [
                 ("user", "hello"),
                 ("assistant", "stroll"),
                 ("user", "what just happened: thrown"),
             ]
         );
-    }
-
-    /// Runs `body` on a thread carrying an abandoned call's flag, which is how
-    /// a superseded worker sees the world.
-    fn as_abandoned(body: impl FnOnce()) {
-        ABANDONED.with_borrow_mut(|flag| *flag = Some(Arc::new(AtomicBool::new(true))));
-        body();
-        ABANDONED.with_borrow_mut(|flag| *flag = None);
     }
 
     /// #312: a superseded call is still inside `post` when the wake that
@@ -1939,13 +1944,15 @@ pub(crate) mod tests {
     #[test]
     fn a_superseded_turn_neither_leaves_its_question_nor_takes_the_winners() {
         let endpoint = local_endpoint();
-        endpoint.open_turn("hello");
-        endpoint.close_turn(Ok("stroll".to_string())).unwrap();
+        let (opening, _) = endpoint.open_turn("hello");
+        endpoint
+            .close_turn(opening, Ok("stroll".to_string()))
+            .unwrap();
 
-        endpoint.open_turn("what just happened: nothing");
-        let poked = endpoint.open_turn("what just happened: poked");
+        let (ambient, _) = endpoint.open_turn("what just happened: nothing");
+        let (poked, asked) = endpoint.open_turn("what just happened: poked");
         assert_eq!(
-            spoken(&poked),
+            spoken(&asked),
             [
                 ("user", "hello"),
                 ("assistant", "stroll"),
@@ -1954,15 +1961,13 @@ pub(crate) mod tests {
             "the abandoned question must not be asked alongside the new one"
         );
 
-        as_abandoned(|| {
-            endpoint
-                .close_turn(Err("abandoned".to_string()))
-                .unwrap_err();
-        });
-        endpoint.close_turn(Ok("nap".to_string())).unwrap();
+        endpoint
+            .close_turn(ambient, Err("abandoned".to_string()))
+            .unwrap_err();
+        endpoint.close_turn(poked, Ok("nap".to_string())).unwrap();
 
         assert_eq!(
-            spoken(&endpoint.open_turn("what just happened: thrown")),
+            spoken(&endpoint.open_turn("what just happened: thrown").1),
             [
                 ("user", "hello"),
                 ("assistant", "stroll"),
@@ -1970,6 +1975,28 @@ pub(crate) mod tests {
                 ("assistant", "nap"),
                 ("user", "what just happened: thrown"),
             ]
+        );
+    }
+
+    /// Nothing orders the two workers, so the superseded one may reach the
+    /// session first and open its turn after the wake that replaced it. Whoever
+    /// lands last, an answer must never be recorded against another turn's
+    /// question — that is what the next Character Prompt is built from.
+    #[test]
+    fn an_answer_is_never_recorded_against_another_turns_question() {
+        let endpoint = local_endpoint();
+        let (poked, _) = endpoint.open_turn("what just happened: poked");
+        let (ambient, _) = endpoint.open_turn("what just happened: nothing");
+
+        endpoint.close_turn(poked, Ok("nap".to_string())).unwrap();
+        endpoint
+            .close_turn(ambient, Err("abandoned".to_string()))
+            .unwrap_err();
+
+        assert_eq!(
+            spoken(&endpoint.open_turn("what just happened: thrown").1),
+            [("user", "what just happened: thrown")],
+            "a question whose turn is closed leaves nothing behind"
         );
     }
 
@@ -2844,8 +2871,8 @@ pub(crate) mod tests {
     }
 
     /// Superseding has to reach the worker, not just the epoch it answers on.
-    /// Closing the connection is what stops a generation and gives the endpoint
-    /// its slot back (#302), and the worker is the only thing holding the
+    /// Closing the connection is what stops a generation and gives the host its
+    /// capacity back (#302), and the worker is the only thing holding the
     /// socket — so a flag it never reads buys nothing.
     #[test]
     fn superseding_raises_the_flag_the_worker_reads() {

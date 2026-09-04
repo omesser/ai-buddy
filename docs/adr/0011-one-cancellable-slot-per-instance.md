@@ -56,9 +56,10 @@ Superseding raises the flag #302 put behind the streaming reader, so the loser
 closes its connection between SSE frames and the host stops generating.
 
 Two calls can now overlap on one `Endpoint`, which the session bookkeeping had
-been relying on not happening. A question nobody answered is withdrawn by the
-next `open_turn`, and an abandoned call closes without touching the session at
-all — otherwise the loser pops the winner's question out from under it.
+been relying on not happening. A turn carries a number, because the position of
+the last message no longer says whose question it is: a question nobody answered
+is withdrawn by the next `open_turn`, and a turn some later one has replaced
+closes without touching the session at all.
 
 Reversing this means going back to a convention checked by hand at every call
 site, and to a buddy that answers a question the world has moved past.
