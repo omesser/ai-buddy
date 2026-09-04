@@ -1,6 +1,7 @@
 # Buddy Bot — logo-inspired desktop AI mascot for ai-buddy.
 # Art: Grok Imagine–generated character pack (320×320 RGBA, transparent).
-# Walk faces RIGHT; the Engine mirrors for leftward travel. Soft anti-aliased
+# Walk faces RIGHT (frames were horizontally flipped from the Imagine pack,
+# which faced left); the Engine mirrors for leftward travel. Soft anti-aliased
 # lines, so render_mode is smooth (ADR-0006). Scale 1: frames are authored at
 # desktop size already (320px), like BMO/Cat/Timber Wolf — fractional scale is
 # not in the schema (whole numbers 1–4 only). The sprite reads larger than
@@ -39,6 +40,7 @@ frames = [
 fps = 5
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
+# Pack walk originally faced left; mirrored so facing=1 moves with the nose.
 
 [animations.walk]
 frames = [

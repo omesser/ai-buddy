@@ -213,6 +213,27 @@ fn frames_of(name: &str) -> Vec<(String, String, Vec<u8>)> {
     frames
 }
 
+/// Mean x of cyan cheek-light pixels in an RGBA PNG (Buddy Bot status LED).
+fn cyan_cheek_light_x(bytes: &[u8]) -> f32 {
+    let mut reader = png::Decoder::new(Cursor::new(bytes))
+        .read_info()
+        .expect("every frame is a PNG");
+    let width = reader.info().width as usize;
+    let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
+    let frame = reader.next_frame(&mut buf).expect("frame decodes");
+    let mut sx = 0.0f32;
+    let mut n = 0.0f32;
+    for (i, px) in buf[..frame.buffer_size()].chunks_exact(4).enumerate() {
+        let (r, g, b, a) = (px[0], px[1], px[2], px[3]);
+        if a > 128 && b > 150 && r < 120 && g > 80 {
+            sx += (i % width) as f32;
+            n += 1.0;
+        }
+    }
+    assert!(n > 0.0, "expected cyan status-light pixels");
+    sx / n
+}
+
 /// #161: every grounded pose has a foot on the canvas bottom row.
 /// Only `fall` is airborne.
 #[test]
@@ -551,6 +572,31 @@ fn buddy_bot_frames_are_320_square_rgba() {
             "{animation} frame {frame} must keep a transparent margin"
         );
     }
+}
+
+/// Walk art must face right (engine mirrors for left). The Imagine pack's walk
+/// faced left — cheek status light on the viewer's right — which read as
+/// moonwalking. After the package flip, the cyan cheek light sits in the left
+/// half like the front-facing idle frames (character's right cheek).
+#[test]
+fn buddy_bot_walk_faces_right_like_idle_cheek_light() {
+    let files = package_bytes("buddy-bot");
+    let idle = files.get("frames/idle-0.png").expect("idle-0");
+    let walk = files.get("frames/walk-0.png").expect("walk-0");
+    let (width, _, _) = frame_alpha(walk);
+    let mid = width as f32 / 2.0;
+
+    let idle_light = cyan_cheek_light_x(idle);
+    let walk_light = cyan_cheek_light_x(walk);
+
+    assert!(
+        idle_light < mid,
+        "idle cheek light is on the viewer's left, got {idle_light} mid {mid}"
+    );
+    assert!(
+        walk_light < mid,
+        "walk must face right: cheek light on viewer's left after flip, got {walk_light} mid {mid}"
+    );
 }
 
 #[test]
