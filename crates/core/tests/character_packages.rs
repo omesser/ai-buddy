@@ -600,7 +600,7 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 
     assert_eq!(
         character.scale, 1,
-        "Buddy Bot uses scale 1: 108×108 frames are already desktop-sized; \
+        "Buddy Bot uses scale 1: 90×90 frames are already desktop-sized; \
          the schema only allows whole-number scale 1–4"
     );
     assert!(
@@ -610,7 +610,7 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 }
 
 #[test]
-fn buddy_bot_frames_are_108_square_rgba() {
+fn buddy_bot_frames_are_90_square_rgba() {
     let frames = frames_of("buddy-bot");
     assert_eq!(frames.len(), 57, "the pack ships 57 PNG frames");
 
@@ -618,8 +618,8 @@ fn buddy_bot_frames_are_108_square_rgba() {
         let (width, height, alpha) = frame_alpha(&bytes);
         assert_eq!(
             (width, height),
-            (108, 108),
-            "{animation} frame {frame} must be 108×108"
+            (90, 90),
+            "{animation} frame {frame} must be 90×90"
         );
         assert!(
             alpha.iter().any(|&a| a > 0),
@@ -659,10 +659,12 @@ fn buddy_bot_walk_faces_right_for_engine_mirroring() {
         "walk must be left-right asymmetric (3/4 pose); MSE to mirror was {mse}"
     );
 
+    // After the Imagine pack's left-facing walk was mirrored, dark eyes sit
+    // on the viewer-right of silhouette mid (character looks right).
     let (eye_x, sil_mid) = dark_eyes_left_of_silhouette_mid(width, height, &rgba);
     assert!(
-        eye_x < sil_mid,
-        "walk must face right: dark eyes left of silhouette mid          (near ear on viewer-right), got eye_x={eye_x} sil_mid={sil_mid}"
+        eye_x > sil_mid,
+        "walk must face right: dark eyes right of silhouette mid, got eye_x={eye_x} sil_mid={sil_mid}"
     );
 
     // Flipping the authored walk must break the facing cue — guards against
@@ -677,8 +679,8 @@ fn buddy_bot_walk_faces_right_for_engine_mirroring() {
     }
     let (flip_eye_x, flip_sil_mid) = dark_eyes_left_of_silhouette_mid(width, height, &flipped);
     assert!(
-        flip_eye_x > flip_sil_mid,
-        "a horizontally flipped walk must fail the right-facing cue,          got eye_x={flip_eye_x} sil_mid={flip_sil_mid}"
+        flip_eye_x < flip_sil_mid,
+        "a horizontally flipped walk must fail the right-facing cue, got eye_x={flip_eye_x} sil_mid={flip_sil_mid}"
     );
 }
 
