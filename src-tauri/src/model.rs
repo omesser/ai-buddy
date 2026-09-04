@@ -43,7 +43,7 @@ fn trace_block(which: &str, text: &str) {
 pub(crate) const API_KEY: &str = "AI_BUDDY_DIRECTOR_API_KEY";
 pub(crate) const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
 pub(crate) const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
-const ENABLED: &str = "AI_BUDDY_DIRECTOR";
+pub(crate) const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// First ambient session wait, in seconds. Not a heartbeat.
 const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
@@ -87,6 +87,10 @@ pub struct DirectorInspect {
 pub struct DirectorConfig {
     pub enabled: bool,
     pub configured: bool,
+    /// `AI_BUDDY_DIRECTOR` said off. Read here rather than in `apply_switch`,
+    /// which the frame loop calls every tick, and nothing sets the variable
+    /// once the process is running.
+    env_off: bool,
     /// The env var is set, but trim left nothing usable — `$XAI_API_KEY`
     /// expanding to empty used to look like the key was never offered.
     pub key_invalid: bool,
@@ -99,6 +103,15 @@ pub struct DirectorConfig {
 }
 
 impl DirectorConfig {
+    /// Fold the saved switch in: on only when the file says on, a key or a
+    /// local host makes it possible, and the env has not vetoed it.
+    ///
+    /// The only place that composes the three. A caller that sets `enabled`
+    /// from `configured` alone loses the veto.
+    pub fn apply_switch(&mut self, saved_on: bool) {
+        self.enabled = saved_on && self.configured && !self.env_off;
+    }
+
     pub fn inspect(&self) -> DirectorInspect {
         DirectorInspect {
             enabled: self.enabled,
@@ -198,10 +211,11 @@ pub(crate) fn env_or_file(var: &str, file: &str) -> String {
 /// Build Director on/off from already-resolved settings.
 pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
     let configured = !settings.api_key.is_empty() || is_local(&settings.base_url);
-    let enabled = configured && !off();
+    let env_off = env_vetoes_director();
     DirectorConfig {
-        enabled,
+        enabled: configured && !env_off,
         configured,
+        env_off,
         key_invalid: settings.key_invalid,
         wake_every: WAKE_EVERY,
         ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
@@ -314,7 +328,11 @@ pub(crate) fn env_owns_key() -> bool {
     !matches!(key_from_env(), KeyRead::Unset)
 }
 
-fn off() -> bool {
+/// Has `AI_BUDDY_DIRECTOR` forbidden the Director?
+///
+/// `pub(crate)` like the endpoint variables: the window and the tray have to
+/// name a switch the env owns, not offer a toggle that does nothing (#272).
+pub(crate) fn env_vetoes_director() -> bool {
     matches!(
         std::env::var(ENABLED).ok().as_deref(),
         Some("off" | "0" | "false")
@@ -1001,7 +1019,8 @@ pub fn retarget_model(
 pub(crate) mod tests {
     use super::*;
 
-    /// Run `body` with the three Director vars set as given, then restored.
+    /// Run `body` with the three Director vars set as given and the switch
+    /// cleared, then all four restored.
     ///
     /// One lock for the whole test binary: `settings` and `settings::form`
     /// test env-owned rows against the same vars, and a second mutex would
@@ -1012,7 +1031,23 @@ pub(crate) mod tests {
         model: Option<&str>,
         body: impl FnOnce(),
     ) {
-        // Concurrent setenv/getenv is undefined behaviour. These three vars are
+        with_vars(key, base, model, None, body)
+    }
+
+    /// Run `body` with the Director switched off and the other three cleared,
+    /// so the developer's shell cannot decide the result.
+    pub(crate) fn with_director_off(body: impl FnOnce()) {
+        with_vars(None, None, None, Some("off"), body)
+    }
+
+    fn with_vars(
+        key: Option<&str>,
+        base: Option<&str>,
+        model: Option<&str>,
+        enabled: Option<&str>,
+        body: impl FnOnce(),
+    ) {
+        // Concurrent setenv/getenv is undefined behaviour. These vars are
         // process-global and the resolve tests share them; serialise mutation.
         static ENV: Mutex<()> = Mutex::new(());
         let _lock = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -1039,7 +1074,7 @@ pub(crate) mod tests {
             }
         }
 
-        // The three the caller sets, and every Development variable: a shell
+        // The four the caller sets, and every Development variable: a shell
         // that exported one of those would otherwise freeze a row or seed a
         // switch in a test that never mentions it (#273).
         //
@@ -1047,7 +1082,12 @@ pub(crate) mod tests {
         // process-global too, so the lock owns them as well: seeded to the
         // defaults on the way in and again on the way out, no test has to
         // hand-restore them.
-        let mut wanted = vec![(API_KEY, key), (BASE_URL, base), (MODEL, model)];
+        let mut wanted = vec![
+            (API_KEY, key),
+            (BASE_URL, base),
+            (MODEL, model),
+            (ENABLED, enabled),
+        ];
         wanted.extend(
             crate::dev_flags::test_vars()
                 .into_iter()
@@ -1118,6 +1158,32 @@ pub(crate) mod tests {
             let config = config_from(&settings);
             assert!(!config.configured);
             assert!(endpoint_from(&settings).is_none());
+        });
+    }
+
+    /// The README's promise that `off` "keeps Static even when a key is set".
+    /// A local host is configured without a key, so nothing but the veto can
+    /// hold the Director back.
+    #[test]
+    fn the_env_switch_vetoes_a_director_the_file_would_allow() {
+        with_director_off(|| {
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&settings);
+            assert!(config.configured, "a local host needs no key");
+            config.apply_switch(true);
+            assert!(!config.enabled, "the file said on, the env vetoed it");
+        });
+    }
+
+    #[test]
+    fn the_saved_switch_decides_when_the_process_says_nothing() {
+        with_env(None, None, None, || {
+            let settings = resolve("http://localhost:11434", "gemma4", None);
+            let mut config = config_from(&settings);
+            config.apply_switch(true);
+            assert!(config.enabled);
+            config.apply_switch(false);
+            assert!(!config.enabled, "the file can always turn it off");
         });
     }
 
@@ -1280,6 +1346,7 @@ pub(crate) mod tests {
         let static_only = DirectorConfig {
             enabled: false,
             configured: false,
+            env_off: false,
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,
@@ -1306,6 +1373,7 @@ pub(crate) mod tests {
         let model = DirectorConfig {
             enabled: true,
             configured: true,
+            env_off: false,
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Duration::from_secs(45),
@@ -1319,6 +1387,7 @@ pub(crate) mod tests {
         let off = DirectorConfig {
             enabled: false,
             configured: true,
+            env_off: false,
             key_invalid: false,
             wake_every: WAKE_EVERY,
             ambient_first: Pace::FIRST,

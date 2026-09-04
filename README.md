@@ -253,7 +253,7 @@ cargo run
 | `AI_BUDDY_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a [local](#a-local-model-server) server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
 | `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
 | `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
-| `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. |
+| `AI_BUDDY_DIRECTOR` | `off`, `0`, or `false` keeps Static even when a key is set. The window and the tray name the variable and disable the toggle. |
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |

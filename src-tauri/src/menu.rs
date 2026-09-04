@@ -50,6 +50,10 @@ pub struct MenuSnapshot<'a> {
     pub current_character: &'a str,
     pub instances: &'a [(String, String)],
     pub director_enabled: bool,
+    /// `AI_BUDDY_DIRECTOR` said off. Passed in rather than read in `describe`,
+    /// which stays a pure function of this snapshot so it can cross to the
+    /// main thread and be compared against the last one.
+    pub director_vetoed: bool,
     pub do_not_disturb: bool,
     pub hidden: bool,
     pub hide_in_fullscreen: bool,
@@ -203,11 +207,16 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         });
     }
 
+    // Disabled, not merely unchecked: clicking it would flip the saved value
+    // and change nothing the Director does.
     entries.push(MenuEntry::Check {
         id: DIRECTOR_ID.to_string(),
-        label: "Director".to_string(),
-        enabled: true,
-        checked: snapshot.director_enabled,
+        label: match snapshot.director_vetoed {
+            true => format!("Director (off by {})", crate::model::ENABLED),
+            false => "Director".to_string(),
+        },
+        enabled: !snapshot.director_vetoed,
+        checked: snapshot.director_enabled && !snapshot.director_vetoed,
     });
     actions.insert(DIRECTOR_ID.to_string(), MenuAction::ToggleDirector);
 
@@ -409,6 +418,7 @@ mod tests {
             current_character: current,
             instances: &[],
             director_enabled: true,
+            director_vetoed: false,
             do_not_disturb,
             hidden: false,
             hide_in_fullscreen: true,
@@ -443,6 +453,33 @@ mod tests {
             MenuEntry::Item { id: got, .. } | MenuEntry::Check { id: got, .. } => got == id,
             _ => false,
         })
+    }
+
+    /// The tray must not offer a toggle that cannot take effect.
+    #[test]
+    fn a_vetoed_director_is_named_and_not_offered() {
+        let installed = names(&["bmo"]);
+        let mut vetoed = snapshot(&installed, "bmo", false);
+        assert!(vetoed.director_enabled, "precondition: the file says on");
+        vetoed.director_vetoed = true;
+
+        let description = describe(vetoed);
+        match entry_with_id(&description, DIRECTOR_ID).expect("the Director row exists") {
+            MenuEntry::Check {
+                label,
+                enabled,
+                checked,
+                ..
+            } => {
+                assert!(!enabled, "a vetoed switch must not be clickable");
+                assert!(!checked, "vetoed, whatever the saved value says");
+                assert!(
+                    label.contains(crate::model::ENABLED),
+                    "the row must name the variable, not {label:?}"
+                );
+            }
+            _ => panic!("the Director row must be a Check"),
+        }
     }
 
     /// The rows of the Instances submenu.
