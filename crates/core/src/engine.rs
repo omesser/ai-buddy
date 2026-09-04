@@ -248,6 +248,20 @@ const POKE_COOLDOWN_MS: u32 = 2_500;
 /// on an unattended desktop settles down.
 const SLEEP_AFTER_MS: u32 = 60_000;
 
+/// How long a sprite rests quietly on a Perch before leaving sit and idling in
+/// place. Long enough to read as settling onto the edge, and far short of
+/// nodding off. #310.
+///
+/// The ceiling is arithmetic rather than taste, and it is tight. Perched rest
+/// ends at the next Static Director wake — `director::WAKE_EVERY`, less the
+/// Behavior it starts — so the quiet window is about 18s. A variant ring holds
+/// its base for `3 * VARIANT_HOLD_MS` before the first variant's slot opens,
+/// and `animation_ms` restarts when sit gives way to idle, so an idle variant
+/// needs 12s of that window to itself. Spend more than 6s on sit and no Perch
+/// ever reaches one, which is the idle life this constant exists to restore.
+/// #307.
+const PERCHED_IDLE_AFTER_MS: u32 = 4_000;
+
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
 const CLIMB_SPEED: f64 = 200.0;
 
@@ -323,6 +337,9 @@ pub struct Engine {
     state: State,
     /// Milliseconds the sprite has spent on its feet, untouched.
     idle_ms: u32,
+    /// Milliseconds the sprite has been quietly resting while Perched: not
+    /// riding, not walking, no Primitive playing. #310.
+    perched_rest_ms: u32,
     animation: &'static str,
     /// Milliseconds since the current Animation started.
     animation_ms: u32,
@@ -414,6 +431,7 @@ impl Engine {
             velocity: Point::default(),
             state: State::Falling,
             idle_ms: 0,
+            perched_rest_ms: 0,
             animation: animation_for(State::Falling),
             animation_ms: 0,
             behaviors: BTreeMap::new(),
@@ -516,6 +534,19 @@ impl Engine {
             };
         } else {
             self.idle_ms = 0;
+        }
+
+        // Quiet perch rest is narrower than idle: Perched only, not riding,
+        // not walking, no Primitive playing. #310.
+        let quietly_resting_perched = matches!(self.state, State::Perched)
+            && !self.riding
+            && self.velocity.x == 0.0
+            && self.on_screen().is_none()
+            && snapshot.verbs.is_empty();
+        if quietly_resting_perched {
+            self.perched_rest_ms = self.perched_rest_ms.saturating_add(snapshot.elapsed_ms);
+        } else {
+            self.perched_rest_ms = 0;
         }
 
         // Being addressed is not being left alone, so a proposal holds off the
@@ -941,6 +972,13 @@ impl Engine {
             // until the sprite runs out of Perch, so the Animation has to hold
             // with it rather than dropping back to standing mid-stride.
             None if self.is_walking() => "walk",
+            // A sprite that rests quietly on a Perch idles in place: still
+            // Perched, same edge, idle art and idle life. #310.
+            None if matches!(self.state, State::Perched)
+                && self.perched_rest_ms >= PERCHED_IDLE_AFTER_MS =>
+            {
+                "idle"
+            }
             None => animation_for(self.state),
         };
         // A Primitive that starts restarts the Animation's clock even when the
@@ -3720,6 +3758,222 @@ mod tests {
         assert_eq!(still.position.y, 380.0);
         assert_eq!(still.animation, "sit");
         assert!(!still.riding);
+    }
+
+    /// #307: what `PERCHED_IDLE_AFTER_MS` is actually bounded by, since the
+    /// number alone reads as taste and is not. Perched rest ends at the next
+    /// Static Director wake, and a variant ring holds its base for
+    /// `3 * VARIANT_HOLD_MS` before the first variant's slot opens. Sit too
+    /// long and the idle stretch left over never reaches that slot, so a
+    /// perched Character shows its base idle art and nothing else — which is
+    /// the state #310 was raised to end. Three Primitives is the longest
+    /// Behavior the shipped Characters declare.
+    #[test]
+    fn sit_leaves_a_perched_idle_long_enough_to_reach_a_variant() {
+        let quiet = crate::director::WAKE_EVERY.as_millis() as u32 - 3 * PRIMITIVE_MS;
+        let idling = quiet - PERCHED_IDLE_AFTER_MS;
+
+        assert!(
+            idling > 3 * crate::character::VARIANT_HOLD_MS,
+            "sit spends {PERCHED_IDLE_AFTER_MS}ms of a {quiet}ms window, leaving \
+             {idling}ms of idle against a base hold of {}ms",
+            3 * crate::character::VARIANT_HOLD_MS
+        );
+    }
+
+    /// #310: a sprite that rests quietly on a Perch for a while idles in
+    /// place rather than staying in sit. Still Perched, same edge, but idle
+    /// art and idle life can run.
+    #[test]
+    fn a_perched_sprite_idles_after_resting_quietly() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        // Fresh perch rest: a Poke resets the timer. Wait for the reaction
+        // to finish, then the sprite sits.
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..perch(50.0, 400.0)
+        });
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PRIMITIVE_MS,
+            ..perch(50.0, 400.0)
+        });
+        let fresh_rest = engine.tick(&perch(50.0, 400.0));
+        assert_eq!(fresh_rest.animation, "sit", "sit after reset");
+
+        // Accumulate time in one large tick, just under the threshold.
+        let nearly_idle = engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS - 101,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(nearly_idle.state, State::Perched);
+        assert_eq!(nearly_idle.animation, "sit", "not idle yet");
+
+        // One more tick crosses the threshold.
+        let idling = engine.tick(&WorldSnapshot {
+            elapsed_ms: 100,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(idling.state, State::Perched, "still Perched");
+        assert_eq!(idling.animation, "idle", "now idle after the timer");
+    }
+
+    /// #310: the timer resets when the sprite walks, so a stroll interrupted
+    /// by rest briefly shows sit again before idling.
+    #[test]
+    fn perched_idle_timer_resets_when_walking() {
+        let mut engine = a_character_at(Point { x: 200.0, y: 0.0 });
+        settle(&mut engine, &a_long_perch());
+
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS,
+            ..a_long_perch()
+        });
+        assert_eq!(
+            engine.tick(&a_long_perch()).animation,
+            "idle",
+            "idling after rest"
+        );
+
+        let proposing_walk = engine.tick(&WorldSnapshot {
+            proposal: walk(),
+            ..a_long_perch()
+        });
+        assert_eq!(proposing_walk.animation, "walk");
+
+        let walking_tick = engine.tick(&a_long_perch());
+        assert_eq!(walking_tick.animation, "walk", "walking continues");
+
+        // A Poke stops the walk.
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..a_long_perch()
+        });
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PRIMITIVE_MS,
+            ..a_long_perch()
+        });
+        let resting = engine.tick(&a_long_perch());
+        assert_eq!(resting.animation, "sit", "back to sit after walk stops");
+
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS,
+            ..a_long_perch()
+        });
+        let idling_again = engine.tick(&a_long_perch());
+        assert_eq!(idling_again.animation, "idle", "idle after rest again");
+    }
+
+    /// #310: the timer resets when riding a moving Perch, so a sprite that
+    /// lands from a ride shows sit first.
+    #[test]
+    fn perched_idle_timer_resets_when_riding() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(
+            engine.tick(&perch(50.0, 400.0)).animation,
+            "idle",
+            "idling after rest"
+        );
+
+        let riding = engine.tick(&perch(50.0, 380.0));
+        assert_eq!(riding.animation, "hold", "holding the moving Perch");
+
+        let still = engine.tick(&perch(50.0, 380.0));
+        assert_eq!(still.animation, "sit", "back to sit after ride ends");
+    }
+
+    /// #310: a Behavior resets the timer, so the sprite sits briefly after
+    /// a reaction before idling again.
+    #[test]
+    fn perched_idle_timer_resets_when_a_behavior_plays() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(
+            engine.tick(&perch(50.0, 400.0)).animation,
+            "idle",
+            "idling after rest"
+        );
+
+        let reacting = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Poke],
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(reacting.animation, "react");
+
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PRIMITIVE_MS,
+            ..perch(50.0, 400.0)
+        });
+        let resting = engine.tick(&perch(50.0, 400.0));
+        assert_eq!(resting.animation, "sit", "back to sit after reaction");
+    }
+
+    /// #310: leaving the Perched state resets the timer. Landing back on the
+    /// same edge shows sit first.
+    #[test]
+    fn perched_idle_timer_resets_when_leaving_perched() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(
+            engine.tick(&perch(50.0, 400.0)).animation,
+            "idle",
+            "idling after rest"
+        );
+
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Grab],
+            ..perch(50.0, 400.0)
+        });
+        let dragged = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Grab],
+            cursor: Point { x: 100.0, y: 350.0 },
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(dragged.state, State::Dragged);
+
+        settle(&mut engine, &perch(50.0, 400.0));
+        let landed = engine.tick(&perch(50.0, 400.0));
+        assert_eq!(landed.state, State::Perched);
+        assert_eq!(landed.animation, "sit", "sit first after landing");
+    }
+
+    /// #310: the sleep path from Perched rest still works. The idle timer is
+    /// much shorter than sleep, so a sprite idles first and sleeps later.
+    #[test]
+    fn a_perched_sprite_idles_then_sleeps_if_left_alone() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        let idling = engine.tick(&WorldSnapshot {
+            elapsed_ms: PERCHED_IDLE_AFTER_MS,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(idling.state, State::Perched);
+        assert_eq!(idling.animation, "idle", "idle before sleep");
+
+        let asleep = engine.tick(&WorldSnapshot {
+            elapsed_ms: SLEEP_AFTER_MS,
+            ..perch(50.0, 400.0)
+        });
+        assert_eq!(asleep.state, State::Asleep, "then sleep");
+        assert_eq!(asleep.animation, "sleep");
     }
 
     /// #85: what the window server's id buys, and geometry could not. The
