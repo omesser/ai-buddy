@@ -1,0 +1,199 @@
+# Buddy Bot — logo-inspired desktop AI mascot for ai-buddy.
+# Art: Grok Imagine–generated character pack, resized to 90×90 RGBA
+# (transparent). Sprite reads a bit smaller than the authored 108 pack.
+# Walk frames are horizontally flipped so the nose faces RIGHT; the Engine
+# mirrors for leftward travel. Cheek LED omitted on walk only. Soft
+# anti-aliased lines → render_mode smooth (ADR-0006). Scale 1: frames are
+# already desktop-sized; fractional scale is not in the schema (1–4 only).
+
+name = "Buddy Bot"
+render_mode = "smooth"
+scale = 1
+
+# Proactive model calls: a helpful buddy offers before being asked. One and
+# one keeps every two minutes — same mild pace as BMO and Cat.
+
+[director]
+model_base = 1
+model_power = 1
+
+# Cursor reactions: friendly mascot energy — greets when you approach, pops
+# a lean-react when you rush it. Not antisocial.
+
+[cursor]
+near_reaction = "speak"
+rush_reaction = "react"
+
+# Front-facing hover bob (sine). Sixteen frames keep the float smooth.
+
+[animations.idle]
+frames = [
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-2.png",
+  "frames/idle-3.png",
+  "frames/idle-4.png",
+  "frames/idle-5.png",
+  "frames/idle-6.png",
+  "frames/idle-7.png",
+  "frames/idle-8.png",
+  "frames/idle-9.png",
+  "frames/idle-10.png",
+  "frames/idle-11.png",
+  "frames/idle-12.png",
+  "frames/idle-13.png",
+  "frames/idle-14.png",
+  "frames/idle-15.png",
+]
+fps = 5
+
+# 3/4 right stride, closed sine bob. Engine mirrors for left.
+# 3/4 right stride after pack flip; cheek LED omitted on walk only.
+
+[animations.walk]
+frames = [
+  "frames/walk-0.png",
+  "frames/walk-1.png",
+  "frames/walk-2.png",
+  "frames/walk-3.png",
+  "frames/walk-4.png",
+  "frames/walk-5.png",
+  "frames/walk-6.png",
+  "frames/walk-7.png",
+]
+fps = 8
+
+# Jaw + LED bleep while speaking.
+
+[animations.talk]
+frames = [
+  "frames/talk-0.png",
+  "frames/talk-1.png",
+  "frames/talk-2.png",
+  "frames/talk-3.png",
+  "frames/talk-4.png",
+  "frames/talk-5.png",
+]
+fps = 6
+
+# Tumble then recover toward idle. The Fall Primitive owns duration.
+
+[animations.fall]
+frames = [
+  "frames/fall-0.png",
+  "frames/fall-1.png",
+  "frames/fall-2.png",
+  "frames/fall-3.png",
+  "frames/fall-4.png",
+  "frames/fall-5.png",
+]
+fps = 6
+
+# Incoming, squash, recover — play once so the last frame holds into idle.
+
+[animations.land]
+frames = [
+  "frames/land-0.png",
+  "frames/land-1.png",
+  "frames/land-2.png",
+  "frames/land-3.png",
+]
+fps = 8
+loop = "once"
+
+# Parked low on the desk.
+
+[animations.sit]
+frames = [
+  "frames/sit-0.png",
+  "frames/sit-1.png",
+  "frames/sit-2.png",
+  "frames/sit-3.png",
+]
+fps = 3
+
+# Grabbed swing while the user drags.
+
+[animations.hold]
+frames = [
+  "frames/hold-0.png",
+  "frames/hold-1.png",
+  "frames/hold-2.png",
+  "frames/hold-3.png",
+]
+fps = 4
+
+# Closed eyes, droop. Slow breath.
+
+[animations.sleep]
+frames = [
+  "frames/sleep-0.png",
+  "frames/sleep-1.png",
+  "frames/sleep-2.png",
+  "frames/sleep-3.png",
+]
+fps = 2
+
+# Lean pop on poke or rush — once, then back to life.
+
+[animations.react]
+frames = [
+  "frames/react-0.png",
+  "frames/react-1.png",
+  "frames/react-2.png",
+  "frames/react-3.png",
+  "frames/react-4.png",
+]
+fps = 8
+loop = "once"
+
+# A helpful buddy's life: say hello while someone is at the keyboard, then
+# stroll (greet chains into walk — same pattern as BMO greet→patrol / cat
+# greet→inspect). Offer to help while they are still around, fidget in place,
+# stroll the desk when they pause, patrol when they have plainly gone, and
+# settle into nap last of all (nap at 2m like cat, settle chains into it).
+# Weights keep walk competitive with talk: help must not starve stroll in
+# the overlapping 30s–1m band, and nap must outrank late patrol.
+
+[behaviors.greet]
+play = ["talk"]
+then = "stroll"
+weight = 4
+when = "idle under 10s"
+
+[behaviors.help]
+play = ["talk", "idle", "talk"]
+weight = 2
+when = "idle under 1m"
+
+[behaviors.fidget]
+play = ["idle"]
+weight = 2
+when = "idle over 10s"
+
+[behaviors.stroll]
+play = ["walk"]
+weight = 3
+when = "idle over 30s"
+
+[behaviors.patrol]
+play = ["walk", "idle", "walk"]
+then = "stroll"
+weight = 2
+when = "idle over 2m"
+
+# Sit, then chain into nap (trump settle→doze / timber-wolf standby→power_down).
+# Nap opens at 2m like cat — 5m meant sleep almost never won the late-band draw
+# against stroll/patrol, and Director proposals keep resetting the engine's
+# 60s auto-sleep timer.
+
+[behaviors.settle]
+play = ["sit"]
+then = "nap"
+weight = 3
+when = "idle over 1m"
+
+[behaviors.nap]
+play = ["sit", "sleep"]
+weight = 4
+when = "idle over 2m"

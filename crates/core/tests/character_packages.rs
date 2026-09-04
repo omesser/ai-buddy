@@ -213,6 +213,85 @@ fn frames_of(name: &str) -> Vec<(String, String, Vec<u8>)> {
     frames
 }
 
+/// Mean x of cyan cheek-light pixels in an RGBA PNG (Buddy Bot status LED).
+fn cyan_cheek_light_x(bytes: &[u8]) -> f32 {
+    let (width, _, rgba) = frame_rgba(bytes);
+    let mut sx = 0.0f32;
+    let mut n = 0.0f32;
+    for (i, px) in rgba.iter().enumerate() {
+        let (r, g, b, a) = (px[0], px[1], px[2], px[3]);
+        if a > 128 && b > 150 && r < 120 && g > 80 {
+            sx += (i % width) as f32;
+            n += 1.0;
+        }
+    }
+    assert!(n > 0.0, "expected cyan status-light pixels");
+    sx / n
+}
+
+/// Mean squared RGB error between a frame and its horizontal mirror.
+/// Directional art scores high; a left-right symmetric sprite would score near 0.
+fn mse_to_horizontal_flip(width: usize, height: usize, rgba: &[[u8; 4]]) -> f64 {
+    let mut sum = 0.0f64;
+    let mut n = 0.0f64;
+    for y in 0..height {
+        for x in 0..width {
+            let i = y * width + x;
+            let j = y * width + (width - 1 - x);
+            if rgba[i][3] == 0 && rgba[j][3] == 0 {
+                continue;
+            }
+            for (left, right) in rgba[i][..3].iter().zip(rgba[j][..3].iter()) {
+                let d = *left as f64 - *right as f64;
+                sum += d * d;
+                n += 1.0;
+            }
+        }
+    }
+    assert!(n > 0.0, "frame has visible pixels to compare");
+    sum / n
+}
+
+/// 3/4-right walk: the near ear sits on the viewer's right and extends the
+/// opaque bbox, so dark facial features (eyes) land left of silhouette mid.
+/// Horizontally flipping the frame reverses the inequality — that is the
+/// regression against re-flipping walk art the engine already mirrors.
+fn dark_eyes_left_of_silhouette_mid(width: usize, height: usize, rgba: &[[u8; 4]]) -> (f32, f32) {
+    let mut x_min = width;
+    let mut x_max = 0usize;
+    for (i, px) in rgba.iter().enumerate() {
+        if px[3] > 128 {
+            let x = i % width;
+            x_min = x_min.min(x);
+            x_max = x_max.max(x);
+        }
+    }
+    assert!(x_min <= x_max, "walk frame has an opaque silhouette");
+    let sil_mid = (x_min + x_max) as f32 / 2.0;
+
+    let y0 = height * 30 / 108;
+    let y1 = height * 55 / 108;
+    let mut sx = 0.0f32;
+    let mut n = 0.0f32;
+    for (i, px) in rgba.iter().enumerate() {
+        let y = i / width;
+        if y < y0 || y > y1 {
+            continue;
+        }
+        let (r, g, b, a) = (px[0] as u16, px[1] as u16, px[2] as u16, px[3]);
+        let lum = (r + g + b) / 3;
+        if a > 128 && lum < 50 {
+            sx += (i % width) as f32;
+            n += 1.0;
+        }
+    }
+    assert!(
+        n > 10.0,
+        "expected dark eye pixels in the head band, got {n}"
+    );
+    (sx / n, sil_mid)
+}
+
 /// #161: every grounded pose has a foot on the canvas bottom row.
 /// Only `fall` is airborne.
 #[test]
@@ -478,5 +557,221 @@ fn timber_wolf_declares_cursor_reactions() {
         character.rush_reaction,
         CursorReaction::React,
         "a cursor rushing the chassis plays react, the weapon raise"
+    );
+}
+
+/// Buddy Bot: logo mascot package loads with all nine required animations and
+/// the authored frame counts from the Grok Imagine pack.
+#[test]
+fn buddy_bot_package_loads_with_all_required_animations() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    assert_eq!(character.name, "Buddy Bot");
+    assert!(
+        !character.personality.is_empty(),
+        "Buddy Bot has a personality prompt"
+    );
+
+    assert_required_animations(&character);
+
+    let expected_frames = [
+        ("idle", 16),
+        ("walk", 8),
+        ("talk", 6),
+        ("sleep", 4),
+        ("sit", 4),
+        ("react", 5),
+        ("land", 4),
+        ("hold", 4),
+        ("fall", 6),
+    ];
+    for (animation, count) in expected_frames {
+        assert_eq!(
+            character.animations[animation].frames.len(),
+            count,
+            "{animation} must carry the shipped {count}-frame loop"
+        );
+    }
+}
+
+#[test]
+fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    assert_eq!(
+        character.scale, 1,
+        "Buddy Bot uses scale 1: 90×90 frames are already desktop-sized; \
+         the schema only allows whole-number scale 1–4"
+    );
+    assert!(
+        character.smooth,
+        "soft anti-aliased mascot art uses smooth, not pixelated"
+    );
+}
+
+#[test]
+fn buddy_bot_frames_are_90_square_rgba() {
+    let frames = frames_of("buddy-bot");
+    assert_eq!(frames.len(), 57, "the pack ships 57 PNG frames");
+
+    for (animation, frame, bytes) in frames {
+        let (width, height, alpha) = frame_alpha(&bytes);
+        assert_eq!(
+            (width, height),
+            (90, 90),
+            "{animation} frame {frame} must be 90×90"
+        );
+        assert!(
+            alpha.iter().any(|&a| a > 0),
+            "{animation} frame {frame} must have visible pixels"
+        );
+        assert!(
+            alpha.contains(&0),
+            "{animation} frame {frame} must keep a transparent margin"
+        );
+    }
+}
+
+/// Eyes must be opaque black, not punched-through alpha holes (desktop shows through).
+#[test]
+fn buddy_bot_eyes_are_opaque_black_not_transparent() {
+    let files = package_bytes("buddy-bot");
+    let idle = files.get("frames/idle-0.png").expect("idle-0");
+    let (width, height, rgba) = frame_rgba(idle);
+    // Sample the two eye sockets near the face midline (90×90 pack).
+    let samples = [(34usize, 33usize), (35, 34), (54, 33), (55, 34)];
+    for (x, y) in samples {
+        assert!(x < width && y < height, "sample ({x},{y}) in bounds");
+        let px = rgba[y * width + x];
+        assert_eq!(px[0], 0, "eye R at ({x},{y})");
+        assert_eq!(px[1], 0, "eye G at ({x},{y})");
+        assert_eq!(px[2], 0, "eye B at ({x},{y})");
+        assert_eq!(
+            px[3], 255,
+            "eye alpha at ({x},{y}) must be opaque, got {}",
+            px[3]
+        );
+    }
+}
+
+/// Walk art must already face right (engine mirrors for left). Idle keeps the
+/// cyan cheek LED on the viewer's left. Walk omits that LED; facing is pinned
+/// by dark eyes right of silhouette mid after the pack flip. MSE to the mirror
+/// stays high so the pose is directional.
+#[test]
+fn buddy_bot_walk_faces_right_for_engine_mirroring() {
+    let files = package_bytes("buddy-bot");
+    let idle = files.get("frames/idle-0.png").expect("idle-0");
+    let walk = files.get("frames/walk-0.png").expect("walk-0");
+    let (idle_w, _, _) = frame_alpha(idle);
+    let idle_mid = idle_w as f32 / 2.0;
+
+    let idle_light = cyan_cheek_light_x(idle);
+    assert!(
+        idle_light < idle_mid,
+        "idle cheek light is on the viewer's left, got {idle_light} mid {idle_mid}"
+    );
+
+    let (width, height, rgba) = frame_rgba(walk);
+    let mse = mse_to_horizontal_flip(width, height, &rgba);
+    assert!(
+        mse > 500.0,
+        "walk must be left-right asymmetric (3/4 pose); MSE to mirror was {mse}"
+    );
+
+    // After the Imagine pack's left-facing walk was mirrored, dark eyes sit
+    // on the viewer-right of silhouette mid (character looks right).
+    let (eye_x, sil_mid) = dark_eyes_left_of_silhouette_mid(width, height, &rgba);
+    assert!(
+        eye_x > sil_mid,
+        "walk must face right: dark eyes right of silhouette mid, got eye_x={eye_x} sil_mid={sil_mid}"
+    );
+
+    // Flipping the authored walk must break the facing cue — guards against
+    // re-flipping frames the engine already mirrors for leftward travel.
+    let mut flipped = rgba.clone();
+    for y in 0..height {
+        for x in 0..(width / 2) {
+            let left = y * width + x;
+            let right = y * width + (width - 1 - x);
+            flipped.swap(left, right);
+        }
+    }
+    let (flip_eye_x, flip_sil_mid) = dark_eyes_left_of_silhouette_mid(width, height, &flipped);
+    assert!(
+        flip_eye_x < flip_sil_mid,
+        "a horizontally flipped walk must fail the right-facing cue, got eye_x={flip_eye_x} sil_mid={flip_sil_mid}"
+    );
+}
+
+#[test]
+fn buddy_bot_declares_friendly_cursor_reactions() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    assert_eq!(
+        character.near_reaction,
+        CursorReaction::Speak,
+        "a friendly mascot greets when the cursor enters Near"
+    );
+    assert_eq!(
+        character.rush_reaction,
+        CursorReaction::React,
+        "a rush earns a lean-pop react, not flight"
+    );
+}
+
+#[test]
+fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    for name in [
+        "greet", "help", "fidget", "stroll", "patrol", "settle", "nap",
+    ] {
+        assert!(
+            character.behaviors.contains_key(name),
+            "Buddy Bot declares {name}"
+        );
+    }
+
+    assert_eq!(
+        character.behaviors["greet"].then.as_deref(),
+        Some("stroll"),
+        "greet chains into stroll so a hello is followed by a walk          (BMO greet→patrol / cat greet→inspect)"
+    );
+    assert_eq!(
+        character.behaviors["help"].weight, 2,
+        "help stays present but light enough that stroll can win the 30s–1m overlap"
+    );
+    assert_eq!(
+        character.behaviors["stroll"].weight, 3,
+        "stroll outranks fidget/help so the mascot actually walks the desk"
+    );
+    assert!(
+        character.behaviors["stroll"]
+            .primitives
+            .contains(&character::Primitive::Walk),
+        "stroll is a Walk"
+    );
+    assert_eq!(
+        character.behaviors["settle"].then.as_deref(),
+        Some("nap"),
+        "settle chains into nap so sitting leads to sleep"
+    );
+    assert_eq!(
+        character.behaviors["nap"].weight, 4,
+        "nap outranks late-band stroll/patrol so sleep is visible"
+    );
+    assert!(
+        matches!(
+            character.behaviors["nap"].trigger,
+            Some(character::Trigger::IdleOver(d)) if d == std::time::Duration::from_secs(120)
+        ),
+        "nap opens at idle over 2m (was 5m — too rare against walk)"
+    );
+    assert!(
+        character.behaviors["nap"]
+            .primitives
+            .contains(&character::Primitive::Sleep),
+        "nap ends on sleep for an empty desk"
     );
 }
