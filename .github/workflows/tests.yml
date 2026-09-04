@@ -278,6 +278,7 @@ jobs:
           files: |
             src-tauri/src/platform.rs
             src-tauri/src/platform/windows/**
+            src-tauri/src/secrets.rs
             crates/core/src/sensing.rs
             src-tauri/Cargo.toml
             crates/core/Cargo.toml

@@ -128,4 +128,85 @@ mod tests {
         let store = MemoryStore::new();
         store.delete(DIRECTOR_API_KEY).unwrap();
     }
+
+    #[cfg(windows)]
+    mod windows_credential_manager {
+        use super::*;
+        use std::sync::Mutex;
+
+        static CREDENTIAL_MANAGER_LOCK: Mutex<()> = Mutex::new(());
+
+        struct CredentialGuard {
+            store: KeyringStore,
+            account: String,
+            original: Option<String>,
+        }
+
+        impl CredentialGuard {
+            fn new(account: &str) -> Self {
+                let store = KeyringStore::new();
+                let original = store.get(account).unwrap_or(None);
+                Self {
+                    store,
+                    account: account.to_string(),
+                    original,
+                }
+            }
+        }
+
+        impl Drop for CredentialGuard {
+            fn drop(&mut self) {
+                match &self.original {
+                    Some(value) => {
+                        let _ = self.store.set(&self.account, value);
+                    }
+                    None => {
+                        let _ = self.store.delete(&self.account);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn round_trip_director_key_through_credential_manager() {
+            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
+            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
+            let store = &guard.store;
+
+            let sentinel = format!("sk-windows-cm-roundtrip-{}", uuid::Uuid::new_v4());
+
+            store.set(DIRECTOR_API_KEY, &sentinel).unwrap();
+
+            let retrieved = store.get(DIRECTOR_API_KEY).unwrap();
+            assert_eq!(retrieved.as_deref(), Some(sentinel.as_str()));
+
+            store.delete(DIRECTOR_API_KEY).unwrap();
+            let after_delete = store.get(DIRECTOR_API_KEY).unwrap();
+            assert_eq!(after_delete, None);
+        }
+
+        #[test]
+        fn missing_credential_is_none_not_error() {
+            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
+            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
+            let store = &guard.store;
+
+            store.delete(DIRECTOR_API_KEY).unwrap();
+
+            let result = store.get(DIRECTOR_API_KEY).unwrap();
+            assert_eq!(result, None);
+        }
+
+        #[test]
+        fn deleting_missing_credential_is_ok() {
+            let _lock = CREDENTIAL_MANAGER_LOCK.lock().unwrap();
+            let guard = CredentialGuard::new(DIRECTOR_API_KEY);
+            let store = &guard.store;
+
+            store.delete(DIRECTOR_API_KEY).unwrap();
+
+            let result = store.delete(DIRECTOR_API_KEY);
+            assert!(result.is_ok());
+        }
+    }
 }

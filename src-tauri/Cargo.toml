@@ -141,3 +141,6 @@ objc2-foundation = {version = "0.3", default-features = false, features = [
   "NSValue",
   "NSURL"
 ]}
+
+[dev-dependencies]
+uuid = {version = "1.11", features = ["v4"]}
