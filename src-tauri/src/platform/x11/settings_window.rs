@@ -14,7 +14,7 @@ use gtk::{
     WindowPosition, WindowType,
 };
 
-use crate::settings::form::{self, CompositeControl, FormRow, RowAction, RowOperation};
+use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -119,7 +119,7 @@ impl SettingsWindow {
 
             let mut drawn = false;
             for section in &tab.sections {
-                drawn |= self.build_section(&vbox, section, &description.actions, drawn);
+                drawn |= self.build_section(&vbox, section, &description.operations, drawn);
             }
 
             scrolled.add(&vbox);
@@ -135,7 +135,7 @@ impl SettingsWindow {
         &self,
         container: &gtk::Box,
         section: &form::FormSection,
-        actions: &HashMap<String, RowAction>,
+        operations: &HashMap<String, RowOperation>,
         rule: bool,
     ) -> bool {
         let visible_rows: Vec<&FormRow> = section
@@ -180,7 +180,7 @@ impl SettingsWindow {
         }
 
         for row in &visible_rows {
-            self.build_row(container, row, actions);
+            self.build_row(container, row, operations);
         }
 
         true
@@ -195,11 +195,17 @@ impl SettingsWindow {
         }
     }
 
-    fn build_row(&self, container: &gtk::Box, row: &FormRow, actions: &HashMap<String, RowAction>) {
+    fn build_row(
+        &self,
+        container: &gtk::Box,
+        row: &FormRow,
+        operations: &HashMap<String, RowOperation>,
+    ) {
         match row {
             FormRow::Checkbox {
                 id,
                 label,
+                writes,
                 frozen,
                 help,
                 comment: _,
@@ -221,8 +227,8 @@ impl SettingsWindow {
                 // Frozen like the field arms below, so refresh's `set_active`
                 // has nothing to fire into. `set_sensitive(false)` stops a
                 // click; only an absent handler stops a programmatic set.
-                if let Some(action) = actions.get(id).filter(|_| !frozen) {
-                    let action = action.clone();
+                if !frozen {
+                    let writes = *writes;
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
                     check.connect_toggled(move |check| {
@@ -231,14 +237,10 @@ impl SettingsWindow {
                         }
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
-                                if let RowAction::PatchField(field) = &action {
-                                    let mut patch = SettingsPatch::default();
-                                    if !patch.set_bool(field, check.is_active()) {
-                                        return;
-                                    }
-                                    if let Err(e) = sess.apply(patch) {
-                                        eprintln!("settings: {e}");
-                                    }
+                                let mut patch = SettingsPatch::default();
+                                patch.set_bool(writes, check.is_active());
+                                if let Err(e) = sess.apply(patch) {
+                                    eprintln!("settings: {e}");
                                 }
                             }
                         }
@@ -253,6 +255,7 @@ impl SettingsWindow {
                 id,
                 label,
                 placeholder,
+                writes,
                 frozen,
                 batched,
             } => {
@@ -271,8 +274,8 @@ impl SettingsWindow {
 
                 if *batched {
                     self.bind_batched(&entry);
-                } else if let Some(action) = actions.get(id).filter(|_| !frozen) {
-                    let action = action.clone();
+                } else if !frozen {
+                    let writes = *writes;
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
                     let entry_clone = entry.clone();
@@ -284,14 +287,12 @@ impl SettingsWindow {
                         if let Ok(guard) = session.lock() {
                             if let Some(sess) = guard.as_ref() {
                                 let text = entry_clone.text().to_string();
-                                if let RowAction::PatchField(field) = &action {
-                                    let mut patch = SettingsPatch::default();
-                                    if !patch.set_text(field, &text) {
-                                        return;
-                                    }
-                                    if let Err(e) = sess.apply(patch) {
-                                        eprintln!("settings: {e}");
-                                    }
+                                let mut patch = SettingsPatch::default();
+                                if !patch.set_text(writes, &text) {
+                                    return;
+                                }
+                                if let Err(e) = sess.apply(patch) {
+                                    eprintln!("settings: {e}");
                                 }
                             }
                         }
@@ -313,7 +314,12 @@ impl SettingsWindow {
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
             }
-            FormRow::SecureField { id, label, frozen } => {
+            FormRow::SecureField {
+                id,
+                label,
+                writes,
+                frozen,
+            } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
@@ -408,7 +414,11 @@ impl SettingsWindow {
                 }
             }
             FormRow::Multiline {
-                id, help, editable, ..
+                id,
+                writes,
+                help,
+                editable,
+                ..
             } => {
                 let scrolled =
                     gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
@@ -420,10 +430,8 @@ impl SettingsWindow {
                 text_view.set_wrap_mode(gtk::WrapMode::Word);
                 text_view.set_monospace(true);
 
-                // The field name off the row's own action, not a literal: a
-                // rename would leave a hand-matched name writing nothing.
-                if let Some(RowAction::PatchField(field)) = actions.get(id).filter(|_| *editable) {
-                    let field = field.clone();
+                if *editable {
+                    let writes = *writes;
                     let buffer = text_view.buffer().expect("text buffer");
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
@@ -438,7 +446,7 @@ impl SettingsWindow {
                                     .map(|s| s.to_string())
                                     .unwrap_or_default();
                                 let mut patch = SettingsPatch::default();
-                                if !patch.set_text(&field, &text) {
+                                if !patch.set_text(writes, &text) {
                                     return;
                                 }
                                 if let Err(e) = sess.apply(patch) {
@@ -488,18 +496,17 @@ impl SettingsWindow {
                             let button = gtk::Button::with_label(label);
                             button.set_sensitive(!frozen);
 
-                            if let Some(action) = actions.get(id) {
-                                let action = action.clone();
+                            if let Some(op) = operations.get(id) {
+                                let op = op.clone();
                                 let session = Arc::clone(&self.session);
                                 let window_weak = self.window.downgrade();
-                                let director = match &action {
-                                    RowAction::Operation(
-                                        op @ (RowOperation::ClearKey
+                                let director = matches!(
+                                    op,
+                                    RowOperation::ClearKey
                                         | RowOperation::Apply
-                                        | RowOperation::Cancel),
-                                    ) => Some(op.clone()),
-                                    _ => None,
-                                };
+                                        | RowOperation::Cancel
+                                )
+                                .then(|| op.clone());
 
                                 if id == form::SPAWN_ID {
                                     let new_name_id = form::NEW_NAME_ID.to_string();
@@ -509,48 +516,46 @@ impl SettingsWindow {
                                     button.connect_clicked(move |_| {
                                         if let Ok(guard) = session.lock() {
                                             if let Some(sess) = guard.as_ref() {
-                                                if let RowAction::Operation(op) = &action {
-                                                    if matches!(op, RowOperation::Spawn) {
-                                                        let ctrl = controls.borrow();
-                                                        let name = ctrl
-                                                            .get(&new_name_id)
-                                                            .and_then(|c| {
-                                                                if let Control::Entry(e) = c {
-                                                                    Some(e.text().to_string())
-                                                                } else {
-                                                                    None
-                                                                }
-                                                            })
-                                                            .unwrap_or_default()
-                                                            .trim()
-                                                            .to_string();
-                                                        let character = ctrl
-                                                            .get(&new_char_id)
-                                                            .and_then(|c| {
-                                                                if let Control::CharacterPicker(radio_box, _) = c {
-                                                                    radio_box.children().into_iter().find_map(|child| {
-                                                                        child.downcast::<gtk::RadioButton>().ok().and_then(|radio| {
-                                                                            if radio.is_active() {
-                                                                                Some(radio.label().unwrap().to_string())
-                                                                            } else {
-                                                                                None
-                                                                            }
-                                                                        })
-                                                                    })
-                                                                } else {
-                                                                    None
-                                                                }
-                                                            })
-                                                            .unwrap_or_default();
-
-                                                        if !name.is_empty() && !character.is_empty()
-                                                        {
-                                                            sess.spawn(character, name);
-                                                            if let Some(Control::Entry(e)) =
-                                                                ctrl.get(&new_name_id)
-                                                            {
-                                                                e.set_text("");
+                                                if matches!(&op, RowOperation::Spawn) {
+                                                    let ctrl = controls.borrow();
+                                                    let name = ctrl
+                                                        .get(&new_name_id)
+                                                        .and_then(|c| {
+                                                            if let Control::Entry(e) = c {
+                                                                Some(e.text().to_string())
+                                                            } else {
+                                                                None
                                                             }
+                                                        })
+                                                        .unwrap_or_default()
+                                                        .trim()
+                                                        .to_string();
+                                                    let character = ctrl
+                                                        .get(&new_char_id)
+                                                        .and_then(|c| {
+                                                            if let Control::CharacterPicker(radio_box, _) = c {
+                                                                radio_box.children().into_iter().find_map(|child| {
+                                                                    child.downcast::<gtk::RadioButton>().ok().and_then(|radio| {
+                                                                        if radio.is_active() {
+                                                                            Some(radio.label().unwrap().to_string())
+                                                                        } else {
+                                                                            None
+                                                                        }
+                                                                    })
+                                                                })
+                                                            } else {
+                                                                None
+                                                            }
+                                                        })
+                                                        .unwrap_or_default();
+
+                                                    if !name.is_empty() && !character.is_empty()
+                                                    {
+                                                        sess.spawn(character, name);
+                                                        if let Some(Control::Entry(e)) =
+                                                            ctrl.get(&new_name_id)
+                                                        {
+                                                            e.set_text("");
                                                         }
                                                     }
                                                 }
@@ -645,28 +650,32 @@ impl SettingsWindow {
                                     button.connect_clicked(move |_| {
                                         if let Ok(guard) = session.lock() {
                                             if let Some(sess) = guard.as_ref() {
-                                                if let RowAction::Operation(op) = &action {
-                                                    match op {
-                                                        RowOperation::OpenMemory => {
-                                                            if let Err(e) = sess.open_memory() {
-                                                                eprintln!("settings: {e}");
-                                                            }
+                                                match &op {
+                                                    RowOperation::OpenMemory => {
+                                                        if let Err(e) = sess.open_memory() {
+                                                            eprintln!("settings: {e}");
                                                         }
-                                                        RowOperation::WipeMemory => {
-                                                            if let Some(window) =
-                                                                window_weak.upgrade()
-                                                            {
-                                                                if confirm_wipe(&window) {
-                                                                    if let Err(e) =
-                                                                        sess.wipe_memory()
-                                                                    {
-                                                                        eprintln!("settings: {e}");
-                                                                    }
+                                                    }
+                                                    RowOperation::WipeMemory => {
+                                                        if let Some(window) = window_weak.upgrade()
+                                                        {
+                                                            if confirm_wipe(&window) {
+                                                                if let Err(e) = sess.wipe_memory() {
+                                                                    eprintln!("settings: {e}");
                                                                 }
                                                             }
                                                         }
-                                                        _ => {}
                                                     }
+                                                    RowOperation::ClearKey => {
+                                                        let patch = SettingsPatch {
+                                                            director_api_key: Some(String::new()),
+                                                            ..SettingsPatch::default()
+                                                        };
+                                                        if let Err(e) = sess.apply(patch) {
+                                                            eprintln!("settings: {e}");
+                                                        }
+                                                    }
+                                                    _ => {}
                                                 }
                                             }
                                         }
@@ -837,12 +846,9 @@ impl SettingsWindow {
                 entry.set_text(text);
             }
         }
-        // The picker's own registered field, so the popup writes through the
-        // setter every other row uses rather than naming the field itself.
-        let character_field = match form::describe().actions.get(form::CHARACTER_ID) {
-            Some(RowAction::PatchField(field)) => field.clone(),
-            _ => String::new(),
-        };
+        // The picker's own row declares the field, so the radio buttons built
+        // here and the row cannot disagree about what a pick writes.
+        let character_field = form::describe().text_write(form::CHARACTER_ID);
         if let Some(Control::CharacterPicker(radio_box, cached_installed)) =
             controls.get_mut(form::CHARACTER_ID)
         {
@@ -871,16 +877,18 @@ impl SettingsWindow {
                     let session = Arc::clone(&self.session);
                     let refreshing = self.refreshing.clone();
                     let character = name.clone();
-                    let character_field = character_field.clone();
                     radio.connect_toggled(move |radio| {
                         if refreshing.get() {
                             return;
                         }
                         if radio.is_active() {
+                            let Some(writes) = character_field else {
+                                return;
+                            };
                             if let Ok(guard) = session.lock() {
                                 if let Some(sess) = guard.as_ref() {
                                     let mut patch = SettingsPatch::default();
-                                    if !patch.set_text(&character_field, &character) {
+                                    if !patch.set_text(writes, &character) {
                                         return;
                                     }
                                     if let Err(e) = sess.apply(patch) {
