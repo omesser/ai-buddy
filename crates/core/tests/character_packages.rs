@@ -632,12 +632,32 @@ fn buddy_bot_frames_are_90_square_rgba() {
     }
 }
 
+/// Eyes must be opaque black, not punched-through alpha holes (desktop shows through).
+#[test]
+fn buddy_bot_eyes_are_opaque_black_not_transparent() {
+    let files = package_bytes("buddy-bot");
+    let idle = files.get("frames/idle-0.png").expect("idle-0");
+    let (width, height, rgba) = frame_rgba(idle);
+    // Sample the two eye sockets near the face midline (90×90 pack).
+    let samples = [(34usize, 33usize), (35, 34), (54, 33), (55, 34)];
+    for (x, y) in samples {
+        assert!(x < width && y < height, "sample ({x},{y}) in bounds");
+        let px = rgba[y * width + x];
+        assert_eq!(px[0], 0, "eye R at ({x},{y})");
+        assert_eq!(px[1], 0, "eye G at ({x},{y})");
+        assert_eq!(px[2], 0, "eye B at ({x},{y})");
+        assert_eq!(
+            px[3], 255,
+            "eye alpha at ({x},{y}) must be opaque, got {}",
+            px[3]
+        );
+    }
+}
+
 /// Walk art must already face right (engine mirrors for left). Idle keeps the
-/// cyan cheek LED on the viewer's left (character's right cheek). Walk omits
-/// that LED per the art pack, so facing is pinned by silhouette: dark eyes sit
-/// left of the opaque mid because the near ear extends the right side — and a
-/// horizontal flip reverses that. MSE to the mirror stays high so the pose is
-/// directional, not symmetric.
+/// cyan cheek LED on the viewer's left. Walk omits that LED; facing is pinned
+/// by dark eyes right of silhouette mid after the pack flip. MSE to the mirror
+/// stays high so the pose is directional.
 #[test]
 fn buddy_bot_walk_faces_right_for_engine_mirroring() {
     let files = package_bytes("buddy-bot");
