@@ -4,11 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  # Keep an in-flight run when a triage label fires `labeled`.
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
   # One job, both platforms. The differences between them are tool installation
@@ -254,17 +256,11 @@ jobs:
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
 
-  # A job of its own rather than a third matrix entry: Windows cannot run shfmt,
-  # shellcheck, `sudo mv` or the apt step that `checks` rests on. The one
-  # question it can answer that the other two cannot is whether the `not(unix)`
-  # arms in platform.rs and sensing.rs still compile.
-  #
-  # Ungated: a path gate over the files holding those arms would let an arm
-  # added anywhere else escape it, which is the failure this job exists to
-  # catch. #247.
+  # Own job: Windows cannot run the shfmt/shellcheck/apt path `checks` uses.
+  # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
+  # Tests only on the path list below, the `windows` label, or non-PR events.
   windows:
     runs-on: windows-latest
-    # A cold-cache MSVC build of the whole workspace on the slowest runner.
     timeout-minutes: 45
 
     steps:
@@ -272,6 +268,40 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Find what this run changed
+        id: changed
+        # Same pin as `checks` (CVE-2025-30066).
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        continue-on-error: true
+        with:
+          files: |
+            src-tauri/src/platform.rs
+            src-tauri/src/platform/windows/**
+            crates/core/src/sensing.rs
+            src-tauri/Cargo.toml
+            crates/core/Cargo.toml
+            Cargo.toml
+            Cargo.lock
+            .github/workflows/tests.yml
+
+      - name: Decide whether this run should test
+        id: gate
+        # Fail open if changed-files errors. `windows` label forces tests on.
+        shell: pwsh
+        env:
+          ANY_CHANGED: ${{ steps.changed.outputs.any_changed }}
+          OUTCOME: ${{ steps.changed.outcome }}
+          EVENT: ${{ github.event_name }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          $run_tests = $true
+          if ($env:OUTCOME -eq "success" -and $env:ANY_CHANGED -eq "false" -and `
+              $env:EVENT -eq "pull_request" -and -not ($env:LABELS -like '*windows*')) {
+            $run_tests = $false
+          }
+          Write-Host "run tests: $run_tests"
+          "run_tests=$run_tests" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --component clippy
@@ -284,8 +314,13 @@ jobs:
           # Same reason as the `checks` job above.
           cache-on-failure: true
 
-      - name: Compile the workspace for Windows
-        # --all-targets to type-check the test targets, where a rotted arm shows
-        # up. Compilation only: a first Windows `cargo test` is red for reasons
-        # unrelated to the platform arms, so turning it on is #258.
+      - name: Clippy the workspace for Windows
+        # --all-targets: also type-check test modules where many `not(unix)` arms live.
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        # --doc: --all-targets skips doctests.
+        if: steps.gate.outputs.run_tests == 'true'
+        run: |
+          cargo test --workspace --all-targets
+          cargo test --workspace --doc
