@@ -400,6 +400,64 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
+/// TAC laser scan: optional idle variant, four frames, drawable by name.
+/// Engage steps through idle so the scan ring can surface on acquire beats.
+#[test]
+fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
+    let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
+
+    assert!(
+        character.animations.contains_key("scan"),
+        "scan animation is declared"
+    );
+    let scan = &character.animations["scan"];
+    assert_eq!(
+        scan.frames.len(),
+        4,
+        "scan is the four-frame TAC laser sweep"
+    );
+    assert_eq!(
+        scan.frames,
+        vec![
+            "frames/scan-0.png".to_string(),
+            "frames/scan-1.png".to_string(),
+            "frames/scan-2.png".to_string(),
+            "frames/scan-3.png".to_string(),
+        ]
+    );
+    assert!(
+        character.animations["idle"]
+            .variants
+            .contains(&"scan".to_string()),
+        "scan rings on idle so a parked mech paints the sector"
+    );
+
+    let drawn = character
+        .draw("scan", 0)
+        .expect("scan draws when asked for by name");
+    assert_eq!(drawn.animation, "scan");
+
+    let engage = &character.behaviors["engage"];
+    assert!(
+        engage.primitives.contains(&character::Primitive::Idle),
+        "engage steps through idle so scan can ride the variant ring"
+    );
+    assert!(
+        engage.primitives.contains(&character::Primitive::React),
+        "engage still raises weapons"
+    );
+
+    assert!(
+        character.behaviors.contains_key("patrol"),
+        "patrol stays"
+    );
+    let pursue = &character.behaviors["pursue"];
+    assert!(
+        pursue.primitives.contains(&character::Primitive::Chase),
+        "pursue still walks toward the cursor"
+    );
+}
+
 /// #161: a patrol mech tracks a near contact and raises a weapon on a rush.
 #[test]
 fn timber_wolf_declares_cursor_reactions() {
