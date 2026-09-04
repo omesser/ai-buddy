@@ -504,7 +504,7 @@ impl Endpoint {
     /// GET `url`. Non-2xx is still `Ok` — the status and body are the answer.
     pub fn get(&self, url: &str) -> Result<(u16, String), String> {
         let request = self
-            .headers(self.agent.get(url))
+            .headers(self.agent.get(url), "application/json")
             .config()
             .http_status_as_error(false)
             .timeout_global(Some(self.timeout))
@@ -517,57 +517,130 @@ impl Endpoint {
 
     /// POST `url` with the body that path expects. Used by the probe so a
     /// 403 on `/v1/responses` is visible next to a 200 on chat-completions.
+    ///
+    /// Streams, and falls back to a whole reply for a server that will not.
+    /// The fallback is one retry on the same session snapshot: `open_turn`
+    /// has already appended the user message, so both attempts ask the same
+    /// question and only one answer is ever recorded.
     pub fn post(&self, url: &str, prompt: &str) -> Result<String, String> {
-        let snapshot = {
-            let mut session = self.session.lock().expect("session lock");
-            session.push(Message {
-                role: "user",
-                content: prompt.to_string(),
-            });
-            session.clone()
-        };
-        let body = request_body(&self.model, &snapshot, uses_responses(url), self.max_tokens);
-        let request = self
-            .headers(self.agent.post(url))
-            .header("Content-Type", "application/json")
-            .config()
-            .http_status_as_error(false)
-            .timeout_global(Some(self.timeout))
-            .build();
-        let text = match request.send_json(body) {
-            Ok(response) => {
-                let (code, text) = read_response(response)?;
-                if (200..300).contains(&code) {
-                    text
-                } else {
-                    self.session.lock().expect("session lock").pop();
-                    return Err(status_error(url, code, &text));
-                }
+        let snapshot = self.open_turn(prompt);
+        let mut reply = self.send(url, &snapshot, Wire::Stream);
+        if let Err(Unsent::NotStreamable(why)) = &reply {
+            if tracing() {
+                eprintln!("director: {why}; retrying without stream");
             }
-            Err(error) => {
-                self.session.lock().expect("session lock").pop();
-                return Err(error.to_string());
-            }
-        };
-        match content_from_body(&text) {
+            reply = self.send(url, &snapshot, Wire::Whole);
+        }
+        self.close_turn(reply.map_err(Unsent::into_error))
+    }
+
+    /// Append the user message and hand back the session the request body is
+    /// built from. Paired with `close_turn`.
+    fn open_turn(&self, prompt: &str) -> Vec<Message> {
+        let mut session = self.session.lock().expect("session lock");
+        session.push(Message {
+            role: "user",
+            content: prompt.to_string(),
+        });
+        session.clone()
+    }
+
+    /// Record the reply, or take the question back out.
+    ///
+    /// A turn that produced nothing pops the user message, because the
+    /// session is what the *next* prompt is built from: leaving the question
+    /// behind would ask the model to answer two things at once, and a
+    /// streamed reply can now end with no answer in more ways than a whole
+    /// one could — abandoned mid-generation, or cut off.
+    fn close_turn(&self, reply: Result<String, String>) -> Result<String, String> {
+        let mut session = self.session.lock().expect("session lock");
+        match reply {
             Ok(content) => {
-                self.session.lock().expect("session lock").push(Message {
+                session.push(Message {
                     role: "assistant",
                     content: content.clone(),
                 });
                 Ok(content)
             }
             Err(error) => {
-                self.session.lock().expect("session lock").pop();
-                Err(format!("{url}: {error}"))
+                session.pop();
+                Err(error)
             }
         }
     }
 
-    fn headers<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
+    /// One attempt, read the way `wire` asked for.
+    fn send(&self, url: &str, session: &[Message], wire: Wire) -> Result<String, Unsent> {
+        let accept = match wire {
+            Wire::Stream => "text/event-stream",
+            Wire::Whole => "application/json",
+        };
+        let body = request_body(
+            &self.model,
+            session,
+            uses_responses(url),
+            self.max_tokens,
+            wire,
+        );
+        let request = self
+            .headers(self.agent.post(url), accept)
+            .header("Content-Type", "application/json")
+            .config()
+            .http_status_as_error(false)
+            .timeout_global(Some(self.timeout))
+            .build();
+        let response = request
+            .send_json(body)
+            .map_err(|error| Unsent::Failed(error.to_string()))?;
+
+        let code = response.status().as_u16();
+        if !(200..300).contains(&code) {
+            let (_, text) = read_response(response).map_err(Unsent::Failed)?;
+            let error = status_error(url, code, &text);
+            return Err(if wire == Wire::Stream && refused_stream(code, &text) {
+                Unsent::NotStreamable(error)
+            } else {
+                Unsent::Failed(error)
+            });
+        }
+
+        match wire {
+            Wire::Whole => {
+                let (_, text) = read_response(response).map_err(Unsent::Failed)?;
+                content_from_body(&text).map_err(|error| Unsent::Failed(format!("{url}: {error}")))
+            }
+            Wire::Stream => {
+                // Capped like the whole-body read. `into_reader` is unlimited
+                // by default, and a server that never stops sending would
+                // otherwise grow this String until the machine gave out.
+                let reader = response
+                    .into_body()
+                    .into_with_config()
+                    .limit(STREAM_LIMIT)
+                    .reader();
+                match read_stream(reader, abandoned) {
+                    Ok(Streamed::Complete(content)) if !content.trim().is_empty() => Ok(content),
+                    Ok(Streamed::Complete(_)) => Err(Unsent::Failed(format!(
+                        "{url}: streamed reply had no text content"
+                    ))),
+                    Ok(Streamed::NotEventStream) => Err(Unsent::NotStreamable(format!(
+                        "{url}: answered 200 with no event stream in it"
+                    ))),
+                    Ok(Streamed::Abandoned) => Err(Unsent::Abandoned),
+                    Err(error) => Err(Unsent::Failed(format!("{url}: {error}"))),
+                }
+            }
+        }
+    }
+
+    fn headers<B>(
+        &self,
+        request: ureq::RequestBuilder<B>,
+        accept: &str,
+    ) -> ureq::RequestBuilder<B> {
         let mut request = request
             .header("User-Agent", "ai-buddy")
-            .header("Accept", "application/json");
+            .header("Accept", accept);
         if !self.api_key.is_empty() {
             request = request.header("Authorization", &format!("Bearer {}", self.api_key));
         }
@@ -646,6 +719,17 @@ fn alternate_url(url: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Did the server reject the request *for* asking to stream?
+///
+/// 400 and 422 are the codes that mean "your body is wrong", and a strict
+/// OpenAI-compatible server names the field it did not recognise. Nothing
+/// else counts: a 401 or 403 would fail the same way without the field, and
+/// on the xAI paths 403 already means something `fallback_url` handles. The
+/// cost of reading this too narrowly is one turn of `StaticDirector`.
+fn refused_stream(code: u16, body: &str) -> bool {
+    matches!(code, 400 | 422) && body.to_ascii_lowercase().contains("stream")
 }
 
 /// Retry the legacy xAI path only when Responses was refused, not when the
@@ -850,11 +934,25 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     }
 }
 
+/// How this request asks for its reply.
+///
+/// The first line of a reply is the Behavior name and is one to three tokens,
+/// so streaming is where nearly all of the perceived wait goes. It is also
+/// the only shape a cancellation can reach: closing a non-streaming request
+/// leaves the generation running and billed, and there is no read to be
+/// between. `Whole` exists for the servers that reject the field outright.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Wire {
+    Stream,
+    Whole,
+}
+
 fn request_body(
     model: &str,
     session: &[Message],
     responses: bool,
     max_tokens: u32,
+    wire: Wire,
 ) -> serde_json::Value {
     let input = if responses && session.len() == 1 {
         // xAI's first-request example is `input` as a string. Later turns
@@ -874,7 +972,7 @@ fn request_body(
                 .collect(),
         )
     };
-    if responses {
+    let mut body = if responses {
         serde_json::json!({
             "model": model,
             "input": input,
@@ -890,7 +988,125 @@ fn request_body(
             "messages": input,
             "max_tokens": max_tokens,
         })
+    };
+    if wire == Wire::Stream {
+        body["stream"] = serde_json::Value::Bool(true);
     }
+    body
+}
+
+/// Ceiling on a streamed reply, in bytes.
+///
+/// `into_reader` is unlimited by default, where the whole-body read stops at
+/// ureq's 10MB. A reply is two lines under a `max_tokens` cap of at most a
+/// few hundred, so a megabyte is already far past anything a working server
+/// sends; it is here to bound a broken one.
+const STREAM_LIMIT: u64 = 1024 * 1024;
+
+/// Why one attempt produced no reply.
+enum Unsent {
+    /// The server rejected the request for asking to stream, so the same
+    /// question is worth one more send without the field.
+    NotStreamable(String),
+    /// Superseded while the tokens were arriving. Nobody is waiting for this
+    /// answer, so there is no error worth composing.
+    Abandoned,
+    /// A status, a transport error, or an unreadable reply.
+    Failed(String),
+}
+
+impl Unsent {
+    fn into_error(self) -> String {
+        match self {
+            Unsent::NotStreamable(why) | Unsent::Failed(why) => why,
+            Unsent::Abandoned => "abandoned".to_string(),
+        }
+    }
+}
+
+/// How a streamed reply ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Streamed {
+    /// `[DONE]`, or the body ended. Empty when the model spent its whole
+    /// budget without writing anything.
+    Complete(String),
+    /// The body held no `data:` frame at all, so it was never an event
+    /// stream: a server that took `stream` and ignored it. The refusal has
+    /// no status of its own, which makes this the only place it shows.
+    NotEventStream,
+    /// Superseded, so the reader was dropped mid-generation. Closing the
+    /// connection is how a synchronous generation is stopped, so this is the
+    /// one path that gives the endpoint its slot back.
+    Abandoned,
+}
+
+/// Assemble an SSE reply, giving up as soon as `abandoned` says the call is
+/// no longer wanted.
+///
+/// Takes a `Read` rather than a response so the shapes below are checked
+/// against canned bytes: this repo has no HTTP double, and a parser only a
+/// live server can reach is a parser nobody checks.
+fn read_stream(
+    reader: impl std::io::Read,
+    abandoned: impl Fn() -> bool,
+) -> Result<Streamed, String> {
+    use std::io::BufRead;
+
+    let mut reader = std::io::BufReader::new(reader);
+    let mut content = String::new();
+    let mut line = String::new();
+    let mut framed = false;
+    loop {
+        // Between frames, not between bytes: `read_line` parks until the
+        // server says something, so a cancel lands one chunk late — tens of
+        // milliseconds while tokens flow.
+        if abandoned() {
+            return Ok(Streamed::Abandoned);
+        }
+        line.clear();
+        if reader
+            .read_line(&mut line)
+            .map_err(|error| error.to_string())?
+            == 0
+        {
+            return Ok(if framed {
+                Streamed::Complete(content)
+            } else {
+                Streamed::NotEventStream
+            });
+        }
+        let Some(payload) = line.trim().strip_prefix("data:") else {
+            // A `:` comment holding a connection open, an event name, or the
+            // blank line between frames. None of them carries text.
+            continue;
+        };
+        framed = true;
+        let payload = payload.trim();
+        if payload == "[DONE]" {
+            return Ok(Streamed::Complete(content));
+        }
+        if let Some(delta) = delta_from_event(payload) {
+            content.push_str(&delta);
+        }
+    }
+}
+
+/// The text one SSE frame adds, if it adds any.
+///
+/// Two shapes because the two paths `completions_url` picks between stream
+/// differently: chat-completions nests the text under `choices`, and
+/// Responses sends a typed event whose `delta` *is* the text. Frames that
+/// carry neither — role announcements, usage, a reasoning trace — add
+/// nothing and are not errors.
+fn delta_from_event(payload: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+    if let Some(text) = value["choices"][0]["delta"]["content"].as_str() {
+        return Some(text.to_string());
+    }
+    if value["type"].as_str()? == "response.output_text.delta" {
+        return Some(value["delta"].as_str()?.to_string());
+    }
+    None
 }
 
 fn content_from_body(body: &str) -> Result<String, String> {
@@ -918,11 +1134,37 @@ fn content_from_body(body: &str) -> Result<String, String> {
     Err("model reply had no text content".to_string())
 }
 
+thread_local! {
+    /// The abandon flag for the model call running on this thread.
+    ///
+    /// A thread-local rather than a field on `Endpoint`, because the socket
+    /// lives in the worker's stack frame: "should this call stop" is a
+    /// property of the thread, not of a Completer every wake shares. It also
+    /// keeps the abort out of `Completer`, which `crates/core` could neither
+    /// cause nor observe — cancellation is a property of a resource only the
+    /// Shell holds.
+    static ABANDONED: std::cell::RefCell<Option<Arc<AtomicBool>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Has the call running on this thread been dropped by the frame loop?
+///
+/// False on a thread that never carried one — the probe and the tests — so
+/// `Endpoint` needs no second code path for them.
+fn abandoned() -> bool {
+    ABANDONED.with_borrow(|flag| {
+        flag.as_ref()
+            .is_some_and(|flag| flag.load(Ordering::SeqCst))
+    })
+}
+
 /// One model call in flight. The frame loop starts it and polls `try_take`.
 pub struct InFlight {
     tx: Sender<Wake>,
     rx: Receiver<Wake>,
     busy: Arc<AtomicBool>,
+    /// Raised by `cancel`, read by the worker between SSE frames.
+    abandoned: Arc<AtomicBool>,
 }
 
 impl InFlight {
@@ -932,6 +1174,7 @@ impl InFlight {
             tx,
             rx,
             busy: Arc::new(AtomicBool::new(false)),
+            abandoned: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -941,9 +1184,15 @@ impl InFlight {
 
     /// Drop a call that no longer belongs to this Character.
     ///
-    /// The worker still finishes; its Wake lands on a channel nobody reads.
-    /// ureq cannot abort a POST already on the wire.
+    /// Raises the flag the worker reads between SSE frames, so a streaming
+    /// call closes its connection rather than running the generation out —
+    /// which is what actually returns the endpoint's slot and stops paying
+    /// for output tokens nobody will hear. Replacing `self` gives the next
+    /// call a fresh flag and leaves the old one alive in the worker's hands.
+    ///
+    /// A whole-reply fallback still finishes: there is no read to be between.
     pub fn cancel(&mut self) {
+        self.abandoned.store(true, Ordering::SeqCst);
         *self = Self::new();
     }
 
@@ -954,7 +1203,9 @@ impl InFlight {
     ) {
         self.busy.store(true, Ordering::SeqCst);
         let tx = self.tx.clone();
+        let abandoned = Arc::clone(&self.abandoned);
         thread::spawn(move || {
+            ABANDONED.with_borrow_mut(|slot| *slot = Some(abandoned));
             // Always send. A panic here would leave `busy` set and skip
             // StaticDirector on later ticks.
             let wake =
@@ -977,8 +1228,9 @@ impl InFlight {
 
 /// Drop an in-flight wake and install a Completer for the new settings.
 ///
-/// The worker still finishes; its Wake lands on a channel nobody reads.
-/// ureq cannot abort a POST already on the wire.
+/// A Wake still on the wire would propose against the old host and session;
+/// drop it and open a new turn. `InFlight::cancel` closes the connection on
+/// a streaming call, so the old host stops generating too.
 pub fn retarget_model(
     pending: &mut InFlight,
     in_flight: &mut Option<Context>,
@@ -1185,13 +1437,214 @@ pub(crate) mod tests {
         assert!(content_from_body("not json").is_err());
     }
 
+    fn local_endpoint() -> Endpoint {
+        Endpoint {
+            api_key: String::new(),
+            url: "http://localhost:11434/v1/chat/completions".to_string(),
+            model: "gemma4".to_string(),
+            timeout: TIMEOUT,
+            max_tokens: HOSTED_MAX_TOKENS,
+            session: Mutex::new(Vec::new()),
+            agent: ureq::agent(),
+        }
+    }
+
+    /// A stream can end without a reply — abandoned, or cut off — and the
+    /// session is what the *next* prompt is built from. Leaving the question
+    /// behind would ask the model to answer two things at once, and keeping a
+    /// half sentence would teach it that half sentences are the format.
+    #[test]
+    fn a_turn_with_no_reply_leaves_no_half_answer_in_the_session() {
+        let endpoint = local_endpoint();
+
+        let opening = endpoint.open_turn("hello");
+        assert_eq!(opening.len(), 1, "the opening turn is the prompt alone");
+        endpoint.close_turn(Ok("stroll".to_string())).unwrap();
+
+        endpoint.open_turn("what just happened: poked");
+        endpoint
+            .close_turn(Err("abandoned".to_string()))
+            .unwrap_err();
+
+        let next = endpoint.open_turn("what just happened: thrown");
+        let turns: Vec<(&str, &str)> = next
+            .iter()
+            .map(|message| (message.role, message.content.as_str()))
+            .collect();
+        assert_eq!(
+            turns,
+            [
+                ("user", "hello"),
+                ("assistant", "stroll"),
+                ("user", "what just happened: thrown"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_streamed_chat_completion_assembles_its_deltas() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\nhey\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            read_stream(std::io::Cursor::new(sse), || false).unwrap(),
+            Streamed::Complete("stroll\nhey".to_string())
+        );
+    }
+
+    #[test]
+    fn a_streamed_responses_reply_assembles_its_deltas() {
+        let sse = concat!(
+            "event: response.created\n",
+            "data: {\"type\":\"response.created\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"\\nhey\"}\n\n",
+            "data: {\"type\":\"response.completed\"}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            read_stream(std::io::Cursor::new(sse), || false).unwrap(),
+            Streamed::Complete("stroll\nhey".to_string())
+        );
+    }
+
+    /// A frame arrives in as many TCP reads as the network feels like, and
+    /// a keep-alive comment arrives between frames. Neither is a boundary
+    /// the parser gets to see.
+    #[test]
+    fn a_frame_split_across_reads_is_still_one_event() {
+        struct Dribble {
+            bytes: Vec<u8>,
+            sent: usize,
+        }
+
+        impl std::io::Read for Dribble {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let take = (self.bytes.len() - self.sent).min(3).min(buf.len());
+                buf[..take].copy_from_slice(&self.bytes[self.sent..self.sent + take]);
+                self.sent += take;
+                Ok(take)
+            }
+        }
+
+        let sse = concat!(
+            ": keep-alive\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            ": keep-alive\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"\\nhey\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let dribble = Dribble {
+            bytes: sse.as_bytes().to_vec(),
+            sent: 0,
+        };
+        assert_eq!(
+            read_stream(dribble, || false).unwrap(),
+            Streamed::Complete("stroll\nhey".to_string())
+        );
+    }
+
+    /// A server that takes `stream: true` and answers with an ordinary body
+    /// never says so in a status, so the absence of frames is the only signal
+    /// there is — and it is the one worth another send. A stream that really
+    /// did arrive empty is not: sending the same question again would spend a
+    /// second call to be told the same nothing.
+    #[test]
+    fn a_body_with_no_frames_in_it_was_never_a_stream() {
+        let whole = r#"{"choices":[{"message":{"content":"stroll\nhey"}}]}"#;
+        assert_eq!(
+            read_stream(std::io::Cursor::new(whole), || false).unwrap(),
+            Streamed::NotEventStream
+        );
+
+        let spent = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            read_stream(std::io::Cursor::new(spent), || false).unwrap(),
+            Streamed::Complete(String::new()),
+            "a model that thought its whole budget away did stream"
+        );
+    }
+
+    /// A server that ends the body without `[DONE]` still said everything it
+    /// was going to say. Ollama and some llama.cpp builds do this.
+    #[test]
+    fn a_stream_that_ends_without_done_keeps_what_arrived() {
+        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n";
+        assert_eq!(
+            read_stream(std::io::Cursor::new(sse), || false).unwrap(),
+            Streamed::Complete("stroll".to_string())
+        );
+    }
+
+    /// The load win. An endless stream is the only honest test of it: a
+    /// reader that stopped on its own would prove nothing, and one that
+    /// drains would hang this test rather than fail it.
+    #[test]
+    fn an_abandoned_stream_stops_reading_rather_than_draining() {
+        struct Endless;
+
+        impl std::io::Read for Endless {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let frame = b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n";
+                buf[..frame.len()].copy_from_slice(frame);
+                Ok(frame.len())
+            }
+        }
+
+        let asked = std::cell::Cell::new(0);
+        let abandoned = || {
+            asked.set(asked.get() + 1);
+            asked.get() > 3
+        };
+        assert_eq!(
+            read_stream(Endless, abandoned).unwrap(),
+            Streamed::Abandoned
+        );
+    }
+
+    #[test]
+    fn a_streaming_request_asks_for_a_stream_and_the_fallback_does_not() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        let streamed = request_body(
+            "gpt-4o-mini",
+            &session,
+            false,
+            HOSTED_MAX_TOKENS,
+            Wire::Stream,
+        );
+        assert_eq!(streamed["stream"], true);
+        let responses = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS, Wire::Stream);
+        assert_eq!(responses["stream"], true, "the Responses path streams too");
+
+        let whole = request_body(
+            "gpt-4o-mini",
+            &session,
+            false,
+            HOSTED_MAX_TOKENS,
+            Wire::Whole,
+        );
+        assert!(
+            whole.get("stream").is_none(),
+            "a retry must not name the field the server just refused"
+        );
+    }
+
     #[test]
     fn a_responses_request_uses_input_and_does_not_store() {
         let session = [Message {
             role: "user",
             content: "wave".to_string(),
         }];
-        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS);
+        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS, Wire::Whole);
         assert_eq!(body["input"], "wave");
         assert_eq!(body["max_output_tokens"], 80);
         assert_eq!(body["store"], false);
@@ -1215,7 +1668,7 @@ pub(crate) mod tests {
                 content: "what just happened: thrown".to_string(),
             },
         ];
-        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS);
+        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS, Wire::Whole);
         assert_eq!(body["input"][2]["content"], "what just happened: thrown");
         assert!(body["input"].is_array());
     }
@@ -1336,6 +1789,29 @@ pub(crate) mod tests {
         assert_eq!(
             alternate_url("https://api.openai.com/v1/chat/completions"),
             None
+        );
+    }
+
+    #[test]
+    fn a_server_that_rejects_the_stream_field_earns_one_whole_retry() {
+        assert!(refused_stream(
+            400,
+            r#"{"error":{"message":"Unrecognized request argument supplied: stream"}}"#
+        ));
+        assert!(
+            refused_stream(
+                422,
+                r#"{"detail":[{"loc":["body","stream"],"msg":"extra fields not permitted"}]}"#
+            ),
+            "a strict server validates the body rather than the field"
+        );
+        assert!(
+            !refused_stream(400, r#"{"error":{"message":"model gpt-9 does not exist"}}"#),
+            "a 400 about anything else would fail the same way twice"
+        );
+        assert!(
+            !refused_stream(403, "streaming is not available"),
+            "403 is the key, the credits, or a path ACL; fallback_url owns that"
         );
     }
 
@@ -1625,6 +2101,56 @@ pub(crate) mod tests {
         assert!(
             pending.try_take().is_none(),
             "the abandoned Wake must not land on the new Character"
+        );
+    }
+
+    /// `cancel` has to reach the worker, not just the channel it answers on.
+    /// Closing the connection is what stops a generation and gives the
+    /// endpoint its slot back, and the worker is the only thing holding the
+    /// socket — so a flag it never reads buys nothing.
+    #[test]
+    fn cancel_raises_the_flag_the_worker_reads() {
+        /// Stands in for the SSE loop: checks between frames, without a
+        /// server. Spins far longer than the test should need.
+        struct Watchful {
+            saw: Arc<AtomicBool>,
+        }
+
+        impl Completer for Watchful {
+            fn complete(&self, _: &str) -> Result<String, String> {
+                for _ in 0..400 {
+                    if abandoned() {
+                        self.saw.store(true, Ordering::SeqCst);
+                        return Err("abandoned".to_string());
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Ok("idle".to_string())
+            }
+        }
+
+        let saw = Arc::new(AtomicBool::new(false));
+        let mut pending = InFlight::new();
+        pending.start(
+            Arc::new(ModelDirector::new(
+                Watchful {
+                    saw: Arc::clone(&saw),
+                },
+                ["idle"],
+            )),
+            wake_context(),
+        );
+        pending.cancel();
+
+        for _ in 0..100 {
+            if saw.load(Ordering::SeqCst) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            saw.load(Ordering::SeqCst),
+            "the worker ran on without ever seeing that it had been dropped"
         );
     }
 

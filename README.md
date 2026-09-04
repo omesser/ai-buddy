@@ -262,7 +262,8 @@ Settings → Director persists base URL and model, and stores the API key in
 the OS secret store (Keychain on macOS); Settings → Development persists the
 Completer timeout and reply cap. Editing any of the five retargets the running
 Director: the next wake reaches the new host, and the session in flight is
-dropped rather than answered against the old one. No restart.
+dropped rather than answered against the old one — a streaming call closes its
+connection, so the old host stops generating too. No restart.
 
 `cargo run` with those env vars unset uses the saved Completer. The env vars
 remain a one-process override, and the window says so: a field one of them
@@ -315,6 +316,14 @@ a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai);
 `/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that
 requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries
 chat-completions if Responses returns 403 or 404.
+
+The stand-in asks for `stream: true`. A reply's first line is the Behavior
+name and runs one to three tokens, so almost the whole wait is a dialogue
+line the buddy does not need before it starts moving. Streaming is also the
+only shape a dropped call can be *stopped* in: closing a streaming connection
+ends the generation, where a whole-reply request runs to completion on the
+server whatever the client does. A server that rejects the field — or accepts
+it and answers with an ordinary body anyway — gets one more send without it.
 
 `scripts/probe-model.sh` hits the same Completer without starting the
 overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST
