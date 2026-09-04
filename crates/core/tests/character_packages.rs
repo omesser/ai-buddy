@@ -400,44 +400,45 @@ fn timber_wolf_poses_are_not_copies_of_each_other() {
     );
 }
 
-/// TAC laser scan must be visible in normal play: Idle turns are only 600ms,
-/// and the idle variant ring holds the base for ~12s before scan — so a
-/// variant_of alone almost never appears under Director wakes. Idle bakes the
-/// sweep into its strip; a `scan` behavior holds consecutive Idle so the ring
-/// can complete; engage still parks on Idle around react.
+/// TAC laser must show where the mech actually rests. Perched (on a window)
+/// draws `sit`, not idle — baking into idle alone left the laser invisible.
+/// Sit bakes the sweep; scan variants off sit; the scan behavior holds
+/// consecutive Sit so animation_ms can finish the ring.
 #[test]
-fn timber_wolf_tac_laser_scan_is_visible_in_idle_life() {
+fn timber_wolf_tac_laser_scan_is_visible_on_perched_sit() {
     let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
 
     assert!(
         character.animations.contains_key("scan"),
         "scan animation is declared"
     );
-    let scan = &character.animations["scan"];
     assert_eq!(
-        scan.frames.len(),
+        character.animations["scan"].frames.len(),
         4,
-        "scan is the four-frame TAC laser sweep"
+        "scan is a four-frame TAC laser loop (scan-1..3 ping-pong; scan-0 was a dupe of idle-0)"
     );
     assert!(
-        character.animations["idle"]
+        character.animations["sit"]
             .variants
             .contains(&"scan".to_string()),
-        "scan still rings on idle for long uninterrupted rests"
+        "scan rings on sit — Perched rest is sit, not idle"
     );
 
-    let idle_frames = &character.animations["idle"].frames;
+    let sit_frames = &character.animations["sit"].frames;
     for name in [
-        "frames/scan-0.png",
         "frames/scan-1.png",
         "frames/scan-2.png",
         "frames/scan-3.png",
     ] {
         assert!(
-            idle_frames.iter().any(|f| f == name),
-            "idle strip bakes {name} so short Idle turns still show the laser"
+            sit_frames.iter().any(|f| f == name),
+            "sit strip bakes {name} so perched rest shows the laser"
         );
     }
+    assert!(
+        sit_frames.iter().all(|f| f != "frames/scan-0.png"),
+        "sit must not reference scan-0 (byte-identical to idle-0)"
+    );
 
     let drawn = character
         .draw("scan", 0)
@@ -447,15 +448,15 @@ fn timber_wolf_tac_laser_scan_is_visible_in_idle_life() {
     let scan_behavior = &character.behaviors["scan"];
     assert!(
         scan_behavior.primitives.len() >= 20,
-        "scan behavior holds Idle long enough for the variant ring (~16s), got {}",
+        "scan behavior holds Sit long enough for the variant ring (~16s), got {}",
         scan_behavior.primitives.len()
     );
     assert!(
         scan_behavior
             .primitives
             .iter()
-            .all(|p| *p == character::Primitive::Idle),
-        "scan behavior is Idle-only so animation_ms accumulates into the ring"
+            .all(|p| *p == character::Primitive::Sit),
+        "scan behavior is Sit-only so animation_ms accumulates on the sit ring"
     );
     assert_eq!(
         scan_behavior.weight, 4,
@@ -464,8 +465,8 @@ fn timber_wolf_tac_laser_scan_is_visible_in_idle_life() {
 
     let engage = &character.behaviors["engage"];
     assert!(
-        engage.primitives.contains(&character::Primitive::Idle),
-        "engage parks on idle around the weapon raise"
+        engage.primitives.contains(&character::Primitive::Sit),
+        "engage parks on sit around the weapon raise (perch rest art)"
     );
     assert!(
         engage.primitives.contains(&character::Primitive::React),

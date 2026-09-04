@@ -37,23 +37,11 @@ model_base = 1
 model_power = 1
 
 # Camera-facing stand from the turn recording, so idle meshes with talk and react.
-# Stand, then TAC laser sweep in the same strip. Idle Primitive turns are only
-# PRIMITIVE_MS (600ms); the variant ring needs ~12s of uninterrupted idle before
-# scan gets a slot — Director wakes every 20s and patrol interrupts — so a
-# variant_of alone is almost never seen. Baking the sweep into idle makes the
-# laser visible whenever the mech is parked on its feet.
+# Stand. Desktop pets spend their rest Perched on windows — and Perched rests
+# on `sit`, not idle — so the TAC laser lives on the sit strip below.
 [animations.idle]
-frames = [
-  "frames/idle-0.png",
-  "frames/idle-1.png",
-  "frames/idle-0.png",
-  "frames/idle-1.png",
-  "frames/scan-0.png",
-  "frames/scan-1.png",
-  "frames/scan-2.png",
-  "frames/scan-3.png",
-]
-fps = 4
+frames = ["frames/idle-0.png", "frames/idle-1.png"]
+fps = 2
 
 # Side stride, facing right for engine mirroring. 20 unique poses, 8 fps.
 [animations.walk]
@@ -91,9 +79,21 @@ fps = 8
 loop = "once"
 
 # A mech does not sit; it hunkers down on its legs.
+# Perched rest draws `sit` (engine animation_for), not idle. Bake the TAC sweep
+# here so a mech parked on a title bar actually paints the sector. Crouch, then
+# stand-and-sweep (scan-1..3; scan-0 is a dupe of idle-0), then back.
 [animations.sit]
-frames = ["frames/sit-0.png", "frames/sit-1.png"]
-fps = 2
+frames = [
+  "frames/sit-0.png",
+  "frames/sit-1.png",
+  "frames/sit-0.png",
+  "frames/sit-1.png",
+  "frames/scan-1.png",
+  "frames/scan-2.png",
+  "frames/scan-3.png",
+  "frames/scan-2.png",
+]
+fps = 4
 
 [animations.hold]
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
@@ -104,17 +104,19 @@ fps = 4
 frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
 fps = 1
 
-# Full-strip TAC sweep kept as its own Animation (and still an idle variant) so
-# a long uninterrupted rest also rings a dedicated scan slot after the base.
+# Dedicated TAC strip; rings on sit (the perched rest animation) so a long
+# station hold also gets a full sweep slot after the crouch base.
+# scan-0.png is a byte-identical copy of idle-0 (packaging mistake in the
+# TAC drop); the real sweep is scan-1..3.
 [animations.scan]
 frames = [
-  "frames/scan-0.png",
   "frames/scan-1.png",
   "frames/scan-2.png",
   "frames/scan-3.png",
+  "frames/scan-2.png",
 ]
 fps = 4
-variant_of = "idle"
+variant_of = "sit"
 
 # Full-frontal weapon raise from the turn recording: contact acquired.
 [animations.react]
@@ -127,11 +129,10 @@ loop = "once"
 frames = ["frames/talk-0.png", "frames/talk-1.png", "frames/talk-2.png"]
 fps = 4
 
-# A heavy assault mech's life: patrol, report, scan the sector, engage.
-# `scan` holds Idle long enough for animation_ms to accumulate through the
-# variant ring (consecutive Idle keeps the same animation clock). Engage also
-# parks on Idle before/after the weapon raise so the baked idle strip and the
-# ring can paint. pursue/chase, patrol, near=face, rush=react stay.
+# A heavy assault mech's life: patrol, report, scan the sector from station,
+# engage. Perched rest is `sit`, so scan holds consecutive Sit (animation_ms
+# accumulates; baked sit strip + sit→scan variant ring). Engage parks on Sit
+# around the weapon raise. pursue/chase, patrol, near=face, rush=react stay.
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
@@ -139,17 +140,17 @@ weight = 2
 when = "idle over 30s"
 
 [behaviors.scan]
-play = ["idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle", "idle"]
+play = ["sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit", "sit"]
 weight = 4
 when = "idle over 30s"
 
 [behaviors.report]
-play = ["talk", "idle"]
+play = ["talk", "sit"]
 weight = 3
 when = "idle under 2m"
 
 [behaviors.engage]
-play = ["idle", "idle", "idle", "idle", "idle", "react", "idle", "idle", "idle"]
+play = ["sit", "sit", "sit", "sit", "sit", "react", "sit", "sit", "sit"]
 weight = 3
 when = "idle over 1m"
 
