@@ -229,6 +229,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         timeout: timeout_for(local),
         max_tokens: max_tokens_for(local),
         session: Mutex::new(Vec::new()),
+        streams: AtomicBool::new(true),
         agent: ureq::agent(),
     })
 }
@@ -464,6 +465,9 @@ pub struct Endpoint {
     max_tokens: u32,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
     session: Mutex<Vec<Message>>,
+    /// Does this host stream? Starts optimistic and only ever falls, once a
+    /// whole reply has succeeded where a stream did not (#302).
+    streams: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
     /// use-once [Agent]", so each wake would throw away the pooled connection
     /// and pay another TCP and TLS handshake to the model host.
@@ -515,27 +519,51 @@ impl Endpoint {
         }
     }
 
-    /// POST `url` with the body that path expects. Used by the probe so a
-    /// 403 on `/v1/responses` is visible next to a 200 on chat-completions.
+    /// Send `prompt` as the next session turn and read the reply.
+    ///
+    /// Takes `url` rather than using `self.url` so the probe can show a 403
+    /// on `/v1/responses` next to a 200 on chat-completions, and so
+    /// `complete` can retry the other xAI path.
     ///
     /// Streams, and falls back to a whole reply for a server that will not.
-    /// The fallback is one retry on the same session snapshot: `open_turn`
-    /// has already appended the user message, so both attempts ask the same
-    /// question and only one answer is ever recorded.
+    /// The fallback retries the same session snapshot, so both attempts ask
+    /// the same question and only one answer is ever recorded — and once a
+    /// whole reply has succeeded where a stream did not, this endpoint stops
+    /// asking, rather than paying two POSTs on every wake for the rest of
+    /// the session.
     pub fn post(&self, url: &str, prompt: &str) -> Result<String, String> {
         let snapshot = self.open_turn(prompt);
-        let mut reply = self.send(url, &snapshot, Wire::Stream);
+        let wire = if self.streams.load(Ordering::SeqCst) {
+            Wire::Stream
+        } else {
+            Wire::Whole
+        };
+        let mut reply = self.send(url, &snapshot, wire);
         if let Err(Unsent::NotStreamable(why)) = &reply {
             if tracing() {
                 eprintln!("director: {why}; retrying without stream");
             }
-            reply = self.send(url, &snapshot, Wire::Whole);
+            // A call dropped between the two attempts must not become a
+            // fresh request the frame loop can no longer reach.
+            reply = if abandoned() {
+                Err(Unsent::Abandoned)
+            } else {
+                let whole = self.send(url, &snapshot, Wire::Whole);
+                // Evidence, not a guess: streaming failed here and a whole
+                // reply worked, so this endpoint does not stream. A refusal
+                // misread from some unrelated 400 fails twice and sticks
+                // nothing.
+                if whole.is_ok() {
+                    self.streams.store(false, Ordering::SeqCst);
+                }
+                whole
+            };
         }
         self.close_turn(reply.map_err(Unsent::into_error))
     }
 
-    /// Append the user message and hand back the session the request body is
-    /// built from. Paired with `close_turn`.
+    /// Append the user message and hand back the snapshot the request body
+    /// is built from. Paired with `close_turn`.
     fn open_turn(&self, prompt: &str) -> Vec<Message> {
         let mut session = self.session.lock().expect("session lock");
         session.push(Message {
@@ -549,9 +577,12 @@ impl Endpoint {
     ///
     /// A turn that produced nothing pops the user message, because the
     /// session is what the *next* prompt is built from: leaving the question
-    /// behind would ask the model to answer two things at once, and a
-    /// streamed reply can now end with no answer in more ways than a whole
-    /// one could — abandoned mid-generation, or cut off.
+    /// behind would ask the model to answer two things at once.
+    ///
+    /// Pops the last message rather than one it identifies, which holds
+    /// because an Instance has one `Endpoint` and `InFlight` keeps one call
+    /// on the wire at a time. A second concurrent caller would need this to
+    /// carry an index.
     fn close_turn(&self, reply: Result<String, String>) -> Result<String, String> {
         let mut session = self.session.lock().expect("session lock");
         match reply {
@@ -623,6 +654,9 @@ impl Endpoint {
                     Ok(Streamed::Complete(_)) => Err(Unsent::Failed(format!(
                         "{url}: streamed reply had no text content"
                     ))),
+                    Ok(Streamed::Cut) => {
+                        Err(Unsent::Failed(format!("{url}: the stream ended mid-reply")))
+                    }
                     Ok(Streamed::NotEventStream) => Err(Unsent::NotStreamable(format!(
                         "{url}: answered 200 with no event stream in it"
                     ))),
@@ -934,13 +968,17 @@ fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     }
 }
 
-/// How this request asks for its reply.
+/// How this request asks for its reply. The argument for `Stream` is #302,
+/// and it has two halves.
 ///
-/// The first line of a reply is the Behavior name and is one to three tokens,
-/// so streaming is where nearly all of the perceived wait goes. It is also
-/// the only shape a cancellation can reach: closing a non-streaming request
-/// leaves the generation running and billed, and there is no read to be
-/// between. `Whole` exists for the servers that reject the field outright.
+/// A reply's first line is the Behavior name and runs one to three tokens,
+/// so almost the whole wait is dialogue the buddy does not need in order to
+/// start moving. And streaming is the only shape a dropped call can be
+/// *stopped* in: closing a streaming connection ends the generation, where a
+/// whole-reply request runs to completion on the server — and is billed —
+/// whatever the client does, because there is no read to be between.
+///
+/// `Whole` is for the servers that will not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Wire {
     Stream,
@@ -1027,16 +1065,26 @@ impl Unsent {
 /// How a streamed reply ended.
 #[derive(Debug, PartialEq, Eq)]
 enum Streamed {
-    /// `[DONE]`, or the body ended. Empty when the model spent its whole
+    /// The server marked the end. Empty when the model spent its whole
     /// budget without writing anything.
     Complete(String),
+    /// The body ended with the server never saying it was finished, so
+    /// whatever arrived is half a sentence.
+    ///
+    /// ponytail: this trusts every OpenAI-compatible server to mark the end
+    /// — `[DONE]`, a `finish_reason`, or `response.completed`. Measured on
+    /// xAI (both paths) and oMLX, and it is what OpenAI's own stream does,
+    /// so the untested servers in the README's table are expected to follow.
+    /// One that does not would look truncated on every wake and fall to
+    /// `StaticDirector`; `AI_BUDDY_TRACE_DIRECTOR` names it in one line. The
+    /// upgrade, if that ever happens, is to keep the reply and pop only the
+    /// session turn.
+    Cut,
     /// The body held no `data:` frame at all, so it was never an event
     /// stream: a server that took `stream` and ignored it. The refusal has
     /// no status of its own, which makes this the only place it shows.
     NotEventStream,
-    /// Superseded, so the reader was dropped mid-generation. Closing the
-    /// connection is how a synchronous generation is stopped, so this is the
-    /// one path that gives the endpoint its slot back.
+    /// Superseded, so the reader is dropped mid-generation (#302).
     Abandoned,
 }
 
@@ -1056,10 +1104,12 @@ fn read_stream(
     let mut content = String::new();
     let mut line = String::new();
     let mut framed = false;
+    let mut finished = false;
     loop {
         // Between frames, not between bytes: `read_line` parks until the
-        // server says something, so a cancel lands one chunk late — tens of
-        // milliseconds while tokens flow.
+        // server says something, so a cancel lands one frame late — tens of
+        // milliseconds once tokens are flowing, and time-to-first-token
+        // before they are.
         if abandoned() {
             return Ok(Streamed::Abandoned);
         }
@@ -1069,10 +1119,10 @@ fn read_stream(
             .map_err(|error| error.to_string())?
             == 0
         {
-            return Ok(if framed {
-                Streamed::Complete(content)
-            } else {
-                Streamed::NotEventStream
+            return Ok(match (framed, finished) {
+                (false, _) => Streamed::NotEventStream,
+                (true, true) => Streamed::Complete(content),
+                (true, false) => Streamed::Cut,
             });
         }
         let Some(payload) = line.trim().strip_prefix("data:") else {
@@ -1085,28 +1135,64 @@ fn read_stream(
         if payload == "[DONE]" {
             return Ok(Streamed::Complete(content));
         }
-        if let Some(delta) = delta_from_event(payload) {
+        let frame = read_frame(payload);
+        finished |= frame.finished;
+        if let Some(delta) = frame.delta {
+            if content.is_empty() && !delta.is_empty() && tracing() {
+                // The whole point of streaming, and the one moment worth a
+                // line: a Behavior name is one to three tokens, so this is
+                // roughly when the sprite could start moving (#302).
+                eprintln!("director: first token");
+            }
             content.push_str(&delta);
         }
     }
 }
 
-/// The text one SSE frame adds, if it adds any.
+/// What one SSE frame contributes.
+#[derive(Default)]
+struct Frame {
+    /// Text it adds, if it adds any. Frames that carry none — a role
+    /// announcement, usage, a reasoning trace — are not errors.
+    delta: Option<String>,
+    /// It says the server is done, so an end of body after it is a whole
+    /// reply rather than a connection cut.
+    finished: bool,
+}
+
+/// Read one frame in whichever of the two shapes `completions_url` chose.
 ///
-/// Two shapes because the two paths `completions_url` picks between stream
-/// differently: chat-completions nests the text under `choices`, and
-/// Responses sends a typed event whose `delta` *is* the text. Frames that
-/// carry neither — role announcements, usage, a reasoning trace — add
-/// nothing and are not errors.
-fn delta_from_event(payload: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(payload).ok()?;
-    if let Some(text) = value["choices"][0]["delta"]["content"].as_str() {
-        return Some(text.to_string());
+/// chat-completions nests text under `choices` and marks the end with
+/// `finish_reason`; Responses sends typed events whose `delta` *is* the text
+/// and marks the end with `response.completed`. Both markers matter as much
+/// as the text: `/v1/responses` ends the body without `[DONE]`, measured
+/// against xAI, so the marker is the only thing that tells a finished reply
+/// from a truncated one.
+fn read_frame(payload: &str) -> Frame {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return Frame::default();
+    };
+    let choice = &value["choices"][0];
+    if let Some(text) = choice["delta"]["content"].as_str() {
+        return Frame {
+            delta: Some(text.to_string()),
+            finished: choice["finish_reason"].is_string(),
+        };
     }
-    if value["type"].as_str()? == "response.output_text.delta" {
-        return Some(value["delta"].as_str()?.to_string());
+    match value["type"].as_str() {
+        Some("response.output_text.delta") => Frame {
+            delta: value["delta"].as_str().map(str::to_string),
+            finished: false,
+        },
+        Some("response.completed") => Frame {
+            delta: None,
+            finished: true,
+        },
+        _ => Frame {
+            delta: None,
+            finished: choice["finish_reason"].is_string(),
+        },
     }
-    None
 }
 
 fn content_from_body(body: &str) -> Result<String, String> {
@@ -1184,13 +1270,10 @@ impl InFlight {
 
     /// Drop a call that no longer belongs to this Character.
     ///
-    /// Raises the flag the worker reads between SSE frames, so a streaming
-    /// call closes its connection rather than running the generation out —
-    /// which is what actually returns the endpoint's slot and stops paying
-    /// for output tokens nobody will hear. Replacing `self` gives the next
-    /// call a fresh flag and leaves the old one alive in the worker's hands.
-    ///
-    /// A whole-reply fallback still finishes: there is no read to be between.
+    /// Raises the flag the worker reads between SSE frames, so the call
+    /// closes its connection instead of running out (see `Wire`). Replacing
+    /// `self` gives the next call a fresh flag and leaves the old one alive
+    /// in the worker's hands.
     pub fn cancel(&mut self) {
         self.abandoned.store(true, Ordering::SeqCst);
         *self = Self::new();
@@ -1229,8 +1312,8 @@ impl InFlight {
 /// Drop an in-flight wake and install a Completer for the new settings.
 ///
 /// A Wake still on the wire would propose against the old host and session;
-/// drop it and open a new turn. `InFlight::cancel` closes the connection on
-/// a streaming call, so the old host stops generating too.
+/// drop it and open a new turn. `InFlight::cancel` closes the connection, so
+/// the old host stops generating rather than merely going unheard.
 pub fn retarget_model(
     pending: &mut InFlight,
     in_flight: &mut Option<Context>,
@@ -1445,14 +1528,14 @@ pub(crate) mod tests {
             timeout: TIMEOUT,
             max_tokens: HOSTED_MAX_TOKENS,
             session: Mutex::new(Vec::new()),
+            streams: AtomicBool::new(true),
             agent: ureq::agent(),
         }
     }
 
-    /// A stream can end without a reply — abandoned, or cut off — and the
-    /// session is what the *next* prompt is built from. Leaving the question
-    /// behind would ask the model to answer two things at once, and keeping a
-    /// half sentence would teach it that half sentences are the format.
+    /// A streamed turn can end with no reply in more ways than a whole one
+    /// could — abandoned, or cut off — and each has to leave the session as
+    /// an error does (#302).
     #[test]
     fn a_turn_with_no_reply_leaves_no_half_answer_in_the_session() {
         let endpoint = local_endpoint();
@@ -1487,6 +1570,7 @@ pub(crate) mod tests {
             "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
             "data: {\"choices\":[{\"delta\":{\"content\":\"\\nhey\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
             "data: [DONE]\n\n",
         );
         assert_eq!(
@@ -1571,14 +1655,34 @@ pub(crate) mod tests {
         );
     }
 
-    /// A server that ends the body without `[DONE]` still said everything it
-    /// was going to say. Ollama and some llama.cpp builds do this.
+    /// xAI's `/v1/responses` ends the body with no `[DONE]` after it, so the
+    /// end marker has to be enough on its own — and a body that stops with
+    /// no marker at all is half a sentence, which must not reach the Speech
+    /// bubble or the session (#302).
     #[test]
-    fn a_stream_that_ends_without_done_keeps_what_arrived() {
-        let sse = "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n";
+    fn a_marked_end_is_enough_and_an_unmarked_one_is_a_cut() {
+        let responses = concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"stroll\"}\n\n",
+            "data: {\"type\":\"response.completed\"}\n\n",
+        );
         assert_eq!(
-            read_stream(std::io::Cursor::new(sse), || false).unwrap(),
+            read_stream(std::io::Cursor::new(responses), || false).unwrap(),
             Streamed::Complete("stroll".to_string())
+        );
+
+        let completions = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        );
+        assert_eq!(
+            read_stream(std::io::Cursor::new(completions), || false).unwrap(),
+            Streamed::Complete("stroll".to_string())
+        );
+
+        let cut = "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\\nhey th\"}}]}\n\n";
+        assert_eq!(
+            read_stream(std::io::Cursor::new(cut), || false).unwrap(),
+            Streamed::Cut
         );
     }
 

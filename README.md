@@ -323,7 +323,9 @@ line the buddy does not need before it starts moving. Streaming is also the
 only shape a dropped call can be *stopped* in: closing a streaming connection
 ends the generation, where a whole-reply request runs to completion on the
 server whatever the client does. A server that rejects the field — or accepts
-it and answers with an ordinary body anyway — gets one more send without it.
+it and answers with an ordinary body anyway — gets one more send without it,
+and once that one works the endpoint stops asking to stream, so the second
+POST is paid once rather than on every wake.
 
 `scripts/probe-model.sh` hits the same Completer without starting the
 overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST
@@ -606,6 +608,11 @@ what the window server says about any display.
 what we sent, `--- model ---` is the reply, then whether that played as a
 Behavior (or fell back to Static). Off unless asked. Poke, throw, pick up,
 or place on a Perch to force a wake.
+
+`director: first token` in that trace is when the stream started arriving,
+which is roughly when the sprite could begin moving; its distance from the
+reply is what streaming is for. A server that would not stream says so on the
+line before its retry.
 
 There is one overlay per display and every one of them is told where the
 sprite is, so the trace is one line per tick rather than one per overlay. Which
