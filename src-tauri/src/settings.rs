@@ -2277,12 +2277,12 @@ mod tests {
                 };
 
                 // What frame_loop.rs does with the payload.
-                let mut pending = model::InFlight::new();
-                let mut in_flight = Some(model::tests::wake_context());
+                let id = "buddy".to_string();
+                let mut slots = model::tests::slots_awaiting_a_wake(&id);
                 let mut completer = None;
                 model::retarget_model(
-                    &mut pending,
-                    &mut in_flight,
+                    &mut slots,
+                    &id,
                     &mut completer,
                     ["stroll"],
                     &director,
@@ -2291,7 +2291,7 @@ mod tests {
                 assert!(completer.is_some(), "{field} needs a Completer");
                 // ADR-0008: a Wake already on the wire cannot propose against
                 // the target that was just replaced.
-                assert!(in_flight.is_none(), "{field} must drop the open session");
+                assert!(!slots.waiting(&id), "{field} must drop the open session");
 
                 let endpoint =
                     model::endpoint_from(&director).expect("configured means a Completer");

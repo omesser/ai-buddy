@@ -68,6 +68,12 @@ pub(crate) fn run_frame_loop(
             instances: instance_rows,
             ops,
         } = extras;
+
+        // One registry for every Instance, so that the question "how many calls
+        // may be on the wire at once" has somewhere to be asked. It is not asked
+        // yet — there is no cap, and N buddies make N calls, as before.
+        let mut slots = model::Slots::new();
+
         publish_instances(&roster, &instance_rows);
         let (mut tray_actions, mut last_menu) = {
             let installed: Vec<String> = characters.keys().cloned().collect();
@@ -368,6 +374,7 @@ pub(crate) fn run_frame_loop(
                     action.clone(),
                     &mut roster,
                     &mut lives,
+                    &mut slots,
                     id,
                     &rules,
                     &settings,
@@ -396,6 +403,7 @@ pub(crate) fn run_frame_loop(
                             action,
                             &mut roster,
                             &mut lives,
+                            &mut slots,
                             &target,
                             &rules,
                             &settings,
@@ -428,6 +436,7 @@ pub(crate) fn run_frame_loop(
                     SettingsOp::Dismiss { id } => {
                         roster.dismiss(&id);
                         lives.retain(|live| live.id != id);
+                        slots.abandon(&id);
                     }
                     SettingsOp::SwitchAll { character } => {
                         if let Some(loaded) = characters.get(&character).cloned() {
@@ -436,6 +445,7 @@ pub(crate) fn run_frame_loop(
                                 switch_instance(
                                     &mut roster,
                                     &mut lives,
+                                    &mut slots,
                                     &id,
                                     Arc::clone(&loaded),
                                     &config,
@@ -467,8 +477,8 @@ pub(crate) fn run_frame_loop(
                             // still on the wire would propose against the old
                             // host and session; drop it and open a new turn.
                             model::retarget_model(
-                                &mut live.pending,
-                                &mut live.in_flight,
+                                &mut slots,
+                                &live.id,
                                 &mut live.model,
                                 live.character.behaviors.keys().cloned(),
                                 &director,
@@ -769,13 +779,9 @@ pub(crate) fn run_frame_loop(
                 }
 
                 let mut proposal = None;
-                let arrived = live.pending.try_take();
+                let arrived = slots.take(&live.id);
                 let applied = arrived.is_some();
-                if let Some(wake) = arrived {
-                    let context = live
-                        .in_flight
-                        .take()
-                        .expect("a started call still has its context");
+                if let Some((wake, context)) = arrived {
                     if model::tracing() {
                         match &wake {
                             Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(
@@ -836,7 +842,7 @@ pub(crate) fn run_frame_loop(
                         // Static keeps the free life going. A session call in
                         // flight is the one exception: do not stack a weight pick
                         // on a proposal that is about to land.
-                        if live.pending.ready() && !applied {
+                        if !slots.waiting(&live.id) && !applied {
                             proposal = live.director.propose(&Context {
                                 activity: activity.clone(),
                                 recent: live.recent.clone(),
@@ -891,8 +897,6 @@ pub(crate) fn run_frame_loop(
                             instance.do_not_disturb(),
                             config.ambient_allowed,
                         ) && config.enabled
-                            && live.pending.ready()
-                            && !applied
                         {
                             let context = Context {
                                 activity: activity.clone(),
@@ -921,9 +925,7 @@ pub(crate) fn run_frame_loop(
                                 inspect.last_payload = Some(payload);
                                 inspect.wake_secs = live.pace.wait().as_secs();
                             }
-                            live.pending
-                                .start(live.id.clone(), Arc::clone(model), context.clone());
-                            live.in_flight = Some(context);
+                            slots.wake(&live.id, Arc::clone(model), context);
                             was_addressed
                         } else {
                             false
@@ -946,10 +948,6 @@ pub(crate) fn run_frame_loop(
                         .is_some_and(|activity| activity.displays_asleep)
                     {
                         "asleep"
-                    } else if !live.pending.ready() {
-                        "pending"
-                    } else if applied {
-                        "just-applied"
                     } else {
                         "not-due"
                     };
@@ -959,13 +957,8 @@ pub(crate) fn run_frame_loop(
                     );
                 }
 
-                let thinking = !live.pending.ready()
-                    && (reactive_wake
-                        || live
-                            .in_flight
-                            .as_ref()
-                            .is_some_and(|ctx| ctx.happened != Happened::Ambient))
-                    && !instance.do_not_disturb();
+                let thinking =
+                    (reactive_wake || slots.thinking(&live.id)) && !instance.do_not_disturb();
 
                 // What the user has seen is what the Engine played, not what the
                 // Director asked for: a proposal the State refuses never reaches
