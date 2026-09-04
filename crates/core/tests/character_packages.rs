@@ -447,10 +447,7 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
         "engage still raises weapons"
     );
 
-    assert!(
-        character.behaviors.contains_key("patrol"),
-        "patrol stays"
-    );
+    assert!(character.behaviors.contains_key("patrol"), "patrol stays");
     let pursue = &character.behaviors["pursue"];
     assert!(
         pursue.primitives.contains(&character::Primitive::Chase),
