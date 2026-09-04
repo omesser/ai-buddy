@@ -861,6 +861,8 @@ files cannot drift apart on them:
 - Fit the bubble — five short sentences at the most.
 - Vary, preferring an unused line, while a signature phrase may recur.
 - Lean away from the Behaviors that just played.
+- React to the moment — what just happened, and what the sprite stands on —
+  when there is something worth remarking on.
 - Dialogue is demeanour, never capability: no promising actions on the
   machine, no claiming abilities.
 
