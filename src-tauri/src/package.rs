@@ -477,6 +477,7 @@ mod tests {
             ("cat", "Cat", "inspect", 4, "nap"),
             ("jotaro-kujo", "Jotaro Kujo", "stand", 5, "rest"),
             ("nim", "Nim", "doze", 5, "doze"),
+            ("buddy-bot", "Buddy Bot", "help", 4, "nap"),
             ("timber-wolf", "Timber Wolf", "patrol", 3, "power_down"),
             ("trump", "Trump", "report", 4, "doze"),
         ];

@@ -1,0 +1,180 @@
+# Buddy Bot — logo-inspired desktop AI mascot for ai-buddy.
+# Art: Grok Imagine–generated character pack (320×320 RGBA, transparent).
+# Walk faces RIGHT; the Engine mirrors for leftward travel. Soft anti-aliased
+# lines, so render_mode is smooth (ADR-0006). Scale 1: frames are authored at
+# desktop size already (320px), like BMO/Cat/Timber Wolf — fractional scale is
+# not in the schema (whole numbers 1–4 only). The sprite reads larger than
+# BMO's ~126px shimeji, which fits a product mascot standing next to the logo.
+
+name = "Buddy Bot"
+render_mode = "smooth"
+scale = 1
+
+# Proactive model calls: a helpful buddy offers before being asked. One and
+# one keeps every two minutes — same mild pace as BMO and Cat.
+
+[director]
+model_base = 1
+model_power = 1
+
+# Cursor reactions: friendly mascot energy — greets when you approach, pops
+# a lean-react when you rush it. Not antisocial.
+
+[cursor]
+near_reaction = "speak"
+rush_reaction = "react"
+
+# Front-facing hover bob (sine). Six frames keep the float readable without
+# looking busy.
+
+[animations.idle]
+frames = [
+  "frames/idle-0.png",
+  "frames/idle-1.png",
+  "frames/idle-2.png",
+  "frames/idle-3.png",
+  "frames/idle-4.png",
+  "frames/idle-5.png",
+]
+fps = 5
+
+# 3/4 right stride, closed sine bob. Engine mirrors for left.
+
+[animations.walk]
+frames = [
+  "frames/walk-0.png",
+  "frames/walk-1.png",
+  "frames/walk-2.png",
+  "frames/walk-3.png",
+  "frames/walk-4.png",
+  "frames/walk-5.png",
+  "frames/walk-6.png",
+  "frames/walk-7.png",
+]
+fps = 8
+
+# Jaw + LED bleep while speaking.
+
+[animations.talk]
+frames = [
+  "frames/talk-0.png",
+  "frames/talk-1.png",
+  "frames/talk-2.png",
+  "frames/talk-3.png",
+  "frames/talk-4.png",
+  "frames/talk-5.png",
+]
+fps = 6
+
+# Tumble then recover toward idle. The Fall Primitive owns duration.
+
+[animations.fall]
+frames = [
+  "frames/fall-0.png",
+  "frames/fall-1.png",
+  "frames/fall-2.png",
+  "frames/fall-3.png",
+  "frames/fall-4.png",
+  "frames/fall-5.png",
+]
+fps = 6
+
+# Incoming, squash, recover — play once so the last frame holds into idle.
+
+[animations.land]
+frames = [
+  "frames/land-0.png",
+  "frames/land-1.png",
+  "frames/land-2.png",
+  "frames/land-3.png",
+]
+fps = 8
+loop = "once"
+
+# Parked low on the desk.
+
+[animations.sit]
+frames = [
+  "frames/sit-0.png",
+  "frames/sit-1.png",
+  "frames/sit-2.png",
+  "frames/sit-3.png",
+]
+fps = 3
+
+# Grabbed swing while the user drags.
+
+[animations.hold]
+frames = [
+  "frames/hold-0.png",
+  "frames/hold-1.png",
+  "frames/hold-2.png",
+  "frames/hold-3.png",
+]
+fps = 4
+
+# Closed eyes, droop. Slow breath.
+
+[animations.sleep]
+frames = [
+  "frames/sleep-0.png",
+  "frames/sleep-1.png",
+  "frames/sleep-2.png",
+  "frames/sleep-3.png",
+]
+fps = 2
+
+# Lean pop on poke or rush — once, then back to life.
+
+[animations.react]
+frames = [
+  "frames/react-0.png",
+  "frames/react-1.png",
+  "frames/react-2.png",
+  "frames/react-3.png",
+  "frames/react-4.png",
+]
+fps = 8
+loop = "once"
+
+# A helpful buddy's life: say hello while someone is at the keyboard, offer
+# to help, fidget in place, stroll the desk when they pause, patrol when they
+# have plainly gone, and settle / nap last of all. Bands overlap so no idle
+# duration leaves it with nothing to do.
+
+[behaviors.greet]
+play = ["talk"]
+then = "help"
+weight = 4
+when = "idle under 10s"
+
+[behaviors.help]
+play = ["talk", "idle", "talk"]
+weight = 4
+when = "idle under 1m"
+
+[behaviors.fidget]
+play = ["idle"]
+weight = 2
+when = "idle over 10s"
+
+[behaviors.stroll]
+play = ["walk"]
+weight = 1
+when = "idle over 30s"
+
+[behaviors.patrol]
+play = ["walk", "idle", "walk"]
+then = "stroll"
+weight = 3
+when = "idle over 2m"
+
+[behaviors.settle]
+play = ["sit"]
+weight = 2
+when = "idle over 2m"
+
+[behaviors.nap]
+play = ["sit", "sleep"]
+weight = 3
+when = "idle over 5m"

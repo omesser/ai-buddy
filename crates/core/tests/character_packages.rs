@@ -480,3 +480,116 @@ fn timber_wolf_declares_cursor_reactions() {
         "a cursor rushing the chassis plays react, the weapon raise"
     );
 }
+
+/// Buddy Bot: logo mascot package loads with all nine required animations and
+/// the authored frame counts from the Grok Imagine pack.
+#[test]
+fn buddy_bot_package_loads_with_all_required_animations() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    assert_eq!(character.name, "Buddy Bot");
+    assert!(
+        !character.personality.is_empty(),
+        "Buddy Bot has a personality prompt"
+    );
+
+    assert_required_animations(&character);
+
+    let expected_frames = [
+        ("idle", 6),
+        ("walk", 8),
+        ("talk", 6),
+        ("sleep", 4),
+        ("sit", 4),
+        ("react", 5),
+        ("land", 4),
+        ("hold", 4),
+        ("fall", 6),
+    ];
+    for (animation, count) in expected_frames {
+        assert_eq!(
+            character.animations[animation].frames.len(),
+            count,
+            "{animation} must carry the shipped {count}-frame loop"
+        );
+    }
+}
+
+#[test]
+fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    assert_eq!(
+        character.scale, 1,
+        "Buddy Bot uses scale 1: 320×320 frames are already desktop-sized; \
+         the schema only allows whole-number scale 1–4"
+    );
+    assert!(
+        character.smooth,
+        "soft anti-aliased mascot art uses smooth, not pixelated"
+    );
+}
+
+#[test]
+fn buddy_bot_frames_are_320_square_rgba() {
+    let frames = frames_of("buddy-bot");
+    assert_eq!(frames.len(), 47, "the pack ships 47 PNG frames");
+
+    for (animation, frame, bytes) in frames {
+        let (width, height, alpha) = frame_alpha(&bytes);
+        assert_eq!(
+            (width, height),
+            (320, 320),
+            "{animation} frame {frame} must be 320×320"
+        );
+        assert!(
+            alpha.iter().any(|&a| a > 0),
+            "{animation} frame {frame} must have visible pixels"
+        );
+        assert!(
+            alpha.contains(&0),
+            "{animation} frame {frame} must keep a transparent margin"
+        );
+    }
+}
+
+#[test]
+fn buddy_bot_declares_friendly_cursor_reactions() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    assert_eq!(
+        character.near_reaction,
+        CursorReaction::Speak,
+        "a friendly mascot greets when the cursor enters Near"
+    );
+    assert_eq!(
+        character.rush_reaction,
+        CursorReaction::React,
+        "a rush earns a lean-pop react, not flight"
+    );
+}
+
+#[test]
+fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    for name in [
+        "greet", "help", "fidget", "stroll", "patrol", "settle", "nap",
+    ] {
+        assert!(
+            character.behaviors.contains_key(name),
+            "Buddy Bot declares {name}"
+        );
+    }
+
+    assert_eq!(
+        character.behaviors["help"].weight, 4,
+        "help is the distinctive eager-offer weight"
+    );
+    assert!(
+        character.behaviors["nap"]
+            .primitives
+            .contains(&character::Primitive::Sleep),
+        "nap ends on sleep for an empty desk"
+    );
+}
