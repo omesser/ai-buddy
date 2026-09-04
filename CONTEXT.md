@@ -145,7 +145,10 @@ _Avoid_: Backend, provider, model
 An HTTP chat-completions endpoint standing in for a Harness until one is
 attached, behind the same session trait
 ([ADR-0008](./docs/adr/0008-one-harness-session.md)). Settings names its timeout
-and reply cap, which is where the word reaches the screen.
+and reply cap, which is where the word reaches the screen. It streams, so the
+first token arrives long before the reply and a dropped call stops the host
+generating rather than merely going unheard; one that will not stream is
+answered whole instead.
 _Avoid_: Model, LLM, provider, API
 
 **Executor**:

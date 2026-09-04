@@ -467,6 +467,10 @@ pub struct Endpoint {
     session: Mutex<Vec<Message>>,
     /// Does this host stream? Starts optimistic and only ever falls, once a
     /// whole reply has succeeded where a stream did not (#302).
+    ///
+    /// Per host, though `post` takes a `url`: a host that streamed on one of
+    /// the two paths and not the other would lose streaming on both. No such
+    /// host is known, and the cost if one exists is latency, not a failure.
     streams: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
     /// use-once [Agent]", so each wake would throw away the pooled connection
@@ -539,31 +543,35 @@ impl Endpoint {
             Wire::Whole
         };
         let mut reply = self.send(url, &snapshot, wire);
-        if let Err(Unsent::NotStreamable(why)) = &reply {
-            if tracing() {
-                eprintln!("director: {why}; retrying without stream");
-            }
-            // A call dropped between the two attempts must not become a
-            // fresh request the frame loop can no longer reach.
-            reply = if abandoned() {
-                Err(Unsent::Abandoned)
-            } else {
-                let whole = self.send(url, &snapshot, Wire::Whole);
-                // Evidence, not a guess: streaming failed here and a whole
-                // reply worked, so this endpoint does not stream. A refusal
-                // misread from some unrelated 400 fails twice and sticks
-                // nothing.
-                if whole.is_ok() {
-                    self.streams.store(false, Ordering::SeqCst);
+        if let Err(unsent) = &reply {
+            if let Some(settles) = unsent.retry_settles() {
+                if tracing() {
+                    eprintln!("director: {}; retrying without stream", unsent.why());
                 }
-                whole
-            };
+                // A call dropped between the two attempts must not become a
+                // fresh request the frame loop can no longer reach.
+                reply = if abandoned() {
+                    Err(Unsent::Abandoned)
+                } else {
+                    let whole = self.send(url, &snapshot, Wire::Whole);
+                    // Evidence, not a guess: the server rejected the field
+                    // and a whole reply worked, so this host does not stream.
+                    // A refusal misread from some unrelated 400 fails twice
+                    // and settles nothing, and neither does a stream that
+                    // merely broke.
+                    if whole.is_ok() && settles {
+                        self.streams.store(false, Ordering::SeqCst);
+                    }
+                    whole
+                };
+            }
         }
         self.close_turn(reply.map_err(Unsent::into_error))
     }
 
-    /// Append the user message and hand back the snapshot the request body
-    /// is built from. Paired with `close_turn`.
+    /// Paired with `close_turn`: the session only ever grows here and is only
+    /// ever trimmed there. Hands back a snapshot rather than holding the lock,
+    /// so the fallback retry asks the identical question.
     fn open_turn(&self, prompt: &str) -> Vec<Message> {
         let mut session = self.session.lock().expect("session lock");
         session.push(Message {
@@ -579,10 +587,14 @@ impl Endpoint {
     /// session is what the *next* prompt is built from: leaving the question
     /// behind would ask the model to answer two things at once.
     ///
-    /// Pops the last message rather than one it identifies, which holds
-    /// because an Instance has one `Endpoint` and `InFlight` keeps one call
-    /// on the wire at a time. A second concurrent caller would need this to
-    /// carry an index.
+    /// Pops the last message rather than one it identifies. `InFlight::cancel`
+    /// lets a new call start before the abandoned one has stopped reading, so
+    /// what holds this together is not one call at a time — it is that the
+    /// only caller of `cancel` is `retarget_model`, which installs a fresh
+    /// `Endpoint`, leaving the abandoned worker to trim a session nobody will
+    /// prompt from again. Cancelling against a live `Endpoint` (#312, where a
+    /// world event supersedes a wake) needs this to carry the index
+    /// `open_turn` appended at, or the loser trims the winner's question.
     fn close_turn(&self, reply: Result<String, String>) -> Result<String, String> {
         let mut session = self.session.lock().expect("session lock");
         match reply {
@@ -600,7 +612,8 @@ impl Endpoint {
         }
     }
 
-    /// One attempt, read the way `wire` asked for.
+    /// One POST. Both attempts come through here, so the fallback differs
+    /// from the first try in exactly one field.
     fn send(&self, url: &str, session: &[Message], wire: Wire) -> Result<String, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
@@ -655,7 +668,7 @@ impl Endpoint {
                         "{url}: streamed reply had no text content"
                     ))),
                     Ok(Streamed::Cut) => {
-                        Err(Unsent::Failed(format!("{url}: the stream ended mid-reply")))
+                        Err(Unsent::Cut(format!("{url}: the stream ended mid-reply")))
                     }
                     Ok(Streamed::NotEventStream) => Err(Unsent::NotStreamable(format!(
                         "{url}: answered 200 with no event stream in it"
@@ -763,7 +776,18 @@ fn alternate_url(url: &str) -> Option<String> {
 /// on the xAI paths 403 already means something `fallback_url` handles. The
 /// cost of reading this too narrowly is one turn of `StaticDirector`.
 fn refused_stream(code: u16, body: &str) -> bool {
-    matches!(code, 400 | 422) && body.to_ascii_lowercase().contains("stream")
+    matches!(code, 400 | 422) && names_stream(&body.to_ascii_lowercase())
+}
+
+/// `stream` as a word, so a gateway's "upstream connect error" is not read
+/// as a refusal and charged a second POST.
+fn names_stream(body: &str) -> bool {
+    body.match_indices("stream").any(|(at, _)| {
+        !body[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|before| before.is_alphanumeric() || before == '_')
+    })
 }
 
 /// Retry the legacy xAI path only when Responses was refused, not when the
@@ -1044,8 +1068,14 @@ const STREAM_LIMIT: u64 = 1024 * 1024;
 /// Why one attempt produced no reply.
 enum Unsent {
     /// The server rejected the request for asking to stream, so the same
-    /// question is worth one more send without the field.
+    /// question is worth one more send without the field — and because the
+    /// answer is about the server rather than this call, it is worth
+    /// remembering.
     NotStreamable(String),
+    /// The stream broke before the server marked its end. Worth the same one
+    /// retry, but a broken connection says nothing about whether the next
+    /// stream will work, so it settles nothing.
+    Cut(String),
     /// Superseded while the tokens were arriving. Nobody is waiting for this
     /// answer, so there is no error worth composing.
     Abandoned,
@@ -1054,11 +1084,27 @@ enum Unsent {
 }
 
 impl Unsent {
-    fn into_error(self) -> String {
+    /// Borrowed, for the trace line that runs before the retry has decided
+    /// anything.
+    fn why(&self) -> &str {
         match self {
-            Unsent::NotStreamable(why) | Unsent::Failed(why) => why,
-            Unsent::Abandoned => "abandoned".to_string(),
+            Unsent::NotStreamable(why) | Unsent::Cut(why) | Unsent::Failed(why) => why,
+            Unsent::Abandoned => "abandoned",
         }
+    }
+
+    /// Is the same question worth one send without the `stream` field, and
+    /// does an answer settle whether this host streams at all?
+    fn retry_settles(&self) -> Option<bool> {
+        match self {
+            Unsent::NotStreamable(_) => Some(true),
+            Unsent::Cut(_) => Some(false),
+            Unsent::Abandoned | Unsent::Failed(_) => None,
+        }
+    }
+
+    fn into_error(self) -> String {
+        self.why().to_string()
     }
 }
 
@@ -1075,10 +1121,11 @@ enum Streamed {
     /// — `[DONE]`, a `finish_reason`, or `response.completed`. Measured on
     /// xAI (both paths) and oMLX, and it is what OpenAI's own stream does,
     /// so the untested servers in the README's table are expected to follow.
-    /// One that does not would look truncated on every wake and fall to
-    /// `StaticDirector`; `AI_BUDDY_TRACE_DIRECTOR` names it in one line. The
-    /// upgrade, if that ever happens, is to keep the reply and pop only the
-    /// session turn.
+    /// One that does not still answers, because `post` retries it whole, but
+    /// it looks truncated on every wake and so pays two POSTs forever without
+    /// ever learning better; `AI_BUDDY_TRACE_DIRECTOR` names it in one line.
+    /// The upgrade, if a real server ever turns up like this, is to keep what
+    /// arrived rather than re-ask for it (#302).
     Cut,
     /// The body held no `data:` frame at all, so it was never an event
     /// stream: a server that took `stream` and ignored it. The refusal has
@@ -1135,9 +1182,9 @@ fn read_stream(
         if payload == "[DONE]" {
             return Ok(Streamed::Complete(content));
         }
-        let frame = read_frame(payload);
-        finished |= frame.finished;
-        if let Some(delta) = frame.delta {
+        let event = read_event(payload);
+        finished |= event.finished;
+        if let Some(delta) = event.delta {
             if content.is_empty() && !delta.is_empty() && tracing() {
                 // The whole point of streaming, and the one moment worth a
                 // line: a Behavior name is one to three tokens, so this is
@@ -1149,10 +1196,11 @@ fn read_stream(
     }
 }
 
-/// What one SSE frame contributes.
+/// What one SSE event contributes. Named for the wire rather than the
+/// animation `Frame` this codebase means everywhere else.
 #[derive(Default)]
-struct Frame {
-    /// Text it adds, if it adds any. Frames that carry none — a role
+struct Event {
+    /// Text it adds, if it adds any. Events that carry none — a role
     /// announcement, usage, a reasoning trace — are not errors.
     delta: Option<String>,
     /// It says the server is done, so an end of body after it is a whole
@@ -1160,7 +1208,7 @@ struct Frame {
     finished: bool,
 }
 
-/// Read one frame in whichever of the two shapes `completions_url` chose.
+/// Read one event in whichever of the two shapes `completions_url` chose.
 ///
 /// chat-completions nests text under `choices` and marks the end with
 /// `finish_reason`; Responses sends typed events whose `delta` *is* the text
@@ -1168,27 +1216,27 @@ struct Frame {
 /// as the text: `/v1/responses` ends the body without `[DONE]`, measured
 /// against xAI, so the marker is the only thing that tells a finished reply
 /// from a truncated one.
-fn read_frame(payload: &str) -> Frame {
+fn read_event(payload: &str) -> Event {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
-        return Frame::default();
+        return Event::default();
     };
     let choice = &value["choices"][0];
     if let Some(text) = choice["delta"]["content"].as_str() {
-        return Frame {
+        return Event {
             delta: Some(text.to_string()),
             finished: choice["finish_reason"].is_string(),
         };
     }
     match value["type"].as_str() {
-        Some("response.output_text.delta") => Frame {
+        Some("response.output_text.delta") => Event {
             delta: value["delta"].as_str().map(str::to_string),
             finished: false,
         },
-        Some("response.completed") => Frame {
+        Some("response.completed") => Event {
             delta: None,
             finished: true,
         },
-        _ => Frame {
+        _ => Event {
             delta: None,
             finished: choice["finish_reason"].is_string(),
         },
@@ -1916,6 +1964,38 @@ pub(crate) mod tests {
         assert!(
             !refused_stream(403, "streaming is not available"),
             "403 is the key, the credits, or a path ACL; fallback_url owns that"
+        );
+        assert!(
+            !refused_stream(400, "upstream connect error or disconnect/reset"),
+            "a gateway saying upstream is not a server naming the stream field"
+        );
+        assert!(
+            refused_stream(400, r#"{"error":"streaming is not supported here"}"#),
+            "the word can still be inflected, it just cannot be a suffix"
+        );
+    }
+
+    #[test]
+    fn a_broken_stream_is_worth_a_retry_but_teaches_nothing() {
+        assert_eq!(
+            Unsent::NotStreamable("names the field".to_string()).retry_settles(),
+            Some(true),
+            "a host that rejected the field will reject it on the next wake too"
+        );
+        assert_eq!(
+            Unsent::Cut("ended mid-reply".to_string()).retry_settles(),
+            Some(false),
+            "the answer is still owed, but one dropped body is no verdict on the host"
+        );
+        assert_eq!(
+            Unsent::Failed("503".to_string()).retry_settles(),
+            None,
+            "dropping the stream field will not revive a server that is down"
+        );
+        assert_eq!(
+            Unsent::Abandoned.retry_settles(),
+            None,
+            "nobody is waiting for a second attempt at a superseded call"
         );
     }
 
