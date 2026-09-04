@@ -10,15 +10,7 @@ use std::collections::HashMap;
 use crate::consent;
 use crate::dev_flags;
 use crate::model;
-
-/// What a settings row writes when changed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RowAction {
-    /// Writes to a SettingsPatch field.
-    PatchField(String),
-    /// Sends a SettingsOp.
-    Operation(RowOperation),
-}
+use crate::settings::{BoolField, TextField};
 
 /// Operations the settings window requests.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,12 +34,17 @@ pub struct FormSection {
 }
 
 /// One row of the settings form, as data.
+///
+/// A row that writes carries the field it writes, so its kind and its field
+/// have to agree: a `Checkbox` can only name a bool. That is what makes a
+/// control writing nothing unrepresentable rather than merely tested (#287).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormRow {
     /// A checkbox that writes a bool to Settings.
     Checkbox {
         id: String,
         label: String,
+        writes: BoolField,
         frozen: bool,
         help: Option<String>,
         comment: Option<String>,
@@ -64,12 +61,14 @@ pub enum FormRow {
     Popup {
         id: String,
         label: Option<String>,
+        writes: TextField,
         help: Option<String>,
     },
     /// A multiline text field that writes to Settings.
     Multiline {
         id: String,
         label: Option<String>,
+        writes: TextField,
         help: Option<String>,
         editable: bool,
     },
@@ -78,6 +77,7 @@ pub enum FormRow {
         id: String,
         label: Option<String>,
         placeholder: String,
+        writes: TextField,
         /// Read-only: the value shown is not the user's to change. True when
         /// an exported variable owns the field, since `model::resolve` gives
         /// it the last word and would discard an edit made here (#272).
@@ -101,6 +101,7 @@ pub enum FormRow {
     SecureField {
         id: String,
         label: Option<String>,
+        writes: TextField,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
     },
@@ -155,15 +156,14 @@ pub struct FormTab {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FormDescription {
     pub tabs: Vec<FormTab>,
-    pub actions: HashMap<String, RowAction>,
+    /// What each button does, by control id. Only buttons: a writing row
+    /// carries its own field, so no registry can disagree with one.
+    pub operations: HashMap<String, RowOperation>,
 }
 
 impl FormDescription {
     /// Every section, in tab order. For the parts of a renderer that want the
     /// rows and not the grouping, such as finding one row by id.
-    // AppKit is the last caller: the GTK window builds a page per tab, so the
-    // binary's dead-code lint sees no caller on the other targets.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn sections(&self) -> impl Iterator<Item = &FormSection> + '_ {
         self.tabs.iter().flat_map(|tab| &tab.sections)
     }
@@ -201,6 +201,45 @@ impl FormDescription {
                 _ => None,
             })
             .unwrap_or(false)
+    }
+
+    /// The boolean field the checkbox with this id writes.
+    ///
+    /// For a renderer holding an id and needing the field — AppKit reaches a
+    /// control through the tag the click carries, not through the row.
+    // GTK captures the field where it builds the control, and Windows builds
+    // no settings window, so the binary's dead-code lint sees no caller there.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn bool_write(&self, id: &str) -> Option<BoolField> {
+        self.sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::Checkbox {
+                    id: row_id, writes, ..
+                } if row_id == id => Some(*writes),
+                _ => None,
+            })
+    }
+
+    /// The text field the row with this id writes.
+    pub fn text_write(&self, id: &str) -> Option<TextField> {
+        self.sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField {
+                    id: row_id, writes, ..
+                }
+                | FormRow::SecureField {
+                    id: row_id, writes, ..
+                }
+                | FormRow::Multiline {
+                    id: row_id, writes, ..
+                }
+                | FormRow::Popup {
+                    id: row_id, writes, ..
+                } if row_id == id => Some(*writes),
+                _ => None,
+            })
     }
 }
 
@@ -269,11 +308,18 @@ fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
 ///
 /// Frozen when the exported value is one `model::env_switch` reads: that
 /// value is the switch, so the click would change nothing.
-fn flag_row(id: &str, flag: &dev_flags::Flag, label: &str, help: &str) -> FormRow {
+fn flag_row(
+    id: &str,
+    flag: &dev_flags::Flag,
+    writes: BoolField,
+    label: &str,
+    help: &str,
+) -> FormRow {
     let (label, frozen) = switch_row(label, flag.var());
     FormRow::Checkbox {
         id: id.to_string(),
         label,
+        writes,
         frozen,
         help: Some(help.to_string()),
         comment: None,
@@ -294,6 +340,7 @@ fn director_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: DIRECTOR_ID.to_string(),
                     label: director_label,
+                    writes: BoolField::DirectorEnabled,
                     frozen: director_frozen,
                     help: Some("The model picks what happens next.".to_string()),
                     comment: None,
@@ -301,6 +348,7 @@ fn director_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: AMBIENT_ID.to_string(),
                     label: "Ambient session wakes".to_string(),
+                    writes: BoolField::AmbientWakes,
                     frozen: false,
                     help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
@@ -309,6 +357,7 @@ fn director_sections() -> Vec<FormSection> {
                     id: DIRECTOR_BASE_URL_ID.to_string(),
                     label: Some(base_url_label),
                     placeholder: "https://api.openai.com".to_string(),
+                    writes: TextField::DirectorBaseUrl,
                     frozen: base_url_frozen,
                     batched: true,
                 },
@@ -316,12 +365,14 @@ fn director_sections() -> Vec<FormSection> {
                     id: DIRECTOR_MODEL_ID.to_string(),
                     label: Some(model_label),
                     placeholder: "gpt-4o-mini".to_string(),
+                    writes: TextField::DirectorModel,
                     frozen: model_frozen,
                     batched: true,
                 },
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
                     label: Some(api_key_label),
+                    writes: TextField::DirectorApiKey,
                     frozen: api_key_frozen,
                 },
                 FormRow::Composite {
@@ -377,6 +428,7 @@ fn character_sections() -> Vec<FormSection> {
             rows: vec![FormRow::Popup {
                 id: CHARACTER_ID.to_string(),
                 label: None,
+                writes: TextField::Character,
                 help: Some("The character your buddy wears.".to_string()),
             }],
         },
@@ -423,6 +475,7 @@ fn presence_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: DND_ID.to_string(),
                     label: "Do Not Disturb".to_string(),
+                    writes: BoolField::DoNotDisturb,
                     frozen: false,
                     help: Some(
                         "Stays on screen. Silences sounds and stops initiating actions."
@@ -433,6 +486,7 @@ fn presence_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: SOUND_ID.to_string(),
                     label: "Sound".to_string(),
+                    writes: BoolField::Sound,
                     frozen: false,
                     help: Some("Off silences audio cues.".to_string()),
                     comment: None,
@@ -446,6 +500,7 @@ fn presence_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: HIDDEN_ID.to_string(),
                     label: "Go away".to_string(),
+                    writes: BoolField::Hidden,
                     frozen: false,
                     help: Some("Go off screen. But still exist.".to_string()),
                     comment: None,
@@ -453,6 +508,7 @@ fn presence_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: FULLSCREEN_ID.to_string(),
                     label: "Hide in fullscreen apps".to_string(),
+                    writes: BoolField::HideInFullscreen,
                     frozen: false,
                     help: Some("Steps aside for fullscreen apps.".to_string()),
                     comment: None,
@@ -470,6 +526,7 @@ fn presence_sections() -> Vec<FormSection> {
             rows: vec![FormRow::Checkbox {
                 id: LAUNCH_ID.to_string(),
                 label: "Launch at login (unimplemented)".to_string(),
+                writes: BoolField::LaunchAtLogin,
                 frozen: true,
                 // No installed app on any OS yet, so there is nothing for the
                 // system to start: a Launch Agent pointing at `cargo run` is
@@ -490,6 +547,7 @@ fn privacy_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: CONSENT_ACCESSIBILITY_ID.to_string(),
                     label: "Accessibility".to_string(),
+                    writes: BoolField::UseAccessibility,
                     frozen: false,
                     help: Some("Reads the Dock's position.".to_string()),
                     comment: None,
@@ -497,6 +555,7 @@ fn privacy_sections() -> Vec<FormSection> {
                 FormRow::Checkbox {
                     id: CONSENT_SCREEN_RECORDING_ID.to_string(),
                     label: "Screen Recording".to_string(),
+                    writes: BoolField::UseScreenRecording,
                     frozen: false,
                     help: Some("Reads window titles.".to_string()),
                     comment: None,
@@ -509,6 +568,7 @@ fn privacy_sections() -> Vec<FormSection> {
             rows: vec![FormRow::Multiline {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
+                writes: TextField::ExcludedApplications,
                 help: Some("One application name per line. Those windows stay out of MCP sensing. The buddy can still sit on them.".to_string()),
                 editable: true,
             }],
@@ -546,24 +606,28 @@ fn development_sections() -> Vec<FormSection> {
         flag_row(
             TRACE_FRAMES_ID,
             &dev_flags::TRACE_FRAMES,
+            BoolField::TraceFrames,
             "Trace frames",
             "Prints each frame.",
         ),
         flag_row(
             TRACE_HITTEST_ID,
             &dev_flags::TRACE_HITTEST,
+            BoolField::TraceHittest,
             "Trace hit-test",
             "Prints where each click went.",
         ),
         flag_row(
             TRACE_DIRECTOR_ID,
             &dev_flags::TRACE_DIRECTOR,
+            BoolField::TraceDirector,
             "Trace Director",
             "Prints each model call.",
         ),
         flag_row(
             TRACE_ENGINE_ID,
             &dev_flags::TRACE_ENGINE,
+            BoolField::TraceEngine,
             "Trace Engine",
             "Prints each change of Behavior or Animation.",
         ),
@@ -574,6 +638,7 @@ fn development_sections() -> Vec<FormSection> {
         flag_row(
             CAPTURABLE_ID,
             &dev_flags::CAPTURABLE,
+            BoolField::Capturable,
             "Show in screenshots and shares",
             // `configure_overlay` reads this when a window is built, and only
             // the Linux frame loop re-runs it. Honest rather than silently
@@ -599,6 +664,7 @@ fn development_sections() -> Vec<FormSection> {
                     id: DIRECTOR_TIMEOUT_SECS_ID.to_string(),
                     label: Some(timeout_label),
                     placeholder: model::timeout_placeholder(),
+                    writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
                 },
@@ -606,6 +672,7 @@ fn development_sections() -> Vec<FormSection> {
                     id: DIRECTOR_MAX_TOKENS_ID.to_string(),
                     label: Some(max_tokens_label),
                     placeholder: model::max_tokens_placeholder(),
+                    writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
                 },
@@ -638,120 +705,17 @@ pub fn describe() -> FormDescription {
             sections: development_sections(),
         },
     ];
-    let mut actions = HashMap::new();
+    // Only the buttons: every writing row carries the field it writes.
+    let operations = HashMap::from([
+        (SPAWN_ID.to_string(), RowOperation::Spawn),
+        (MEMORY_OPEN_ID.to_string(), RowOperation::OpenMemory),
+        (MEMORY_WIPE_ID.to_string(), RowOperation::WipeMemory),
+        (CLEAR_KEY_ID.to_string(), RowOperation::ClearKey),
+        (APPLY_ID.to_string(), RowOperation::Apply),
+        (CANCEL_ID.to_string(), RowOperation::Cancel),
+    ]);
 
-    // Register what each control writes
-    actions.insert(
-        DIRECTOR_ID.to_string(),
-        RowAction::PatchField("director_enabled".to_string()),
-    );
-    actions.insert(
-        AMBIENT_ID.to_string(),
-        RowAction::PatchField("ambient_wakes".to_string()),
-    );
-    actions.insert(
-        DND_ID.to_string(),
-        RowAction::PatchField("do_not_disturb".to_string()),
-    );
-    actions.insert(
-        SOUND_ID.to_string(),
-        RowAction::PatchField("sound".to_string()),
-    );
-    actions.insert(
-        HIDDEN_ID.to_string(),
-        RowAction::PatchField("hidden".to_string()),
-    );
-    actions.insert(
-        FULLSCREEN_ID.to_string(),
-        RowAction::PatchField("hide_in_fullscreen".to_string()),
-    );
-    actions.insert(
-        EXCLUDED_ID.to_string(),
-        RowAction::PatchField("excluded_applications".to_string()),
-    );
-    actions.insert(
-        CHARACTER_ID.to_string(),
-        RowAction::PatchField("character".to_string()),
-    );
-    actions.insert(
-        LAUNCH_ID.to_string(),
-        RowAction::PatchField("launch_at_login".to_string()),
-    );
-    actions.insert(
-        SPAWN_ID.to_string(),
-        RowAction::Operation(RowOperation::Spawn),
-    );
-    actions.insert(
-        MEMORY_OPEN_ID.to_string(),
-        RowAction::Operation(RowOperation::OpenMemory),
-    );
-    actions.insert(
-        MEMORY_WIPE_ID.to_string(),
-        RowAction::Operation(RowOperation::WipeMemory),
-    );
-    actions.insert(
-        DIRECTOR_BASE_URL_ID.to_string(),
-        RowAction::PatchField("director_base_url".to_string()),
-    );
-    actions.insert(
-        DIRECTOR_MODEL_ID.to_string(),
-        RowAction::PatchField("director_model".to_string()),
-    );
-    actions.insert(
-        DIRECTOR_API_KEY_ID.to_string(),
-        RowAction::PatchField("director_api_key".to_string()),
-    );
-    actions.insert(
-        CLEAR_KEY_ID.to_string(),
-        RowAction::Operation(RowOperation::ClearKey),
-    );
-    actions.insert(
-        APPLY_ID.to_string(),
-        RowAction::Operation(RowOperation::Apply),
-    );
-    actions.insert(
-        CANCEL_ID.to_string(),
-        RowAction::Operation(RowOperation::Cancel),
-    );
-    actions.insert(
-        TRACE_FRAMES_ID.to_string(),
-        RowAction::PatchField("trace_frames".to_string()),
-    );
-    actions.insert(
-        TRACE_HITTEST_ID.to_string(),
-        RowAction::PatchField("trace_hittest".to_string()),
-    );
-    actions.insert(
-        TRACE_DIRECTOR_ID.to_string(),
-        RowAction::PatchField("trace_director".to_string()),
-    );
-    actions.insert(
-        TRACE_ENGINE_ID.to_string(),
-        RowAction::PatchField("trace_engine".to_string()),
-    );
-    #[cfg(target_os = "macos")]
-    actions.insert(
-        CAPTURABLE_ID.to_string(),
-        RowAction::PatchField("capturable".to_string()),
-    );
-    actions.insert(
-        DIRECTOR_TIMEOUT_SECS_ID.to_string(),
-        RowAction::PatchField("director_timeout_secs".to_string()),
-    );
-    actions.insert(
-        DIRECTOR_MAX_TOKENS_ID.to_string(),
-        RowAction::PatchField("director_max_tokens".to_string()),
-    );
-    actions.insert(
-        CONSENT_ACCESSIBILITY_ID.to_string(),
-        RowAction::PatchField("use_accessibility".to_string()),
-    );
-    actions.insert(
-        CONSENT_SCREEN_RECORDING_ID.to_string(),
-        RowAction::PatchField("use_screen_recording".to_string()),
-    );
-
-    FormDescription { tabs, actions }
+    FormDescription { tabs, operations }
 }
 
 #[cfg(test)]
@@ -904,81 +868,6 @@ mod tests {
                 );
             });
         }
-    }
-
-    /// Whether the control carrying this id writes a bool, or `None` when no
-    /// writing control claims it.
-    ///
-    /// Composite controls count: a `PatchField` registered against one is
-    /// dispatched by the same two setters, so leaving them out would let the
-    /// next composite text field ship inert.
-    fn writes_bool(description: &FormDescription, id: &str) -> Option<bool> {
-        for row in description.sections().flat_map(|section| &section.rows) {
-            match row {
-                FormRow::Checkbox { id: row_id, .. } if row_id == id => return Some(true),
-                FormRow::TextField { id: row_id, .. }
-                | FormRow::SecureField { id: row_id, .. }
-                | FormRow::Multiline { id: row_id, .. }
-                | FormRow::Popup { id: row_id, .. }
-                    if row_id == id =>
-                {
-                    return Some(false)
-                }
-                FormRow::Composite { controls, .. } => {
-                    for control in controls {
-                        match control {
-                            CompositeControl::TextField { id: c_id, .. }
-                            | CompositeControl::Popup { id: c_id, .. }
-                                if c_id == id =>
-                            {
-                                return Some(false)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
-    /// Every registered `PatchField` has to reach that field through the
-    /// setter its own control calls.
-    ///
-    /// The mapping is by name, so a field name no setter knows compiles clean
-    /// and ships a control that writes nothing. Each renderer picks the setter
-    /// from the control kind — `set_bool` for a `Checkbox`, `set_text` for a
-    /// field — and returns when it refuses the name, so a name only the other
-    /// setter knows lands just as inert (#273).
-    ///
-    /// Walking the actions map rather than the rows is what catches a field
-    /// registered against an id no writing control carries, which reaches
-    /// neither setter and so cannot be caught by looking at rows alone.
-    #[test]
-    fn every_patch_field_reaches_the_setter_its_control_calls() {
-        let description = describe();
-        let mut checked = 0;
-        for (id, action) in &description.actions {
-            let RowAction::PatchField(name) = action else {
-                continue;
-            };
-            let Some(writes_bool) = writes_bool(&description, id) else {
-                panic!("{id} writes {name}, but no writing control carries that id");
-            };
-            let mut patch = crate::settings::SettingsPatch::default();
-            let (took, setter) = if writes_bool {
-                (patch.set_bool(name, true), "set_bool")
-            } else {
-                (patch.set_text(name, "value"), "set_text")
-            };
-            assert!(
-                took,
-                "{id} writes {name}, which SettingsPatch::{setter} — the setter its control calls — does not know"
-            );
-            checked += 1;
-        }
-        assert!(checked > 0, "no writing control was checked");
     }
 
     fn described_row(description: &FormDescription, id: &str) -> (String, bool) {
@@ -1275,66 +1164,48 @@ mod tests {
         assert!(has_help("Excluded applications", EXCLUDED_ID));
     }
 
+    /// A button is the one control still reached by name, so it is the one
+    /// that can still be drawn with nothing behind it. Every other control
+    /// carries the field it writes, which the compiler checks.
     #[test]
-    fn every_control_has_an_action() {
+    fn every_button_has_an_operation() {
         let description = describe();
 
         for section in description.sections() {
             for row in &section.rows {
-                match row {
-                    FormRow::Checkbox { id, .. }
-                    | FormRow::Popup { id, .. }
-                    | FormRow::Multiline { id, .. }
-                    | FormRow::TextField { id, .. }
-                    | FormRow::SecureField { id, .. } => {
-                        assert!(
-                            description.actions.contains_key(id),
-                            "Row {id} has no action"
-                        );
-                    }
-                    FormRow::Composite { controls, .. } => {
-                        for control in controls {
-                            if let CompositeControl::Button { id, .. } = control {
-                                assert!(
-                                    description.actions.contains_key(id),
-                                    "Button {id} has no action"
-                                );
-                            }
+                if let FormRow::Composite { controls, .. } = row {
+                    for control in controls {
+                        if let CompositeControl::Button { id, .. } = control {
+                            assert!(
+                                description.operations.contains_key(id),
+                                "Button {id} has no operation"
+                            );
                         }
                     }
-                    _ => {}
                 }
             }
         }
     }
 
     #[test]
-    fn actions_map_to_patches_or_ops() {
+    fn buttons_map_to_operations() {
         let description = describe();
 
         assert_eq!(
-            description.actions.get(DIRECTOR_ID),
-            Some(&RowAction::PatchField("director_enabled".to_string()))
+            description.operations.get(SPAWN_ID),
+            Some(&RowOperation::Spawn)
         );
         assert_eq!(
-            description.actions.get(SOUND_ID),
-            Some(&RowAction::PatchField("sound".to_string()))
+            description.operations.get(MEMORY_OPEN_ID),
+            Some(&RowOperation::OpenMemory)
         );
         assert_eq!(
-            description.actions.get(SPAWN_ID),
-            Some(&RowAction::Operation(RowOperation::Spawn))
+            description.operations.get(APPLY_ID),
+            Some(&RowOperation::Apply)
         );
         assert_eq!(
-            description.actions.get(MEMORY_OPEN_ID),
-            Some(&RowAction::Operation(RowOperation::OpenMemory))
-        );
-        assert_eq!(
-            description.actions.get(APPLY_ID),
-            Some(&RowAction::Operation(RowOperation::Apply))
-        );
-        assert_eq!(
-            description.actions.get(CANCEL_ID),
-            Some(&RowAction::Operation(RowOperation::Cancel))
+            description.operations.get(CANCEL_ID),
+            Some(&RowOperation::Cancel)
         );
     }
 
@@ -1393,13 +1264,15 @@ mod tests {
             _ => panic!("Screen Recording row must be a checkbox"),
         }
 
+        // The compiler pins each of these to *a* bool; only the test pins it
+        // to the right one, and a swap here would grant the other capability.
         assert_eq!(
-            description.actions.get(CONSENT_ACCESSIBILITY_ID),
-            Some(&RowAction::PatchField("use_accessibility".to_string()))
+            description.bool_write(CONSENT_ACCESSIBILITY_ID),
+            Some(BoolField::UseAccessibility)
         );
         assert_eq!(
-            description.actions.get(CONSENT_SCREEN_RECORDING_ID),
-            Some(&RowAction::PatchField("use_screen_recording".to_string()))
+            description.bool_write(CONSENT_SCREEN_RECORDING_ID),
+            Some(BoolField::UseScreenRecording)
         );
     }
 
@@ -1422,7 +1295,7 @@ mod tests {
     /// on the tab, and a reader who scrolls to a later heading has left the
     /// first section's comment behind (#273).
     #[test]
-    fn the_development_tab_warns_and_registers_every_row() {
+    fn the_development_tab_warns_on_every_section() {
         let description = describe();
         let tab = development_tab(&description);
 
@@ -1437,11 +1310,7 @@ mod tests {
                 section.heading
             );
             for row in &section.rows {
-                let id = row_id(row).expect("every development row is a control");
-                assert!(
-                    description.actions.contains_key(id),
-                    "development row {id} has no action"
-                );
+                row_id(row).expect("every development row is a control that writes");
             }
         }
     }

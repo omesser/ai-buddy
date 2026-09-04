@@ -144,18 +144,11 @@ define_class!(
                 return;
             };
 
-            let description = form::describe();
-            let Some(action) = description.actions.get(id) else {
-                return;
-            };
-
-            let form::RowAction::PatchField(field_name) = action else {
+            let Some(field) = form::describe().bool_write(id) else {
                 return;
             };
             let mut patch = SettingsPatch::default();
-            if !patch.set_bool(field_name, on) {
-                return;
-            }
+            patch.set_bool(field, on);
             self.apply(patch);
         }
 
@@ -170,14 +163,13 @@ define_class!(
                 return;
             };
 
-            let description = form::describe();
-            let Some(form::RowAction::PatchField(field_name)) = description.actions.get(id) else {
+            let Some(writes) = form::describe().text_write(id) else {
                 return;
             };
 
             let text = field.stringValue().to_string();
             let mut patch = SettingsPatch::default();
-            if !patch.set_text(field_name, &text) {
+            if !patch.set_text(writes, &text) {
                 return;
             }
             self.apply(patch);
@@ -191,14 +183,11 @@ define_class!(
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
-            let description = form::describe();
-            let Some(form::RowAction::PatchField(field)) =
-                description.actions.get(form::CHARACTER_ID)
-            else {
+            let Some(writes) = form::describe().text_write(form::CHARACTER_ID) else {
                 return;
             };
             let mut patch = SettingsPatch::default();
-            if !patch.set_text(field, &title.to_string()) {
+            if !patch.set_text(writes, &title.to_string()) {
                 return;
             }
             self.apply(patch);
@@ -217,19 +206,17 @@ define_class!(
             };
 
             let description = form::describe();
-            let Some(action) = description.actions.get(id) else {
+            let Some(op) = description.operations.get(id) else {
                 return;
             };
 
-            if let form::RowAction::Operation(op) = action {
-                match op {
-                    form::RowOperation::Spawn => self.do_spawn(),
-                    form::RowOperation::OpenMemory => self.do_memory_open(),
-                    form::RowOperation::WipeMemory => self.do_memory_wipe(),
-                    form::RowOperation::ClearKey => self.do_clear_key(),
-                    form::RowOperation::Apply => self.do_apply(),
-                    form::RowOperation::Cancel => self.do_cancel(),
-                }
+            match op {
+                form::RowOperation::Spawn => self.do_spawn(),
+                form::RowOperation::OpenMemory => self.do_memory_open(),
+                form::RowOperation::WipeMemory => self.do_memory_wipe(),
+                form::RowOperation::ClearKey => self.do_clear_key(),
+                form::RowOperation::Apply => self.do_apply(),
+                form::RowOperation::Cancel => self.do_cancel(),
             }
         }
 
@@ -397,9 +384,8 @@ impl SettingsController {
         self.draw(true);
     }
 
-    /// The field name comes off the row's own action, not a literal: a rename
-    /// would leave a hand-matched name writing nothing, which is the class of
-    /// bug the action registry exists to close.
+    /// The field comes off the row itself rather than a literal, so the blur
+    /// and the row cannot disagree about which field the text belongs to.
     fn commit_excluded(&self) {
         let text = self
             .ivars()
@@ -408,13 +394,11 @@ impl SettingsController {
             .as_ref()
             .map(|field| field.string().to_string())
             .unwrap_or_default();
-        let description = form::describe();
-        let Some(form::RowAction::PatchField(field)) = description.actions.get(form::EXCLUDED_ID)
-        else {
+        let Some(writes) = form::describe().text_write(form::EXCLUDED_ID) else {
             return;
         };
         let mut patch = SettingsPatch::default();
-        if !patch.set_text(field, &text) {
+        if !patch.set_text(writes, &text) {
             return;
         }
         self.apply(patch);
@@ -709,6 +693,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         label,
                         frozen,
                         help,
+                        writes: _,
                         comment: _,
                     } => {
                         let tag = next_tag;
@@ -753,6 +738,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         placeholder,
                         frozen,
                         batched,
+                        writes: _,
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -776,7 +762,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             _ => {}
                         }
                     }
-                    FormRow::SecureField { id, label, frozen } => {
+                    FormRow::SecureField {
+                        id,
+                        label,
+                        frozen,
+                        writes: _,
+                    } => {
                         if let Some(label_text) = label {
                             let lbl =
                                 NSTextField::labelWithString(&NSString::from_str(label_text), mtm);

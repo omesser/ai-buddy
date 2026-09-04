@@ -431,10 +431,10 @@ impl DirectorDraft<'_> {
         }
         let mut patch = SettingsPatch::default();
         if let Some(text) = self.base_url_edit(view) {
-            patch.set_text("director_base_url", text);
+            patch.set_text(TextField::DirectorBaseUrl, text);
         }
         if let Some(text) = self.model_edit(view) {
-            patch.set_text("director_model", text);
+            patch.set_text(TextField::DirectorModel, text);
         }
         if let Some(key) = self.key_edit(view) {
             patch.director_api_key = Some(key.to_string());
@@ -656,60 +656,96 @@ pub struct SettingsPatch {
     pub use_screen_recording: Option<bool>,
 }
 
+/// A boolean field of `SettingsPatch`, as the form row writing it names it.
+///
+/// A name rather than a `&str` so the row and the setter cannot disagree: with
+/// a string key, a row could name a field no setter knew, and that compiled
+/// clean and shipped a checkbox that wrote nothing (#273).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoolField {
+    DirectorEnabled,
+    AmbientWakes,
+    DoNotDisturb,
+    Sound,
+    Hidden,
+    HideInFullscreen,
+    LaunchAtLogin,
+    TraceFrames,
+    TraceHittest,
+    TraceDirector,
+    TraceEngine,
+    /// Only AppKit has a capture exclusion to drop, so only AppKit offers the
+    /// row. The patch field itself is not gated: the file carries it anywhere.
+    #[cfg(target_os = "macos")]
+    Capturable,
+    UseAccessibility,
+    UseScreenRecording,
+}
+
+/// A text field of `SettingsPatch`, as the form row writing it names it.
+///
+/// Typed for the reason `BoolField` is. No `hide_hotkey`: the row showing it is
+/// an `InspectBlock` that writes nothing, because a text field is not a key
+/// recorder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextField {
+    Character,
+    DirectorBaseUrl,
+    DirectorModel,
+    DirectorTimeoutSecs,
+    DirectorMaxTokens,
+    DirectorApiKey,
+    ExcludedApplications,
+}
+
 impl SettingsPatch {
-    /// Write the boolean field a `RowAction::PatchField` names, and say
-    /// whether it named one.
+    /// Write the boolean field a checkbox declares.
     ///
-    /// The one place that turns a row's field name into a patch. Each window
-    /// hand-matched the names it knew and returned on the rest, so a row added
-    /// to `form.rs` compiled clean and landed inert — a click that reached
-    /// nothing (#273).
-    pub fn set_bool(&mut self, name: &str, value: bool) -> bool {
-        match name {
-            "director_enabled" => self.director_enabled = Some(value),
-            "ambient_wakes" => self.ambient_wakes = Some(value),
-            "do_not_disturb" => self.do_not_disturb = Some(value),
-            "sound" => self.sound = Some(value),
-            "hidden" => self.hidden = Some(value),
-            "hide_in_fullscreen" => self.hide_in_fullscreen = Some(value),
-            "launch_at_login" => self.launch_at_login = Some(value),
-            "trace_frames" => self.trace_frames = Some(value),
-            "trace_hittest" => self.trace_hittest = Some(value),
-            "trace_director" => self.trace_director = Some(value),
-            "trace_engine" => self.trace_engine = Some(value),
-            "capturable" => self.capturable = Some(value),
-            "use_accessibility" => self.use_accessibility = Some(value),
-            "use_screen_recording" => self.use_screen_recording = Some(value),
-            _ => return false,
+    /// The one place that turns a row's field into a patch, and the one place
+    /// the boolean field list is spelled: a `BoolField` this match does not
+    /// cover is a compile error.
+    pub fn set_bool(&mut self, field: BoolField, value: bool) {
+        match field {
+            BoolField::DirectorEnabled => self.director_enabled = Some(value),
+            BoolField::AmbientWakes => self.ambient_wakes = Some(value),
+            BoolField::DoNotDisturb => self.do_not_disturb = Some(value),
+            BoolField::Sound => self.sound = Some(value),
+            BoolField::Hidden => self.hidden = Some(value),
+            BoolField::HideInFullscreen => self.hide_in_fullscreen = Some(value),
+            BoolField::LaunchAtLogin => self.launch_at_login = Some(value),
+            BoolField::TraceFrames => self.trace_frames = Some(value),
+            BoolField::TraceHittest => self.trace_hittest = Some(value),
+            BoolField::TraceDirector => self.trace_director = Some(value),
+            BoolField::TraceEngine => self.trace_engine = Some(value),
+            #[cfg(target_os = "macos")]
+            BoolField::Capturable => self.capturable = Some(value),
+            BoolField::UseAccessibility => self.use_accessibility = Some(value),
+            BoolField::UseScreenRecording => self.use_screen_recording = Some(value),
         }
-        true
     }
 
-    /// Write the text field a `RowAction::PatchField` names, and say whether
-    /// it took the value.
+    /// Write the text field a row declares, and say whether it took the value.
     ///
-    /// False for a name that is no text field of ours, and for a blank API
-    /// key: both windows leave that field blank on refresh, so a blur over an
-    /// untouched one is not an edit, and blank reaching the store is what
-    /// Clear key means. `key_was_typed` is the whole of that test.
-    pub fn set_text(&mut self, name: &str, value: &str) -> bool {
-        match name {
-            // No `hide_hotkey`: the row is an `InspectBlock` with no action,
-            // because a string field is not a key recorder.
-            "character" => self.character = Some(value.to_string()),
-            "director_base_url" => self.director_base_url = Some(value.to_string()),
-            "director_model" => self.director_model = Some(value.to_string()),
-            "director_timeout_secs" => self.director_timeout_secs = Some(value.to_string()),
-            "director_max_tokens" => self.director_max_tokens = Some(value.to_string()),
-            "director_api_key" if key_was_typed(value) => {
+    /// False only for a blank API key: both windows leave that field blank on
+    /// refresh, so a blur over an untouched one is not an edit, and blank
+    /// reaching the store is what Clear key means. `key_was_typed` is the whole
+    /// of that test.
+    pub fn set_text(&mut self, field: TextField, value: &str) -> bool {
+        match field {
+            TextField::Character => self.character = Some(value.to_string()),
+            TextField::DirectorBaseUrl => self.director_base_url = Some(value.to_string()),
+            TextField::DirectorModel => self.director_model = Some(value.to_string()),
+            TextField::DirectorTimeoutSecs => self.director_timeout_secs = Some(value.to_string()),
+            TextField::DirectorMaxTokens => self.director_max_tokens = Some(value.to_string()),
+            TextField::DirectorApiKey if key_was_typed(value) => {
                 self.director_api_key = Some(value.to_string())
             }
+            TextField::DirectorApiKey => return false,
             // One name per line, the shape both windows' multiline field holds.
-            "excluded_applications" => {
+            TextField::ExcludedApplications => {
                 self.excluded_applications =
                     Some(value.lines().map(|line| line.trim().to_string()).collect())
             }
-            _ => return false,
         }
         true
     }
