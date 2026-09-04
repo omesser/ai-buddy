@@ -31,11 +31,19 @@ and given to the Director. Governs demeanour only, never capability.
 _Avoid_: System prompt — that is the Character Prompt, which carries this and more
 
 **Character Prompt**:
-The opening turn of the Director session: Personality Prompt, the Behaviors
-it may propose, and this moment. Later wakes send a short follow-up (what
-just happened, recent Behaviors, time of day, State, frontmost window) in
-the same conversation. Inspectable in settings, never authored by hand.
+The opening turn of the Director session: Personality Prompt, Instance Prompt,
+the Behaviors it may propose, and this moment. Later wakes send a short
+follow-up (what just happened, recent Behaviors, time of day, State, frontmost
+window) in the same conversation. Assembled rather than written: two of its
+layers are authored, the whole is never hand-authored, and it is inspectable in
+settings. ADR-0012.
 _Avoid_: Persona, preamble, prompt template
+
+**Instance Prompt**:
+The user's own layer of the Character Prompt, written per Character Instance and
+empty by default. Follows the Personality Prompt as a second voice layer, bound
+by the same rule: demeanour only, never capability. ADR-0012.
+_Avoid_: System prompt, custom instructions, jailbreak
 
 **Animation**:
 A named frame sequence belonging to a Character. Pure art with no logic.
@@ -47,7 +55,8 @@ _Avoid_: Base set, defaults
 
 **Character Instance**:
 One spawned buddy: a Character plus a user-given name and a stable id. Instances
-differ in personality and behavior, never in what they know.
+differ in personality and behavior, never in what they know — the Instance
+Prompt is where that difference is written. ADR-0012.
 _Avoid_: Session, spawn, copy, clone
 
 **Memory**:
