@@ -1020,10 +1020,19 @@ impl Engine {
             self.animation = animation;
             self.variant_draw = self.variants.draw();
         }
-        // A Primitive that starts restarts the Animation's clock even when the
-        // name has not changed, or a second Poke would extend a held last frame
-        // instead of playing the reaction again.
-        if new_family || started {
+        // Startling is the one moment whose replay is the point: `react` is
+        // `loop = once` in every package, so a second Poke arriving on the
+        // held last frame of the first would be invisible. `land` is the other
+        // once-loop the Engine plays and needs no such clause — a second
+        // arrival comes through a fall, and the fall is a change of name.
+        //
+        // Everything else keeps its clock across the Primitives that step
+        // through it, because `PRIMITIVE_MS` is the Engine's turn and not the
+        // art's length: no `idle` in the repository is that short, and a clock
+        // each turn restarted would draw the first 600ms of the strip and
+        // never the rest. #368.
+        let startled = self.on_screen() == Some(Primitive::React);
+        if new_family || (started && startled) {
             self.animation_ms = 0;
         } else {
             self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
@@ -2475,6 +2484,138 @@ mod tests {
             again.animation_ms, 0,
             "and the second Poke plays it from its first frame"
         );
+    }
+
+    /// #368: `PRIMITIVE_MS` is how long the Engine gives a Primitive, not how
+    /// long the art runs. Every base `idle` a shipped Character declares is
+    /// longer — twelve seconds for Black Mage, and the shortest is 750ms — so a
+    /// clock each turn restarted would draw the opening of the strip over and
+    /// over and none of the rest.
+    #[test]
+    fn a_behaviors_idle_keeps_one_clock_across_its_primitive_turns() {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(BTreeMap::from([(
+                "ponder".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Idle, Primitive::Idle, Primitive::Idle],
+                    then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
+                },
+            )]));
+        let base = settle(&mut engine, &snapshot(100)).animation_ms;
+        assert!(base > 0, "the sprite has been idling since it landed");
+
+        let started = engine.tick(&proposing("ponder"));
+        assert_eq!(started.behavior.as_deref(), Some("ponder"), "it plays");
+
+        let mut clock = vec![started.animation_ms];
+        for _ in 0..18 {
+            let frame = engine.tick(&snapshot(100));
+            assert_eq!(frame.animation, "idle", "and idles throughout");
+            clock.push(frame.animation_ms);
+        }
+
+        assert_eq!(
+            clock,
+            (1..=19).map(|tick| base + tick * 100).collect::<Vec<u32>>(),
+            "three Primitive turns of the same Animation are one loop, and the \
+             idle it interrupted was already that Animation"
+        );
+    }
+
+    /// #368: the ride replays Hold for as long as the Perch keeps moving, and
+    /// nim's `hold` is a second of `loop = once`. A clock the replay restarted
+    /// would leave the grip it ends on unreachable.
+    #[test]
+    fn a_long_ride_holds_on_one_clock() {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
+        settle(&mut engine, &perch(50.0, 400.0));
+
+        let mut clock = Vec::new();
+        for tick in 0..12 {
+            let frame = engine.tick(&perch(50.0, 400.0 - f64::from(tick + 1) * 10.0));
+            assert!(frame.riding, "the Perch is still moving on tick {tick}");
+            assert_eq!(frame.animation, "hold");
+            clock.push(frame.animation_ms);
+        }
+
+        assert_eq!(
+            clock,
+            (0..12).map(|tick| tick * 100).collect::<Vec<u32>>(),
+            "one grip, held for the whole ride"
+        );
+    }
+
+    /// #368: the cursor's own startle is a startle. Reaching at a sprite that
+    /// is still mid-`react` has to look like a second reach, which is what a
+    /// second Poke gets, so the `loop = once` art plays again from frame 0
+    /// rather than holding the frame it had already clamped to.
+    #[test]
+    fn a_cursor_reaction_starts_a_reaction_already_playing_over() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::React, CursorReaction::Indifferent);
+        let near = Point {
+            x: engine.position.x + 50.0,
+            y: engine.position.y,
+        };
+        let away = Point {
+            x: engine.position.x + 300.0,
+            y: engine.position.y,
+        };
+
+        let first = engine.tick(&WorldSnapshot {
+            cursor: near,
+            ..snapshot(100)
+        });
+        assert_eq!(first.animation, "react");
+        let leaving = engine.tick(&WorldSnapshot {
+            cursor: away,
+            ..snapshot(100)
+        });
+        assert_eq!(leaving.animation_ms, 100, "the reaction has been running");
+
+        let again = engine.tick(&WorldSnapshot {
+            cursor: near,
+            ..snapshot(100)
+        });
+        assert_eq!(again.animation, "react");
+        assert_eq!(again.animation_ms, 0, "and it startles again");
+    }
+
+    /// #368: speaking is not startling. A Character that talks at the cursor
+    /// gets a second approach while the first line is still on screen, and
+    /// cutting the mouth back to its first frame there is a hitch with nothing
+    /// behind it — `talk` loops, so there is no held frame to escape.
+    #[test]
+    fn a_cursor_reaction_lets_a_talk_already_playing_run_on() {
+        let mut engine = a_resting_sprite()
+            .with_cursor_reactions(CursorReaction::Speak, CursorReaction::Indifferent);
+        let near = Point {
+            x: engine.position.x + 50.0,
+            y: engine.position.y,
+        };
+        let away = Point {
+            x: engine.position.x + 300.0,
+            y: engine.position.y,
+        };
+
+        let first = engine.tick(&WorldSnapshot {
+            cursor: near,
+            ..snapshot(100)
+        });
+        assert_eq!(first.animation, "talk");
+        engine.tick(&WorldSnapshot {
+            cursor: away,
+            ..snapshot(100)
+        });
+
+        let again = engine.tick(&WorldSnapshot {
+            cursor: near,
+            ..snapshot(100)
+        });
+        assert_eq!(again.animation, "talk");
+        assert_eq!(again.animation_ms, 200, "one line, still being said");
     }
 
     /// #6: verbs arriving in the same tick resolve deterministically. A Grab
