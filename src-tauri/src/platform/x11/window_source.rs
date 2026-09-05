@@ -65,10 +65,8 @@ impl WindowSource for X11WindowSource {
 /// Falls back to _NET_CLIENT_LIST when STACKING is unavailable or empty,
 /// as some window managers do not support stacking order.
 ///
-/// Filters out windows with WM_CLASS "ai-buddy"/"Ai-buddy" (our own overlays)
-/// so they do not block Perch detection. The overlay covers the entire display
-/// and is frontmost, so without this filter every other window's top edge would
-/// be reported as hidden.
+/// Our own windows are in the list like anyone else's; `window_rect` reports
+/// the level that keeps the overlay out of the world.
 fn visible_windows() -> Vec<WindowRect> {
     use std::sync::atomic::{AtomicBool, Ordering};
     static LOGGED: AtomicBool = AtomicBool::new(false);
@@ -151,11 +149,6 @@ fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     )
 }
 
-/// Whether this WM_CLASS names one of our own overlay windows.
-fn is_own_overlay_class(class: &str) -> bool {
-    class == "ai-buddy" || class == "Ai-buddy"
-}
-
 /// Read one window's geometry, owner, and layer, or None if it should be skipped.
 fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     if !is_normal_window(conn, window) {
@@ -163,9 +156,6 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
     }
 
     let owner = window_class(conn, window).unwrap_or_else(|| "Unknown".to_string());
-    if is_own_overlay_class(&owner) {
-        return None;
-    }
 
     let geom = xproto::get_geometry(conn, window).ok()?.reply().ok()?;
     let translated = xproto::translate_coordinates(conn, window, geom.root, 0, 0)
@@ -191,8 +181,39 @@ fn window_rect(conn: &RustConnection, window: Window) -> Option<WindowRect> {
             height: f64::from(height),
         },
         owner,
-        layer: 0,
+        layer: i32::from(is_above(conn, window)),
     })
+}
+
+/// Whether the window manager keeps this window above ordinary ones:
+/// `_NET_WM_STATE_ABOVE`, X11's answer to a macOS floating window level, and
+/// what now keeps the overlay out of the world. `overlay::set_ewmh_states`
+/// writes the state on the overlay itself, so the answer waits on no window
+/// manager echoing it back. The WM_CLASS exclusion this replaces covered every
+/// window a GTK process owns, the Chat surface (#362) and Settings included.
+fn is_above(conn: &RustConnection, window: Window) -> bool {
+    let Some(atoms) = super::atoms::atoms() else {
+        return false;
+    };
+
+    let Some(reply) = xproto::get_property(
+        conn,
+        false,
+        window,
+        atoms.net_wm_state,
+        AtomEnum::ATOM,
+        0,
+        32,
+    )
+    .ok()
+    .and_then(|cookie| cookie.reply().ok()) else {
+        return false;
+    };
+
+    reply.format == 32
+        && reply.value.chunks_exact(4).any(|chunk| {
+            u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == atoms.net_wm_state_above
+        })
 }
 
 /// Skip docks, desktops, and menus: `_NET_WM_WINDOW_TYPE_NORMAL` only.
@@ -394,20 +415,4 @@ fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]
     }
 
     Some(result)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The overlay windows must be filtered out of visible_windows so they do
-    /// not block Perch detection. WM_CLASS "ai-buddy" or "Ai-buddy" are ours.
-    #[test]
-    fn our_overlay_class_is_recognized() {
-        assert!(is_own_overlay_class("ai-buddy"));
-        assert!(is_own_overlay_class("Ai-buddy"));
-        assert!(!is_own_overlay_class("xfce4-terminal"));
-        assert!(!is_own_overlay_class(""));
-        assert!(!is_own_overlay_class("Chrome"));
-    }
 }
