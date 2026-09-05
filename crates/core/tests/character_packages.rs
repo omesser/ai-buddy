@@ -612,7 +612,7 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 #[test]
 fn buddy_bot_frames_are_90_square_rgba() {
     let frames = frames_of("buddy-bot");
-    assert_eq!(frames.len(), 57, "the pack ships 57 PNG frames");
+    assert_eq!(frames.len(), 78, "the pack ships 78 PNG frames (57 base + 21 idle variants)");
 
     for (animation, frame, bytes) in frames {
         let (width, height, alpha) = frame_alpha(&bytes);
@@ -630,6 +630,46 @@ fn buddy_bot_frames_are_90_square_rgba() {
             "{animation} frame {frame} must keep a transparent margin"
         );
     }
+}
+
+/// Idle life variants: LED breath-pulse, blink, and listen-tilt ring with base idle
+/// (BMO / Timber Wolf variant pattern). Not separate Behaviors — the ring is enough.
+#[test]
+fn buddy_bot_declares_idle_life_variants() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    let expected = [
+        ("idle-breathe", 8),
+        ("idle-blink", 6),
+        ("idle-listen", 7),
+    ];
+    for (name, count) in expected {
+        assert!(
+            character.animations.contains_key(name),
+            "{name} animation is declared"
+        );
+        let anim = &character.animations[name];
+        assert_eq!(
+            anim.frames.len(),
+            count,
+            "{name} must carry the shipped {count}-frame loop"
+        );
+        assert!(
+            character.animations["idle"]
+                .variants
+                .contains(&name.to_string()),
+            "{name} is an idle variant"
+        );
+        assert!(
+            !character.behaviors.contains_key(name),
+            "no {name} Behavior — the variant ring is enough"
+        );
+    }
+
+    let drawn = character
+        .draw("idle-breathe", 0)
+        .expect("idle-breathe draws when asked for by name");
+    assert_eq!(drawn.animation, "idle-breathe");
 }
 
 /// Eyes must be opaque black, not punched-through alpha holes (desktop shows through).
