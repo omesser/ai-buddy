@@ -441,6 +441,7 @@ pub fn update_input_region(
 }
 
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 pub fn update_input_region(
     _window: &tauri::WebviewWindow,
     _mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,

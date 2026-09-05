@@ -15,8 +15,8 @@ use crate::platform::ButtonsDown;
 /// overlay witness in `platform.rs` is the other half of the answer.
 pub fn buttons_down() -> ButtonsDown {
     ButtonsDown {
-        primary: button_down(VK_LBUTTON),
-        secondary: button_down(VK_RBUTTON),
+        primary: button_down(VK_LBUTTON.into()),
+        secondary: button_down(VK_RBUTTON.into()),
     }
 }
 

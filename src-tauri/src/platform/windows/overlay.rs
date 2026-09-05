@@ -6,10 +6,8 @@
 //! alpha mask. WDA_EXCLUDEFROMCAPTURE hides the overlay from screen captures.
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows_sys::Win32::Foundation::{HWND, RECT};
-use windows_sys::Win32::Graphics::Gdi::{
-    CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_AND, RGN_OR,
-};
+use windows_sys::Win32::Foundation::HWND;
+use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongW, SetWindowDisplayAffinity, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
     HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE,
