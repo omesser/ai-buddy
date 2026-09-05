@@ -17,5 +17,4 @@ pub mod snapshot;
 pub mod visibility;
 pub mod window_source;
 
-// Private module for tool handlers (file organization, not a public interface)
 mod tools;
