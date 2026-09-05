@@ -253,7 +253,18 @@ The window a Summon opens: where the user types to the attached Harness and
 reads the answers too long for a Speech bubble. Belongs to the Character
 Instance that was Summoned, and is drawn by ai-buddy rather than by the
 Harness. #17, ADR-0010.
-_Avoid_: Chat window, console, terminal, prompt box
+_Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
+design, not the window)
+
+**Chat UI**:
+A named, swappable visual design for the Chat surface — palette, type scale and
+shape — defined in `src/chat-ui.css` and applied by a class on the root element
+of the Chat surface's own document. Not the surface itself: the surface is the
+window, and a Chat UI is one of the designs it can be drawn in. Reaches nothing
+the overlay draws — not a Character's art, not the Speech bubble — and is not
+the light or dark theme the operating system supplies. v1 ships one and no
+switcher. #355, #348, ADR-0013.
+_Avoid_: Look, theme, skin, style, variant, design
 
 ### The published site
 
