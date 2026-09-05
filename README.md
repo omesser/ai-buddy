@@ -27,6 +27,8 @@ A desktop companion in the spirit of Windows 95-era desktop mascots. An animated
 
 ## Interact
 
+![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
+
 - **Poke:** Click once. It plays its `react` animation, then goes back to what it was doing.
 - **Pick up:** Click and drag. It follows your cursor.
 - **Throw:** Drag and release while moving. It leaves your hand on an arc and lands.
@@ -44,19 +46,21 @@ Buddy Bot ships as the default. Each character moves and behaves differently.
 | ![Nim](./docs/readme/nim-idle.gif) **Nim** | Modern pixel art | Pixel grid, translucent shadow. Twice the frames, so motion eases. Sits and sleeps. |
 | ![Black Mage](./docs/readme/black-mage-idle.gif) **Black Mage** | 8-bit Theater fan art | Pixel art at 3x scale. Stands, never settles. |
 
-Character Packages bundle identity, art, personality, and tuning. Three ship; the format is first-class but undocumented until v2.
+Character Packages bundle identity, art, personality, and tuning. Buddy Bot is the default; seven more ship in-repo (BMO, Cat, Jotaro Kujo, Timber Wolf, Trump). The format is first-class but undocumented until v2.
 
 ## Run From Source
 
-macOS is the first implementation. Linux is supported with a degraded Spatial Layer under Wayland (no window geometry). Windows is out of v1 scope.
+macOS is the first implementation. Linux is supported with a degraded Spatial Layer under Wayland (no window geometry). Windows ships an NSIS installer; the Spatial Layer is still thin (stub/degraded cells in the platform table below), but packaging is real.
+
+Download builds: [GitHub Releases](https://github.com/omesser/ai-buddy/releases) — DMG (macOS), AppImage + deb (Linux), NSIS installer (Windows).
+
+Or clone and run:
 
 ```sh
 git clone https://github.com/omesser/ai-buddy.git
 cd ai-buddy
 cargo run -p ai-buddy
 ```
-
-No packaged installers yet — tracked in [#132](https://github.com/omesser/ai-buddy/issues/132).
 
 **Switch characters:**
 
