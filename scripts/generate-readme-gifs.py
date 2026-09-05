@@ -20,7 +20,7 @@ def create_looping_gif(frames, output_path, fps, scale=1, target_height=None):
     images = []
     for frame_path in frames:
         img = Image.open(frame_path)
-        
+
         if target_height:
             # Scale to target height, maintaining aspect ratio
             aspect_ratio = img.width / img.height
@@ -30,7 +30,7 @@ def create_looping_gif(frames, output_path, fps, scale=1, target_height=None):
         elif scale > 1:
             new_size = (img.width * scale, img.height * scale)
             img = img.resize(new_size, Image.NEAREST)
-        
+
         images.append(img)
 
     duration_ms = int(1000 / fps)
