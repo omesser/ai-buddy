@@ -3,9 +3,10 @@
 //! ponytail: HTTP chat-completions until #16 attaches a Harness. The
 //! `Completer` trait is the seam; this file is the disposable impl. ADR-0008.
 //!
-//! The Completer runs on a worker thread. The frame loop only `try_recv`s.
+//! The Completer runs on a worker thread. The frame loop only polls `Slots`.
 //! #18 binds these settings. Until then they come from the env.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -13,7 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use ai_buddy_core::director::{Completer, Context, ModelDirector, Pace, Wake, WAKE_EVERY};
+use ai_buddy_core::director::{
+    Completer, Context, Happened, ModelDirector, Pace, Wake, WAKE_EVERY,
+};
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
 
@@ -243,7 +246,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         model: settings.model.clone(),
         timeout: timeout_for(local),
         max_tokens: max_tokens_for(local),
-        session: Mutex::new(Vec::new()),
+        session: Mutex::new(Session::default()),
         streams: AtomicBool::new(true),
         agent: ureq::agent(),
     })
@@ -511,6 +514,17 @@ struct Message {
     content: String,
 }
 
+/// The conversation, and which turn is open in it.
+///
+/// A counter rather than the position of the last message: two calls can be
+/// inside `post` at once now that a world event may supersede a wake (#312),
+/// nothing orders them, and so "the question at the end" does not say whose.
+#[derive(Default)]
+struct Session {
+    messages: Vec<Message>,
+    opened: u64,
+}
+
 pub struct Endpoint {
     api_key: String,
     url: String,
@@ -518,7 +532,7 @@ pub struct Endpoint {
     timeout: Duration,
     max_tokens: u32,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
-    session: Mutex<Vec<Message>>,
+    session: Mutex<Session>,
     /// Does this host stream? Starts optimistic and only ever falls, once a
     /// whole reply has succeeded where a stream did not (#302).
     ///
@@ -590,7 +604,7 @@ impl Endpoint {
     /// asking, rather than paying two POSTs on every wake for the rest of
     /// the session.
     pub fn post(&self, url: &str, prompt: &str) -> Result<String, String> {
-        let snapshot = self.open_turn(prompt);
+        let (turn, snapshot) = self.open_turn(prompt);
         let wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
         } else {
@@ -620,47 +634,60 @@ impl Endpoint {
                 };
             }
         }
-        self.close_turn(reply.map_err(Unsent::into_error))
+        self.close_turn(turn, reply.map_err(Unsent::into_error))
     }
 
     /// Paired with `close_turn`: the session only ever grows here and is only
-    /// ever trimmed there. Hands back a snapshot rather than holding the lock,
-    /// so the fallback retry asks the identical question.
-    fn open_turn(&self, prompt: &str) -> Vec<Message> {
+    /// ever trimmed there. Hands back the turn it opened, and a snapshot rather
+    /// than the lock, so the fallback retry asks the identical question.
+    ///
+    /// A trailing question is one a superseded call left open (#312): its
+    /// worker is still on the wire and no longer owns a turn here, so
+    /// withdrawing it is what keeps the Completer from being asked two things
+    /// at once.
+    fn open_turn(&self, prompt: &str) -> (u64, Vec<Message>) {
         let mut session = self.session.lock().expect("session lock");
-        session.push(Message {
+        if session
+            .messages
+            .last()
+            .is_some_and(|last| last.role == "user")
+        {
+            session.messages.pop();
+        }
+        session.messages.push(Message {
             role: "user",
             content: prompt.to_string(),
         });
-        session.clone()
+        session.opened += 1;
+        (session.opened, session.messages.clone())
     }
 
     /// Record the reply, or take the question back out.
     ///
-    /// A turn that produced nothing pops the user message, because the
-    /// session is what the *next* prompt is built from: leaving the question
-    /// behind would ask the model to answer two things at once.
+    /// A turn that produced nothing pops the user message, because the session
+    /// is what the *next* prompt is built from: leaving the question behind
+    /// would ask the Completer to answer two things at once.
     ///
-    /// Pops the last message rather than one it identifies. `InFlight::cancel`
-    /// lets a new call start before the abandoned one has stopped reading, so
-    /// what holds this together is not one call at a time — it is that the
-    /// only caller of `cancel` is `retarget_model`, which installs a fresh
-    /// `Endpoint`, leaving the abandoned worker to trim a session nobody will
-    /// prompt from again. Cancelling against a live `Endpoint` (#312, where a
-    /// world event supersedes a wake) needs this to carry the index
-    /// `open_turn` appended at, or the loser trims the winner's question.
-    fn close_turn(&self, reply: Result<String, String>) -> Result<String, String> {
+    /// A turn some later `open_turn` has replaced touches nothing at all. Its
+    /// question is already gone and the one at the end belongs to the wake that
+    /// superseded it, so popping would take the winner's question out and
+    /// pushing would answer it with the loser's reply — a reply `Slots::take`
+    /// will never hand out anyway.
+    fn close_turn(&self, turn: u64, reply: Result<String, String>) -> Result<String, String> {
         let mut session = self.session.lock().expect("session lock");
+        if session.opened != turn {
+            return reply;
+        }
         match reply {
             Ok(content) => {
-                session.push(Message {
+                session.messages.push(Message {
                     role: "assistant",
                     content: content.clone(),
                 });
                 Ok(content)
             }
             Err(error) => {
-                session.pop();
+                session.messages.pop();
                 Err(error)
             }
         }
@@ -1346,13 +1373,69 @@ fn abandoned() -> bool {
     })
 }
 
-/// One model call in flight. The frame loop starts it and polls `try_take`.
-pub struct InFlight {
-    tx: Sender<Wake>,
-    rx: Receiver<Wake>,
-    busy: Arc<AtomicBool>,
-    /// Raised by `cancel`, read by the worker between SSE frames.
+/// Every session call the app has on the wire: one slot per Character Instance.
+///
+/// One registry rather than one per Instance. Sessions stay per-Instance inside
+/// each `Endpoint` — ADR-0008 is untouched — and only the slot is centralised,
+/// which is what makes a global concurrency cap expressible at all and gives
+/// #18's spend panel somewhere to read. There is no cap: N Instances make N
+/// calls, as they always have.
+#[derive(Default)]
+pub struct Slots {
+    slots: HashMap<InstanceId, Slot>,
+}
+
+/// One Character Instance's place on the wire.
+struct Slot {
+    /// Which call is this Instance's current one. A reply stamped with any
+    /// other number was computed for a moment the Instance has left.
+    epoch: u64,
+    tx: Sender<Delivered>,
+    rx: Receiver<Delivered>,
+    /// Raised when the call is superseded, and read by the worker between SSE
+    /// frames, so an abandoned call closes its connection (#302).
     abandoned: Arc<AtomicBool>,
+    waiting: bool,
+    /// Whether the call answers something the user did, which is the whole of
+    /// what the Thinking ellipsis asks.
+    reactive: bool,
+}
+
+/// One worker's answer, stamped with the call it belongs to.
+struct Delivered {
+    epoch: u64,
+    wake: Wake,
+    context: Context,
+}
+
+impl Default for Slot {
+    fn default() -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self {
+            epoch: 0,
+            tx,
+            rx,
+            abandoned: Arc::new(AtomicBool::new(false)),
+            waiting: false,
+            reactive: false,
+        }
+    }
+}
+
+impl Slot {
+    /// Whatever this slot had on the wire stops being this Instance's answer.
+    ///
+    /// The epoch moves past it so `take` drops its reply, and its abandon flag
+    /// rises so the worker closes the connection rather than generating on. The
+    /// next call gets a fresh flag; the old one stays alive in the worker's
+    /// hands.
+    fn supersede(&mut self) {
+        self.abandoned.store(true, Ordering::SeqCst);
+        self.abandoned = Arc::new(AtomicBool::new(false));
+        self.epoch += 1;
+        self.waiting = false;
+        self.reactive = false;
+    }
 }
 
 /// The trace line for a proposed Behavior name nobody declared.
@@ -1368,45 +1451,35 @@ fn near_miss_line(id: &str, name: &str, behaviors: &[String]) -> String {
     )
 }
 
-impl InFlight {
+impl Slots {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel();
-        Self {
-            tx,
-            rx,
-            busy: Arc::new(AtomicBool::new(false)),
-            abandoned: Arc::new(AtomicBool::new(false)),
-        }
+        Self::default()
     }
 
-    pub fn ready(&self) -> bool {
-        !self.busy.load(Ordering::SeqCst)
-    }
-
-    /// Drop a call that no longer belongs to this Character.
+    /// Send this Character Prompt for `id`, abandoning whatever `id` had out.
     ///
-    /// Raises the flag the worker reads between SSE frames, so the call
-    /// closes its connection instead of running out (see `Wire`). Replacing
-    /// `self` gives the next call a fresh flag and leaves the old one alive
-    /// in the worker's hands.
-    pub fn cancel(&mut self) {
-        self.abandoned.store(true, Ordering::SeqCst);
-        *self = Self::new();
-    }
-
-    pub fn start<C: Completer + Send + Sync + 'static>(
-        &self,
-        id: InstanceId,
+    /// Infallible, because starting a call *is* the cancellation of the
+    /// previous one: there is no busy to report and so no check for a caller
+    /// to forget. Per-Instance newest-wins — "should this buddy's old Poke be
+    /// abandoned for its new Throw" is always yes.
+    pub fn wake<C: Completer + Send + Sync + 'static>(
+        &mut self,
+        id: &InstanceId,
         director: Arc<ModelDirector<C>>,
         context: Context,
     ) {
-        self.busy.store(true, Ordering::SeqCst);
-        let tx = self.tx.clone();
-        let abandoned = Arc::clone(&self.abandoned);
+        let slot = self.slots.entry(id.clone()).or_default();
+        slot.supersede();
+        slot.waiting = true;
+        slot.reactive = context.happened != Happened::Ambient;
+        let epoch = slot.epoch;
+        let tx = slot.tx.clone();
+        let abandoned = Arc::clone(&slot.abandoned);
+        let traced = id.clone();
         thread::spawn(move || {
-            ABANDONED.with_borrow_mut(|slot| *slot = Some(abandoned));
-            // Always send. A panic here would leave `busy` set and skip
-            // StaticDirector on later ticks.
+            ABANDONED.with_borrow_mut(|flag| *flag = Some(abandoned));
+            // Always send. A panic here would leave the slot waiting forever
+            // and skip StaticDirector on every later tick.
             let wake = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let (wake, near_miss) = director.wake_and_near_miss(&context);
                 // Traced here, beside the reply it came from, rather than in
@@ -1414,42 +1487,81 @@ impl InFlight {
                 // and speech is what a near miss is indistinguishable from.
                 if tracing() {
                     if let Some(name) = near_miss {
-                        eprintln!("{}", near_miss_line(&id, &name, director.behaviors()));
+                        eprintln!("{}", near_miss_line(&traced, &name, director.behaviors()));
                     }
                 }
                 wake
             }))
             .unwrap_or(Wake::Failed);
-            let _ = tx.send(wake);
+            let _ = tx.send(Delivered {
+                epoch,
+                wake,
+                context,
+            });
         });
     }
 
-    pub fn try_take(&self) -> Option<Wake> {
-        match self.rx.try_recv() {
-            Ok(wake) => {
-                self.busy.store(false, Ordering::SeqCst);
-                Some(wake)
+    /// The reply for `id`, with the Context it was computed for.
+    ///
+    /// The pair travels together because a proposal only means anything against
+    /// the moment that asked for it, and a reply from a superseded moment is
+    /// dropped here rather than handed out for a caller to compare — which is
+    /// what stops a buddy saying "put me down" from the floor it landed on.
+    pub fn take(&mut self, id: &InstanceId) -> Option<(Wake, Context)> {
+        let slot = self.slots.get_mut(id)?;
+        while let Ok(delivered) = slot.rx.try_recv() {
+            if delivered.epoch != slot.epoch {
+                continue;
             }
-            Err(_) => None,
+            slot.waiting = false;
+            slot.reactive = false;
+            return Some((delivered.wake, delivered.context));
         }
+        None
+    }
+
+    /// Drop whatever `id` has on the wire, and forget the Instance.
+    ///
+    /// For the three moments where the answer would be the wrong buddy's: a
+    /// Character switch, a Completer retarget, and a dismissal. Forgetting
+    /// rather than emptying, so a registry that outlives its Instances does not
+    /// accumulate them; the next `wake` opens a fresh slot.
+    pub fn abandon(&mut self, id: &InstanceId) {
+        if let Some(slot) = self.slots.remove(id) {
+            slot.abandoned.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Whether `id` is waiting on the Director. Not a gate on `wake` — an
+    /// observation, for the Static Director standing down while a session
+    /// proposal is about to land.
+    pub fn waiting(&self, id: &InstanceId) -> bool {
+        self.slots.get(id).is_some_and(|slot| slot.waiting)
+    }
+
+    /// Whether what `id` is waiting on answers something the user did, which is
+    /// the Thinking ellipsis's whole question: a proactive wake stays invisible.
+    pub fn thinking(&self, id: &InstanceId) -> bool {
+        self.slots
+            .get(id)
+            .is_some_and(|slot| slot.waiting && slot.reactive)
     }
 }
 
 /// Drop an in-flight wake and install a Completer for the new settings.
 ///
 /// A Wake still on the wire would propose against the old host and session;
-/// drop it and open a new turn. `InFlight::cancel` closes the connection, so
-/// the old host stops generating rather than merely going unheard.
+/// drop it and open a new turn. `Slots::abandon` closes the connection, so the
+/// old host stops generating rather than merely going unheard.
 pub fn retarget_model(
-    pending: &mut InFlight,
-    in_flight: &mut Option<Context>,
+    slots: &mut Slots,
+    id: &InstanceId,
     model: &mut Option<Arc<ModelDirector<Endpoint>>>,
     behaviors: impl IntoIterator<Item = impl Into<String>>,
     settings: &DirectorSettings,
     configured: bool,
 ) {
-    pending.cancel();
-    *in_flight = None;
+    slots.abandon(id);
     *model = configured.then(|| {
         Arc::new(ModelDirector::new(
             endpoint_from(settings).expect("configured means a Completer exists"),
@@ -1792,7 +1904,7 @@ pub(crate) mod tests {
             model: "gemma4".to_string(),
             timeout: TIMEOUT,
             max_tokens: HOSTED_MAX_TOKENS,
-            session: Mutex::new(Vec::new()),
+            session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
             agent: ureq::agent(),
         }
@@ -1805,28 +1917,94 @@ pub(crate) mod tests {
     fn a_turn_with_no_reply_leaves_no_half_answer_in_the_session() {
         let endpoint = local_endpoint();
 
-        let opening = endpoint.open_turn("hello");
-        assert_eq!(opening.len(), 1, "the opening turn is the prompt alone");
-        endpoint.close_turn(Ok("stroll".to_string())).unwrap();
-
-        endpoint.open_turn("what just happened: poked");
+        let (opening, asked) = endpoint.open_turn("hello");
+        assert_eq!(asked.len(), 1, "the opening turn is the prompt alone");
         endpoint
-            .close_turn(Err("abandoned".to_string()))
+            .close_turn(opening, Ok("stroll".to_string()))
+            .unwrap();
+
+        let (poked, _) = endpoint.open_turn("what just happened: poked");
+        endpoint
+            .close_turn(poked, Err("abandoned".to_string()))
             .unwrap_err();
 
-        let next = endpoint.open_turn("what just happened: thrown");
-        let turns: Vec<(&str, &str)> = next
-            .iter()
-            .map(|message| (message.role, message.content.as_str()))
-            .collect();
         assert_eq!(
-            turns,
+            spoken(&endpoint.open_turn("what just happened: thrown").1),
             [
                 ("user", "hello"),
                 ("assistant", "stroll"),
                 ("user", "what just happened: thrown"),
             ]
         );
+    }
+
+    /// #312: a superseded call is still inside `post` when the wake that
+    /// replaced it opens a turn on the same `Endpoint`. The loser must neither
+    /// leave its question in the session nor take the winner's out.
+    #[test]
+    fn a_superseded_turn_neither_leaves_its_question_nor_takes_the_winners() {
+        let endpoint = local_endpoint();
+        let (opening, _) = endpoint.open_turn("hello");
+        endpoint
+            .close_turn(opening, Ok("stroll".to_string()))
+            .unwrap();
+
+        let (ambient, _) = endpoint.open_turn("what just happened: nothing");
+        let (poked, asked) = endpoint.open_turn("what just happened: poked");
+        assert_eq!(
+            spoken(&asked),
+            [
+                ("user", "hello"),
+                ("assistant", "stroll"),
+                ("user", "what just happened: poked"),
+            ],
+            "the abandoned question must not be asked alongside the new one"
+        );
+
+        endpoint
+            .close_turn(ambient, Err("abandoned".to_string()))
+            .unwrap_err();
+        endpoint.close_turn(poked, Ok("nap".to_string())).unwrap();
+
+        assert_eq!(
+            spoken(&endpoint.open_turn("what just happened: thrown").1),
+            [
+                ("user", "hello"),
+                ("assistant", "stroll"),
+                ("user", "what just happened: poked"),
+                ("assistant", "nap"),
+                ("user", "what just happened: thrown"),
+            ]
+        );
+    }
+
+    /// Nothing orders the two workers, so the superseded one may reach the
+    /// session first and open its turn after the wake that replaced it. Whoever
+    /// lands last, an answer must never be recorded against another turn's
+    /// question — that is what the next Character Prompt is built from.
+    #[test]
+    fn an_answer_is_never_recorded_against_another_turns_question() {
+        let endpoint = local_endpoint();
+        let (poked, _) = endpoint.open_turn("what just happened: poked");
+        let (ambient, _) = endpoint.open_turn("what just happened: nothing");
+
+        endpoint.close_turn(poked, Ok("nap".to_string())).unwrap();
+        endpoint
+            .close_turn(ambient, Err("abandoned".to_string()))
+            .unwrap_err();
+
+        assert_eq!(
+            spoken(&endpoint.open_turn("what just happened: thrown").1),
+            [("user", "what just happened: thrown")],
+            "a question whose turn is closed leaves nothing behind"
+        );
+    }
+
+    fn spoken(session: &[Message]) -> Vec<(&str, &str)> {
+        session
+            .iter()
+            .map(|message| (message.role, message.content.as_str()))
+            .collect()
     }
 
     #[test]
@@ -2385,15 +2563,6 @@ pub(crate) mod tests {
         });
     }
 
-    struct Slow;
-
-    impl Completer for Slow {
-        fn complete(&self, _: &str) -> Result<String, String> {
-            thread::sleep(Duration::from_millis(40));
-            Ok("idle".to_string())
-        }
-    }
-
     /// A Context to stand in for a wake already on the wire. `pub(crate)` for
     /// the `settings` tests, which retarget through the same call.
     pub(crate) fn wake_context() -> Context {
@@ -2424,19 +2593,39 @@ pub(crate) mod tests {
         with_env(None, None, None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
             let config = config_from(&settings);
-            let mut pending = InFlight::new();
-            let mut in_flight = Some(wake_context());
+            let mut slots = Slots::new();
+            let id = "buddy".to_string();
+            let saw = Arc::new(AtomicBool::new(false));
+            slots.wake(
+                &id,
+                Arc::new(ModelDirector::new(
+                    Watchful {
+                        saw: Arc::clone(&saw),
+                    },
+                    ["stroll"],
+                )),
+                wake_context(),
+            );
             let mut model = None;
+
             retarget_model(
-                &mut pending,
-                &mut in_flight,
+                &mut slots,
+                &id,
                 &mut model,
                 ["stroll"],
                 &settings,
                 config.configured,
             );
-            assert!(pending.ready(), "cancel replaced the channel");
-            assert!(in_flight.is_none());
+
+            assert!(
+                waited_for(&saw),
+                "the old host must be told to stop generating"
+            );
+            thread::sleep(Duration::from_millis(50));
+            assert!(
+                slots.take(&id).is_none(),
+                "a Wake computed against the old target cannot answer the new one"
+            );
             assert!(model.is_some());
         });
     }
@@ -2446,12 +2635,11 @@ pub(crate) mod tests {
         with_env(None, None, None, || {
             let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
             let config = config_from(&settings);
-            let mut pending = InFlight::new();
-            let mut in_flight = None;
+            let mut slots = Slots::new();
             let mut model = None;
             retarget_model(
-                &mut pending,
-                &mut in_flight,
+                &mut slots,
+                &"buddy".to_string(),
                 &mut model,
                 ["stroll"],
                 &settings,
@@ -2468,12 +2656,11 @@ pub(crate) mod tests {
             let mut config = config_from(&settings);
             config.enabled = false;
             assert!(config.configured, "local needs no key");
-            let mut pending = InFlight::new();
-            let mut in_flight = None;
+            let mut slots = Slots::new();
             let mut model = None;
             retarget_model(
-                &mut pending,
-                &mut in_flight,
+                &mut slots,
+                &"buddy".to_string(),
                 &mut model,
                 ["stroll"],
                 &settings,
@@ -2502,76 +2689,212 @@ pub(crate) mod tests {
         );
     }
 
-    /// A switch must not apply the old Character's reply, and must be able
-    /// to start the new opening before that POST returns.
+    /// A switch must not apply the old Character's reply, and must be able to
+    /// start the new opening before that POST returns.
     #[test]
-    fn cancel_drops_a_wake_that_still_arrives() {
-        let pending = InFlight::new();
-        let director = Arc::new(ModelDirector::new(Slow, ["idle"]));
-        pending.start("buddy-1".to_string(), director, wake_context());
-        assert!(!pending.ready(), "the call is in flight");
+    fn abandon_drops_a_wake_that_still_arrives() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+        slots.wake(&id, answering("stroll", 40), wake_context());
+        assert!(slots.waiting(&id), "the call is in flight");
 
-        let mut pending = pending;
-        pending.cancel();
+        slots.abandon(&id);
         assert!(
-            pending.ready(),
-            "a cancelled call must not block the next Character Prompt"
+            !slots.waiting(&id),
+            "an abandoned call must not hold the next Character Prompt back"
         );
         thread::sleep(Duration::from_millis(80));
         assert!(
-            pending.try_take().is_none(),
+            slots.take(&id).is_none(),
             "the abandoned Wake must not land on the new Character"
         );
     }
 
-    /// `cancel` has to reach the worker, not just the channel it answers on.
-    /// Closing the connection is what stops a generation and gives the
-    /// endpoint its slot back, and the worker is the only thing holding the
+    /// The ellipsis is for a turn the user is waiting on. An ambient wake is
+    /// nobody's question, and showing it would tell the user the buddy is busy
+    /// with them when it is not.
+    #[test]
+    fn only_a_reactive_call_is_thinking() {
+        let mut slots = Slots::new();
+        let (ambient, poked) = ("ambient".to_string(), "poked".to_string());
+
+        slots.wake(&ambient, answering("stroll", 200), wake_context());
+        slots.wake(
+            &poked,
+            answering("stroll", 200),
+            Context {
+                happened: Happened::Poke,
+                ..wake_context()
+            },
+        );
+
+        assert!(slots.waiting(&ambient) && !slots.thinking(&ambient));
+        assert!(slots.thinking(&poked));
+    }
+
+    /// Stands in for the SSE loop: checks between frames, without a server.
+    /// Spins far longer than a test should need.
+    struct Watchful {
+        saw: Arc<AtomicBool>,
+    }
+
+    impl Completer for Watchful {
+        fn complete(&self, _: &str) -> Result<String, String> {
+            for _ in 0..400 {
+                if abandoned() {
+                    self.saw.store(true, Ordering::SeqCst);
+                    return Err("abandoned".to_string());
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Ok("idle".to_string())
+        }
+    }
+
+    fn waited_for(flag: &AtomicBool) -> bool {
+        for _ in 0..100 {
+            if flag.load(Ordering::SeqCst) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+
+    /// A Completer that answers with a fixed Behavior name after a delay, so
+    /// a test can tell one call apart from the one that superseded it.
+    struct Answers {
+        behavior: &'static str,
+        delay: Duration,
+    }
+
+    impl Completer for Answers {
+        fn complete(&self, _: &str) -> Result<String, String> {
+            thread::sleep(self.delay);
+            Ok(self.behavior.to_string())
+        }
+    }
+
+    fn answering(behavior: &'static str, delay_ms: u64) -> Arc<ModelDirector<Answers>> {
+        Arc::new(ModelDirector::new(
+            Answers {
+                behavior,
+                delay: Duration::from_millis(delay_ms),
+            },
+            ["stroll", "nap"],
+        ))
+    }
+
+    /// A registry with a call already out for `id`, long enough to still be
+    /// there when the test acts. `pub(crate)` for the `settings` tests, which
+    /// retarget through the same call.
+    pub(crate) fn slots_awaiting_a_wake(id: &InstanceId) -> Slots {
+        let mut slots = Slots::new();
+        slots.wake(id, answering("stroll", 200), wake_context());
+        slots
+    }
+
+    /// Poll the slot the way the frame loop does, until an answer lands.
+    fn polled(slots: &mut Slots, id: &InstanceId) -> Option<(Wake, Context)> {
+        for _ in 0..200 {
+            if let Some(taken) = slots.take(id) {
+                return Some(taken);
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        None
+    }
+
+    fn behavior_of(wake: &Wake) -> &str {
+        match wake {
+            Wake::Proposed(proposal) => &proposal.behavior,
+            Wake::Failed => "failed",
+        }
+    }
+
+    /// The responsiveness this registry exists for: a Poke arriving while an
+    /// ambient wake is still out sends its own prompt at once, and the answer
+    /// the user gets is the one to what they just did.
+    #[test]
+    fn a_new_wake_supersedes_the_one_the_instance_had_on_the_wire() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        slots.wake(&id, answering("stroll", 120), wake_context());
+        slots.wake(&id, answering("nap", 0), wake_context());
+
+        let (wake, _) = polled(&mut slots, &id).expect("the newest call answers");
+        assert_eq!(behavior_of(&wake), "nap");
+
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            slots.take(&id).is_none(),
+            "the superseded reply must be dropped, not delivered a tick later"
+        );
+    }
+
+    /// The Wake and its Context cannot be separated, so nothing downstream can
+    /// read a proposal against a moment it was not computed for.
+    #[test]
+    fn take_hands_back_the_context_the_wake_was_computed_for() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+        let asked = Context {
+            happened: Happened::Poke,
+            standing: "Finder".to_string(),
+            ..wake_context()
+        };
+
+        slots.wake(&id, answering("stroll", 0), asked);
+
+        let (_, carried) = polled(&mut slots, &id).expect("the call answers");
+        assert_eq!(carried.happened, Happened::Poke);
+        assert_eq!(carried.standing, "Finder");
+    }
+
+    /// One registry, but the newest-wins latch is each Instance's own: two
+    /// buddies poked at once are two conversations, per ADR-0008.
+    #[test]
+    fn one_instances_wake_leaves_anothers_slot_alone() {
+        let mut slots = Slots::new();
+        let (first, second) = ("first".to_string(), "second".to_string());
+
+        slots.wake(&first, answering("stroll", 0), wake_context());
+        slots.wake(&second, answering("nap", 0), wake_context());
+        // Supersedes `first` only. `second` has said nothing about it.
+        slots.wake(&first, answering("nap", 0), wake_context());
+
+        let (theirs, _) = polled(&mut slots, &second).expect("the second buddy still answers");
+        assert_eq!(behavior_of(&theirs), "nap");
+        let (ours, _) = polled(&mut slots, &first).expect("the first buddy answers too");
+        assert_eq!(behavior_of(&ours), "nap");
+    }
+
+    /// Superseding has to reach the worker, not just the epoch it answers on.
+    /// Closing the connection is what stops a generation and gives the host its
+    /// capacity back (#302), and the worker is the only thing holding the
     /// socket — so a flag it never reads buys nothing.
     #[test]
-    fn cancel_raises_the_flag_the_worker_reads() {
-        /// Stands in for the SSE loop: checks between frames, without a
-        /// server. Spins far longer than the test should need.
-        struct Watchful {
-            saw: Arc<AtomicBool>,
-        }
-
-        impl Completer for Watchful {
-            fn complete(&self, _: &str) -> Result<String, String> {
-                for _ in 0..400 {
-                    if abandoned() {
-                        self.saw.store(true, Ordering::SeqCst);
-                        return Err("abandoned".to_string());
-                    }
-                    thread::sleep(Duration::from_millis(5));
-                }
-                Ok("idle".to_string())
-            }
-        }
-
+    fn superseding_raises_the_flag_the_worker_reads() {
         let saw = Arc::new(AtomicBool::new(false));
-        let mut pending = InFlight::new();
-        pending.start(
-            "buddy-1".into(),
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        slots.wake(
+            &id,
             Arc::new(ModelDirector::new(
                 Watchful {
                     saw: Arc::clone(&saw),
                 },
-                ["idle"],
+                ["stroll"],
             )),
             wake_context(),
         );
-        pending.cancel();
+        slots.wake(&id, answering("nap", 0), wake_context());
 
-        for _ in 0..100 {
-            if saw.load(Ordering::SeqCst) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
         assert!(
-            saw.load(Ordering::SeqCst),
-            "the worker ran on without ever seeing that it had been dropped"
+            waited_for(&saw),
+            "the superseded worker ran on without ever seeing that it had been dropped"
         );
     }
 

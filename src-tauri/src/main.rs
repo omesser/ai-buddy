@@ -47,7 +47,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::character::{Character, Primitive};
-use ai_buddy_core::director::{Context, Happened, ModelDirector, Pace, Seeded, StaticDirector};
+use ai_buddy_core::director::{Happened, ModelDirector, Pace, Seeded, StaticDirector};
 use ai_buddy_core::engine::{Cue, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
 use ai_buddy_core::memory::{self, MemoryManifest};
@@ -151,8 +151,6 @@ struct InstanceState {
     character: Arc<Character>,
     director: StaticDirector,
     model: Option<Arc<ModelDirector<model::Endpoint>>>,
-    pending: model::InFlight,
-    in_flight: Option<Context>,
     recent: Vec<String>,
     pace: Pace,
     since_wake: Duration,
@@ -261,9 +259,9 @@ struct SpritePlacement<'a> {
     /// A line to speak on this tick only. Dialogue is an event, not a state.
     /// #119: the webview latches it and owns display duration.
     dialogue: Option<String>,
-    /// Whether to show the thinking ellipsis. Derived from InFlight state and
-    /// addressed. #119: grace and min-hold are in the webview so the Engine
-    /// stays tick-pure.
+    /// Whether to show the thinking ellipsis. Derived from what the Instance
+    /// has on the wire. #119: grace and min-hold are in the webview so the
+    /// Engine stays tick-pure.
     thinking: bool,
     /// Whether this overlay draws this Instance's bubble (#178, `bubble_owner`).
     bubble: bool,
@@ -756,6 +754,7 @@ fn apply_menu_action(
     action: menu::MenuAction,
     roster: &mut Roster,
     lives: &mut Vec<InstanceState>,
+    slots: &mut model::Slots,
     instance_id: &InstanceId,
     rules: &Arc<Mutex<HideRules>>,
     settings: &Arc<Mutex<Settings>>,
@@ -769,7 +768,15 @@ fn apply_menu_action(
     match action {
         menu::MenuAction::SwitchCharacter(name) => {
             if let Some(character) = characters.get(&name).cloned() {
-                switch_instance(roster, lives, instance_id, character, config, director);
+                switch_instance(
+                    roster,
+                    lives,
+                    slots,
+                    instance_id,
+                    character,
+                    config,
+                    director,
+                );
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -869,6 +876,7 @@ fn quit_now() -> ! {
 fn switch_instance(
     roster: &mut Roster,
     lives: &mut [InstanceState],
+    slots: &mut model::Slots,
     instance_id: &InstanceId,
     character: Arc<Character>,
     config: &model::DirectorConfig,
@@ -886,8 +894,8 @@ fn switch_instance(
         // The old session is the previous Character's. A Wake still on the
         // wire would propose as them; drop it and ask for this opening turn.
         model::retarget_model(
-            &mut live.pending,
-            &mut live.in_flight,
+            slots,
+            instance_id,
             &mut live.model,
             live.character.behaviors.keys().cloned(),
             settings,
@@ -938,8 +946,6 @@ fn spawn_live(
                 character.behaviors.keys().cloned(),
             ))
         }),
-        pending: model::InFlight::new(),
-        in_flight: None,
         recent: Vec::new(),
         pace: Pace::with_growth(
             config.ambient_first,
@@ -1187,17 +1193,15 @@ fn spawn_instances(
             //
             // ponytail: N Instances with a key make N times the model calls, on
             // N independent `Pace` clocks and against no shared budget. Fine for
-            // the handful a desktop holds; a budget the Instances draw from is
-            // the upgrade, and it wants somewhere to show the spend, which is
-            // #18's panel.
+            // the handful a desktop holds; the cap belongs in `Slots`, which is
+            // the one thing that sees every Instance, and it wants somewhere to
+            // show the spend, which is #18's panel.
             model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
                     model::endpoint_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                 ))
             }),
-            pending: model::InFlight::new(),
-            in_flight: None,
             recent: Vec::new(),
             pace: Pace::with_growth(
                 config.ambient_first,
