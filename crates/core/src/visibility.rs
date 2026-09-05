@@ -347,7 +347,7 @@ mod tests {
             window(0.0, 1117.0, 1920.0, 1080.0),
         ] {
             assert!(
-                !fullscreen_frontmost(&[parked.bounds, fullscreen.bounds], &displays),
+                fullscreen_frontmost(&[parked.bounds, fullscreen.bounds], &displays),
                 "a window parked at {parked:?} is not on any display and answers for nothing"
             );
         }
