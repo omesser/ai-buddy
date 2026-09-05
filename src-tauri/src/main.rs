@@ -93,8 +93,23 @@ fn overlay_label(index: usize) -> String {
     format!("overlay-{index}")
 }
 
+/// The label of the Chat surface belonging to `id`.
+///
+/// One surface per Summoned Character Instance, so the Instance's id is both
+/// the name and the way the frame loop addresses a reply. Outside the
+/// `overlay-` namespace on purpose: `place_overlays` closes every `overlay-{n}`
+/// past the display count, so a Chat surface sharing that prefix would be shut
+/// when a display is unplugged. `capabilities/chat.json` grants the same
+/// permissions to every `chat-*`.
+fn chat_label(id: &InstanceId) -> String {
+    format!("chat-{id}")
+}
+
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
+
+/// The event carrying one turn's answer to a Chat surface.
+const CHAT_EVENT: &str = "chat";
 
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
@@ -160,6 +175,11 @@ struct InstanceState {
     last_state: Option<State>,
     addressed: bool,
     happened: Happened,
+    /// Whether the call this Instance has on the wire answers a typed line, so
+    /// the Chat surface can be told when newest-wins throws that answer away
+    /// (ADR-0011). Not derivable from `Slots`, which knows only that a call is
+    /// out, and not from `happened`, which the wake clears as it sends.
+    chat_turn: bool,
     pointer: Pointer,
     /// The last line spoken and which overlay showed it, so a crossing
     /// carries it (#178). See `carry_line`.
@@ -595,6 +615,182 @@ fn build_overlay(
     Ok(())
 }
 
+/// Build one Instance's Chat surface.
+///
+/// Nothing is shared with `build_overlay` and nothing should be: every flag
+/// that makes an overlay an overlay is wrong for a window a user types into.
+/// Click-through would swallow the click that puts the caret in the field,
+/// always-on-top and visible-on-all-workspaces would follow them into the
+/// application they left the conversation for, and `configure_overlay`'s
+/// window level would sit a text field above their editor. What is left is a
+/// plain window, which is what Tauri builds when nothing asks otherwise — so
+/// the flags an overlay sets are absent here rather than set to false.
+///
+/// Main thread only: it builds a window.
+fn build_chat(app: &tauri::AppHandle, label: &str, title: &str) -> Result<(), tauri::Error> {
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
+        .title(title)
+        .inner_size(420.0, 560.0)
+        .min_inner_size(320.0, 320.0)
+        .focused(true)
+        .build()?;
+    Ok(())
+}
+
+/// Open this Instance's Chat surface, or raise the one it already has.
+///
+/// Called from the frame loop, so the whole of it is posted to the main
+/// thread: building a webview and focusing one both reach the window server.
+/// The lookup goes over with it rather than being done here, because
+/// `run_on_main_thread` returning `Ok` means queued and not built — deciding
+/// on this side would have two Summons a tick apart each post a build and get
+/// a second window for one Instance. ADR-0008 gives that Instance one session,
+/// so a second window would be a second view of one conversation.
+fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
+    let label = chat_label(id);
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || match handle.get_webview_window(&label) {
+        Some(window) => {
+            let _ = window.unminimize();
+            if let Err(why) = window.set_focus() {
+                eprintln!("chat: {label} could not be raised: {why}");
+            }
+        }
+        None => {
+            if let Err(why) = build_chat(&handle, &label, &title) {
+                eprintln!("chat: {label}: {why}");
+            }
+        }
+    }) {
+        eprintln!("chat: could not reach the main thread: {why}");
+    }
+}
+
+/// Shut the Chat surface belonging to `id`, if it has one.
+///
+/// Nothing else closes a `chat-*`: they sit outside the `overlay-` namespace
+/// `place_overlays` sweeps, so a surface whose Instance was dismissed would
+/// keep a window open on a conversation with nobody at the other end — a
+/// blank header, and a caret waiting on an answer no frame loop can write.
+///
+/// Main thread only, for `open_chat`'s reason.
+fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
+    let label = chat_label(id);
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(&label) {
+            if let Err(why) = window.close() {
+                eprintln!("chat: {label} could not be closed: {why}");
+            }
+        }
+    }) {
+        eprintln!("chat: could not reach the main thread: {why}");
+    }
+}
+
+/// Record what just happened to an Instance, unless a typed line is still
+/// waiting to be asked.
+///
+/// `happened` is one slot, and a typed line is the only thing that ever sits
+/// in it with someone waiting on an answer. Without this, a Poke or a Perch
+/// landing between the line arriving and the wake starting would replace the
+/// question, and the Director would answer one nobody asked.
+fn note_happened(happened: &mut Happened, what: Happened) {
+    if !matches!(happened, Happened::Chat(_)) {
+        *happened = what;
+    }
+}
+
+/// What a Chat surface needs to draw itself before anything is typed.
+#[derive(Serialize)]
+struct ChatOpening {
+    /// Two Instances of one Character share its Memory and differ in name, so
+    /// the name is how a user tells two of these windows apart.
+    name: String,
+    /// The Character this Instance runs.
+    character: String,
+    /// Whether a Completer exists at all — a key, or a local host.
+    configured: bool,
+    /// Whether the switch is on as well. Configured and switched off is a
+    /// different sentence from never configured, and the surface says which.
+    enabled: bool,
+}
+
+/// The Chat surface asking who it belongs to, and whether anything can answer.
+///
+/// A command rather than an event, for `character`'s reason: Tauri buffers
+/// nothing for a listener that is not there yet, so state emitted when the
+/// window is built reaches nobody. Read out of the same `DirectorInspect` the
+/// Settings window renders, so the two windows cannot disagree about whether
+/// a session Director is attached.
+#[tauri::command]
+fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> ChatOpening {
+    let (name, character) = state
+        .instances
+        .lock()
+        .ok()
+        .and_then(|rows| {
+            rows.iter()
+                .find(|row| row.id == instance)
+                .map(|row| (row.name.clone(), row.character.clone()))
+        })
+        .unwrap_or_default();
+    let inspect = state.inspect.lock().ok();
+    ChatOpening {
+        name,
+        character,
+        configured: inspect.as_ref().is_some_and(|read| read.configured),
+        enabled: inspect.as_ref().is_some_and(|read| read.enabled),
+    }
+}
+
+/// A line typed at one Instance's Chat surface, on its way to the frame loop.
+struct ChatLine {
+    instance: InstanceId,
+    text: String,
+}
+
+/// The sender every Chat surface posts typed lines on.
+///
+/// A channel of its own rather than another `SettingsOp`: every op drained
+/// from that one rewrites settings.json and redraws the Settings window, which
+/// is not what typing a line is. A struct rather than a bare `Sender`, because
+/// managed state is keyed by type and two channels of one shape would collide.
+struct ChatChannel(mpsc::Sender<ChatLine>);
+
+/// What the Shell tells one Chat surface when a turn of its own is over.
+#[derive(Clone, Serialize)]
+struct ChatReply {
+    /// What the Instance said, and `None` when the turn produced no line: a
+    /// failed call falls back to `StaticDirector`, which is silent by
+    /// contract, and Do Not Disturb refuses dialogue outright. Sent anyway,
+    /// because a surface waiting forever for an answer that is not coming is
+    /// worse than one told there is none.
+    said: Option<String>,
+    /// The line was refused because one typed before it has not been asked
+    /// yet. `said` is `None`; see the drain in `frame_loop`.
+    busy: bool,
+}
+
+/// A line the user typed, on its way in.
+///
+/// Bounded here because this is where webview text enters the process, and at
+/// the Director's own limit rather than a second number: the line goes into a
+/// session that keeps it, so `follow_up` cutting it later would still have
+/// paid for the whole paste on the way.
+#[tauri::command]
+fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>) {
+    let text: String = text
+        .trim()
+        .chars()
+        .take(ai_buddy_core::director::CHAT_LIMIT)
+        .collect();
+    if text.is_empty() {
+        return;
+    }
+    let _ = chat.0.send(ChatLine { instance, text });
+}
+
 /// One overlay per display, each covering that display.
 ///
 /// This is what keeps a Character on a seam whole: both overlays draw it, each
@@ -959,6 +1155,7 @@ fn spawn_live(
         last_state: None,
         addressed: false,
         happened: Happened::Ambient,
+        chat_turn: false,
         pointer: Pointer::default(),
         spoken: None,
         drawn_last: None,
@@ -979,6 +1176,7 @@ struct FrameExtras {
     characters: BTreeMap<String, Arc<Character>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     ops: mpsc::Receiver<SettingsOp>,
+    chat: mpsc::Receiver<ChatLine>,
 }
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
@@ -1220,6 +1418,7 @@ fn spawn_instances(
             last_state: None,
             addressed: false,
             happened: Happened::Ambient,
+            chat_turn: false,
             pointer: Pointer::default(),
             spoken: None,
             drawn_last: None,
@@ -1397,7 +1596,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             character,
             overlay_primary,
-            overlay_secondary
+            overlay_secondary,
+            chat_opening,
+            chat_send
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
@@ -1584,6 +1785,8 @@ fn main() {
             }
             let instance_rows = Arc::new(Mutex::new(Vec::new()));
             let (ops_tx, ops_rx) = mpsc::channel();
+            let (chat_tx, chat_rx) = mpsc::channel();
+            app.manage(ChatChannel(chat_tx));
             app.manage(SettingsState {
                 settings: Arc::clone(&settings),
                 path: settings_file.clone(),
@@ -1669,6 +1872,7 @@ fn main() {
                     characters: character_cache,
                     instances: instance_rows,
                     ops: ops_rx,
+                    chat: chat_rx,
                 },
             );
             Ok(())
@@ -1681,6 +1885,31 @@ fn main() {
 mod tests {
     use super::*;
     use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
+
+    /// #17: a typed line waits in `happened` until a wake carries it, and the
+    /// sprite goes on being pokeable in the meantime. Losing the line there
+    /// would answer a question the user never asked and drop the one they are
+    /// waiting on, with nothing anywhere saying so.
+    #[test]
+    fn a_waiting_typed_line_survives_everything_else_that_happens() {
+        let mut happened = Happened::Chat("what are you standing on?".to_string());
+        note_happened(&mut happened, Happened::Poke);
+        note_happened(&mut happened, Happened::Perch);
+
+        assert_eq!(
+            happened,
+            Happened::Chat("what are you standing on?".to_string())
+        );
+    }
+
+    #[test]
+    fn with_nothing_waiting_the_latest_moment_wins() {
+        let mut happened = Happened::Ambient;
+        note_happened(&mut happened, Happened::Poke);
+        note_happened(&mut happened, Happened::Throw);
+
+        assert_eq!(happened, Happened::Throw);
+    }
 
     /// Settings persist Character.name (`Trump`). The env var and the folder
     /// are still the package stem (`trump`). Either has to start the same buddy.
