@@ -2,7 +2,7 @@
 # Art: Grok Imagine–generated character pack, resized to 90×90 RGBA
 # (transparent). Sprite reads a bit smaller than the authored 108 pack.
 # Walk frames are horizontally flipped so the nose faces RIGHT; the Engine
-# mirrors for leftward travel. Cheek LED omitted on walk only. Soft
+# mirrors for leftward travel. Cheek LED omitted on walk only (#345). Soft
 # anti-aliased lines → render_mode smooth (ADR-0006). Scale 1: frames are
 # already desktop-sized; fractional scale is not in the schema (1–4 only).
 
@@ -46,6 +46,49 @@ frames = [
   "frames/idle-15.png",
 ]
 fps = 5
+
+# Idle variants, not Behaviors: mood art on the idle ring without Director
+# weight. Brow-sensor glow (mirror-safe) pairs with the cheek LED; walk still
+# omits the cheek mark (#345).
+
+[animations.idle-breathe]
+frames = [
+  "frames/idle-breathe-0.png",
+  "frames/idle-breathe-1.png",
+  "frames/idle-breathe-2.png",
+  "frames/idle-breathe-3.png",
+  "frames/idle-breathe-4.png",
+  "frames/idle-breathe-5.png",
+  "frames/idle-breathe-6.png",
+  "frames/idle-breathe-7.png",
+]
+fps = 5
+variant_of = "idle"
+
+[animations.idle-blink]
+frames = [
+  "frames/idle-blink-0.png",
+  "frames/idle-blink-1.png",
+  "frames/idle-blink-2.png",
+  "frames/idle-blink-3.png",
+  "frames/idle-blink-4.png",
+  "frames/idle-blink-5.png",
+]
+fps = 8
+variant_of = "idle"
+
+[animations.idle-listen]
+frames = [
+  "frames/idle-listen-0.png",
+  "frames/idle-listen-1.png",
+  "frames/idle-listen-2.png",
+  "frames/idle-listen-3.png",
+  "frames/idle-listen-4.png",
+  "frames/idle-listen-5.png",
+  "frames/idle-listen-6.png",
+]
+fps = 4
+variant_of = "idle"
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
 # 3/4 right stride after pack flip; cheek LED omitted on walk only.

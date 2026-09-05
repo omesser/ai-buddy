@@ -688,7 +688,11 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 #[test]
 fn buddy_bot_frames_are_90_square_rgba() {
     let frames = frames_of("buddy-bot");
-    assert_eq!(frames.len(), 57, "the pack ships 57 PNG frames");
+    assert_eq!(
+        frames.len(),
+        78,
+        "the pack ships 78 PNG frames (57 base + 21 idle variants)"
+    );
 
     for (animation, frame, bytes) in frames {
         let (width, height, alpha) = frame_alpha(&bytes);
@@ -706,6 +710,42 @@ fn buddy_bot_frames_are_90_square_rgba() {
             "{animation} frame {frame} must keep a transparent margin"
         );
     }
+}
+
+/// Idle mood variants ring with base idle (BMO / Timber Wolf pattern). Declared
+/// as art, not Behaviors — the ring is enough without Director weight.
+#[test]
+fn buddy_bot_declares_idle_life_variants() {
+    let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
+
+    let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-listen", 7)];
+    for (name, count) in expected {
+        assert!(
+            character.animations.contains_key(name),
+            "{name} animation is declared"
+        );
+        let anim = &character.animations[name];
+        assert_eq!(
+            anim.frames.len(),
+            count,
+            "{name} must carry the shipped {count}-frame loop"
+        );
+        assert!(
+            character.animations["idle"]
+                .variants
+                .contains(&name.to_string()),
+            "{name} is an idle variant"
+        );
+        assert!(
+            !character.behaviors.contains_key(name),
+            "no {name} Behavior — the variant ring is enough"
+        );
+    }
+
+    let drawn = character
+        .draw("idle-breathe", 0)
+        .expect("idle-breathe draws when asked for by name");
+    assert_eq!(drawn.animation, "idle-breathe");
 }
 
 /// Eyes must be opaque black, not punched-through alpha holes (desktop shows through).
@@ -726,6 +766,45 @@ fn buddy_bot_eyes_are_opaque_black_not_transparent() {
             px[3], 255,
             "eye alpha at ({x},{y}) must be opaque, got {}",
             px[3]
+        );
+    }
+}
+
+/// Brow-sensor LEDs on idle: cool cyan-white glow at the two dots above the
+/// eyes. Positions shift with the idle bob, so we search the brow band.
+/// Mirror-safe alive signal; cheek LED on walk is #345.
+#[test]
+fn buddy_bot_idle_has_mirror_safe_brow_sensor_leds() {
+    let files = package_bytes("buddy-bot");
+    for frame in [
+        "frames/idle-0.png",
+        "frames/idle-breathe-4.png",
+        "frames/idle-blink-2.png",
+        "frames/idle-listen-3.png",
+    ] {
+        let bytes = files.get(frame).unwrap_or_else(|| panic!("{frame}"));
+        let (width, height, rgba) = frame_rgba(bytes);
+        let y0 = height * 16 / 90;
+        let y1 = height * 30 / 90;
+        let mut left = 0usize;
+        let mut right = 0usize;
+        for y in y0..=y1 {
+            for x in 0..width {
+                let px = rgba[y * width + x];
+                let (r, g, b, a) = (px[0], px[1], px[2], px[3]);
+                if a < 255 || b <= 200 || g <= 180 || b <= r || (b as i16 - r as i16) <= 20 {
+                    continue;
+                }
+                if x < width / 2 {
+                    left += 1;
+                } else {
+                    right += 1;
+                }
+            }
+        }
+        assert!(
+            left >= 1 && right >= 1,
+            "{frame} needs brow-sensor glow on both sides of mid, got left={left} right={right}"
         );
     }
 }
