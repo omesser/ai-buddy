@@ -44,6 +44,16 @@ pub struct Rect {
     pub height: f64,
 }
 
+impl Rect {
+    pub(crate) fn bottom(&self) -> f64 {
+        self.y + self.height
+    }
+
+    pub(crate) fn spans_x(&self, x: f64) -> bool {
+        x >= self.x && x <= self.x + self.width
+    }
+}
+
 /// The window server's handle for one window.
 ///
 /// An opaque token. Nothing above this layer interprets one, orders them or
