@@ -77,6 +77,24 @@ pub enum Happened {
     Ambient,
 }
 
+/// The same word again, as the Chat surface labels the row it draws.
+///
+/// Derived from `happened_cell` rather than written out a second time: the row
+/// and the status bar cell under it name the same fact, and two lists would
+/// eventually disagree about it. One preposition in front is all the label
+/// needs — every one of those words is a past participle, so `when poked` and
+/// `when spoken to` are both grammatical.
+///
+/// `Ambient` is the exception, and says so instead of naming a trigger. It is
+/// the one wake nobody caused, which is the thing a reader should be able to
+/// pick out of a log without reading the word after `when`.
+pub fn reacting_to(happened: &Happened) -> String {
+    match happened {
+        Happened::Ambient => "unprompted".to_string(),
+        caused => format!("when {}", happened_cell(caused)),
+    }
+}
+
 /// The same fact as `happened_word`, in the Chat surface's status bar.
 ///
 /// A second vocabulary because the two have different budgets. The prompt
@@ -562,11 +580,15 @@ mod tests {
     use crate::character::Primitive;
     use std::time::UNIX_EPOCH;
 
-    /// The Chat surface's status bar draws this word in a cell that cannot
-    /// wrap, and `tests/chat-status.test.js` measures the rest of that line
-    /// against a nine-character budget for it. A tenth character here moves
-    /// the clipping the bar was fixed for back onto the end of the line, and
-    /// nothing on the Rust side would notice.
+    /// Everything the Chat surface draws these two words in is narrow. The bar
+    /// cell cannot wrap, and `tests/chat-status.test.js` measures the rest of
+    /// that line against a nine-character budget for it; the row label sits
+    /// beside an Instance's name in the same 420-point window. A longer word
+    /// here moves the clipping the bar was fixed for back onto the end of the
+    /// line, and nothing else on the Rust side would notice.
+    ///
+    /// The last assertion is the one that matters most: it is what keeps the
+    /// label and the cell one vocabulary as this list grows.
     #[test]
     fn every_bar_word_fits_the_cell_the_bar_measured() {
         for happened in [
@@ -580,6 +602,19 @@ mod tests {
         ] {
             let word = happened_cell(&happened);
             assert!(word.len() <= 9, "{word:?} is {} characters", word.len());
+
+            let marker = reacting_to(&happened);
+            assert!(
+                marker.len() <= 15,
+                "{marker:?} is {} characters",
+                marker.len()
+            );
+            if !matches!(happened, Happened::Ambient) {
+                assert!(
+                    marker.ends_with(word),
+                    "{marker:?} stopped being {word:?} with a preposition in front",
+                );
+            }
         }
     }
 

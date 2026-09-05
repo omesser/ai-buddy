@@ -39,9 +39,11 @@ scroll or a filter to set, and anything the Harness reported rather than the
 Engine played, is the workbench arriving by another door.
 
 The log takes the same widening. Every response the session Director produces
-appears here, ambient as much as reactive, marked when nobody asked for it — a
-line said in the Speech bubble and nowhere else leaves one conversation with
-two places to read it and this log missing the half the user did not prompt.
+appears here, ambient as much as reactive — a line said in the Speech bubble
+and nowhere else leaves one conversation with two places to read it and this
+log missing the half the user did not type. One the user did not type is
+labelled with what the Director was reacting to, in the status bar's own words:
+a Summon and a Poke are prompts too, and only the ambient wake is unprompted.
 A response that proposes a Behavior and no Speech has no line to draw; the bar
 above names the Behavior, and nothing is held for a surface that opens later.
 

@@ -817,11 +817,17 @@ struct ChatReply {
     /// The line was refused because one typed before it has not been asked
     /// yet. `said` is `None`; see the drain in `frame_loop`.
     busy: bool,
-    /// Nobody asked for this: an ambient wake's Speech, which reaches the log
-    /// as well as the Speech bubble. Never takes the caret a typed line is
-    /// waiting on, and the surface marks it, because the log's grammar is a
-    /// question with its answer under it and this has no question above it.
-    unprompted: bool,
+    /// What the Director was reacting to when it said this, as the surface
+    /// labels the row: `when poked`, `when summoned`, or `unprompted` for the
+    /// one wake nobody caused. `None` on an answer to a typed line, which sits
+    /// under the user's own turn and needs no label.
+    ///
+    /// A label rather than a bare flag, and `director::reacting_to`'s words
+    /// rather than the window's own, because a double-click is a prompt: the
+    /// user asked, they just did not type. Its presence is also what tells the
+    /// surface not to hand this line to a caret waiting on a question it did
+    /// not answer.
+    reacting_to: Option<String>,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).

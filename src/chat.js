@@ -1,8 +1,8 @@
 // The Chat surface: one window per Summoned Character Instance, drawn by
 // ai-buddy rather than by whatever answers (ADR-0010). Three kinds of line
-// today — the user's turns, the answer as it arrives, and a line the Character
-// said with nobody having asked — plus the Shell's own note about a turn that
-// produced nothing. ADR-0010 gives the log two more, a tool call as a one-liner
+// today — the user's turns, the answer as it arrives, and a line the user drew
+// out without typing, labelled with what it was reacting to — plus the Shell's
+// own note about a turn that produced nothing. ADR-0010 gives the log two more, a tool call as a one-liner
 // and a forwarded permission request, and both arrive with the client that can
 // emit one (#16). It holds no authoritative state, like the overlay: the log is
 // what has been said in this window, and the Shell owns the session behind it.
@@ -187,16 +187,18 @@ async function start() {
         note("Still answering the last one — ask again when it lands.");
         return;
       }
-      if (payload.unprompted) {
-        // The Character speaking with nobody having asked: an ambient wake's
-        // Speech, which reaches the log as well as the Speech bubble so the
-        // conversation has one place to be read (ADR-0010). Marked rather than
-        // drawn as a reply, because the log's grammar is a question with its
-        // answer under it and an unmarked line here would read as the answer
-        // to whatever is above it — which may be minutes old and about
-        // something else. It takes no waiting turn for the same reason: that
-        // caret is on a question this did not answer.
-        said(`${them} · unprompted`, payload.said, "them");
+      if (payload.reacting_to) {
+        // A line the user did not type, which reaches the log as well as the
+        // Speech bubble so the conversation has one place to be read
+        // (ADR-0010). The label names what drew it out — a Summon, a Poke, or
+        // nobody at all — because the log's grammar is a question with its
+        // answer under it: an unlabelled line here reads as the answer to
+        // whatever is above it, and a line labelled as unasked-for reads as a
+        // bug when the user just double-clicked the sprite. It takes no
+        // waiting turn for the same reason: that caret is on a question this
+        // did not answer. The Shell writes the words, out of the vocabulary
+        // the status bar draws below.
+        said(`${them} · ${payload.reacting_to}`, payload.said, "them");
         return;
       }
       const turn = waiting.shift();

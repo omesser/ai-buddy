@@ -536,7 +536,7 @@ pub(crate) fn run_frame_loop(
                         ChatReply {
                             said: None,
                             busy: false,
-                            unprompted: false,
+                            reacting_to: None,
                         },
                     );
                     continue;
@@ -563,7 +563,7 @@ pub(crate) fn run_frame_loop(
                         ChatReply {
                             said: None,
                             busy: false,
-                            unprompted: false,
+                            reacting_to: None,
                         },
                     );
                     continue;
@@ -587,7 +587,7 @@ pub(crate) fn run_frame_loop(
                         ChatReply {
                             said: None,
                             busy: true,
-                            unprompted: false,
+                            reacting_to: None,
                         },
                     );
                     continue;
@@ -914,6 +914,14 @@ pub(crate) fn run_frame_loop(
                     .as_ref()
                     .is_some_and(|(wake, _)| matches!(wake, Wake::Proposed(_)));
 
+                // What that wake was told had happened, in the words the row
+                // label uses. Read here because the `Context` it came with is
+                // consumed just below, and the emit that needs it is further
+                // down still.
+                let reacting_to = arrived
+                    .as_ref()
+                    .map(|(_, context)| director::reacting_to(&context.happened));
+
                 if let Some((wake, context)) = arrived {
                     if model::tracing() {
                         match &wake {
@@ -1015,28 +1023,29 @@ pub(crate) fn run_frame_loop(
                 // Every response, not only the ones a typed line asked for. A
                 // line said in the bubble and nowhere else is one conversation
                 // with two places to read it and a log missing half of it,
-                // which is the split ADR-0008 exists to prevent. An ambient
-                // wake's line goes over marked as unasked-for, so the surface
-                // cannot draw it as the answer to a question still sitting
-                // above it. Two things do not go over: a response that
-                // proposed a Behavior and no Speech, which has no words to log
-                // and whose Behavior the bar names a line under it, and
-                // anything the Static Director picked, which is every free
-                // wake and would fill the window with rows nobody asked for.
-                // Nothing waits for a window that is not open — `emit_to`
-                // names a label, and a label nobody holds reaches nobody.
+                // which is the split ADR-0008 exists to prevent. A line the
+                // user did not type carries what the Director was reacting to,
+                // so the surface can say a Summon or a Poke drew it out rather
+                // than drawing it under a question it did not answer. Two
+                // things do not go over: a response that proposed a Behavior
+                // and no Speech, which has no words to log and whose Behavior
+                // the bar names a line under it, and anything the Static
+                // Director picked, which is every free wake and would fill the
+                // window with rows nobody asked for. Nothing waits for a
+                // window that is not open — `emit_to` names a label, and a
+                // label nobody holds reaches nobody.
                 if answering_chat {
                     live.chat_turn = false;
                 }
-                let unprompted = responded && !answering_chat && frame.dialogue.is_some();
-                if answering_chat || unprompted {
+                let unasked = responded && !answering_chat && frame.dialogue.is_some();
+                if answering_chat || unasked {
                     let _ = app.emit_to(
                         chat_label(&live.id),
                         CHAT_EVENT,
                         ChatReply {
                             said: frame.dialogue.clone(),
                             busy: false,
-                            unprompted,
+                            reacting_to: unasked.then(|| reacting_to.clone()).flatten(),
                         },
                     );
                 }
@@ -1115,7 +1124,7 @@ pub(crate) fn run_frame_loop(
                                     ChatReply {
                                         said: None,
                                         busy: false,
-                                        unprompted: false,
+                                        reacting_to: None,
                                     },
                                 );
                             }
