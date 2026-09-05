@@ -6,8 +6,7 @@
 
 use std::time::Duration;
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{self, AtomEnum, Window};
-use x11rb::rust_connection::RustConnection;
+use x11rb::protocol::xproto::{self, AtomEnum};
 
 pub struct X11ActivitySource;
 
@@ -49,38 +48,7 @@ fn frontmost_window_class() -> Option<String> {
         reply.value[3],
     ]);
 
-    window_class(conn, active_window)
-}
-
-/// Read WM_CLASS to get the window's application name.
-fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
-    let reply = xproto::get_property(
-        conn,
-        false,
-        window,
-        AtomEnum::WM_CLASS,
-        AtomEnum::STRING,
-        0,
-        1024,
-    )
-    .ok()?
-    .reply()
-    .ok()?;
-
-    if reply.format != 8 {
-        return None;
-    }
-
-    let value = reply.value;
-    String::from_utf8(value.clone())
-        .ok()
-        .and_then(|s| s.split('\0').nth(1).map(|c| c.to_string()))
-        .or_else(|| {
-            String::from_utf8_lossy(&value)
-                .split('\0')
-                .next()
-                .map(|s| s.to_string())
-        })
+    super::atoms::window_class(conn, active_window)
 }
 
 /// Read idle duration from X11 Screensaver extension.
