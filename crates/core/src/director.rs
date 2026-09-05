@@ -253,7 +253,7 @@ pub fn remember(recent: &mut Vec<String>, behavior: String) {
 
 /// Wait between proactive model calls. Grows by `model_base.pow(model_power)`
 /// after each proactive call, resets when the user addresses the buddy.
-/// The Character Manifest names those two. ADR-0008.
+/// The Character Manifest names those two. ADR-0015.
 #[derive(Clone, Debug)]
 pub struct Pace {
     first: Duration,

@@ -26,7 +26,7 @@
 //! its own, never a declaration, so it can describe a Character that jumps
 //! without the Character gaining a jump.
 //!
-//! The Character Manifest is TOML (ADR-0008): a name, a table per Animation,
+//! The Character Manifest is TOML (ADR-0015): a name, a table per Animation,
 //! a table per Behavior, and an optional `[director]` for how proactive model
 //! calls space themselves. TOML replaces only the container — the `when`
 //! condition is still this module's own small language, checked here. It stays

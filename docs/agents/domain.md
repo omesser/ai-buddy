@@ -49,3 +49,8 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
+
+That citation is the reason a number belongs to one decision. Number a new ADR
+with the next free number, and re-check it against `docs/adr/` just before you
+commit: two branches both taking "the next one" is how the number 0008 came to
+name two documents. The `adr-numbers-unique` pre-commit hook refuses a repeat.
