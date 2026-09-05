@@ -7,6 +7,8 @@
 // authoritative state, like the overlay: the log is what has been said in
 // this window, and the Shell owns the session behind it.
 
+import { statusCells } from "./chat-status.js";
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
@@ -24,9 +26,31 @@ const composer = document.getElementById("composer");
 const line = document.getElementById("line");
 const send = document.getElementById("send");
 
+// The status bar's cells, by the name `statusCells` gives each.
+const cells = Object.fromEntries(
+  ["behavior", "primitive", "animation", "state", "facing", "director", "happened"].map(
+    (name) => [name, document.getElementById(`s-${name}`)],
+  ),
+);
+
 // The WHO label on the Instance's own turns, filled in once the Shell says who
 // this window belongs to.
 let them = "";
+
+// The last thing the Shell said about the Spatial Layer, and when the ambient
+// wake it named falls due. The Shell pushes that deadline once rather than a
+// number every second: the seconds between are arithmetic, and arithmetic in
+// here costs the frame loop nothing.
+let status = null;
+let wakeAt = null;
+
+function paint() {
+  const left = wakeAt === null ? null : Math.max(0, wakeAt - performance.now());
+  const drawn = statusCells(status, left);
+  for (const [name, node] of Object.entries(cells)) {
+    node.textContent = drawn[name];
+  }
+}
 
 // Turns waiting on an answer, oldest first. The Shell answers them in the
 // order it took them and refuses a line typed while one is still waiting, so
@@ -185,6 +209,24 @@ async function start() {
     { target: chat.label },
   );
 
+  await listen(
+    "chat-status",
+    ({ payload }) => {
+      status = payload;
+      const ms = payload.wake_ms ?? null;
+      wakeAt = ms === null ? null : performance.now() + ms;
+      paint();
+    },
+    { target: chat.label },
+  );
+
+  // Both listeners are up, so the state as it stands can be asked for. The bar
+  // is pushed on change and a window opened between two of them would sit at
+  // dashes until the sprite next did something different.
+  invoke("chat_ready", { instance }).catch((why) => {
+    console.error("chat: the status bar could not ask for a first push:", why);
+  });
+
   const opening = await invoke("chat_opening", { instance });
   them = opening.name;
   document.getElementById("name").textContent = opening.name;
@@ -198,6 +240,10 @@ async function start() {
   attached(opening);
   line.focus();
 }
+
+// Only the countdown moves between pushes, and it moves once a second.
+paint();
+setInterval(paint, 1000);
 
 start().catch((why) => {
   // Not knowing who this window belongs to or whether anything can answer

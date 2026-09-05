@@ -70,6 +70,32 @@
       <button type="submit" id="send">Send</button>
     </form>
 
+    <!-- The Spatial Layer's own state, live (ADR-0010). The ladder reads
+         left to right — Behavior, Primitive, Animation, the split ADR-0002
+         draws — then the State it plays under and which way the sprite faces,
+         then what the Director is doing, then what it was last told had
+         happened. chat.js writes the values; the labels are titles rather
+         than words on the line, because a 420-point window has room for the
+         values or for their names and not for both. -->
+    <footer class="bar">
+      <span class="v elide" id="s-behavior" title="Behavior"></span>
+      <span class="sep">›</span>
+      <span class="v" id="s-primitive" title="Primitive"></span>
+      <span class="sep">›</span>
+      <span class="v elide" id="s-animation" title="Animation"></span>
+      <span class="sep">·</span>
+      <span class="v" id="s-state" title="State"></span>
+      <span class="v" id="s-facing" title="Which way it faces"></span>
+      <span class="sep">·</span>
+      <span
+        class="v"
+        id="s-director"
+        title="The Director: a turn on the wire, and the next ambient wake"
+      ></span>
+      <span class="sep">·</span>
+      <span class="v" id="s-happened" title="What the last wake was told had happened"></span>
+    </footer>
+
     <script type="module" src="chat.js"></script>
   </body>
 </html>
