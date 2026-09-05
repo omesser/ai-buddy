@@ -37,8 +37,7 @@ model_base = 1
 model_power = 1
 
 # Camera-facing stand from the turn recording, so idle meshes with talk and react.
-# Stand. TAC laser is an idle variant (below). Perched rest is still sit until
-# #311 lets quiet perch switch to idle — then the scan ring can show on a window.
+# Stand. TAC laser is an idle variant (below).
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
@@ -94,8 +93,11 @@ fps = 1
 
 
 # TAC laser sweep as an idle variant. scan-0.png is a byte-copy of idle-0 and
-# is omitted; the real sweep is scan-1..3. Visible whenever idle draws long
-# enough for the variant ring (floor rest today; perched rest after #311).
+# is omitted; the real sweep is scan-1..3. Weightless, so it takes the default
+# one against idle's three: about one idle stretch in four is a sweep. A
+# perched rest or the floor plays the whole 1s sweep; a Behavior's idle
+# Primitive restarts the clock every 600ms, so it shows the way out and not
+# the way back.
 [animations.scan]
 frames = [
   "frames/scan-1.png",

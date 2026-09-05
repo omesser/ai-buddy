@@ -34,10 +34,11 @@ frames = ["frames/sing-0.png", "frames/sing-1.png", "frames/sing-2.png", "frames
 fps = 3
 variant_of = "idle"
 
-# A variant is more art for the same life: the renderer cycles the ring —
-# base first and three times as long, then each variant — in whole loops.
-# Idling, BMO mostly stands; now and then it sings, or rides its skateboard.
-# Walking, it sometimes dribbles a football the whole way.
+# A variant is more art for the same life: whenever the engine starts the
+# base, one member of the ring is drawn by weight and plays until the engine
+# asks for something else. An undeclared weight is one against the base's
+# three. Idling, BMO mostly stands; now and then it sings, or rides its
+# skateboard. Walking, it sometimes dribbles a football the whole way.
 
 # Cruise, push, cruise, cheer — the bail frame stays in the pack: a board
 # that vanishes mid-loop reads as a glitch, not a trick.

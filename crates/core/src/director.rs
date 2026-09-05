@@ -474,8 +474,9 @@ fn triggered(trigger: &Trigger, activity: &Activity) -> bool {
 /// for a coin toss the Engine performs once every twenty seconds.
 ///
 /// Public because the Shell needs draws of its own — where each Instance's wake
-/// clock starts — and a second generator there would be a second thing to
-/// reason about at a second quality. One mixer, one set of properties.
+/// clock starts — and the Engine needs one to pick a variant. A second
+/// generator would be a second thing to reason about at a second quality.
+/// One mixer, one set of properties, whoever is drawing.
 pub struct Seeded(u64);
 
 impl Seeded {
@@ -494,25 +495,33 @@ impl Seeded {
     }
 
     /// One name out of `choices`, each as likely as its weight says.
+    fn pick(&mut self, choices: &[(String, u32)]) -> Option<String> {
+        let weights: Vec<u32> = choices.iter().map(|(_, weight)| *weight).collect();
+        Some(choices[self.pick_index(&weights)?].0.clone())
+    }
+
+    /// Which of `weights` the next draw lands on, each as likely as its weight
+    /// says, and `None` when none of them has any.
     ///
     /// The draw is taken over the running total, which is why the order matters
     /// and why a `BTreeMap` feeds it: the same seed and the same Character must
-    /// pick the same Behavior on every machine and every run.
+    /// pick the same Behavior — and the same variant — on every machine and
+    /// every run.
     ///
     /// Modulo bias is real and irrelevant here — the weights of one Character
     /// sum to something astronomically smaller than 2^64, so the bias is a part
     /// in billions of billions.
-    fn pick(&mut self, choices: &[(String, u32)]) -> Option<String> {
-        let total: u64 = choices.iter().map(|(_, weight)| u64::from(*weight)).sum();
+    pub(crate) fn pick_index(&mut self, weights: &[u32]) -> Option<usize> {
+        let total: u64 = weights.iter().map(|weight| u64::from(*weight)).sum();
         if total == 0 {
             return None;
         }
 
         let mut drawn = self.draw() % total;
-        for (name, weight) in choices {
+        for (index, weight) in weights.iter().enumerate() {
             match drawn.checked_sub(u64::from(*weight)) {
                 Some(left) => drawn = left,
-                None => return Some(name.clone()),
+                None => return Some(index),
             }
         }
         None

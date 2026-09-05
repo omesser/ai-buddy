@@ -6,6 +6,7 @@
 //! asserting frames, with no windowing system, no model and no waiting.
 
 use crate::character::{Behavior, CursorReaction, Primitive};
+use crate::director::Seeded;
 pub use crate::window_source::WindowId;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -202,6 +203,12 @@ pub struct Frame {
     /// the Character Manifest declares, which the Engine has no business
     /// knowing. `character::Animation::frame_at` does that arithmetic.
     pub animation_ms: u32,
+    /// The draw that decides which member of the Animation's variant ring is
+    /// on screen, weighed by `Character::draw` against what the Manifest
+    /// declared. Held for as long as the Animation plays and taken afresh when
+    /// it changes, so a Behavior stepping through `idle` shows one strip
+    /// instead of swapping costumes every Primitive turn. #316.
+    pub variant_draw: u64,
     /// A line to speak on this frame only. Dialogue is an event, not a state.
     pub dialogue: Option<String>,
     /// The Behavior that started playing on this frame, if a proposal was
@@ -271,14 +278,10 @@ const SLEEP_AFTER_MS: u32 = 60_000;
 /// place. Long enough to read as settling onto the edge, and far short of
 /// nodding off. #310.
 ///
-/// The ceiling is arithmetic rather than taste, and it is tight. Perched rest
-/// ends at the next Static Director wake — `director::WAKE_EVERY`, less the
-/// Behavior it starts — so the quiet window is about 18s. A variant ring holds
-/// its base for `3 * VARIANT_HOLD_MS` before the first variant's slot opens,
-/// and `animation_ms` restarts when sit gives way to idle, so an idle variant
-/// needs 12s of that window to itself. Spend more than 6s on sit and no Perch
-/// ever reaches one, which is the idle life this constant exists to restore.
-/// #307.
+/// How the sit reads, and no longer whether art is reachable: a variant is
+/// drawn when idle starts, so this does not decide whether one appears. It
+/// still bounds how much of a long strip a perched sprite gets through before
+/// the next wake. #310, #316.
 const PERCHED_IDLE_AFTER_MS: u32 = 4_000;
 
 /// Points per second the sprite hauls itself up a screen edge. A tuning knob.
@@ -362,6 +365,12 @@ pub struct Engine {
     animation: &'static str,
     /// Milliseconds since the current Animation started.
     animation_ms: u32,
+    /// The draw the renderer weighs against the Animation's variant ring, and
+    /// the source it comes from. The Engine knows when an Animation starts and
+    /// nothing about the art, which is exactly what the draw needs and all it
+    /// needs; which strip the number lands on is the Character's. #316.
+    variant_draw: u64,
+    variants: Seeded,
     /// The Behaviors the Character declares, which a proposal names.
     behaviors: BTreeMap<String, Behavior>,
     /// The windows of the previous tick, to tell a window that has come to
@@ -461,6 +470,8 @@ impl Engine {
             perched_rest_ms: 0,
             animation: animation_for(State::Falling),
             animation_ms: 0,
+            variant_draw: 0,
+            variants: Seeded::new(0),
             behaviors: BTreeMap::new(),
             previous_windows: Vec::new(),
             previous_position: position,
@@ -497,6 +508,19 @@ impl Engine {
     /// Primitives the Engine already owns.
     pub fn with_behaviors(mut self, behaviors: BTreeMap<String, Behavior>) -> Self {
         self.behaviors = behaviors;
+        self
+    }
+
+    /// The seed this Instance's variant draws come from, so two buddies of one
+    /// Character do not idle in lockstep.
+    ///
+    /// Passed in rather than read, like the Static Director's seed: the Engine
+    /// has no clock, and a draw no test could reproduce would be worse than no
+    /// draw at all. The first is taken here, because the Animation a sprite
+    /// spawns in is one the seed should reach as well.
+    pub fn with_variant_seed(mut self, seed: u64) -> Self {
+        self.variants = Seeded::new(seed);
+        self.variant_draw = self.variants.draw();
         self
     }
 
@@ -1007,14 +1031,21 @@ impl Engine {
             }
             None => animation_for(self.state),
         };
+        // A fresh variant draw on the Animation, not on the Primitive: `idle`
+        // and a variant of `idle` are one family, and re-drawing every turn of
+        // a 600ms Primitive would flicker between strips mid-Behavior. #316.
+        let new_family = animation != self.animation;
+        if new_family {
+            self.animation = animation;
+            self.variant_draw = self.variants.draw();
+        }
         // A Primitive that starts restarts the Animation's clock even when the
         // name has not changed, or a second Poke would extend a held last frame
         // instead of playing the reaction again.
-        if animation == self.animation && !started {
-            self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
-        } else {
-            self.animation = animation;
+        if new_family || started {
             self.animation_ms = 0;
+        } else {
+            self.animation_ms = self.animation_ms.saturating_add(snapshot.elapsed_ms);
         }
 
         self.previous_windows.clone_from(&snapshot.windows);
@@ -1037,6 +1068,7 @@ impl Engine {
             state: self.state,
             animation: self.animation,
             animation_ms: self.animation_ms,
+            variant_draw: self.variant_draw,
             dialogue: if self.do_not_disturb {
                 None
             } else {
@@ -3931,27 +3963,6 @@ mod tests {
         assert_eq!(still.position.y, 380.0);
         assert_eq!(still.animation, "sit");
         assert!(!still.riding);
-    }
-
-    /// #307: what `PERCHED_IDLE_AFTER_MS` is actually bounded by, since the
-    /// number alone reads as taste and is not. Perched rest ends at the next
-    /// Static Director wake, and a variant ring holds its base for
-    /// `3 * VARIANT_HOLD_MS` before the first variant's slot opens. Sit too
-    /// long and the idle stretch left over never reaches that slot, so a
-    /// perched Character shows its base idle art and nothing else — which is
-    /// the state #310 was raised to end. Three Primitives is the longest
-    /// Behavior the shipped Characters declare.
-    #[test]
-    fn sit_leaves_a_perched_idle_long_enough_to_reach_a_variant() {
-        let quiet = crate::director::WAKE_EVERY.as_millis() as u32 - 3 * PRIMITIVE_MS;
-        let idling = quiet - PERCHED_IDLE_AFTER_MS;
-
-        assert!(
-            idling > 3 * crate::character::VARIANT_HOLD_MS,
-            "sit spends {PERCHED_IDLE_AFTER_MS}ms of a {quiet}ms window, leaving \
-             {idling}ms of idle against a base hold of {}ms",
-            3 * crate::character::VARIANT_HOLD_MS
-        );
     }
 
     /// #310: a sprite that rests quietly on a Perch for a while idles in

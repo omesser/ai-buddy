@@ -950,8 +950,8 @@ real variance rather than against itself:
   edge it climbs hand over hand — `climb` being the one optional Animation
   the engine asks for by name, with walk art the silent fallback. The idle
   and walk extras are `variant_of` declarations: more art for the same life,
-  cycled by the renderer a few seconds apiece. BMO never settles: every
-  Behavior it declares ends on its feet.
+  drawn by weight whenever the engine starts the Animation they vary. BMO
+  never settles: every Behavior it declares ends on its feet.
 - **`characters/nim/` — Nim**, modern pixel art. A palette larger than
   sixteen colours shaded on a ramp lit from the upper left, a translucent
   contact shadow wherever there is ground to cast it on, and twice the frames
