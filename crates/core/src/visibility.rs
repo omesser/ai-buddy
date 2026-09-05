@@ -20,8 +20,7 @@
 //! people on the call never see the Character while its owner keeps it. See
 //! `platform::macos::overlay_panel`.
 
-use crate::engine::Rect as WindowRect;
-use crate::window_source::Rect;
+use crate::window_source::{Rect, WindowRect};
 
 /// How long a rule takes to take the Character away, and to give it back.
 ///
@@ -216,7 +215,7 @@ fn fade_ms(from: Presence, to: Presence) -> u32 {
 /// asked is whether the window the user is working in has taken a whole screen,
 /// and a presentation on the second monitor is exactly when a companion should
 /// not be anywhere.
-pub fn fullscreen_frontmost(windows: &[WindowRect], frames: &[Rect]) -> bool {
+pub fn fullscreen_frontmost(windows: &[Rect], frames: &[Rect]) -> bool {
     windows
         .iter()
         .find(|window| {
@@ -235,7 +234,7 @@ pub fn fullscreen_frontmost(windows: &[WindowRect], frames: &[Rect]) -> bool {
 /// so asking the first window alone asks whether the menu bar is fullscreen,
 /// and it never is. Skipping what is off every display asks the window the
 /// user is actually working in, which is what decides.
-fn overlaps(window: &WindowRect, frame: &Rect) -> bool {
+fn overlaps(window: &Rect, frame: &Rect) -> bool {
     window.x < frame.x + frame.width
         && window.x + window.width > frame.x
         && window.y < frame.y + frame.height
@@ -244,7 +243,7 @@ fn overlaps(window: &WindowRect, frame: &Rect) -> bool {
 
 /// The Dock and the menu bar. Skip them so a fullscreen window behind them
 /// still counts.
-fn reserved_strip(window: &WindowRect, frame: &Rect) -> bool {
+fn reserved_strip(window: &Rect, frame: &Rect) -> bool {
     let hugs_top = (window.y - frame.y).abs() <= EDGE_TOLERANCE;
     let hugs_bottom =
         ((window.y + window.height) - (frame.y + frame.height)).abs() <= EDGE_TOLERANCE;
@@ -262,7 +261,7 @@ fn reserved_strip(window: &WindowRect, frame: &Rect) -> bool {
 
 /// Whether a window reaches every edge of a display, give or take the slack a
 /// fractional scale factor leaves behind.
-fn covers(window: &WindowRect, frame: &Rect) -> bool {
+fn covers(window: &Rect, frame: &Rect) -> bool {
     window.x <= frame.x + EDGE_TOLERANCE
         && window.y <= frame.y + EDGE_TOLERANCE
         && window.x + window.width >= frame.x + frame.width - EDGE_TOLERANCE
@@ -320,37 +319,22 @@ mod tests {
                 height: 1117.0,
             },
         ];
-        let menu_bar = WindowRect {
-            x: 0.0,
-            y: -32.0,
-            width: 1920.0,
-            height: 32.0,
-        };
-        let fullscreen = WindowRect {
-            x: 0.0,
-            y: 0.0,
-            width: 1920.0,
-            height: 1080.0,
-        };
+        let menu_bar = window(0.0, -32.0, 1920.0, 32.0);
+        let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
 
         assert!(
-            fullscreen_frontmost(&[menu_bar, fullscreen], &displays),
+            fullscreen_frontmost(&[menu_bar.bounds, fullscreen.bounds], &displays),
             "the frontmost window that is anywhere on a display is the one being worked in"
         );
         // On the display, not above it. OnScreenOnly still reports this
         // strip, so skipping only off-display windows is not enough. #188.
-        let on_display = WindowRect {
-            x: 0.0,
-            y: 0.0,
-            width: 1920.0,
-            height: 32.0,
-        };
+        let on_display = window(0.0, 0.0, 1920.0, 32.0);
         assert!(
-            fullscreen_frontmost(&[on_display, fullscreen], &displays),
+            fullscreen_frontmost(&[on_display.bounds, fullscreen.bounds], &displays),
             "a menu bar on the display does not hide a fullscreen window behind it"
         );
         assert!(
-            !fullscreen_frontmost(&[menu_bar], &displays),
+            !fullscreen_frontmost(&[menu_bar.bounds], &displays),
             "and a desktop holding nothing but the strip hides nothing"
         );
 
@@ -358,27 +342,12 @@ mod tests {
         // has four sides, and a window parked past any of them is equally not
         // the one being worked in.
         for parked in [
-            WindowRect {
-                x: -1920.0,
-                y: 0.0,
-                width: 1920.0,
-                height: 1080.0,
-            },
-            WindowRect {
-                x: 3648.0,
-                y: 0.0,
-                width: 1920.0,
-                height: 1080.0,
-            },
-            WindowRect {
-                x: 0.0,
-                y: 1117.0,
-                width: 1920.0,
-                height: 1080.0,
-            },
+            window(-1920.0, 0.0, 1920.0, 1080.0),
+            window(3648.0, 0.0, 1920.0, 1080.0),
+            window(0.0, 1117.0, 1920.0, 1080.0),
         ] {
             assert!(
-                fullscreen_frontmost(&[parked, fullscreen], &displays),
+                !fullscreen_frontmost(&[parked.bounds, fullscreen.bounds], &displays),
                 "a window parked at {parked:?} is not on any display and answers for nothing"
             );
         }
@@ -394,17 +363,17 @@ mod tests {
         let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
 
         assert!(
-            fullscreen_frontmost(&[dock, fullscreen], &[display()]),
+            fullscreen_frontmost(&[dock.bounds, fullscreen.bounds], &[display()]),
             "Dock in front of a fullscreen window is still fullscreen"
         );
         assert!(
-            !fullscreen_frontmost(&[dock], &[display()]),
+            !fullscreen_frontmost(&[dock.bounds], &[display()]),
             "the Dock alone is not fullscreen"
         );
 
         let side_dock = window(0.0, 200.0, 70.0, 680.0);
         assert!(
-            fullscreen_frontmost(&[side_dock, fullscreen], &[display()]),
+            fullscreen_frontmost(&[side_dock.bounds, fullscreen.bounds], &[display()]),
             "a left-edge Dock in front of a fullscreen window is still fullscreen"
         );
     }
@@ -417,7 +386,7 @@ mod tests {
         let palette = window(200.0, 880.0, 400.0, 200.0);
         let fullscreen = window(0.0, 0.0, 1920.0, 1080.0);
         assert!(
-            !fullscreen_frontmost(&[palette, fullscreen], &[display()]),
+            !fullscreen_frontmost(&[palette.bounds, fullscreen.bounds], &[display()]),
             "a short window on the bottom edge is not the Dock"
         );
     }
@@ -651,6 +620,20 @@ mod tests {
 
     fn window(x: f64, y: f64, width: f64, height: f64) -> WindowRect {
         WindowRect {
+            id: 1,
+            bounds: Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            owner: String::new(),
+            layer: 0,
+        }
+    }
+
+    fn rect(x: f64, y: f64, width: f64, height: f64) -> Rect {
+        Rect {
             x,
             y,
             width,
@@ -661,7 +644,7 @@ mod tests {
     #[test]
     fn a_window_covering_its_whole_display_is_a_fullscreen_application() {
         assert!(fullscreen_frontmost(
-            &[window(0.0, 0.0, 1920.0, 1080.0)],
+            &[rect(0.0, 0.0, 1920.0, 1080.0)],
             &[display()]
         ));
     }
@@ -671,7 +654,7 @@ mod tests {
     #[test]
     fn a_zoomed_window_stops_at_the_menu_bar_and_is_not_fullscreen() {
         assert!(!fullscreen_frontmost(
-            &[window(0.0, 30.0, 1920.0, 952.0)],
+            &[rect(0.0, 30.0, 1920.0, 952.0)],
             &[display()]
         ));
     }
@@ -680,8 +663,8 @@ mod tests {
     fn a_fullscreen_window_that_is_not_frontmost_does_not_hide_the_character() {
         assert!(!fullscreen_frontmost(
             &[
-                window(100.0, 100.0, 800.0, 600.0),
-                window(0.0, 0.0, 1920.0, 1080.0),
+                rect(100.0, 100.0, 800.0, 600.0),
+                rect(0.0, 0.0, 1920.0, 1080.0),
             ],
             &[display()]
         ));
@@ -704,7 +687,7 @@ mod tests {
     #[test]
     fn a_fullscreen_window_on_a_second_display_counts_too() {
         assert!(fullscreen_frontmost(
-            &[window(1920.0, 200.0, 1728.0, 1117.0)],
+            &[rect(1920.0, 200.0, 1728.0, 1117.0)],
             &[display(), second_display()]
         ));
     }
@@ -720,31 +703,31 @@ mod tests {
 
         // Full height and out to the right edge, but starting a long way in.
         assert!(!fullscreen_frontmost(
-            &[window(200.0, 0.0, 1720.0, 1080.0)],
+            &[rect(200.0, 0.0, 1720.0, 1080.0)],
             &displays
         ));
         // Down to the bottom edge, but starting below the menu bar — the
         // zoomed window above stops short of the bottom as well, so without
         // this one nothing measures the top edge at all.
         assert!(!fullscreen_frontmost(
-            &[window(0.0, 30.0, 1920.0, 1050.0)],
+            &[rect(0.0, 30.0, 1920.0, 1050.0)],
             &displays
         ));
         // Full height, pinned to the left edge, and narrow.
         assert!(!fullscreen_frontmost(
-            &[window(0.0, 0.0, 400.0, 1080.0)],
+            &[rect(0.0, 0.0, 400.0, 1080.0)],
             &displays
         ));
         // Narrow on the second display: its right edge is past that display's
         // width, and nowhere near its right edge at 1920 + 1728.
         assert!(!fullscreen_frontmost(
-            &[window(1920.0, 200.0, 400.0, 1117.0)],
+            &[rect(1920.0, 200.0, 400.0, 1117.0)],
             &displays
         ));
         // Short on the second display: past 1117 points from the top of the
         // desktop, and still short of its bottom edge at 200 + 1117.
         assert!(!fullscreen_frontmost(
-            &[window(1920.0, 200.0, 1728.0, 1000.0)],
+            &[rect(1920.0, 200.0, 1728.0, 1000.0)],
             &displays
         ));
     }
@@ -753,7 +736,7 @@ mod tests {
     fn a_desktop_with_no_windows_has_no_fullscreen_application() {
         assert!(!fullscreen_frontmost(&[], &[display()]));
         assert!(!fullscreen_frontmost(
-            &[window(0.0, 0.0, 1920.0, 1080.0)],
+            &[rect(0.0, 0.0, 1920.0, 1080.0)],
             &[]
         ));
     }
@@ -764,11 +747,11 @@ mod tests {
     #[test]
     fn edges_a_hair_apart_are_still_the_whole_display() {
         assert!(fullscreen_frontmost(
-            &[window(0.3, 0.3, 1919.4, 1079.4)],
+            &[rect(0.3, 0.3, 1919.4, 1079.4)],
             &[display()]
         ));
         assert!(!fullscreen_frontmost(
-            &[window(0.0, 0.0, 1920.0, 1077.0)],
+            &[rect(0.0, 0.0, 1920.0, 1077.0)],
             &[display()]
         ));
     }
