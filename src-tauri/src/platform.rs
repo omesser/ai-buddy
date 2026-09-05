@@ -194,7 +194,7 @@ impl DisplayCache {
 ///
 /// They move at human speed — someone toggles Dock hiding, drags it to another
 /// edge, or plugs a display in — so this is far more often than it needs to be
-/// and still costs one main-thread hop every other poll.
+/// and still costs at most one read every other poll.
 #[cfg(unix)]
 const USABLE_FRAME_REFRESH: Duration = Duration::from_millis(500);
 
@@ -648,22 +648,14 @@ impl WindowSource for LinuxWindowSource {
     }
 }
 
-/// Whether enough time has passed to ask the main thread again, marking it
-/// asked if so.
-#[cfg(target_os = "macos")]
-fn due(refreshed: &Mutex<Instant>) -> bool {
-    let Ok(mut refreshed) = refreshed.lock() else {
-        return false;
-    };
-    if refreshed.elapsed() < USABLE_FRAME_REFRESH {
-        return false;
-    }
-    *refreshed = Instant::now();
-    true
-}
-
-/// X11 display refresh check: same as macOS but without main thread dispatch.
-#[cfg(all(unix, not(target_os = "macos")))]
+/// Whether enough time has passed to re-read the displays, marking them read
+/// if so.
+///
+/// Both unix lanes throttle on the same clock and differ only in what they do
+/// once it says yes: macOS posts the read to the main thread, X11 does it
+/// inline. That belongs to the call sites, which each say so. Windows reads
+/// once and never asks again, which is why this is `unix`.
+#[cfg(unix)]
 fn due(refreshed: &Mutex<Instant>) -> bool {
     let Ok(mut refreshed) = refreshed.lock() else {
         return false;

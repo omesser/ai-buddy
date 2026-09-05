@@ -1053,7 +1053,6 @@ fn update_director_buttons(
     }
 }
 
-/// Add a widget to a page with `gap` of space above it.
 /// A row's help line, packed close under the control it describes.
 fn help_line(container: &gtk::Box, text: &str) {
     let label = gtk::Label::new(Some(text));
@@ -1068,6 +1067,7 @@ fn help_line(container: &gtk::Box, text: &str) {
     pack(container, &label, HINT_GAP);
 }
 
+/// Add a widget to a page with `gap` of space above it.
 fn pack(container: &gtk::Box, widget: &impl gtk::glib::IsA<gtk::Widget>, gap: i32) {
     widget.set_margin_top(gap);
     container.pack_start(widget, false, false, 0);
