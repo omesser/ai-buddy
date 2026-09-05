@@ -295,7 +295,10 @@ body {
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;
-  gap: 5px;
+  /* Eleven of these between twelve cells, so a point here is most of a
+     character there. Four buys the fixed vocabulary its margin at the 320
+     points the window may be dragged down to. */
+  gap: 4px;
   padding: 7px 16px 9px;
   border-top: 1px solid var(--chat-rule);
   background: var(--chat-fill-dim);
@@ -311,12 +314,16 @@ body {
 }
 
 /* The two values a Character Package names, and so the two that can be any
-   length. Capped in characters rather than shrunk: a flexible cell gives up
-   its width to whatever follows it, which answers one long Behavior name by
-   emptying the cell. Past the cap the line runs off the right end, in the
-   order the bar puts things in. */
+   length. The only cells allowed to shrink: everything else on the line is
+   `flex: 0 0 auto` above and holds a closed vocabulary that `chat-status.js`
+   measures against the window, so what a long Behavior name costs is taken
+   from these two and never from the cell at the end of the line. A cap in
+   characters was the earlier answer and was wrong twice over — it cannot know
+   the width the user dragged the window to, and it left the fixed vocabulary
+   past it to be clipped by the window edge with no ellipsis to say so. */
 .bar .elide {
-  max-width: 12ch;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

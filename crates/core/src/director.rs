@@ -77,6 +77,27 @@ pub enum Happened {
     Ambient,
 }
 
+/// The same fact as `happened_word`, in the Chat surface's status bar.
+///
+/// A second vocabulary because the two have different budgets. The prompt
+/// writes a sentence fragment the Director reads — "placed on a perch" — and
+/// the bar draws one line that must not wrap or clip on a 420-point window,
+/// where that fragment is the cell that gets eaten. So the bar names the
+/// interaction verb instead, which is the same fact in the register the rest
+/// of the bar is written in. Nine characters is the longest, and
+/// `chat-status.js` measures the whole line against that.
+pub fn happened_cell(happened: &Happened) -> &'static str {
+    match happened {
+        Happened::Poke => "poked",
+        Happened::Throw => "thrown",
+        Happened::Summon => "summoned",
+        Happened::Grab => "grabbed",
+        Happened::Perch => "perched",
+        Happened::Chat(_) => "spoken to",
+        Happened::Ambient => "ambient",
+    }
+}
+
 /// What the Director is told about the world on one wake.
 ///
 /// The Free tier and the recent past, which is the whole of v1's context per
@@ -540,6 +561,27 @@ mod tests {
     use super::*;
     use crate::character::Primitive;
     use std::time::UNIX_EPOCH;
+
+    /// The Chat surface's status bar draws this word in a cell that cannot
+    /// wrap, and `tests/chat-status.test.js` measures the rest of that line
+    /// against a nine-character budget for it. A tenth character here moves
+    /// the clipping the bar was fixed for back onto the end of the line, and
+    /// nothing on the Rust side would notice.
+    #[test]
+    fn every_bar_word_fits_the_cell_the_bar_measured() {
+        for happened in [
+            Happened::Poke,
+            Happened::Throw,
+            Happened::Summon,
+            Happened::Grab,
+            Happened::Perch,
+            Happened::Chat("anything at all".into()),
+            Happened::Ambient,
+        ] {
+            let word = happened_cell(&happened);
+            assert!(word.len() <= 9, "{word:?} is {} characters", word.len());
+        }
+    }
 
     /// A Behavior of one Primitive, which is all selection cares about.
     fn behavior(weight: u32, trigger: Option<Trigger>) -> Behavior {

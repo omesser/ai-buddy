@@ -536,6 +536,7 @@ pub(crate) fn run_frame_loop(
                         ChatReply {
                             said: None,
                             busy: false,
+                            unprompted: false,
                         },
                     );
                     continue;
@@ -562,6 +563,7 @@ pub(crate) fn run_frame_loop(
                         ChatReply {
                             said: None,
                             busy: false,
+                            unprompted: false,
                         },
                     );
                     continue;
@@ -585,6 +587,7 @@ pub(crate) fn run_frame_loop(
                         ChatReply {
                             said: None,
                             busy: true,
+                            unprompted: false,
                         },
                     );
                     continue;
@@ -904,6 +907,13 @@ pub(crate) fn run_frame_loop(
                     .as_ref()
                     .is_some_and(|(_, context)| matches!(context.happened, Happened::Chat(_)));
 
+                // Whether the session Director answered at all, as against a
+                // call that failed and left `fallback` to keep the life going
+                // on static weights. Only the first is a response.
+                let responded = arrived
+                    .as_ref()
+                    .is_some_and(|(wake, _)| matches!(wake, Wake::Proposed(_)));
+
                 if let Some((wake, context)) = arrived {
                     if model::tracing() {
                         match &wake {
@@ -1001,14 +1011,32 @@ pub(crate) fn run_frame_loop(
                 // speaks on the desktop. Addressed to that Instance's window,
                 // because an untargeted listener hears every emit and two
                 // conversations would each render the other's turns.
+                //
+                // Every response, not only the ones a typed line asked for. A
+                // line said in the bubble and nowhere else is one conversation
+                // with two places to read it and a log missing half of it,
+                // which is the split ADR-0008 exists to prevent. An ambient
+                // wake's line goes over marked as unasked-for, so the surface
+                // cannot draw it as the answer to a question still sitting
+                // above it. Two things do not go over: a response that
+                // proposed a Behavior and no Speech, which has no words to log
+                // and whose Behavior the bar names a line under it, and
+                // anything the Static Director picked, which is every free
+                // wake and would fill the window with rows nobody asked for.
+                // Nothing waits for a window that is not open — `emit_to`
+                // names a label, and a label nobody holds reaches nobody.
                 if answering_chat {
                     live.chat_turn = false;
+                }
+                let unprompted = responded && !answering_chat && frame.dialogue.is_some();
+                if answering_chat || unprompted {
                     let _ = app.emit_to(
                         chat_label(&live.id),
                         CHAT_EVENT,
                         ChatReply {
                             said: frame.dialogue.clone(),
                             busy: false,
+                            unprompted,
                         },
                     );
                 }
@@ -1087,11 +1115,12 @@ pub(crate) fn run_frame_loop(
                                     ChatReply {
                                         said: None,
                                         busy: false,
+                                        unprompted: false,
                                     },
                                 );
                             }
                             live.chat_turn = matches!(context.happened, Happened::Chat(_));
-                            live.happened_last = Some(director::happened_word(&context.happened));
+                            live.happened_last = Some(director::happened_cell(&context.happened));
                             slots.wake(&live.id, Arc::clone(model), context);
                             was_addressed
                         } else {

@@ -1,11 +1,11 @@
 // The Chat surface: one window per Summoned Character Instance, drawn by
-// ai-buddy rather than by whatever answers (ADR-0010). Two kinds of line
-// today — the user's turns and the answer as it arrives — plus the Shell's
-// own note about a turn that produced nothing. ADR-0010 gives the log two
-// more, a tool call as a one-liner and a forwarded permission request, and
-// both arrive with the client that can emit one (#16). It holds no
-// authoritative state, like the overlay: the log is what has been said in
-// this window, and the Shell owns the session behind it.
+// ai-buddy rather than by whatever answers (ADR-0010). Three kinds of line
+// today — the user's turns, the answer as it arrives, and a line the Character
+// said with nobody having asked — plus the Shell's own note about a turn that
+// produced nothing. ADR-0010 gives the log two more, a tool call as a one-liner
+// and a forwarded permission request, and both arrive with the client that can
+// emit one (#16). It holds no authoritative state, like the overlay: the log is
+// what has been said in this window, and the Shell owns the session behind it.
 
 import { statusCells } from "./chat-status.js";
 
@@ -185,6 +185,18 @@ async function start() {
           drop(refused);
         }
         note("Still answering the last one — ask again when it lands.");
+        return;
+      }
+      if (payload.unprompted) {
+        // The Character speaking with nobody having asked: an ambient wake's
+        // Speech, which reaches the log as well as the Speech bubble so the
+        // conversation has one place to be read (ADR-0010). Marked rather than
+        // drawn as a reply, because the log's grammar is a question with its
+        // answer under it and an unmarked line here would read as the answer
+        // to whatever is above it — which may be minutes old and about
+        // something else. It takes no waiting turn for the same reason: that
+        // caret is on a question this did not answer.
+        said(`${them} · unprompted`, payload.said, "them");
         return;
       }
       const turn = waiting.shift();

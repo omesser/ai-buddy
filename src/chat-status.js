@@ -12,16 +12,28 @@
 // a bar that broke rather than as a Behavior nobody proposed.
 const NONE = "—";
 
-// Milliseconds until the next ambient wake, as the seconds a reader counts
-// down. Rounded up, so the bar reaches 0 when the wake is actually due rather
-// than a second before it; `due` past that, because a wake the Engine has not
-// got to yet is due, not late.
+// Milliseconds until the next ambient wake, in the largest unit that still
+// counts. Rounded up, so the bar reaches 0 when the wake is actually due
+// rather than a second before it; `due` past that, because a wake the Engine
+// has not got to yet is due, not late.
+//
+// Seconds only under a minute. `Pace` grows the ambient wait to two hours, and
+// `wake 7200s` is both the widest thing this cell can hold and a number nobody
+// reads as a duration. Three characters is the most any of these takes, which
+// is what makes the bar's arithmetic below fit.
 export function untilWake(ms) {
   if (ms === null || ms === undefined) {
     return NONE;
   }
   const secs = Math.ceil(ms / 1000);
-  return secs > 0 ? `${secs}s` : "due";
+  if (secs <= 0) {
+    return "due";
+  }
+  if (secs < 60) {
+    return `${secs}s`;
+  }
+  const mins = Math.ceil(secs / 60);
+  return mins < 60 ? `${mins}m` : `${Math.ceil(mins / 60)}h`;
 }
 
 // One push, plus how much of its countdown is left, as the text of each cell.
@@ -29,7 +41,6 @@ export function untilWake(ms) {
 // `status` is null before the first push arrives — the window can open between
 // two changes — and every cell says so rather than sitting blank.
 export function statusCells(status, msLeft) {
-  const wake = `wake ${untilWake(status ? msLeft : null)}`;
   return {
     behavior: status?.behavior ?? NONE,
     primitive: status?.primitive ?? NONE,
@@ -39,10 +50,12 @@ export function statusCells(status, msLeft) {
     // not been reported on faces no way, and a guessed arrow is a lie the
     // width of the cell.
     facing: status ? (status.facing < 0 ? "←" : "→") : "",
-    // Both facts the Director has, in one cell because the window is 420
-    // points wide: whether a turn is on the wire now, and when the next one
-    // goes out on its own.
-    director: status?.asking ? `thinking · ${wake}` : wake,
+    // One fact at a time, not both, because the window is 420 points wide and
+    // this cell held the widest pair on the line. It costs nothing to say the
+    // one that matters: a wake resets the ambient pace as it starts, so the
+    // countdown under a turn on the wire is always the full wait over again
+    // and tells the reader nothing they did not know a moment ago.
+    director: status?.asking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
     happened: status?.happened ?? NONE,
   };
 }

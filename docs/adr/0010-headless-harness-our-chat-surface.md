@@ -38,7 +38,14 @@ nothing to operate. Anything the user acts on, anything with a history to
 scroll or a filter to set, and anything the Harness reported rather than the
 Engine played, is the workbench arriving by another door.
 
-    30|It is a webview rather than a native window because Settings already priced
+The log takes the same widening. Every response the session Director produces
+appears here, ambient as much as reactive, marked when nobody asked for it — a
+line said in the Speech bubble and nowhere else leaves one conversation with
+two places to read it and this log missing the half the user did not prompt.
+A response that proposes a Behavior and no Speech has no line to draw; the bar
+above names the Behavior, and nothing is held for a surface that opens later.
+
+It is a webview rather than a native window because Settings already priced
 the alternative: `platform/macos/settings_window.rs` and
 `platform/x11/settings_window.rs` are 1046 and 913 lines of hand-written
 AppKit and GTK for a form of checkboxes, and the Windows third is still

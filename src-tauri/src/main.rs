@@ -646,14 +646,17 @@ fn build_overlay(
 /// the flags an overlay sets are absent here rather than set to false.
 ///
 /// Main thread only: it builds a window.
-fn build_chat(app: &tauri::AppHandle, label: &str, title: &str) -> Result<(), tauri::Error> {
+fn build_chat(
+    app: &tauri::AppHandle,
+    label: &str,
+    title: &str,
+) -> Result<tauri::WebviewWindow, tauri::Error> {
     WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
         .title(title)
         .inner_size(420.0, 560.0)
         .min_inner_size(320.0, 320.0)
         .focused(true)
-        .build()?;
-    Ok(())
+        .build()
 }
 
 /// Open this Instance's Chat surface, or raise the one it already has.
@@ -668,17 +671,30 @@ fn build_chat(app: &tauri::AppHandle, label: &str, title: &str) -> Result<(), ta
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     let label = chat_label(id);
     let handle = app.clone();
-    if let Err(why) = app.run_on_main_thread(move || match handle.get_webview_window(&label) {
-        Some(window) => {
-            let _ = window.unminimize();
-            if let Err(why) = window.set_focus() {
-                eprintln!("chat: {label} could not be raised: {why}");
+    if let Err(why) = app.run_on_main_thread(move || {
+        let window = match handle.get_webview_window(&label) {
+            Some(window) => {
+                let _ = window.unminimize();
+                window
             }
-        }
-        None => {
-            if let Err(why) = build_chat(&handle, &label, &title) {
-                eprintln!("chat: {label}: {why}");
-            }
+            None => match build_chat(&handle, &label, &title) {
+                Ok(window) => window,
+                Err(why) => {
+                    eprintln!("chat: {label}: {why}");
+                    return;
+                }
+            },
+        };
+        // Both paths, because building is not raising. The builder's
+        // `focused(true)` only orders the window to the front of *this*
+        // application, and a Summon arrives while another one is active: the
+        // surface is then key inside ai-buddy and behind the editor the user
+        // was looking at. `set_focus` is the call that activates the process
+        // as well, which is what a deliberate act has to do — and doing it
+        // here rather than in the frame loop keeps the overlay's own window
+        // where it is, still taking no focus from anyone.
+        if let Err(why) = window.set_focus() {
+            eprintln!("chat: {label} could not be raised: {why}");
         }
     }) {
         eprintln!("chat: could not reach the main thread: {why}");
@@ -801,6 +817,11 @@ struct ChatReply {
     /// The line was refused because one typed before it has not been asked
     /// yet. `said` is `None`; see the drain in `frame_loop`.
     busy: bool,
+    /// Nobody asked for this: an ambient wake's Speech, which reaches the log
+    /// as well as the Speech bubble. Never takes the caret a typed line is
+    /// waiting on, and the surface marks it, because the log's grammar is a
+    /// question with its answer under it and this has no question above it.
+    unprompted: bool,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
