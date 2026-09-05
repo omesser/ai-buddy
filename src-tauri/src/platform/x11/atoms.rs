@@ -67,3 +67,72 @@ fn intern(conn: &RustConnection, name: &str) -> Option<Atom> {
         .ok()
         .map(|reply| reply.atom)
 }
+
+/// Parse WM_CLASS property bytes into the application name.
+///
+/// WM_CLASS holds two null-terminated strings: instance then class. Tries to
+/// parse as UTF-8 and return the class (second string), falling back to the
+/// instance (first string) if UTF-8 parsing fails.
+pub(super) fn parse_wm_class(property_bytes: &[u8]) -> Option<String> {
+    String::from_utf8(property_bytes.to_vec())
+        .ok()
+        .and_then(|s| s.split('\0').nth(1).map(|c| c.to_string()))
+        .or_else(|| {
+            String::from_utf8_lossy(property_bytes)
+                .split('\0')
+                .next()
+                .map(|s| s.to_string())
+        })
+        .filter(|s| !s.is_empty())
+}
+
+/// Read WM_CLASS to get the window's application name.
+pub(super) fn window_class(conn: &RustConnection, window: xproto::Window) -> Option<String> {
+    let reply = xproto::get_property(
+        conn,
+        false,
+        window,
+        xproto::AtomEnum::WM_CLASS,
+        xproto::AtomEnum::STRING,
+        0,
+        1024,
+    )
+    .ok()?
+    .reply()
+    .ok()?;
+
+    if reply.format != 8 {
+        return None;
+    }
+
+    parse_wm_class(&reply.value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_wm_class_returns_class_from_valid_property() {
+        let property = b"instance\0Class\0";
+        assert_eq!(parse_wm_class(property), Some("Class".to_string()));
+    }
+
+    #[test]
+    fn parse_wm_class_returns_none_when_property_missing() {
+        let property = b"";
+        assert_eq!(parse_wm_class(property), None);
+    }
+
+    #[test]
+    fn parse_wm_class_handles_single_string() {
+        let property = b"firefox\0";
+        assert_eq!(parse_wm_class(property), None);
+    }
+
+    #[test]
+    fn parse_wm_class_falls_back_to_instance_on_invalid_utf8() {
+        let property = b"valid\0\xFF\xFE\0";
+        assert_eq!(parse_wm_class(property), Some("valid".to_string()));
+    }
+}
