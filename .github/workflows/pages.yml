@@ -6,6 +6,15 @@ name: Pages
 # the Assemble step names each file it publishes, and a page nobody added to
 # that list is not on the internet.
 #
+# The unit of that list is a file, or a generator. #289's Character gallery
+# needs a few hundred PNGs, too many to name as reviewed lines, so the step
+# names `scripts/make-character-gallery.py` and the script decides what ships:
+# it copies only the frames a Character Manifest names, only PNGs, only from
+# inside their own package. The guarantee moves from a reviewed line in a diff
+# to a reviewed script, on purpose (ADR-0011) — and the Verify step below
+# still checks the outcome, since everything the allowlist exists to keep off
+# a crawlable URL is Markdown.
+#
 # Source is GitHub Actions rather than a branch, so there is no `gh-pages`
 # branch to keep in step with `main` — the deployment is this workflow's
 # artifact, built from the commit being deployed.
@@ -36,16 +45,42 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # tomllib, which the gallery generator reads the manifests with, is 3.11
+      # and later. Pinned rather than taken from the runner image so the build
+      # does not change under us when that image does.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
       - name: Assemble the site
         # Flat: the landing page is the site root and every other page sits
         # beside it, so a link is `/cues.html` rather than a path that has to
-        # mirror wherever the file happens to live in the repository.
+        # mirror wherever the file happens to live in the repository. The
+        # gallery's art is the one exception, under `_site/characters/`,
+        # because a page cannot reference a few hundred frames without a
+        # directory to put them in.
         run: |
           mkdir -p _site
           cp docs/design/index.html _site/index.html
           cp docs/design/cues.html  _site/cues.html
           cp docs/design/chat.html  _site/chat.html
           cp docs/design/chat-mockups.html _site/chat-mockups.html
+          python3 scripts/make-character-gallery.py --self-check
+          python3 scripts/make-character-gallery.py --out _site
+
+      - name: Verify nothing but a page or its art reached _site
+        # The generator is trusted to enumerate; this is not trusted to be
+        # right. Every file the allowlist exists to keep off a crawlable URL
+        # is Markdown, so an extension check catches the failure that matters
+        # even if a generator one day walks a directory it should not.
+        run: |
+          stray=$(find _site -type f ! \( -name '*.html' -o -name '*.css' \
+            -o -name '*.js' -o -name '*.png' -o -name '*.svg' \))
+          if [ -n "$stray" ]; then
+            echo "not publishable, and _site holds it:"
+            echo "$stray"
+            exit 1
+          fi
 
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
