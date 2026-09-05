@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate looping GIFs from character frames for the README."""
+"""Generate showcase GIFs from character frames for the README.
+Creates more interesting animations (not boring idles) for the Characters table."""
 
 import os
 from pathlib import Path
@@ -54,90 +55,94 @@ def main():
     # Target height for consistent visual sizing in README
     target_height = 96
 
-    # Buddy Bot: idle animation (smooth render, 16 frames)
-    buddy_idle_frames = [
-        chars_dir / "buddy-bot" / "frames" / f"idle-{i}.png" for i in range(16)
+    # Buddy Bot: walk animation (motion stride for table, 8 frames)
+    buddy_walk_frames = [
+        chars_dir / "buddy-bot" / "frames" / f"walk-{i}.png" for i in range(8)
     ]
     create_looping_gif(
-        buddy_idle_frames, out_dir / "buddy-bot-idle.gif", fps=5, target_height=target_height
+        buddy_walk_frames, out_dir / "buddy-bot-walk.gif", fps=8, target_height=target_height
     )
-    print(f"✓ buddy-bot-idle.gif ({os.path.getsize(out_dir / 'buddy-bot-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ buddy-bot-walk.gif ({os.path.getsize(out_dir / 'buddy-bot-walk.gif') / 1024:.1f} KB)")
 
-    # Buddy Bot: react animation (delighted startle, 5 frames)
+    # Buddy Bot: react animation (still used in Interact section, 5 frames)
     buddy_react_frames = [
         chars_dir / "buddy-bot" / "frames" / f"react-{i}.png" for i in range(5)
     ]
     create_looping_gif(
-        buddy_react_frames, out_dir / "buddy-bot-react.gif", fps=8, target_height=target_height
+        buddy_react_frames, out_dir / "buddy-bot-react.gif", fps=12, target_height=target_height
     )
     print(f"✓ buddy-bot-react.gif ({os.path.getsize(out_dir / 'buddy-bot-react.gif') / 1024:.1f} KB)")
 
-    # Nim: idle animation (pixel art, 6 frames)
-    nim_idle_frames = [
-        chars_dir / "nim" / "frames" / f"idle-{i}.png" for i in range(6)
+    # Black Mage: talk animation (incantation/cast, 2 frames)
+    black_mage_talk_frames = [
+        chars_dir / "black-mage" / "frames" / f"talk-{i}.png" for i in range(2)
     ]
     create_looping_gif(
-        nim_idle_frames, out_dir / "nim-idle.gif", fps=8, target_height=target_height
+        black_mage_talk_frames, out_dir / "black-mage-talk.gif", fps=3, target_height=target_height
     )
-    print(f"✓ nim-idle.gif ({os.path.getsize(out_dir / 'nim-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ black-mage-talk.gif ({os.path.getsize(out_dir / 'black-mage-talk.gif') / 1024:.1f} KB)")
 
-    # Black Mage: idle animation (3 frames, already scaled 3x in source)
-    black_mage_idle_frames = [
-        chars_dir / "black-mage" / "frames" / f"idle-{i}.png" for i in range(3)
+    # BMO: sing animation (signature variant, 4 frames)
+    bmo_sing_frames = [
+        chars_dir / "bmo" / "frames" / f"sing-{i}.png" for i in range(4)
     ]
     create_looping_gif(
-        black_mage_idle_frames, out_dir / "black-mage-idle.gif", fps=1, target_height=target_height
+        bmo_sing_frames, out_dir / "bmo-sing.gif", fps=3, target_height=target_height
     )
-    print(f"✓ black-mage-idle.gif ({os.path.getsize(out_dir / 'black-mage-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ bmo-sing.gif ({os.path.getsize(out_dir / 'bmo-sing.gif') / 1024:.1f} KB)")
 
-    # BMO: idle animation (2 frames, smooth render)
-    bmo_idle_frames = [
-        chars_dir / "bmo" / "frames" / f"idle-{i}.png" for i in range(2)
+    # Cat: walk animation (motion, 8 frames)
+    cat_walk_frames = [
+        chars_dir / "cat" / "frames" / f"walk-{i}.png" for i in range(8)
     ]
     create_looping_gif(
-        bmo_idle_frames, out_dir / "bmo-idle.gif", fps=1, target_height=target_height
+        cat_walk_frames, out_dir / "cat-walk.gif", fps=8, target_height=target_height
     )
-    print(f"✓ bmo-idle.gif ({os.path.getsize(out_dir / 'bmo-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ cat-walk.gif ({os.path.getsize(out_dir / 'cat-walk.gif') / 1024:.1f} KB)")
 
-    # Cat: idle animation (6 frames)
-    cat_idle_frames = [
-        chars_dir / "cat" / "frames" / f"idle-{i}.png" for i in range(6)
+    # Jotaro Kujo: react animation (Stand aura showcase, 8 frames)
+    jotaro_react_frames = [
+        chars_dir / "jotaro-kujo" / "frames" / f"react-{i}.png" for i in range(8)
     ]
     create_looping_gif(
-        cat_idle_frames, out_dir / "cat-idle.gif", fps=8, target_height=target_height
+        jotaro_react_frames, out_dir / "jotaro-kujo-react.gif", fps=7, target_height=target_height
     )
-    print(f"✓ cat-idle.gif ({os.path.getsize(out_dir / 'cat-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ jotaro-kujo-react.gif ({os.path.getsize(out_dir / 'jotaro-kujo-react.gif') / 1024:.1f} KB)")
 
-    # Jotaro Kujo: idle animation (2 frames)
-    jotaro_idle_frames = [
-        chars_dir / "jotaro-kujo" / "frames" / f"idle-{i}.png" for i in range(2)
+    # Nim: sleep animation (matches personality, 4 frames)
+    nim_sleep_frames = [
+        chars_dir / "nim" / "frames" / f"sleep-{i}.png" for i in range(4)
     ]
     create_looping_gif(
-        jotaro_idle_frames, out_dir / "jotaro-idle.gif", fps=2, target_height=target_height
+        nim_sleep_frames, out_dir / "nim-sleep.gif", fps=3, target_height=target_height
     )
-    print(f"✓ jotaro-idle.gif ({os.path.getsize(out_dir / 'jotaro-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ nim-sleep.gif ({os.path.getsize(out_dir / 'nim-sleep.gif') / 1024:.1f} KB)")
 
-    # Timber Wolf: idle animation (2 frames)
-    timber_idle_frames = [
-        chars_dir / "timber-wolf" / "frames" / f"idle-{i}.png" for i in range(2)
+    # Timber Wolf: scan animation (TAC laser sweep, unique differentiator)
+    # Manifest frames: scan-1, scan-2, scan-3, scan-2 (bounce)
+    timber_scan_frames = [
+        chars_dir / "timber-wolf" / "frames" / "scan-1.png",
+        chars_dir / "timber-wolf" / "frames" / "scan-2.png",
+        chars_dir / "timber-wolf" / "frames" / "scan-3.png",
+        chars_dir / "timber-wolf" / "frames" / "scan-2.png",
     ]
     create_looping_gif(
-        timber_idle_frames, out_dir / "timber-wolf-idle.gif", fps=8, target_height=target_height
+        timber_scan_frames, out_dir / "timber-wolf-scan.gif", fps=4, target_height=target_height
     )
-    print(f"✓ timber-wolf-idle.gif ({os.path.getsize(out_dir / 'timber-wolf-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ timber-wolf-scan.gif ({os.path.getsize(out_dir / 'timber-wolf-scan.gif') / 1024:.1f} KB)")
 
-    # Trump: idle animation (6 frames)
-    trump_idle_frames = [
-        chars_dir / "trump" / "frames" / f"idle-{i}.png" for i in range(6)
+    # Trump: talk animation (rally wave, 3 frames)
+    trump_talk_frames = [
+        chars_dir / "trump" / "frames" / f"talk-{i}.png" for i in range(3)
     ]
     create_looping_gif(
-        trump_idle_frames, out_dir / "trump-idle.gif", fps=8, target_height=target_height
+        trump_talk_frames, out_dir / "trump-talk.gif", fps=4, target_height=target_height
     )
-    print(f"✓ trump-idle.gif ({os.path.getsize(out_dir / 'trump-idle.gif') / 1024:.1f} KB)")
+    print(f"✓ trump-talk.gif ({os.path.getsize(out_dir / 'trump-talk.gif') / 1024:.1f} KB)")
 
-    print(f"\nAll GIFs generated in {out_dir}/")
+    print(f"\nAll showcase GIFs generated in {out_dir}/")
     print(f"Target height: {target_height}px for consistent visual sizing")
-    print("Transparent backgrounds preserved, nearest-neighbor scaling, looping enabled.")
+    print("More interesting animations selected (walk/react/sing/scan/talk vs boring idles)")
 
 
 if __name__ == "__main__":
