@@ -47,8 +47,9 @@ frames = [
 ]
 fps = 5
 
-# Cute futuristic life while idling: LED breath-pulse, occasional blink, and a
-# slight listen-tilt. variant_of idle rings with the base bob (BMO pattern).
+# Idle variants, not Behaviors: mood art on the idle ring without Director
+# weight. Brow-sensor glow (mirror-safe) pairs with the cheek LED; walk still
+# omits the cheek mark (#345).
 
 [animations.idle-breathe]
 frames = [
@@ -88,7 +89,6 @@ frames = [
 ]
 fps = 4
 variant_of = "idle"
-
 
 # 3/4 right stride, closed sine bob. Engine mirrors for left.
 # 3/4 right stride after pack flip; cheek LED omitted on walk only.
