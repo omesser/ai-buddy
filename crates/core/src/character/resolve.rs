@@ -380,6 +380,24 @@ mod tests {
         );
     }
 
+    /// The wording is the behavior here, not the refusal: an Animation that is
+    /// a variant of itself is also a variant of a variant, so losing the
+    /// self-reference guard would still reject it — with the ring message,
+    /// which names a mistake the author did not make.
+    #[test]
+    fn an_animation_that_is_a_variant_of_itself_is_rejected_by_name() {
+        let manifest = format!(
+            "{}[animations.shimmy]\nframes = [\"idle-0.png\"]\nvariant_of = \"shimmy\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_eq!(
+            errors,
+            vec!["animation \"shimmy\" is a variant_of itself".to_string()],
+        );
+    }
+
     #[test]
     fn a_frame_that_is_not_in_the_package_is_rejected_by_name() {
         let manifest = declaring(&REQUIRED_ANIMATIONS).replace("sit-0.png", "sit-99.png");

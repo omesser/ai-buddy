@@ -287,6 +287,10 @@ fn parse_animation(
         }
     }
 
+    // The table rather than `frames`: `frame_list` pushes this same message
+    // for a list written empty, and its every other refusal leaves the key
+    // present, so asking whether the author wrote one at all is what keeps the
+    // two sites to one error between them.
     if !table.contains_key("frames") {
         errors.push(format!("animation {name:?} declares no frames"));
     }
@@ -342,6 +346,7 @@ fn frame_list(
             }
         }
     }
+    // The list written empty; `parse_animation` reports the key never written.
     if frames.is_empty() {
         errors.push(format!("animation {name:?} declares no frames"));
         return None;
@@ -676,6 +681,34 @@ mod tests {
                 empty,
                 vec!["animation \"wave\" declares no frames".to_string()],
                 "the author is told which Animation has no art"
+            );
+        }
+    }
+
+    /// `declares no frames` is pushed from two places — `parse_animation` for
+    /// a `frames` key nobody wrote, `frame_list` for one written empty — and
+    /// they add up to one error only because the key's presence decides which
+    /// can run. Every other way a frame list is refused leaves the key
+    /// present, so those are the cases that pin it: the refusal already said
+    /// what was wrong, and the missing-key error must not follow it. The
+    /// bound's own test asserts by name, which an extra error would satisfy.
+    #[test]
+    fn a_frames_list_refused_for_another_reason_is_not_also_called_no_frames() {
+        let over_the_bound = vec!["\"wave-0.png\""; MAX_FRAMES + 1].join(", ");
+        for frames in [
+            "frames = \"wave-0.png\"".to_string(),
+            "frames = [7]".to_string(),
+            format!("frames = [{over_the_bound}]"),
+        ] {
+            let refused = errors(load_manifest(&format!(
+                "{}[animations.wave]\n{frames}\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            )));
+
+            assert_eq!(refused.len(), 1, "one mistake, one error: {refused:#?}");
+            assert!(
+                !refused[0].contains("declares no frames"),
+                "the frames key is written, so the missing-key error must not fire: {refused:#?}"
             );
         }
     }
