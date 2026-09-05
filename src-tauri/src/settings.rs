@@ -1621,6 +1621,19 @@ mod tests {
     }
 
     #[test]
+    fn write_director_key_fails_loudly_when_store_set_fails() {
+        let patch = SettingsPatch {
+            director_api_key: Some("sk-new-key".into()),
+            ..SettingsPatch::default()
+        };
+        let result = write_director_key(&FailingStore, &patch);
+        assert!(
+            result.is_err(),
+            "a store set error must fail loudly, not succeed silently"
+        );
+    }
+
+    #[test]
     fn write_director_key_none_leaves_the_store() {
         let store = MemoryStore::new();
         store.set(DIRECTOR_API_KEY, "sk-from-settings").unwrap();
