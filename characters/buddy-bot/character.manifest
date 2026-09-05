@@ -180,7 +180,7 @@ frames = [
 ]
 fps = 2
 
-# Lean pop on poke or rush — once, then back to life.
+# Delighted startle on poke or rush: squash, wider eyes, LED flash — once.
 
 [animations.react]
 frames = [
