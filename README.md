@@ -15,9 +15,9 @@ A desktop companion in the spirit of Windows 95-era desktop mascots. An animated
 
 - **Perches on windows.** Falls, lands on window edges, rides them when dragged slowly, drops when yanked or closed.
 - **Reacts to you.** Click to poke, drag to pick up, fling to throw. It arcs, lands, and keeps going.
-- **Click-through off the sprite.** Clicks on transparent regions reach the window underneath.
+- **Character-driven AI.** Behaviors and short dialogue follow the Character's personality — Static weights with no key, or a Director Completer when you configure one.
 - **Stays out of your way.** Fades when you go fullscreen, hides instantly on Control-Option-Command-B, never appears in screen captures or shares.
-- **Lives its own life.** Walks, idles, sits, sleeps. Static weights pick behaviors, or hook up a Director (OpenAI, Anthropic, xAI, Ollama) for ambient proposals.
+- **Lives its own life.** Walks, idles, sits, sleeps — even with the Director off.
 
 ## See It
 
