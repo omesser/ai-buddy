@@ -1,6 +1,6 @@
 //! MCP tool dispatch.
 //!
-//! Maps tool names and JSON arguments onto the tool handlers from tools.rs.
+//! Maps tool names and JSON arguments onto tool handlers.
 //! Tested in-process without an MCP transport, so it can live in core beside
 //! the handlers it wraps.
 
@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
-use crate::engine::BehaviorProposal;
 use crate::memory::MemoryManifest;
 use crate::tools;
 use crate::window_source::WindowSource;
@@ -49,103 +48,6 @@ fn as_expression_handle<'short>(
     }
 }
 
-/// Private helper functions for collapsed tool implementations.
-mod helpers {
-    use crate::engine::BehaviorProposal;
-    use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
-    use crate::window_source::{WindowRect, WindowSource};
-
-    /// Get denylist-filtered snapshot of windows from the window source.
-    ///
-    /// Both list_windows and describe_screen use this to ensure consistent filtering.
-    pub fn filtered_windows_snapshot(
-        source: &dyn WindowSource,
-        denylist: &DenyList,
-    ) -> Vec<WindowRect> {
-        let geometry = source.snapshot();
-        geometry
-            .windows
-            .into_iter()
-            .filter(|w| denylist.allows(&w.owner))
-            .collect()
-    }
-
-    /// Result from resolving expression target and attempting enqueue.
-    pub enum ExpressionResult {
-        /// Successfully enqueued (or stub success for no instances)
-        Success,
-        /// Failed due to unknown instance or ambiguous target
-        Failed,
-    }
-
-    /// Enqueue an expression proposal following tools.rs logic.
-    ///
-    /// Both speak and play_behavior follow the same pattern of resolving target
-    /// and enqueueing proposals through the expression handle.
-    pub fn enqueue_expression(
-        instance_id: Option<&str>,
-        roster: &[InstanceInfo],
-        expression: Option<&mut dyn ExpressionHandle>,
-        proposal: BehaviorProposal,
-    ) -> ExpressionResult {
-        let target_id = match resolve_target_instance(instance_id, roster) {
-            TargetResolution::Resolved(id) => id,
-            TargetResolution::NoInstances => {
-                // Empty roster is success (stub behavior for harness compatibility)
-                return ExpressionResult::Success;
-            }
-            TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
-                return ExpressionResult::Failed;
-            }
-        };
-
-        // Try to enqueue the proposal
-        if let Some(handle) = expression {
-            let _enqueue_result = handle.enqueue(&target_id, proposal);
-            // Regardless of enqueue result, we report success (matches tools.rs)
-        }
-
-        ExpressionResult::Success
-    }
-
-    /// Target resolution result for Expression tools (matches tools.rs).
-    enum TargetResolution {
-        /// Resolved to a specific instance id
-        Resolved(String),
-        /// No instances in roster (stub success case)
-        NoInstances,
-        /// Unknown instance_id provided
-        UnknownInstance,
-        /// Multiple instances but no specific id provided
-        AmbiguousTarget,
-    }
-
-    /// Target resolution against roster for both speak and play_behavior (matches tools.rs).
-    fn resolve_target_instance(
-        instance_id: Option<&str>,
-        roster: &[InstanceInfo],
-    ) -> TargetResolution {
-        match instance_id {
-            Some(id) => {
-                // Check if the given id exists in roster
-                if roster.iter().any(|info| info.id == id) {
-                    TargetResolution::Resolved(id.to_string())
-                } else {
-                    TargetResolution::UnknownInstance
-                }
-            }
-            None => {
-                // No instance_id provided
-                match roster.len() {
-                    0 => TargetResolution::NoInstances,
-                    1 => TargetResolution::Resolved(roster[0].id.clone()),
-                    _ => TargetResolution::AmbiguousTarget,
-                }
-            }
-        }
-    }
-}
-
 fn parse_args<T: for<'de> Deserialize<'de>>(
     arguments: Value,
     tool_name: &str,
@@ -171,39 +73,15 @@ pub fn dispatch(
             }
             let args: Args = parse_args(arguments, tool_name)?;
 
-            // Early return for empty message
-            if args.message.is_empty() {
-                let result = tools::SpeakResult {
-                    success: false,
-                    message: args.message,
-                };
-                return serde_json::to_value(&result).map_err(|e| DispatchError {
-                    code: ErrorCode::ExecutionFailed,
-                    message: format!("Failed to serialize result: {}", e),
-                });
-            }
-
             let mut expression = context.expression.take();
-            let proposal = BehaviorProposal {
-                behavior: String::new(),
-                dialogue: Some(args.message.clone()),
-            };
-
-            let success = match helpers::enqueue_expression(
+            let result = tools::speak(
+                &args.message,
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
-                proposal,
-            ) {
-                helpers::ExpressionResult::Success => true,
-                helpers::ExpressionResult::Failed => false,
-            };
-
+            );
             context.expression = expression;
-            let result = tools::SpeakResult {
-                success,
-                message: args.message,
-            };
+
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -218,84 +96,29 @@ pub fn dispatch(
             }
             let args: Args = parse_args(arguments, tool_name)?;
 
-            // Early return for empty behavior
-            if args.behavior.is_empty() {
-                let result = tools::PlayBehaviorResult {
-                    success: false,
-                    behavior: args.behavior,
-                };
-                return serde_json::to_value(&result).map_err(|e| DispatchError {
-                    code: ErrorCode::ExecutionFailed,
-                    message: format!("Failed to serialize result: {}", e),
-                });
-            }
-
             let mut expression = context.expression.take();
-            let proposal = BehaviorProposal {
-                behavior: args.behavior.clone(),
-                dialogue: None,
-            };
-
-            let success = match helpers::enqueue_expression(
+            let result = tools::play_behavior(
+                &args.behavior,
                 args.instance_id.as_deref(),
                 context.roster,
                 as_expression_handle(&mut expression),
-                proposal,
-            ) {
-                helpers::ExpressionResult::Success => true,
-                helpers::ExpressionResult::Failed => false,
-            };
-
+            );
             context.expression = expression;
-            let result = tools::PlayBehaviorResult {
-                success,
-                behavior: args.behavior,
-            };
+
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
             })
         }
         "list_windows" => {
-            let windows =
-                helpers::filtered_windows_snapshot(context.window_source, &context.denylist);
-            let result = tools::ListWindowsResult {
-                windows: windows
-                    .into_iter()
-                    .map(|w| tools::WindowInfo {
-                        owner: w.owner,
-                        x: w.bounds.x,
-                        y: w.bounds.y,
-                        width: w.bounds.width,
-                        height: w.bounds.height,
-                    })
-                    .collect(),
-            };
+            let result = tools::list_windows(context.window_source, &context.denylist);
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
             })
         }
         "describe_screen" => {
-            let windows =
-                helpers::filtered_windows_snapshot(context.window_source, &context.denylist);
-            let description = if windows.is_empty() {
-                "No windows are visible.".to_string()
-            } else {
-                let mut parts = vec![format!("{} visible windows:", windows.len())];
-                for window in &windows {
-                    parts.push(format!(
-                        "- {} at ({:.0}, {:.0}), size {:.0}x{:.0}",
-                        window.owner,
-                        window.bounds.x,
-                        window.bounds.y,
-                        window.bounds.width,
-                        window.bounds.height
-                    ));
-                }
-                parts.join("\n")
-            };
-            let result = tools::DescribeScreenResult { description };
+            let result = tools::describe_screen(context.window_source, &context.denylist);
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
