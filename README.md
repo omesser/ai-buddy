@@ -9,7 +9,7 @@ A desktop companion in the spirit of Windows 95-era desktop mascots. An animated
 [![CI](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-![Buddy Bot idle animation](./docs/readme/buddy-bot-idle.gif)
+![Buddy Bot walk](./docs/readme/buddy-bot-walk.gif)
 
 ## What It Does
 
