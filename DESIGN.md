@@ -8,6 +8,16 @@ Harness you supply and does real work on your machine.
 This document records what was decided, why, and what was rejected. Vocabulary
 is defined in [CONTEXT.md](./CONTEXT.md) and used precisely here.
 
+## State
+
+Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+
+Feature comparison versus six software desktop pet alternatives is in [docs/research/alternatives.md](./docs/research/alternatives.md).
+
+The overlay is up and the frame loop runs the Engine, so the sprite falls, lands on the top edge of whatever window is under it, rides that edge when the window is dragged slowly, and drops when the window is yanked or closed, and it stands on the Dock rather than behind it. It can be clicked, picked up, dragged and thrown. It knows when to get out of the way: it fades out while a fullscreen application has the screen, goes away at once on Control-Option-Command-B and comes back the same way, and never appears in a screen share or a screen recording at all. It is a real Character Package on disk, and its Animations play at the speeds its Character Manifest declares. Startup stops if no package loads, because a companion with no Character has nothing to be. A Director proposes Behaviors: Static weights with nothing configured, or an HTTP stand-in if you set a key (see [Running it](./README.md#running-it)). A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)). There is no chat surface yet: double-clicking is a Summon, the sprite reacts to it, and nothing else answers (#17). Right-clicking the sprite and the tray / menu bar icon open the same menu: Character, Instances, Director, Do Not Disturb, Go away, Memory, Settings, Quit.
+
+The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep` and `walk` each answer a State, `fall` covering being dragged as well; `land` plays when a fall ends, `hold` when a Perch is ridden, and `react` answers a Poke. Eight of the nine are also Primitives a Character can compose into a Behavior — all but `fall`, which is what losing your footing looks like rather than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into, and is refused or abandoned when the State the sprite is in does not permit it. `talk` plays when a proposal names a Behavior that includes it.
+
 ## Shape of the product
 
 Two layers, deliberately separate.
