@@ -182,7 +182,7 @@ pub const ALPHA_THRESHOLD: u8 = 128;
 /// through, the moment a fall ends, and the one thing it can say. Anything a
 /// Character needs beyond them is a Primitive added here for everyone, never a
 /// scripting runtime handed to a package (ADR-0002).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum Primitive {
     Idle,
     Walk,

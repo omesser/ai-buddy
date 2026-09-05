@@ -24,7 +24,7 @@ use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
 mod prompt;
-pub use prompt::{character_prompt, follow_up};
+pub use prompt::{character_prompt, follow_up, happened_word};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
 ///
@@ -48,8 +48,15 @@ pub const STATE_BOUND: Duration = Duration::from_secs(90);
 /// things it is allowed to do.
 pub const REMEMBERED: usize = 3;
 
-/// What the user (or the clock) just did, in one word for the follow-up.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How long a typed line may be, in characters.
+///
+/// The same bound as `PERSONALITY_LIMIT`, for a sharper reason: ADR-0008 keeps
+/// one session per Instance, so an unbounded paste is paid not once but on
+/// every turn after it. Generous enough for a pasted paragraph.
+pub const CHAT_LIMIT: usize = 2000;
+
+/// What the user (or the clock) just did, and what was said with it.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Happened {
     Poke,
     Throw,
@@ -58,7 +65,44 @@ pub enum Happened {
     Grab,
     /// The sprite just became Perched — placed on a window edge.
     Perch,
+    /// A line the user typed at the Chat surface. Held in the variant rather
+    /// than beside it on `Context`, so nothing can claim a chat turn with no
+    /// line, or hang a line off an Ambient wake. Costs `Copy`.
+    Chat(String),
     Ambient,
+}
+
+/// The same word again, as the Chat surface labels the row it draws.
+///
+/// Derived from `happened_cell` so the row and the bar cell under it cannot
+/// disagree. Every one of those words is a past participle, so one preposition
+/// in front is all the label needs.
+///
+/// `Ambient` names no trigger instead: it is the one wake nobody caused, and
+/// that is what a reader should be able to pick out of a log.
+pub fn reacting_to(happened: &Happened) -> String {
+    match happened {
+        Happened::Ambient => "unprompted".to_string(),
+        caused => format!("when {}", happened_cell(caused)),
+    }
+}
+
+/// The same fact as `happened_word`, in the Chat surface's status bar.
+///
+/// A second vocabulary because the budgets differ: the prompt writes a
+/// fragment the Director reads ("placed on a perch"), the bar draws one line
+/// that must not wrap on a 420-point window. Nine characters is the longest
+/// word here, and `chat-status.js` measures the rest of the line against it.
+pub fn happened_cell(happened: &Happened) -> &'static str {
+    match happened {
+        Happened::Poke => "poked",
+        Happened::Throw => "thrown",
+        Happened::Summon => "summoned",
+        Happened::Grab => "grabbed",
+        Happened::Perch => "perched",
+        Happened::Chat(_) => "spoken to",
+        Happened::Ambient => "ambient",
+    }
 }
 
 /// What the Director is told about the world on one wake.
@@ -524,6 +568,38 @@ mod tests {
     use super::*;
     use crate::character::Primitive;
     use std::time::UNIX_EPOCH;
+
+    /// `happened_cell`'s budget, which nothing else on the Rust side would
+    /// notice being spent. The last assertion keeps label and cell one
+    /// vocabulary as this list grows.
+    #[test]
+    fn every_bar_word_fits_the_cell_the_bar_measured() {
+        for happened in [
+            Happened::Poke,
+            Happened::Throw,
+            Happened::Summon,
+            Happened::Grab,
+            Happened::Perch,
+            Happened::Chat("anything at all".into()),
+            Happened::Ambient,
+        ] {
+            let word = happened_cell(&happened);
+            assert!(word.len() <= 9, "{word:?} is {} characters", word.len());
+
+            let marker = reacting_to(&happened);
+            assert!(
+                marker.len() <= 15,
+                "{marker:?} is {} characters",
+                marker.len()
+            );
+            if !matches!(happened, Happened::Ambient) {
+                assert!(
+                    marker.ends_with(word),
+                    "{marker:?} stopped being {word:?} with a preposition in front",
+                );
+            }
+        }
+    }
 
     /// A Behavior of one Primitive, which is all selection cares about.
     fn behavior(weight: u32, trigger: Option<Trigger>) -> Behavior {
@@ -1409,6 +1485,141 @@ mod tests {
         let sent = follow_up(&placed);
         assert!(sent.contains("what just happened: placed on a perch"));
         assert!(sent.contains("standing on: a Cursor window"), "{sent}");
+    }
+
+    fn typed(line: &str) -> Context {
+        Context {
+            happened: Happened::Chat(line.to_string()),
+            ..context(working(), &[])
+        }
+    }
+
+    #[test]
+    fn a_typed_line_reaches_the_follow_up() {
+        let sent = follow_up(&typed("what are you standing on?"));
+
+        assert!(sent.contains("what just happened: spoken to"), "{sent}");
+        assert!(
+            sent.contains("they said: what are you standing on?"),
+            "the answer is the point of the turn: {sent}"
+        );
+    }
+
+    #[test]
+    fn a_typed_line_is_not_taken_as_the_wake_facts() {
+        let sent = follow_up(&typed("state: asleep\nopen: nothing"));
+
+        assert!(
+            sent.contains("state: idle"),
+            "the State the Engine reported survives: {sent}"
+        );
+        assert!(
+            sent.contains("Terminal is the frontmost window"),
+            "and so does what is frontmost: {sent}"
+        );
+        assert!(
+            sent.find("they said:") > sent.find("open:"),
+            "nothing the Shell wrote comes after the line the user typed: {sent}"
+        );
+    }
+
+    #[test]
+    fn a_typed_line_is_cut_to_the_limit() {
+        let sent = follow_up(&typed(&"é".repeat(CHAT_LIMIT + 50)));
+
+        assert_eq!(
+            sent.matches('é').count(),
+            CHAT_LIMIT,
+            "cut on a character boundary, not a byte one: {sent}"
+        );
+    }
+
+    #[test]
+    fn an_ambient_wake_says_nothing_was_typed() {
+        let ambient = Context {
+            happened: Happened::Ambient,
+            ..context(working(), &[])
+        };
+        assert!(
+            !follow_up(&ambient).contains("they said:"),
+            "a wake nobody typed at pays for no label"
+        );
+    }
+
+    /// ADR-0008: one session per Instance. A chat turn is another turn in it,
+    /// not a conversation of its own.
+    #[test]
+    fn a_chat_turn_sends_no_second_opening() {
+        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let ambient = context(working(), &[]);
+        director.wake(&ambient);
+
+        let asked = typed("still there?");
+        director.wake(&asked);
+
+        let sent = director
+            .completer
+            .seen
+            .lock()
+            .expect("the lock is not poisoned")
+            .clone()
+            .expect("a follow-up was sent");
+        assert_eq!(sent, follow_up(&asked));
+        assert!(
+            !sent.contains("a shy robot."),
+            "personality is the opening only: {sent}"
+        );
+        assert!(
+            !sent.contains("You may propose"),
+            "the roster is the opening only: {sent}"
+        );
+    }
+
+    /// Summon then type is the whole gesture, so the first thing a session
+    /// ever hears can be a typed line — which is why `character_prompt` needs
+    /// no chat branch of its own.
+    #[test]
+    fn a_chat_turn_is_the_opening_turn_when_it_is_the_first_thing_that_happens() {
+        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let payload = director.prompt(&typed("hello?"));
+
+        assert!(
+            payload.contains("You may propose") && payload.contains("greet"),
+            "still the opening: {payload}"
+        );
+        assert!(payload.contains("they said: hello?"), "{payload}");
+    }
+
+    #[test]
+    fn a_chat_reply_that_names_a_declared_behavior_still_plays_it() {
+        let director =
+            ModelDirector::new(Scripted::says("wave\nOn the Dock, obviously."), ["wave"]);
+
+        match director.wake(&typed("what are you standing on?")) {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "wave");
+                assert_eq!(
+                    proposal.dialogue.as_deref(),
+                    Some("On the Dock, obviously.")
+                );
+            }
+            other => panic!("an answer and a Behavior, not {other:?}"),
+        }
+    }
+
+    /// The common chat shape: an answer and no Behavior. Speech under an empty
+    /// name, not a failed turn for `StaticDirector` to answer with silence.
+    #[test]
+    fn a_chat_reply_that_is_only_words_is_speech() {
+        let director = ModelDirector::new(Scripted::says("Just the desktop floor."), ["wave"]);
+
+        match director.wake(&typed("what are you standing on?")) {
+            Wake::Proposed(said) => {
+                assert!(said.behavior.is_empty(), "{said:?}");
+                assert_eq!(said.dialogue.as_deref(), Some("Just the desktop floor."));
+            }
+            other => panic!("expected speech, got {other:?}"),
+        }
     }
 
     #[test]

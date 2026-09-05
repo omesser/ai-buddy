@@ -93,8 +93,27 @@ fn overlay_label(index: usize) -> String {
     format!("overlay-{index}")
 }
 
+/// The label of the Chat surface belonging to `id`.
+///
+/// Outside the `overlay-` namespace on purpose: `place_overlays` closes every
+/// `overlay-{n}` past the display count, so a Chat surface sharing that prefix
+/// would be shut when a display is unplugged. `capabilities/chat.json` grants
+/// every `chat-*` the same permissions.
+fn chat_label(id: &InstanceId) -> String {
+    format!("chat-{id}")
+}
+
 /// The event carrying each `Frame` to the webview.
 const FRAME_EVENT: &str = "frame";
+
+/// The event carrying one turn's answer to a Chat surface.
+const CHAT_EVENT: &str = "chat";
+
+/// The event carrying the Spatial Layer's state to a Chat surface's status bar.
+///
+/// Separate from `CHAT_EVENT`: this arrives whenever the sprite does something
+/// different, whether or not anyone has typed.
+const CHAT_STATUS_EVENT: &str = "chat-status";
 
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
@@ -160,6 +179,10 @@ struct InstanceState {
     last_state: Option<State>,
     addressed: bool,
     happened: Happened,
+    /// Whether the call on the wire answers a typed line, so the surface can be
+    /// told when newest-wins throws that answer away (ADR-0016). `Slots` knows
+    /// only that a call is out, and the wake clears `happened` as it sends.
+    chat_turn: bool,
     pointer: Pointer,
     /// The last line spoken and which overlay showed it, so a crossing
     /// carries it (#178). See `carry_line`.
@@ -169,6 +192,17 @@ struct InstanceState {
     /// so turning it on always opens with a line rather than waiting for the
     /// sprite to do something new.
     traced_last: Option<Traced>,
+    /// What the status bar was last told, so the push happens on change rather
+    /// than every tick. `None` re-sends: a surface that has just said it is
+    /// listening has drawn nothing yet.
+    status_last: Option<ChatStatus>,
+    /// The countdown last pushed with it. Kept out of `ChatStatus` because it
+    /// falls a millisecond per millisecond and the window subtracts for itself;
+    /// only a deadline that *moved* is worth a push.
+    status_wake_ms: Option<u64>,
+    /// The `Happened` that drove the last session wake, as `happened_cell`
+    /// names it. `None` until one has: nothing has been asked here yet.
+    happened_last: Option<&'static str>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
     /// pointer is told whether the press was its own.
@@ -595,6 +629,242 @@ fn build_overlay(
     Ok(())
 }
 
+/// Build one Instance's Chat surface.
+///
+/// None of `build_overlay`'s flags: click-through would swallow the click that
+/// puts the caret in the field, always-on-top and visible-on-all-workspaces
+/// would follow the user out of the app, and `configure_overlay`'s window level
+/// would sit a text field above their editor. Absent rather than set to false,
+/// because a plain window is what Tauri builds when nothing asks otherwise.
+///
+/// Main thread only: it builds a window.
+fn build_chat(
+    app: &tauri::AppHandle,
+    label: &str,
+    title: &str,
+) -> Result<tauri::WebviewWindow, tauri::Error> {
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App("chat.html".into()))
+        .title(title)
+        .inner_size(420.0, 560.0)
+        .min_inner_size(320.0, 320.0)
+        .focused(true)
+        .build()
+}
+
+/// Open this Instance's Chat surface, or raise the one it already has.
+///
+/// Called from the frame loop, so the whole of it is posted to the main
+/// thread: building a webview and focusing one both reach the window server.
+/// The lookup goes over with it, because `run_on_main_thread` returning `Ok`
+/// means queued and not built — deciding on this side would have two Summons a
+/// tick apart each post a build, and one session (ADR-0008) would have two
+/// windows on it.
+fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
+    let label = chat_label(id);
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || {
+        let window = match handle.get_webview_window(&label) {
+            Some(window) => {
+                let _ = window.unminimize();
+                window
+            }
+            None => match build_chat(&handle, &label, &title) {
+                Ok(window) => window,
+                Err(why) => {
+                    eprintln!("chat: {label}: {why}");
+                    return;
+                }
+            },
+        };
+        // Both paths, because building is not raising. The builder's
+        // `focused(true)` only orders the window to the front of *this*
+        // application, and a Summon arrives while another one is active: the
+        // surface is then key inside ai-buddy and behind the editor the user
+        // was looking at. `set_focus` is the call that activates the process
+        // as well, which is what a deliberate act has to do — and doing it
+        // here rather than in the frame loop keeps the overlay's own window
+        // where it is, still taking no focus from anyone.
+        if let Err(why) = window.set_focus() {
+            eprintln!("chat: {label} could not be raised: {why}");
+        }
+    }) {
+        eprintln!("chat: could not reach the main thread: {why}");
+    }
+}
+
+/// Shut the Chat surface belonging to `id`, if it has one.
+///
+/// Nothing else closes a `chat-*`: they sit outside the `overlay-` namespace
+/// `place_overlays` sweeps, so a dismissed Instance would leave a window open
+/// on a conversation with nobody at the other end.
+///
+/// Main thread only, for `open_chat`'s reason.
+fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
+    let label = chat_label(id);
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(&label) {
+            if let Err(why) = window.close() {
+                eprintln!("chat: {label} could not be closed: {why}");
+            }
+        }
+    }) {
+        eprintln!("chat: could not reach the main thread: {why}");
+    }
+}
+
+/// Record what just happened to an Instance, unless a typed line is still
+/// waiting to be asked.
+///
+/// `happened` is one slot, and a Poke landing between a line arriving and the
+/// wake starting would replace the question — leaving the Director to answer
+/// one nobody asked.
+fn note_happened(happened: &mut Happened, what: Happened) {
+    if !matches!(happened, Happened::Chat(_)) {
+        *happened = what;
+    }
+}
+
+/// What a Chat surface needs to draw itself before anything is typed.
+#[derive(Serialize)]
+struct ChatOpening {
+    name: String,
+    character: String,
+    /// Whether a Completer exists at all — a key, or a local host.
+    configured: bool,
+    /// Whether the switch is on as well. Configured and switched off is a
+    /// different sentence from never configured, and the surface says which.
+    enabled: bool,
+}
+
+/// The Chat surface asking who it belongs to, and whether anything can answer.
+///
+/// A command rather than an event, for `character`'s reason: Tauri buffers
+/// nothing for a listener that is not there yet. Read out of the same
+/// `DirectorInspect` the Settings window renders, so the two cannot disagree
+/// about whether a session Director is attached.
+#[tauri::command]
+fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> ChatOpening {
+    let (name, character) = state
+        .instances
+        .lock()
+        .ok()
+        .and_then(|rows| {
+            rows.iter()
+                .find(|row| row.id == instance)
+                .map(|row| (row.name.clone(), row.character.clone()))
+        })
+        .unwrap_or_default();
+    let inspect = state.inspect.lock().ok();
+    ChatOpening {
+        name,
+        character,
+        configured: inspect.as_ref().is_some_and(|read| read.configured),
+        enabled: inspect.as_ref().is_some_and(|read| read.enabled),
+    }
+}
+
+struct ChatLine {
+    instance: InstanceId,
+    text: String,
+}
+
+/// What one Chat surface has to say to the frame loop.
+enum ChatMsg {
+    Said(ChatLine),
+    /// The surface is listening and has drawn nothing yet: the bar is pushed on
+    /// change, so a window opened between two would sit at dashes. Sent after
+    /// the listener is registered, or it is an answer nobody hears.
+    Listening(InstanceId),
+}
+
+/// The sender every Chat surface posts on.
+///
+/// Not another `SettingsOp`: every op drained from that one rewrites
+/// settings.json and redraws the Settings window. A struct rather than a bare
+/// `Sender`, because managed state is keyed by type.
+struct ChatChannel(mpsc::Sender<ChatMsg>);
+
+/// What the Shell tells one Chat surface when a turn of its own is over.
+#[derive(Clone, Serialize)]
+struct ChatReply {
+    /// What the Instance said, and `None` when the turn produced no line — a
+    /// failed call falling back to the silent `StaticDirector`, or Do Not
+    /// Disturb. Sent anyway, so no caret waits forever on a line that is
+    /// not coming.
+    said: Option<String>,
+    /// The line was refused because one typed before it has not been asked
+    /// yet. `said` is `None`; see the drain in `frame_loop`.
+    busy: bool,
+    /// What the Director was reacting to when it said this, as the surface
+    /// labels the row. `None` on an answer to a typed line, which sits under
+    /// the user's own turn — and its presence is what tells the surface not to
+    /// hand this line to a caret waiting on a question it did not answer.
+    ///
+    /// A label rather than a bare flag because a double-click is a prompt: the
+    /// user asked, they just did not type.
+    reacting_to: Option<String>,
+}
+
+/// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
+///
+/// The `engine:` trace's quartet — the ADR-0002 ladder and the State it plays
+/// under — plus which way the sprite faces and what the Director is doing.
+///
+/// Compared field by field to decide whether to push, so nothing in here
+/// changes on a tick where the bar would not.
+#[derive(Clone, PartialEq, Serialize)]
+struct ChatStatus {
+    /// The Behavior playing, and `None` for the Engine's own moments — a Land
+    /// or a startle no Director proposed. The bar draws a dash, as the trace does.
+    behavior: Option<String>,
+    primitive: Option<Primitive>,
+    animation: &'static str,
+    state: State,
+    /// What drove the last wake, in `happened_cell`'s word for it.
+    happened: Option<&'static str>,
+    /// -1 heading left, 1 as authored, like `SpritePlacement::facing`.
+    facing: i8,
+    /// A turn is on the wire. The same bit the thinking ellipsis draws from.
+    asking: bool,
+}
+
+/// One push of the status bar.
+#[derive(Clone, Serialize)]
+struct ChatStatusPush<'a> {
+    #[serde(flatten)]
+    status: &'a ChatStatus,
+    /// Milliseconds until the next ambient wake, and `None` when none is coming
+    /// — no Completer, the Director off, ambient wakes not allowed, Do Not
+    /// Disturb, or the displays asleep. A deadline pushed once rather than a
+    /// number pushed every second: the window counts it down itself.
+    wake_ms: Option<u64>,
+}
+
+/// A line the user typed, on its way in.
+///
+/// Bounded here because this is where webview text enters the process, and at
+/// `CHAT_LIMIT` rather than a second number: the session keeps the line, so
+/// cutting it later would still have paid for the whole paste on the way in.
+#[tauri::command]
+fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>) {
+    let text: String = text
+        .trim()
+        .chars()
+        .take(ai_buddy_core::director::CHAT_LIMIT)
+        .collect();
+    if text.is_empty() {
+        return;
+    }
+    let _ = chat.0.send(ChatMsg::Said(ChatLine { instance, text }));
+}
+
+/// A Chat surface reporting that it is listening.
+#[tauri::command]
+fn chat_ready(instance: String, chat: tauri::State<'_, ChatChannel>) {
+    let _ = chat.0.send(ChatMsg::Listening(instance));
+}
+
 /// One overlay per display, each covering that display.
 ///
 /// This is what keeps a Character on a seam whole: both overlays draw it, each
@@ -959,10 +1229,14 @@ fn spawn_live(
         last_state: None,
         addressed: false,
         happened: Happened::Ambient,
+        chat_turn: false,
         pointer: Pointer::default(),
         spoken: None,
         drawn_last: None,
         traced_last: None,
+        status_last: None,
+        status_wake_ms: None,
+        happened_last: None,
         verbs: Vec::new(),
         menu_hold: None,
         character,
@@ -979,6 +1253,7 @@ struct FrameExtras {
     characters: BTreeMap<String, Arc<Character>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     ops: mpsc::Receiver<SettingsOp>,
+    chat: mpsc::Receiver<ChatMsg>,
 }
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
@@ -1220,10 +1495,14 @@ fn spawn_instances(
             last_state: None,
             addressed: false,
             happened: Happened::Ambient,
+            chat_turn: false,
             pointer: Pointer::default(),
             spoken: None,
             drawn_last: None,
             traced_last: None,
+            status_last: None,
+            status_wake_ms: None,
+            happened_last: None,
             verbs: Vec::new(),
             menu_hold: None,
         });
@@ -1397,7 +1676,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             character,
             overlay_primary,
-            overlay_secondary
+            overlay_secondary,
+            chat_opening,
+            chat_send,
+            chat_ready
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
@@ -1584,6 +1866,8 @@ fn main() {
             }
             let instance_rows = Arc::new(Mutex::new(Vec::new()));
             let (ops_tx, ops_rx) = mpsc::channel();
+            let (chat_tx, chat_rx) = mpsc::channel();
+            app.manage(ChatChannel(chat_tx));
             app.manage(SettingsState {
                 settings: Arc::clone(&settings),
                 path: settings_file.clone(),
@@ -1669,6 +1953,7 @@ fn main() {
                     characters: character_cache,
                     instances: instance_rows,
                     ops: ops_rx,
+                    chat: chat_rx,
                 },
             );
             Ok(())
@@ -1681,6 +1966,29 @@ fn main() {
 mod tests {
     use super::*;
     use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
+
+    /// #17: losing a line that is waiting in `happened` would answer a question
+    /// the user never asked and drop the one they are waiting on.
+    #[test]
+    fn a_waiting_typed_line_survives_everything_else_that_happens() {
+        let mut happened = Happened::Chat("what are you standing on?".to_string());
+        note_happened(&mut happened, Happened::Poke);
+        note_happened(&mut happened, Happened::Perch);
+
+        assert_eq!(
+            happened,
+            Happened::Chat("what are you standing on?".to_string())
+        );
+    }
+
+    #[test]
+    fn with_nothing_waiting_the_latest_moment_wins() {
+        let mut happened = Happened::Ambient;
+        note_happened(&mut happened, Happened::Poke);
+        note_happened(&mut happened, Happened::Throw);
+
+        assert_eq!(happened, Happened::Throw);
+    }
 
     /// Settings persist Character.name (`Trump`). The env var and the folder
     /// are still the package stem (`trump`). Either has to start the same buddy.

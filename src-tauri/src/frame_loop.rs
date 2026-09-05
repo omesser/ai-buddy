@@ -17,11 +17,12 @@ use tauri::{Emitter, Manager};
 
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, describe_menu, dev_flags, menu, model, overlay_label, place_overlays,
-    platform, publish_instances, remember_instances, spawn_live, switch_instance, tray,
-    DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed,
-    Placement, SpritePlacement, Traced, TrayHandle, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
-    SENSE_INTERVAL,
+    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, menu, model,
+    note_happened, open_chat, overlay_label, place_overlays, platform, publish_instances,
+    remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
+    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
+    MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
+    CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// One overlay's last applied shape: the mask, then x, y, width and height.
@@ -75,6 +76,7 @@ pub(crate) fn run_frame_loop(
             characters,
             instances: instance_rows,
             ops,
+            chat,
         } = extras;
         let mut slots = model::Slots::new();
         publish_instances(&roster, &instance_rows);
@@ -440,6 +442,7 @@ pub(crate) fn run_frame_loop(
                         roster.dismiss(&id);
                         lives.retain(|live| live.id != id);
                         slots.abandon(&id);
+                        close_chat(&app, &id);
                     }
                     SettingsOp::SwitchAll { character } => {
                         if let Some(loaded) = characters.get(&character).cloned() {
@@ -497,6 +500,82 @@ pub(crate) fn run_frame_loop(
                 let _ = app.run_on_main_thread(|| {
                     platform::refresh_settings();
                 });
+            }
+
+            // A line typed at a Chat surface lands in the two fields a Poke
+            // already sets: `addressed` makes the next session wake due, and
+            // `happened` carries the line into that wake's `Context`. No call
+            // starts here — the frame loop can never wait on one.
+            while let Ok(msg) = chat.try_recv() {
+                let line = match msg {
+                    ChatMsg::Said(line) => line,
+                    ChatMsg::Listening(id) => {
+                        if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
+                            live.status_last = None;
+                        }
+                        continue;
+                    }
+                };
+                let Some(live) = lives.iter_mut().find(|live| live.id == line.instance) else {
+                    // Dismissed between the send and this drain. Answered
+                    // anyway, so if this beats the window closing it stops a
+                    // caret rather than leaving it spinning.
+                    eprintln!("chat: no Instance {} to speak to", line.instance);
+                    let _ = app.emit_to(
+                        chat_label(&line.instance),
+                        CHAT_EVENT,
+                        ChatReply {
+                            said: None,
+                            busy: false,
+                            reacting_to: None,
+                        },
+                    );
+                    continue;
+                };
+
+                // A line nothing can ask is answered here rather than parked:
+                // `happened` is one slot only a wake below clears, so a line
+                // taken while the wake gate is shut would hold it for as long
+                // as the gate stayed shut. Displays asleep is deliberately not
+                // one of these — a line taken first is asked when they wake.
+                let askable = config.enabled
+                    && live.model.is_some()
+                    && roster
+                        .get(&live.id)
+                        .is_some_and(|instance| !instance.do_not_disturb());
+                if !askable {
+                    let _ = app.emit_to(
+                        chat_label(&live.id),
+                        CHAT_EVENT,
+                        ChatReply {
+                            said: None,
+                            busy: false,
+                            reacting_to: None,
+                        },
+                    );
+                    continue;
+                }
+
+                // A second line typed inside the same tick has nowhere to go:
+                // `happened` is one slot only the wake site below clears.
+                // Refused rather than allowed to overwrite, because the surface
+                // answers its rows in order and overwriting would hand the
+                // first row the second's answer. A line typed while a wake is
+                // already on the wire is not this case: ADR-0016 supersedes.
+                if matches!(live.happened, Happened::Chat(_)) {
+                    let _ = app.emit_to(
+                        chat_label(&line.instance),
+                        CHAT_EVENT,
+                        ChatReply {
+                            said: None,
+                            busy: true,
+                            reacting_to: None,
+                        },
+                    );
+                    continue;
+                }
+                live.addressed = true;
+                live.happened = Happened::Chat(line.text);
             }
 
             {
@@ -681,23 +760,38 @@ pub(crate) fn run_frame_loop(
                 }) || grab_started
                 {
                     live.addressed = true;
-                    live.happened = if live
-                        .verbs
-                        .iter()
-                        .any(|verb| matches!(verb, Verb::Throw { .. }))
-                    {
-                        Happened::Throw
-                    } else if grab_started {
-                        Happened::Grab
-                    } else if live
-                        .verbs
-                        .iter()
-                        .any(|verb| matches!(verb, Verb::Menu | Verb::Poke))
-                    {
-                        Happened::Poke
-                    } else {
-                        Happened::Summon
-                    };
+                    note_happened(
+                        &mut live.happened,
+                        if live
+                            .verbs
+                            .iter()
+                            .any(|verb| matches!(verb, Verb::Throw { .. }))
+                        {
+                            Happened::Throw
+                        } else if grab_started {
+                            Happened::Grab
+                        } else if live
+                            .verbs
+                            .iter()
+                            .any(|verb| matches!(verb, Verb::Menu | Verb::Poke))
+                        {
+                            Happened::Poke
+                        } else {
+                            Happened::Summon
+                        },
+                    );
+                }
+
+                // #17: opening the surface is all the Shell adds to a Summon;
+                // the verb stays on `live` for the Engine, which answers it the
+                // way it answers a Poke. Here because `std::mem::take` empties
+                // the vec below.
+                if live.verbs.iter().any(|verb| matches!(verb, Verb::Summon)) {
+                    let title = roster
+                        .get(&live.id)
+                        .map(|instance| instance.name.clone())
+                        .unwrap_or_else(|| live.character.name.clone());
+                    open_chat(&app, &live.id, title);
                 }
             }
 
@@ -784,6 +878,23 @@ pub(crate) fn run_frame_loop(
                 let mut proposal = None;
                 let arrived = slots.take(&live.id);
                 let applied = arrived.is_some();
+
+                let answering_chat = arrived
+                    .as_ref()
+                    .is_some_and(|(_, context)| matches!(context.happened, Happened::Chat(_)));
+
+                // The session Director answered, as against a failed call that
+                // left `fallback` running on static weights.
+                let responded = arrived
+                    .as_ref()
+                    .is_some_and(|(wake, _)| matches!(wake, Wake::Proposed(_)));
+
+                // Read here because the `Context` is consumed just below and
+                // the emit that needs it is further down still.
+                let reacting_to = arrived
+                    .as_ref()
+                    .map(|(_, context)| director::reacting_to(&context.happened));
+
                 if let Some((wake, context)) = arrived {
                     if model::tracing() {
                         match &wake {
@@ -851,7 +962,7 @@ pub(crate) fn run_frame_loop(
                                 recent: live.recent.clone(),
                                 personality: live.character.personality.clone(),
                                 state: live.last_state.unwrap_or(State::Grounded),
-                                happened: live.happened,
+                                happened: live.happened.clone(),
                                 standing: String::new(),
                             });
                         }
@@ -875,12 +986,39 @@ pub(crate) fn run_frame_loop(
                     live.addressed = true;
                 }
 
+                // As well as the Speech bubble, not instead of it, and
+                // addressed to one window so two conversations cannot render
+                // each other's turns.
+                //
+                // Every response, not only answers to a typed line: a line said
+                // in the bubble alone is the split ADR-0008 exists to prevent.
+                // One the user did not type carries what the Director was
+                // reacting to, so the surface can say a Summon drew it out
+                // rather than draw it under a question it did not answer. Two
+                // are held back — a proposal with no Speech has no words to
+                // log, and the Static Director picks every free wake.
+                if answering_chat {
+                    live.chat_turn = false;
+                }
+                let unasked = responded && !answering_chat && frame.dialogue.is_some();
+                if answering_chat || unasked {
+                    let _ = app.emit_to(
+                        chat_label(&live.id),
+                        CHAT_EVENT,
+                        ChatReply {
+                            said: frame.dialogue.clone(),
+                            busy: false,
+                            reacting_to: unasked.then(|| reacting_to.clone()).flatten(),
+                        },
+                    );
+                }
+
                 let became_perched = live.last_state.is_some()
                     && frame.state == State::Perched
                     && live.last_state != Some(State::Perched);
                 if became_perched {
                     live.addressed = true;
-                    live.happened = Happened::Perch;
+                    note_happened(&mut live.happened, Happened::Perch);
                 }
 
                 if live.last_state != Some(frame.state) {
@@ -889,7 +1027,9 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // After the tick so a Throw is already Falling, not still Dragged.
-                let happened = live.happened;
+                // Cloned because the wake below resets `live.happened` before
+                // the trace at the end of this Instance's turn reads it.
+                let happened = live.happened.clone();
                 let reactive_wake =
                     if let (Some(model), Some(activity)) = (&live.model, last_activity.as_ref()) {
                         if director::session_due(
@@ -906,7 +1046,7 @@ pub(crate) fn run_frame_loop(
                                 recent: live.recent.clone(),
                                 personality: live.character.personality.clone(),
                                 state: frame.state,
-                                happened: live.happened,
+                                happened: live.happened.clone(),
                                 standing: assembler.standing_on(frame.position),
                             };
                             let was_addressed = live.addressed;
@@ -928,6 +1068,25 @@ pub(crate) fn run_frame_loop(
                                 inspect.last_payload = Some(payload);
                                 inspect.wake_secs = live.pace.wait().as_secs();
                             }
+                            // Starting a call cancels the one before it
+                            // (ADR-0016) and `Slots::take` drops the superseded
+                            // reply, so a typed line on the wire is told here
+                            // that no answer is coming. Nothing else would, and
+                            // a row left unanswered would take the next turn's
+                            // answer, blinking for the life of the window.
+                            if live.chat_turn {
+                                let _ = app.emit_to(
+                                    chat_label(&live.id),
+                                    CHAT_EVENT,
+                                    ChatReply {
+                                        said: None,
+                                        busy: false,
+                                        reacting_to: None,
+                                    },
+                                );
+                            }
+                            live.chat_turn = matches!(context.happened, Happened::Chat(_));
+                            live.happened_last = Some(director::happened_cell(&context.happened));
                             slots.wake(&live.id, Arc::clone(model), context);
                             was_addressed
                         } else {
@@ -1013,6 +1172,55 @@ pub(crate) fn run_frame_loop(
                     // Forgotten while off, so flipping the switch back on opens
                     // with a line instead of waiting for the next change.
                     live.traced_last = None;
+                }
+
+                // Pushed on change for the trace's reason above: the loop turns
+                // at display rate and a `ChatStatus` changes a handful of times
+                // a minute. Above the `draw` below, so a Character whose art
+                // will not draw still says what its Engine is doing.
+                //
+                // `ambient_coming` is `session_due`'s ambient arm, so the bar
+                // counts down only to a wake that is coming.
+                let ambient_coming = config.enabled
+                    && config.ambient_allowed
+                    && live.model.is_some()
+                    && !instance.do_not_disturb()
+                    && !last_activity
+                        .as_ref()
+                        .is_some_and(|activity| activity.displays_asleep);
+                let wake_ms = ambient_coming.then(|| {
+                    live.pace
+                        .wait()
+                        .saturating_sub(live.since_ambient)
+                        .as_millis() as u64
+                });
+                let status = ChatStatus {
+                    behavior: frame.playing_behavior.clone(),
+                    primitive: frame.playing_primitive,
+                    animation: frame.animation,
+                    state: frame.state,
+                    happened: live.happened_last,
+                    facing: frame.facing as i8,
+                    asking: thinking,
+                };
+                // Asks whether the deadline moved — a wake landing, the pace
+                // growing under it — not whether it ran down, which it does
+                // every tick and which no push has to say.
+                let deadline_moved = match (wake_ms, live.status_wake_ms) {
+                    (Some(now_ms), Some(was_ms)) => now_ms > was_ms,
+                    (now_ms, was_ms) => now_ms.is_some() != was_ms.is_some(),
+                };
+                if deadline_moved || live.status_last.as_ref() != Some(&status) {
+                    let _ = app.emit_to(
+                        chat_label(&live.id),
+                        CHAT_STATUS_EVENT,
+                        ChatStatusPush {
+                            status: &status,
+                            wake_ms,
+                        },
+                    );
+                    live.status_last = Some(status);
+                    live.status_wake_ms = wake_ms;
                 }
 
                 // The Engine names an Animation and how long it has been
