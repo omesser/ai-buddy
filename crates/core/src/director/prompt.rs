@@ -50,6 +50,24 @@ pub fn character_prompt(
     )
 }
 
+/// The one word this repository uses for each `Happened`.
+///
+/// Shared rather than matched a second time: the Chat surface's status bar
+/// names the same moment to the user, and a vocabulary of its own would have
+/// the window and the prompt disagree about what just happened in front of
+/// someone who can read both.
+pub fn happened_word(happened: &Happened) -> &'static str {
+    match happened {
+        Happened::Poke => "poked",
+        Happened::Throw => "thrown",
+        Happened::Summon => "summoned",
+        Happened::Grab => "picked up",
+        Happened::Perch => "placed on a perch",
+        Happened::Chat(_) => "spoken to",
+        Happened::Ambient => "time passed",
+    }
+}
+
 /// A later turn in the same session. No Personality Prompt, no roster.
 pub fn follow_up(context: &Context) -> String {
     let recent = if context.recent.is_empty() {
@@ -58,15 +76,7 @@ pub fn follow_up(context: &Context) -> String {
         context.recent.join(", ")
     };
     let clock = format_clock(context.activity.hour, context.activity.minute);
-    let happened = match &context.happened {
-        Happened::Poke => "poked",
-        Happened::Throw => "thrown",
-        Happened::Summon => "summoned",
-        Happened::Grab => "picked up",
-        Happened::Perch => "placed on a perch",
-        Happened::Chat(_) => "spoken to",
-        Happened::Ambient => "time passed",
-    };
+    let happened = happened_word(&context.happened);
     let state = match context.state {
         State::Grounded => "idle",
         State::Falling => "falling",

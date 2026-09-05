@@ -283,3 +283,45 @@ body {
   outline: 2px solid var(--chat-accent);
   outline-offset: 2px;
 }
+
+/* The status bar: instrument panel, not conversation. Monospaced and dim so
+   the eye passes over it on the way to the log, and one line whatever it is
+   asked to draw — it sits under a log that scrolls, and a bar that reflowed
+   would move the conversation every time a Behavior with a longer name
+   started. Truncation is the whole of the overflow story: nowrap here, an
+   ellipsis on the values, and the Behavior name is the one that ever needs
+   it. */
+.bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 7px 16px 9px;
+  border-top: 1px solid var(--chat-rule);
+  background: var(--chat-fill-dim);
+  font-family: var(--chat-mono);
+  font-size: 10.5px;
+  color: var(--chat-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bar .v {
+  flex: 0 0 auto;
+}
+
+/* The two values a Character Package names, and so the two that can be any
+   length. Capped in characters rather than shrunk: a flexible cell gives up
+   its width to whatever follows it, which answers one long Behavior name by
+   emptying the cell. Past the cap the line runs off the right end, in the
+   order the bar puts things in. */
+.bar .elide {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar .sep {
+  flex: 0 0 auto;
+  color: var(--chat-ink-4);
+}

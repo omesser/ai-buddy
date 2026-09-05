@@ -19,10 +19,10 @@ use super::settings::SettingsOp;
 use super::{
     apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, menu, model,
     note_happened, open_chat, overlay_label, place_overlays, platform, publish_instances,
-    remember_instances, spawn_live, switch_instance, tray, ChatReply, DirectorRun, Drawn,
-    FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, CHAT_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT,
-    SENSE_INTERVAL,
+    remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
+    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
+    MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
+    CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// One overlay's last applied shape: the mask, then x, y, width and height.
@@ -512,7 +512,18 @@ pub(crate) fn run_frame_loop(
             // the `Context` that wake sends. Nothing starts a call here — the
             // wake site below is the only place that does, and the frame loop
             // can never wait on one.
-            while let Ok(line) = chat.try_recv() {
+            while let Ok(msg) = chat.try_recv() {
+                let line = match msg {
+                    ChatMsg::Said(line) => line,
+                    // A surface that has just opened has missed every change
+                    // the bar is pushed on, so the next tick pushes again.
+                    ChatMsg::Listening(id) => {
+                        if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
+                            live.status_last = None;
+                        }
+                        continue;
+                    }
+                };
                 let Some(live) = lives.iter_mut().find(|live| live.id == line.instance) else {
                     // Dismissed between the send and this drain. Answered all
                     // the same, for `ChatReply`'s reason: the surface is
@@ -1080,6 +1091,7 @@ pub(crate) fn run_frame_loop(
                                 );
                             }
                             live.chat_turn = matches!(context.happened, Happened::Chat(_));
+                            live.happened_last = Some(director::happened_word(&context.happened));
                             slots.wake(&live.id, Arc::clone(model), context);
                             was_addressed
                         } else {
@@ -1165,6 +1177,64 @@ pub(crate) fn run_frame_loop(
                     // Forgotten while off, so flipping the switch back on opens
                     // with a line instead of waiting for the next change.
                     live.traced_last = None;
+                }
+
+                // The status bar of this Instance's own Chat surface, pushed on
+                // change for the trace's reason above: the loop turns at
+                // display rate and everything in a `ChatStatus` changes a
+                // handful of times a minute. Addressed to that one window,
+                // because there is one surface per Summoned Instance and an
+                // untargeted emit would have every bar drawing every buddy.
+                //
+                // Up here with the trace, above the `draw` below, so a
+                // Character whose art will not draw still says what its Engine
+                // is doing.
+                //
+                // What `session_due`'s ambient arm asks, so the bar counts down
+                // only to a wake that is coming: everything that stops one
+                // reads as a dash rather than as a number falling towards a
+                // moment that never arrives.
+                let ambient_coming = config.enabled
+                    && config.ambient_allowed
+                    && live.model.is_some()
+                    && !instance.do_not_disturb()
+                    && !last_activity
+                        .as_ref()
+                        .is_some_and(|activity| activity.displays_asleep);
+                let wake_ms = ambient_coming.then(|| {
+                    live.pace
+                        .wait()
+                        .saturating_sub(live.since_ambient)
+                        .as_millis() as u64
+                });
+                let status = ChatStatus {
+                    behavior: frame.playing_behavior.clone(),
+                    primitive: frame.playing_primitive,
+                    animation: frame.animation,
+                    state: frame.state,
+                    happened: live.happened_last,
+                    facing: frame.facing as i8,
+                    asking: thinking,
+                };
+                // The countdown is a deadline the window subtracts from, so
+                // this asks whether the deadline moved — a wake landing, the
+                // ambient pace growing under it — and not whether it ran down,
+                // which it does every tick and which no push has to say.
+                let deadline_moved = match (wake_ms, live.status_wake_ms) {
+                    (Some(now_ms), Some(was_ms)) => now_ms > was_ms,
+                    (now_ms, was_ms) => now_ms.is_some() != was_ms.is_some(),
+                };
+                if deadline_moved || live.status_last.as_ref() != Some(&status) {
+                    let _ = app.emit_to(
+                        chat_label(&live.id),
+                        CHAT_STATUS_EVENT,
+                        ChatStatusPush {
+                            status: &status,
+                            wake_ms,
+                        },
+                    );
+                    live.status_last = Some(status);
+                    live.status_wake_ms = wake_ms;
                 }
 
                 // The Engine names an Animation and how long it has been

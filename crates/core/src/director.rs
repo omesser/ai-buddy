@@ -24,7 +24,7 @@ use crate::engine::{BehaviorProposal, State};
 use crate::sensing::Activity;
 
 mod prompt;
-pub use prompt::{character_prompt, follow_up};
+pub use prompt::{character_prompt, follow_up, happened_word};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
 ///

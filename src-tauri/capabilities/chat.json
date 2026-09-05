@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "chat",
-  "description": "Tauri denies the webview every core command unless a capability grants it, so with no capability at all a Chat surface could not hear the reply the Shell pushes it when a turn lands - the window would open, take a line, and sit there silent with nothing on screen saying why. Listening for events is the only thing it needs from core: it draws no sprite, holds no state, and asks who it belongs to and sends what was typed through app commands, which are not gated here. The glob covers every surface: there is one per Summoned Character Instance, labelled chat- and that Instance's id, and they all answer under the same rules.",
+  "description": "Tauri denies the webview every core command unless a capability grants it, so with no capability at all a Chat surface could not hear what the Shell pushes it - the reply when a turn lands, and the Spatial Layer state its status bar draws - the window would open, take a line, and sit there silent with nothing on screen saying why. Listening for events is the only thing it needs from core: it draws no sprite, holds no state, and asks who it belongs to and sends what was typed through app commands, which are not gated here. The glob covers every surface: there is one per Summoned Character Instance, labelled chat- and that Instance's id, and they all answer under the same rules.",
   "windows": [
     "chat-*"
   ],
