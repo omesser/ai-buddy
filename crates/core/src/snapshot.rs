@@ -13,7 +13,6 @@ use std::time::Duration;
 
 use crate::engine::{Point, Verb, Window, WorldSnapshot};
 use crate::window_source::{
-    Rect,
     WindowSource, WorldGeometry, DOCK_PERCH_ID, POLL_INTERVAL, RIDE_POLL_INTERVAL,
 };
 
@@ -230,7 +229,6 @@ fn perch_eligible(layer: i32) -> bool {
     layer == 0
 }
 
-
 /// Where the sprite comes into the world: the middle of the first display the
 /// platform reported.
 ///
@@ -254,7 +252,7 @@ mod tests {
 
     use super::*;
     use crate::engine::{Engine, State, Window};
-    use crate::window_source::{Capabilities, FakeWindowSource, WindowId, WindowRect};
+    use crate::window_source::{Capabilities, FakeWindowSource, Rect, WindowId, WindowRect};
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> crate::window_source::Rect {
         crate::window_source::Rect {

@@ -21,7 +21,6 @@ pub struct Point {
     pub y: f64,
 }
 
-
 /// One visible window: which one it is, and where.
 ///
 /// The id is opaque here and only ever compared for equality. That comparison
@@ -6447,30 +6446,30 @@ mod tests {
     #[test]
     fn window_source_rect_accepts_as_engine_rect() {
         use crate::window_source;
-        
+
         // This should compile: function taking engine::Rect called with window_source::Rect
         fn takes_engine_rect(_rect: Rect) {}
-        
+
         let source_rect = window_source::Rect {
             x: 100.0,
             y: 200.0,
             width: 300.0,
             height: 400.0,
         };
-        
+
         // This should work without field-by-field mapping
         takes_engine_rect(source_rect);
-        
+
         // Also test direct assignment in WorldSnapshot assembly
         let geometry = window_source::WorldGeometry {
             usable_frames: vec![source_rect],
             windows: vec![],
             dock: None,
         };
-        
+
         // This should work without .map(rect)
         let _snapshot = WorldSnapshot {
-            displays: geometry.usable_frames,  // No .map(rect) needed
+            displays: geometry.usable_frames, // No .map(rect) needed
             windows: vec![],
             cursor: Point { x: 0.0, y: 0.0 },
             elapsed_ms: 16,

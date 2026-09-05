@@ -20,7 +20,7 @@
 //! people on the call never see the Character while its owner keeps it. See
 //! `platform::macos::overlay_panel`.
 
-use crate::window_source::{Rect, WindowRect};
+use crate::window_source::Rect;
 
 /// How long a rule takes to take the Character away, and to give it back.
 ///
@@ -271,6 +271,7 @@ fn covers(window: &Rect, frame: &Rect) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::window_source::WindowRect;
 
     fn fullscreen() -> Desktop {
         Desktop {
