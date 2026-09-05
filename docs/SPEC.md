@@ -578,7 +578,8 @@ Decided against, not merely deferred:
 - An undo system for desktop actions.
 - A provider abstraction layer over harnesses.
 - Per-Instance memory. May become configurable later; not built now.
-- Ambient screenshots without a mandatory Local Gate.
+- Ambient screenshots without a mandatory Local Gate, and any Capture the user did not
+  permit for that Capture. ADR-0005.
 - Desktop-level or dynamically restacked z-order, and peeking out from behind windows.
 - Window side and bottom collision.
 - Interaction verbs beyond the five.

@@ -181,17 +181,20 @@ _Avoid_: Memory log, transcript, audit trail
 ### Sensing
 
 **Ambient Capture**:
-Low-frequency, consented sampling of the screen that runs while the user works.
-_Avoid_: Monitoring, watching, background scan
+A Capture the Character asks for while the user works, taken only after they
+say yes. Never sampled on a cadence: the cadence bounds the asking. ADR-0005.
+_Avoid_: Monitoring, watching, background scan, sampling
 
 **On-Demand Capture**:
 A single capture taken in direct response to a user act — a Poke, a call, a
-chat message.
+chat message. An act that names the screen is its own permission for it.
+ADR-0005.
 _Avoid_: Manual capture, triggered scan
 
 **Local Gate**:
-The mandatory on-device filter every Capture passes through before anything may
-reach the Director. Discards unchanged and uninteresting frames.
+The mandatory on-device filter every consented Capture passes through before
+anything may reach the Director. Discards unchanged and uninteresting frames.
+Not a substitute for consent.
 _Avoid_: Preprocessor, filter, throttle
 
 ### Interaction verbs
