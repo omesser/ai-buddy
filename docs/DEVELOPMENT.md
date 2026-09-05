@@ -96,36 +96,172 @@ Set environment variables for live debugging (all off by default):
 
 Values: `1`/`on`/`true`/`yes` for on, `0`/`off`/`false`/`no` for off (case-insensitive).
 
-## Director Environment
+## Running with a Completer
+
+With no Director key, Static weights pick idle Behaviors from the Character's manifest — no model, no account, no permission required. Connect a Completer for model-driven variety.
+
+### Quick Start
+
+OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`; `AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai` selects that path. An explicit full URL (ending in `/chat/completions` or `/responses`) is used as-is.
+
+```sh
+# OpenAI
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$OPENAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.openai.com \
+AI_BUDDY_DIRECTOR_MODEL=gpt-4o-mini \
+cargo run
+
+# Anthropic (OpenAI-compatible /v1/chat/completions)
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.anthropic.com \
+AI_BUDDY_DIRECTOR_MODEL=claude-haiku-4-5 \
+cargo run
+
+# xAI — get a key at https://console.x.ai
+cd src-tauri
+AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
+AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+cargo run
+
+# Ollama (local, no key)
+cd src-tauri
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+cargo run
+```
+
+### Director Environment
+
+Every variable that names a switch reads the same words: `1`, `on`, `true` or `yes` for on, `0`, `off`, `false` or `no` for off, in any case. Any other value is a typo rather than a choice — the switch stays as Settings has it, and the launch prints a line naming the variable it ignored. An empty value is an expansion that produced nothing, and is quietly no override at all.
 
 | Variable | What it does |
 |---|---|
-| `AI_BUDDY_DIRECTOR_API_KEY` | API key (required for remote, optional for local) |
-| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin (default: `https://api.openai.com`) |
-| `AI_BUDDY_DIRECTOR_MODEL` | Model name (default: `gpt-4o-mini`) |
-| `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Timeout (default: 20 remote, 120 local) |
-| `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap (default: 80 remote, 512 local) |
-| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First wake wait (default: 120s), then exponential backoff |
+| `AI_BUDDY_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a local server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
+| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
+| `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
+| `AI_BUDDY_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
+| `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
+| `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
+| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+
+### Settings and Keyring
+
+Settings → Director persists base URL and model, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Completer timeout and reply cap. Editing any of the five retargets the running Director: the next wake reaches the new host, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
+
+`cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
+
+**Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.
+
+**macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. From the repository root:
+
+```sh
+cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
+```
+
+A key saved before the first signed run keeps the old list — clear it in Settings and save it once more. Signing also changes the identity macOS grants Accessibility and Screen Recording to, so expect to grant those again, once. Released builds are ad-hoc signed too, so an update prompts the same way until there is a Developer ID to sign with (#283).
+
+**Accessibility and Screen Recording:** Settings → What the buddy can see is how you grant these permissions. The pane names the row macOS will show: a `cargo run` from Cursor is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn that named app on in Privacy & Security.
 
 ### Local Model Servers
 
-Tested servers supporting `/v1/chat/completions`:
+The buddy wakes on a pace all day and every Poke is a wake on top of that, so a hosted API puts a meter on idling — and each wake sends the frontmost application name and the clock off the machine. A server of your own removes the metering, and a server on loopback also keeps that context on this machine; a box across the LAN still receives it. "Local" here means loopback, an RFC1918 or IPv6 unique-local address, or a `.local` name — the LAN counts. A local base URL makes `AI_BUDDY_DIRECTOR_API_KEY` optional: leave it unset when the server has no auth, set it when the server requires one.
 
-| Server | Base URL | Auth | Tested |
-|---|---|---|---|
-| [Ollama](https://ollama.com) | `http://localhost:11434` | none | yes |
-| [oMLX](https://github.com/jundot/omlx) | `http://localhost:8000` | key required | yes |
-| llama.cpp | `http://localhost:8080` | optional | no |
-| LM Studio | `http://localhost:1234` | optional | no |
+These servers speak `/v1/chat/completions`:
+
+| Server | Base URL | Model name | Auth | Tested |
+|---|---|---|---|---|
+| [Ollama](https://ollama.com) | `http://localhost:11434` | a tag: `gemma4`, `llama3.2:3b` | none by default | yes — `gemma4:latest`, 9.6 GB, on an Apple-silicon Mac |
+| [oMLX](https://github.com/jundot/omlx) | `http://localhost:8000` | a served model id | API key required | yes |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | `http://localhost:8080` | the gguf path, or `--alias` | optional `--api-key` | no |
+| [LM Studio](https://lmstudio.ai) | `http://localhost:1234` | the id shown in its server tab | optional | no |
+| [vLLM](https://docs.vllm.ai) | `http://localhost:8000` | the served model id | optional `--api-key` | no |
+| [MLX](https://github.com/ml-explore/mlx-examples) `mlx_lm.server` | `http://localhost:8080` | a Hugging Face repo id | none | no |
+
+**Ollama** (no auth):
 
 ```sh
-# Ollama example
-ollama pull gemma4 && ollama serve
+ollama pull gemma4
+ollama serve
+
 AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 cargo run
+AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+cargo run
 ```
 
-Check server: `scripts/probe-model.sh` with same env vars.
+**oMLX** (requires API key):
+
+```sh
+omlx serve --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --api-key your-key-here
+
+AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
+AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+cargo run --bin ai-buddy
+```
+
+### Testing Connectivity
+
+`scripts/probe-model.sh` hits the same Completer without starting the overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST paths. Same env as `cargo run`. It prints status and body, never the key. Later this is also how to check a Harness is reachable.
+
+```sh
+AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
+AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
+scripts/probe-model.sh
+```
+
+**Check a server** before you trust it — reports whether the model you configured is actually loaded:
+
+```sh
+# Ollama (no key)
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
+AI_BUDDY_DIRECTOR_MODEL=gemma4 \
+scripts/probe-model.sh
+
+# oMLX (with key)
+AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
+AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
+AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
+scripts/probe-model.sh
+```
+
+At startup the app asks the same question once, in the background, and says so when the answer is no:
+
+```
+director: http://localhost:11439 unreachable: Connection refused; staying on StaticDirector until it answers
+director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:latest
+```
+
+Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a buddy that went quiet is not a mystery.
+
+### Provider Details
+
+**Cursor API:** `CURSOR_API_KEY` is for the Cloud Agents API and SDKs, not a Completer. `https://api.cursor.com` has no `/v1/chat/completions`; a POST there is a 404 and Static takes over.
+
+**xAI keys:** A 403 from xAI is the server refusing the key, not a bad JSON body (that is a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai); `/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries chat-completions if Responses returns 403 or 404.
+
+**Streaming:** The stand-in asks for `stream: true`. A reply's first line is the Behavior name and runs one to three tokens, so almost the whole wait is a dialogue line the buddy does not need before it starts moving. Streaming is also the only shape a dropped call can be *stopped* in: closing a streaming connection ends the generation, where a whole-reply request runs to completion on the server whatever the client does. A server that rejects the field — or accepts it and sends whole-reply JSON anyway — stays one the buddy can run against, because the parser handles both.
+
+### Ambient Wake Behavior
+
+Session calls stay quiet while the main display is asleep. Settings can turn the Director off, or leave it on and disable ambient wakes.
+
+A Character that should grow faster or slower than doubling says so:
+
+```toml
+[director]
+model_base = 3
+model_power = 1
+```
+
+Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect on the next frame, no restart. Do Not Disturb also silences the buddy while it is on, and leaves the visual cues (#277). A machine that cannot start an audio context does the same: one warning in the webview console, then silence, with the visual still playing (#292).
+
+### Reply Contract Measurements
+
+**Size and the reply contract, measured** (from `measure_the_reply_contract_failure_rate` test in `src-tauri/src/model.rs`). See [main README archived version](https://github.com/omesser/ai-buddy/blob/main/README.md) lines 450–490 for detailed measurement methodology and results.
 
 ## Character Packages
 
