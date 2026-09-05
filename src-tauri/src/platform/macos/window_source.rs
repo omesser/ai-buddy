@@ -18,10 +18,6 @@ use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource,
 
 /// The macOS window server's view of the desktop.
 pub struct MacosWindowSource {
-    /// Our own process. Its windows are excluded from every read: the overlay
-    /// covers the whole display the sprite is on, so a sprite allowed to see it
-    /// would find a Perch under its own feet and never fall again.
-    own_pid: i32,
     /// Where the usable part of each display comes from, and the Dock's true
     /// bounds when Accessibility lets the Shell read them.
     ///
@@ -36,7 +32,6 @@ impl MacosWindowSource {
         read_displays: impl Fn() -> (Vec<Rect>, Option<Rect>) + Send + Sync + 'static,
     ) -> Self {
         Self {
-            own_pid: std::process::id() as i32,
             read_displays: Box::new(read_displays),
         }
     }
@@ -54,19 +49,26 @@ impl WindowSource for MacosWindowSource {
         let (usable_frames, dock) = (self.read_displays)();
         WorldGeometry {
             usable_frames,
-            windows: visible_windows(self.own_pid),
+            windows: visible_windows(),
             dock,
         }
     }
 }
 
-/// Visible windows, frontmost first.
+/// Visible windows, frontmost first — ours among them.
 ///
 /// `OnScreenOnly` already returns the list in front-to-back order, which is the
 /// descending z-order the Engine wants, and `ExcludeDesktopElements` drops the
 /// desktop image and its icons — a sprite should stand on the desktop, not on a
 /// window covering it.
-fn visible_windows(own_pid: i32) -> Vec<WindowRect> {
+///
+/// Our own process is not excluded. The overlay is the one window that has to
+/// stay invisible — it covers the display, so a sprite that could see it would
+/// find a Perch under its own feet and never fall again — and it is a floating
+/// panel at layer 3, which the level filter in `ai_buddy_core::snapshot`
+/// already drops. Excluding the process took the Chat surface (#362) and
+/// Settings with it.
+fn visible_windows() -> Vec<WindowRect> {
     let options =
         CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
     let Some(list) = CGWindowListCopyWindowInfo(options, 0) else {
@@ -80,7 +82,7 @@ fn visible_windows(own_pid: i32) -> Vec<WindowRect> {
     let entries: &NSArray<NSDictionary<NSString, AnyObject>> =
         unsafe { &*std::ptr::from_ref(&*list).cast() };
 
-    entries.iter().filter_map(|e| window(&e, own_pid)).collect()
+    entries.iter().filter_map(|e| window(&e)).collect()
 }
 
 /// One window-list entry, or `None` for entries we cannot or should not use.
@@ -88,11 +90,7 @@ fn visible_windows(own_pid: i32) -> Vec<WindowRect> {
 /// The keys are spelled as literals because their `kCGWindow*` constants are
 /// defined as exactly these strings, and a bridged dictionary compares string
 /// keys by value.
-fn window(entry: &NSDictionary<NSString, AnyObject>, own_pid: i32) -> Option<WindowRect> {
-    if number(entry, ns_string!("kCGWindowOwnerPID"))?.as_i32() == own_pid {
-        return None;
-    }
-
+fn window(entry: &NSDictionary<NSString, AnyObject>) -> Option<WindowRect> {
     let bounds = entry.objectForKey(ns_string!("kCGWindowBounds"))?;
     let mut cg_rect = CGRect::ZERO;
     // SAFETY: `kCGWindowBounds` is documented to be a rectangle in the

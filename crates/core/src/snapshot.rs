@@ -225,6 +225,12 @@ fn world_snapshot(
 /// The one piece of furniture worth standing on — the Dock — arrives with its
 /// true bounds as `WorldGeometry::dock` when the platform can see them, and
 /// becomes a Perch above, not through this filter.
+///
+/// Our own overlay is above the ordinary level too — a floating panel, 3 on
+/// macOS and `_NET_WM_STATE_ABOVE` on X11 — so this is the whole of what keeps
+/// it out of the world. The platforms hand over every window they own, because
+/// the rest of ours are Chat surfaces (#362) and Settings, and a sprite may
+/// stand on those.
 fn perch_eligible(layer: i32) -> bool {
     layer == 0
 }
@@ -273,9 +279,9 @@ mod tests {
     }
 
     /// A window above the ordinary application level. The layers here are the
-    /// ones a real macOS desktop reports: 20 for the Dock, 24 for the menu bar,
-    /// 25 for the status items, and a large negative one for Notification
-    /// Centre.
+    /// ones a real macOS desktop reports: 3 for a floating panel, which is what
+    /// our own overlay is, 20 for the Dock, 24 for the menu bar, 25 for the
+    /// status items, and a large negative one for Notification Centre.
     fn elevated(
         id: WindowId,
         owner: &str,
@@ -510,6 +516,64 @@ mod tests {
                 }
             }],
             "the menu bar, the Dock and the status items are not Perches"
+        );
+    }
+
+    /// A window of ours is a window. #362 gave every Instance a Chat surface,
+    /// and nothing from here up knows or cares whose window it is.
+    #[test]
+    fn a_window_of_ours_that_is_not_the_overlay_is_a_perch_like_any_other() {
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: WorldGeometry {
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                windows: vec![window(7, "ai-buddy", rect(700.0, 400.0, 420.0, 560.0))],
+                dock: None,
+            },
+        });
+
+        let snapshot = assembler.assemble(16, Point::default(), Vec::new());
+
+        assert_eq!(
+            snapshot.windows,
+            vec![Window {
+                id: 7,
+                rect: rect(700.0, 400.0, 420.0, 560.0)
+            }],
+            "the Chat surface is somewhere to land"
+        );
+        assert_eq!(
+            assembler.standing_on(Point { x: 900.0, y: 400.0 }),
+            "a ai-buddy window",
+            "and somewhere the Director is told the buddy is standing"
+        );
+    }
+
+    /// The overlay is the one window of ours the world must never see: it
+    /// covers the display, so a sprite that could find a Perch on it would
+    /// find one under its own feet and never fall again.
+    #[test]
+    fn our_own_overlay_is_never_a_perch() {
+        let mut assembler = SnapshotAssembler::new(FakeWindowSource {
+            capabilities: seeing_everything(),
+            geometry: WorldGeometry {
+                usable_frames: vec![rect(0.0, 0.0, 1920.0, 1080.0)],
+                windows: vec![elevated(1, "ai-buddy", rect(0.0, 0.0, 1920.0, 1080.0), 3)],
+                dock: None,
+            },
+        });
+
+        let snapshot = assembler.assemble(16, Point::default(), Vec::new());
+
+        assert!(
+            snapshot.windows.is_empty(),
+            "a floating panel is not a Perch: {:?}",
+            snapshot.windows
+        );
+        assert_eq!(
+            assembler.standing_on(Point { x: 960.0, y: 0.0 }),
+            "nothing",
+            "nor anywhere to be standing"
         );
     }
 
