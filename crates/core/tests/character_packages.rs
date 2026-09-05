@@ -612,7 +612,11 @@ fn buddy_bot_uses_scale_1_for_authored_desktop_frames() {
 #[test]
 fn buddy_bot_frames_are_90_square_rgba() {
     let frames = frames_of("buddy-bot");
-    assert_eq!(frames.len(), 78, "the pack ships 78 PNG frames (57 base + 21 idle variants)");
+    assert_eq!(
+        frames.len(),
+        78,
+        "the pack ships 78 PNG frames (57 base + 21 idle variants)"
+    );
 
     for (animation, frame, bytes) in frames {
         let (width, height, alpha) = frame_alpha(&bytes);
@@ -638,11 +642,7 @@ fn buddy_bot_frames_are_90_square_rgba() {
 fn buddy_bot_declares_idle_life_variants() {
     let character = load_package("buddy-bot").expect("Buddy Bot package is valid");
 
-    let expected = [
-        ("idle-breathe", 8),
-        ("idle-blink", 6),
-        ("idle-listen", 7),
-    ];
+    let expected = [("idle-breathe", 8), ("idle-blink", 6), ("idle-listen", 7)];
     for (name, count) in expected {
         assert!(
             character.animations.contains_key(name),
