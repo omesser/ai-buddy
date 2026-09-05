@@ -43,9 +43,23 @@ impl WindowSource for WindowsWindowSource {
 
     fn read(&self) -> WorldGeometry {
         let (usable_frames, dock) = (self.read_displays)();
+        let windows = visible_windows();
+        
+        // TRACE: Diagnose Perch issue - log window count and first few bounds
+        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("window_source: {} visible windows on Windows", windows.len());
+            for (i, w) in windows.iter().take(3).enumerate() {
+                eprintln!(
+                    "  [{}] owner={}, bounds=({},{})@{}×{}",
+                    i, w.owner, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height
+                );
+            }
+        }
+        
         WorldGeometry {
             usable_frames,
-            windows: visible_windows(),
+            windows,
             dock,
         }
     }
