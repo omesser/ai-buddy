@@ -1085,3 +1085,74 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
         "nap ends on sleep for an empty desk"
     );
 }
+
+/// #368: `PRIMITIVE_MS` is the Engine's turn, not the art's length. Cat's idle
+/// runs 1200ms and the `waiting` variant of it 1000ms, so a Behavior stepping
+/// through idle has to leave whichever strip the ring drew running — a clock
+/// the Primitive restarted would replay the opening half-second of it and
+/// never the rest.
+///
+/// Through the Engine, because `draw` called with a chosen `ms` decides for
+/// itself when the clock started and so cannot disagree with the Engine about
+/// it. That is the seam the reset hid behind.
+#[test]
+fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
+    let character = load_package("cat").expect("cat package is valid");
+    let ground = WorldSnapshot {
+        displays: vec![DISPLAY],
+        elapsed_ms: 100,
+        ..WorldSnapshot::default()
+    };
+
+    let mut strips = BTreeSet::new();
+    for seed in 0..16 {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+            .with_behaviors(character.behaviors.clone())
+            .with_variant_seed(seed);
+        let idling = (0..40)
+            .map(|_| engine.tick(&ground))
+            .find(|frame| frame.animation == "idle")
+            .expect("the cat lands and the landing gives way to idling");
+        assert_eq!(idling.animation_ms, 0, "seed {seed} idles from frame zero");
+
+        // `groom` is a single Idle Primitive over an idle already on screen:
+        // the Behavior with nothing to restart.
+        let mut swept = BTreeSet::new();
+        let mut drew = BTreeSet::new();
+        for tick in 0..13 {
+            let frame = engine.tick(&WorldSnapshot {
+                proposal: (tick == 0).then(|| BehaviorProposal {
+                    behavior: "groom".to_string(),
+                    dialogue: None,
+                }),
+                ..ground.clone()
+            });
+            if tick == 0 {
+                assert_eq!(
+                    frame.behavior.as_deref(),
+                    Some("groom"),
+                    "seed {seed} played the Behavior rather than refusing it"
+                );
+            }
+            let art = character
+                .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                .expect("the cat draws the idle it is playing");
+            drew.insert(art.animation.to_string());
+            swept.insert(art.index);
+        }
+
+        assert_eq!(
+            swept,
+            BTreeSet::from([0, 1, 2, 3, 4, 5]),
+            "seed {seed} drew {drew:?} end to end"
+        );
+        strips.extend(drew);
+    }
+
+    assert_eq!(
+        strips,
+        BTreeSet::from(["idle".to_string(), "waiting".to_string()]),
+        "and both members of the ring took a turn, so the variant is pinned \
+         with the base"
+    );
+}
