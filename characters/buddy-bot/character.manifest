@@ -119,7 +119,10 @@ frames = [
 ]
 fps = 6
 
-# Tumble then recover toward idle. The Fall Primitive owns duration.
+# Grab + fall share this strip: State::Dragged and State::Falling both play
+# `fall` (no separate grab art). Trust-fall beat — early dangling pickup, mid
+# soft tumble with face+cyan LED readable, late unwind toward land. Personality
+# treats being dragged as a trust fall. The Fall Primitive owns duration.
 
 [animations.fall]
 frames = [
