@@ -330,13 +330,24 @@ Grant permissions: Settings → What the buddy can see.
 ## Linux Dependencies
 
 ```sh
-# Debian/Ubuntu
+# Debian/Ubuntu (build from source)
 sudo apt install libayatana-appindicator3-dev
 ```
 
-Tray requires StatusNotifier host (GNOME Shell, KDE Plasma, XFCE panel). GStreamer for audio.
+Tray requires a StatusNotifier host (GNOME Shell, KDE Plasma, XFCE panel). GStreamer for cue audio.
 
-## Platform Details
+### Install packages (tray, cue audio, AppImage)
+
+The tray icon is required, not a preference: it is how you reach Settings, Character, Memory, and Quit without hunting the sprite. The `.deb` therefore depends on `libayatana-appindicator3-1`, and `apt` pulls it in with the package. The older `libappindicator3-1` is not an accepted alternative; `Depends` names the `libayatana` one alone. The AppImage carries its own copy, so it needs no appindicator package.
+
+Displaying that icon is a second requirement, and no package can declare it: the panel must run a StatusNotifier host, which the desktop environment provides rather than `apt`. GNOME Shell, KDE Plasma, and XFCE's Status Tray plugin are hosts. A dock such as Plank is not one, and neither is a Wayland compositor with no tray protocol — the tray installs and no icon appears. Where no host answers, the sprite's right-click menu opens the same menu.
+
+Cue audio is Web Audio in WebKitGTK, which plays through GStreamer. The `.deb` does not name a GStreamer package of its own: `libwebkit2gtk-4.1-0` already Depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (the latter ships `pulsesink`). That is enough on a session with PipeWire-pulse or PulseAudio. An ALSA-only machine also wants `gstreamer1.0-alsa`, which WebKit only Suggests. A machine with no sound device stays silent and still draws the visual cue.
+
+The AppImage copies `libgstreamer` with WebKit and does **not** ship the plugin pack (`bundleMediaFramework` stays off, or the image grows by tens of megabytes). Cue audio then needs the host's `gstreamer1.0-plugins-good` (and `gstreamer1.0-alsa` on a box with no Pulse/PipeWire) plus a running sink. If those are installed and the AppImage is still mute, GStreamer is looking inside the image for plugins that are not there.
+
+AppImage on Ubuntu needs `libfuse2` (22.04) or `libfuse2t64` (24.04+).
+
 
 ### Linux X11/Wayland
 

@@ -76,15 +76,7 @@ The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first 
 
 The Release ships an AppImage and a `.deb` (x86_64).
 
-Under Wayland the sprite keeps to screen edges and loses window Perches, which is a supported mode rather than an error. X11 gets both. [Platform Support](#platform-support) lists everything the session type decides.
-
-The tray icon is required, not a preference: it is how you reach Settings, Character, Memory, and Quit without hunting the sprite. The `.deb` therefore depends on `libayatana-appindicator3-1`, and `apt` pulls it in with the package. The older `libappindicator3-1` is not an accepted alternative; `Depends` names the `libayatana` one alone. The AppImage carries its own copy, so it needs no appindicator package.
-
-Displaying that icon is a second requirement, and no package can declare it: the panel must run a StatusNotifier host, which the desktop environment provides rather than `apt`. GNOME Shell, KDE Plasma, and XFCE's Status Tray plugin are hosts. A dock such as Plank is not one, and neither is a Wayland compositor with no tray protocol — the tray installs and no icon appears. Where no host answers, the sprite's right-click menu opens the same menu.
-
-Cue audio is Web Audio in WebKitGTK, which plays through GStreamer. The `.deb` does not name a GStreamer package of its own: `libwebkit2gtk-4.1-0` already Depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (the latter ships `pulsesink`). That is enough on a session with PipeWire-pulse or PulseAudio. An ALSA-only machine also wants `gstreamer1.0-alsa`, which WebKit only Suggests. A machine with no sound device stays silent and still draws the visual cue.
-
-The AppImage copies `libgstreamer` with WebKit and does **not** ship the plugin pack (`bundleMediaFramework` stays off, or the image grows by tens of megabytes). Cue audio then needs the host's `gstreamer1.0-plugins-good` (and `gstreamer1.0-alsa` on a box with no Pulse/PipeWire) plus a running sink. If those are installed and the AppImage is still mute, GStreamer is looking inside the image for plugins that are not there.
+Under Wayland the sprite keeps to screen edges and loses window Perches — a supported mode, not an error. X11 gets both.
 
 ```sh
 # Debian/Ubuntu .deb
@@ -93,6 +85,8 @@ sudo apt install ./ai-buddy_*.deb
 # sudo apt install libfuse2    # or libfuse2t64
 # chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
 ```
+
+Tray hosts, cue audio (GStreamer), and AppImage fuse notes: [DEVELOPMENT.md](./docs/DEVELOPMENT.md#linux-dependencies).
 
 ### Windows
 
