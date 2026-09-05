@@ -560,6 +560,82 @@ fn timber_wolf_declares_cursor_reactions() {
     );
 }
 
+/// Under-arm Sketchfab plate must not seal the crook: the desk shows through
+/// between torso and inner arm. Window is the left crook on front-facing
+/// frames (his right arm). Near-black opaque must not dominate that pocket.
+#[test]
+fn timber_wolf_underarm_crook_is_not_a_near_black_plate() {
+    let files = package_bytes("timber-wolf");
+    // Left under-arm pocket on the 176×160 frontals (idle / talk-2 / react / scan).
+    const X0: usize = 55;
+    const X1: usize = 72;
+    const Y0: usize = 70;
+    const Y1: usize = 86;
+
+    let frames = [
+        "frames/idle-0.png",
+        "frames/idle-1.png",
+        "frames/talk-2.png",
+        "frames/react-0.png",
+        "frames/react-1.png",
+        "frames/scan-1.png",
+        "frames/scan-2.png",
+        "frames/scan-3.png",
+    ];
+    for path in frames {
+        let bytes = files
+            .get(path)
+            .unwrap_or_else(|| panic!("{path} is in the package"));
+        let (width, height, rgba) = frame_rgba(bytes);
+        assert_eq!((width, height), (176, 160), "{path} stays on the TW canvas");
+
+        let mut transparent = 0usize;
+        let mut opaque = 0usize;
+        let mut near_black = 0usize;
+        for y in Y0..Y1 {
+            for x in X0..X1 {
+                let px = rgba[y * width + x];
+                if px[3] < 8 {
+                    transparent += 1;
+                    continue;
+                }
+                if px[3] < VISIBLE {
+                    continue;
+                }
+                opaque += 1;
+                let mx = px[0].max(px[1]).max(px[2]);
+                if mx <= 22 {
+                    near_black += 1;
+                }
+            }
+        }
+
+        assert!(
+            transparent >= 140,
+            "{path}: left under-arm crook must open to the desk (transparent={transparent}, want >= 140)"
+        );
+        assert!(
+            near_black * 2 <= opaque + transparent / 4,
+            "{path}: near-black opaque must not plate-fill the crook \
+             (near_black={near_black} opaque={opaque} transparent={transparent})"
+        );
+
+        // Outer gun column still solid — remat must not eat the hanging pod.
+        let mut outer = 0usize;
+        for y in 55..100 {
+            for x in 36..50 {
+                if rgba[y * width + x][3] >= VISIBLE {
+                    outer += 1;
+                }
+            }
+        }
+        assert!(
+            outer >= 140,
+            "{path}: left outer gun/arm column still solid (opaque={outer})"
+        );
+    }
+}
+
 /// Buddy Bot: logo mascot package loads with all nine required animations and
 /// the authored frame counts from the Grok Imagine pack.
 #[test]
