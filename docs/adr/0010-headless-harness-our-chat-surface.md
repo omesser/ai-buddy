@@ -22,6 +22,22 @@ workbench. No diff view, file tree, plan panel, skill browser or settings pane
 — those are the Harness's own surfaces, and what ai-buddy needs to remember of
 them belongs in the Action Log.
 
+One thing more: a status bar under the log, drawing what the Spatial Layer is
+doing — the Behavior, Primitive and Animation being played, the State under
+them, which way the sprite faces, what the last wake was told had happened, and
+how long until the next one. That is not the workbench this section refuses.
+What it refuses is the *Harness's* surfaces: a diff, a file tree, a plan, a
+skill browser are all drawn better by the TUI we chose not to embed, so
+rebuilding them here makes a worse copy of it. The bar draws state ai-buddy
+itself owns, which no Harness surface carries and which nothing else in the
+product shows.
+
+The line, for the next pull request that wants a sixth thing in this window:
+the bar may say what our own layers are doing right now, in one line, with
+nothing to operate. Anything the user acts on, anything with a history to
+scroll or a filter to set, and anything the Harness reported rather than the
+Engine played, is the workbench arriving by another door.
+
     30|It is a webview rather than a native window because Settings already priced
 the alternative: `platform/macos/settings_window.rs` and
 `platform/x11/settings_window.rs` are 1046 and 913 lines of hand-written

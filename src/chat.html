@@ -1,0 +1,101 @@
+<!doctype html>
+<!-- The Chat surface of one Summoned Character Instance (ADR-0010). -->
+<html lang="en" class="chat-ui-minimal">
+  <head>
+    <meta charset="utf-8" />
+    <title>ai-buddy</title>
+    <link rel="stylesheet" href="chat-ui.css" />
+  </head>
+  <body>
+    <!-- Static, unlike index.html's empty #stage: this window belongs to one
+         Character Instance, and which one is settled before it opens. The
+         Instance's name is large and its Character small beside it, because
+         two Instances of one Character share a Memory and differ in name —
+         the name is how a user tells two of these windows apart. -->
+    <header class="tb">
+      <span class="who">
+        <span class="name" id="name"></span>
+        <span class="of" id="character"></span>
+      </span>
+    </header>
+
+    <!-- Announced rather than silent: an answer lands while the caret is still
+         in the field, so a reader who is not watching the log is told. -->
+    <div class="log" id="log" aria-live="polite">
+      <!-- The state most people open first, so it says what to attach rather
+           than sitting empty. Markup rather than strings in chat.js: this is
+           copy, and copy belongs where the rest of the window's words are.
+           The Instance and Character names are filled in below. -->
+      <div class="empty" id="empty" hidden>
+        <div id="empty-none">
+          <h2>Nothing to answer with</h2>
+          <p>
+            ai-buddy ships no agent of its own. Point it at a Completer — a
+            chat-completions endpoint and a key — and
+            <span class="i-name"></span> answers here, out of the same session
+            that proposes what <span class="i-character"></span> does on your
+            desktop.
+          </p>
+          <p>
+            <b>A Harness later.</b> Attaching an agent runtime you already run
+            — Claude Code, opencode, Hermes, Pi — is what this window is drawn
+            for, and it is not here yet: the Completer stands in until it
+            lands (ADR-0008, #16).
+          </p>
+          <p>
+            <b>If you would rather not.</b> Static weights keep
+            <span class="i-character"></span> moving with no model at all: the
+            buddy still walks, reacts and speaks. This window is the only part
+            that waits for something to answer.
+          </p>
+          <p class="where">Settings, on the tray menu, takes the endpoint and the key.</p>
+        </div>
+
+        <!-- Configured and switched off is a different sentence from never
+             configured, and one is not a paraphrase of the other. Two blocks
+             rather than one rewritten from chat.js, so the copy stays here. -->
+        <div id="empty-off" hidden>
+          <h2>Answers are switched off</h2>
+          <p>
+            Settings, on the tray menu, turns the Director back on and
+            <span class="i-name"></span> answers here again. The buddy keeps
+            walking and reacting either way.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <form class="composer" id="composer">
+      <input id="line" autocomplete="off" placeholder="Say something" />
+      <button type="submit" id="send">Send</button>
+    </form>
+
+    <!-- The Spatial Layer's own state, live (ADR-0010). The ladder reads
+         left to right — Behavior, Primitive, Animation, the split ADR-0002
+         draws — then the State it plays under and which way the sprite faces,
+         then what the Director is doing, then what it was last told had
+         happened. chat.js writes the values; the labels are titles rather
+         than words on the line, because a 420-point window has room for the
+         values or for their names and not for both. -->
+    <footer class="bar">
+      <span class="v elide" id="s-behavior" title="Behavior"></span>
+      <span class="sep">›</span>
+      <span class="v" id="s-primitive" title="Primitive"></span>
+      <span class="sep">›</span>
+      <span class="v elide" id="s-animation" title="Animation"></span>
+      <span class="sep">·</span>
+      <span class="v" id="s-state" title="State"></span>
+      <span class="v" id="s-facing" title="Which way it faces"></span>
+      <span class="sep">·</span>
+      <span
+        class="v"
+        id="s-director"
+        title="The Director: a turn on the wire, and the next ambient wake"
+      ></span>
+      <span class="sep">·</span>
+      <span class="v" id="s-happened" title="What the last wake was told had happened"></span>
+    </footer>
+
+    <script type="module" src="chat.js"></script>
+  </body>
+</html>

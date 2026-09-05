@@ -52,7 +52,7 @@ pub struct Window {
 }
 
 /// Where the sprite is anchored and which physics apply.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum State {
     Grounded,
     Falling,
