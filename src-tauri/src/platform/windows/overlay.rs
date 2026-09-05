@@ -111,8 +111,15 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 /// Make the window topmost without changing its size or position.
 fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
     unsafe {
-        if SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
-            == 0
+        if SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+        ) == 0
         {
             return Err("Failed to set window topmost".to_string());
         }
