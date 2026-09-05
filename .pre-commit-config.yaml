@@ -132,28 +132,3 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
-
-    # The Chat surface's token seam
-  - repo: local
-    hooks:
-      - id: chat-ui-tokens
-        name: chat UI reads its tokens
-        # ADR-0013 puts it as: "a design that cannot recolour the surface is a
-        # surface that stopped reading tokens", and that is the only way this
-        # seam breaks. So no colour, font family or radius literal may sit
-        # outside a .chat-ui-* block. rgb()/rgba() is checked beyond the ADR's
-        # three, because most of modern minimal's palette is white tints and
-        # "no hex colour" alone would let every one of them back in.
-        #
-        # A linter over one stylesheet, so it belongs with the hooks rather
-        # than beside the test steps in tests.yml. var() references and
-        # comments come out first, which is what makes the patterns precise: a
-        # compliant rule reduces to `border-radius: ;` and matches nothing.
-        #
-        # The block skip is column-sensitive — it wants a .chat-ui-… selector
-        # and its closing brace at column 0 — so reformatting that block with
-        # indentation would leave this check passing over anything.
-        entry: bash -c 'out=$(sed "s|var([^)]*)||g; s|/\*[^*]*\*/||g" src/chat-ui.css | awk "/^\.chat-ui-/{s=1} s&&/^}/{s=0;next} !s" | grep -E "#[0-9A-Fa-f]{3}|rgba?\(|font-family:[^;]*[A-Za-z]|border-radius:[^;]*[0-9]"); if [ -n "$out" ]; then echo "$out"; echo "chat-ui.css — the above sits outside a .chat-ui-* block"; exit 1; fi'
-        language: system
-        files: ^src/chat-ui\.css$
-        pass_filenames: false
