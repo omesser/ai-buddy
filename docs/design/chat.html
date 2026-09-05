@@ -286,13 +286,13 @@
 
       <div class="win" id="win">
         <div class="tb">
-          <span class="who"><span class="name">Buddo</span><span class="of">BMO</span></span>
+          <span class="who"><span class="name">bmo</span><span class="of">BMO</span></span>
           <span class="spacer"></span>
           <button id="close" title="Close the chat surface. The Instance keeps living.">✕</button>
         </div>
         <div class="log" id="log"></div>
         <form class="composer" id="composer">
-          <input id="say" placeholder="Ask Buddo…" autocomplete="off">
+          <input id="say" placeholder="Ask bmo…" autocomplete="off">
           <button id="send" type="submit">Send</button>
         </form>
       </div>
@@ -391,7 +391,7 @@
       seven seconds of dots above the head reads as a buddy that has stopped living. That
       makes it a decision to overturn rather than a preference to nod at. The ellipsis
       stays for the wakes with no window open.</li>
-    <li>The title bar names the Instance, not the Character: <b>Buddo</b> large, <code>BMO</code>
+    <li>The title bar names the Instance, not the Character: <b>bmo</b> large, <code>BMO</code>
       small beside it. Two Instances of one Character differ in name, personality and
       behavior — never in what they know, since Memory is one record they share — and the
       title bar is where a user tells their windows apart.</li>
@@ -578,7 +578,7 @@ function reset() {
   win.hidden = false;
   say.disabled = false;
   send.disabled = false;
-  say.placeholder = "Ask Buddo…";
+  say.placeholder = "Ask bmo…";
   tHarness.textContent = "attached · idle";
   return gen;
 }
@@ -602,7 +602,7 @@ async function slowTurn() {
   tool("list_windows", "");
   await wait(1300); check();
 
-  const row = said("Buddo", "", "them");
+  const row = said("bmo", "", "them");
   tHarness.textContent = "session/prompt · in flight";
   await stream(row, "Three windows: Ghostty at the left of the display, Chrome on the right, Slack behind it. Ghostty is frontmost and has been since you sat down.\n\nI can put the terminal's place under Working setup, which is a write to Memory:", mine);
   check();
@@ -615,12 +615,12 @@ async function slowTurn() {
   await wait(600); check();
 
   if (kind === "reject_once") {
-    const no = said("Buddo", "", "them");
+    const no = said("bmo", "", "them");
     await stream(no, "Left Memory as it was. Nothing was written.", mine);
   } else {
     tool("remember", "\"Working setup\" · \"Terminal on the left\"");
     await wait(900); check();
-    const done = said("Buddo", "", "them");
+    const done = said("bmo", "", "them");
     await stream(done, "Done — Working setup now says the terminal lives on the left. Every Character Instance reads the same Memory, so the others have it too.", mine);
   }
   check();
@@ -632,7 +632,7 @@ async function slowTurn() {
 // of its own, not that it hides the Harness's.
 function permission() {
   const box = el("ask");
-  box.append(el("head", "Buddo asks to write to Memory"));
+  box.append(el("head", "bmo asks to write to Memory"));
   const what = el("what");
   what.textContent = "remember(\"Working setup\", \"Terminal on the left\") → ~/.ai-buddy/memory.md";
   box.append(what);
@@ -688,7 +688,7 @@ async function speakTurn() {
   tHarness.textContent = "speak + play_behavior · through the Character";
   await wait(300); check();
 
-  const row = said("Buddo", "", "them");
+  const row = said("bmo", "", "them");
   await stream(row, "Two failures out of twelve, both the windows job, both on lints. macOS and Ubuntu were green each time, which is why nobody noticed.", mine);
   check();
   tHarness.textContent = "attached · idle";
@@ -707,7 +707,7 @@ function emptyState() {
   const box = el("empty");
   box.append(
     el("", "No Harness attached", "h3"),
-    el("", "ai-buddy ships no agent of its own. Point it at one you already have — Claude Code, opencode, Hermes, Pi — and Buddo answers here, out of the same session that proposes what BMO does on your desktop.", "p"),
+    el("", "ai-buddy ships no agent of its own. Point it at one you already have — Claude Code, opencode, Hermes, Pi — and the buddy answers here, out of the same session that proposes what BMO does on your desktop.", "p"),
     el("", "<b>What it costs.</b> ai-buddy spawns and holds a full agent process for as long as the app runs, working in <code>~/.ai-buddy</code> rather than in your repositories. One process, one conversation — this window, the Speech and the Behaviors.", "p"),
     el("", "<b>If you would rather not.</b> Static weights keep BMO moving with no model at all, and the HTTP Completer answers a wake over a chat-completions endpoint. Both stay supported: the buddy still walks, reacts and speaks. This window is the only part that waits for a Harness.", "p"),
   );
@@ -748,7 +748,7 @@ composer.addEventListener("submit", async e => {
     speak(line);
     play("report");
     await wait(400); check();
-    const row = said("Buddo", "", "them");
+    const row = said("bmo", "", "them");
     await stream(row, "The fake Harness on this page answers every typed turn the same way — it is a timer, not an agent. What is up for review is the shape of the window around this line, not the line.", mine);
     check();
     tHarness.textContent = "attached · idle";
