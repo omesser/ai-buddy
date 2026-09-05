@@ -1,0 +1,285 @@
+/* The Chat surface's visual language.
+ *
+ * One Chat UI ships — modern minimal, from the design review — and this file
+ * is its single definition: a :root block naming the tokens, one .chat-ui-*
+ * block setting them, and the rules that consume them. The seam is the point:
+ * a second design is a second .chat-ui-* block and nothing else, which is why
+ * no colour, font family or radius literal is written outside one. A
+ * pre-commit hook greps for exactly that. ADR-0013.
+ *
+ * Structure and density are literal on purpose. They are what modern minimal
+ * happens to be, not names another design has to inherit, and a second design
+ * that needs a different scale overrides the rule under its own class. Tokens
+ * nothing reads would be a scale invented for a design that does not exist.
+ */
+
+/* Named, not set. System keywords carry no literal, so this block passes the
+ * hook that guards the ones below it — and a typo in the root class leaves a
+ * plain, legible window that follows the desktop rather than an invisible one.
+ */
+:root {
+  color-scheme: light dark;
+
+  --chat-panel: Canvas;
+  --chat-ink: CanvasText;
+  --chat-ink-2: GrayText;
+  --chat-ink-3: GrayText;
+  --chat-ink-4: GrayText;
+  --chat-accent: AccentColor;
+  --chat-accent-ink: AccentColorText;
+  --chat-accent-soft: ButtonFace;
+
+  --chat-fill: Field;
+  --chat-fill-dim: ButtonFace;
+  --chat-fill-soft: ButtonFace;
+  --chat-rule: ButtonBorder;
+  --chat-line: ButtonBorder;
+
+  --chat-radius: 0;
+  --chat-radius-tail: 0;
+  --chat-radius-control: 0;
+  --chat-radius-badge: 0;
+
+  --chat-sans: system-ui, sans-serif;
+  --chat-mono: ui-monospace, monospace;
+}
+
+/* Modern minimal. Soft dark panel, one accent, generous spacing.
+ *
+ * The ink ramp is four steps because four things are dimmed apart: what was
+ * said, the explainer's prose, the Character badge, and the WHO label the
+ * Shell's own notes share with it.
+ *
+ * The type is not the review page's. That page was drawn in Nunito and IBM
+ * Plex Mono off a Google Fonts link, which the app's CSP blocks and which
+ * would fail silently into the system stack; self-hosting two woff2 families
+ * is a decision with a download attached, so the shipped window is the design
+ * that won in the system stacks rather than in its own faces.
+ */
+.chat-ui-minimal {
+  color-scheme: dark;
+
+  --chat-panel: #14171e;
+  --chat-ink: #e8ebf2;
+  --chat-ink-2: #9aa2b4;
+  --chat-ink-3: #7c8496;
+  --chat-ink-4: #6c7488;
+  --chat-accent: #5cc9b5;
+  --chat-accent-ink: #0b231f;
+  --chat-accent-soft: rgba(92, 201, 181, 0.13);
+
+  --chat-fill: rgba(255, 255, 255, 0.04);
+  --chat-fill-dim: rgba(255, 255, 255, 0.02);
+  --chat-fill-soft: rgba(255, 255, 255, 0.06);
+  --chat-rule: rgba(255, 255, 255, 0.07);
+  --chat-line: rgba(255, 255, 255, 0.13);
+
+  --chat-radius: 12px;
+  --chat-radius-tail: 3px;
+  --chat-radius-control: 10px;
+  --chat-radius-badge: 5px;
+
+  --chat-sans: system-ui, -apple-system, sans-serif;
+  --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The empty-state panel and its parts are laid out as grids and hidden with
+   the attribute, and a `display` of their own would otherwise outrank the
+   browser's rule for it. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat-panel);
+  color: var(--chat-ink);
+  font-family: var(--chat-sans);
+  font-size: 13.5px;
+}
+
+/* The window's own furniture. No close button: the window is decorated, so
+   the system draws one, and closing this surface leaves the Instance living
+   on the desktop either way. */
+.tb {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 14px 11px 18px;
+}
+
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 800;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+}
+
+.of {
+  padding: 1px 6px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-badge);
+  font-family: var(--chat-mono);
+  font-size: 11px;
+  color: var(--chat-ink-3);
+}
+
+.log {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 18px 18px 8px;
+  border-top: 1px solid var(--chat-rule);
+}
+
+.row {
+  display: grid;
+  gap: 5px;
+}
+
+.who-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--chat-ink-4);
+}
+
+/* Wrapped anywhere rather than on words: real turns carry paths and URLs that
+   would otherwise push the log sideways. */
+.said {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.row.you {
+  justify-items: end;
+}
+
+.row.you .said {
+  max-width: 86%;
+  padding: 9px 13px;
+  background: var(--chat-accent-soft);
+  border-radius: var(--chat-radius) var(--chat-radius) var(--chat-radius-tail) var(--chat-radius);
+}
+
+.row.them .said {
+  max-width: 94%;
+  line-height: 1.55;
+}
+
+.caret {
+  display: inline-block;
+  width: 7px;
+  color: var(--chat-accent);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Not a turn, and deliberately not dressed as one: the Shell saying what
+   became of a line, where a log that simply stops reads as one still
+   waiting. */
+.note {
+  font-size: 12.5px;
+  color: var(--chat-ink-4);
+}
+
+.empty,
+.empty > div {
+  display: grid;
+  gap: 11px;
+}
+
+.empty {
+  padding: 4px 2px;
+}
+
+.empty h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.empty p {
+  margin: 0;
+  font-size: 12.8px;
+  line-height: 1.5;
+  color: var(--chat-ink-2);
+}
+
+.empty p b {
+  color: var(--chat-ink);
+}
+
+.empty .where {
+  color: var(--chat-ink-4);
+}
+
+.composer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 9px;
+  padding: 12px 16px 16px;
+}
+
+.composer input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 13px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill);
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.composer input::placeholder {
+  color: var(--chat-ink-4);
+}
+
+.composer input:disabled {
+  background: var(--chat-fill-dim);
+  color: var(--chat-ink-4);
+}
+
+.composer button {
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-accent);
+  color: var(--chat-accent-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  background: var(--chat-fill-soft);
+  color: var(--chat-ink-4);
+  cursor: default;
+}
+
+.composer input:focus-visible,
+.composer button:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}

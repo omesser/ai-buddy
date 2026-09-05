@@ -1,4 +1,4 @@
-use super::{Context, Happened, State};
+use super::{Context, Happened, State, CHAT_LIMIT};
 
 /// The opening turn: who this is, what it may propose, and this moment.
 ///
@@ -58,12 +58,13 @@ pub fn follow_up(context: &Context) -> String {
         context.recent.join(", ")
     };
     let clock = format_clock(context.activity.hour, context.activity.minute);
-    let happened = match context.happened {
+    let happened = match &context.happened {
         Happened::Poke => "poked",
         Happened::Throw => "thrown",
         Happened::Summon => "summoned",
         Happened::Grab => "picked up",
         Happened::Perch => "placed on a perch",
+        Happened::Chat(_) => "spoken to",
         Happened::Ambient => "time passed",
     };
     let state = match context.state {
@@ -79,19 +80,38 @@ pub fn follow_up(context: &Context) -> String {
         _ => "nothing is frontmost".to_string(),
     };
 
+    // Last, after every labelled fact, because it is the one line of a turn
+    // the user writes: a paste that imitates `state:` or `open:` then reads as
+    // part of what was said and cannot displace the value above it, and the
+    // trailing lines of a multi-line paste need no quoting to stay unambiguous.
+    let said = match &context.happened {
+        Happened::Chat(line) => format!("they said: {}\n", cut(line)),
+        _ => String::new(),
+    };
+
     format!(
         "what just happened: {happened}\n\
          recent: {recent}\n\
          time: {clock}\n\
          state: {state}\n\
          standing on: {standing}\n\
-         open: {open}\n",
+         open: {open}\n\
+         {said}",
         standing = if context.standing.is_empty() {
             "nothing"
         } else {
             context.standing.as_str()
         },
     )
+}
+
+/// `line` at `CHAT_LIMIT` characters, cut on a character boundary so a
+/// multi-byte paste cannot panic the slice.
+fn cut(line: &str) -> &str {
+    match line.char_indices().nth(CHAT_LIMIT) {
+        Some((end, _)) => &line[..end],
+        None => line,
+    }
 }
 
 fn format_clock(hour: u8, minute: u8) -> String {

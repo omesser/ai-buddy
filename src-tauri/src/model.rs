@@ -2983,7 +2983,7 @@ pub(crate) mod tests {
                 recent: Vec::new(),
                 personality: cat.personality.clone(),
                 state: *state,
-                happened: *happened,
+                happened: happened.clone(),
                 standing: standing.to_string(),
             };
 
