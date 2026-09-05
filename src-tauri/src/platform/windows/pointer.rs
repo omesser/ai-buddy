@@ -1,8 +1,8 @@
 //! Windows pointer button state via GetAsyncKeyState.
 //!
-//! The Shell polls this beside the cursor position each tick. GetAsyncKeyState
-//! reads the current button state without needing hooks or events, similar to
-//! macOS's CGEventSourceButtonState and X11's XQueryPointer.
+//! Polled each tick beside cursor position. GetAsyncKeyState reads current button
+//! state without hooks or events, same seam as macOS CGEventSourceButtonState
+//! and X11 XQueryPointer.
 
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 

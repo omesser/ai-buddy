@@ -1,8 +1,8 @@
-//! Windows activity sensing: frontmost application and idle time.
+//! Windows activity sensing: frontmost application, idle time, display sleep.
 //!
-//! Uses GetForegroundWindow for the frontmost application and GetLastInputInfo
-//! for idle time. Display sleep detection uses GetSystemPowerStatus, which is
-//! an approximation — Windows has no direct API for "displays are off".
+//! GetForegroundWindow for frontmost, GetLastInputInfo for idle. Display sleep
+//! via GetSystemPowerStatus is an approximation: Windows has no direct "displays
+//! are off" query.
 
 use std::time::Duration;
 

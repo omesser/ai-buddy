@@ -31,6 +31,13 @@ pre-commit install
 
 Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, `cargo clippy -D warnings`. Toolchain pinned in `rust-toolchain.toml`.
 
+## Trace Variables
+
+| Variable | Effect |
+|---|---|
+| `AI_BUDDY_TRACE_FRAMES=1` | Log every frame state to stderr: `Grounded pos(x,y)`, `Dragged`, `Perched`, etc. |
+| `AI_BUDDY_TRACE_WINDOWS=1` | Log window count and first 3 window bounds on first read (Windows only). |
+
 ## Verifying the Overlay
 
 ### Unit Tests
@@ -41,13 +48,15 @@ cargo test                      # Everything including platform shell
 node --test tests/*.test.js     # Renderer interpolation
 ```
 
-### Automated Script (macOS only)
+### Automated Scripts
 
 ```sh
-scripts/verify-overlay.sh       # or --keep to leave app running
+scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
+scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
+scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
 ```
 
-Checks overlay windows, frame loop physics, hit-testing. Needs real desktop.
+Each checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
 
 ### Manual Verification Checklist
 

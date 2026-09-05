@@ -1,7 +1,7 @@
 //! Windows settings window stub.
 //!
-//! The native settings window is deferred: Windows uses the plain Tauri window
-//! that every platform gets. These are the dispatch points platform.rs calls.
+//! Native settings window deferred: Windows uses the plain Tauri window. These
+//! are the dispatch points platform.rs calls.
 
 use crate::settings::SettingsSession;
 

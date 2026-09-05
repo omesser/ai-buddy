@@ -1,9 +1,9 @@
-//! Windows overlay window configuration: non-activating, topmost, click-through.
+//! Windows overlay configuration: non-activating, topmost, click-through.
 //!
-//! Uses extended window styles (WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_EX_TOOLWINDOW,
-//! WS_EX_TRANSPARENT) to make the overlay float above other windows without
-//! stealing focus. Per-pixel click-through uses SetWindowRgn from the sprite's
-//! alpha mask. WDA_EXCLUDEFROMCAPTURE hides the overlay from screen captures.
+//! Extended window styles (WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_EX_TOOLWINDOW,
+//! WS_EX_TRANSPARENT) float the overlay above other windows without stealing
+//! focus. SetWindowRgn carves the input region from the sprite's alpha mask.
+//! WDA_EXCLUDEFROMCAPTURE excludes the overlay from screen capture.
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;

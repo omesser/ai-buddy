@@ -1,9 +1,9 @@
 //! Windows window geometry via EnumWindows and GetWindowRect.
 //!
-//! Enumerates visible windows using EnumWindows, filters to normal application
-//! windows (not tool windows, not the taskbar), and reads their bounds with
-//! GetWindowRect. Window owner comes from GetWindowTextW. All consent-free Win32
-//! APIs, similar to macOS's CGWindowListCopyWindowInfo and X11's _NET_CLIENT_LIST.
+//! EnumWindows returns visible windows in z-order. Filters to normal application
+//! windows (WS_VISIBLE, not WS_EX_TOOLWINDOW), reads bounds with GetWindowRect,
+//! and filters own overlays by process ID. Window owner from GetWindowTextW.
+//! Consent-free, like macOS CGWindowListCopyWindowInfo and X11 _NET_CLIENT_LIST.
 
 use std::sync::Mutex;
 
@@ -45,18 +45,17 @@ impl WindowSource for WindowsWindowSource {
         let (usable_frames, dock) = (self.read_displays)();
         let windows = visible_windows();
 
-        // TRACE: Diagnose Perch issue - log window count and first few bounds
-        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            eprintln!(
-                "window_source: {} visible windows on Windows",
-                windows.len()
-            );
-            for (i, w) in windows.iter().take(3).enumerate() {
-                eprintln!(
-                    "  [{}] owner={}, bounds=({},{})@{}×{}",
-                    i, w.owner, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height
-                );
+        if std::env::var("AI_BUDDY_TRACE_WINDOWS").is_ok() {
+            static LOGGED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("window_source: {} visible windows", windows.len());
+                for (i, w) in windows.iter().take(3).enumerate() {
+                    eprintln!(
+                        "  [{}] owner={}, bounds=({},{})@{}×{}",
+                        i, w.owner, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height
+                    );
+                }
             }
         }
 
