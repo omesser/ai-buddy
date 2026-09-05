@@ -1,16 +1,13 @@
 /* The Chat surface's visual language.
  *
- * One Chat UI ships — modern minimal, from the design review — and this file
- * is its single definition: a :root block naming the tokens, one .chat-ui-*
- * block setting them, and the rules that consume them. The seam is the point:
- * a second design is a second .chat-ui-* block and nothing else, which is why
- * no colour, font family or radius literal is written outside one. A
- * pre-commit hook greps for exactly that. ADR-0013.
+ * One Chat UI ships — modern minimal — and this file is its single definition:
+ * a :root block naming the tokens, one .chat-ui-* block setting them, and the
+ * rules that consume them. A second design is a second .chat-ui-* block and
+ * nothing else, which is why no colour, font family or radius literal is
+ * written outside one; tests/chat-ui-tokens.test.js checks that. ADR-0013.
  *
- * Structure and density are literal on purpose. They are what modern minimal
- * happens to be, not names another design has to inherit, and a second design
- * that needs a different scale overrides the rule under its own class. Tokens
- * nothing reads would be a scale invented for a design that does not exist.
+ * Structure and density stay literal: they are what modern minimal happens to
+ * be, not a scale another design has to inherit.
  */
 
 /* Named, not set. System keywords carry no literal, so this block passes the
@@ -47,14 +44,11 @@
 /* Modern minimal. Soft dark panel, one accent, generous spacing.
  *
  * The ink ramp is four steps because four things are dimmed apart: what was
- * said, the explainer's prose, the Character badge, and the WHO label the
- * Shell's own notes share with it.
+ * said, the explainer's prose, the Character badge, and the WHO label.
  *
- * The type is not the review page's. That page was drawn in Nunito and IBM
- * Plex Mono off a Google Fonts link, which the app's CSP blocks and which
- * would fail silently into the system stack; self-hosting two woff2 families
- * is a decision with a download attached, so the shipped window is the design
- * that won in the system stacks rather than in its own faces.
+ * Not the review page's Nunito and IBM Plex Mono: those came off a Google
+ * Fonts link the app's CSP blocks, which would fail silently into the system
+ * stack, and self-hosting two woff2 families is a download to decide on.
  */
 .chat-ui-minimal {
   color-scheme: dark;

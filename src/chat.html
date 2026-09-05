@@ -7,11 +7,9 @@
     <link rel="stylesheet" href="chat-ui.css" />
   </head>
   <body>
-    <!-- Static, unlike index.html's empty #stage: this window belongs to one
-         Character Instance, and which one is settled before it opens. The
-         Instance's name is large and its Character small beside it, because
-         two Instances of one Character share a Memory and differ in name —
-         the name is how a user tells two of these windows apart. -->
+    <!-- Static, unlike index.html's empty #stage: which Instance this window
+         belongs to is settled before it opens. The name is large because two
+         Instances of one Character share a Memory and differ only in it. -->
     <header class="tb">
       <span class="who">
         <span class="name" id="name"></span>
@@ -23,9 +21,8 @@
          in the field, so a reader who is not watching the log is told. -->
     <div class="log" id="log" aria-live="polite">
       <!-- The state most people open first, so it says what to attach rather
-           than sitting empty. Markup rather than strings in chat.js: this is
-           copy, and copy belongs where the rest of the window's words are.
-           The Instance and Character names are filled in below. -->
+           than sitting empty. Markup rather than strings in chat.js, because
+           copy belongs with the rest of the window's words. -->
       <div class="empty" id="empty" hidden>
         <div id="empty-none">
           <h2>Nothing to answer with</h2>
@@ -52,8 +49,7 @@
         </div>
 
         <!-- Configured and switched off is a different sentence from never
-             configured, and one is not a paraphrase of the other. Two blocks
-             rather than one rewritten from chat.js, so the copy stays here. -->
+             configured, not a paraphrase of it. -->
         <div id="empty-off" hidden>
           <h2>Answers are switched off</h2>
           <p>
@@ -70,13 +66,11 @@
       <button type="submit" id="send">Send</button>
     </form>
 
-    <!-- The Spatial Layer's own state, live (ADR-0010). The ladder reads
-         left to right — Behavior, Primitive, Animation, the split ADR-0002
-         draws — then the State it plays under and which way the sprite faces,
-         then what the Director is doing, then what it was last told had
-         happened. chat.js writes the values; the labels are titles rather
-         than words on the line, because a 420-point window has room for the
-         values or for their names and not for both. -->
+    <!-- The Spatial Layer's own state, live (ADR-0010): the ADR-0002 ladder
+         left to right, then the State and facing, then what the Director is
+         doing and what it was last told had happened. The labels are titles
+         rather than words on the line, because a 420-point window has room
+         for the values or for their names and not for both. -->
     <footer class="bar">
       <span class="v elide" id="s-behavior" title="Behavior"></span>
       <span class="sep">›</span>

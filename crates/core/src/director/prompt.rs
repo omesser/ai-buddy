@@ -50,12 +50,7 @@ pub fn character_prompt(
     )
 }
 
-/// The one word this repository uses for each `Happened`.
-///
-/// Shared rather than matched a second time: the Chat surface's status bar
-/// names the same moment to the user, and a vocabulary of its own would have
-/// the window and the prompt disagree about what just happened in front of
-/// someone who can read both.
+/// The one word the prompt uses for each `Happened`.
 pub fn happened_word(happened: &Happened) -> &'static str {
     match happened {
         Happened::Poke => "poked",
@@ -90,10 +85,9 @@ pub fn follow_up(context: &Context) -> String {
         _ => "nothing is frontmost".to_string(),
     };
 
-    // Last, after every labelled fact, because it is the one line of a turn
-    // the user writes: a paste that imitates `state:` or `open:` then reads as
-    // part of what was said and cannot displace the value above it, and the
-    // trailing lines of a multi-line paste need no quoting to stay unambiguous.
+    // Last, after every labelled fact, because it is the only line the user
+    // writes: a paste imitating `state:` or `open:` then reads as part of what
+    // was said and cannot displace the real value above it.
     let said = match &context.happened {
         Happened::Chat(line) => format!("they said: {}\n", cut(line)),
         _ => String::new(),

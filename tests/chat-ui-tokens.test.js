@@ -1,15 +1,11 @@
 // Run with `node --test tests/`.
 //
-// The seam ADR-0013 ships: `src/chat-ui.css` is the one definition of the
-// visual language, a design is one `.chat-ui-*` block, and adding a second
-// design is adding a second block and nothing else. That only holds while the
-// rest of the stylesheet reads tokens, so a colour, font family or radius
-// written outside a design block is the seam breaking, and it breaks quietly —
-// the surface still renders, and the next design simply cannot recolour it.
+// ADR-0013's seam: a colour, font family or radius written outside a
+// `.chat-ui-*` block breaks it, and breaks it quietly — the surface still
+// renders, and the next design simply cannot recolour it.
 //
-// `rgb()` and `rgba()` are checked beyond the three the ADR names, because most
-// of modern minimal's palette is white tints and forbidding hex alone would let
-// every one of them back in.
+// `rgb()` and `rgba()` go beyond the three the ADR names, because most of
+// modern minimal's palette is white tints and hex alone would let them back in.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,11 +15,9 @@ const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8")
 
 /// The stylesheet with every design block removed, as `{line, text}` per line.
 ///
-/// Depth-counted rather than matched against a brace in column zero, which is
-/// what this check did while it was a shell hook: indenting a design block was
-/// enough to make it skip the whole file and pass over anything. Blank lines
-/// stand in for what is removed so the line numbers a failure reports are the
-/// line numbers in the file.
+/// Depth-counted, not matched against a brace in column zero: indenting a
+/// design block defeated the shell hook this replaced. Blank lines stand in for
+/// what is removed, so a failure's line numbers are the file's.
 function outsideDesignBlocks(source) {
   const lines = source.split("\n");
   const kept = [];
@@ -49,11 +43,9 @@ function outsideDesignBlocks(source) {
   return kept;
 }
 
-/// A declaration that hard-codes what a token should carry.
-///
-/// `var()` and comments come out first, which is what lets the patterns stay
-/// this blunt: a rule that reads its token reduces to `border-radius: ;` and
-/// matches nothing.
+/// A declaration that hard-codes what a token should carry. `var()` and
+/// comments come out first, which is what lets the patterns stay this blunt: a
+/// rule that reads its token reduces to `border-radius: ;` and matches nothing.
 const LITERALS = [
   [/#[0-9A-Fa-f]{3}/, "a hex colour"],
   [/rgba?\(/, "an rgb() colour"],
@@ -80,8 +72,6 @@ test("every colour, font and radius outside a design block reads a token", () =>
   );
 });
 
-// The guard above is only worth having if it still sees a design block that was
-// reformatted, which is the case that defeated its shell version.
 test("a design block is skipped however it is indented", () => {
   const indented = "  .chat-ui-minimal {\n    color: #fff;\n  }\n";
   const outside = outsideDesignBlocks(indented)

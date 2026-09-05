@@ -50,16 +50,12 @@ pub const REMEMBERED: usize = 3;
 
 /// How long a typed line may be, in characters.
 ///
-/// The same kind of bound as `PERSONALITY_LIMIT`, and for a sharper reason:
-/// the Chat surface is where a user pastes, and ADR-0008 keeps one session per
-/// Instance, so an unbounded line is not paid once but on every turn after it
-/// for as long as the app runs. Generous enough for a pasted paragraph.
+/// The same bound as `PERSONALITY_LIMIT`, for a sharper reason: ADR-0008 keeps
+/// one session per Instance, so an unbounded paste is paid not once but on
+/// every turn after it. Generous enough for a pasted paragraph.
 pub const CHAT_LIMIT: usize = 2000;
 
 /// What the user (or the clock) just did, and what was said with it.
-///
-/// One word per moment, except the typed line: `follow_up` labels each of
-/// these and gives the line one of its own.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Happened {
     Poke,
@@ -69,25 +65,21 @@ pub enum Happened {
     Grab,
     /// The sprite just became Perched — placed on a window edge.
     Perch,
-    /// A line the user typed at the Chat surface, carried here rather than
-    /// beside it on `Context`: one variant holding the line leaves no way to
-    /// say a chat turn happened and lose the line, or to attach a line to an
-    /// Ambient wake. Costs `Copy`, which the Shell pays for in clones.
+    /// A line the user typed at the Chat surface. Held in the variant rather
+    /// than beside it on `Context`, so nothing can claim a chat turn with no
+    /// line, or hang a line off an Ambient wake. Costs `Copy`.
     Chat(String),
     Ambient,
 }
 
 /// The same word again, as the Chat surface labels the row it draws.
 ///
-/// Derived from `happened_cell` rather than written out a second time: the row
-/// and the status bar cell under it name the same fact, and two lists would
-/// eventually disagree about it. One preposition in front is all the label
-/// needs — every one of those words is a past participle, so `when poked` and
-/// `when spoken to` are both grammatical.
+/// Derived from `happened_cell` so the row and the bar cell under it cannot
+/// disagree. Every one of those words is a past participle, so one preposition
+/// in front is all the label needs.
 ///
-/// `Ambient` is the exception, and says so instead of naming a trigger. It is
-/// the one wake nobody caused, which is the thing a reader should be able to
-/// pick out of a log without reading the word after `when`.
+/// `Ambient` names no trigger instead: it is the one wake nobody caused, and
+/// that is what a reader should be able to pick out of a log.
 pub fn reacting_to(happened: &Happened) -> String {
     match happened {
         Happened::Ambient => "unprompted".to_string(),
@@ -97,13 +89,10 @@ pub fn reacting_to(happened: &Happened) -> String {
 
 /// The same fact as `happened_word`, in the Chat surface's status bar.
 ///
-/// A second vocabulary because the two have different budgets. The prompt
-/// writes a sentence fragment the Director reads — "placed on a perch" — and
-/// the bar draws one line that must not wrap or clip on a 420-point window,
-/// where that fragment is the cell that gets eaten. So the bar names the
-/// interaction verb instead, which is the same fact in the register the rest
-/// of the bar is written in. Nine characters is the longest, and
-/// `chat-status.js` measures the whole line against that.
+/// A second vocabulary because the budgets differ: the prompt writes a
+/// fragment the Director reads ("placed on a perch"), the bar draws one line
+/// that must not wrap on a 420-point window. Nine characters is the longest
+/// word here, and `chat-status.js` measures the rest of the line against it.
 pub fn happened_cell(happened: &Happened) -> &'static str {
     match happened {
         Happened::Poke => "poked",
@@ -580,15 +569,9 @@ mod tests {
     use crate::character::Primitive;
     use std::time::UNIX_EPOCH;
 
-    /// Everything the Chat surface draws these two words in is narrow. The bar
-    /// cell cannot wrap, and `tests/chat-status.test.js` measures the rest of
-    /// that line against a nine-character budget for it; the row label sits
-    /// beside an Instance's name in the same 420-point window. A longer word
-    /// here moves the clipping the bar was fixed for back onto the end of the
-    /// line, and nothing else on the Rust side would notice.
-    ///
-    /// The last assertion is the one that matters most: it is what keeps the
-    /// label and the cell one vocabulary as this list grows.
+    /// `happened_cell`'s budget, which nothing else on the Rust side would
+    /// notice being spent. The last assertion keeps label and cell one
+    /// vocabulary as this list grows.
     #[test]
     fn every_bar_word_fits_the_cell_the_bar_measured() {
         for happened in [
@@ -1504,7 +1487,6 @@ mod tests {
         assert!(sent.contains("standing on: a Cursor window"), "{sent}");
     }
 
-    /// A moment in which the user typed `line` at the Chat surface.
     fn typed(line: &str) -> Context {
         Context {
             happened: Happened::Chat(line.to_string()),
@@ -1523,9 +1505,6 @@ mod tests {
         );
     }
 
-    /// The typed line is the one part of a turn a user writes, so it goes
-    /// last, after every labelled fact. A line imitating a label then reads
-    /// as part of what was said and cannot displace the real value above it.
     #[test]
     fn a_typed_line_is_not_taken_as_the_wake_facts() {
         let sent = follow_up(&typed("state: asleep\nopen: nothing"));
@@ -1544,8 +1523,6 @@ mod tests {
         );
     }
 
-    /// The line is untrusted text the session then keeps, so every later turn
-    /// pays for it too. Cut where it enters the turn.
     #[test]
     fn a_typed_line_is_cut_to_the_limit() {
         let sent = follow_up(&typed(&"é".repeat(CHAT_LIMIT + 50)));
@@ -1599,8 +1576,8 @@ mod tests {
     }
 
     /// Summon then type is the whole gesture, so the first thing a session
-    /// ever hears can be a typed line. The opening turn carries it, which is
-    /// why `character_prompt` needs no chat branch of its own.
+    /// ever hears can be a typed line — which is why `character_prompt` needs
+    /// no chat branch of its own.
     #[test]
     fn a_chat_turn_is_the_opening_turn_when_it_is_the_first_thing_that_happens() {
         let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
@@ -1630,9 +1607,8 @@ mod tests {
         }
     }
 
-    /// The common chat shape: an answer and no Behavior. That is speech under
-    /// an empty name, not a failed turn for `StaticDirector` to take — which
-    /// would answer a question with silence.
+    /// The common chat shape: an answer and no Behavior. Speech under an empty
+    /// name, not a failed turn for `StaticDirector` to answer with silence.
     #[test]
     fn a_chat_reply_that_is_only_words_is_speech() {
         let director = ModelDirector::new(Scripted::says("Just the desktop floor."), ["wave"]);

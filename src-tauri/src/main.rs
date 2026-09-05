@@ -95,12 +95,10 @@ fn overlay_label(index: usize) -> String {
 
 /// The label of the Chat surface belonging to `id`.
 ///
-/// One surface per Summoned Character Instance, so the Instance's id is both
-/// the name and the way the frame loop addresses a reply. Outside the
-/// `overlay-` namespace on purpose: `place_overlays` closes every `overlay-{n}`
-/// past the display count, so a Chat surface sharing that prefix would be shut
-/// when a display is unplugged. `capabilities/chat.json` grants the same
-/// permissions to every `chat-*`.
+/// Outside the `overlay-` namespace on purpose: `place_overlays` closes every
+/// `overlay-{n}` past the display count, so a Chat surface sharing that prefix
+/// would be shut when a display is unplugged. `capabilities/chat.json` grants
+/// every `chat-*` the same permissions.
 fn chat_label(id: &InstanceId) -> String {
     format!("chat-{id}")
 }
@@ -113,9 +111,8 @@ const CHAT_EVENT: &str = "chat";
 
 /// The event carrying the Spatial Layer's state to a Chat surface's status bar.
 ///
-/// Separate from `CHAT_EVENT` because the two have nothing to do with each
-/// other: a turn's answer arrives once per question, and this arrives whenever
-/// the sprite does something different, whether or not anyone has typed.
+/// Separate from `CHAT_EVENT`: this arrives whenever the sprite does something
+/// different, whether or not anyone has typed.
 const CHAT_STATUS_EVENT: &str = "chat-status";
 
 /// Director config and the last Character Prompt, for the frame loop.
@@ -182,10 +179,9 @@ struct InstanceState {
     last_state: Option<State>,
     addressed: bool,
     happened: Happened,
-    /// Whether the call this Instance has on the wire answers a typed line, so
-    /// the Chat surface can be told when newest-wins throws that answer away
-    /// (ADR-0011). Not derivable from `Slots`, which knows only that a call is
-    /// out, and not from `happened`, which the wake clears as it sends.
+    /// Whether the call on the wire answers a typed line, so the surface can be
+    /// told when newest-wins throws that answer away (ADR-0016). `Slots` knows
+    /// only that a call is out, and the wake clears `happened` as it sends.
     chat_turn: bool,
     pointer: Pointer,
     /// The last line spoken and which overlay showed it, so a crossing
@@ -196,17 +192,16 @@ struct InstanceState {
     /// so turning it on always opens with a line rather than waiting for the
     /// sprite to do something new.
     traced_last: Option<Traced>,
-    /// What the Chat surface's status bar was last told, so the push happens on
-    /// change rather than on every tick. `None` re-sends it: a surface that has
-    /// just said it is listening has drawn nothing yet.
+    /// What the status bar was last told, so the push happens on change rather
+    /// than every tick. `None` re-sends: a surface that has just said it is
+    /// listening has drawn nothing yet.
     status_last: Option<ChatStatus>,
     /// The countdown last pushed with it. Kept out of `ChatStatus` because it
     /// falls a millisecond per millisecond and the window subtracts for itself;
     /// only a deadline that *moved* is worth a push.
     status_wake_ms: Option<u64>,
-    /// The `Happened` that drove the last session wake, in `follow_up`'s own
-    /// word for it. `None` until one has, which is the honest answer: nothing
-    /// has been asked about this Instance yet.
+    /// The `Happened` that drove the last session wake, as `happened_cell`
+    /// names it. `None` until one has: nothing has been asked here yet.
     happened_last: Option<&'static str>,
     /// This tick's verbs, decided before any Instance is ticked. Held on the
     /// Instance because `press_target` has to see every hit-test before any
@@ -636,14 +631,11 @@ fn build_overlay(
 
 /// Build one Instance's Chat surface.
 ///
-/// Nothing is shared with `build_overlay` and nothing should be: every flag
-/// that makes an overlay an overlay is wrong for a window a user types into.
-/// Click-through would swallow the click that puts the caret in the field,
-/// always-on-top and visible-on-all-workspaces would follow them into the
-/// application they left the conversation for, and `configure_overlay`'s
-/// window level would sit a text field above their editor. What is left is a
-/// plain window, which is what Tauri builds when nothing asks otherwise — so
-/// the flags an overlay sets are absent here rather than set to false.
+/// None of `build_overlay`'s flags: click-through would swallow the click that
+/// puts the caret in the field, always-on-top and visible-on-all-workspaces
+/// would follow the user out of the app, and `configure_overlay`'s window level
+/// would sit a text field above their editor. Absent rather than set to false,
+/// because a plain window is what Tauri builds when nothing asks otherwise.
 ///
 /// Main thread only: it builds a window.
 fn build_chat(
@@ -663,11 +655,10 @@ fn build_chat(
 ///
 /// Called from the frame loop, so the whole of it is posted to the main
 /// thread: building a webview and focusing one both reach the window server.
-/// The lookup goes over with it rather than being done here, because
-/// `run_on_main_thread` returning `Ok` means queued and not built — deciding
-/// on this side would have two Summons a tick apart each post a build and get
-/// a second window for one Instance. ADR-0008 gives that Instance one session,
-/// so a second window would be a second view of one conversation.
+/// The lookup goes over with it, because `run_on_main_thread` returning `Ok`
+/// means queued and not built — deciding on this side would have two Summons a
+/// tick apart each post a build, and one session (ADR-0008) would have two
+/// windows on it.
 fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     let label = chat_label(id);
     let handle = app.clone();
@@ -704,9 +695,8 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
 /// Shut the Chat surface belonging to `id`, if it has one.
 ///
 /// Nothing else closes a `chat-*`: they sit outside the `overlay-` namespace
-/// `place_overlays` sweeps, so a surface whose Instance was dismissed would
-/// keep a window open on a conversation with nobody at the other end — a
-/// blank header, and a caret waiting on an answer no frame loop can write.
+/// `place_overlays` sweeps, so a dismissed Instance would leave a window open
+/// on a conversation with nobody at the other end.
 ///
 /// Main thread only, for `open_chat`'s reason.
 fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
@@ -726,10 +716,9 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
 /// Record what just happened to an Instance, unless a typed line is still
 /// waiting to be asked.
 ///
-/// `happened` is one slot, and a typed line is the only thing that ever sits
-/// in it with someone waiting on an answer. Without this, a Poke or a Perch
-/// landing between the line arriving and the wake starting would replace the
-/// question, and the Director would answer one nobody asked.
+/// `happened` is one slot, and a Poke landing between a line arriving and the
+/// wake starting would replace the question — leaving the Director to answer
+/// one nobody asked.
 fn note_happened(happened: &mut Happened, what: Happened) {
     if !matches!(happened, Happened::Chat(_)) {
         *happened = what;
@@ -739,10 +728,7 @@ fn note_happened(happened: &mut Happened, what: Happened) {
 /// What a Chat surface needs to draw itself before anything is typed.
 #[derive(Serialize)]
 struct ChatOpening {
-    /// Two Instances of one Character share its Memory and differ in name, so
-    /// the name is how a user tells two of these windows apart.
     name: String,
-    /// The Character this Instance runs.
     character: String,
     /// Whether a Completer exists at all — a key, or a local host.
     configured: bool,
@@ -754,10 +740,9 @@ struct ChatOpening {
 /// The Chat surface asking who it belongs to, and whether anything can answer.
 ///
 /// A command rather than an event, for `character`'s reason: Tauri buffers
-/// nothing for a listener that is not there yet, so state emitted when the
-/// window is built reaches nobody. Read out of the same `DirectorInspect` the
-/// Settings window renders, so the two windows cannot disagree about whether
-/// a session Director is attached.
+/// nothing for a listener that is not there yet. Read out of the same
+/// `DirectorInspect` the Settings window renders, so the two cannot disagree
+/// about whether a session Director is attached.
 #[tauri::command]
 fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> ChatOpening {
     let (name, character) = state
@@ -779,7 +764,6 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
     }
 }
 
-/// A line typed at one Instance's Chat surface, on its way to the frame loop.
 struct ChatLine {
     instance: InstanceId,
     text: String,
@@ -787,69 +771,57 @@ struct ChatLine {
 
 /// What one Chat surface has to say to the frame loop.
 enum ChatMsg {
-    /// A line the user typed.
     Said(ChatLine),
-    /// The surface is listening, and has drawn nothing yet. The status bar is
-    /// pushed on change, so a window opened between two changes would sit at
-    /// dashes until the sprite next did something different; this asks for the
-    /// state as it stands. Sent after the listener is registered, because an
-    /// answer to a window that is not listening yet is an answer nobody hears.
+    /// The surface is listening and has drawn nothing yet: the bar is pushed on
+    /// change, so a window opened between two would sit at dashes. Sent after
+    /// the listener is registered, or it is an answer nobody hears.
     Listening(InstanceId),
 }
 
 /// The sender every Chat surface posts on.
 ///
-/// A channel of its own rather than another `SettingsOp`: every op drained
-/// from that one rewrites settings.json and redraws the Settings window, which
-/// is not what typing a line is. A struct rather than a bare `Sender`, because
-/// managed state is keyed by type and two channels of one shape would collide.
+/// Not another `SettingsOp`: every op drained from that one rewrites
+/// settings.json and redraws the Settings window. A struct rather than a bare
+/// `Sender`, because managed state is keyed by type.
 struct ChatChannel(mpsc::Sender<ChatMsg>);
 
 /// What the Shell tells one Chat surface when a turn of its own is over.
 #[derive(Clone, Serialize)]
 struct ChatReply {
-    /// What the Instance said, and `None` when the turn produced no line: a
-    /// failed call falls back to `StaticDirector`, which is silent by
-    /// contract, and Do Not Disturb refuses dialogue outright. Sent anyway,
-    /// because a surface waiting forever for an answer that is not coming is
-    /// worse than one told there is none.
+    /// What the Instance said, and `None` when the turn produced no line — a
+    /// failed call falling back to the silent `StaticDirector`, or Do Not
+    /// Disturb. Sent anyway, so no caret waits forever on a line that is
+    /// not coming.
     said: Option<String>,
     /// The line was refused because one typed before it has not been asked
     /// yet. `said` is `None`; see the drain in `frame_loop`.
     busy: bool,
     /// What the Director was reacting to when it said this, as the surface
-    /// labels the row: `when poked`, `when summoned`, or `unprompted` for the
-    /// one wake nobody caused. `None` on an answer to a typed line, which sits
-    /// under the user's own turn and needs no label.
+    /// labels the row. `None` on an answer to a typed line, which sits under
+    /// the user's own turn — and its presence is what tells the surface not to
+    /// hand this line to a caret waiting on a question it did not answer.
     ///
-    /// A label rather than a bare flag, and `director::reacting_to`'s words
-    /// rather than the window's own, because a double-click is a prompt: the
-    /// user asked, they just did not type. Its presence is also what tells the
-    /// surface not to hand this line to a caret waiting on a question it did
-    /// not answer.
+    /// A label rather than a bare flag because a double-click is a prompt: the
+    /// user asked, they just did not type.
     reacting_to: Option<String>,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
 ///
-/// The `engine:` trace's quartet, which is the Behavior → Primitive →
-/// Animation ladder of ADR-0002 and the State it plays under, plus the two
-/// things that trace has no reason to carry: which way the sprite faces, and
-/// what the Director is doing about it.
+/// The `engine:` trace's quartet — the ADR-0002 ladder and the State it plays
+/// under — plus which way the sprite faces and what the Director is doing.
 ///
-/// Compared field by field to decide whether to push, so everything in here is
-/// something the bar draws, and nothing in here changes on a tick where the bar
-/// would not.
+/// Compared field by field to decide whether to push, so nothing in here
+/// changes on a tick where the bar would not.
 #[derive(Clone, PartialEq, Serialize)]
 struct ChatStatus {
     /// The Behavior playing, and `None` for the Engine's own moments — a Land
-    /// or a startle that no Director proposed. The bar draws a dash, as the
-    /// `engine:` trace does.
+    /// or a startle no Director proposed. The bar draws a dash, as the trace does.
     behavior: Option<String>,
     primitive: Option<Primitive>,
     animation: &'static str,
     state: State,
-    /// What drove the last wake, in `follow_up`'s word for it.
+    /// What drove the last wake, in `happened_cell`'s word for it.
     happened: Option<&'static str>,
     /// -1 heading left, 1 as authored, like `SpritePlacement::facing`.
     facing: i8,
@@ -857,28 +829,23 @@ struct ChatStatus {
     asking: bool,
 }
 
-/// One push of the status bar: the state, and how long until the next ambient
-/// wake.
+/// One push of the status bar.
 #[derive(Clone, Serialize)]
 struct ChatStatusPush<'a> {
     #[serde(flatten)]
     status: &'a ChatStatus,
-    /// Milliseconds until the next ambient wake is due, and `None` when none is
-    /// coming — no Completer, the Director switched off, ambient wakes not
-    /// allowed, Do Not Disturb, or the displays asleep.
-    ///
-    /// A deadline pushed once, not a number pushed every second: the window
-    /// counts it down itself, which is arithmetic it can do and traffic the
-    /// frame loop then never sends.
+    /// Milliseconds until the next ambient wake, and `None` when none is coming
+    /// — no Completer, the Director off, ambient wakes not allowed, Do Not
+    /// Disturb, or the displays asleep. A deadline pushed once rather than a
+    /// number pushed every second: the window counts it down itself.
     wake_ms: Option<u64>,
 }
 
 /// A line the user typed, on its way in.
 ///
 /// Bounded here because this is where webview text enters the process, and at
-/// the Director's own limit rather than a second number: the line goes into a
-/// session that keeps it, so `follow_up` cutting it later would still have
-/// paid for the whole paste on the way.
+/// `CHAT_LIMIT` rather than a second number: the session keeps the line, so
+/// cutting it later would still have paid for the whole paste on the way in.
 #[tauri::command]
 fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>) {
     let text: String = text
@@ -892,8 +859,7 @@ fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>
     let _ = chat.0.send(ChatMsg::Said(ChatLine { instance, text }));
 }
 
-/// A Chat surface reporting that it is listening, so the status bar it has just
-/// drawn empty is filled in rather than waiting on the next change.
+/// A Chat surface reporting that it is listening.
 #[tauri::command]
 fn chat_ready(instance: String, chat: tauri::State<'_, ChatChannel>) {
     let _ = chat.0.send(ChatMsg::Listening(instance));
@@ -2001,10 +1967,8 @@ mod tests {
     use super::*;
     use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
 
-    /// #17: a typed line waits in `happened` until a wake carries it, and the
-    /// sprite goes on being pokeable in the meantime. Losing the line there
-    /// would answer a question the user never asked and drop the one they are
-    /// waiting on, with nothing anywhere saying so.
+    /// #17: losing a line that is waiting in `happened` would answer a question
+    /// the user never asked and drop the one they are waiting on.
     #[test]
     fn a_waiting_typed_line_survives_everything_else_that_happens() {
         let mut happened = Happened::Chat("what are you standing on?".to_string());
