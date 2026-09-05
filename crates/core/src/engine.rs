@@ -1055,7 +1055,7 @@ impl Engine {
                 self.position.x += self.velocity.x * dt;
 
                 if let Some(wall) = wall_reached(self.position.x, self.velocity.x, snapshot)
-                    .or_else(|| dock_side_reached(self.position, snapshot))
+                    .or_else(|| dock_side_reached(self.position, self.velocity.x, snapshot))
                 {
                     // Arriving at a screen edge sideways is a catch, not a stop.
                     // It also keeps the sprite inside the displays. The Dock's
@@ -1141,7 +1141,7 @@ impl Engine {
                 // longer than the Dock is wide would cross it unseen; the
                 // snapshot assembler caps `elapsed_ms` at one poll interval,
                 // which is what keeps a step small.
-                if let Some(side) = dock_side_reached(self.position, snapshot) {
+                if let Some(side) = dock_side_reached(self.position, self.velocity.x, snapshot) {
                     self.position.x = side;
                     self.velocity = Point::default();
                     return Some(Contact::Wall);
@@ -1816,6 +1816,56 @@ mod tests {
             previous = frame;
         }
         panic!("the walk never reached the Dock's top: {previous:?}");
+    }
+
+    /// The Dock's side is a wall for a sprite walking into it (#176), and not
+    /// for one that has just walked off the top of it. Catching that one put it
+    /// back on the top to walk off again, so everything beyond the Dock — the
+    /// screen edge it was heading for included — stayed unreachable for as long
+    /// as the app ran. #361.
+    #[test]
+    fn a_walk_off_the_dock_top_carries_on_past_it_rather_than_climbing_back() {
+        let dock = dock();
+        let mut engine = a_character_at(Point { x: 700.0, y: 0.0 });
+        settle(&mut engine, &dock_snapshot(100));
+
+        // Thrown leftwards into the Dock's right side, which it climbs, leaving
+        // it on the top facing left with the far edge ahead of it.
+        engine.tick(&WorldSnapshot {
+            cursor: Point { x: 700.0, y: 760.0 },
+            verbs: vec![Verb::Grab],
+            ..dock_snapshot(16)
+        });
+        engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: -400.0, y: 0.0 },
+            }],
+            ..dock_snapshot(16)
+        });
+        let on_top = settle(&mut engine, &dock_snapshot(16));
+        assert_eq!(
+            (on_top.state, on_top.position.y),
+            (State::Perched, dock.y),
+            "the throw is meant to leave it on the Dock: {on_top:?}"
+        );
+
+        let mut stepped_off = false;
+        for _ in 0..400 {
+            let frame = engine.tick(&WorldSnapshot {
+                proposal: walk(),
+                ..dock_snapshot(16)
+            });
+            let on_dock = frame.state == State::Perched && frame.position.y == dock.y;
+            stepped_off |= !on_dock;
+            assert!(
+                !(stepped_off && on_dock),
+                "put back on the Dock it had just walked off: {frame:?}"
+            );
+            if frame.state == State::Climbing && frame.position.x == one_display().x {
+                return; // the far wall, which is what walking that way is for
+            }
+        }
+        panic!("the walk never got past the Dock to the display edge");
     }
 
     /// Standing on the Dock's top is standing above its side, not behind it:

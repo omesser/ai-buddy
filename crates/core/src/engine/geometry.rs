@@ -259,7 +259,22 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
 /// Strictly inside that, so the sprite this puts on the line is beside the
 /// Dock and stays put: the walk stops going forward instead of being set
 /// back, which is the #141 stutter it must not repeat.
-pub(super) fn dock_side_reached(position: Point, snapshot: &WorldSnapshot) -> Option<f64> {
+///
+/// Out in that margin the side is a wall only for a sprite moving into the
+/// Dock, the rule `wall_reached` already keeps for a display edge: one moving
+/// away has left, and catching it anyway is a wall in the middle of the floor.
+/// It is what made the Dock a trap for a walk heading past it — step off the
+/// top, get caught by the side just below, climb, and get put back on the top
+/// to do it again, for as long as the app ran. #361.
+///
+/// Strictly behind the Dock there is no such reprieve, whichever way the
+/// sprite is going: a real Dock is wide and the way out from under one is a
+/// long way sideways, all of it unseen. It climbs.
+pub(super) fn dock_side_reached(
+    position: Point,
+    velocity_x: f64,
+    snapshot: &WorldSnapshot,
+) -> Option<f64> {
     let dock = dock_in(snapshot)?;
     let (left, right) = (
         dock.x - EDGE_CLEARANCE,
@@ -285,11 +300,22 @@ pub(super) fn dock_side_reached(position: Point, snapshot: &WorldSnapshot) -> Op
             && position.y <= display.bottom()
     })?;
 
-    Some(if position.x - left <= right - position.x {
-        left
+    let nearer_left = position.x - left <= right - position.x;
+
+    // Strictly inside, so a sprite level with the Dock's own edge counts as
+    // out in the margin and may leave. It is the position stepping off the top
+    // lands on, and treating it as behind would keep the trap shut.
+    let behind = position.x > dock.x && position.x < dock.x + dock.width;
+    let into_dock = if nearer_left {
+        velocity_x > 0.0
     } else {
-        right
-    })
+        velocity_x < 0.0
+    };
+    if !behind && !into_dock {
+        return None;
+    }
+
+    Some(if nearer_left { left } else { right })
 }
 
 /// Where a climb beside the Dock steps onto its top, once the feet reach it.
