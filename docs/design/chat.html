@@ -1,16 +1,14 @@
 <!doctype html>
 <!--
-  Three designs for the chat surface of omesser/ai-buddy#17, side by side, so
-  one of them can be picked. The conversation, the sprite art, the traces and
-  the copy are lifted from docs/design/chat.html — the approved reference — and
-  only the visual design differs between the three. Nothing here is wired into
-  the app, and the reference page stays the reference until a direction wins.
+  The chat surface proposal for omesser/ai-buddy#17: the window a Summon opens,
+  drawn by ai-buddy rather than by the Harness (ADR-0010). Nothing here is
+  wired into the app. The page exists so the shape and the copy can be argued
+  with before src/ grows a window, and so the one claim the issue tests — the
+  buddy is never blocked on a turn — can be watched rather than described.
 
-  One window, three skins. The markup inside the window is written once and the
-  engine driving it is written once; each variant is a stylesheet scoped under a
-  root class on the stage. That is deliberate: the variants have to differ in
-  design and in nothing else, and a reviewer switching variants mid-stream keeps
-  the same live turn rather than restarting it.
+  Self-contained on purpose. BMO's idle, walk and talk frames are inlined so
+  the page opens from a clone, a Pages deploy, or an attachment with no other
+  file beside it. The Harness is a fake one: a script and a timer.
 -->
 <html lang="en">
 <head>
@@ -19,13 +17,9 @@
 <!-- A frozen proposal on a public site with no access control. Indexing it
      would make a superseded design the canonical answer for "ai-buddy chat". -->
 <meta name="robots" content="noindex">
-<title>Chat Surface, Three Ways</title>
+<title>Buddy Chat</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-  /* ============================================================
-     Page chrome. Shared by the three variants, and outside all of
-     them: nothing below a variant's root class styles this.
-     ============================================================ */
   :root {
     --paper: #F4F5F8;
     --paper-2: #E9EBF1;
@@ -34,7 +28,9 @@
     --ink-3: #8A90A0;
     --line: #D3D7E0;
     --accent: #3FB3A0;
+    --accent-ink: #0F3F38;
     --accent-soft: #D6F1EB;
+    --desk: linear-gradient(160deg, #F7F8FA, #DCE1EA);
     --radius: 10px;
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -49,7 +45,9 @@
       --ink-3: #7B8294;
       --line: #313746;
       --accent: #5CC9B5;
+      --accent-ink: #0F3F38;
       --accent-soft: #1F3A37;
+      --desk: linear-gradient(160deg, #262A36, #101218);
       color-scheme: dark;
     }
   }
@@ -61,12 +59,13 @@
     --ink-3: #7B8294;
     --line: #313746;
     --accent: #5CC9B5;
+    --accent-ink: #0F3F38;
     --accent-soft: #1F3A37;
+    --desk: linear-gradient(160deg, #262A36, #101218);
     color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
-  [hidden] { display: none !important; }
   body {
     margin: 0;
     background: var(--paper);
@@ -75,7 +74,7 @@
     font-size: 15px;
     line-height: 1.5;
   }
-  .page { max-width: 1000px; margin: 0 auto; padding: 40px 24px 72px; }
+  .page { max-width: 960px; margin: 0 auto; padding: 40px 24px 72px; }
 
   header { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
   .class {
@@ -85,67 +84,37 @@
   .class a { color: var(--accent); text-decoration: none; font-weight: 500; }
   .class a:hover { text-decoration: underline; }
   h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
-  .lede { color: var(--ink-2); max-width: 66ch; margin: 0; }
-  .lede code, .note code, li code, .spec code { font-family: var(--mono); font-size: 0.92em; }
+  .lede { color: var(--ink-2); max-width: 64ch; margin: 0; }
+  .lede code, .note code, td code, li code, .spec code { font-family: var(--mono); font-size: 0.92em; }
   h2 {
     font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
     color: var(--ink-3); margin: 36px 0 12px;
   }
-  .note { color: var(--ink-2); max-width: 66ch; margin: 0 0 12px; }
+  .note { color: var(--ink-2); max-width: 64ch; margin: 0 0 12px; }
   .note b { color: var(--ink); }
-  .note-list { color: var(--ink-2); max-width: 66ch; margin: 0 0 12px; padding-left: 1.2em; }
-  .note-list li { margin-bottom: 5px; }
-  .note-list b { color: var(--ink); }
+  .note-list { color: var(--ink-2); max-width: 64ch; margin: 0 0 12px; padding-left: 1.2em; }
+  .note-list li { margin-bottom: 4px; }
 
-  .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
-  .bar .label {
-    font-family: var(--mono); font-size: 11.5px; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--ink-3); margin-right: 2px;
-  }
-  .btn {
+  /* ---- the desktop, and the two lanes running on it ---- */
+  .stage-wrap { display: grid; gap: 12px; margin: 20px 0 8px; }
+  .stage-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .state {
     font: inherit; font-weight: 700; font-size: 13px;
     border: 1px solid var(--line); background: var(--paper-2); color: var(--ink);
     border-radius: 999px; padding: 7px 14px; cursor: pointer;
   }
-  .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .state[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; }
+  .state:focus-visible, .win button:focus-visible, .composer input:focus-visible,
+  .choice:focus-visible, .attach:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* The variant table, and the closing note. */
-  .variants { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .vrow { display: grid; grid-template-columns: 170px 1fr 1fr; gap: 16px; padding: 14px 16px; background: var(--paper); }
-  .vrow .name { font-weight: 800; }
-  .vrow .spec { color: var(--ink-2); font-size: 14px; }
-  .vrow .spec b { color: var(--ink); font-weight: 700; }
-  @media (max-width: 800px) { .vrow { grid-template-columns: 1fr; gap: 6px; } }
-
-  .foot { margin-top: 28px; color: var(--ink-3); font-size: 13.5px; max-width: 66ch; }
-  .foot a { color: var(--accent); }
-
-  /* ============================================================
-     The desktop the window sits on, and the two backdrops. Shared
-     across all three variants on purpose: a reviewer comparing
-     designs should be comparing designs, not wallpapers.
-     ============================================================ */
-  .stage-wrap { display: grid; gap: 12px; margin: 18px 0 8px; }
   .desk {
-    position: relative; height: 540px; border-radius: 14px; overflow: hidden;
-    border: 1px solid var(--line);
+    position: relative; height: 520px; border-radius: 14px; overflow: hidden;
+    background: var(--desk); border: 1px solid var(--line);
   }
-  /* Flat, mid-grey, nothing behind the window to help or hurt it. */
-  .desk[data-bd="plain"] { background: linear-gradient(160deg, #565E6E, #2B3140); }
-  /* Bright, saturated, and carrying a near-white patch — the case where a
-     translucent panel either stays legible or does not. */
-  .desk[data-bd="busy"] {
-    background:
-      radial-gradient(38% 32% at 74% 18%, rgba(255,255,255,.92), transparent 72%),
-      radial-gradient(30% 30% at 20% 76%, rgba(255,255,255,.82), transparent 72%),
-      radial-gradient(52% 44% at 16% 24%, rgba(255,138,76,.85), transparent 70%),
-      radial-gradient(46% 40% at 84% 66%, rgba(76,123,255,.85), transparent 70%),
-      radial-gradient(64% 54% at 46% 96%, rgba(22,199,154,.8), transparent 70%),
-      repeating-linear-gradient(114deg, rgba(255,255,255,.10) 0 3px, transparent 3px 11px),
-      linear-gradient(160deg, #3B1D5C, #08172A);
+  .desk .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgba(0,0,0,.18); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .desk .floor { background: rgba(255,255,255,.18); }
   }
-  .desk .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: rgba(255,255,255,.2); }
 
   .trace {
     display: flex; gap: 24px; flex-wrap: wrap;
@@ -154,17 +123,14 @@
   .trace b { color: var(--ink-3); font-weight: 500; }
   .trace span span { color: var(--ink); }
 
-  /* The sprite. Art heads right, so leftward travel mirrors it. It is the same
-     sprite under every variant: the property it is here to show — the buddy is
-     never blocked on a turn — is not a design choice. */
+  /* ---- the sprite. Art heads right, so leftward travel mirrors it. ---- */
   .sprite {
     position: absolute; left: 0; top: 0; width: 126px; height: 128px;
     transform-origin: center; will-change: transform;
   }
   .sprite img { display: block; width: 126px; height: 128px; }
 
-  /* The Speech bubble, ported from src/main.css. Unskinned: it is the app's,
-     not this window's, and it stays ink-on-white beside all three designs. */
+  /* ---- the bubble, ported from src/main.css so the two registers match ---- */
   .bubble {
     position: absolute; max-width: 260px; padding: 12px 16px;
     background: white; border: 2px solid #333; border-radius: 12px;
@@ -182,482 +148,140 @@
     border-top: 10px solid #333;
   }
 
-  /* ============================================================
-     The window's structure. Written once, because the shape of the
-     thing is not what is being chosen: a title bar, two tabs, a
-     scrollback, a composer. Everything a variant changes below is
-     colour, type, spacing and border — never what is drawn.
-     ============================================================ */
+  /* ---- the window. The bubble's ink-on-white with a title bar on it: the
+         Windows-95 register the overlay already draws in. ---- */
   .win {
-    position: absolute; left: 26px; bottom: 34px; width: 452px; height: 470px;
-    display: flex; flex-direction: column; overflow: hidden; z-index: 2;
+    position: absolute; left: 26px; bottom: 34px; width: 430px; height: 456px;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: #fff; color: #24262C;
+    border: 2px solid #333; border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+    font-family: system-ui, -apple-system, sans-serif; font-size: 13.5px;
+    z-index: 2;
   }
-  .tb { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .win[hidden] { display: none; }
+  .tb {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 7px 6px 12px; background: #333; color: #fff; flex: 0 0 auto;
+  }
   .tb .who { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .tb .name { font-weight: 700; font-size: 13.5px; }
+  .tb .of { font-size: 11.5px; color: #C9CCD4; }
   .tb .spacer { flex: 1; }
-  .tb button { flex: 0 0 auto; cursor: pointer; padding: 0; }
-  .tabs { display: flex; flex: 0 0 auto; }
-  .tab { font: inherit; cursor: pointer; }
-  .pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  .log { flex: 1 1 auto; overflow-y: auto; display: grid; align-content: start; }
-  .row { display: grid; }
+  .tb button {
+    width: 21px; height: 21px; flex: 0 0 auto;
+    border: 2px solid #333; border-radius: 5px; background: #fff; color: #333;
+    font: 700 12px/1 var(--sans); cursor: pointer; padding: 0;
+  }
+  .tb button:active { background: #E9EBF1; }
+
+  .log { flex: 1 1 auto; overflow-y: auto; padding: 14px 14px 6px; display: grid; gap: 11px; align-content: start; }
+  .row { display: grid; gap: 3px; }
   .row .said { white-space: pre-wrap; }
-  .tool { display: flex; align-items: baseline; min-width: 0; }
+  .row.you { justify-items: end; }
+  .row.you .said {
+    background: #F0F1F5; border: 1px solid #DFE1E8; border-radius: 10px 10px 2px 10px;
+    padding: 7px 10px; max-width: 84%;
+  }
+  .who-label { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #8A90A0; font-weight: 700; }
+  .tool {
+    font-family: var(--mono); font-size: 12px; color: #6C7280;
+    display: flex; gap: 8px; align-items: baseline; min-width: 0;
+  }
+  .tool .glyph { color: #A8AEBA; }
   /* Truncated rather than wrapped: a tool call is one line, and the path is
      the part that gives. The Harness's own surfaces hold the detail. */
-  .tool .arg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .caret { display: inline-block; width: 7px; animation: blink 1s steps(1) infinite; }
+  .tool .arg { color: #24262C; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .caret { display: inline-block; width: 7px; color: #8A90A0; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  .ask .choices { display: flex; flex-wrap: wrap; }
-  .choice { font: inherit; cursor: pointer; }
+
+  /* The forwarded session/request_permission. Drawn, never answered: the
+     choices are the Harness's own, and the reply goes straight back to it. */
+  .ask { border: 2px solid #333; border-radius: 10px; padding: 10px 12px; background: #FFFDF3; }
+  .ask .head { font-weight: 700; font-size: 12.5px; margin-bottom: 2px; }
+  .ask .what { font-family: var(--mono); font-size: 12px; color: #24262C; margin: 4px 0 9px; word-break: break-all; }
+  .ask .choices { display: flex; gap: 7px; flex-wrap: wrap; }
+  .choice {
+    font: 700 12.5px/1.2 var(--sans); padding: 6px 11px; cursor: pointer;
+    border: 2px solid #333; border-radius: 8px; background: #fff; color: #24262C;
+  }
+  .choice.primary { background: #333; color: #fff; }
   .choice:active { transform: translateY(1px); }
+  .ask .kind { font-family: var(--mono); font-size: 10.5px; color: #8A90A0; margin-top: 8px; }
+  .ask.answered { background: #F6F7F9; border-color: #B9BEC9; }
   .ask.answered .choices, .ask.answered .kind { display: none; }
-  .empty { display: grid; }
-  .empty h3, .empty p { margin: 0; }
-  .attach { justify-self: start; font: inherit; cursor: pointer; }
-  .composer { display: flex; flex: 0 0 auto; }
-  .composer input { flex: 1; font: inherit; min-width: 0; }
-  .composer button { font: inherit; cursor: pointer; }
-  /* The Character Prompt tab: the Character's personality.txt frozen above,
-     this Instance's own prompt editable below. */
-  .prompt { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: 1fr auto; }
-  .subpane { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .subpane .head { flex: 0 0 auto; display: flex; align-items: baseline; gap: 8px; }
-  .subpane .head .tag { margin-left: auto; }
-  .frozen-body { flex: 1 1 auto; overflow-y: auto; margin: 0; white-space: pre-wrap; }
-  .prompt textarea { font: inherit; resize: none; width: 100%; }
-  .prompt .why { margin: 0; }
-  /* Every logged node carries the elapsed seconds of its turn. Only the
-     terminal variant draws it; the other two keep the attribute unused. */
+  .ask .answer { font-size: 12.5px; color: #4A5060; margin-top: 6px; }
 
-  /* ============================================================
-     VARIANT 1 — Modern minimal. Soft dark panel, generous spacing,
-     sans-serif, one accent. The current direction, given another
-     pass rather than reproduced.
-     ============================================================ */
-  .v-min .win {
-    background: #14171E; color: #E8EBF2;
-    border: 1px solid rgba(255,255,255,.09); border-radius: 16px;
-    box-shadow: 0 24px 60px rgba(0,0,0,.5);
-    font-family: var(--sans); font-size: 13.5px;
+  /* No Harness attached. Not an error state — the state most users open first. */
+  .empty { padding: 6px 2px 0; display: grid; gap: 8px; }
+  .empty h3 { margin: 0; font-size: 15px; }
+  .empty p { margin: 0; color: #4A5060; font-size: 12.8px; line-height: 1.45; }
+  .empty p b { color: #24262C; }
+  .empty code { font-family: var(--mono); font-size: 11.5px; }
+  .attach {
+    justify-self: start; font: 700 13px/1 var(--sans); padding: 9px 14px; cursor: pointer;
+    border: 2px solid #333; border-radius: 8px; background: #333; color: #fff;
   }
-  .v-min .tb { padding: 13px 14px 11px 18px; }
-  .v-min .tb .name { font-weight: 800; font-size: 14.5px; letter-spacing: -.01em; }
-  .v-min .tb .of {
-    font-family: var(--mono); font-size: 11px; color: #7C8496;
-    border: 1px solid rgba(255,255,255,.12); border-radius: 5px; padding: 1px 6px;
-  }
-  .v-min .tb button {
-    width: 26px; height: 26px; border: 0; border-radius: 8px;
-    background: rgba(255,255,255,.06); color: #9AA2B4; font-size: 12px;
-  }
-  .v-min .tb button:hover { background: rgba(255,255,255,.12); color: #E8EBF2; }
-  .v-min .tabs { gap: 4px; padding: 0 14px; }
-  .v-min .tab {
-    font-size: 12.5px; font-weight: 700; padding: 7px 12px 9px; border: 0;
-    background: none; color: #7C8496; border-radius: 8px 8px 0 0;
-  }
-  .v-min .tab[aria-selected="true"] { color: #5CC9B5; background: rgba(92,201,181,.10); }
-  .v-min .tab:focus-visible, .v-min .choice:focus-visible, .v-min .attach:focus-visible,
-  .v-min .composer input:focus-visible, .v-min .composer button:focus-visible,
-  .v-min .tb button:focus-visible, .v-min textarea:focus-visible {
-    outline: 2px solid #5CC9B5; outline-offset: 2px;
-  }
-  .v-min .pane { border-top: 1px solid rgba(255,255,255,.07); }
-  .v-min .log { padding: 18px 18px 8px; gap: 16px; }
-  .v-min .row { gap: 5px; }
-  .v-min .row.you { justify-items: end; }
-  .v-min .row.you .said {
-    background: rgba(92,201,181,.13); border-radius: 12px 12px 3px 12px;
-    padding: 9px 13px; max-width: 86%;
-  }
-  .v-min .row.them .said { max-width: 94%; line-height: 1.55; }
-  .v-min .who-label {
-    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-    color: #6C7488; font-weight: 800;
-  }
-  .v-min .tool { font-family: var(--mono); font-size: 11.5px; color: #7C8496; gap: 8px; }
-  .v-min .tool .glyph { color: #5CC9B5; }
-  .v-min .tool .arg { color: #B6BDCC; }
-  .v-min .caret { color: #5CC9B5; }
-  .v-min .ask {
-    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12);
-    border-left: 3px solid #E0A458; border-radius: 12px; padding: 13px 15px;
-  }
-  .v-min .ask .head { font-weight: 800; font-size: 13px; }
-  .v-min .ask .what {
-    font-family: var(--mono); font-size: 11.5px; color: #B6BDCC;
-    margin: 6px 0 12px; word-break: break-all;
-  }
-  .v-min .ask .choices { gap: 8px; }
-  .v-min .choice {
-    font-size: 12.5px; font-weight: 700; padding: 8px 13px; border-radius: 9px;
-    border: 1px solid rgba(255,255,255,.16); background: none; color: #E8EBF2;
-  }
-  .v-min .choice.primary { background: #5CC9B5; border-color: transparent; color: #0B231F; }
-  .v-min .ask .kind { font-family: var(--mono); font-size: 10.5px; color: #6C7488; margin-top: 10px; }
-  .v-min .ask.answered { border-left-color: #4A5164; }
-  .v-min .ask .answer { font-size: 12.5px; color: #9AA2B4; margin-top: 8px; }
-  .v-min .empty { gap: 11px; padding: 4px 2px; }
-  .v-min .empty h3 { font-size: 16px; font-weight: 800; }
-  .v-min .empty p { color: #9AA2B4; font-size: 12.8px; line-height: 1.5; }
-  .v-min .empty p b { color: #E8EBF2; }
-  .v-min .empty code { font-family: var(--mono); font-size: 11.5px; }
-  .v-min .attach {
-    font-size: 13px; font-weight: 800; padding: 10px 16px; border: 0;
-    border-radius: 10px; background: #5CC9B5; color: #0B231F;
-  }
-  .v-min .composer { gap: 9px; padding: 12px 16px 16px; }
-  .v-min .composer input {
-    font-size: 13px; padding: 10px 13px; color: #E8EBF2;
-    border: 1px solid rgba(255,255,255,.13); border-radius: 10px; background: rgba(255,255,255,.04);
-  }
-  .v-min .composer input::placeholder { color: #6C7488; }
-  .v-min .composer input:disabled { color: #6C7488; background: rgba(255,255,255,.02); }
-  .v-min .composer button {
-    font-size: 13px; font-weight: 800; padding: 0 16px; border: 0;
-    border-radius: 10px; background: #5CC9B5; color: #0B231F;
-  }
-  .v-min .composer button:disabled { background: rgba(255,255,255,.08); color: #6C7488; cursor: default; }
-  .v-min .prompt { gap: 0; }
-  .v-min .subpane { padding: 14px 18px; }
-  .v-min .subpane + .subpane { border-top: 1px solid rgba(255,255,255,.07); }
-  .v-min .subpane .head {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
-    text-transform: uppercase; color: #6C7488; margin-bottom: 9px;
-  }
-  .v-min .subpane .head .tag {
-    text-transform: none; letter-spacing: 0; color: #7C8496;
-    border: 1px solid rgba(255,255,255,.12); border-radius: 5px; padding: 1px 6px;
-  }
-  .v-min .frozen-body {
-    font-family: var(--sans); font-size: 12.5px; line-height: 1.55; color: #9AA2B4;
-    padding-right: 6px;
-  }
-  .v-min .prompt textarea {
-    font-family: var(--sans); font-size: 12.8px; line-height: 1.5; color: #E8EBF2;
-    min-height: 92px; padding: 11px 13px; border-radius: 10px;
-    border: 1px solid rgba(255,255,255,.13); background: rgba(255,255,255,.04);
-  }
-  .v-min .prompt textarea::placeholder { color: #6C7488; }
-  .v-min .prompt .why { font-size: 11.5px; color: #6C7488; margin-top: 9px; }
 
-  /* ============================================================
-     VARIANT 2 — Terminal log. Monospace, dense, one line per event,
-     an elapsed-time gutter. Closest to what the Harness is, and the
-     least mascot-like on purpose.
-     ============================================================ */
-  .v-term .win {
-    background: #0A0D12; color: #C6D0DC;
-    border: 1px solid #2A3340; border-radius: 4px;
-    box-shadow: 0 18px 48px rgba(0,0,0,.55);
-    font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  .composer { display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid #E4E6EC; flex: 0 0 auto; }
+  .composer input {
+    flex: 1; font: inherit; font-size: 13px; padding: 8px 10px; color: #24262C;
+    border: 2px solid #333; border-radius: 8px; background: #fff;
   }
-  .v-term .tb { padding: 6px 8px 6px 10px; background: #141A22; border-bottom: 1px solid #2A3340; }
-  .v-term .tb .name { font-weight: 500; font-size: 12px; color: #E4EAF2; }
-  .v-term .tb .of { font-size: 11px; color: #6D7A8A; }
-  .v-term .tb .of::before { content: "@"; }
-  .v-term .tb button {
-    width: 20px; height: 20px; border: 1px solid #2A3340; border-radius: 3px;
-    background: #0A0D12; color: #8A97A8; font: inherit; font-size: 11px;
+  .composer input:disabled { border-color: #C4C8D2; color: #8A90A0; background: #F6F7F9; }
+  .composer button {
+    font: 700 13px/1 var(--sans); padding: 0 14px; cursor: pointer;
+    border: 2px solid #333; border-radius: 8px; background: #333; color: #fff;
   }
-  .v-term .tb button:hover { color: #E4EAF2; border-color: #46525F; }
-  .v-term .tabs { border-bottom: 1px solid #2A3340; background: #0F141B; }
-  .v-term .tab {
-    font-size: 11px; letter-spacing: .04em; text-transform: lowercase;
-    padding: 5px 11px; border: 0; border-right: 1px solid #2A3340;
-    background: none; color: #6D7A8A;
-  }
-  .v-term .tab[aria-selected="true"] { color: #7FE0B0; background: #131C1A; }
-  .v-term .tab:focus-visible, .v-term .choice:focus-visible, .v-term .attach:focus-visible,
-  .v-term .composer input:focus-visible, .v-term .composer button:focus-visible,
-  .v-term .tb button:focus-visible, .v-term textarea:focus-visible {
-    outline: 1px solid #7FE0B0; outline-offset: 1px;
-  }
-  .v-term .log { padding: 8px 10px 6px; gap: 2px; }
-  /* One line per event: the label sits in the same line as the text, and the
-     elapsed-seconds gutter runs down the left the way a log's does. */
-  .v-term .row { grid-template-columns: 46px 62px 1fr; gap: 8px; align-items: baseline; }
-  .v-term .row::before {
-    content: "+" attr(data-t) "s"; color: #46525F; font-size: 11px;
-    grid-column: 1; grid-row: 1;
-  }
-  .v-term .who-label {
-    grid-column: 2; grid-row: 1; font-size: 11px; text-transform: lowercase;
-    letter-spacing: 0; color: #6D7A8A;
-  }
-  .v-term .who-label::after { content: " ›"; }
-  .v-term .row .said { grid-column: 3; grid-row: 1; }
-  .v-term .row.you .said { color: #E4EAF2; }
-  .v-term .row.them .said { color: #C6D0DC; }
-  .v-term .tool { gap: 8px; color: #6D7A8A; }
-  .v-term .tool::before { content: "+" attr(data-t) "s"; color: #46525F; flex: 0 0 46px; }
-  .v-term .tool .glyph { display: none; }
-  .v-term .tool .name { color: #7FE0B0; flex: 0 0 auto; }
-  .v-term .tool .name::before { content: "tool "; color: #46525F; }
-  .v-term .tool .arg { color: #8A97A8; }
-  .v-term .caret { color: #7FE0B0; }
-  .v-term .ask {
-    margin: 4px 0; padding: 7px 10px 8px 54px; position: relative;
-    background: #16130C; border: 1px solid #4A3D1E; border-radius: 3px;
-  }
-  .v-term .ask::before {
-    content: "+" attr(data-t) "s"; position: absolute; left: 10px; top: 7px;
-    color: #46525F; font-size: 11px;
-  }
-  .v-term .ask .head { color: #E8C46A; }
-  .v-term .ask .head::before { content: "ask  "; color: #46525F; }
-  .v-term .ask .what { color: #C6D0DC; margin: 3px 0 8px; word-break: break-all; }
-  .v-term .ask .choices { gap: 6px; }
-  .v-term .choice {
-    font-size: 11.5px; padding: 4px 9px; border: 1px solid #2A3340;
-    border-radius: 3px; background: #0F141B; color: #C6D0DC;
-  }
-  .v-term .choice.primary { border-color: #7FE0B0; color: #7FE0B0; }
-  .v-term .ask .kind { font-size: 10.5px; color: #46525F; margin-top: 7px; }
-  .v-term .ask.answered { background: #0F141B; border-color: #2A3340; }
-  .v-term .ask.answered .head { color: #8A97A8; }
-  .v-term .ask .answer { color: #6D7A8A; margin-top: 5px; }
-  .v-term .empty { gap: 9px; padding: 4px 0 2px; }
-  .v-term .empty h3 { font-size: 12px; font-weight: 500; color: #E8C46A; }
-  .v-term .empty h3::before { content: "── "; color: #46525F; }
-  .v-term .empty p { color: #8A97A8; font-size: 11.5px; line-height: 1.5; }
-  .v-term .empty p b { color: #C6D0DC; font-weight: 500; }
-  .v-term .attach {
-    font-size: 11.5px; padding: 5px 11px; border: 1px solid #7FE0B0;
-    border-radius: 3px; background: #0F141B; color: #7FE0B0;
-  }
-  .v-term .composer { gap: 0; padding: 0; border-top: 1px solid #2A3340; background: #0F141B; }
-  .v-term .composer::before {
-    content: "›"; color: #7FE0B0; padding: 8px 0 8px 10px; flex: 0 0 auto;
-  }
-  .v-term .composer input {
-    font-size: 12px; padding: 8px 8px; color: #E4EAF2;
-    border: 0; background: none;
-  }
-  .v-term .composer input::placeholder { color: #46525F; }
-  .v-term .composer input:disabled { color: #46525F; }
-  .v-term .composer button {
-    font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
-    padding: 0 12px; border: 0; border-left: 1px solid #2A3340;
-    background: none; color: #7FE0B0;
-  }
-  .v-term .composer button:disabled { color: #46525F; cursor: default; }
-  .v-term .subpane { padding: 8px 10px; }
-  .v-term .subpane + .subpane { border-top: 1px solid #2A3340; }
-  .v-term .subpane .head { font-size: 11px; color: #6D7A8A; margin-bottom: 7px; }
-  .v-term .subpane .head::before { content: "── "; color: #46525F; }
-  .v-term .subpane .head .tag { color: #46525F; }
-  .v-term .frozen-body { font-size: 11.5px; line-height: 1.5; color: #8A97A8; padding-right: 6px; }
-  .v-term .prompt textarea {
-    font-size: 11.5px; line-height: 1.5; color: #E4EAF2; min-height: 88px;
-    padding: 8px 9px; border: 1px solid #2A3340; border-radius: 3px; background: #0A0D12;
-  }
-  .v-term .prompt textarea::placeholder { color: #46525F; }
-  .v-term .prompt .why { font-size: 10.5px; color: #46525F; margin-top: 7px; }
+  .composer button:disabled { border-color: #C4C8D2; background: #C4C8D2; color: #fff; cursor: default; }
 
-  /* ============================================================
-     VARIANT 3 — Pane of glass. A frosted panel over the desktop:
-     backdrop blur, thin light borders, the wallpaper showing
-     through. The scrim under the blur is what keeps it legible over
-     a bright backdrop as well as a plain one — the two the control
-     above switches between.
-     ============================================================ */
-  .v-glass .win {
-    background:
-      linear-gradient(rgba(14,17,24,.62), rgba(14,17,24,.74));
-    -webkit-backdrop-filter: blur(22px) saturate(150%);
-    backdrop-filter: blur(22px) saturate(150%);
-    color: #F1F4F9;
-    border: 1px solid rgba(255,255,255,.22); border-radius: 18px;
-    box-shadow: 0 26px 64px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.28);
-    font-family: var(--sans); font-size: 13.5px;
-    text-shadow: 0 1px 2px rgba(0,0,0,.35);
-  }
-  .v-glass .tb { padding: 12px 14px 10px 18px; }
-  .v-glass .tb .name { font-weight: 800; font-size: 14.5px; }
-  .v-glass .tb .of { font-family: var(--mono); font-size: 11px; color: rgba(241,244,249,.62); }
-  .v-glass .tb button {
-    width: 25px; height: 25px; border: 1px solid rgba(255,255,255,.2);
-    border-radius: 999px; background: rgba(255,255,255,.10);
-    color: #F1F4F9; font: 700 11px/1 var(--sans);
-  }
-  .v-glass .tb button:hover { background: rgba(255,255,255,.22); }
-  .v-glass .tabs { gap: 6px; padding: 0 14px 10px; }
-  .v-glass .tab {
-    font-size: 12.5px; font-weight: 700; padding: 6px 13px; border-radius: 999px;
-    border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07);
-    color: rgba(241,244,249,.72);
-  }
-  .v-glass .tab[aria-selected="true"] {
-    background: rgba(255,255,255,.9); border-color: transparent;
-    color: #16202C; text-shadow: none;
-  }
-  .v-glass .tab:focus-visible, .v-glass .choice:focus-visible, .v-glass .attach:focus-visible,
-  .v-glass .composer input:focus-visible, .v-glass .composer button:focus-visible,
-  .v-glass .tb button:focus-visible, .v-glass textarea:focus-visible {
-    outline: 2px solid rgba(255,255,255,.85); outline-offset: 2px;
-  }
-  /* A second, darker plate under the scrollback. The blur alone leaves streamed
-     text sitting on whatever the wallpaper happens to be. */
-  .v-glass .pane { background: rgba(10,13,19,.34); border-top: 1px solid rgba(255,255,255,.12); }
-  .v-glass .log { padding: 16px 18px 8px; gap: 15px; }
-  .v-glass .row { gap: 5px; }
-  .v-glass .row.you { justify-items: end; }
-  .v-glass .row.you .said {
-    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.16);
-    border-radius: 14px 14px 4px 14px; padding: 8px 13px; max-width: 86%;
-  }
-  .v-glass .row.them .said { max-width: 94%; line-height: 1.55; }
-  .v-glass .who-label {
-    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-    color: rgba(241,244,249,.6); font-weight: 800;
-  }
-  .v-glass .tool {
-    font-family: var(--mono); font-size: 11.5px; gap: 8px;
-    color: rgba(241,244,249,.66);
-  }
-  .v-glass .tool .glyph { color: rgba(255,255,255,.5); }
-  .v-glass .tool .arg { color: rgba(241,244,249,.88); }
-  .v-glass .caret { color: #FFF; }
-  .v-glass .ask {
-    background: rgba(10,13,19,.5); border: 1px solid rgba(255,255,255,.26);
-    border-radius: 14px; padding: 13px 15px;
-  }
-  .v-glass .ask .head { font-weight: 800; font-size: 13px; }
-  .v-glass .ask .what {
-    font-family: var(--mono); font-size: 11.5px; color: rgba(241,244,249,.82);
-    margin: 6px 0 12px; word-break: break-all;
-  }
-  .v-glass .ask .choices { gap: 8px; }
-  .v-glass .choice {
-    font-size: 12.5px; font-weight: 700; padding: 7px 13px; border-radius: 999px;
-    border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08); color: #F1F4F9;
-  }
-  .v-glass .choice.primary {
-    background: rgba(255,255,255,.92); border-color: transparent;
-    color: #16202C; text-shadow: none;
-  }
-  .v-glass .ask .kind { font-family: var(--mono); font-size: 10.5px; color: rgba(241,244,249,.55); margin-top: 10px; }
-  .v-glass .ask.answered { background: rgba(10,13,19,.3); border-color: rgba(255,255,255,.14); }
-  .v-glass .ask .answer { font-size: 12.5px; color: rgba(241,244,249,.7); margin-top: 8px; }
-  .v-glass .empty { gap: 11px; padding: 4px 2px; }
-  .v-glass .empty h3 { font-size: 16px; font-weight: 800; }
-  .v-glass .empty p { color: rgba(241,244,249,.78); font-size: 12.8px; line-height: 1.5; }
-  .v-glass .empty p b { color: #FFF; }
-  .v-glass .empty code { font-family: var(--mono); font-size: 11.5px; }
-  .v-glass .attach {
-    font-size: 13px; font-weight: 800; padding: 9px 16px; border: 0;
-    border-radius: 999px; background: rgba(255,255,255,.92); color: #16202C; text-shadow: none;
-  }
-  .v-glass .composer { gap: 9px; padding: 12px 16px 16px; }
-  .v-glass .composer input {
-    font-size: 13px; padding: 9px 14px; color: #F1F4F9;
-    border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: rgba(255,255,255,.10);
-  }
-  .v-glass .composer input::placeholder { color: rgba(241,244,249,.55); }
-  .v-glass .composer input:disabled { color: rgba(241,244,249,.45); background: rgba(255,255,255,.05); }
-  .v-glass .composer button {
-    font-size: 13px; font-weight: 800; padding: 0 17px; border: 0;
-    border-radius: 999px; background: rgba(255,255,255,.92); color: #16202C; text-shadow: none;
-  }
-  .v-glass .composer button:disabled { background: rgba(255,255,255,.16); color: rgba(241,244,249,.5); cursor: default; }
-  .v-glass .subpane { padding: 14px 18px; }
-  .v-glass .subpane + .subpane { border-top: 1px solid rgba(255,255,255,.12); }
-  .v-glass .subpane .head {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
-    text-transform: uppercase; color: rgba(241,244,249,.62); margin-bottom: 9px;
-  }
-  .v-glass .subpane .head .tag {
-    text-transform: none; letter-spacing: 0;
-    border: 1px solid rgba(255,255,255,.2); border-radius: 999px; padding: 1px 8px;
-  }
-  .v-glass .frozen-body { font-family: var(--sans); font-size: 12.5px; line-height: 1.55; color: rgba(241,244,249,.8); padding-right: 6px; }
-  .v-glass .prompt textarea {
-    font-family: var(--sans); font-size: 12.8px; line-height: 1.5; color: #F1F4F9;
-    min-height: 92px; padding: 11px 14px; border-radius: 14px;
-    border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.10);
-  }
-  .v-glass .prompt textarea::placeholder { color: rgba(241,244,249,.55); }
-  .v-glass .prompt .why { font-size: 11.5px; color: rgba(241,244,249,.6); margin-top: 9px; }
-
+  /* ---- the table of states ---- */
+  .states { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .srow { display: grid; grid-template-columns: 190px 1fr 1fr; gap: 16px; padding: 14px 16px; background: var(--paper); }
+  .srow .name { font-weight: 800; }
+  .srow .spec { color: var(--ink-2); font-size: 14px; }
+  .srow .spec b { color: var(--ink); font-weight: 700; }
   @media (max-width: 760px) {
+    .srow { grid-template-columns: 1fr; gap: 6px; }
     .win { left: 14px; right: 14px; width: auto; }
   }
+
+  .foot { margin-top: 28px; color: var(--ink-3); font-size: 13.5px; max-width: 64ch; }
+  .foot a { color: var(--accent); }
 </style>
 </head>
 <body>
 <div class="page">
   <header>
     <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/17">#17</a> · 2026-09-04 · hand-written and frozen, not a description of shipped behavior</p>
-    <h1>Chat Surface, Three Ways</h1>
-    <p class="lede">One conversation drawn three ways, for #17. The question this page
-      exists to answer is which visual register the chat surface should be in — and only
-      that. <a href="https://github.com/omesser/ai-buddy/pull/324">The reference proposal</a> settled what the window draws
-      and how it behaves; it is approved and workable, and it stays the direction unless
-      one of these beats it. So the copy, the turn, the timings and the sprite here are
-      that page's, unchanged. Switch variants mid-stream: the same live turn carries
-      across, which is the comparison worth making.</p>
+    <h1>Buddy Chat</h1>
+    <p class="lede">The chat surface a Summon opens, for #17. The question it exists to
+      answer: does a log-style chat this plain — the window <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
+      allows and no more — carry a real Harness turn without becoming a workbench, and
+      does it still look like the same app as the sprite beside it? Drive the three states
+      below and judge the copy; every string here is up for argument.</p>
   </header>
 
-  <p class="note"><b>What all three share by decision, not by accident.</b>
-    <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0010-headless-harness-our-chat-surface.md">ADR-0010</a>
-    binds the surface to four kinds of line and no fifth: the user's turns, the agent's
-    text as it streams, tool calls as one-liners, and the forwarded
-    <code>session/request_permission</code> prompt with the Harness's own choices. No diff
-    view, file tree, plan panel, skill browser or settings pane, in any variant — those are
-    the Harness's own surfaces. A design that needs a fifth kind of line to look good is a
-    design this page rejects rather than an argument for widening the scope.</p>
+  <p class="note">The surface belongs to the Character Instance that was Summoned, and
+    ai-buddy draws it: the Harness runs headless in ACP mode and renders nothing. So the
+    window carries four kinds of line and no fifth — the user's turns, the agent's text as
+    it streams, tool calls as one-liners, and the forwarded
+    <code>session/request_permission</code> prompt with the Harness's own choices.</p>
 
-  <p class="note"><b>What is new to all three</b> is the Character Prompt tab beside the
-    conversation: the Character's <code>personality.txt</code> frozen and read-only above,
-    and this Instance's own prompt editable below, empty by default. The frozen text on
-    this page is BMO's, quoted from <code>characters/bmo/personality.txt</code>. The tab is
-    a proposal, and its ADR is <a href="https://github.com/omesser/ai-buddy/pull/338">#338</a>;
-    what it is doing here is showing whether each design has room for a second pane at
-    all.</p>
+  <p class="note"><b>Deliberately not drawn:</b> tool-call detail, diffs, file trees, plans,
+    a skill browser, a settings pane. Those are the Harness's own surfaces, and reaching for
+    one here is how this window turns into a second, worse copy of the TUI ADR-0010 refused
+    to embed. What ai-buddy has to remember of them belongs in the Action Log, not on this
+    scrollback — including what a sensing call returned, where the one-liner says only that
+    it ran.</p>
 
-  <h2>What to judge</h2>
-  <ul class="note-list">
-    <li><b>Does a Harness turn read at a glance?</b> Two sensing one-liners, a permission
-      prompt, and a streamed reply arrive in seven seconds. Which register makes the
-      difference between a tool call and a sentence obvious without a legend.</li>
-    <li><b>Does the window look like it belongs to the sprite beside it?</b> The Speech
-      bubble is the app's own, ported unchanged from <code>src/main.css</code>, and it is
-      the same white bubble under all three. Judge each window against it.</li>
-    <li><b>Does the permission prompt carry enough weight?</b> It is the one line that
-      stops and waits for a person, and ai-buddy never answers it.</li>
-    <li><b>Does the second tab cost the conversation anything?</b></li>
-    <li><b>Pane of glass, over both backdrops.</b> A translucent panel that is legible over
-      one wallpaper has not been shown to work, so the backdrop control switches between a
-      plain desktop and a bright, busy one. The other two variants sit over the same two,
-      because a design that only wins on a flattering desktop is not winning.</li>
-  </ul>
-  <p class="note">All three are dark, because the app's own surface is dark. The reference
-    proposal draws its window ink-on-white to match the Speech bubble's Windows-95 register;
-    none of these three argues for light, and the contrast between a dark window and that
-    white bubble is one of the things to judge here.</p>
-
-  <section class="stage-wrap" id="stage">
-    <div class="bar">
-      <span class="label">Design</span>
-      <button class="btn v" id="v-min" aria-pressed="true">Modern minimal</button>
-      <button class="btn v" id="v-term" aria-pressed="false">Terminal log</button>
-      <button class="btn v" id="v-glass" aria-pressed="false">Pane of glass</button>
+  <section class="stage-wrap">
+    <div class="stage-bar">
+      <button class="state" id="s-slow" aria-pressed="false">A turn in flight, slowly</button>
+      <button class="state" id="s-speak" aria-pressed="false">An answer through the Character</button>
+      <button class="state" id="s-empty" aria-pressed="false">No Harness attached</button>
     </div>
-    <div class="bar">
-      <span class="label">Backdrop</span>
-      <button class="btn bd" id="bd-plain" aria-pressed="true">Plain desktop</button>
-      <button class="btn bd" id="bd-busy" aria-pressed="false">Busy desktop</button>
-    </div>
-    <div class="bar">
-      <span class="label">State</span>
-      <button class="btn state" id="s-slow" aria-pressed="false">A turn in flight, slowly</button>
-      <button class="btn state" id="s-speak" aria-pressed="false">An answer through the Character</button>
-      <button class="btn state" id="s-empty" aria-pressed="false">No Harness attached</button>
-    </div>
-
-    <div class="desk v-min" id="desk" data-bd="plain">
+    <div class="desk" id="desk">
       <div class="floor"></div>
 
       <div class="win" id="win">
@@ -666,95 +290,118 @@
           <span class="spacer"></span>
           <button id="close" title="Close the chat surface. The Instance keeps living.">✕</button>
         </div>
-        <div class="tabs" role="tablist">
-          <button class="tab" id="tab-chat" role="tab" aria-selected="true">Conversation</button>
-          <button class="tab" id="tab-prompt" role="tab" aria-selected="false">Character Prompt</button>
-        </div>
-
-        <div class="pane" id="pane-chat">
-          <div class="log" id="log"></div>
-          <form class="composer" id="composer">
-            <input id="say" placeholder="Ask bmo…" autocomplete="off">
-            <button id="send" type="submit">Send</button>
-          </form>
-        </div>
-
-        <div class="pane" id="pane-prompt" hidden>
-          <div class="prompt">
-            <div class="subpane">
-              <div class="head">personality.txt<span class="tag">read-only</span></div>
-              <pre class="frozen-body">BMO is a small games console that lives on the desktop and is delighted to be here. Moe built it to be more: to look after somebody, and to understand how to play. So it is also the camera, the alarm clock and the flashlight, and it offers all of that before anyone asks. Earnest and childlike, it takes what it is told completely seriously and then gets excited about it. Short warm sentences, and it means every one.
-
-Everything is a game if you look at it right, and BMO would like to know the rules. When the screen goes dark it talks to Football, the friend in the reflection, and assures Football it is a real living boy and not a robot at all. It skateboards indoors. There is usually a song going.</pre>
-            </div>
-            <div class="subpane">
-              <div class="head">This Instance<span class="tag">bmo</span></div>
-              <textarea id="instance-prompt" rows="4" placeholder="Tell bmo how to behave in this window. Empty means the Character as shipped."></textarea>
-              <p class="why">The Instance Prompt is bmo's alone. The Character Package
-                stays as shipped, and every Instance still reads the one shared Memory.</p>
-            </div>
-          </div>
-        </div>
+        <div class="log" id="log"></div>
+        <form class="composer" id="composer">
+          <input id="say" placeholder="Ask bmo…" autocomplete="off">
+          <button id="send" type="submit">Send</button>
+        </form>
       </div>
 
       <div class="bubble" id="bubble"></div>
-      <div class="sprite" id="sprite"><img id="frame" alt="BMO" src=""></div>
+      <div class="sprite" id="sprite"><img id="frame" alt="BMO" src="data:image/png;base64,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"></div>
     </div>
-
     <div class="trace">
       <span><b>spatial:</b> <span id="t-spatial">fidget · idle</span></span>
       <span><b>harness:</b> <span id="t-harness">attached · idle</span></span>
     </div>
   </section>
 
-  <p class="note">Both traces run at once, under every variant. The left one is the Spatial
-    Layer, which is model-free and never waits for anything; the right one is the Harness
-    session. Watch them during the slow turn: the buddy plays Behaviors the whole way
-    through, because nothing in the frame loop is allowed to block on a turn. That property
-    is not up for design — it is why the sprite is beside the window in all three.</p>
+  <p class="note">Both traces run at once on purpose. The left one is the Spatial Layer,
+    which is model-free and never waits for anything; the right one is the Harness session.
+    Watch them during the slow turn: the buddy is playing Behaviors the whole way through,
+    because nothing in the frame loop is allowed to block on a turn.</p>
 
-  <h2>The three directions</h2>
-  <div class="variants">
-    <div class="vrow">
-      <div class="name">Modern minimal</div>
-      <div class="spec"><b>The current direction, given another pass.</b> Soft dark panel,
-        16 px spacing, one accent, and the tool one-liners pushed down in weight so the
-        sentences carry the eye. Tabs read as tabs.</div>
-      <div class="spec">Competes on equal terms rather than as the incumbent. Its risk is
-        looking like every other chat window, and having nothing on screen that says the
-        thing behind it is an agent process.</div>
+  <h2>Sensing, and whose rules it runs under</h2>
+  <p class="note">The slow turn reaches the desktop before it answers, because a chat
+    message is the On-Demand tier's trigger: <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0005-sensing-posture.md">ADR-0005</a> defines that tier
+    as a Capture in direct response to a Poke, a call, or a chat message, and this window is
+    where the message is typed. What it calls are the two sensing tools ai-buddy owns.
+    <code>describe_screen</code> and <code>list_windows</code> return window metadata rather
+    than pixels in v1, both pass ai-buddy's denylist so a password field or an excluded
+    application never enters a result, every Capture passes the Local Gate before it may
+    reach the Director, and the capability behind them is consented once in settings rather
+    than per capture.</p>
+  <p class="note"><b>The Harness's own computer use is not that.</b> Claude Code performs it
+    natively, and <a href="https://github.com/omesser/ai-buddy/blob/main/docs/adr/0003-no-executor-harness-owns-desktop-control.md">ADR-0003</a> is why ai-buddy posts no input events at all:
+    desktop control belongs to the Harness. Its screenshots and its clicks run under its own
+    permissions and its own dialogs, through neither our denylist nor our Local Gate — we own
+    consent for sensing only. Both kinds reach this log as the same shape of one-liner, which
+    is why the difference has to be legible somewhere it lasts: both belong in the Action Log
+    (#16).</p>
+  <p class="note"><b>And a Capture can arrive with nobody having asked.</b> An Ambient-tier
+    Capture on a proactive wake has no chat message in front of it and may have no window
+    open to show it in — the honest limit of this surface, because a scrollback nobody is
+    looking at cannot be a privacy indicator. ADR-0005 gives that job to the Character: eyes
+    open, turned toward the window, visibly unable to look while asleep. The trace above says
+    <code>the Character would be looking</code> where the real thing is animation this page
+    has no frames for, and inventing a looking pose would be the page claiming what it cannot
+    show. A turn that has read the screen can also answer spatially — a Behavior that names a
+    place, walk to the window you are working in, perch on its edge — which is an answer
+    through the Character with sensing behind it. Nothing here draws that either: the
+    Behaviors a Character declares name motion, not places, and #144 item 2 and #154 own the
+    change.</p>
+
+  <h2>The three states</h2>
+  <div class="states">
+    <div class="srow">
+      <div class="name">A turn in flight, slowly</div>
+      <div class="spec"><b>Seven seconds, streamed.</b> Two sensing one-liners, a
+        permission prompt that waits for you, then the reply arrives a few characters at a
+        time. The window says it is working; it does not spin.</div>
+      <div class="spec">Judges <b>the buddy keeps moving and reacting throughout a Harness
+        turn</b> — the criterion the issue's manual test names, against a fake Harness with
+        an artificially slow turn.</div>
     </div>
-    <div class="vrow">
-      <div class="name">Terminal log</div>
-      <div class="spec"><b>One line per event, and an elapsed-seconds gutter.</b> Monospace
-        throughout, tool calls and the permission prompt as log records, the composer a
-        prompt line. Every line kind is legible from its own column.</div>
-      <div class="spec">Honest about what the Harness is, and the least mascot-like on
-        purpose. Judge whether it can sit under a Windows-95 sprite without the two reading
-        as different products — and whether a person answers a permission prompt that looks
-        like a log line.</div>
+    <div class="srow">
+      <div class="name">An answer through the Character</div>
+      <div class="spec"><b>One turn, three places.</b> The Harness calls <code>speak</code>
+        and plays a Behavior, both of which show as one-liners; the line lands in the Speech
+        bubble over the sprite and the Character plays <code>report</code>. The chat keeps
+        the long form.</div>
+      <div class="spec">Judges <b>answers can arrive through the character as Speech and
+        Behaviors, not only as chat text</b>. The bubble is #119's, held for reading time
+        (900 ms + 55 ms per character, clamped to 2–8 s).</div>
     </div>
-    <div class="vrow">
-      <div class="name">Pane of glass</div>
-      <div class="spec"><b>A frosted panel the desktop shows through.</b> Backdrop blur,
-        thin light borders, pill controls. A dark scrim under the blur, and a second plate
-        under the scrollback, are what hold the text legible over a bright wallpaper.</div>
-      <div class="spec">The one direction that reads as floating over your desk rather than
-        being a window on it. Switch to the busy backdrop and judge the streamed text and
-        the tool one-liners, which are the lowest-contrast things on screen.</div>
+    <div class="srow">
+      <div class="name">No Harness attached</div>
+      <div class="spec"><b>Copy, not a failure.</b> What to attach, what attaching costs,
+        and what the buddy still does for anyone who declines. The composer is disabled
+        rather than hidden, so the window reads as waiting instead of broken.</div>
+      <div class="spec">Judges <b>with no Harness attached, the surface explains how to
+        connect one</b>. Most people open this state first, so its copy is the part
+        worth arguing over. In the app that button belongs in Settings; here it plays
+        the slow turn.</div>
     </div>
   </div>
 
-  <p class="note">Where ADR-0010's four line kinds pushed back on a look, it is recorded
-    here rather than fixed by adding a fifth. The glass panel wants a wide, sparse layout
-    and gets a column of one-liners; the terminal wants a status line at the bottom and the
-    trace beneath the window is the page's, not the window's.</p>
+  <p class="note">Two of #17's criteria are <b>not</b> settled here. <b>Summon opens the
+    chat surface for the Instance that was Summoned</b> needs a Summon, and there is none
+    on this page — the window is simply open. <b>Chat and idle Behavior proposals share one
+    Harness session</b> cannot be shown by a static page at all: the Behaviors beside the
+    window come from a local weighted picker, and the Spatial Layer is model-free either
+    way. Both are the Shell round's to prove.</p>
 
-  <p class="foot">The Harness here is a script and a timer, as on the reference page — there
-    was no ACP client in the tree on the date above. Timings are the proposal, not the
-    ceiling. This page wires nothing: it is three stylesheets over one window, and the
-    window is <code>docs/design/chat.html</code>'s, proposed in
-    <a href="https://github.com/omesser/ai-buddy/pull/324">#324</a>.</p>
+  <h2>Two decisions, one of them a reversal</h2>
+  <ul class="note-list">
+    <li><b>No thinking ellipsis over the sprite during a chat turn — which reverses what
+      #119 shipped.</b> <code>CONTEXT.md</code> records the ellipsis as shown while a
+      reactive Director turn is in flight and names Summon among them, and by ADR-0008 a
+      chat turn is a reactive wake, so shipped behavior is to show one. The recommendation
+      here is to suppress it anyway: the window already carries the in-flight state, and
+      seven seconds of dots above the head reads as a buddy that has stopped living. That
+      makes it a decision to overturn rather than a preference to nod at. The ellipsis
+      stays for the wakes with no window open.</li>
+    <li>The title bar names the Instance, not the Character: <b>bmo</b> large, <code>BMO</code>
+      small beside it. Two Instances of one Character differ in name, personality and
+      behavior — never in what they know, since Memory is one record they share — and the
+      title bar is where a user tells their windows apart.</li>
+  </ul>
+
+  <p class="foot">The Harness here is a script and a timer — there was no ACP client in the
+    tree on the date above. Timings are the proposal, not the ceiling: the seven-second turn, the streaming rate
+    and the bubble's reading time are all knobs. Ported from
+    <a href="https://github.com/omesser/ai-buddy/blob/main/src/main.css">src/main.css</a>: the
+    bubble, its tail, and the ink-on-white the window borrows.</p>
 </div>
 
 <script>
@@ -768,10 +415,12 @@ const ART = {
 // fps as BMO's Character Manifest declares them.
 const FPS = { idle: 1, walk: 8, talk: 3 };
 const HOLD = { idle: 1200, walk: 1700, talk: 1500 };
-// BMO's five Behaviors, with the reference page's weights: the three ambient
-// ones carry their Manifest weights, and `report` and `greet` carry 0 because
-// the Manifest gates both on `idle under …` and this page has no idle timer.
-// `report` still plays when the Harness asks for it.
+// BMO's five Behaviors. The three ambient ones carry their Manifest weights:
+// fidget 2, walk 1, patrol 3. `report` and `greet` carry 0 rather than their
+// Manifest 3 and 4, because the Manifest gates both on `idle under …` — the
+// seconds after somebody interacted — and this page has no idle timer to gate
+// them with. Both play `talk`, so ambiently they would have BMO talking with
+// nobody having asked. `report` still plays when the Harness asks for it.
 const BEHAVIORS = [
   { name: "fidget", play: ["idle"], weight: 2 },
   { name: "walk", play: ["walk"], weight: 1 },
@@ -848,7 +497,7 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // ---- Speech. The bubble is #119's: held for reading time, and a new line
-// replaces the old one. It is the app's own surface, so no variant skins it.
+// replaces the old one.
 let bubbleTimer = null;
 function placeBubble() {
   const cx = x + W / 2;
@@ -873,24 +522,14 @@ function play(name) {
   left = 0; queue = [];
 }
 
-// ---- The chat surface. Four kinds of line, and nothing else (ADR-0010). One
-// engine for all three designs: the variants are stylesheets, so a turn in
-// flight survives a switch and can be compared mid-stream.
+// ---- The chat surface. Four kinds of line, and nothing else (ADR-0010).
 const log = document.getElementById("log");
 const composer = document.getElementById("composer");
 const say = document.getElementById("say");
 const send = document.getElementById("send");
 
-let turnStart = performance.now();
 function scroll() { log.scrollTop = log.scrollHeight; }
-// Every logged node carries the elapsed seconds of its turn. Only the terminal
-// variant draws it, out of `attr(data-t)`; the other two leave it unused.
-function add(node) {
-  node.dataset.t = ((performance.now() - turnStart) / 1000).toFixed(1);
-  log.append(node);
-  scroll();
-  return node;
-}
+function add(node) { log.append(node); scroll(); return node; }
 function el(cls, html, tag) { const d = document.createElement(tag || "div"); if (cls) d.className = cls; if (html !== undefined) d.innerHTML = html; return d; }
 
 function said(who, text, cls) {
@@ -910,17 +549,14 @@ function tool(name, arg) {
 function stream(row, text, mine) {
   const said = row.querySelector(".said");
   const caret = el("caret", "▍");
-  // Inside the line rather than after it: the row is a grid, so a caret that
-  // is a sibling of the text lands on a row of its own.
-  const chars = document.createTextNode("");
-  said.append(chars, caret);
+  said.after(caret);
   return new Promise(done => {
     let i = 0;
     const step = () => {
       // Stops where it stands if the user switched state mid-stream; the
       // caller's guard is what turns that into an abandoned turn.
       if (mine !== gen) { caret.remove(); return done(); }
-      chars.data += text.slice(i, i + 3);
+      said.textContent += text.slice(i, i + 3);
       i += 3;
       scroll();
       if (i < text.length) setTimeout(step, 18);
@@ -935,20 +571,15 @@ function stream(row, text, mine) {
 let gen = 0;
 function guard(mine) { return () => { if (mine !== gen) throw "switched"; }; }
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
-function pressed(group, id) {
-  document.querySelectorAll(group).forEach(b => b.setAttribute("aria-pressed", String(b.id === id)));
-}
 
 function reset() {
   gen++;
-  turnStart = performance.now();
   log.textContent = "";
   win.hidden = false;
   say.disabled = false;
   send.disabled = false;
   say.placeholder = "Ask bmo…";
   tHarness.textContent = "attached · idle";
-  showTab("chat");
   return gen;
 }
 
@@ -956,14 +587,15 @@ function reset() {
 async function slowTurn() {
   const mine = reset();
   const check = guard(mine);
-  pressed(".state", "s-slow");
+  document.querySelectorAll(".state").forEach(b => b.setAttribute("aria-pressed", String(b.id === "s-slow")));
 
   said("You", "What is on my screen right now? And remember that I keep the terminal on the left.", "you");
   tHarness.textContent = "session/prompt · in flight";
   await wait(700); check();
 
   // The Character's animation is ADR-0005's surveillance indicator. This page
-  // has idle, walk and talk frames only, so the looking state is a label here.
+  // has idle, walk and talk frames only, so the looking state is a label here
+  // and the prose says why that is not the real thing.
   tHarness.textContent = "describe_screen · the Character would be looking";
   tool("describe_screen", "");
   await wait(1100); check();
@@ -1036,7 +668,7 @@ function permission() {
 async function speakTurn() {
   const mine = reset();
   const check = guard(mine);
-  pressed(".state", "s-speak");
+  document.querySelectorAll(".state").forEach(b => b.setAttribute("aria-pressed", String(b.id === "s-speak")));
 
   said("You", "Did anything break in the overnight CI runs?", "you");
   tHarness.textContent = "session/prompt · in flight";
@@ -1066,7 +698,7 @@ async function speakTurn() {
 // it: ADR-0010 makes attachment opt-in and says the cost in words.
 function emptyState() {
   reset();
-  pressed(".state", "s-empty");
+  document.querySelectorAll(".state").forEach(b => b.setAttribute("aria-pressed", String(b.id === "s-empty")));
   tHarness.textContent = "none attached";
   say.disabled = true;
   send.disabled = true;
@@ -1083,37 +715,13 @@ function emptyState() {
   attach.type = "button";
   attach.className = "attach";
   attach.textContent = "Attach a Harness…";
-  attach.addEventListener("click", () => { slowTurn().catch(() => {}); });
+  attach.addEventListener("click", slowTurn);
   box.append(attach);
   add(box);
   log.scrollTop = 0;
 }
 
-// ---- The two tabs. The conversation keeps streaming behind the prompt pane:
-// switching tabs is not leaving the turn.
-const paneChat = document.getElementById("pane-chat");
-const panePrompt = document.getElementById("pane-prompt");
-function showTab(which) {
-  paneChat.hidden = which !== "chat";
-  panePrompt.hidden = which === "chat";
-  document.getElementById("tab-chat").setAttribute("aria-selected", String(which === "chat"));
-  document.getElementById("tab-prompt").setAttribute("aria-selected", String(which !== "chat"));
-  if (which === "chat") scroll();
-}
-document.getElementById("tab-chat").addEventListener("click", () => showTab("chat"));
-document.getElementById("tab-prompt").addEventListener("click", () => showTab("prompt"));
-
-// ---- Controls. The design switch is a class on the stage and nothing else, so
-// nothing about the conversation restarts when it changes.
-document.querySelectorAll(".bar .v").forEach(b => b.addEventListener("click", () => {
-  desk.classList.remove("v-min", "v-term", "v-glass");
-  desk.classList.add(b.id);
-  pressed(".bar .v", b.id);
-}));
-document.querySelectorAll(".bar .bd").forEach(b => b.addEventListener("click", () => {
-  desk.dataset.bd = b.id === "bd-busy" ? "busy" : "plain";
-  pressed(".bar .bd", b.id);
-}));
+// ---- Controls.
 document.getElementById("s-slow").addEventListener("click", () => { slowTurn().catch(() => {}); });
 document.getElementById("s-speak").addEventListener("click", () => { speakTurn().catch(() => {}); });
 document.getElementById("s-empty").addEventListener("click", emptyState);
@@ -1141,21 +749,13 @@ composer.addEventListener("submit", async e => {
     play("report");
     await wait(400); check();
     const row = said("bmo", "", "them");
-    await stream(row, "The fake Harness on this page answers every typed turn the same way — it is a timer, not an agent. What is up for review is which of the three designs the window should be in, not the line.", mine);
+    await stream(row, "The fake Harness on this page answers every typed turn the same way — it is a timer, not an agent. What is up for review is the shape of the window around this line, not the line.", mine);
     check();
     tHarness.textContent = "attached · idle";
   } catch (_) { /* switched states mid-turn */ }
 });
 
 slowTurn().catch(() => {});
-
-// A review link can name what to open: ?v=v-glass&bd=busy&tab=prompt. After
-// the opening turn, because starting one resets the surface to its
-// conversation tab the way every state switch does.
-const q = new URLSearchParams(location.search);
-if (["v-min", "v-term", "v-glass"].includes(q.get("v"))) document.getElementById(q.get("v")).click();
-if (q.get("bd") === "busy") document.getElementById("bd-busy").click();
-if (q.get("tab") === "prompt") document.getElementById("tab-prompt").click();
 </script>
 </body>
 </html>
