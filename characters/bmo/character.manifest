@@ -1,14 +1,23 @@
-# BMO from the shimejishop free pack, drawn art rather than pixel art: soft
-# lines, anti-aliased edges, and the render_mode ADR-0006 reserved for
-# exactly this. Every frame is cut from the pack's 46 and flipped to head
-# right — the Engine's facing mirrors it back for leftward travel. At scale 1
-# the sprite stands its authored size, which is the size a shimeji stands.
-# The frames are static art; scripts/make-shipped-characters.py draws Nim
-# only.
+# Drawn art rather than pixel art: soft lines, anti-aliased edges, and the
+# render_mode ADR-0006 reserved for exactly this. Every frame is cut from the
+# pack's 46 and flipped to head right — the Engine's facing mirrors it back for
+# leftward travel. At scale 1 the sprite stands its authored size, which is the
+# size a shimeji stands. The frames are static art;
+# scripts/make-shipped-characters.py draws Nim only.
 
 name = "BMO"
 render_mode = "smooth"
 scale = 1
+
+[source]
+art = """
+BMO from Adventure Time, cut from the free BMO shimeji pack on shimejishop, \
+with a one-pixel breathing shift added for sleep."""
+url = "https://shimejishop.com/free/bmo-shimeji/"
+license = """
+None declared. BMO is Cartoon Network IP and the pack is fan art, so the \
+character is a development asset and none of this repository's license claims \
+cover the art."""
 
 # Proactive model calls: BMO offers to help before being asked, so the wait
 # does not grow. One and one keeps every two minutes.

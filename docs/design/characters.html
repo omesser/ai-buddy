@@ -81,27 +81,32 @@
                font-size: .95em; }
   .short { color: var(--warn); }
 
-  /* The manifest's own leading comment, verbatim. Most packages cite a
-     third-party art source there, and three say this repository's license
-     does not cover the art; this page is a public, indexed URL, so it repeats
-     what the manifest says rather than paraphrasing a caveat into a weaker
-     one. */
-  pre.provenance {
+  /* The package's own [source] declaration. Most packages cite third-party
+     art, and six say this repository's license does not cover it; this page
+     is a public, indexed URL, so it prints what the manifest declares rather
+     than paraphrasing a caveat into a weaker one. */
+  .source {
     margin: .7rem 0 0;
     padding: .7rem .85rem;
+    max-width: 44rem;
     background: var(--card);
     border: 1px solid var(--line);
     border-left: 3px solid var(--ink-3);
     border-radius: 7px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: .78rem;
-    line-height: 1.5;
+    font-size: .82rem;
+    line-height: 1.55;
     color: var(--ink-2);
-    white-space: pre-wrap;
     overflow-wrap: break-word;
   }
-  pre.provenance b { display: block; color: var(--ink-3); font-weight: 500;
-                     margin-bottom: .4rem; }
+  .source b { display: block; color: var(--ink-3); font-weight: 500;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+              font-size: .95em; margin-bottom: .4rem; }
+  .source p { margin: 0 0 .35rem; }
+  .source p:last-child { margin-bottom: 0; }
+  .source a { color: var(--accent); }
+  /* The license line is the one a reader must not skim past. */
+  .source .license { color: var(--ink); }
+  .source .license em { font-style: normal; color: var(--ink-3); }
 
   .strip { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1rem; }
   .tile { background: var(--card); border: 1px solid var(--line);
@@ -195,11 +200,25 @@
       meta.append(count);
       section.append(meta);
 
-      if (character.provenance) {
-        const pre = el("pre", "provenance");
-        pre.append(el("b", null, "characters/" + character.dir + "/character.manifest"));
-        pre.append(document.createTextNode(character.provenance));
-        section.append(pre);
+      // Declared, never inferred: a package that says nothing gets no panel,
+      // which is not the same as a page claiming the art is this project's.
+      if (character.source) {
+        const box = el("div", "source");
+        box.append(el("b", null, "characters/" + character.dir + "/character.manifest"));
+        box.append(el("p", null, character.source.art));
+        if (character.source.url) {
+          const cite = el("p");
+          const link = el("a", null, character.source.url);
+          link.href = character.source.url;
+          link.rel = "noopener nofollow";
+          cite.append(link);
+          box.append(cite);
+        }
+        const license = el("p", "license");
+        license.append(el("em", null, "License: "));
+        license.append(document.createTextNode(character.source.license));
+        box.append(license);
+        section.append(box);
       }
 
       const strip = el("div", "strip");

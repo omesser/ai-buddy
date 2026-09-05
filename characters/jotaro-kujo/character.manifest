@@ -1,6 +1,3 @@
-# Jotaro Kujo imported from petscodex (petdex) by scripts/import-pet.py.
-# Source pet id: jotaro-kujo — https://petscodex.com/pets/jotaro-kujo
-# Source description: A chibi Jotaro Kujo-style Codex pet.
 # Hand-tuned after import based on actual spritesheet art (petscodex labels
 # do not match this pet's frames). Spritesheet: 8x9 grid of 192x208 cells.
 # Final mapping: idle+waiting<-row 0[0,1] at fps=2 (blink, destrobed from 6),
@@ -9,16 +6,24 @@
 # down, 2 frames), land<-row 6[0,1] (crouch), talk<-row 8 (gestures, 6),
 # react<-row 5 (Stand aura, 8), fall/hold<-row 4 (run/lunge).
 # All frames: 1px silhouette erode + re-ground to remove green chroma halo.
-# License: none declared anywhere in the source ecosystem;
-# accepted at import with --accept-license. A development asset
-# unless a license surfaces — this repository's license claims
-# do not cover the art.
 
 name = "Jotaro Kujo"
 render_mode = "smooth"
 scale = 1
 
+[source]
+art = """
+A chibi Jotaro Kujo pet, cut from the petscodex pet `jotaro-kujo` by \
+scripts/import-pet.py."""
+url = "https://petscodex.com/pets/jotaro-kujo"
+license = """
+None declared anywhere in the source ecosystem; accepted at import with \
+--accept-license. Jotaro Kujo is Shueisha / Hirohiko Araki IP and the pack is \
+fan art, so the character is a development asset unless a license surfaces — \
+this repository's license claims do not cover the art."""
+
 # Cursor reactions: cool and unfazed, doesn't react to proximity but faces challenges.
+
 [cursor]
 near_reaction = "indifferent"
 rush_reaction = "face"

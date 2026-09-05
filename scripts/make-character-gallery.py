@@ -8,8 +8,8 @@ Reads every Character Manifest, copies the frames the manifests name into
 `<out>/characters/`, and writes `<out>/characters.html` — the page shell in
 docs/design/characters.html with its data block substituted. A Generated page
 under ADR-0011: the manifests are the source of the frame count, fps, loop,
-render_mode and scale the page shows, so a page that disagrees with a package
-cannot be deployed.
+render_mode, scale and attribution the page shows, so a page that disagrees
+with a package cannot be deployed.
 
 Pure standard library. tomllib reads the manifests and the frames are copied
 byte for byte, so nothing here needs Pillow or a TOML dependency installed.
@@ -87,22 +87,42 @@ def from_rust(source):
 # --------------------------------------------------------------------------
 
 
-def provenance(text):
-    """The manifest's leading comment block, verbatim.
+def source(package, declared):
+    """What the package declares in `[source]`, or None.
 
-    Most packages cite a third-party art source in that comment, and three
-    say this repository's license does not cover the art. The gallery is a
-    public, indexed URL, so it repeats what the manifest says instead of a
-    summary of it — a paraphrase is how a license caveat quietly becomes a
-    weaker one. A package whose manifest opens with no comment gets no block,
-    rather than a line asserting the art is ours.
+    Read, not scraped. The leading comment block this replaced carried both
+    the attribution and the art-production notes beside it — row mappings,
+    remat logs — and the page published all of it; trimming to the first
+    paragraph instead would have dropped `cat`'s license caveat, which sits
+    below its mapping with no blank line above. Only a declared key can
+    publish the license sentence and nothing else.
+
+    A package that declares nothing gets nothing. Silence is the honest
+    rendering; a line asserting the art is this repository's would not be.
     """
-    lines = []
-    for line in text.splitlines():
-        if not line.startswith("#"):
-            break
-        lines.append(line[1:].removeprefix(" "))
-    return "\n".join(lines).strip()
+    block = declared.get("source")
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise Malformed(f"{package.name}: [source] is not a table")
+
+    said = {}
+    for key in ("art", "license"):
+        value = block.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise Malformed(f"{package.name}: [source] declares no {key}")
+        said[key] = value.strip()
+
+    # The page writes this into an href, so the scheme is checked here for the
+    # same reason frame paths are: a manifest is data, and this script is what
+    # stands between it and a public URL.
+    url = block.get("url")
+    if url is not None:
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+            raise Malformed(f"{package.name}: [source] url {url!r} is not an http or https address")
+        said["url"] = url
+
+    return said
 
 
 def frame(package, declared, art_root):
@@ -167,7 +187,7 @@ def character(package, required, defaults, art_root):
         "name": declared.get("name") or package.name,
         "smooth": declared.get("render_mode") == "smooth",
         "scale": declared.get("scale", defaults["scale"]),
-        "provenance": provenance(text),
+        "source": source(package, declared),
         "animations": strip,
     }
 
@@ -255,6 +275,13 @@ def self_check():
         )
         assert raises(escape, out), "a frame path leaving the package built a page anyway"
 
+        # The page publishes this at an indexed URL, so a package that names
+        # its art source and says nothing about the license stops the build
+        # rather than reaching the page with the caveat missing.
+        quiet = scratch / "quiet"
+        package(quiet / "hushed", f'name = "Hushed"\n[source]\nart = "From a pack"\n{body}\n')
+        assert raises(quiet, out), "a [source] declaring no license built a page anyway"
+
         short = scratch / "short"
         names = [n for n in required if n != "walk"]
         package(
@@ -267,9 +294,10 @@ def self_check():
         walk = next(a for a in data["characters"][0]["animations"] if a["name"] == "walk")
         assert walk.get("missing"), "an undeclared Animation did not reach the page as missing"
         assert len(data["characters"][0]["animations"]) == len(required), "the strip lost a slot"
+        assert data["characters"][0]["source"] is None, "a package declaring no source got one"
 
     print(f"self-check: {len(required)} Required Animations, "
-          f"defaults fps={defaults['fps']} scale={defaults['scale']}, 4 checks passed")
+          f"defaults fps={defaults['fps']} scale={defaults['scale']}, 6 checks passed")
 
 
 def main():

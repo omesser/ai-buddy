@@ -27,13 +27,19 @@
 //! without the Character gaining a jump.
 //!
 //! The Character Manifest is TOML (ADR-0015): a name, a table per Animation,
-//! a table per Behavior, and an optional `[director]` for how proactive model
-//! calls space themselves. TOML replaces only the container — the `when`
+//! a table per Behavior, an optional `[source]` saying where the art came
+//! from, and an optional `[director]` for how proactive model calls space
+//! themselves. TOML replaces only the container — the `when`
 //! condition is still this module's own small language, checked here. It stays
 //! internal and undocumented until v2, so this is the whole of it:
 //!
 //! ```text
 //! name = "Blip"
+//!
+//! [source]
+//! art = "Blip, cut from the Blipworks shimeji pack"
+//! url = "https://example.invalid/blip"
+//! license = "CC BY 4.0"
 //!
 //! [animations.idle]
 //! frames = ["idle-0.png", "idle-1.png"]
@@ -342,6 +348,28 @@ pub struct Character {
     pub near_reaction: CursorReaction,
     /// How the Character reacts to a cursor rushing at it (#152).
     pub rush_reaction: CursorReaction,
+    /// Where the art came from, when the package says. `None` is silence, not
+    /// a claim: a package that declares no `[source]` gets no attribution
+    /// printed for it rather than one implying the art is this repository's.
+    pub source: Option<Source>,
+}
+
+/// Where a Character's art came from, as the package declares it (#289).
+///
+/// Prose and not an identifier, because the interesting cases are not
+/// identifiers: `timber-wolf` is CC BY 4.0 art of BattleTech IP, and `cat` has
+/// no license at all and needs to say so. `license` is required whenever
+/// `[source]` is present so that "none is declared" has to be written down —
+/// a gallery publishing this at a public URL can lose that sentence by
+/// omission, and no shape but a required field stops an author omitting it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Source {
+    /// What the art is and where it came from.
+    pub art: String,
+    /// Where it came from, when there is an address to cite.
+    pub url: Option<String>,
+    /// The license, or the sentence saying none is declared.
+    pub license: String,
 }
 
 /// How a Character reacts to the cursor entering its Near radius or rushing at it (#152).
@@ -530,6 +558,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             model_power: declared.model_power.unwrap_or(DEFAULT_MODEL_POWER),
             near_reaction: declared.near_reaction.unwrap_or_default(),
             rush_reaction: declared.rush_reaction.unwrap_or_default(),
+            source: declared.source,
         }),
         _ => Err(errors),
     }
@@ -1213,6 +1242,86 @@ mod tests {
             vec!["the package declares no name".to_string()],
             "the author is told what is absent, not merely the word \"name\""
         );
+    }
+
+    #[test]
+    fn a_declared_source_is_carried_whole() {
+        let manifest = format!(
+            "{}[source]\nart = \"Blip, cut from the Blipworks pack\"\n\
+             url = \"https://example.invalid/blip\"\nlicense = \"CC BY 4.0\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("a declared source loads");
+
+        assert_eq!(
+            character.source,
+            Some(Source {
+                art: "Blip, cut from the Blipworks pack".to_string(),
+                url: Some("https://example.invalid/blip".to_string()),
+                license: "CC BY 4.0".to_string(),
+            })
+        );
+    }
+
+    /// Silence and a claim are different things, and a package that says
+    /// nothing must not be published as if the art were this repository's.
+    #[test]
+    fn a_package_that_declares_no_source_carries_none() {
+        let character =
+            load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("a source is optional");
+
+        assert_eq!(character.source, None);
+    }
+
+    /// The failure this key exists to prevent: `cat` and `jotaro-kujo` have no
+    /// license to name, and the sentence saying so is the one thing a public
+    /// page cannot afford to drop. An author can only be made to write it by
+    /// the key being required.
+    #[test]
+    fn a_source_that_names_no_license_is_rejected() {
+        let manifest = format!(
+            "{}[source]\nart = \"Blip, cut from the Blipworks pack\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_names(&errors, "[source] declares no license");
+    }
+
+    #[test]
+    fn a_source_that_says_nothing_about_the_art_is_rejected() {
+        let manifest = format!(
+            "{}[source]\nlicense = \"CC BY 4.0\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_names(&errors, "[source] declares no art");
+    }
+
+    /// The url reaches a public page as an href, so a scheme that runs is
+    /// refused where the manifest is read rather than where it is rendered.
+    #[test]
+    fn a_source_url_that_is_not_a_web_address_is_rejected() {
+        let manifest = format!(
+            "{}[source]\nart = \"Blip\"\nurl = \"javascript:alert(1)\"\n\
+             license = \"CC BY 4.0\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_names(&errors, "\"source.url\"");
+    }
+
+    #[test]
+    fn an_unknown_source_declaration_is_rejected() {
+        let manifest = format!(
+            "{}[source]\nart = \"Blip\"\nlicense = \"CC BY 4.0\"\nauthor = \"Nobody\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let errors = errors(load_manifest(&manifest));
+
+        assert_names(&errors, "unknown declaration source.\"author\"");
     }
 
     #[test]
