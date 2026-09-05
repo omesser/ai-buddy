@@ -9,11 +9,8 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::memory::MemoryManifest;
-use crate::tools::{self};
+use crate::tools::{self, DenyList, ExpressionHandle, InstanceInfo};
 use crate::window_source::WindowSource;
-
-// Re-exports for MCP/Shell compatibility
-pub use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DispatchError {
