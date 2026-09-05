@@ -286,6 +286,19 @@ Eight characters ship: **Buddy Bot** (default), BMO, Nim, Black Mage, Cat, Jotar
 
 A Character Package is a directory or `.zip` archive holding a `character.manifest`, a `personality.txt`, and the frames its manifest names. The format is first-class but undocumented until v2.
 
+#### Declaring where the art came from
+
+`[source]` is the one part of the manifest documented before v2, because the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html) publishes it. A package that omits it appears there with no attribution at all.
+
+```toml
+[source]
+art     = "What the Character is, and where its frames came from."
+url     = "https://example.com/the-pack"   # optional, http or https only
+license = "The license the art carries, or that none is declared."
+```
+
+Whenever `[source]` is present, `license` is required. "None is declared" is a valid answer, and the common one for fan art. Omitting the key is not, because a reader cannot tell an unlicensed pack from an unfinished manifest. The loader accepts a package with no `[source]` at all, but `every_shipped_package_declares_where_its_art_came_from` stops one shipping from this repository.
+
 #### Writing a personality
 
 `personality.txt` is plain prose the loader never interprets, up to 2000 characters. A register alone is not enough: a model given only temperament converges on the same three assistant-flavored lines. A good one contains three things, unlabeled (#156):
@@ -305,7 +318,7 @@ Leave these out of a personality file. `character_prompt` in `crates/core/src/di
 - React to the moment — what just happened, and what the sprite stands on — when there is something worth remarking on.
 - Dialogue is demeanour, never capability: no promising actions on the machine, no claiming abilities.
 
-The package format (manifest structure, animation declarations, Behavior composition) stays internal and undocumented until v2.
+The rest of the package format — manifest structure, animation declarations, Behavior composition — stays internal and undocumented until v2.
 
 ### Running Multiple Instances
 
