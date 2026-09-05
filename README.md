@@ -1,121 +1,60 @@
 # ai-buddy
 
-A desktop companion in the spirit of Windows 95-era desktop mascots: an animated
-sprite that lives on your screen, reacts to the windows around it, and can be
-asked to do real work on your machine.
+A desktop companion in the spirit of Windows 95-era desktop mascots. An animated sprite lives on your screen, reacts to windows around it, and can be asked to do real work on your machine.
 
-Vocabulary is defined in [CONTEXT.md](./CONTEXT.md), the design in
-[DESIGN.md](./DESIGN.md), the v1 scope in [docs/SPEC.md](./docs/SPEC.md), and the
-decisions that carry lock-in in [docs/adr/](./docs/adr/).
+<p align="center">
+  <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
+</p>
 
-## State
+[![CI](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml/badge.svg)](https://github.com/omesser/ai-buddy/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-Early. Work is tracked as [GitHub issues](https://github.com/omesser/ai-buddy/issues).
+![Buddy Bot idle animation](./docs/readme/buddy-bot-idle.gif)
 
-Feature comparison versus six software desktop pet alternatives is in
-[docs/research/alternatives.md](./docs/research/alternatives.md).
+## What It Does
 
-The overlay is up and the frame loop runs the Engine, so the sprite falls, lands
-on the top edge of whatever window is under it, rides that edge when the window
-is dragged slowly, and drops when the window is yanked or closed, and it stands
-on the Dock rather than behind it. It can be clicked,
-picked up, dragged and thrown. It knows when to get out of the way: it fades out
-while a fullscreen application has the screen, goes away at once on
-Control-Option-Command-B and comes back the same way, and never appears in a
-screen share or a screen recording at all. It is a real Character Package on
-disk, and its Animations play at the speeds its Character Manifest declares.
-Startup stops if no package loads, because a companion with no Character has
-nothing to be. A Director proposes Behaviors: Static weights with nothing
-configured, or an HTTP stand-in if you set a key (see [Running it](#running-it)).
-A Harness will replace that stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)).
-There is no chat surface yet: double-clicking is a Summon, the sprite reacts to
-it, and nothing else answers (#17). Right-clicking the sprite and the tray /
-menu bar icon open the same menu: Character, Instances, Director, Do Not
-Disturb, Go away, Memory, Settings, Quit.
+- **Perches on windows.** Falls, lands on window edges, rides them when dragged slowly, drops when yanked or closed.
+- **Reacts to you.** Click to poke, drag to pick up, fling to throw. It arcs, lands, and keeps going.
+- **Character-driven AI.** Behaviors and short dialogue follow the Character's personality — Static weights with no key, or a Director Completer when you configure one.
+- **Stays out of your way.** Fades when you go fullscreen, hides instantly on Control-Option-Command-B, never appears in screen captures or shares.
+- **Lives its own life.** Walks, idles, sits, sleeps — even with the Director off.
 
-The Engine drives all nine required Animations. `idle`, `fall`, `sit`, `sleep`
-and `walk` each answer a State, `fall` covering being dragged as well; `land`
-plays when a fall ends, `hold` when a Perch is ridden, and `react` answers a
-Poke. Eight of the nine are also Primitives a Character can compose into a
-Behavior — all but `fall`, which is what losing your footing looks like rather
-than something a Behavior can ask for. A Behavior plays its Primitives in order and the Behaviors it chains into,
-and is refused or abandoned when the State the sprite is in does not permit it.
-`talk` plays when a proposal names a Behavior that includes it.
+## See It
 
-## Platform support
+**Try the interactive demos:**
+- [Buddy Cues](https://omesser.github.io/ai-buddy/cues.html) — Gestures and physics on a draggable sprite
+- [Chat Mockups](https://omesser.github.io/ai-buddy/chat-mockups.html) — Three chat surface designs (chat not shipped yet — [#17](https://github.com/omesser/ai-buddy/issues/17))
 
-What ships where, read from the platform seam rather than from intent.
-Releases cover macOS, Linux, and Windows; the Windows column is still thin in
-places (`stub` / `degraded`), and those cells are what the code does today.
+## Interact
 
-| Capability | macOS | Linux | Windows |
-|---|---|---|---|
-| Overlay that never takes focus | yes | yes † | degraded |
-| Click-through off the sprite | yes | yes † | yes |
-| Grab, Throw and Poke | yes | yes † | degraded |
-| Perch on window edges | yes | yes † | degraded |
-| Dock or panel as a Perch | yes | degraded | degraded |
-| Fade out for a fullscreen app | yes | yes † | degraded |
-| Frontmost app and idle sensing | yes | yes † | stub |
-| Never captured in a screen share | yes | degraded | stub |
-| Native settings window | yes | yes | stub |
-| Tray or menu bar icon | yes | yes † | yes |
-| Open Memory in an editor | yes | yes | yes |
+![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
 
-- `yes` — implemented.
-- `degraded` — runs in reduced form, because nothing on the platform provides
-  the rest. A supported mode, not an error.
-- `stub` — the arm compiles and does nothing. Windows only.
-- `†` — needs an X server, which a Wayland session usually supplies through
-  XWayland. Degraded only where none answers, and then for one of three reasons.
+- **Poke:** Click once. It plays its `react` animation, then goes back to what it was doing.
+- **Pick up:** Click and drag. It follows your cursor.
+- **Throw:** Drag and release while moving. It leaves your hand on an arc and lands.
+- **Perch:** Let it settle on a window's top edge. Drag that window slowly and it rides along. Fling the window and it drops.
+- **Hide hotkey:** Control-Option-Command-B. Instant. Press again to bring it back.
+- **Fullscreen:** The sprite fades out when any application goes fullscreen, fades back in when you exit.
 
-Linux is one column because it is one build. There is a single non-macOS arm
-behind `cfg(all(unix, not(target_os = "macos")))`, and it picks its lane at
-runtime on whether an X server answers — an X11 path where one does, including
-through the XWayland a GNOME or KDE session runs, and a fallback that declares
-the capability absent where none does. X11 and Wayland are display servers a
-Linux user is already running one of, not platforms to port to.
+## Characters
 
-Where no X server answers, a daggered row is degraded for one of three reasons.
-No compositor reports other windows' geometry or the pointer outside a client's
-own surface, and no protocol is coming for either. Frontmost and idle have no
-portable interface: idle is `ext-idle-notify-v1` on KWin, wlroots and COSMIC
-and the D-Bus `org.gnome.Mutter.IdleMonitor` on GNOME. Per-pixel click-through
-is core Wayland, `wl_surface.set_input_region`; tao hands us the `wl_surface`
-and `x11/overlay.rs` matches only X11 handles, so that row is ours to wire.
-Whichever a row costs, the sprite keeps its window, its art and its menu. A
-Wayland session usually pays none of it, because XWayland answers and the X11
-lane is taken; what it does cost there is a window list without the native
-Wayland clients, so those windows are not Perches.
+Buddy Bot ships as the default. Each character moves and behaves differently.
 
-What the cells leave out:
+| Character | Style | Notes |
+|---|---|---|
+| ![Buddy Bot](./docs/readme/buddy-bot-idle.gif) **Buddy Bot** | Logo mascot, smooth render | Helpful, curious, treats the desk like a shared workspace. Greets, strolls, settles into nap. |
+| ![Nim](./docs/readme/nim-idle.gif) **Nim** | Modern pixel art | Pixel grid, translucent shadow. Twice the frames, so motion eases. Sits and sleeps. |
+| ![Black Mage](./docs/readme/black-mage-idle.gif) **Black Mage** | 8-bit Theater fan art | Pixel art at 3x scale. Stands, never settles. |
 
-- **Overlay that never takes focus** — every platform gets the same floating,
-  transparent, off-the-taskbar window from Tauri. Only macOS adds a
-  non-activating panel and X11 the EWMH states, and a Wayland compositor need
-  not honour even the placement.
-- **Click-through off the sprite** — X11 carves it per-pixel from the sprite's
-  alpha; macOS and Windows toggle Tauri's whole-window flag, the same answer at
-  coarser grain. Wayland would carve it the same way, from the same rectangles,
-  once `x11/overlay.rs` takes the `wl_surface` tao already hands it.
-- **Grab, Throw and Poke** — with no global pointer only the clicks the webview
-  witnesses count, so a Grab that outruns the art is lost.
-- **Perch on window edges**, **Fade out for a fullscreen app** — both need a
-  window list. Without one the world is screen edges alone.
-- **Dock or panel as a Perch** — only macOS reads the Dock's true bounds.
-  Elsewhere the sprite keeps out of the reserved strip and cannot ride it.
-- **Never captured in a screen share** — no platform but macOS lets a window
-  declare that it must never be captured.
-- **Tray or menu bar icon** — the expected door to Settings, Character, Memory,
-  and Quit. The Linux package requires the appindicator library, and the panel
-  must run a StatusNotifier host no package can require. See [Linux](#linux).
+Character Packages bundle identity, art, personality, and tuning. Buddy Bot is the default; seven more ship in-repo (BMO, Cat, Jotaro Kujo, Timber Wolf, Trump). The format is first-class but undocumented until v2.
 
-## Install
+## Run From Source
 
-Download a build from
-[GitHub Releases](https://github.com/omesser/ai-buddy/releases).
+macOS is the first implementation. Linux is supported with a degraded Spatial Layer under Wayland (no window geometry). Windows ships an NSIS installer; the Spatial Layer is still thin (stub/degraded cells in the platform table below), but packaging is real.
 
-Or clone and run from the repo root (macOS, Linux, Windows):
+Download builds: [GitHub Releases](https://github.com/omesser/ai-buddy/releases) — DMG (macOS), AppImage + deb (Linux), NSIS installer (Windows).
+
+Or clone and run:
 
 ```sh
 git clone https://github.com/omesser/ai-buddy.git
@@ -123,116 +62,25 @@ cd ai-buddy
 cargo run -p ai-buddy
 ```
 
-Linux packages, toolchains, and hooks are under
-[Development](#development).
-
-### macOS
-
-Apple Silicon. The Release ships a `.dmg`. Open it and copy `ai-buddy`
-to Applications.
-
-The build is ad-hoc signed, not notarized, so Gatekeeper will warn on
-the first open. Double-click the app, dismiss the dialog, then System
-Settings → Privacy & Security → Open Anyway. Note the button is
-time-limited after the blocked launch. Developer ID and notarization are
-a follow-up.
-
-### Linux
-
-The Release ships an AppImage and a `.deb` (x86_64).
-
-Under Wayland the sprite keeps to screen edges and loses window Perches,
-which is a supported mode rather than an error. X11 gets both.
-[Platform support](#platform-support) lists everything the session type
-decides.
-
-The tray icon is required, not a preference: it is how you reach Settings,
-Character, Memory, and Quit without hunting the sprite. The `.deb` therefore
-depends on `libayatana-appindicator3-1`, and `apt` pulls it in with the
-package. The older `libappindicator3-1` is not an accepted alternative;
-`Depends` names the `libayatana` one alone. The AppImage carries its own
-copy, so it needs no appindicator package.
-
-Displaying that icon is a second requirement, and no package can declare it:
-the panel must run a StatusNotifier host, which the desktop environment
-provides rather than `apt`. GNOME Shell, KDE Plasma, and XFCE's Status Tray
-plugin are hosts. A dock such as Plank is not one, and neither is a Wayland
-compositor with no tray protocol — the tray installs and no icon appears.
-Where no host answers, the sprite's right-click menu opens the same menu.
-
-Cue audio is Web Audio in WebKitGTK, which plays through GStreamer. The `.deb`
-does not name a GStreamer package of its own: `libwebkit2gtk-4.1-0` already
-Depends on `gstreamer1.0-plugins-base` and `gstreamer1.0-plugins-good` (the
-latter ships `pulsesink`). That is enough on a session with PipeWire-pulse or
-PulseAudio. An ALSA-only machine also wants `gstreamer1.0-alsa`, which WebKit
-only Suggests. A machine with no sound device stays silent and still draws the
-visual cue.
-
-The AppImage copies `libgstreamer` with WebKit and does **not** ship the plugin
-pack (`bundleMediaFramework` stays off, or the image grows by tens of
-megabytes). Cue audio then needs the host's `gstreamer1.0-plugins-good` (and
-`gstreamer1.0-alsa` on a box with no Pulse/PipeWire) plus a running sink. If
-those are installed and the AppImage is still mute, GStreamer is looking inside
-the image for plugins that are not there.
+**Switch characters:**
 
 ```sh
-# Debian/Ubuntu .deb
-sudo apt install ./ai-buddy_*.deb
-# or: AppImage (needs libfuse2 on Ubuntu 22.04, libfuse2t64 on 24.04+)
-# sudo apt install libfuse2    # or libfuse2t64
-# chmod +x ai-buddy_*.AppImage && ./ai-buddy_*.AppImage
+cd src-tauri && AI_BUDDY_CHARACTER=buddy-bot cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
+cd src-tauri && AI_BUDDY_CHARACTER=black-mage cargo run
 ```
 
-### Windows
+## Director (Optional)
 
-The Release ships an NSIS installer (x86_64). Run it and follow the prompts.
+With no Director key the sprite still has a life: Static weights pick among the Character's declared Behaviors. A key turns on the HTTP stand-in ([ADR-0008](./docs/adr/0008-one-harness-session.md)).
 
-SmartScreen may warn on the first open because the build is not Authenticode
-signed. Choose More info → Run anyway. Code signing is a follow-up.
+OpenAI, Anthropic, and Ollama use `/v1/chat/completions`. [xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses `/v1/responses`.
 
-Some Windows platform cells are still `stub` or `degraded` — see
-[Platform support](#platform-support). The installer and the shell binary are
-real; those cells are about overlay and sensing depth, not the package.
-
-## Running it
-
-Download a build from [Install](#install) or build from a checkout as in
-[Development](#development).
-
-### Linux
-
-Tray and Wayland notes are under [Install](#install).
-
-For development, install `libayatana-appindicator3-dev`:
-
-```sh
-# Debian/Ubuntu
-sudo apt install libayatana-appindicator3-dev
-```
-
-The Director API key is stored via the OS secret store: Secret Service (GNOME
-Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building
-the shell requires `libdbus-1-dev` as a link dependency. No packaged secret
-store is required: keyutils is always available, and Secret Service is present
-when the desktop environment provides it.
-
-No bundler: the front end is static files under `src/`, which Tauri embeds at
-build time.
-
-With no Director key the sprite still has a life: Static weights pick among
-the Character's declared Behaviors. A key turns on the HTTP stand-in
-([ADR-0008](./docs/adr/0008-one-harness-session.md) — disposable until a
-Harness attaches).
-
-OpenAI, Anthropic's compatibility layer, and Ollama use `/v1/chat/completions`.
-[xAI](https://docs.x.ai/developers/model-capabilities/text/comparison) uses
-`/v1/responses`; `AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai` selects that
-path. An explicit full URL (ending in `/chat/completions` or `/responses`)
-is used as-is.
-
-Cursor's `CURSOR_API_KEY` is for the Cloud Agents API and SDKs, not a
-Completer. `https://api.cursor.com` has no `/v1/chat/completions`; a POST
-there is a 404 and Static takes over.
+| Variable | What it does |
+|---|---|
+| `AI_BUDDY_DIRECTOR_API_KEY` | Required for remote providers. Optional for local servers. |
+| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
+| `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
 
 ```sh
 # OpenAI
@@ -242,895 +90,56 @@ AI_BUDDY_DIRECTOR_BASE_URL=https://api.openai.com \
 AI_BUDDY_DIRECTOR_MODEL=gpt-4o-mini \
 cargo run
 
-# Anthropic (OpenAI-compatible /v1/chat/completions)
-cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY="$ANTHROPIC_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.anthropic.com \
-AI_BUDDY_DIRECTOR_MODEL=claude-haiku-4-5 \
-cargo run
-
-# xAI — get a key at https://console.x.ai
-cd src-tauri
-AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
-AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
-cargo run
-
-# Ollama — a local server, so no key at all
+# Ollama (local, no key)
 cd src-tauri
 AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
 AI_BUDDY_DIRECTOR_MODEL=gemma4 \
 cargo run
 ```
 
-Every variable that names a switch reads the same words: `1`, `on`, `true` or
-`yes` for on, `0`, `off`, `false` or `no` for off, in any case. Any other value
-is a typo rather than a choice — the switch stays as Settings has it, and the
-launch prints a line naming the variable it ignored. An empty value is an
-expansion that produced nothing, and is quietly no override at all.
-
-| Variable | What it does |
-|---|---|
-| `AI_BUDDY_DIRECTOR_API_KEY` | Required for a remote provider. Optional for a [local](#a-local-model-server) server (unset when the server has no auth; set when it requires one). Empty or unset for a remote URL means Static only. |
-| `AI_BUDDY_DIRECTOR_BASE_URL` | Provider origin. Default `https://api.openai.com`. |
-| `AI_BUDDY_DIRECTOR_MODEL` | Model name. Default `gpt-4o-mini`. |
-| `AI_BUDDY_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
-| `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
-| `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
-| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
-
-Settings → Director persists base URL and model, and stores the API key in
-the OS secret store (Keychain on macOS); Settings → Development persists the
-Completer timeout and reply cap. Editing any of the five retargets the running
-Director: the next wake reaches the new host, and the session in flight is
-dropped rather than answered against the old one — a streaming call closes its
-connection, so the old host stops generating too. No restart.
-
-`cargo run` with those env vars unset uses the saved Completer. The env vars
-remain a one-process override, and the window says so: a field one of them
-owns shows that value, names the variable, and takes no edit, because the
-Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps
-the Keychain out of the launch entirely — the env has already decided the key,
-so nothing reads the store.
-
-On macOS a saved key is guarded by an access control list naming the build that
-wrote it, and an ad-hoc signature names it by a hash that every `cargo build`
-changes — so a rebuilt app is a stranger to its own key and the launch costs
-two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the
-list can name instead, and its header carries the whole argument. From the
-repository root:
-
-```sh
-cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
-```
-
-A key saved before the first signed run keeps the old list — clear it in
-Settings and save it once more. Signing also changes the identity macOS grants
-Accessibility and Screen Recording to, so expect to grant those again, once.
-Released builds are ad-hoc signed too, so an update prompts the same way until
-there is a Developer ID to sign with (#283).
-
-Settings → What the buddy can see is how you grant Accessibility and Screen
-Recording. The pane names the row macOS will show: a `cargo run` from Cursor
-is listed as Cursor, a packaged build as ai-buddy. Check the box, then turn
-that named app on in Privacy & Security.
-
-Settings → Do Not Disturb → Sound is the mute. On by default; off takes effect
-on the next frame, no restart. Do Not Disturb also silences the buddy while it
-is on, and leaves the visual cues (#277). A machine that cannot start an audio
-context does the same: one warning in the webview console, then silence, with
-the visual still playing (#292).
-
-A Character that should grow faster or slower than doubling says so:
-
-```toml
-[director]
-model_base = 3
-model_power = 1
-```
-
-Session calls stay quiet while the main display is asleep. Settings can turn
-the Director off, or leave it on and disable ambient wakes.
-
-A 403 from xAI is the server refusing the key, not a bad JSON body (that is
-a 400). Keys are granted per-endpoint in [console.x.ai](https://console.x.ai);
-`/v1/responses` and `/v1/chat/completions` are separate ACLs. A team that
-requires mTLS wants `https://mtls.api.x.ai`. The stand-in retries
-chat-completions if Responses returns 403 or 404.
-
-The stand-in asks for `stream: true`. A reply's first line is the Behavior
-name and runs one to three tokens, so almost the whole wait is a dialogue
-line the buddy does not need before it starts moving. Streaming is also the
-only shape a dropped call can be *stopped* in: closing a streaming connection
-ends the generation, where a whole-reply request runs to completion on the
-server whatever the client does. A server that rejects the field — or accepts
-it and answers with an ordinary body anyway — gets one more send without it,
-and once that one works the endpoint stops asking to stream, so the second
-POST is paid once rather than on every wake.
-
-`scripts/probe-model.sh` hits the same Completer without starting the
-overlay — GET `/v1/models` (and `/v1/api-key` on xAI), then both POST
-paths. Same env as `cargo run`. It prints status and body, never the key.
-Later this is also how to check a Harness is reachable.
-
-```sh
-AI_BUDDY_DIRECTOR_API_KEY="$XAI_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=https://api.x.ai \
-AI_BUDDY_DIRECTOR_MODEL=grok-4.6 \
-scripts/probe-model.sh
-```
-
-### A local model server
-
-The buddy wakes on a pace all day and every Poke is a wake on top of that, so
-a hosted API puts a meter on idling — and each wake sends the frontmost
-application name and the clock off the machine. A server of your own removes
-the metering, and a server on loopback also keeps that context on this
-machine; a box across the LAN still receives it. "Local" here means loopback,
-an RFC1918 or IPv6 unique-local address, or a `.local` name — the LAN counts,
-which is a wider circle than the *on-device* "Local Gate" in
-[CONTEXT.md](./CONTEXT.md). A local base URL makes `AI_BUDDY_DIRECTOR_API_KEY`
-optional: leave it unset when the server has no auth, set it when the server
-requires one. A remote URL still requires a real key, so a missing cloud key
-never becomes an unauthenticated request.
-
-These servers speak `/v1/chat/completions`, which is the path the Completer
-already builds:
-
-| Server | Base URL | Model name | Auth | Tested |
-|---|---|---|---|---|
-| [Ollama](https://ollama.com) | `http://localhost:11434` | a tag: `gemma4`, `llama3.2:3b` | none by default | yes — `gemma4:latest`, 9.6 GB, on an Apple-silicon Mac |
-| [oMLX](https://github.com/jundot/omlx) | `http://localhost:8000` | a served model id | API key required | yes |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | `http://localhost:8080` | the gguf path, or `--alias` | optional `--api-key` | no |
-| [LM Studio](https://lmstudio.ai) | `http://localhost:1234` | the id shown in its server tab | optional | no |
-| [vLLM](https://docs.vllm.ai) | `http://localhost:8000` | the served model id | optional `--api-key` | no |
-| [MLX](https://github.com/ml-explore/mlx-examples) `mlx_lm.server` | `http://localhost:8080` | a Hugging Face repo id | none | no |
-
-**Ollama** (no auth):
-
-```sh
-ollama pull gemma4
-ollama serve
-
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 \
-cargo run
-```
-
-**oMLX** (requires API key):
-
-```sh
-omlx serve --model mlx-community/Qwen2.5-1.5B-Instruct-4bit --api-key your-key-here
-
-AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
-AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
-cargo run --bin ai-buddy
-```
-
-**Check a server** before you trust it — reports whether the model you
-configured is actually loaded:
-
-```sh
-# Ollama (no key)
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
-AI_BUDDY_DIRECTOR_MODEL=gemma4 \
-scripts/probe-model.sh
-
-# oMLX (with key)
-AI_BUDDY_DIRECTOR_API_KEY="$OMLX_API_KEY" \
-AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:8000 \
-AI_BUDDY_DIRECTOR_MODEL=gemma-4-e2b-it-4bit \
-scripts/probe-model.sh
-```
-
-At startup the app asks the same question once, in the background, and says
-so when the answer is no:
-
-```
-director: http://localhost:11439 unreachable: Connection refused; staying on StaticDirector until it answers
-director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:latest
-```
-
-Neither line stops anything: a wake that fails already falls back to Static
-per turn. The line exists so a buddy that went quiet is not a mystery.
-
-**Size and the reply contract, measured.** The Director asks for a Behavior
-name on one line and an optional spoken line on the next, and every break is
-silent — an unparsable reply becomes speech, a failed one becomes Static.
-`measure_the_reply_contract_failure_rate` (an `#[ignore]`d test in
-`src-tauri/src/model.rs`) counts the outcomes over 40 varied wakes against a
-live server, classifying with `ModelDirector::wake` itself so the measurement
-cannot drift from what the app does. Nothing pins `temperature` or a seed —
-the app sends neither — and the run shares one session, so replies condition
-each other; `AI_BUDDY_BENCH_WAKES` raises the sample when a tighter number is
-worth the minutes. On an Apple-silicon Mac, loading `characters/cat`:
-
-| Server | Model | Behavior played | Prose instead | Failed |
-|---|---|---|---|---|
-| Ollama | `gemma4:latest`, 8B Q4_K_M, 9.6 GB | 95% | 2% | 2% |
-| Ollama | `llama3.2:1b`, 1B | 12–78% | 22–88% | 0% |
-| oMLX | `gemma-4-e2b-it-4bit` | 90% | 10% | 0% |
-
-Every row is a post-#233 run.
-
-Instruction tuning matters more than size: a 4-bit `e2b` build plays a
-Behavior on nine wakes in ten, while the 1B swings between one and eight.
-**The 1B is a range because it is genuinely unstable** — four runs of the same
-model gave 12%, 30%, 65% and 78%.
-One session carries the whole run, so once a small model starts inventing
-names (`snub`, `scratching`, `grooming` for the declared `groom`) it keeps
-doing it, and a run locks into a good or bad groove rather than averaging out.
-The 8B repeated 95% twice. Read the 1B as "unreliable", not as a percentage.
-**Some of the remaining breaks are the personality file's doing.** The prose
-the `e2b` build returned instead of a Behavior was twice the verbatim line
-`"What is that one? Show me."` — one of the sample lines in
-`characters/cat/personality.txt`. A small model reads sample lines as replies
-to imitate whole, and a sample line carries no Behavior name, so quoting one
-breaks the contract by construction. Worth weighing when writing them (#156).
-
-Constrained decoding is the durable fix, and four of the five servers support
-it through `response_format`; #144 decides that shape.
-
-**The measurement's first finding was ours, and it is fixed.** `knows`
-compared a proposed Behavior name to the declared ones with `==`, and every
-model here answers `Prowl` where the manifest declares `prowl`, so a reply
-that kept the contract was refused, fell through `as_speech`, and reached the
-user as dialogue with the name stuck on the front — the buddy talked and never
-acted. Behaviors played were 0%, 2% and 0% before; they are 95%, 12–78% and
-90% after. #233 compares without case
-and hands back the Character's own spelling, which is what the Engine looks a
-Behavior up by; the numbers above are what the same harness measures after it.
-The comparison is exact-modulo-case, not fuzzy: `Greeter` and `grooming` still
-become speech, because no Character declares them.
-
-A local reasoning model (Qwen3, gpt-oss) has a second failure: it thinks
-inside the same token budget on chat-completions, so a tight cap can be spent
-before it writes anything. That is why the local cap defaults to 512 rather
-than 80.
-
-## Development
-
-From a clone, with a Rust toolchain:
-
-```sh
-cargo run -p ai-buddy
-```
-
-### Linux dependencies
-
-The tray icon requires `libayatana-appindicator3-dev` (or the older
-`libappindicator3-dev`) at build time. Which of the two is installed decides
-what a `.deb` built here requires at runtime, so the Release workflow installs
-the `libayatana` one and the packages it ships name that library. A
-StatusNotifier host in the desktop environment displays the icon at runtime;
-without one the tray silently installs but shows no icon. Plank is not a host.
-`xfce4-panel` (Status Tray plugin) is. On Wayland, tray availability depends on
-the compositor's tray protocol support.
-
-```sh
-# Debian/Ubuntu
-sudo apt install libayatana-appindicator3-dev
-```
-
-Cue audio at runtime is the GStreamer plugins WebKitGTK already Depends on,
-plus a working sink. Development builds use the host WebKit, so
-`gstreamer1.0-plugins-good` (and a Pulse/PipeWire/ALSA session) is enough to
-hear them. The AppImage is the exception; see [Install](#install).
-
-### Toolchains
-
-Three, and each earns its place:
-
-| Toolchain | Needed for | Needed to build? |
-|---|---|---|
-| **Rust** | everything: the core crate, the Tauri shell | yes |
-| **Python** | `pre-commit`, the Characters' frame generators, and the pet importer (the one script that needs Pillow) | no |
-| **Node** | the renderer's unit tests, and nothing else | no |
-
-Node is the newest and the least obvious, so: the webview front end has been
-JavaScript since the first overlay commit, because that is what a Tauri front
-end is. What Node adds is a way to *test* the arithmetic in it. `interpolate`
-runs once per display frame between Engine ticks, so it cannot live in Rust, and
-docs/SPEC.md holds that "arithmetic is never exempt, wherever it lives".
-
-That dependency is deliberately as thin as it goes: `node --test` and
-`node:assert` from the standard library, no test framework, no package manager,
-no lockfile, and no `node_modules`. The root `package.json` exists only to
-declare the renderer ESM, so no Node release's module detection has to guess.
-Any Node that ships `node --test` will do; CI uses the current LTS.
-
-### Hooks
-
-Hooks lint, format and typecheck. They do not run tests — neither `cargo test`
-nor the renderer's. Tests run in CI, and by hand as below.
-
-Install them once after cloning:
-
-```sh
-pre-commit install
-```
-
-They cover whitespace and line endings, YAML/JSON/TOML validity, spelling, shell
-formatting and shellcheck, plus `cargo fmt --check` and `cargo clippy -D
-warnings`. The toolchain is pinned in `rust-toolchain.toml` so local runs and CI
-agree on what rustfmt and clippy consider correct.
-
-CI runs the same hooks on both a Linux and a macOS runner, because the shell
-carries a non-macOS code path that only a Linux build exercises.
-
-## Verifying the overlay
-
-Most of what this feature does is invisible. Nothing on screen says whether the
-overlay is currently swallowing clicks or passing them on, so verification is
-split in three.
-
-**Unit tests** cover the arithmetic — the alpha lookup, the coordinate
-conversions, frame selection, and the renderer's interpolation between Engine
-ticks. Fast, pure, no windowing system, because the core crate depends on no
-platform binding at all:
-
-```sh
-cargo test -p ai-buddy-core     # the pure core, builds anywhere
-cargo test                      # everything, including the macOS shell
-node --test tests/*.test.js     # the renderer's own arithmetic
-```
-
-**`scripts/verify-overlay.sh`** covers everything else a machine can reach. It
-is deliberately not a `cargo test`: it needs a real desktop, a real window
-server and a running app, so it is slow, macOS-only, and cannot run in CI. Run
-it when the overlay, the platform layer or the frame loop changes.
-
-```sh
-scripts/verify-overlay.sh          # or --keep to leave the app running
-```
-
-It checks that there is one overlay window per display, that every one of them
-is on screen at floating level, that each display is covered whole by one of
-them and none of them covers anything else, that the window server has been told
-never to hand any of them to a screen capture, and that the app is an accessory
-with no Dock tile or switcher entry.
-
-Then it checks the frame loop against a real desktop. It opens a plain window of
-its own below where the sprite starts, so the sprite has a Perch to aim at, and
-steps that window down the screen before closing it. Reading the app's own frame
-trace against the bounds the window server reports, it asserts that the sprite
-falls under gravity, comes to rest on that window's top edge, rides the edge
-when the window steps down, drops when the window closes — each within about one
-poll interval — and comes to rest again on the display below.
-
-Then it falls again, onto a window that covers the same ground in one jump
-rather than three steps. That one is faster than the sprite can hold on to, so
-the assertions invert: it must not be carried, and it has to reach the new edge
-by falling onto it.
-
-Last it checks the hit-test pipeline: it puts the cursor on the sprite's centre
-and then on its transparent top-left corner, and asserts a hit on the first and
-a miss on the second. The cursor goes back where you left it. It also saves a
-screenshot of each display under `.verify/`. The sprite is not in them: the
-overlay refuses every screen capture, and `screencapture` is one. To photograph
-your own Character — to look at its art, or to show somebody — start the app
-with `AI_BUDDY_CAPTURABLE=1`, which gives that up for one run.
-
-Keep hands off the mouse while it runs.
-
-Every change of the hide rules prints a `presence:` line without being asked
-for, which says whether the sprite was shown or hidden and over how long. It is
-a handful of lines in a session, and it is how to tell a rule that did not fire
-from a fade that did not play.
-
-For a live view of what the app is deciding, set `AI_BUDDY_TRACE_HITTEST=1` for
-the click-through decision and `AI_BUDDY_TRACE_FRAMES=1` for the Engine's
-frames — state, position and animation, once per tick. Both trace in the point
-space every display shares, so the positions they report are comparable with
-what the window server says about any display.
-
-`AI_BUDDY_TRACE_DIRECTOR=1` prints each session wake: `--- prompt ---` is
-what we sent, `--- model ---` is the reply, then whether that played as a
-Behavior (or fell back to Static). Off unless asked. Poke, throw, pick up,
-or place on a Perch to force a wake.
-
-`director: first token` in that trace is when the stream started arriving,
-which is roughly when the sprite could begin moving; its distance from the
-reply is what streaming is for. A server that would not stream says so on the
-line before its retry.
-
-There is one overlay per display and every one of them is told where the
-sprite is, so the trace is one line per tick rather than one per overlay. Which
-overlay the cursor is on is on the hit-test line.
-
-`AI_BUDDY_TRACE_ENGINE=1` answers the question the frame line cannot: not which
-Animation is on screen but what chose it. It prints a unix timestamp, the
-Behavior and the Primitive the Engine is playing, the Animation they resolve to,
-the State, and the Instance:
-
-```
-engine: 1757043169284 behavior(greet) primitive(React) animation(react) state(Grounded) 6f2a1c34-5b8e-4d21-9f70-2a4c8e1b3d55
-engine: 1757043169884 behavior(-) primitive(Land) animation(land) state(Grounded) 6f2a1c34-5b8e-4d21-9f70-2a4c8e1b3d55
-```
-
-A `-` is a thing with no name rather than a missing value. `behavior(-)` is a
-moment the Engine plays itself — a Land, a Hold, a startle at the cursor, the
-answer to a Poke — which no Director proposed and which therefore answers to
-nothing; `primitive(-)` is a chain that has run out, including a walk still
-travelling on the velocity it left behind. The line prints when one of those
-four changes and not once per tick, because the loop turns at display rate and
-an unconditional line would bury everything else in the log. The first tick
-after the switch goes on always prints, so the log never opens in silence about
-what was already playing. Off unless asked.
-
-Settings → Development carries the same switches, so a trace goes on without a
-relaunch: the four above take effect on the next tick or wake,
-`AI_BUDDY_CAPTURABLE` on the next launch. Exporting one of these variables
-freezes its row the way the Director's does, and they read the same words every
-switch does: `1`, `on`, `true` or `yes` for on, `0`, `off`, `false` or `no` for
-off. Any other value is ignored, with a line at launch saying so.
-
-**A human** is still needed for the last step, because only the window server
-can answer it. Run the app, then confirm:
-
-1. **Clicks pass through empty space.** Click the desktop or a window anywhere
-   the sprite is not. The click lands underneath.
-2. **Clicks on the sprite do not pass through.** Click the sprite's body. The
-   window underneath does not receive the click.
-3. **Typing is never interrupted.** Put the cursor in another application and
-   type. Click the sprite mid-sentence and keep typing. Every keystroke reaches
-   the other application and focus never moves.
-4. **Follows you across Spaces.** Switch Spaces. The sprite is present on the
-   new one, in the same screen position.
-5. **Motion is continuous, not stepped.** Watch it fall. It slides down the
-   screen rather than jumping between positions, and it does not judder when it
-   crosses a window's edge.
-6. **The art is crisp.** On a Retina display the pixels are hard squares with no
-   blur or soft edges, and every pixel of the sprite is the same size as every
-   other. A blurred sprite means the integer scale or the nearest-neighbour
-   filtering was lost.
-7. **It rests on the Dock, not behind it.** Let the sprite settle at the bottom
-   of the screen. Its feet stand on the Dock's top edge and the whole sprite is
-   visible. Then turn on Dock auto-hiding in System Settings: within a poll the
-   sprite falls the rest of the way to the bottom of the screen, because the
-   Dock gave the space back. Turn it off and the sprite is lifted again.
-
-   The Dock does not stretch to the sides of the screen, and the sprite knows
-   it: a walk past the Dock's real end falls to the true bottom of the screen,
-   and standing on the Dock is standing on the island the screen actually
-   shows. The exact rectangle comes from a chain the startup log names —
-   a private SPI that needs no consent, then the Accessibility API where that
-   trust was already granted (Settings → What the buddy can see names the
-   row to turn on), then the full-width work-area strip as the fallback
-   where neither answers.
-8. **Declared cadence is honoured.** Point ai-buddy at a copy of
-   Black Mage whose idle declares a faster `fps`, and the idle is visibly faster
-   than it was at the declared 1. Editing the repository's own
-   `characters/` changes nothing on its own: the app reads the copy
-   `tauri-build` placed next to the binary, not the source of that copy.
-
-   ```sh
-   mkdir -p /tmp/ai-buddy-fast
-   cp -R characters/black-mage /tmp/ai-buddy-fast/
-   sed -i '' 's/^fps = 1$/fps = 20/' /tmp/ai-buddy-fast/black-mage/character.manifest
-   cd src-tauri && AI_BUDDY_CHARACTERS=/tmp/ai-buddy-fast cargo run
-   ```
-
-   `AI_BUDDY_CHARACTERS` replaces the search paths rather than adding to them,
-   so nothing installed is touched and there is nothing to put back.
-
-9. **A click makes it react.** Click the sprite once without moving the mouse.
-   It plays its `react` animation for about half a second, then goes back to
-   what it was doing. Clicking again while it reacts restarts the reaction.
-10. **Press and drag picks it up.** Press on the sprite and move. It follows the
-    cursor. Drag faster than it can follow, so the cursor leaves the art
-    entirely — it stays held. Release over a window and it lands on that
-    window's top edge.
-11. **A flick throws it.** Drag and release while still moving and it leaves
-    your hand on an arc. Hold still for a moment before releasing and it drops
-    straight down instead, which is how you put it down rather than throw it.
-12. **It can be put down over the Dock, and does not stay there.** Drag it down
-    over the Dock — it follows the cursor the whole way, because a held sprite
-    goes where your hand goes. Let go and it settles back onto the Dock's top
-    edge, fully visible.
-13. **A window you drag slowly carries it.** Let the sprite settle on a
-    window's top edge, then drag that window by its title bar — down, up and
-    sideways, slowly. The sprite rides the edge and keeps its place along it,
-    playing its hold animation while the window moves rather than standing
-    idle. It is carried, not launched: stop the drag and it stops with the
-    window rather than sliding on.
-14. **A window you fling leaves it behind.** With the sprite perched, throw the
-    same window: grab the title bar and move fast, or zoom the window by
-    double-clicking it. The sprite stays where it stood, in the air, and falls
-    — onto the same edge again when the window is still under it, past it to
-    whatever is below when it is not. Fling the window upwards and the sprite
-    is passed through rather than lifted. Where the line between this and the
-    step above falls is a tuned number rather than a computed one: a drag that
-    looks slow should ride and one that looks like a yank should not, and a
-    disagreement about a drag in between is that number wanting a tune.
-15. **The two shipped Characters are two companions.** Run each in turn (see
-    [The shipped Characters](#the-shipped-characters)) and watch it idle. BMO
-    hums to itself through a four-frame singing loop, in soft drawn lines at
-    its authored size; Nim eases through six, blinks, and carries a
-    translucent shadow. Poke each: BMO's startle is two frames and over, Nim's
-    plays through five. The Behaviors each declares show when a Director
-    proposes one (Static, or the HTTP stand-in with a key). Sitting and
-    sleeping can also be the Engine's own idling and look the same for either.
-    Then judge the drawing itself, which no test can: the frames are generated
-    by a script and nobody has claimed they are good.
-
-16. **A fullscreen application takes the screen and the Character leaves it.**
-    Put any application into fullscreen — the green button, or
-    Control-Command-F. Within about a tenth of a second the sprite fades out
-    over half a second: it dissolves rather than blinking off. Leave
-    fullscreen and it fades back in, carrying on from wherever the Engine got
-    to, still falling or still walking rather than restarting. A *zoomed* window
-    is not a fullscreen one: Option-click the green button, or double-click a
-    title bar, and the sprite stays and can still sit on that window's top edge.
-    On two displays, a fullscreen application on either one takes the sprite
-    away from both: what decides is the window you are working in, not the
-    screen the sprite is standing on. Then quit ai-buddy, go fullscreen, and
-    start it again: the sprite never appears at all, because what it must be
-    rides on every frame rather than being announced once, before the window
-    that draws it was listening.
-17. **Ordinary window switching changes nothing.** Command-Tab between
-    applications, open and close windows, drag them around, switch Spaces. The
-    sprite never blinks, never changes what it is in front of, and never
-    disappears. Only a fullscreen application takes it away.
-18. **The hotkey puts it away and brings it back at once.** Press
-    Control-Option-Command-B. The sprite is gone on the keystroke, with no
-    fade. Press it again and it is back, instantly, wherever it had got to.
-    While it is away, click where it was: the click reaches the window
-    underneath, and the sprite does not react to it when it returns.
-19. **The hotkey outranks the rules.** Press the hotkey to put the sprite away,
-    then enter a fullscreen application and leave it again. The sprite stays
-    away — a fullscreen application quitting must not hand back a Character you
-    put away yourself. Press the hotkey again to get it back.
-20. **It is absent from a real screen share.** Start a real share — Zoom, Meet,
-    Teams — sharing your whole screen, and look at what the other end sees,
-    either on a second machine or in the meeting's own preview of your share.
-    The sprite is on your screen and not in theirs. Then check the system's own
-    capture the same way: Command-Shift-5 to record, and Command-Shift-3 to take
-    a screenshot. Neither one contains the sprite. This is the window server
-    refusing to hand the overlay to any capture, rather than ai-buddy detecting
-    a share, so it holds for every sharing tool including ones nobody has heard
-    of. `scripts/verify-overlay.sh` asserts the setting; only this step shows
-    the effect. It is also why you cannot screenshot your Character: start the
-    app with `AI_BUDDY_CAPTURABLE=1` for a run where you can.
-
-The last three need a second display, and only a window server can answer them:
-
-21. **A Character on a seam is whole.** Drag the sprite slowly across the
-    boundary between two displays and hold it there, half on each. Both halves
-    are drawn, and they meet — no gap between them, nothing drawn twice, and
-    the art is not doubled or offset at the seam. Watch them while your hand is
-    still moving, not only once it stops: each overlay interpolates between the
-    Engine's ticks on its own clock, so a moving sprite is the only thing that
-    can catch two overlays disagreeing about where it is. Two displays with
-    different scale factors or refresh rates is the case worth doing this on.
-22. **Either half can be clicked.** With the sprite straddling, click the half
-    on each display in turn. Both pick it up, and clicking beside it on either
-    display still reaches whatever is underneath.
-23. **A display can come and go.** With the app running, unplug a display, or
-    turn one off in System Settings > Displays. The sprite carries on, and the
-    remaining display still passes clicks through where the sprite is not.
-    Plug it back in: the sprite can be dragged onto it again within a second
-    or so, without restarting the app.
-
-24. **Several buddies run at once.** Start with
-    `AI_BUDDY_INSTANCES="bmo:One,bmo:Two,nim:Nim"` (see [Running several
-    buddies](#running-several-buddies)). Three sprites come into the world side
-    by side rather than in a stack, and each falls and lands on its own. The
-    startup line names all three. Nothing stutters: the frame rate with three
-    is the frame rate with one, because they share one reading of the desktop
-    and one window-list poll.
-
-25. **Each buddy is its own.** Watch the three idle for a minute. They do not
-    move in lockstep — the two running the same Character pick their own
-    Behaviors at their own moments, because each has its own Director and its
-    own seed. Drag one somewhere and let it go: only that one moves, the others
-    carry on. Poke one: only that one reacts.
-
-26. **A press finds the buddy under the cursor, even when they overlap.** Drag
-    two buddies until their art overlaps, then press where both are. The one
-    drawn in front is the one that lifts, and only one lifts. Drag it faster
-    than it can follow so the cursor leaves the art and crosses the other
-    buddy: the drag keeps hold of the one you picked up and does not hand over.
-    Release, and clicking where no sprite is drawn still reaches the
-    application underneath.
-
-27. **A second buddy already knows what the first was told.** Memory is one
-    file for every Instance — `memory.md` in ai-buddy's data directory:
-    `~/Library/Application Support/ai-buddy` on macOS, `~/.local/share/ai-buddy`
-    on Linux, `%APPDATA%\ai-buddy` on Windows. Write a fact into it, or have a
-    Harness write one through the MCP server, and it is the same Memory every
-    buddy reads. Dismissing a buddy leaves the file untouched. Nothing in the
-    app reads Memory into the Character Prompt yet, so this is a check on the
-    file being shared rather than on a buddy reciting it.
-
-The sprite starts in the middle of the first display and goes wherever gravity
-and your windows take it from there, or wherever you put it. To watch it fall
-without touching it, move or close the window it is sitting on.
-
-### Running several buddies
-
-`AI_BUDDY_INSTANCES` names the buddies to run, as `character:name` separated by
-commas:
-
-```sh
-cd src-tauri && AI_BUDDY_INSTANCES="bmo:One,bmo:Two,nim:Nim" cargo run
-```
-
-The Character is a package name, the same one `AI_BUDDY_CHARACTER` takes. The
-name is yours and is what the buddy is called; give the Character alone —
-`AI_BUDDY_INSTANCES="bmo,nim"` — and each is named after its package. Naming the
-same Character twice runs two of it, which is the point: they share the art and
-the Memory, and differ in position and in what they are doing.
-
-Setting nothing runs the one buddy ai-buddy has always run, and
-`AI_BUDDY_CHARACTER` still picks its Character.
-
-Spawning and dismissing a buddy while the app runs needs somewhere to type a
-name, which arrives with the menu in
-[#18](https://github.com/omesser/ai-buddy/issues/18). Until then the set is
-settled at launch.
-
-## Character Packages
-
-A Character Package is a directory or a `.zip` archive holding a
-`character.manifest`, a `personality.txt`, and the frames its manifest names.
-ai-buddy looks for them in two places, in order:
-
-1. `~/Library/Application Support/ai-buddy/characters/` — anything you add.
-2. The Characters shipped with the app, which live in `characters/` in this
-   repository and are copied next to the binary at build time.
-
-The first package that loads is the one you get. Set `AI_BUDDY_CHARACTERS` to a
-`:`-separated list of directories to look in those instead, which is how to try
-a package without installing it.
-
-A package that is rejected says why, one line per mistake. A mistake in a
-declaration names the declaration and the line it is on; a mistake the package
-makes as a whole, such as declaring no name, has no line to point at. A
-directory that holds no `character.manifest` is skipped silently: it was never
-a package, which is a different thing from a broken one.
-
-A `.zip` made by Finder's Compress loads as it is. The `__MACOSX/` tree and the
-`.DS_Store` files Finder puts in it describe your Mac rather than the Character,
-so they are ignored.
-
-### Writing a personality
-
-`personality.txt` is plain prose the loader never interprets, up to 2000
-characters. A register alone is not enough: a model given only temperament
-converges on the same three assistant-flavored lines. A good one contains
-three things, unlabeled (#156):
-
-1. Who the character is and how it carries itself, fused — the paragraph or
-   two every shipped file opens with. Skip what the sprite already shows: a
-   description of the art buys nothing, and the words are better spent on how
-   the character speaks and what it notices.
-2. A fixations paragraph: three to five strong, specific opinions that
-   generate material — things it loves, resents, takes personally, or takes
-   credit for.
-3. Sample lines, verbatim, introduced in prose ("It has been heard to say:
-   …"). Well-chosen lines also carry the character's recurring bits, which is
-   why bits get no section of their own. Be generous: each line is another
-   calibration point, and `characters/black-mage/` shows how far that goes. A
-   catchphrase belongs here: the prompt asks for variety but leaves repetition
-   the character owns to the personality.
-
-#### Universal rules
-
-Leave these out of a personality file. `character_prompt` in
-`crates/core/src/director.rs` injects them once for every Character, so the
-files cannot drift apart on them:
-
-- Stay in character, and never mention being a model or an assistant.
-- Fit the bubble — five short sentences at the most.
-- Vary, preferring an unused line, while a signature phrase may recur.
-- Lean away from the Behaviors that just played.
-- React to the moment — what just happened, and what the sprite stands on —
-  when there is something worth remarking on.
-- Dialogue is demeanour, never capability: no promising actions on the
-  machine, no claiming abilities.
-
-The format stays internal and undocumented until v2 — see
-[DESIGN.md](./DESIGN.md).
-
-### The shipped Characters
-
-Two ship, in deliberately different styles, so that the format is proven against
-real variance rather than against itself:
-
-- **`characters/bmo/` — BMO**, drawn shimeji art (see
-  [Prior art and attribution](#prior-art-and-attribution)): soft anti-aliased
-  lines rather than a pixel grid, so its manifest declares
-  `render_mode = "smooth"` and `scale = 1` — the render mode ADR-0006
-  reserved, and the first Character to use it. Every pose is cut from the
-  pack's 46 and heads right; the Engine's facing mirrors it to walk left.
-  Idling it sings, then rides its skateboard; walking it sometimes dribbles a
-  football; sitting it plays four games on its own screen; scaling a display
-  edge it climbs hand over hand — `climb` being the one optional Animation
-  the engine asks for by name, with walk art the silent fallback. The idle
-  and walk extras are `variant_of` declarations: more art for the same life,
-  cycled by the renderer a few seconds apiece. BMO never settles: every
-  Behavior it declares ends on its feet.
-- **`characters/nim/` — Nim**, modern pixel art. A palette larger than
-  sixteen colours shaded on a ramp lit from the upper left, a translucent
-  contact shadow wherever there is ground to cast it on, and twice the frames
-  everywhere so the motion eases rather than steps. Nim comes to rest: every
-  Behavior it declares but the walk ends sitting or asleep.
-
-The difference is the Behaviors as much as the drawing, which is what makes
-switching feel like a different companion rather than a reskin — from the day a
-Director proposes one. Sitting and sleeping can also be the Engine's own
-idling when nothing has proposed. Both are drawn by a
-script rather than by hand, which is what the repository can honestly claim;
-regenerate both with:
-
-```sh
-python3 scripts/make-shipped-characters.py
-```
-
-#### Running one of them
-
-Name a Character to start that one:
-
-```sh
-cd src-tauri && AI_BUDDY_CHARACTER=bmo cargo run
-cd src-tauri && AI_BUDDY_CHARACTER=nim cargo run
-cd src-tauri && AI_BUDDY_CHARACTER=jotaro-kujo cargo run
-```
-
-The name is the package's directory, without the `.zip` if it is an archive.
-Naming a Character that is not installed starts nothing and says so, rather than
-quietly starting a different one.
-
-With nothing named you get **BMO**, which is `DEFAULT_CHARACTER` in
-`src-tauri/src/package.rs` rather than whichever package happens to sort first —
-otherwise adding one could silently replace the Character everybody meets. It is
-a preference and not a requirement: if BMO will not load, the search carries on
-behind it. Settings remembers the Character you chose.
-
-Either way the app prints what it loaded, which is the quickest way to be sure
-you are looking at the Character you meant:
-
-```
-character: BMO from ../characters/bmo
-```
-
-The menu and settings switch Character while the app runs. To try a package
-without installing it, point the search somewhere else instead:
-
-```sh
-cd src-tauri && AI_BUDDY_CHARACTERS=/path/to/my-packages cargo run
-```
-
-### Importing a pet
-
-`scripts/import-pet.py` translates a pet from another desktop-pet ecosystem
-into a Character Package, once. An authoring tool rather than a build step: the
-output lands in a directory you review, hand-tune, and own — not a runtime
-dependency and not a live bridge (#112). It is the one script allowed to need
-Pillow, because petscodex ships webp sprite sheets and decoding webp rules out
-the standard library.
-
-You can import a pack from these galleries into a Character Package: [Pets Codex](https://petscodex.com/) and [petdex](https://petdex.dev/), which use the Pets Codex / petdex engine (same atlas, one adapter), and [Shimeji Shop](https://shimejishop.com/), which uses Shimeji-ee. Those are the only adapters. No other format is supported. If you want another format, open a GitHub issue. In that issue, show that the request does not break license restrictions (the importer warns on undeclared or non-permissive licenses; whoever imports is who ships; see the license paragraph later in this section).
-
-`npx petscodex install <id>` lands a pack at `~/.codex/pets/<id>/`; the importer slices it by petdex's row semantics and builds the whole Required Animation Set, with `waiting` as an idle `variant_of` ring member. Shimeji-ee packs are per-pose PNGs plus the pack's `actions.xml` naming pose sequences, every frame mirrored to head right. A pack of bare `shime*.png` files with no conf (shimejishop distributes these) rides Shimeji-ee's standard conf instead.
-
-An ecosystem without an adapter needs one written — the importer reads a machine-readable convention or it reads nothing. There is deliberately no generic fallback for a bare pile of frames ([ADR-0009](./docs/adr/0009-no-generic-import-on-ramp.md)).
-
-Pillow lives in a [uv](https://docs.astral.sh/uv/)-managed virtual
-environment, never in a system Python:
-
-```sh
-uv venv
-uv pip install pillow
-
-npx petscodex list
-npx petscodex install labubu
-.venv/bin/python scripts/import-pet.py ~/.codex/pets/labubu --format petscodex \
-    -o characters/labubu
-cd src-tauri && AI_BUDDY_CHARACTER=labubu cargo run
-```
-
-The first run after an import rebuilds, which refreshes the shipped-character
-copy beside the binary; `AI_BUDDY_CHARACTERS=/path/to/characters` skips the
-rebuild by searching the directory itself.
-
-The importer notices a missing Pillow and says exactly this rather than
-tracing back.
-
-A `.zip` works as a source wherever a directory does, `--force` replaces an
-existing output directory, and `--stand` names the on-screen height in
-logical pixels when the default band (100–130, where a shimeji stands) is
-not the right size for the pet. The importer prints the pet's license, and
-warns when it is undeclared or not one of the permissive ones it recognizes —
-MIT, CC0, CC-BY-4.0, Apache-2.0, BSD-3-Clause. It warns rather than refuses:
-whoever imports a pet is who ships it, and a tool cannot read a license on
-their behalf. The manifest header keeps that record after the terminal is
-gone. An import is a development asset unless its license says otherwise, and
-one that ships gets a line in
-[Prior art and attribution](#prior-art-and-attribution). Success is
-declared only after `character::load` accepts the output, through a validator
-that is also useful on its own:
-
-```sh
-cargo run -p ai-buddy-core --example validate -- characters/labubu
-```
-
-Then look at the frames — the tool says so at the end of every run, because
-two things are the reviewer's to judge, not code's:
-
-- **Walk must head right**; the Engine's facing mirrors it for leftward
-  travel. Every petscodex pet sampled so far draws petdex's "running-right"
-  row heading left, so the importer cuts walk from the other row by default.
-  `--walk-row 1` picks the first row anyway, and `--mirror-walk` flips
-  whichever row is chosen, for the pet whose only clean walk heads left.
-- **Sleep must read as sleep.** petscodex has no sleep row, so the importer
-  synthesizes one: idle's stillest frame, twice, the second lifted a pixel as
-  the breath. Swap in a better pose when the sheet has one.
-- **Every animation must read as its name.** The row semantics are labels
-  each generated pet interprets loosely — one pet's "jumping" row is a sword
-  lunge, and its sleeping art lives in the "waiting" row. `--map` recuts an
-  animation from the row the pet actually drew: `--map sleep=6:2,3` takes
-  frames 2 and 3 of row 6, `--map react=7` takes all of row 7. Remaps are
-  recorded in the manifest header.
-- **A personality is authored, never derived.** The importer writes no
-  `personality.txt` — the pet's own description is provenance, not a voice.
-  Write one that fits the art, the way the shipped characters' read.
-
-`characters/cat/` is the first shipped import — petscodex's `cat`, with the
-defaults. The importer's self-test runs with no pet installed:
-
-```sh
-.venv/bin/python scripts/import-pet.py --self-test
-```
-
-## Prior art and attribution
-
-[WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) is the reference for a
-Tauri desktop pet: transparent overlay, click-through hit-testing, tray, and
-updater. ai-buddy is a greenfield build rather than a fork, for the reasons in
-[ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md).
-
-The overlay here is an independent implementation — no WindowPet source is
-copied into this repository. The tray, launch-at-login, and updater follow
-WindowPet's shape (a menu bar icon, `tauri-plugin-autostart`,
-`tauri-plugin-updater` checking GitHub Releases) under MIT. The menu those
-entry points open is ours. The updater endpoint is wired; a release that
-ships signed updates must replace the placeholder `pubkey` in
-`src-tauri/tauri.conf.json` with the minisign public key that signed the
-artifacts. Until then the plugin will refuse every update, which is safer
-than installing an unsigned one.
-
-[desktop-homunculus](https://github.com/not-elm/desktop-homunculus) informed the
-MCP-server-as-companion shape considered and rejected in the same ADR.
-
-BMO's frames are cut from the free
-[BMO shimeji pack](https://shimejishop.com/free/bmo-shimeji/) on shimejishop,
-flipped to head right, with a one-pixel breathing shift added for sleep. BMO
-is Cartoon Network IP and the pack is fan art; the character is a development
-asset, and none of this repository's license claims cover that art.
-
-Cat's frames are cut from the [petscodex](https://petscodex.com/pets/cat) pet
-`cat` by `scripts/import-pet.py` (#112). The installed package declares no
-license, which the importer warns about; the character is a development asset,
-and none of this repository's license claims cover that art.
-
-Trump's frames are cut from the [petscodex](https://petscodex.com/pets/trump)
-pet `trump` by the same importer.
-
-Jotaro Kujo's frames are cut from the
-[petscodex](https://petscodex.com/pets/jotaro-kujo) pet `jotaro-kujo` by
-`scripts/import-pet.py`. The installed package declares no license, so the
-import was accepted with `--accept-license`. Jotaro Kujo is Shueisha /
-Hirohiko Araki IP and the pack is fan art; the character is a development
-asset, and none of this repository's license claims cover that art.
-
-Timber Wolf's frames are cut from a Sketchfab viewer recording of
-[Clans Timberwolf Battlemech](https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f)
-by `oded1africa`. The model is CC BY 4.0, so it is credited here and in the
-package manifest. The mech is BattleTech IP; the character is a development
-asset, and none of this repository's license claims cover that art.
+See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for the full Director env table and local model server setup.
+
+## Platform Support
+
+What ships where, read from the platform seam rather than from intent. Honest about degraded and stub cells.
+
+| Capability | macOS | Linux | Windows |
+|---|---|---|---|
+| Overlay that never takes focus | yes | yes † | degraded |
+| Click-through off the sprite | yes | yes † | yes |
+| Grab, Throw and Poke | yes | yes † | degraded |
+| Perch on window edges | yes | yes † | degraded |
+| Dock or panel as a Perch | yes | degraded | degraded |
+| Fade out for a fullscreen app | yes | yes † | degraded |
+| Never captured in a screen share | yes | degraded | stub |
+
+- `yes` — implemented.
+- `degraded` — runs in reduced form. A supported mode, not an error.
+- `stub` — the arm compiles and does nothing. Windows only.
+- `†` — needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+
+## Developing
+
+See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for:
+- Toolchains (Rust, Python, Node)
+- Pre-commit hooks
+- Verifying the overlay (unit tests, `verify-overlay.sh`, 23-step human checklist)
+- Trace variables (HITTEST, FRAMES, DIRECTOR, ENGINE)
+- Character Packages (search paths, AI_BUDDY_CHARACTERS env)
+- Importing a pet from petscodex or Shimeji-ee
+- Running several buddies at once
+
+**Design and decisions:**
+- [CONTEXT.md](./CONTEXT.md) — Vocabulary
+- [DESIGN.md](./DESIGN.md) — Design decisions
+- [docs/SPEC.md](./docs/SPEC.md) — v1 scope and requirements
+- [docs/adr/](./docs/adr/) — Architecture Decision Records
+
+## Prior Art and Attribution
+
+[WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) is the reference for a Tauri desktop pet. ai-buddy is a greenfield build rather than a fork, for the reasons in [ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md). The overlay is an independent implementation. The tray, launch-at-login, and updater follow WindowPet's shape under MIT.
+
+Character art provenance is documented in each Character Package manifest.
 
 ## License
 
