@@ -307,7 +307,7 @@ See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for:
 - Pre-commit hooks
 - Verifying the overlay (unit tests, `verify-overlay.sh`, 23-step human checklist)
 - Trace variables (HITTEST, FRAMES, DIRECTOR, ENGINE)
-- Character Packages (search paths, AI_BUDDY_CHARACTERS env)
+- Character Packages (search paths, writing a personality, AI_BUDDY_CHARACTERS env)
 - Importing a pet from petscodex or Shimeji-ee
 - Running several buddies at once
 
