@@ -151,7 +151,8 @@ impl Roster {
         let id = uuid::Uuid::new_v4().to_string();
         let engine = Engine::new(position)
             .with_behaviors(character.behaviors.clone())
-            .with_cursor_reactions(character.near_reaction, character.rush_reaction);
+            .with_cursor_reactions(character.near_reaction, character.rush_reaction)
+            .with_sprite_width(character.sprite_width());
         let instance = Instance {
             id: id.clone(),
             name,
@@ -327,6 +328,42 @@ mod tests {
             roster.list(),
             vec![(id.clone(), "Buddy One".to_string())],
             "the Instance appears in the roster with its name"
+        );
+    }
+
+    /// A spawned Instance measures its own Character. The Engine's fallback
+    /// clearance is a guess at how wide a sprite is, and a Character wider than
+    /// the guess came to rest with its art hanging over the outermost display
+    /// edge, where no overlay draws it.
+    #[test]
+    fn a_spawned_instance_keeps_its_own_width_clear_of_the_display_edge() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-wide.md"));
+        let mut roster = Roster::new(memory);
+        let mut character = test_character("Wide");
+        for animation in character.animations.values_mut() {
+            animation.frame_size = (400, 400);
+        }
+
+        let id = roster.spawn(
+            &character,
+            "Wide One".to_string(),
+            Point {
+                x: 1900.0,
+                y: 100.0,
+            },
+        );
+        let instance = roster.get_mut(&id).expect("the Instance was just spawned");
+        let at_rest = (0..120)
+            .map(|_| instance.tick(&test_snapshot()))
+            .last()
+            .expect("the ticks produce frames");
+
+        let right_edge = 1920.0;
+        assert!(
+            at_rest.position.x + 200.0 <= right_edge,
+            "the art's right edge is off screen: feet at {} put it at {}",
+            at_rest.position.x,
+            at_rest.position.x + 200.0,
         );
     }
 
