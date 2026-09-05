@@ -210,10 +210,9 @@ mod tests {
         }
     }
 
-    /// Linux Secret Service tests. Run on a Linux desktop with Secret Service
-    /// (GNOME Keyring, KWallet) or kernel keyutils via:
-    ///
-    ///     cargo test -p ai-buddy -- secrets -- --ignored
+    /// Linux Secret Service tests. Run in Ubuntu CI with gnome-keyring under
+    /// dbus-run-session. On a local Linux desktop without Secret Service, the
+    /// same dbus-run-session recipe that CI uses will start one.
     ///
     /// Tests save and restore any pre-existing `director-api-key` credential.
     #[cfg(target_os = "linux")]
@@ -255,7 +254,6 @@ mod tests {
         }
 
         #[test]
-        #[ignore]
         fn round_trip_director_key_through_secret_service() {
             let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
             let guard = CredentialGuard::new(DIRECTOR_API_KEY);
@@ -274,7 +272,6 @@ mod tests {
         }
 
         #[test]
-        #[ignore]
         fn missing_credential_is_none_not_error() {
             let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
             let guard = CredentialGuard::new(DIRECTOR_API_KEY);
@@ -287,7 +284,6 @@ mod tests {
         }
 
         #[test]
-        #[ignore]
         fn deleting_missing_credential_is_ok() {
             let _lock = SECRET_SERVICE_LOCK.lock().unwrap();
             let guard = CredentialGuard::new(DIRECTOR_API_KEY);
