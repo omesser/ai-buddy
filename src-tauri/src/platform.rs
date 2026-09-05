@@ -15,7 +15,6 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
@@ -204,6 +203,9 @@ mod macos;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod x11;
 
+#[cfg(not(unix))]
+mod windows;
+
 /// Whether an X server answers this process — a real X11 session, or XWayland
 /// proxying for a Wayland one.
 ///
@@ -300,14 +302,17 @@ pub fn refresh_settings() {
     x11::refresh_settings()
 }
 
-/// Windows is stubbed: `docs/SPEC.md` puts it out of scope for v1.
+/// Open the native settings window on Windows. Main thread only.
 #[cfg(not(unix))]
-pub fn show_settings(_session: crate::settings::SettingsSession) {
-    eprintln!("settings: the native window is Windows in a later version");
+pub fn show_settings(session: crate::settings::SettingsSession) {
+    windows::show_settings(session)
 }
 
+/// Redraw the settings window from the live roster. Main thread only.
 #[cfg(not(unix))]
-pub fn refresh_settings() {}
+pub fn refresh_settings() {
+    windows::refresh_settings()
+}
 
 /// Hand a file the user owns to whatever the desktop opens it with.
 ///
@@ -399,11 +404,10 @@ fn shell_execute_file_wide(path: &Path) -> Vec<u16> {
     path.as_os_str().encode_wide().chain(Some(0)).collect()
 }
 
-/// Windows is stubbed deliberately: `docs/SPEC.md` puts it out of scope for v1.
-/// The plain Tauri window is what every other platform gets.
+/// Windows: extended window styles for floating, non-activating overlay.
 #[cfg(not(unix))]
-pub fn configure_overlay(_window: &tauri::WebviewWindow) -> Result<(), String> {
-    Ok(())
+pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
+    windows::configure_overlay(window)
 }
 
 /// Update the input region for the overlay window based on the sprite's alpha mask.
@@ -423,8 +427,20 @@ pub fn update_input_region(
     x11::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
 }
 
-#[allow(dead_code)]
-#[cfg(not(all(unix, not(target_os = "macos"))))]
+/// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
+#[cfg(not(unix))]
+pub fn update_input_region(
+    window: &tauri::WebviewWindow,
+    mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
+    sprite_x: i32,
+    sprite_y: i32,
+    sprite_facing: i32,
+    scale: i32,
+) -> Result<(), String> {
+    windows::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
+}
+
+#[cfg(target_os = "macos")]
 pub fn update_input_region(
     _window: &tauri::WebviewWindow,
     _mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
@@ -469,14 +485,13 @@ pub fn buttons_down() -> ButtonsDown {
     }
 }
 
-/// Without a session poll there is only the overlay latch. A click that
-/// reaches the webview still pokes; one that never does is the supported
-/// degradation, like the missing window geometry beside it.
+/// Windows: GetAsyncKeyState for both buttons, or the overlay latch.
 #[cfg(not(unix))]
 pub fn buttons_down() -> ButtonsDown {
+    let session = windows::buttons_down();
     ButtonsDown {
-        primary: overlay_primary_down(),
-        secondary: overlay_secondary_down(),
+        primary: overlay_primary_down() || session.primary,
+        secondary: overlay_secondary_down() || session.secondary,
     }
 }
 
@@ -532,12 +547,10 @@ impl ActivitySource for LinuxActivitySource {
     }
 }
 
-/// A platform that reports nothing is one where every Behavior with a trigger
-/// simply never fires, which leaves the untriggered ones — a life, if a duller
-/// one. The same supported degradation as the missing window geometry.
+/// Windows: GetForegroundWindow for frontmost, GetLastInputInfo for idle.
 #[cfg(not(unix))]
 pub fn activity_source() -> impl ActivitySource {
-    ai_buddy_core::sensing::StubActivitySource
+    windows::WindowsActivitySource
 }
 
 /// Where window geometry comes from.
@@ -547,10 +560,10 @@ pub fn activity_source() -> impl ActivitySource {
 /// manager's answer and CoreGraphics cannot give it: it reports the Dock as a
 /// window covering the whole display.
 ///
-/// Only macOS reads windows. `docs/SPEC.md` puts Windows out of scope for v1,
-/// so every other platform gets displays and no windows. What this buys is that
-/// the taskbar needs no separate concept when Windows does land: Tauri fills the
-/// same work area from `SPI_GETWORKAREA`.
+/// macOS, X11, and Windows all read windows. Tauri fills the work area from
+/// platform APIs: NSScreen on macOS, Xinerama on X11, and SPI_GETWORKAREA on
+/// Windows. The taskbar is reported as part of the work area, not as a separate
+/// dock bounds.
 ///
 /// Call this on the main thread. The work area comes from `NSScreen`, which may
 /// only be asked there, so the answer is read here and again on a timer, and
@@ -696,29 +709,42 @@ impl WindowSource for DisplayOnlySource {
     }
 }
 
-/// Windows stub: read-once, displays and no windows.
+/// Windows: read windows via EnumWindows, with 500ms refresh for hot-plug.
 #[cfg(not(unix))]
 pub fn window_source(app: tauri::AppHandle) -> (impl WindowSource, DisplayCache) {
     let cache = DisplayCache(Arc::new(Mutex::new(read_displays(&app))));
-    (DisplayOnlySource(cache.clone()), cache)
+    let refreshed = Arc::new(Mutex::new(Instant::now()));
+
+    let source = windows::WindowsWindowSource::new({
+        let cache = cache.clone();
+        let app_clone = app.clone();
+        move || {
+            if due(&refreshed) {
+                *cache.0.lock().unwrap() = read_displays(&app_clone);
+            }
+
+            let displays = cache.read();
+            (
+                displays.usable_frames,
+                displays.dock.map(|(bounds, _)| bounds),
+            )
+        }
+    });
+
+    (source, cache)
 }
 
+/// Windows needs the time check that unix lanes already use.
 #[cfg(not(unix))]
-pub struct DisplayOnlySource(DisplayCache);
-
-#[cfg(not(unix))]
-impl WindowSource for DisplayOnlySource {
-    fn capabilities(&self) -> ai_buddy_core::window_source::Capabilities {
-        ai_buddy_core::window_source::Capabilities::default()
+fn due(refreshed: &Mutex<Instant>) -> bool {
+    let Ok(mut refreshed) = refreshed.lock() else {
+        return false;
+    };
+    if refreshed.elapsed() < Duration::from_millis(500) {
+        return false;
     }
-
-    fn read(&self) -> ai_buddy_core::window_source::WorldGeometry {
-        ai_buddy_core::window_source::WorldGeometry {
-            usable_frames: self.0.read().usable_frames,
-            windows: Vec::new(),
-            dock: None,
-        }
-    }
+    *refreshed = Instant::now();
+    true
 }
 
 /// The displays as the windowing layer sees them right now.
