@@ -7,8 +7,8 @@ use crate::overlay::AlphaMask;
 
 use super::manifest::{DeclaredAnimation, DeclaredBehavior};
 use super::{
-    Animation, Art, Behavior, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS, MAX_FRAME_SIDE,
-    SHOWN_LOOP_BEHAVIORS,
+    Animation, Art, Behavior, PackageBytes, ALPHA_THRESHOLD, DEFAULT_WEIGHT, MAX_CHARACTER_PIXELS,
+    MAX_FRAME_SIDE, SHOWN_LOOP_BEHAVIORS, VARIANT_BASE_WEIGHT,
 };
 
 /// Check every declared Animation against the art the package carries, and
@@ -92,6 +92,17 @@ pub(super) fn resolve_animations(
                     fps: declaration.fps,
                     looping: declaration.looping,
                     variants: Vec::new(),
+                    // A variant that says nothing is seasoning, and a base
+                    // that says nothing keeps the ring its own: `weight = 1`
+                    // on a variant then means the "seldom" it means on a
+                    // Behavior. #316.
+                    weight: declaration
+                        .weight
+                        .unwrap_or(if declaration.variant_of.is_some() {
+                            DEFAULT_WEIGHT
+                        } else {
+                            VARIANT_BASE_WEIGHT
+                        }),
                 },
             );
         }
@@ -133,9 +144,10 @@ pub(super) fn resolve_animations(
 /// pairs worth linking.
 ///
 /// A variant is more art for an Animation the engine already plays, never a
-/// new Behavior. The renderer cycles a ring by whole loops on its own clock,
-/// so a member that holds its last frame would stall it, and a variant of a
-/// variant would make the ring's order a puzzle: both are rejected.
+/// new Behavior. A drawn member plays for as long as the engine keeps asking
+/// for the Animation, so one that holds its last frame would stall there, and
+/// a variant of a variant would leave a ring inside a ring: both are
+/// rejected.
 pub(super) fn check_variants(
     declared: &BTreeMap<String, DeclaredAnimation>,
     errors: &mut Vec<String>,
@@ -156,7 +168,7 @@ pub(super) fn check_variants(
             )),
             Some(target) if !target.looping || !animation.looping => errors.push(format!(
                 "animation {name:?} and its base {base:?} must both loop \"forever\"; \
-                 the renderer cycles a variant ring by whole loops"
+                 a drawn variant plays until the engine asks for something else"
             )),
             Some(_) => pairs.push((name.clone(), base.clone())),
         }
@@ -374,7 +386,7 @@ mod tests {
                  variants ring one base"
                     .to_string(),
                 "animation \"d\" and its base \"walk\" must both loop \"forever\"; \
-                 the renderer cycles a variant ring by whole loops"
+                 a drawn variant plays until the engine asks for something else"
                     .to_string(),
             ],
         );

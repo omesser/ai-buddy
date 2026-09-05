@@ -30,6 +30,9 @@ pub(super) struct DeclaredAnimation {
     pub(super) fps: u32,
     pub(super) looping: bool,
     pub(super) variant_of: Option<String>,
+    /// Left as declared, because what an undeclared weight means depends on
+    /// whether this Animation turns out to be a ring's base or its variant.
+    pub(super) weight: Option<u32>,
 }
 
 pub(super) struct DeclaredBehavior {
@@ -247,6 +250,7 @@ fn parse_animation(
     let mut fps = DEFAULT_FPS;
     let mut looping = true;
     let mut variant_of = None;
+    let mut weight = None;
 
     for (key, item) in table.iter() {
         match key {
@@ -280,9 +284,16 @@ fn parse_animation(
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
+            "weight" => match item.as_integer().and_then(|w| u32::try_from(w).ok()) {
+                Some(declared) => weight = Some(declared),
+                None => errors.push(format!(
+                    "weight for animation {name:?} is {}, which is not a whole number",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
-                 an Animation declares frames, fps, loop and variant_of"
+                 an Animation declares frames, fps, loop, variant_of and weight"
             )),
         }
     }
@@ -302,6 +313,7 @@ fn parse_animation(
         fps,
         looping,
         variant_of,
+        weight,
     })
 }
 
@@ -788,7 +800,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop and variant_of"
+                 frames, fps, loop, variant_of and weight"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
                  as play = [\"react\", \"talk\"]"

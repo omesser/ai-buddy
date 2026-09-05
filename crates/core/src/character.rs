@@ -56,6 +56,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use crate::director::Seeded;
 use crate::overlay::AlphaMask;
 
 mod manifest;
@@ -130,12 +131,12 @@ pub const DEFAULT_MODEL_POWER: u32 = 1;
 /// to be bigger on screen should be authored bigger instead.
 pub const MAX_SCALE: u32 = 4;
 
-/// How long the renderer holds each member of a variant ring, at least.
+/// The share a variant ring's base holds when it declares no `weight`.
 ///
-/// Rounded up to whole loops of the member playing, so the ring never cuts an
-/// Animation mid-stride. A few seconds reads as a mood; loop-for-loop
-/// alternation reads as a costume glitch.
-pub const VARIANT_HOLD_MS: u32 = 4000;
+/// Three against a variant's `DEFAULT_WEIGHT`, so a variant is seasoning: a
+/// ring of equal shares reads as a Character that cannot sit still. Stated as
+/// a number rather than as arithmetic on a hold, which is what #316 replaced.
+pub const VARIANT_BASE_WEIGHT: u32 = 3;
 
 /// The largest either side of a frame may be, in pixels.
 ///
@@ -226,9 +227,14 @@ pub struct Animation {
     /// Whether the Animation repeats or holds its last frame.
     pub looping: bool,
     /// Names of the Animations that declared `variant_of` this one, in name
-    /// order. The renderer cycles through this one and each of these in turn,
-    /// holding each for a few seconds of whole loops.
+    /// order. Whenever the engine starts this Animation, one of this one and
+    /// each of those is drawn by weight and plays until the engine asks for
+    /// something else.
     pub variants: Vec<String>,
+    /// This Animation's share of the variant ring it belongs to: what it
+    /// declared, or `DEFAULT_WEIGHT` for a variant and `VARIANT_BASE_WEIGHT`
+    /// for a base. Meaningless for an Animation in no ring.
+    pub weight: u32,
 }
 
 impl Animation {
@@ -357,8 +363,9 @@ pub enum CursorReaction {
 /// What the renderer needs to draw one tick.
 pub struct Drawn<'a> {
     /// The Animation actually drawing — the one asked for, its optional
-    /// fallback, or the variant the ring has cycled to. The renderer indexes
-    /// its art by this name, never by the one the engine asked with.
+    /// fallback, or the member of its variant ring the draw landed on. The
+    /// renderer indexes its art by this name, never by the one the engine
+    /// asked with.
     pub animation: &'a str,
     pub mask: &'a AlphaMask,
     /// The frame's size in pixels, before any scaling.
@@ -375,14 +382,20 @@ impl Character {
     /// mode come from the Character Manifest rather than a constant. This only
     /// looks up the Animation and the art the index lands on.
     ///
+    /// `variant_draw` is the Engine's draw for the Animation now playing —
+    /// taken when it started, held while it plays — and it decides which
+    /// member of the Animation's variant ring is on screen. Zero draws the
+    /// base, which is what a caller measuring a frame rather than playing one
+    /// wants.
+    ///
     /// `None` only for an Animation this Character does not have, which a
     /// validated Character cannot be asked for: the Engine names one of the
     /// nine required Animations, and a package missing one was rejected.
     /// Substituting a different Animation would be worse than drawing nothing,
     /// because the renderer would still be told the name it asked for.
-    pub fn draw(&self, animation: &str, animation_ms: u32) -> Option<Drawn<'_>> {
-        let (name, animation, local_ms) = self.resolve(animation, animation_ms)?;
-        let index = animation.frame_at(local_ms);
+    pub fn draw(&self, animation: &str, animation_ms: u32, variant_draw: u64) -> Option<Drawn<'_>> {
+        let (name, animation) = self.resolve(animation, variant_draw)?;
+        let index = animation.frame_at(animation_ms);
         let art = self.art.get(animation.frames.get(index)?)?;
 
         Some(Drawn {
@@ -394,13 +407,18 @@ impl Character {
     }
 
     /// Which Animation actually draws: the one asked for, its optional
-    /// fallback, or — when it anchors a variant ring — whichever member the
-    /// elapsed time has cycled to, with the time already spent in its slot.
+    /// fallback, or — when it anchors a variant ring — the member the draw
+    /// weighs out.
     ///
-    /// Pure in the same sense as `frame_at`: elapsed milliseconds in, art
-    /// out. The engine keeps saying "idle"; that a Character skateboards
-    /// through some of its idling is the art's own business.
-    fn resolve(&self, requested: &str, ms: u32) -> Option<(&str, &Animation, u32)> {
+    /// Pure in the same sense as `frame_at`: a draw in, art out. The engine
+    /// keeps saying "idle"; that a Character skateboards through some of its
+    /// idling is the art's own business, and how often is the weights'.
+    ///
+    /// The same mixer the Static Director picks a Behavior with, so one seed
+    /// and one Character behave identically on every machine — and members in
+    /// `BTreeMap` order, because the draw is taken over a running total and
+    /// the order therefore decides the answer.
+    fn resolve(&self, requested: &str, draw: u64) -> Option<(&str, &Animation)> {
         let (name, base) = match self.animations.get_key_value(requested) {
             Some(found) => found,
             None => {
@@ -411,7 +429,7 @@ impl Character {
             }
         };
         if base.variants.is_empty() {
-            return Some((name.as_str(), base, ms));
+            return Some((name.as_str(), base));
         }
 
         let members: Vec<(&str, &Animation)> = std::iter::once((name.as_str(), base))
@@ -421,34 +439,11 @@ impl Character {
                     .map(|(name, animation)| (name.as_str(), animation))
             }))
             .collect();
-        // The base holds three slots to every variant's one: a variant is
-        // seasoning, and a ring of equal shares reads as a Character that
-        // cannot sit still.
-        let slot = |animation: &Animation, hold: u32| -> u32 {
-            let loop_ms = (animation.frames.len() as u32 * 1000 / animation.fps).max(1);
-            loop_ms * hold.div_ceil(loop_ms).max(1)
-        };
-        let hold_for = |i: usize| {
-            if i == 0 {
-                3 * VARIANT_HOLD_MS
-            } else {
-                VARIANT_HOLD_MS
-            }
-        };
-        let total: u32 = members
-            .iter()
-            .enumerate()
-            .map(|(i, (_, member))| slot(member, hold_for(i)))
-            .sum();
-        let mut t = ms % total.max(1);
-        for (i, (member_name, member)) in members.iter().enumerate() {
-            let s = slot(member, hold_for(i));
-            if t < s {
-                return Some((member_name, member, t));
-            }
-            t -= s;
-        }
-        unreachable!("the slots sum to the total the time was wrapped to")
+        let weights: Vec<u32> = members.iter().map(|(_, member)| member.weight).collect();
+        // A ring of nothing but weightless art still has to draw something,
+        // and the base is what the engine asked for.
+        let picked = Seeded::new(draw).pick_index(&weights).unwrap_or(0);
+        members.get(picked).copied()
     }
 }
 
@@ -626,6 +621,7 @@ mod tests {
             fps,
             looping,
             variants: Vec::new(),
+            weight: VARIANT_BASE_WEIGHT,
         }
     }
 
@@ -754,19 +750,19 @@ mod tests {
         package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
         let character = load(&package).expect("package is valid");
 
-        let first = character.draw("idle", 124).expect("idle is declared");
+        let first = character.draw("idle", 124, 0).expect("idle is declared");
         assert_eq!(first.index, 0, "still inside the first of two 125ms frames");
         assert_eq!(first.frame_size, (2, 2));
         assert!(!corner_drawn(&first), "the mask is the one FRAME makes");
 
-        let second = character.draw("idle", 125).expect("idle is declared");
+        let second = character.draw("idle", 125, 0).expect("idle is declared");
         assert_eq!(second.index, 1);
         assert!(
             corner_drawn(&second),
             "and the mask moves to the frame the index landed on"
         );
 
-        let wrapped = character.draw("idle", 250).expect("idle is declared");
+        let wrapped = character.draw("idle", 250, 0).expect("idle is declared");
         assert_eq!(wrapped.index, 0, "a looping strip comes back round");
         assert!(!corner_drawn(&wrapped));
     }
@@ -777,7 +773,7 @@ mod tests {
     #[test]
     fn an_animation_the_character_does_not_have_draws_nothing() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("package is valid");
-        assert!(character.draw("cartwheel", 0).is_none());
+        assert!(character.draw("cartwheel", 0, 0).is_none());
     }
 
     #[test]
@@ -981,39 +977,84 @@ mod tests {
         assert_eq!(character.scale, 1);
     }
 
-    /// The ring is a pure function of elapsed time: the base holds for whole
-    /// loops adding up to at least `VARIANT_HOLD_MS`, then each variant does,
-    /// then it wraps. The engine keeps asking for "idle" throughout.
-    #[test]
-    fn a_variant_ring_cycles_by_whole_loops_and_wraps() {
-        // idle: one frame at the default 8fps, a 125ms loop; the base holds
-        // three variant-slots' worth, exactly 12000ms of whole loops. spin:
-        // one frame at 1fps, 1000ms loops, a 4000ms slot. 16000ms around.
+    /// A ring of one base and one variant, `spin` at 1fps so its loop length
+    /// differs from the base's.
+    fn ringing(spin: &str) -> Character {
         let manifest = format!(
-            "{}[animations.spin]\nframes = [\"idle-0.png\"]\nfps = 1\nvariant_of = \"idle\"\n",
+            "{}[animations.spin]\nframes = [\"idle-0.png\"]\nfps = 1\nvariant_of = \"idle\"\n{spin}",
             declaring(&REQUIRED_ANIMATIONS)
         );
-        let character = load_manifest(&manifest).expect("loads");
+        load_manifest(&manifest).expect("loads")
+    }
 
-        let playing = |ms: u32| {
-            character
-                .draw("idle", ms)
-                .expect("draws")
-                .animation
-                .to_string()
+    /// The distribution, over a fixed seed rather than a real source: the
+    /// counts below are the same on every run and every machine.
+    #[test]
+    fn a_declared_weight_decides_how_often_a_variant_is_drawn() {
+        let shares = |character: &Character| {
+            let mut seeded = Seeded::new(42);
+            let drawn: Vec<&str> = (0..4000)
+                .map(|_| {
+                    character
+                        .draw("idle", 0, seeded.draw())
+                        .expect("draws")
+                        .animation
+                })
+                .collect();
+            let base = drawn.iter().filter(|name| **name == "idle").count();
+            (base, drawn.len() - base)
         };
-        assert_eq!(playing(0), "idle");
-        assert_eq!(playing(11999), "idle", "the base holds three slots");
-        assert_eq!(playing(12000), "spin", "the slot ends on a whole loop");
-        assert_eq!(playing(15999), "spin");
-        assert_eq!(playing(16000), "idle", "the ring wraps to its base");
 
-        // Time inside a slot starts at that slot's own zero, so a member
-        // begins at its first frame rather than mid-loop.
-        assert_eq!(character.draw("idle", 12000).expect("draws").index, 0);
+        // Undeclared, a variant is seasoning: the base's implicit three
+        // against `DEFAULT_WEIGHT`, which is the ring's old `3 *` said as a
+        // number.
+        let (base, spin) = shares(&ringing(""));
+        assert!(
+            (2.7..3.3).contains(&(base as f64 / spin as f64)),
+            "three to one, near enough: {base} against {spin}"
+        );
+
+        // Declared, the author's number is what decides.
+        let (base, spin) = shares(&ringing("weight = 3\n"));
+        assert!(
+            (0.9..1.1).contains(&(base as f64 / spin as f64)),
+            "an even share when the variant asks for one: {base} against {spin}"
+        );
+
+        // And zero takes art out of the running, as it does a Behavior.
+        let (base, spin) = shares(&ringing("weight = 0\n"));
+        assert_eq!((base, spin), (4000, 0));
+    }
+
+    /// Whole loops: a drawn member starts at its own first frame and runs on
+    /// the clock the family is already keeping, so nothing is cut mid-stride.
+    /// `check_variants` refusing a `loop = "once"` member is the other half.
+    #[test]
+    fn a_drawn_variant_plays_from_its_first_frame() {
+        let mut package = art();
+        package.insert("spin-1.png".to_string(), SOLID.to_vec());
+        let manifest = format!(
+            "{}[animations.spin]\nframes = [\"idle-0.png\", \"spin-1.png\"]\n\
+             fps = 1\nvariant_of = \"idle\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
+        let character = load(&package).expect("package is valid");
+
+        let spinning = (0..)
+            .find(|draw| character.draw("idle", 0, *draw).expect("draws").animation == "spin")
+            .expect("some draw lands on the variant");
+
+        let index = |ms: u32| character.draw("idle", ms, spinning).expect("draws").index;
+        assert_eq!(index(0), 0, "the member's own first frame");
+        assert_eq!(index(1000), 1, "a second in, its second frame");
+        assert_eq!(index(2000), 0, "and round again rather than stopping");
 
         // Asked for directly, a variant is an ordinary Animation.
-        assert_eq!(character.draw("spin", 0).expect("draws").animation, "spin");
+        assert_eq!(
+            character.draw("spin", 0, 0).expect("draws").animation,
+            "spin"
+        );
     }
 
     /// The optional Animation contract: used when present, absent silently —
@@ -1022,7 +1063,10 @@ mod tests {
     #[test]
     fn climb_is_optional_and_falls_back_to_walk() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
-        assert_eq!(character.draw("climb", 0).expect("draws").animation, "walk");
+        assert_eq!(
+            character.draw("climb", 0, 0).expect("draws").animation,
+            "walk"
+        );
 
         let manifest = format!(
             "{}[animations.climb]\nframes = [\"idle-0.png\"]\n",
@@ -1030,12 +1074,12 @@ mod tests {
         );
         let character = load_manifest(&manifest).expect("loads");
         assert_eq!(
-            character.draw("climb", 0).expect("draws").animation,
+            character.draw("climb", 0, 0).expect("draws").animation,
             "climb"
         );
 
         // The fallback list is closed: an unknown name still draws nothing.
-        assert!(character.draw("saunter", 0).is_none());
+        assert!(character.draw("saunter", 0, 0).is_none());
     }
 
     #[test]
