@@ -1,10 +1,11 @@
 # FF1 Black Mage, sliced from the GigaGuy custom sprite sheet (Spriters
 # Resource asset 17261, contributed by GigaGuy). White background made
 # transparent, padded to 37x33 with feet on the bottom, flipped to face right
-# for engine mirroring. Where the sheet lacks a required pose, the closest
-# existing pose is reused: fall is tuck/crouch, not lying down; sleep uses the
-# KO/down pose; talk alternates stand and cast; hold shows the holditem pose.
-# Pixel art at scale 3 for desktop readability.
+# for engine mirroring. Sit is 4-frame vertical breath. Sleep is hunkered sit
+# with eyes closed (not the KO/fall pose). Hold bobs 1px. Land-1 is fall tuck,
+# not a duplicate of land-0. Talk alternates stand and cast. The old KO sleep
+# pose remains as fall-0 and land-0. Pixel art at scale 3 for desktop
+# readability.
 #
 # Character voice: Black Mage Evilwizardington from Brian Clevinger's 8-Bit
 # Theater (Nuklear Power), not a silent FF1 class.
@@ -50,13 +51,25 @@ frames = ["frames/fall-0.png", "frames/fall-1.png"]
 fps = 6
 
 [animations.land]
-frames = ["frames/land-0.png", "frames/land-1.png", "frames/land-2.png", "frames/land-3.png"]
+frames = [
+  "frames/land-0.png",
+  "frames/land-1.png",
+  "frames/land-2.png",
+  "frames/land-3.png"
+]
 fps = 10
 loop = "once"
 
 [animations.sit]
-frames = ["frames/sit-0.png", "frames/sit-1.png"]
-fps = 2
+frames = [
+  "frames/sit-0.png",
+  "frames/sit-1.png",
+  "frames/sit-1.png",
+  "frames/sit-2.png",
+  "frames/sit-3.png",
+  "frames/sit-3.png"
+]
+fps = 3
 
 [animations.hold]
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
