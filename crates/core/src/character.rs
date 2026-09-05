@@ -560,7 +560,9 @@ fn personality(package: &PackageBytes, errors: &mut Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::overlay::SpriteRect;
+
     use std::collections::BTreeSet;
 
     /// A 2x2 RGBA PNG whose top-left pixel is transparent. Art a renderer can
@@ -571,12 +573,9 @@ mod tests {
     /// built from it apart from one built from `FRAME`.
     const SOLID: &[u8] = include_bytes!("../tests/fixtures/opaque-2x2.png");
 
-    /// A 2x2 greyscale frame: a readable header with no alpha to mask.
-    const GREYSCALE: &[u8] = include_bytes!("../tests/fixtures/greyscale-2x2.png");
-
     /// One frame file per required Animation, plus a `wave` no manifest has to
     /// declare. Art nothing declares is ignored, the same as a README would be.
-    fn art() -> PackageBytes {
+    pub(super) fn art() -> PackageBytes {
         REQUIRED_ANIMATIONS
             .iter()
             .chain(["wave"].iter())
@@ -585,7 +584,7 @@ mod tests {
     }
 
     /// A Character Manifest declaring exactly `animations`, one frame each.
-    fn declaring(animations: &[&str]) -> String {
+    pub(super) fn declaring(animations: &[&str]) -> String {
         let mut manifest = String::from("name = \"Blip\"\n");
         for animation in animations {
             manifest.push_str(&format!(
@@ -595,7 +594,7 @@ mod tests {
         manifest
     }
 
-    fn load_manifest(manifest: &str) -> Result<Character, Vec<String>> {
+    pub(super) fn load_manifest(manifest: &str) -> Result<Character, Vec<String>> {
         let mut package = art();
         package.insert(
             CHARACTER_MANIFEST_FILE.to_string(),
@@ -605,14 +604,14 @@ mod tests {
     }
 
     /// The errors, or a failure naming what loaded instead.
-    fn errors(result: Result<Character, Vec<String>>) -> Vec<String> {
+    pub(super) fn errors(result: Result<Character, Vec<String>>) -> Vec<String> {
         match result {
             Ok(character) => panic!("expected rejection, loaded {}", character.name),
             Err(errors) => errors,
         }
     }
 
-    fn assert_names(errors: &[String], offender: &str) {
+    pub(super) fn assert_names(errors: &[String], offender: &str) {
         assert!(
             errors.iter().any(|error| error.contains(offender)),
             "no error names {offender:?}: {errors:#?}"
@@ -781,23 +780,6 @@ mod tests {
         assert!(character.draw("cartwheel", 0).is_none());
     }
 
-    /// A readable header with no alpha behind it. Rejected here, naming the
-    /// frame, because nothing downstream reopens the art to discover it —
-    /// this loader is the last thing that can refuse a Character.
-    #[test]
-    fn a_frame_no_mask_can_be_built_from_is_rejected_by_name() {
-        let mut package = art();
-        package.insert("sit-0.png".to_string(), GREYSCALE.to_vec());
-        package.insert(
-            CHARACTER_MANIFEST_FILE.to_string(),
-            declaring(&REQUIRED_ANIMATIONS).into_bytes(),
-        );
-
-        let errors = errors(load(&package));
-        assert_names(&errors, "sit-0.png");
-        assert_names(&errors, "RGBA");
-    }
-
     #[test]
     fn a_missing_required_animation_is_rejected_by_name() {
         let eight = [
@@ -923,146 +905,6 @@ mod tests {
     }
 
     #[test]
-    fn a_weight_that_is_not_a_whole_number_is_rejected() {
-        let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"react\"]\nweight = \"lots\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let rejected = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            rejected,
-            vec!["weight for behavior \"greet\" is \"lots\", \
-                 which is not a whole number"
-                .to_string()]
-        );
-
-        // TOML has negative numbers where the old format had only digits, and
-        // a weight is a count.
-        let negative = format!(
-            "{}[behaviors.greet]\nplay = [\"react\"]\nweight = -3\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let rejected = errors(load_manifest(&negative));
-
-        assert_eq!(
-            rejected,
-            vec!["weight for behavior \"greet\" is -3, \
-                 which is not a whole number"
-                .to_string()]
-        );
-    }
-
-    #[test]
-    fn a_trigger_that_is_not_a_condition_is_rejected_with_the_conditions() {
-        let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"react\"]\nwhen = \"weather rain\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(errors.len(), 1, "{errors:#?}");
-        assert_names(&errors, "\"weather rain\"");
-        assert_names(&errors, "idle over 2m");
-        assert_names(&errors, "app Safari");
-    }
-
-    /// Hostile input: a duration whose last byte is the middle of a character.
-    /// Splitting it off by byte would panic and take the loader with it.
-    #[test]
-    fn a_duration_that_is_not_ascii_is_rejected_rather_than_crashing() {
-        let manifest = format!(
-            "{}[behaviors.nap]\nplay = [\"sit\"]\nwhen = \"idle over 2\u{043c}\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-
-        assert_names(&errors(load_manifest(&manifest)), "nap");
-    }
-
-    #[test]
-    fn an_unknown_primitive_is_rejected_by_name() {
-        let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"talk\", \"jump\"]\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors,
-            vec![
-                "behavior \"greet\" declares \"jump\", which is not a Primitive; \
-                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase"
-                    .to_string()
-            ],
-            "the author is told the offending word and what they may write instead"
-        );
-    }
-
-    #[test]
-    fn a_behavior_that_cannot_terminate_is_rejected() {
-        let manifest = format!(
-            "{}[behaviors.pace]\nplay = [\"walk\"]\nthen = \"turn\"\n\
-             [behaviors.turn]\nplay = [\"walk\"]\nthen = \"pace\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors,
-            vec!["behavior \"pace\" cannot terminate: \
-                 \"pace\" -> \"turn\" -> \"pace\""
-                .to_string()],
-            "the author is given the whole cycle"
-        );
-    }
-
-    #[test]
-    fn a_behavior_that_follows_itself_is_rejected() {
-        let manifest = format!(
-            "{}[behaviors.pace]\nplay = [\"walk\"]\nthen = \"pace\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_names(&errors, "cannot terminate");
-        assert_names(&errors, "pace");
-    }
-
-    #[test]
-    fn a_behavior_following_one_that_does_not_exist_is_rejected_by_name() {
-        let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"talk\"]\nthen = \"nap\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors,
-            vec!["behavior \"greet\" follows \"nap\", \
-                 which the package does not declare"
-                .to_string()],
-            "the author is told which behavior points at what"
-        );
-    }
-
-    /// Hostile input: a chain far deeper than any author would write, ending in
-    /// a loop. A loader that walked it by recursion would exhaust the stack
-    /// instead of reporting anything. Two thousand links is past a typical
-    /// debug stack; the proof is the rejection, not the length of the TOML.
-    #[test]
-    fn a_very_deep_chain_ending_in_a_loop_is_rejected_rather_than_crashing() {
-        const DEPTH: u32 = 2_000;
-        let mut manifest = declaring(&REQUIRED_ANIMATIONS);
-        for link in 0..DEPTH {
-            manifest.push_str(&format!("[behaviors.b{link}]\nthen = \"b{}\"\n", link + 1));
-        }
-        manifest.push_str(&format!("[behaviors.b{DEPTH}]\nthen = \"b0\"\n"));
-
-        let errors = errors(load_manifest(&manifest));
-        assert_names(&errors, "cannot terminate");
-    }
-
-    #[test]
     fn a_package_with_no_character_manifest_is_rejected() {
         let errors = errors(load(&art()));
         assert_eq!(
@@ -1107,26 +949,6 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_declaration_is_rejected_by_name() {
-        // Before the tables: a root key written after one would land inside it.
-        let manifest = format!(
-            "capability = \"screen_recording\"\n{}",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors,
-            vec![
-                "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, render_mode, scale, animations, behaviors, director and cursor"
-                    .to_string()
-            ],
-            "no package can invent a declaration, so none can grant itself anything"
-        );
-    }
-
-    #[test]
     fn director_backoff_is_declared_or_defaulted() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
         assert_eq!(character.model_base, DEFAULT_MODEL_BASE);
@@ -1139,16 +961,6 @@ mod tests {
         let character = load_manifest(&manifest).expect("loads");
         assert_eq!(character.model_base, 3);
         assert_eq!(character.model_power, 2);
-    }
-
-    #[test]
-    fn a_director_backoff_that_is_not_a_whole_number_from_one_is_rejected() {
-        let manifest = format!(
-            "{}\n[director]\nmodel_base = 0\nmodel_power = 1\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-        assert_names(&errors, "model_base");
     }
 
     /// The render_mode ADR-0006 reserved: undeclared stays pixelated at the
@@ -1167,34 +979,6 @@ mod tests {
         let character = load_manifest(&manifest).expect("loads");
         assert!(character.smooth);
         assert_eq!(character.scale, 1);
-    }
-
-    #[test]
-    fn a_render_mode_that_is_neither_option_is_rejected_by_its_text() {
-        let manifest = format!(
-            "render_mode = \"blurry\"\n{}",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-        assert_eq!(
-            errors,
-            vec![
-                "\"render_mode\" is \"blurry\", and must be \"pixelated\" or \"smooth\""
-                    .to_string()
-            ],
-        );
-    }
-
-    #[test]
-    fn a_scale_outside_its_bounds_is_rejected_by_its_text() {
-        let manifest = format!("scale = 9\n{}", declaring(&REQUIRED_ANIMATIONS));
-        let errors = errors(load_manifest(&manifest));
-        assert_eq!(
-            errors,
-            vec![format!(
-                "\"scale\" is 9, and must be a whole number from 1 to {MAX_SCALE}"
-            )],
-        );
     }
 
     /// The ring is a pure function of elapsed time: the base holds for whole
@@ -1255,286 +1039,6 @@ mod tests {
     }
 
     #[test]
-    fn a_variant_of_nothing_a_variant_or_a_once_loop_is_rejected_by_name() {
-        let manifest = format!(
-            "{}\
-             [animations.a]\nframes = [\"idle-0.png\"]\nvariant_of = \"dance\"\n\
-             [animations.b]\nframes = [\"idle-0.png\"]\nvariant_of = \"idle\"\n\
-             [animations.c]\nframes = [\"idle-0.png\"]\nvariant_of = \"b\"\n\
-             [animations.d]\nframes = [\"idle-0.png\"]\nloop = \"once\"\nvariant_of = \"walk\"\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-        let errors = errors(load_manifest(&manifest));
-        assert_eq!(
-            errors,
-            vec![
-                "animation \"a\" is a variant_of \"dance\", which is not declared".to_string(),
-                "animation \"c\" is a variant_of \"b\", itself a variant; \
-                 variants ring one base"
-                    .to_string(),
-                "animation \"d\" and its base \"walk\" must both loop \"forever\"; \
-                 the renderer cycles a variant ring by whole loops"
-                    .to_string(),
-            ],
-        );
-    }
-
-    /// A syntax mistake is one error naming its line, never a cascade: past it
-    /// the parser would be guessing, and a guess would report mistakes the
-    /// author has not made.
-    #[test]
-    fn a_manifest_that_is_not_toml_is_rejected_with_its_line() {
-        let manifest = format!("{}animation idle\n", declaring(&REQUIRED_ANIMATIONS));
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors.len(),
-            1,
-            "one syntax error, one message: {errors:#?}"
-        );
-        // Nine required Animations at two lines each follow the name line.
-        assert_names(&errors, "character.manifest is not TOML at line 20");
-    }
-
-    #[test]
-    fn a_frame_that_is_not_in_the_package_is_rejected_by_name() {
-        let manifest = declaring(&REQUIRED_ANIMATIONS).replace("sit-0.png", "sit-99.png");
-        let errors = errors(load_manifest(&manifest));
-
-        assert_eq!(
-            errors,
-            vec!["animation \"sit\" frame \"sit-99.png\" is not in the package".to_string()],
-            "the author is told which frame of which Animation is absent"
-        );
-    }
-
-    #[test]
-    fn a_frame_that_is_not_readable_art_is_rejected_by_name() {
-        let mut package = art();
-        package.insert("sit-0.png".to_string(), b"MZ\x90\x00 not a PNG".to_vec());
-        package.insert(
-            CHARACTER_MANIFEST_FILE.to_string(),
-            declaring(&REQUIRED_ANIMATIONS).into_bytes(),
-        );
-
-        let errors = errors(load(&package));
-        assert_names(&errors, "sit-0.png");
-        assert_names(&errors, "is not readable art");
-    }
-
-    #[test]
-    fn an_animation_whose_frames_disagree_on_size_is_rejected() {
-        let mut package = art();
-        package.insert("walk-1.png".to_string(), png_bytes(3, 3));
-        package.insert(
-            CHARACTER_MANIFEST_FILE.to_string(),
-            declaring(&REQUIRED_ANIMATIONS)
-                .replace(
-                    "frames = [\"walk-0.png\"]",
-                    "frames = [\"walk-0.png\", \"walk-1.png\"]",
-                )
-                .into_bytes(),
-        );
-
-        let errors = errors(load(&package));
-        assert_eq!(
-            errors,
-            vec![
-                "animation \"walk\" frame \"walk-1.png\" is 3x3, and its first frame \
-                 is 2x2; every frame is one size"
-                    .to_string()
-            ],
-            "the author is told both sizes and which frame disagrees"
-        );
-    }
-
-    /// Hostile input: a header claiming a frame no screen could hold. Nothing
-    /// decompresses it here, but a renderer that trusts the declared size
-    /// allocates it (user story 48).
-    #[test]
-    fn a_frame_too_large_to_be_a_sprite_is_rejected_by_name() {
-        let mut package = art();
-        package.insert("sit-0.png".to_string(), png_bytes(100_000, 1));
-        package.insert(
-            CHARACTER_MANIFEST_FILE.to_string(),
-            declaring(&REQUIRED_ANIMATIONS).into_bytes(),
-        );
-
-        let errors = errors(load(&package));
-        assert_eq!(
-            errors,
-            vec![
-                "animation \"sit\" frame \"sit-0.png\" is 100000x1, and no side of a \
-                 frame may be over 1024 pixels"
-                    .to_string()
-            ],
-            "the author is told which frame is implausible and how big a frame may be"
-        );
-    }
-
-    #[test]
-    fn an_animation_with_no_frames_is_rejected_by_name() {
-        // An empty list and no list at all are the same mistake to an author.
-        for wave in ["[animations.wave]\nframes = []\n", "[animations.wave]\n"] {
-            let empty = errors(load_manifest(&format!(
-                "{}{wave}",
-                declaring(&REQUIRED_ANIMATIONS)
-            )));
-            assert_eq!(
-                empty,
-                vec!["animation \"wave\" declares no frames".to_string()],
-                "the author is told which Animation has no art"
-            );
-        }
-    }
-
-    /// TOML itself refuses a duplicate key, so a declaration written twice is
-    /// a syntax error naming the key rather than a check of this module's.
-    #[test]
-    fn an_animation_or_behavior_declared_twice_is_rejected_by_name() {
-        let twice = errors(load_manifest(&format!(
-            "{}[animations.idle]\nframes = [\"idle-0.png\"]\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        )));
-        assert_names(&twice, "is not TOML");
-        assert_names(&twice, "idle");
-
-        let twice = errors(load_manifest(&format!(
-            "{}[behaviors.greet]\nplay = [\"talk\"]\n[behaviors.greet]\nplay = [\"sit\"]\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        )));
-        assert_names(&twice, "is not TOML");
-        assert_names(&twice, "greet");
-    }
-
-    /// Hostile input: a frame reference is eight bytes of manifest and a whole
-    /// copy of the art in the renderer, so an unbounded frame count is a way to
-    /// hand the renderer an allocation it dies on. The bound is checked on both
-    /// sides so it cannot drift by one.
-    #[test]
-    fn an_animation_with_more_frames_than_the_bound_is_rejected_by_name() {
-        let repeat = |count: usize| {
-            format!(
-                "{}[animations.wave]\nframes = [{}]\n",
-                declaring(&REQUIRED_ANIMATIONS),
-                vec!["\"wave-0.png\""; count].join(", ")
-            )
-        };
-
-        let character = load_manifest(&repeat(MAX_FRAMES)).expect("the bound itself loads");
-        assert_eq!(character.animations["wave"].frames.len(), MAX_FRAMES);
-
-        let over = errors(load_manifest(&repeat(MAX_FRAMES + 1)));
-        assert_names(&over, "wave");
-        assert_names(&over, &format!("{} frames", MAX_FRAMES + 1));
-    }
-
-    /// Hostile input: `MAX_FRAME_SIDE` bounds one frame and `MAX_FRAMES` one
-    /// Animation, but a Character may declare any number of Animations, so
-    /// neither bounds the masks the renderer holds for the whole Character. A
-    /// frame two Animations share is one mask, so it is charged once (user
-    /// story 48).
-    ///
-    /// The package that sits on the budget is not loaded: that is 256
-    /// megapixels of masks, and the check that it *would* load is the same
-    /// arithmetic the over-budget path already uses. The refusal is the
-    /// behavior; headers name the frames, so nothing inflates them.
-    #[test]
-    fn a_character_whose_frames_outweigh_the_budget_is_rejected() {
-        let frame = png_bytes(MAX_FRAME_SIDE, MAX_FRAME_SIDE);
-        let pixels = u64::from(MAX_FRAME_SIDE) * u64::from(MAX_FRAME_SIDE);
-        let budget = (MAX_CHARACTER_PIXELS / pixels) as usize;
-
-        // Every required Animation shares one frame, so `count` frames of art
-        // are `count` masks however many Animations name them.
-        let declaring_distinct = |count: usize| {
-            let mut package: PackageBytes = (0..count)
-                .map(|i| (format!("big-{i}.png"), frame.clone()))
-                .collect();
-            let mut manifest = String::from("name = \"Blip\"\n");
-            for animation in REQUIRED_ANIMATIONS {
-                manifest.push_str(&format!(
-                    "[animations.{animation}]\nframes = [\"big-0.png\"]\n"
-                ));
-            }
-            let rest: Vec<String> = (1..count).map(|i| format!("\"big-{i}.png\"")).collect();
-            manifest.push_str(&format!(
-                "[animations.wave]\nframes = [{}]\n",
-                rest.join(", ")
-            ));
-            package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
-            package
-        };
-
-        let over = errors(load(&declaring_distinct(budget + 1)));
-        assert_eq!(
-            over,
-            vec![format!(
-                "the package's frames are {} pixels in all, over the \
-                 {MAX_CHARACTER_PIXELS}-pixel limit",
-                (budget as u64 + 1) * pixels
-            )],
-            "the author is told how much art they declared and how much a Character may hold"
-        );
-    }
-
-    /// Hostile input: declarations written to confuse the loader rather than
-    /// to declare anything — TOML the parser accepts and the domain does not.
-    /// Each one is rejected by name, and none of them is guessed at, ignored,
-    /// or allowed to panic.
-    #[test]
-    fn nonsense_declarations_are_each_rejected_by_name() {
-        let manifest = format!(
-            "{}\
-             [animations.wave]\n\
-             frames = \"wave-0.png\"\n\
-             mirrored = true\n\
-             [behaviors.chase]\n\
-             play = \"walk\"\n\
-             then = 3\n\
-             [behaviors.pounce]\n\
-             play = [\"react\", 7]\n\
-             when = 6\n\
-             [behaviors.\"фыр\"]\n\
-             play = [[]]\n",
-            declaring(&REQUIRED_ANIMATIONS)
-        );
-
-        let errors = errors(load_manifest(&manifest));
-
-        // The whole set, not a count and a prefix: messages reading only
-        // "wrong type" would satisfy a structural check while telling the
-        // author nothing about what to change.
-        assert_eq!(
-            errors,
-            vec![
-                "frames for animation \"wave\" is \"wave-0.png\", and must be a list of \
-                 frame files, as frames = [\"idle-0.png\"]"
-                    .to_string(),
-                "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop and variant_of"
-                    .to_string(),
-                "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
-                 as play = [\"react\", \"talk\"]"
-                    .to_string(),
-                "then for behavior \"chase\" is 3, and must name one Behavior, \
-                 as then = \"settle\""
-                    .to_string(),
-                "behavior \"pounce\" declares 7, which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
-                    .to_string(),
-                "when for behavior \"pounce\" is 6, which is not a condition; a condition \
-                 reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\""
-                    .to_string(),
-                "behavior \"фыр\" declares [], which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
-                    .to_string(),
-            ],
-            "each nonsense declaration is rejected by name, saying what is wrong"
-        );
-    }
-
-    #[test]
     fn a_name_that_is_not_text_is_rejected() {
         let manifest = declaring(&REQUIRED_ANIMATIONS).replace("name = \"Blip\"", "name = 3");
         let numeric = errors(load_manifest(&manifest));
@@ -1549,31 +1053,6 @@ mod tests {
         let rejected = errors(load_manifest(&manifest));
 
         assert_names(&rejected, "\"name\" is empty");
-    }
-
-    #[test]
-    fn an_unplayable_fps_or_loop_mode_is_rejected_by_name() {
-        // Each case asks for the Animation at fault and what is wrong with
-        // it, so a message that says only "fps" cannot pass.
-        for (declaration, wanted) in [
-            (
-                "fps = 0",
-                &["animation \"idle\"", "is 0", "must be 1 to 60"][..],
-            ),
-            ("fps = \"soon\"", &["animation \"idle\"", "\"soon\""]),
-            ("fps = 240", &["animation \"idle\"", "is 240"]),
-            ("fps = 3.5", &["animation \"idle\"", "3.5", "whole number"]),
-            ("loop = \"maybe\"", &["animation \"idle\"", "\"maybe\""]),
-        ] {
-            let manifest = declaring(&REQUIRED_ANIMATIONS).replace(
-                "frames = [\"idle-0.png\"]",
-                &format!("frames = [\"idle-0.png\"]\n{declaration}"),
-            );
-            let errors = errors(load_manifest(&manifest));
-            for offender in wanted {
-                assert_names(&errors, offender);
-            }
-        }
     }
 
     #[test]
@@ -1657,20 +1136,5 @@ mod tests {
             vec!["personality.txt is 2400 characters, over the 2000-character limit".to_string()],
             "the author is told how long their prompt is and how long it may be"
         );
-    }
-
-    /// A valid PNG of the given size, for the tests the fixture cannot serve.
-    /// The encoder is already a dependency of the renderer.
-    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        let mut encoder = png::Encoder::new(&mut bytes, width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().expect("header is writable");
-        writer
-            .write_image_data(&vec![0; (width * height * 4) as usize])
-            .expect("image data is writable");
-        writer.finish().expect("PNG is finishable");
-        bytes
     }
 }
