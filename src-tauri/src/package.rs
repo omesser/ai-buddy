@@ -472,14 +472,14 @@ mod tests {
     #[test]
     fn every_shipped_character_loads_and_has_a_life() {
         let shipped = [
-            ("black-mage", "Black Mage", "ponder", 4, "meditate"),
-            ("bmo", "BMO", "report", 3, "patrol"),
-            ("cat", "Cat", "inspect", 4, "nap"),
-            ("jotaro-kujo", "Jotaro Kujo", "stand", 5, "rest"),
-            ("nim", "Nim", "doze", 5, "doze"),
-            ("buddy-bot", "Buddy Bot", "greet", 4, "nap"),
-            ("timber-wolf", "Timber Wolf", "patrol", 3, "power_down"),
-            ("trump", "Trump", "report", 4, "doze"),
+            ("black-mage", "Black Mage", "ponder", 40, "meditate"),
+            ("bmo", "BMO", "report", 30, "patrol"),
+            ("cat", "Cat", "inspect", 40, "nap"),
+            ("jotaro-kujo", "Jotaro Kujo", "stand", 50, "rest"),
+            ("nim", "Nim", "doze", 50, "doze"),
+            ("buddy-bot", "Buddy Bot", "greet", 40, "nap"),
+            ("timber-wolf", "Timber Wolf", "patrol", 30, "power_down"),
+            ("trump", "Trump", "report", 40, "doze"),
         ];
 
         for (directory, name, behavior, weight, alone) in shipped {
@@ -997,7 +997,7 @@ mod tests {
 
             for animation in character::REQUIRED_ANIMATIONS {
                 assert!(
-                    character.draw(animation, 0).is_some(),
+                    character.draw(animation, 0, 0).is_some(),
                     "{name} draws its {animation:?} animation"
                 );
             }

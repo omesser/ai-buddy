@@ -215,10 +215,11 @@ A Personality Prompt governs demeanour, never capability. Character Packages are
 untrusted input to a model that can reach an agent Harness; prompt injection
 through a package is not theoretical.
 
-**Required Animation Set: 8** — `idle`, `walk`, `fall`, `land`, `sit`, `sleep`,
-`react`, `talk`. A declared optional set is used when present. A Character with
-8 animations must work; one with 30 should look better. Eight keeps a hobbyist
-package to an evening's drawing.
+**Required Animation Set: 9** — `idle`, `walk`, `fall`, `land`, `sit`, `sleep`,
+`react`, `talk`, `hold` (ADR-0007 added the last, for riding a dragged Perch).
+A declared optional set is used when present. A Character with 9 animations
+must work; one with 30 should look better. Nine keeps a hobbyist package to an
+evening's drawing.
 
 **Shipped Characters: two, one hard-pixel retro (a small flat palette, no
 anti-aliasing, dithering only where a shade between two of its colours is
@@ -243,6 +244,39 @@ declared size can disagree with the art, and a derived one cannot. The manifest
 is TOML — a table per Animation, a table per Behavior (ADR-0015) — and rejects
 every declaration it does not know, which is what stops a package from
 declaring itself a capability.
+
+A `weight` is a relative share, and one seeded draw reads them for a Behavior
+and for an Animation's variants alike. It is a plain integer in both places —
+`weight = 80` — unbounded, defaulting to 10, and meaningful only against its
+siblings'. A ring nobody weighs is therefore an even split.
+
+The default is 10 rather than 1 so that an author can weigh a member *down*.
+At a default of 1 the default is also the floor: making one variant rarer than
+its siblings means raising every other member instead. At 10, `weight = 5` is
+half as often and `weight = 1` a tenth, and nothing else in the ring moves.
+
+Shares rather than percentages because the draw runs over a filtered pool.
+`StaticDirector::propose` gates on trigger and on `weight > 0`, then on
+recency, and draws from whatever survives; a declared percentage would almost
+never be the share actually taken. A ratio survives filtering and a percentage
+does not. Nothing here totals 100, nothing validates a sum, and nothing
+divides — the draw walks a running total over `u32`, so one seed picks the same
+member on every machine.
+
+| Ring | Declared shares | Ring total | Share |
+|---|---|---|---|
+| BMO `idle` | `idle` 80, `sing` 10, `skate` 10 | 100 | 80%, 10%, 10% |
+| BMO `walk` | `walk` 30, `ballwalk` 10 | 40 | 75%, 25% |
+| Buddy Bot `idle` | `idle` 20, and 10 each to `idle-blink`, `idle-breathe`, `idle-listen` | 50 | 40%, 20%, 20%, 20% |
+| Cat `idle` | `idle` 20, `waiting` 10 | 30 | 67%, 33% |
+| Jotaro `idle` | `idle` 30, `waiting` 10 | 40 | 75%, 25% |
+| Timber Wolf `idle` | `idle` 30, `scan` 10 | 40 | 75%, 25% |
+| Trump `idle` | `idle` 30, `waiting` 20 | 50 | 60%, 40% |
+
+Only two of the seven rings declare more than one number, because an undeclared
+member is already 10: `idle = 80` against two silent variants is the whole of
+80/10/10. The shares above are what a million draws actually produced, not what
+the arithmetic promises.
 
 ### 7. Physics, Perches, and five verbs
 

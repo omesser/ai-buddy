@@ -641,7 +641,7 @@ mod tests {
     fn test_character(name: &str) -> crate::character::Character {
         use crate::character::{
             Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
-            DEFAULT_MODEL_POWER,
+            DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
         };
         use std::collections::BTreeMap;
 
@@ -658,6 +658,7 @@ mod tests {
                     fps: 8,
                     looping: true,
                     variants: Vec::new(),
+                    weight: DEFAULT_WEIGHT,
                 },
             );
         }
