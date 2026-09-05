@@ -261,13 +261,16 @@ effect. Its contract:
   descending z-order, cursor position, pending interaction verbs, elapsed time since the
   previous tick, and any Behavior proposal delivered since the last tick.
 - Output: a `Frame` carrying sprite position and velocity, current State, the current
-  animation identifier with how long that Animation has been playing, and optional
-  dialogue.
+  animation identifier with how long that Animation has been playing, the draw that
+  picks among that Animation's variants, and optional dialogue.
 
 Which frame of that Animation is on screen is not the Engine's to say. Selecting a frame
 needs the fps and the loop mode, and a Character Manifest declares both per Animation.
 The Engine reports the elapsed play time it does own, and `Animation::frame_at` maps that
-onto an index.
+onto an index. Nor is which art plays under one name: a Character may declare a variant
+of an Animation the Engine already asks for, and the Engine reports only a draw — taken
+when the Animation starts, from a seed it is handed — that `Character::draw` weighs
+against what the Manifest declared.
 
 The Engine performs no I/O, holds no timers, and reads no clock. Time enters only as
 elapsed milliseconds on the snapshot. This makes every physics and behavior property

@@ -13,7 +13,8 @@
 //! crate's integration test.
 
 use ai_buddy_core::character::{self, CursorReaction, REQUIRED_ANIMATIONS};
-use std::collections::BTreeMap;
+use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, Window, WorldSnapshot};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::path::Path;
 
@@ -521,14 +522,14 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
     );
 
     let drawn = character
-        .draw("scan", 0)
+        .draw("scan", 0, 0)
         .expect("scan draws when asked for by name");
     assert_eq!(drawn.animation, "scan");
 
     let engage = &character.behaviors["engage"];
     assert!(
         engage.primitives.contains(&character::Primitive::Idle),
-        "engage steps through idle so the scan ring can surface"
+        "engage steps through idle, which is where a scan can be drawn"
     );
     assert!(
         engage.primitives.contains(&character::Primitive::React),
@@ -540,6 +541,160 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
     assert!(
         pursue.primitives.contains(&character::Primitive::Chase),
         "pursue still walks toward the cursor"
+    );
+}
+
+/// One display, big enough for a sprite to land on and walk about.
+const DISPLAY: Rect = Rect {
+    x: 0.0,
+    y: 0.0,
+    width: 1000.0,
+    height: 800.0,
+};
+
+/// The art Timber Wolf draws each time a patrol reaches its idle Primitive,
+/// over `stretches` of them, for one Instance's variant seed.
+///
+/// Through the Engine rather than by calling `draw` with a chosen number,
+/// because the property under test is that the two agree: the Engine decides
+/// when a draw happens, and a `draw` called directly cannot disagree with
+/// itself.
+fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize) -> Vec<String> {
+    let ground = WorldSnapshot {
+        displays: vec![DISPLAY],
+        elapsed_ms: 100,
+        ..WorldSnapshot::default()
+    };
+    let mut engine = Engine::new(Point { x: 500.0, y: 0.0 })
+        .with_behaviors(character.behaviors.clone())
+        .with_variant_seed(seed);
+
+    let mut art = Vec::new();
+    let mut idling = false;
+    let mut playing = true;
+    // A bound rather than a loop that hangs the suite: one patrol is three
+    // Primitive turns and the walk it coasts out of, well inside a hundred
+    // ticks. The landing before the first one costs a handful more.
+    for _ in 0..40 + 100 * stretches {
+        let frame = engine.tick(&WorldSnapshot {
+            // Proposed only when nothing is playing: a proposal restarts the
+            // chain, so one every tick would never let patrol reach its idle.
+            proposal: (!playing).then(|| BehaviorProposal {
+                behavior: "patrol".to_string(),
+                dialogue: None,
+            }),
+            ..ground.clone()
+        });
+        playing = frame.playing_primitive.is_some();
+        let on_idle = frame.playing_primitive == Some(character::Primitive::Idle);
+        if on_idle && !idling {
+            art.push(
+                character
+                    .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                    .expect("Timber Wolf draws the idle it is playing")
+                    .animation
+                    .to_string(),
+            );
+            if art.len() == stretches {
+                break;
+            }
+        }
+        idling = on_idle;
+    }
+    art
+}
+
+/// #316: the TAC laser is a weighted draw taken when idle starts, so it
+/// surfaces inside a Behavior's idle Primitive — a turn of under a second,
+/// which is the case an author is most likely to think is broken.
+#[test]
+fn timber_wolf_scans_inside_a_behaviors_idle_primitive() {
+    let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
+
+    let art = patrol_idle_art(&character, 0x5EED, 40);
+
+    assert_eq!(art.len(), 40, "forty patrols reached their idle: {art:?}");
+    assert!(
+        art.iter().any(|name| name == "scan"),
+        "the laser sweeps on some of them: {art:?}"
+    );
+    assert!(
+        art.iter().filter(|name| *name == "idle").count() * 2 > art.len(),
+        "and the base still dominates, because the manifest says so — the sweep \
+         declares a quarter of the ring: {art:?}"
+    );
+}
+
+/// #316: the same seed and Character draw the same members in the same order.
+/// A draw is the only thing deciding which member plays, so nothing else pins
+/// this.
+#[test]
+fn the_same_seed_draws_timber_wolfs_variants_in_the_same_order() {
+    let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
+
+    let art = patrol_idle_art(&character, 7, 16);
+
+    assert_eq!(
+        art,
+        patrol_idle_art(&character, 7, 16),
+        "same seed, same art"
+    );
+    assert_ne!(
+        art,
+        patrol_idle_art(&character, 8, 16),
+        "and two Instances of one Character do not idle in lockstep"
+    );
+}
+
+/// #307: the laser on a window, which is what `PERCHED_IDLE_AFTER_MS` was
+/// tuned for and no longer has to be. A quiet perch leaves sit for idle, and
+/// that start is a draw like any other — whatever the timer's value.
+#[test]
+fn timber_wolf_scans_on_the_first_perched_idle_whatever_the_seed() {
+    let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
+    let perch = WorldSnapshot {
+        displays: vec![DISPLAY],
+        windows: vec![Window {
+            id: 1,
+            rect: Rect {
+                x: 50.0,
+                y: 400.0,
+                width: 300.0,
+                height: 200.0,
+            },
+        }],
+        elapsed_ms: 100,
+        ..WorldSnapshot::default()
+    };
+
+    // The art on the first idle tick of each Instance's perched rest, however
+    // long that rest then lasts: no proposal, no Behavior, only the switch out
+    // of sit.
+    let first_idle = |seed: u64| {
+        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 })
+            .with_behaviors(character.behaviors.clone())
+            .with_variant_seed(seed);
+        (0..200)
+            .map(|_| engine.tick(&perch))
+            .find(|frame| frame.animation == "idle")
+            .map(|frame| {
+                character
+                    .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                    .expect("draws")
+                    .animation
+                    .to_string()
+            })
+            .expect("a quietly perched sprite leaves sit for idle")
+    };
+
+    let drawn: BTreeSet<String> = (0..32).map(first_idle).collect();
+    assert!(
+        drawn.contains("scan"),
+        "the laser sweeps on a window: {drawn:?}"
+    );
+    assert!(
+        drawn.contains("idle"),
+        "and mostly it only stands: {drawn:?}"
     );
 }
 
@@ -743,7 +898,7 @@ fn buddy_bot_declares_idle_life_variants() {
     }
 
     let drawn = character
-        .draw("idle-breathe", 0)
+        .draw("idle-breathe", 0, 0)
         .expect("idle-breathe draws when asked for by name");
     assert_eq!(drawn.animation, "idle-breathe");
 }
@@ -894,11 +1049,11 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
         "greet chains into stroll so a hello is followed by a walk          (BMO greet→patrol / cat greet→inspect)"
     );
     assert_eq!(
-        character.behaviors["help"].weight, 2,
+        character.behaviors["help"].weight, 20,
         "help stays present but light enough that stroll can win the 30s–1m overlap"
     );
     assert_eq!(
-        character.behaviors["stroll"].weight, 3,
+        character.behaviors["stroll"].weight, 30,
         "stroll outranks fidget/help so the mascot actually walks the desk"
     );
     assert!(
@@ -913,7 +1068,7 @@ fn buddy_bot_behaviors_cover_a_helpful_idle_life() {
         "settle chains into nap so sitting leads to sleep"
     );
     assert_eq!(
-        character.behaviors["nap"].weight, 4,
+        character.behaviors["nap"].weight, 40,
         "nap outranks late-band stroll/patrol so sleep is visible"
     );
     assert!(

@@ -38,14 +38,19 @@ model_power = 1
 near_reaction = "speak"
 rush_reaction = "toward"
 
+# Arms folded, waiting to be attended to, is as characteristic as the gesturing
+# idle, so the two nearly share the idling: the gesturing stand is weighed
+# three to the wait's two.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 4
+weight = 30
 
 [animations.waiting]
 frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
 fps = 4
 variant_of = "idle"
+weight = 20
 
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-3.png", "frames/walk-4.png", "frames/walk-5.png", "frames/walk-6.png", "frames/walk-7.png"]
@@ -92,37 +97,37 @@ loop = "once"
 [behaviors.greet]
 play = ["talk"]
 then = "report"
-weight = 4
+weight = 40
 when = "idle under 10s"
 
 [behaviors.report]
 play = ["talk", "idle", "talk"]
-weight = 4
+weight = 40
 when = "idle under 1m"
 
 [behaviors.fidget]
 play = ["idle"]
-weight = 2
+weight = 20
 when = "idle over 10s"
 
 [behaviors.settle]
 play = ["sit"]
 then = "doze"
-weight = 3
+weight = 30
 when = "idle over 1m"
 
 [behaviors.doze]
 play = ["sleep"]
-weight = 5
+weight = 50
 when = "idle over 2m"
 
 [behaviors.walk]
 play = ["walk"]
-weight = 1
+weight = 10
 when = "idle over 30s"
 
 [behaviors.patrol]
 play = ["walk", "talk", "walk"]
 then = "walk"
-weight = 2
+weight = 20
 when = "idle over 2m"

@@ -264,7 +264,7 @@ pub(crate) fn run_frame_loop(
                     visible
                         && live.drawn_last.as_ref().is_some_and(|last| {
                             live.character
-                                .draw(last.animation, last.animation_ms)
+                                .draw(last.animation, last.animation_ms, last.variant_draw)
                                 .is_some_and(|art| {
                                     art.mask.hit(
                                         &last.rect,
@@ -1234,7 +1234,10 @@ pub(crate) fn run_frame_loop(
                 // sprite away, bubble and interpolation with it. That is the
                 // right answer for art that cannot be drawn, and the reason
                 // nothing else in this loop may skip an Instance silently.
-                let Some(drawn) = live.character.draw(frame.animation, frame.animation_ms) else {
+                let Some(drawn) =
+                    live.character
+                        .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                else {
                     continue;
                 };
                 let scale = live.character.scale as i32;
@@ -1286,6 +1289,7 @@ pub(crate) fn run_frame_loop(
                     rect: sprite,
                     animation: frame.animation,
                     animation_ms: frame.animation_ms,
+                    variant_draw: frame.variant_draw,
                     mirrored,
                 });
 

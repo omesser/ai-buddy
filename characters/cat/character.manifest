@@ -29,9 +29,13 @@ model_power = 1
 near_reaction = "toward"
 rush_reaction = "away"
 
+# A cat spends real time sitting and staring at nothing, so the stand takes
+# the idling weighed twice the wait: a third of it goes to staring,
+# which is a habit rather than a surprise.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png", "frames/idle-2.png", "frames/idle-3.png", "frames/idle-4.png", "frames/idle-5.png"]
 fps = 5
+weight = 20
 
 [animations.waiting]
 frames = ["frames/waiting-0.png", "frames/waiting-1.png", "frames/waiting-2.png", "frames/waiting-3.png", "frames/waiting-4.png", "frames/waiting-5.png"]
@@ -95,43 +99,43 @@ fps = 1
 [behaviors.greet]
 play = ["talk"]
 then = "inspect"
-weight = 3
+weight = 30
 when = "idle under 10s"
 
 [behaviors.inspect]
 play = ["walk", "idle"]
-weight = 4
+weight = 40
 when = "idle under 1m"
 
 [behaviors.remark]
 play = ["talk", "idle"]
-weight = 2
+weight = 20
 when = "idle under 1m"
 
 [behaviors.groom]
 play = ["idle"]
-weight = 2
+weight = 20
 when = "idle over 10s"
 
 [behaviors.prowl]
 play = ["walk", "idle", "walk"]
 then = "groom"
-weight = 3
+weight = 30
 when = "idle over 30s"
 
 [behaviors.supervise]
 play = ["sit"]
-weight = 3
+weight = 30
 when = "idle over 1m"
 
 [behaviors.nap]
 play = ["sit", "sleep"]
-weight = 4
+weight = 40
 when = "idle over 2m"
 
 # Chasing the cursor is the fixation the personality admits to only by
 # denying it, so it stays light against the investigating.
 [behaviors.play-with-cursor]
 play = ["chase"]
-weight = 2
+weight = 20
 when = "idle over 1m"

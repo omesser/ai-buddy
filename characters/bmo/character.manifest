@@ -25,19 +25,17 @@ rush_reaction = "react"
 # The idle is a calm stand; the singing and the skateboard ride its ring as
 # variants. The sit is the pack's self-play set: four games on its own screen.
 
+# Singing and skateboarding are whole-body performances, so the stand takes
+# the idling weighed eight times either of them.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 1
+weight = 80
 
 [animations.sing]
 frames = ["frames/sing-0.png", "frames/sing-1.png", "frames/sing-2.png", "frames/sing-3.png"]
 fps = 3
 variant_of = "idle"
-
-# A variant is more art for the same life: the renderer cycles the ring —
-# base first and three times as long, then each variant — in whole loops.
-# Idling, BMO mostly stands; now and then it sings, or rides its skateboard.
-# Walking, it sometimes dribbles a football the whole way.
 
 # Cruise, push, cruise, cheer — the bail frame stays in the pack: a board
 # that vanishes mid-loop reads as a glitch, not a trick.
@@ -46,9 +44,12 @@ frames = ["frames/skate-0.png", "frames/skate-1.png", "frames/skate-0.png", "fra
 fps = 3
 variant_of = "idle"
 
+# Dribbling the whole way is a mood rather than the usual walk: three plain
+# walks to each one that goes out with the football.
 [animations.walk]
 frames = ["frames/walk-0.png", "frames/walk-1.png", "frames/walk-2.png", "frames/walk-1.png"]
 fps = 8
+weight = 30
 
 [animations.ballwalk]
 frames = ["frames/ballwalk-0.png", "frames/ballwalk-1.png"]
@@ -123,27 +124,27 @@ fps = 3
 
 [behaviors.walk]
 play = ["walk"]
-weight = 1
+weight = 10
 when = "idle over 30s"
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
 then = "walk"
-weight = 3
+weight = 30
 when = "idle over 2m"
 
 [behaviors.fidget]
 play = ["idle"]
-weight = 2
+weight = 20
 when = "idle over 10s"
 
 [behaviors.report]
 play = ["talk", "idle", "talk"]
-weight = 3
+weight = 30
 when = "idle under 1m"
 
 [behaviors.greet]
 play = ["talk"]
 then = "patrol"
-weight = 4
+weight = 40
 when = "idle under 10s"

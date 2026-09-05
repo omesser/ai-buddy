@@ -49,6 +49,17 @@ _Avoid_: System prompt, custom instructions, jailbreak
 A named frame sequence belonging to a Character. Pure art with no logic.
 _Avoid_: Clip, sprite, sequence
 
+**Variant**:
+An Animation declared `variant_of` another. A base Animation and its variants
+form a ring, and when the engine asks for the base it draws one member of that
+ring instead — chosen once, when the Animation starts, and played until the
+engine asks for a different Animation. A member's `weight` is its share against
+the others and 10 when undeclared, so a ring nobody weighs is an even split and
+a member can be weighed below the default as well as above it.
+Nothing bounds the total. The draw is seeded: one seed and one Character draw
+the same members on every machine. #316.
+_Avoid_: Alternate, costume, skin, random animation, mood
+
 **Required Animation Set**:
 The animations every Character Package must supply for the engine to drive it.
 _Avoid_: Base set, defaults

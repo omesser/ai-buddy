@@ -148,10 +148,15 @@ impl Roster {
     /// would copy every frame of every Animation per buddy, which is the cost
     /// running several of one Character exists to avoid.
     pub fn spawn(&mut self, character: &Character, name: String, position: Point) -> InstanceId {
-        let id = uuid::Uuid::new_v4().to_string();
+        let uuid = uuid::Uuid::new_v4();
+        let id = uuid.to_string();
         let engine = Engine::new(position)
             .with_behaviors(character.behaviors.clone())
-            .with_cursor_reactions(character.near_reaction, character.rush_reaction);
+            .with_cursor_reactions(character.near_reaction, character.rush_reaction)
+            // The id is already this Instance's one random number, so it is
+            // also what keeps two buddies of one Character from drawing the
+            // same idle variants at the same moments. #316.
+            .with_variant_seed(uuid.as_u64_pair().0);
         let instance = Instance {
             id: id.clone(),
             name,
@@ -233,7 +238,7 @@ mod tests {
     use super::*;
     use crate::character::{
         Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
-        DEFAULT_MODEL_POWER,
+        DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
     };
     use crate::engine::{Point, Rect, Verb};
     use crate::memory::MemoryManifest;
@@ -254,6 +259,7 @@ mod tests {
                     fps: 8,
                     looping: true,
                     variants: Vec::new(),
+                    weight: DEFAULT_WEIGHT,
                 },
             );
         }

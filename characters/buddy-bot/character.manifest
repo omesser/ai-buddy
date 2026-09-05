@@ -46,10 +46,14 @@ frames = [
   "frames/idle-15.png",
 ]
 fps = 5
+weight = 20
 
 # Idle variants, not Behaviors: mood art on the idle ring without Director
 # weight. Brow-sensor glow (mirror-safe) pairs with the cheek LED; walk still
-# omits the cheek mark (#345).
+# omits the cheek mark (#345). All three are micro-motions a foot away from
+# the base — a breath, a blink, a tilt — so the ring is nearly even: the base
+# is weighed twice each of the three. A bot that only
+# ever held still would read as switched off.
 
 [animations.idle-breathe]
 frames = [
@@ -204,28 +208,28 @@ loop = "once"
 [behaviors.greet]
 play = ["talk"]
 then = "stroll"
-weight = 4
+weight = 40
 when = "idle under 10s"
 
 [behaviors.help]
 play = ["talk", "idle", "talk"]
-weight = 2
+weight = 20
 when = "idle under 1m"
 
 [behaviors.fidget]
 play = ["idle"]
-weight = 2
+weight = 20
 when = "idle over 10s"
 
 [behaviors.stroll]
 play = ["walk"]
-weight = 3
+weight = 30
 when = "idle over 30s"
 
 [behaviors.patrol]
 play = ["walk", "idle", "walk"]
 then = "stroll"
-weight = 2
+weight = 20
 when = "idle over 2m"
 
 # Sit, then chain into nap (trump settle→doze / timber-wolf standby→power_down).
@@ -236,10 +240,10 @@ when = "idle over 2m"
 [behaviors.settle]
 play = ["sit"]
 then = "nap"
-weight = 3
+weight = 30
 when = "idle over 1m"
 
 [behaviors.nap]
 play = ["sit", "sleep"]
-weight = 4
+weight = 40
 when = "idle over 2m"

@@ -82,33 +82,33 @@ fps = 10
 
 [behaviors.walk]
 play = ["walk"]
-weight = 1
+weight = 10
 when = "idle under 30s"
 
 [behaviors.doze]
 play = ["sit", "sleep"]
-weight = 5
+weight = 50
 when = "idle over 2m"
 
 [behaviors.amble]
 play = ["walk", "sit"]
 then = "doze"
-weight = 1
+weight = 10
 when = "idle over 20s"
 
 [behaviors.stretch]
 play = ["idle", "sit"]
 then = "doze"
-weight = 3
+weight = 30
 when = "idle over 20s"
 
 [behaviors.mumble]
 play = ["talk", "sit"]
-weight = 2
+weight = 20
 when = "idle over 1m"
 
 [behaviors.greet]
 play = ["react", "talk"]
 then = "doze"
-weight = 2
+weight = 20
 when = "idle under 30s"

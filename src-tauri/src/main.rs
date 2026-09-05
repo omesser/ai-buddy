@@ -130,6 +130,9 @@ struct Drawn {
     rect: SpriteRect,
     animation: &'static str,
     animation_ms: u32,
+    /// The variant draw the art was picked with, so the hit-test measures the
+    /// strip the user saw rather than whatever the next draw lands on.
+    variant_draw: u64,
     /// Whether the art was drawn mirrored, so the hit-test feels the same
     /// pixels the user saw — this tick's facing may already differ.
     mirrored: bool,
@@ -1538,7 +1541,7 @@ fn phase_of(interval: Duration, draw: u64) -> Duration {
 /// at rather than what it is always drawn at.
 fn sprite_width(character: &Character) -> f64 {
     character
-        .draw("idle", 0)
+        .draw("idle", 0, 0)
         .map_or(0.0, |drawn| f64::from(drawn.frame_size.0))
         * f64::from(character.scale)
 }
@@ -1774,7 +1777,7 @@ fn main() {
                 .first()
                 .and_then(|(_, character)| {
                     let scale = character.scale as i32;
-                    character.draw("idle", 0).map(|drawn| {
+                    character.draw("idle", 0, 0).map(|drawn| {
                         (
                             drawn.frame_size.0 as i32 * scale,
                             drawn.frame_size.1 as i32 * scale,

@@ -30,9 +30,13 @@ rush_reaction = "face"
 model_base = 2
 model_power = 1
 
+# The two stands differ by a coat-flick, and Jotaro's whole register is not
+# moving, so the stand is weighed three times the wait:
+# a quarter of it is as much shifting about as he does.
 [animations.idle]
 frames = ["frames/idle-0.png", "frames/idle-1.png"]
 fps = 2
+weight = 30
 
 [animations.waiting]
 frames = ["frames/waiting-0.png", "frames/waiting-1.png"]
@@ -81,36 +85,36 @@ fps = 1
 #
 # `greet` sits at the floor weight because he does not make an occasion of
 # anyone arriving, and `mutter` matches it: two Behaviors that open his mouth,
-# both rare, against a five-weight `stand`. The bands overlap so no instant of
-# the day leaves him nothing he may do.
+# both rare, against a `stand` weighed five times either. The bands overlap so
+# no instant of the day leaves him nothing he may do.
 
 [behaviors.greet]
 play = ["talk"]
-weight = 1
+weight = 10
 when = "idle under 10s"
 
 [behaviors.stand]
 play = ["idle"]
-weight = 5
+weight = 50
 when = "idle over 10s"
 
 [behaviors.mutter]
 play = ["talk"]
-weight = 1
+weight = 10
 when = "idle over 30s"
 
 [behaviors.walk]
 play = ["walk"]
-weight = 2
+weight = 20
 when = "idle over 30s"
 
 [behaviors.watch]
 play = ["sit"]
 then = "stand"
-weight = 4
+weight = 40
 when = "idle over 1m"
 
 [behaviors.rest]
 play = ["sit", "sleep"]
-weight = 3
+weight = 30
 when = "idle over 2m"

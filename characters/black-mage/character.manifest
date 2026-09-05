@@ -95,26 +95,26 @@ fps = 3
 [behaviors.greet]
 play = ["react", "talk"]
 then = "ponder"
-weight = 3
+weight = 30
 when = "idle under 10s"
 
 [behaviors.ponder]
 play = ["idle"]
-weight = 4
+weight = 40
 when = "idle over 10s"
 
 [behaviors.settle]
 play = ["sit"]
 then = "meditate"
-weight = 3
+weight = 30
 when = "idle over 1m"
 
 [behaviors.meditate]
 play = ["sit", "sleep"]
-weight = 5
+weight = 50
 when = "idle over 2m"
 
 [behaviors.walk]
 play = ["walk"]
-weight = 1
+weight = 10
 when = "idle over 30s"
