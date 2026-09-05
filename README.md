@@ -30,11 +30,26 @@ Try [Buddy Cues](https://omesser.github.io/ai-buddy/cues.html) — gestures and 
 ![Buddy Bot react](./docs/readme/buddy-bot-react.gif)
 
 - **Poke** — click once for a react, then it resumes.
+- **Summon** — double-click to open a chat window for that buddy.
 - **Pick up** — click and drag; it follows the cursor.
 - **Throw** — release while moving; it flies on an arc and lands.
 - **Perch** — let it settle on a window's top edge; drag slowly to ride, fling to drop.
 - **Hide** — Control-Option-Command-B toggles the buddy instantly.
 - **Fullscreen** — fades out for fullscreen apps, fades back when you exit.
+
+### Talk to it
+
+Summon opens a chat window belonging to that buddy. What you type is another
+turn in the same conversation that decides what it does on your desktop, so an
+answer arrives as speech in the bubble and as a Behavior it plays, not only as
+text. Lines it says when nobody asked appear here too, labelled with what it was
+reacting to.
+
+<img src="./docs/readme/chat-surface.png" width="420" alt="The chat surface: a line labelled WHEN SUMMONED, a typed question, and BMO's answer, over a status bar naming the Behavior, State and next wake" />
+
+The bar along the bottom names what the buddy is doing right now — the Behavior,
+the Primitive under it, the Animation playing, its State, and how long until it
+next thinks. It needs a Director; see [Running it](#running-it).
 
 ## Characters
 
