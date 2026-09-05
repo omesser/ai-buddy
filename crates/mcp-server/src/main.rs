@@ -5,7 +5,9 @@
 //! roster, denylist from settings.json beside Memory. A Harness attach in
 //! #16 will provide real dependencies per instance.
 
-use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext};
+mod settings;
+
+use ai_buddy_core::dispatch::{dispatch, DispatchContext};
 use ai_buddy_core::window_source::{Capabilities, WindowSource, WorldGeometry};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -54,7 +56,7 @@ impl AiBuddyServer {
         DispatchContext {
             window_source: &SOURCE,
             memory_path,
-            denylist: DenyList::from_settings_file(
+            denylist: settings::load_denylist_from_settings(
                 &ai_buddy_core::memory::data_dir().join("settings.json"),
             ),
             roster: &[],

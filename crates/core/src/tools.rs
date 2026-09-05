@@ -16,7 +16,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::Path;
 
 use crate::engine::BehaviorProposal;
 use crate::memory::MemoryManifest;
@@ -103,27 +102,6 @@ impl DenyList {
             .iter()
             .any(|excluded| excluded.eq_ignore_ascii_case(application))
     }
-
-    /// The excluded-applications list from settings.json beside Memory.
-    ///
-    /// A missing or unreadable file is an empty denylist, the same first-run
-    /// answer Settings itself chose: the buddy staying up is the product.
-    pub fn from_settings_file(path: &Path) -> Self {
-        #[derive(Deserialize, Default)]
-        struct Doc {
-            #[serde(default)]
-            excluded_applications: Vec<String>,
-        }
-        let excluded_applications = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Doc>(&text).ok())
-            .map(|doc| doc.excluded_applications)
-            .unwrap_or_default();
-        Self {
-            excluded_applications,
-            filter_password_fields: true,
-        }
-    }
 }
 
 /// Recall everything Memory holds.
@@ -174,32 +152,6 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
-    }
-
-    #[test]
-    fn denylist_from_settings_hides_those_applications() {
-        let dir = TempDir::new("denylist-settings");
-        let path = dir.0.join("settings.json");
-        fs::write(
-            &path,
-            r#"{"excluded_applications":["1Password","Keychain Access"]}"#,
-        )
-        .expect("write");
-
-        let denylist = DenyList::from_settings_file(&path);
-        assert!(!denylist.allows("1Password"));
-        assert!(!denylist.allows("Keychain Access"));
-        assert!(denylist.allows("Terminal"));
-        assert!(denylist.filter_password_fields);
-    }
-
-    #[test]
-    fn denylist_from_a_missing_settings_file_excludes_nothing() {
-        let path = std::env::temp_dir().join("ai-buddy-no-such-settings.json");
-        let _ = fs::remove_file(&path);
-        let denylist = DenyList::from_settings_file(&path);
-        assert!(denylist.allows("1Password"));
-        assert!(denylist.filter_password_fields);
     }
 
     // Memory tools
