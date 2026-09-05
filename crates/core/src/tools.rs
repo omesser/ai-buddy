@@ -1,8 +1,8 @@
-//! Tool handlers for the MCP server.
+//! Tool types and shared logic for the MCP server.
 //!
-//! Plain functions that implement the buddy's tool surface, testable without an
-//! MCP transport. The Shell wraps these in an MCP server; tests call them
-//! directly with fake adapters and temporary files.
+//! Defines result types and shared utilities used by the dispatch layer.
+//! Private tool handlers implement the buddy's tool surface behind dispatch,
+//! testable without an MCP transport.
 //!
 //! Four responsibilities from docs/SPEC.md:
 //! - Expression: make the buddy speak; play a named Behavior
@@ -16,11 +16,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::Path;
 
 use crate::engine::BehaviorProposal;
 use crate::memory::MemoryManifest;
-use crate::window_source::WindowSource;
 
 /// Tool result for the `speak` tool.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,224 +102,6 @@ impl DenyList {
             .iter()
             .any(|excluded| excluded.eq_ignore_ascii_case(application))
     }
-
-    /// The excluded-applications list from settings.json beside Memory.
-    ///
-    /// A missing or unreadable file is an empty denylist, the same first-run
-    /// answer Settings itself chose: the buddy staying up is the product.
-    pub fn from_settings_file(path: &Path) -> Self {
-        #[derive(Deserialize, Default)]
-        struct Doc {
-            #[serde(default)]
-            excluded_applications: Vec<String>,
-        }
-        let excluded_applications = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Doc>(&text).ok())
-            .map(|doc| doc.excluded_applications)
-            .unwrap_or_default();
-        Self {
-            excluded_applications,
-            filter_password_fields: true,
-        }
-    }
-}
-
-/// Make the buddy speak a line of dialogue.
-///
-/// Expression is a pending BehaviorProposal on a live Instance; without
-/// a target or handle the documented success JSON is still returned so a
-/// Harness can call the tools before #16 crosses the process boundary.
-pub fn speak(
-    message: &str,
-    instance_id: Option<&str>,
-    roster: &[InstanceInfo],
-    expression: Option<&mut dyn ExpressionHandle>,
-) -> SpeakResult {
-    if message.is_empty() {
-        return SpeakResult {
-            success: false,
-            message: message.to_string(),
-        };
-    }
-
-    let target_id = match resolve_target(instance_id, roster) {
-        TargetResolution::Resolved(id) => id,
-        TargetResolution::NoInstances => {
-            return SpeakResult {
-                success: true,
-                message: message.to_string(),
-            };
-        }
-        TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
-            return SpeakResult {
-                success: false,
-                message: message.to_string(),
-            };
-        }
-    };
-
-    if let Some(handle) = expression {
-        let proposal = BehaviorProposal {
-            behavior: String::new(),
-            dialogue: Some(message.to_string()),
-        };
-        if handle.enqueue(&target_id, proposal) {
-            return SpeakResult {
-                success: true,
-                message: message.to_string(),
-            };
-        }
-    }
-
-    SpeakResult {
-        success: true,
-        message: message.to_string(),
-    }
-}
-
-/// Target resolution result for Expression tools.
-enum TargetResolution {
-    /// Resolved to a specific instance id
-    Resolved(String),
-    /// No instances in roster (stub success case)
-    NoInstances,
-    /// Unknown instance_id provided
-    UnknownInstance,
-    /// Multiple instances but no specific id provided
-    AmbiguousTarget,
-}
-
-/// Target resolution against roster for both speak and play_behavior.
-fn resolve_target(instance_id: Option<&str>, roster: &[InstanceInfo]) -> TargetResolution {
-    match instance_id {
-        Some(id) => {
-            // Check if the given id exists in roster
-            if roster.iter().any(|info| info.id == id) {
-                TargetResolution::Resolved(id.to_string())
-            } else {
-                TargetResolution::UnknownInstance
-            }
-        }
-        None => {
-            // No instance_id provided
-            match roster.len() {
-                0 => TargetResolution::NoInstances,
-                1 => TargetResolution::Resolved(roster[0].id.clone()),
-                _ => TargetResolution::AmbiguousTarget,
-            }
-        }
-    }
-}
-
-/// Play a named Behavior.
-///
-/// Expression is a pending BehaviorProposal on a live Instance; without
-/// a target or handle the documented success JSON is still returned so a
-/// Harness can call the tools before #16 crosses the process boundary.
-pub fn play_behavior(
-    behavior: &str,
-    instance_id: Option<&str>,
-    roster: &[InstanceInfo],
-    expression: Option<&mut dyn ExpressionHandle>,
-) -> PlayBehaviorResult {
-    if behavior.is_empty() {
-        return PlayBehaviorResult {
-            success: false,
-            behavior: behavior.to_string(),
-        };
-    }
-
-    let target_id = match resolve_target(instance_id, roster) {
-        TargetResolution::Resolved(id) => id,
-        TargetResolution::NoInstances => {
-            return PlayBehaviorResult {
-                success: true,
-                behavior: behavior.to_string(),
-            };
-        }
-        TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
-            return PlayBehaviorResult {
-                success: false,
-                behavior: behavior.to_string(),
-            };
-        }
-    };
-
-    if let Some(handle) = expression {
-        let proposal = BehaviorProposal {
-            behavior: behavior.to_string(),
-            dialogue: None,
-        };
-        if handle.enqueue(&target_id, proposal) {
-            return PlayBehaviorResult {
-                success: true,
-                behavior: behavior.to_string(),
-            };
-        }
-    }
-
-    PlayBehaviorResult {
-        success: true,
-        behavior: behavior.to_string(),
-    }
-}
-
-/// List visible windows with bounds and owning application.
-///
-/// The denylist removes excluded applications and password fields from the
-/// result, so they never enter any sensing tool result.
-pub fn list_windows(source: &dyn WindowSource, denylist: &DenyList) -> ListWindowsResult {
-    let geometry = source.snapshot();
-
-    let windows = geometry
-        .windows
-        .into_iter()
-        .filter(|w| denylist.allows(&w.owner))
-        .map(|w| WindowInfo {
-            owner: w.owner,
-            x: w.bounds.x,
-            y: w.bounds.y,
-            width: w.bounds.width,
-            height: w.bounds.height,
-        })
-        .collect();
-
-    ListWindowsResult { windows }
-}
-
-/// Describe what is on screen.
-///
-/// v1: window metadata only, since Capture is deferred. Returns a text
-/// description of visible windows and their applications. The denylist removes
-/// excluded applications from the result.
-pub fn describe_screen(source: &dyn WindowSource, denylist: &DenyList) -> DescribeScreenResult {
-    let geometry = source.snapshot();
-
-    let visible_windows: Vec<_> = geometry
-        .windows
-        .into_iter()
-        .filter(|w| denylist.allows(&w.owner))
-        .collect();
-
-    let description = if visible_windows.is_empty() {
-        "No windows are visible.".to_string()
-    } else {
-        let mut parts = vec![format!("{} visible windows:", visible_windows.len())];
-        for window in visible_windows {
-            parts.push(format!(
-                "- {} at ({:.0}, {:.0}), size {:.0}x{:.0}",
-                window.owner,
-                window.bounds.x,
-                window.bounds.y,
-                window.bounds.width,
-                window.bounds.height
-            ));
-        }
-        parts.join("\n")
-    };
-
-    DescribeScreenResult { description }
 }
 
 /// Recall everything Memory holds.
@@ -342,12 +122,213 @@ pub fn list_instances(instances: &[InstanceInfo]) -> ListInstancesResult {
     }
 }
 
+/// Private helper functions for dispatch implementation.
+mod helpers {
+    use crate::engine::BehaviorProposal;
+    use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
+    use crate::window_source::{WindowRect, WindowSource};
+
+    /// Get denylist-filtered snapshot of windows from the window source.
+    ///
+    /// Both list_windows and describe_screen use this to ensure consistent filtering.
+    pub fn filtered_windows_snapshot(
+        source: &dyn WindowSource,
+        denylist: &DenyList,
+    ) -> Vec<WindowRect> {
+        let geometry = source.snapshot();
+        geometry
+            .windows
+            .into_iter()
+            .filter(|w| denylist.allows(&w.owner))
+            .collect()
+    }
+
+    /// Result from resolving expression target and attempting enqueue.
+    pub enum ExpressionResult {
+        /// Successfully enqueued (or stub success for no instances)
+        Success,
+        /// Failed due to unknown instance or ambiguous target
+        Failed,
+    }
+
+    /// Enqueue an expression proposal following tools.rs logic.
+    ///
+    /// Both speak and play_behavior follow the same pattern of resolving target
+    /// and enqueueing proposals through the expression handle.
+    pub fn enqueue_expression(
+        instance_id: Option<&str>,
+        roster: &[InstanceInfo],
+        expression: Option<&mut dyn ExpressionHandle>,
+        proposal: BehaviorProposal,
+    ) -> ExpressionResult {
+        let target_id = match resolve_target_instance(instance_id, roster) {
+            TargetResolution::Resolved(id) => id,
+            TargetResolution::NoInstances => {
+                // Empty roster is success (stub behavior for harness compatibility)
+                return ExpressionResult::Success;
+            }
+            TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
+                return ExpressionResult::Failed;
+            }
+        };
+
+        // Try to enqueue the proposal
+        if let Some(handle) = expression {
+            let _enqueue_result = handle.enqueue(&target_id, proposal);
+            // Regardless of enqueue result, we report success
+        }
+
+        ExpressionResult::Success
+    }
+
+    /// Target resolution result for Expression tools.
+    enum TargetResolution {
+        /// Resolved to a specific instance id
+        Resolved(String),
+        /// No instances in roster (stub success case)
+        NoInstances,
+        /// Unknown instance_id provided
+        UnknownInstance,
+        /// Multiple instances but no specific id provided
+        AmbiguousTarget,
+    }
+
+    /// Target resolution against roster for both speak and play_behavior.
+    fn resolve_target_instance(
+        instance_id: Option<&str>,
+        roster: &[InstanceInfo],
+    ) -> TargetResolution {
+        match instance_id {
+            Some(id) => {
+                // Check if the given id exists in roster
+                if roster.iter().any(|info| info.id == id) {
+                    TargetResolution::Resolved(id.to_string())
+                } else {
+                    TargetResolution::UnknownInstance
+                }
+            }
+            None => {
+                // No instance_id provided
+                match roster.len() {
+                    0 => TargetResolution::NoInstances,
+                    1 => TargetResolution::Resolved(roster[0].id.clone()),
+                    _ => TargetResolution::AmbiguousTarget,
+                }
+            }
+        }
+    }
+}
+
+/// Make the Character speak a line of dialogue.
+pub(crate) fn speak(
+    message: &str,
+    instance_id: Option<&str>,
+    roster: &[InstanceInfo],
+    expression: Option<&mut dyn ExpressionHandle>,
+) -> SpeakResult {
+    // Early return for empty message
+    if message.is_empty() {
+        return SpeakResult {
+            success: false,
+            message: message.to_string(),
+        };
+    }
+
+    let proposal = BehaviorProposal {
+        behavior: String::new(),
+        dialogue: Some(message.to_string()),
+    };
+
+    let success = match helpers::enqueue_expression(instance_id, roster, expression, proposal) {
+        helpers::ExpressionResult::Success => true,
+        helpers::ExpressionResult::Failed => false,
+    };
+
+    SpeakResult {
+        success,
+        message: message.to_string(),
+    }
+}
+
+/// Play a named Behavior.
+pub(crate) fn play_behavior(
+    behavior: &str,
+    instance_id: Option<&str>,
+    roster: &[InstanceInfo],
+    expression: Option<&mut dyn ExpressionHandle>,
+) -> PlayBehaviorResult {
+    // Early return for empty behavior
+    if behavior.is_empty() {
+        return PlayBehaviorResult {
+            success: false,
+            behavior: behavior.to_string(),
+        };
+    }
+
+    let proposal = BehaviorProposal {
+        behavior: behavior.to_string(),
+        dialogue: None,
+    };
+
+    let success = match helpers::enqueue_expression(instance_id, roster, expression, proposal) {
+        helpers::ExpressionResult::Success => true,
+        helpers::ExpressionResult::Failed => false,
+    };
+
+    PlayBehaviorResult {
+        success,
+        behavior: behavior.to_string(),
+    }
+}
+
+/// List visible windows with bounds and owning application.
+pub(crate) fn list_windows(
+    window_source: &dyn crate::window_source::WindowSource,
+    denylist: &DenyList,
+) -> ListWindowsResult {
+    let windows = helpers::filtered_windows_snapshot(window_source, denylist);
+    ListWindowsResult {
+        windows: windows
+            .into_iter()
+            .map(|w| WindowInfo {
+                owner: w.owner,
+                x: w.bounds.x,
+                y: w.bounds.y,
+                width: w.bounds.width,
+                height: w.bounds.height,
+            })
+            .collect(),
+    }
+}
+
+/// Describe what is on screen (v1: window metadata only).
+pub(crate) fn describe_screen(
+    window_source: &dyn crate::window_source::WindowSource,
+    denylist: &DenyList,
+) -> DescribeScreenResult {
+    let windows = helpers::filtered_windows_snapshot(window_source, denylist);
+    let description = if windows.is_empty() {
+        "No windows are visible.".to_string()
+    } else {
+        let mut parts = vec![format!("{} visible windows:", windows.len())];
+        for window in &windows {
+            parts.push(format!(
+                "- {} at ({:.0}, {:.0}), size {:.0}x{:.0}",
+                window.owner,
+                window.bounds.x,
+                window.bounds.y,
+                window.bounds.width,
+                window.bounds.height
+            ));
+        }
+        parts.join("\n")
+    };
+    DescribeScreenResult { description }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::window_source::{
-        Capabilities, FakeWindowSource, Rect, WindowId, WindowRect, WorldGeometry,
-    };
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -375,268 +356,6 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
-    }
-
-    fn window(id: WindowId, owner: &str, x: f64, y: f64, width: f64, height: f64) -> WindowRect {
-        WindowRect {
-            id,
-            bounds: Rect {
-                x,
-                y,
-                width,
-                height,
-            },
-            owner: owner.to_string(),
-            layer: 0,
-        }
-    }
-
-    // Expression tools
-
-    #[test]
-    fn speak_returns_success_with_the_message() {
-        let result = speak("Hello, I am here to help", None, &[], None);
-        assert!(result.success);
-        assert_eq!(result.message, "Hello, I am here to help");
-    }
-
-    #[test]
-    fn speak_with_empty_message_reports_failure() {
-        let result = speak("", None, &[], None);
-        assert!(!result.success);
-    }
-
-    #[test]
-    fn play_behavior_returns_success_with_the_behavior_name() {
-        let result = play_behavior("greet", None, &[], None);
-        assert!(result.success);
-        assert_eq!(result.behavior, "greet");
-    }
-
-    #[test]
-    fn play_behavior_with_empty_name_reports_failure() {
-        let result = play_behavior("", None, &[], None);
-        assert!(!result.success);
-    }
-
-    // Sensing tools
-
-    #[test]
-    fn list_windows_returns_visible_windows_with_bounds() {
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window(1, "Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window(2, "Safari", 30.0, 40.0, 1200.0, 800.0),
-                ],
-                dock: None,
-            },
-        };
-        let denylist = DenyList::default();
-
-        let result = list_windows(&source, &denylist);
-
-        assert_eq!(result.windows.len(), 2);
-        assert_eq!(result.windows[0].owner, "Terminal");
-        assert_eq!(result.windows[0].x, 10.0);
-        assert_eq!(result.windows[0].y, 20.0);
-        assert_eq!(result.windows[0].width, 800.0);
-        assert_eq!(result.windows[0].height, 600.0);
-        assert_eq!(result.windows[1].owner, "Safari");
-    }
-
-    #[test]
-    fn list_windows_excludes_denylisted_applications() {
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window(3, "Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window(4, "1Password", 30.0, 40.0, 400.0, 300.0),
-                    window(5, "Safari", 50.0, 60.0, 1200.0, 800.0),
-                ],
-                dock: None,
-            },
-        };
-        let denylist = DenyList {
-            excluded_applications: vec!["1Password".to_string()],
-            filter_password_fields: true,
-        };
-
-        let result = list_windows(&source, &denylist);
-
-        assert_eq!(result.windows.len(), 2);
-        assert_eq!(result.windows[0].owner, "Terminal");
-        assert_eq!(result.windows[1].owner, "Safari");
-        assert!(
-            !result.windows.iter().any(|w| w.owner == "1Password"),
-            "1Password should be excluded from results"
-        );
-    }
-
-    #[test]
-    fn list_windows_denylist_is_case_insensitive() {
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window(6, "Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window(7, "1password", 30.0, 40.0, 400.0, 300.0),
-                ],
-                dock: None,
-            },
-        };
-        let denylist = DenyList {
-            excluded_applications: vec!["1Password".to_string()],
-            filter_password_fields: true,
-        };
-
-        let result = list_windows(&source, &denylist);
-
-        assert_eq!(result.windows.len(), 1);
-        assert_eq!(result.windows[0].owner, "Terminal");
-    }
-
-    #[test]
-    fn denylist_from_settings_hides_those_applications() {
-        let dir = TempDir::new("denylist-settings");
-        let path = dir.0.join("settings.json");
-        fs::write(
-            &path,
-            r#"{"excluded_applications":["1Password","Keychain Access"]}"#,
-        )
-        .expect("write");
-
-        let denylist = DenyList::from_settings_file(&path);
-        assert!(!denylist.allows("1Password"));
-        assert!(!denylist.allows("Keychain Access"));
-        assert!(denylist.allows("Terminal"));
-        assert!(denylist.filter_password_fields);
-    }
-
-    #[test]
-    fn denylist_from_a_missing_settings_file_excludes_nothing() {
-        let path = std::env::temp_dir().join("ai-buddy-no-such-settings.json");
-        let _ = fs::remove_file(&path);
-        let denylist = DenyList::from_settings_file(&path);
-        assert!(denylist.allows("1Password"));
-        assert!(denylist.filter_password_fields);
-    }
-
-    #[test]
-    fn describe_screen_returns_text_description_of_visible_windows() {
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window(8, "Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window(9, "Safari", 30.0, 40.0, 1200.0, 800.0),
-                ],
-                dock: None,
-            },
-        };
-        let denylist = DenyList::default();
-
-        let result = describe_screen(&source, &denylist);
-
-        assert!(result.description.contains("2 visible windows"));
-        assert!(result.description.contains("Terminal"));
-        assert!(result.description.contains("Safari"));
-    }
-
-    #[test]
-    fn describe_screen_excludes_denylisted_applications() {
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![
-                    window(10, "Terminal", 10.0, 20.0, 800.0, 600.0),
-                    window(11, "1Password", 30.0, 40.0, 400.0, 300.0),
-                ],
-                dock: None,
-            },
-        };
-        let denylist = DenyList {
-            excluded_applications: vec!["1Password".to_string()],
-            filter_password_fields: true,
-        };
-
-        let result = describe_screen(&source, &denylist);
-
-        assert!(result.description.contains("1 visible window"));
-        assert!(result.description.contains("Terminal"));
-        assert!(!result.description.contains("1Password"));
-    }
-
-    #[test]
-    fn describe_screen_returns_message_when_no_windows_visible() {
-        let source = FakeWindowSource {
-            capabilities: Capabilities {
-                window_geometry: true,
-                absolute_positioning: true,
-            },
-            geometry: WorldGeometry {
-                usable_frames: vec![Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1920.0,
-                    height: 1080.0,
-                }],
-                windows: vec![],
-                dock: None,
-            },
-        };
-        let denylist = DenyList::default();
-
-        let result = describe_screen(&source, &denylist);
-
-        assert_eq!(result.description, "No windows are visible.");
     }
 
     // Memory tools
@@ -741,6 +460,48 @@ mod tests {
             0,
             "after dismissing, the list is empty"
         );
+    }
+
+    // Sensing tools
+
+    #[test]
+    fn denylist_match_is_case_insensitive() {
+        let denylist = DenyList {
+            excluded_applications: vec!["1Password".to_string()],
+            filter_password_fields: true,
+        };
+
+        assert!(!denylist.allows("1password"));
+        assert!(!denylist.allows("1Password"));
+        assert!(!denylist.allows("1PASSWORD"));
+        assert!(denylist.allows("Terminal"));
+    }
+
+    #[test]
+    fn describe_screen_when_no_windows_are_visible_returns_message() {
+        use crate::window_source::{Capabilities, FakeWindowSource, Rect, WorldGeometry};
+
+        let source = FakeWindowSource {
+            capabilities: Capabilities {
+                window_geometry: true,
+                absolute_positioning: true,
+            },
+            geometry: WorldGeometry {
+                usable_frames: vec![Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1920.0,
+                    height: 1080.0,
+                }],
+                windows: vec![],
+                dock: None,
+            },
+        };
+        let denylist = DenyList::default();
+
+        let result = describe_screen(&source, &denylist);
+
+        assert_eq!(result.description, "No windows are visible.");
     }
 
     // No tool posts input events

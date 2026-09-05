@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use crate::engine::{Point, Rect, Verb, Window, WorldSnapshot};
+use crate::engine::{Point, Verb, Window, WorldSnapshot};
 use crate::window_source::{
     WindowSource, WorldGeometry, DOCK_PERCH_ID, POLL_INTERVAL, RIDE_POLL_INTERVAL,
 };
@@ -186,7 +186,7 @@ fn world_snapshot(
         .filter(|w| perch_eligible(w.layer))
         .map(|w| Window {
             id: w.id,
-            rect: rect(w.bounds),
+            rect: w.bounds,
         })
         .collect();
     if let Some(dock) = &geometry.dock {
@@ -197,12 +197,12 @@ fn world_snapshot(
             0,
             Window {
                 id: DOCK_PERCH_ID,
-                rect: rect(*dock),
+                rect: *dock,
             },
         );
     }
     WorldSnapshot {
-        displays: geometry.usable_frames.iter().copied().map(rect).collect(),
+        displays: geometry.usable_frames.clone(),
         windows,
         cursor,
         elapsed_ms,
@@ -229,15 +229,6 @@ fn perch_eligible(layer: i32) -> bool {
     layer == 0
 }
 
-fn rect(rect: crate::window_source::Rect) -> Rect {
-    Rect {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-    }
-}
-
 /// Where the sprite comes into the world: the middle of the first display the
 /// platform reported.
 ///
@@ -261,7 +252,7 @@ mod tests {
 
     use super::*;
     use crate::engine::{Engine, State, Window};
-    use crate::window_source::{Capabilities, FakeWindowSource, WindowId, WindowRect};
+    use crate::window_source::{Capabilities, FakeWindowSource, Rect, WindowId, WindowRect};
 
     fn rect(x: f64, y: f64, width: f64, height: f64) -> crate::window_source::Rect {
         crate::window_source::Rect {

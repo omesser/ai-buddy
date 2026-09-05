@@ -1,6 +1,6 @@
 //! MCP tool dispatch.
 //!
-//! Maps tool names and JSON arguments onto the tool handlers from tools.rs.
+//! Maps tool names and JSON arguments onto tool handlers.
 //! Tested in-process without an MCP transport, so it can live in core beside
 //! the handlers it wraps.
 
@@ -9,8 +9,11 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::memory::MemoryManifest;
-use crate::tools::{self, DenyList, ExpressionHandle, InstanceInfo};
+use crate::tools;
 use crate::window_source::WindowSource;
+
+// Re-export key types from tools so external crates import from dispatch
+pub use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DispatchError {
@@ -69,19 +72,16 @@ pub fn dispatch(
                 instance_id: Option<String>,
             }
             let args: Args = parse_args(arguments, tool_name)?;
-            let roster = context.roster;
-            // take() rather than as_deref_mut() on the field: Option<&mut dyn>
-            // is invariant, and `&'a mut DispatchContext<'a>` would extend that
-            // borrow past every caller. The local is assigned back so a reused
-            // context keeps the handle.
+
             let mut expression = context.expression.take();
             let result = tools::speak(
                 &args.message,
                 args.instance_id.as_deref(),
-                roster,
+                context.roster,
                 as_expression_handle(&mut expression),
             );
             context.expression = expression;
+
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -95,15 +95,16 @@ pub fn dispatch(
                 instance_id: Option<String>,
             }
             let args: Args = parse_args(arguments, tool_name)?;
-            let roster = context.roster;
+
             let mut expression = context.expression.take();
             let result = tools::play_behavior(
                 &args.behavior,
                 args.instance_id.as_deref(),
-                roster,
+                context.roster,
                 as_expression_handle(&mut expression),
             );
             context.expression = expression;
+
             serde_json::to_value(&result).map_err(|e| DispatchError {
                 code: ErrorCode::ExecutionFailed,
                 message: format!("Failed to serialize result: {}", e),
@@ -575,6 +576,65 @@ mod tests {
 
         let instances = result["instances"].as_array().expect("instances is array");
         assert_eq!(instances.len(), 0);
+    }
+
+    #[test]
+    fn list_windows_and_describe_screen_apply_denylist_consistently() {
+        let temp = TempDir::new("denylist-consistency");
+        let denylist = DenyList {
+            excluded_applications: vec!["Keychain Access".to_string(), "1Password".to_string()],
+            filter_password_fields: true,
+        };
+        let source = fake_source(vec![
+            window("Terminal", 10.0, 20.0, 800.0, 600.0),
+            window("Keychain Access", 30.0, 40.0, 400.0, 300.0),
+            window("Safari", 50.0, 60.0, 1200.0, 800.0),
+            window("1Password", 70.0, 80.0, 300.0, 200.0),
+        ]);
+        let mut context = test_context(&temp, &source, &[]);
+        context.denylist = denylist;
+
+        let list_args = json!({});
+        let list_result =
+            dispatch("list_windows", list_args, &mut context).expect("dispatch succeeds");
+
+        let describe_args = json!({});
+        let describe_result =
+            dispatch("describe_screen", describe_args, &mut context).expect("dispatch succeeds");
+
+        // Both tools should see exactly the same filtered windows
+        let windows = list_result["windows"].as_array().expect("windows is array");
+        let allowed_apps: Vec<String> = windows
+            .iter()
+            .map(|w| w["owner"].as_str().unwrap().to_string())
+            .collect();
+
+        let description = describe_result["description"]
+            .as_str()
+            .expect("description is string");
+
+        // Verify both tools excluded the same applications
+        assert_eq!(allowed_apps.len(), 2);
+        assert!(allowed_apps.contains(&"Terminal".to_string()));
+        assert!(allowed_apps.contains(&"Safari".to_string()));
+        assert!(!allowed_apps.contains(&"Keychain Access".to_string()));
+        assert!(!allowed_apps.contains(&"1Password".to_string()));
+
+        // The description should mention exactly the same applications as list_windows returned
+        assert!(description.contains("2 visible windows"));
+        assert!(description.contains("Terminal"));
+        assert!(description.contains("Safari"));
+        assert!(!description.contains("Keychain Access"));
+        assert!(!description.contains("1Password"));
+
+        // This assertion would fail if the tools filtered differently
+        for app in &allowed_apps {
+            assert!(
+                description.contains(app),
+                "describe_screen must mention all apps that list_windows returns: missing {}",
+                app
+            );
+        }
     }
 
     /// Copy test helpers from roster.rs

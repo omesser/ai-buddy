@@ -6,7 +6,7 @@
 //! asserting frames, with no windowing system, no model and no waiting.
 
 use crate::character::{Behavior, CursorReaction, Primitive};
-pub use crate::window_source::WindowId;
+pub use crate::window_source::{Rect, WindowId};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod geometry;
@@ -19,25 +19,6 @@ use geometry::*;
 pub struct Point {
     pub x: f64,
     pub y: f64,
-}
-
-/// A display frame or a visible window rectangle, in the same space.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-impl Rect {
-    fn bottom(&self) -> f64 {
-        self.y + self.height
-    }
-
-    fn spans_x(&self, x: f64) -> bool {
-        x >= self.x && x <= self.x + self.width
-    }
 }
 
 /// One visible window: which one it is, and where.
@@ -6509,5 +6490,42 @@ mod tests {
             ..snapshot(16)
         });
         assert!(!past.addressed, "not addressed after passing through");
+    }
+
+    /// TDD: window_source::Rect should be usable as engine::Rect without mapping
+    #[test]
+    fn window_source_rect_accepts_as_engine_rect() {
+        use crate::window_source;
+
+        // This should compile: function taking engine::Rect called with window_source::Rect
+        fn takes_engine_rect(_rect: Rect) {}
+
+        let source_rect = window_source::Rect {
+            x: 100.0,
+            y: 200.0,
+            width: 300.0,
+            height: 400.0,
+        };
+
+        // This should work without field-by-field mapping
+        takes_engine_rect(source_rect);
+
+        // Also test direct assignment in WorldSnapshot assembly
+        let geometry = window_source::WorldGeometry {
+            usable_frames: vec![source_rect],
+            windows: vec![],
+            dock: None,
+        };
+
+        // This should work without .map(rect)
+        let _snapshot = WorldSnapshot {
+            displays: geometry.usable_frames, // No .map(rect) needed
+            windows: vec![],
+            cursor: Point { x: 0.0, y: 0.0 },
+            elapsed_ms: 16,
+            verbs: vec![],
+            proposal: None,
+            poll_generation: 0,
+        };
     }
 }
