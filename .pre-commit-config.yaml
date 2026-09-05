@@ -94,6 +94,18 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      # An ADR's number is how one decision cites another — `docs/agents/domain.md`
+      # asks for "Contradicts ADR-0007", and source comments cite bare numbers
+      # too. Two files sharing one made that string ambiguous twice before
+      # anyone noticed, both times because two branches picked the next number
+      # in parallel. #354.
+      - id: adr-numbers-unique
+        name: ADR numbers are unique
+        entry: bash -c 'twice=$(ls docs/adr | grep -oE "^[0-9]{4}" | sort | uniq -d); if [ -n "$twice" ]; then echo "ADR number used more than once - $twice"; exit 1; fi' --
+        language: system
+        files: ^docs/adr/
+        pass_filenames: false
+
       - id: cargo-clippy-mcp-server
         name: cargo clippy (mcp-server)
         entry: cargo clippy -p ai-buddy-mcp-server --all-targets --
