@@ -1,4 +1,4 @@
-# Desktop Buddy
+# ai-buddy
 
 A personality-driven AI desktop companion. Choose a character — each has its own authored personality — and the Director picks idle behaviors and spoken lines to match. No chat window required. The sprite also perches on windows, responds to gestures, and stays out of your way.
 
@@ -153,7 +153,7 @@ What ships where, read from the platform seam rather than from intent. Honest ab
 
 ## Developing
 
-**Want to help?** [Open issues](https://github.com/omesser/ai-buddy/issues) track bugs, features, and research. Pull requests welcome — see [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, and verification. [Alternatives comparison](./docs/research/alternatives.md) shows how Desktop Buddy differs from other desktop pets.
+**Want to help?** [Open issues](https://github.com/omesser/ai-buddy/issues) track bugs, features, and research. Pull requests welcome — see [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for toolchains, hooks, and verification. [Alternatives comparison](./docs/research/alternatives.md) shows how ai-buddy differs from other desktop pets.
 
 See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for:
 - Toolchains (Rust, Python, Node)
