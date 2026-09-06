@@ -200,7 +200,6 @@ function drawView(view, now) {
   view.sprite.style.transition = `opacity ${latest.fade_ms}ms linear`;
   view.sprite.style.opacity = latest.visible ? "1" : "0";
 
-  // Bubble visibility follows sprite visibility with same fade
   view.bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
   if (!latest.visible) {
     view.bubble.style.opacity = "0";
@@ -210,7 +209,6 @@ function drawView(view, now) {
   } else {
     view.bubble.style.opacity = "";
 
-    // Reposition a visible bubble to follow walking sprite
     if (view.bubble.classList.contains("visible")) {
       positionBubble(
         view,

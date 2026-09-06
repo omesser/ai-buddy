@@ -1,4 +1,4 @@
-// Bubble rendering logic for speech and thinking indicators.
+// The bubble's arithmetic and decisions. main.js owns the DOM that draws them.
 
 export const CEILING_CLEARANCE = 128;
 

@@ -13,11 +13,11 @@ import { test } from "node:test";
 
 const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
 
-/// The stylesheet with every design block removed, as `{line, text}` per line.
-///
-/// Depth-counted, not matched against a brace in column zero: indenting a
-/// design block defeated the shell hook this replaced. Blank lines stand in for
-/// what is removed, so a failure's line numbers are the file's.
+// The stylesheet with every design block removed, as `{line, text}` per line.
+//
+// Depth-counted, not matched against a brace in column zero: indenting a
+// design block defeated the shell hook this replaced. Blank lines stand in for
+// what is removed, so a failure's line numbers are the file's.
 function outsideDesignBlocks(source) {
   const lines = source.split("\n");
   const kept = [];
@@ -43,9 +43,9 @@ function outsideDesignBlocks(source) {
   return kept;
 }
 
-/// A declaration that hard-codes what a token should carry. `var()` and
-/// comments come out first, which is what lets the patterns stay this blunt: a
-/// rule that reads its token reduces to `border-radius: ;` and matches nothing.
+// A declaration that hard-codes what a token should carry. `var()` and
+// comments come out first, which is what lets the patterns stay this blunt: a
+// rule that reads its token reduces to `border-radius: ;` and matches nothing.
 const LITERALS = [
   [/#[0-9A-Fa-f]{3}/, "a hex colour"],
   [/rgba?\(/, "an rgb() colour"],
