@@ -59,6 +59,9 @@ public class SettingsVerify {
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
   public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
@@ -78,6 +81,15 @@ public class SettingsVerify {
     }, IntPtr.Zero);
     return secondary;
   }
+  public static List<IntPtr> FindWindowsByPid(uint pid) {
+    var list = new List<IntPtr>();
+    EnumWindows((h, l) => {
+      uint wpid; GetWindowThreadProcessId(h, out wpid);
+      if (wpid == pid && IsWindowVisible(h)) list.Add(h);
+      return true;
+    }, IntPtr.Zero);
+    return list;
+  }
 }
 "@
 
@@ -91,6 +103,13 @@ $secLeft = $sec.Left; $secTop = $sec.Top
 $secW = $sec.Right - $sec.Left; $secH = $sec.Bottom - $sec.Top
 Info "Secondary work area: ${secLeft},${secTop} ${secW}x${secH}"
 
+# Move PowerShell console to secondary display at start
+$consoleHwnd = (Get-Process -Id $PID).MainWindowHandle
+if ($consoleHwnd -ne [IntPtr]::Zero) {
+  [SettingsVerify]::SetWindowPos($consoleHwnd, [IntPtr]::Zero, $secLeft + 10, $secTop + 10, 800, 600, 0) | Out-Null
+  Info "Moved PowerShell console to secondary display"
+}
+
 $env:AI_BUDDY_OPEN_SETTINGS = "1"
 $env:AI_BUDDY_CHARACTER = "buddy-bot"
 
@@ -102,6 +121,38 @@ $psi.CreateNoWindow = $true
 $script:AppProc = New-Object System.Diagnostics.Process
 $script:AppProc.StartInfo = $psi
 $null = $script:AppProc.Start()
+
+# Wait for ai-buddy to spawn windows, then move overlays to secondary
+Start-Sleep -Milliseconds 1000
+$overlaysMoved = 0
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
+  $windows = [SettingsVerify]::FindWindowsByPid([uint32]$script:AppProc.Id)
+  foreach ($hwnd in $windows) {
+    $sb = New-Object System.Text.StringBuilder(256)
+    [SettingsVerify]::GetClassName($hwnd, $sb, 256) | Out-Null
+    $className = $sb.ToString()
+    # Tauri windows - move to secondary to keep primary clear
+    if ([SettingsVerify]::IsWindowVisible($hwnd)) {
+      $rect = New-Object SettingsVerify+RECT
+      if ([SettingsVerify]::GetWindowRect($hwnd, [ref]$rect)) {
+        $w = $rect.Right - $rect.Left
+        $h = $rect.Bottom - $rect.Top
+        # Only move if it's a reasonable-sized window (not minimized/hidden)
+        if ($w -gt 50 -and $h -gt 50) {
+          $newX = $secLeft + 100
+          $newY = $secTop + 100
+          [SettingsVerify]::SetWindowPos($hwnd, [IntPtr]::Zero, $newX, $newY, $w, $h, 0) | Out-Null
+          $overlaysMoved++
+        }
+      }
+    }
+  }
+  if ($overlaysMoved -gt 0) { break }
+  Start-Sleep -Milliseconds 100
+}
+if ($overlaysMoved -gt 0) {
+  Info "Moved $overlaysMoved ai-buddy overlay window(s) to secondary display"
+}
 
 Info "Waiting for settings window..."
 $settingsHwnd = [IntPtr]::Zero
