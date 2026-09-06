@@ -714,6 +714,22 @@ def read_shimeji(source, name=None):
         print("no actions.xml in the pack; assuming Shimeji-ee's standard conf")
         actions = dict(SHIMEJI_DEFAULT_ACTIONS)
     else:
+        # A pack is a download from the internet, so its actions.xml is
+        # untrusted. expat refuses external entity references already and has
+        # capped entity amplification since 2.4, but that cap is whichever
+        # libexpat the running Python bundles, and no pack has a reason to
+        # declare an entity at all. Refusing the declaration is the guard that
+        # does not depend on the parser's version. #382.
+        #
+        # ponytail: a scan for the literal token rather than a parser-level
+        # handler, because CPython's C XMLParser exposes no handler to install
+        # one on. `<!ENTITY` is spelled exactly this way in XML, so the only
+        # false positive is a pack that writes it inside a comment or text,
+        # which is refused too. Take the defusedxml dependency if a real pack
+        # ever trips that.
+        if b"<!ENTITY" in actions_file.read_bytes():
+            sys.exit(f"{actions_file}: declares an XML entity - refusing to parse")
+
         # Tags are namespaced ({http://www.group-finity.com/Mascot}Action);
         # matching on the local name keeps every dialect readable. Sequence
         # actions compose other actions and carry no poses of their own.
@@ -1201,6 +1217,19 @@ def self_test():
         assert manifest.count('"frames/walk-') == 4  # the repeated path
         assert (out / "frames" / "walk-2.png").exists()
         assert not (out / "frames" / "walk-3.png").exists()
+
+        # Untrusted pack XML: an entity declaration is refused, not expanded.
+        # #382.
+        (tmp / "conf" / "actions.xml").write_text(
+            '<?xml version="1.0"?><!DOCTYPE Mascot [<!ENTITY a "aa">]>'
+            '<Mascot><ActionList/></Mascot>'
+        )
+        try:
+            read_shimeji(tmp, "Bomb")
+        except SystemExit as refused:
+            assert "entity" in str(refused), refused
+        else:
+            raise AssertionError("an entity declaration was parsed")
 
     # A pack of bare shime PNGs and no actions.xml — shimejishop distributes
     # these — rides Shimeji-ee's standard conf instead.
