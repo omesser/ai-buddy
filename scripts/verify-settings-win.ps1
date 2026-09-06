@@ -154,20 +154,27 @@ if ($overlaysMoved -gt 0) {
   Info "Moved $overlaysMoved ai-buddy overlay window(s) to secondary display"
 }
 
-Info "Waiting for settings window..."
+Info "Waiting for settings window (PID-scoped class match)..."
 $settingsHwnd = [IntPtr]::Zero
-for ($i = 0; $i -lt 50; $i++) {
-  $settingsHwnd = [SettingsVerify]::FindWindow("AiBuddySettings", $null)
-  if ($settingsHwnd -ne [IntPtr]::Zero) {
-    # Move immediately to secondary display before user notices
-    $winX = $secLeft + 50
-    $winY = $secTop + 50
-    $winW = 580
-    $winH = 720
-    [SettingsVerify]::SetWindowPos($settingsHwnd, [IntPtr]::Zero, $winX, $winY, $winW, $winH, 0) | Out-Null
-    Pass "Settings window appeared and moved to secondary display"
-    break
+for ($i = 0; $i -lt 150; $i++) {
+  $windows = [SettingsVerify]::FindWindowsByPid([uint32]$script:AppProc.Id)
+  foreach ($hwnd in $windows) {
+    $sb = New-Object System.Text.StringBuilder(256)
+    [SettingsVerify]::GetClassName($hwnd, $sb, 256) | Out-Null
+    $className = $sb.ToString()
+    if ($className -eq "AiBuddySettings") {
+      $settingsHwnd = $hwnd
+      # Move immediately to secondary display (belt-and-suspenders, product should already place it there)
+      $winX = $secLeft + 50
+      $winY = $secTop + 50
+      $winW = 580
+      $winH = 720
+      [SettingsVerify]::SetWindowPos($settingsHwnd, [IntPtr]::Zero, $winX, $winY, $winW, $winH, 0) | Out-Null
+      Pass "Settings window appeared and moved to secondary display"
+      break
+    }
   }
+  if ($settingsHwnd -ne [IntPtr]::Zero) { break }
   Start-Sleep -Milliseconds 100
 }
 if ($settingsHwnd -eq [IntPtr]::Zero) { Fail "Settings window never appeared" }
