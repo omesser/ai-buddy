@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ,
-    HMONITOR, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
+    HMONITOR, MONITORINFO,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
