@@ -626,9 +626,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 | WS_TABSTOP
                                 | WS_BORDER
                                 | WS_VSCROLL
-                                | 0x0004
-                                | 0x1000
-                                | if !editable { 0x0800 } else { 0 },
+                                | ES_MULTILINE
+                                | ES_WANTRETURN
+                                | if !editable { ES_READONLY } else { 0 },
                             MARGIN * 2,
                             y,
                             FIELD_WIDTH,
