@@ -1,17 +1,18 @@
-# FF1 Black Mage, sliced from the GigaGuy custom sprite sheet (Spriters
-# Resource asset 17261, contributed by GigaGuy). White background made
-# transparent, padded to 37x33 with feet on the bottom, flipped to face right
-# for engine mirroring. Sit is 4-frame vertical breath. Sleep is hunkered sit
-# with eyes closed (not the KO/fall pose). Hold bobs 1px. Land-1 is fall tuck,
-# not a duplicate of land-0. Talk alternates stand and cast. The old KO sleep
-# pose remains as fall-0 and land-0. Pixel art at scale 3 for desktop
-# readability.
-#
-# Character voice: Black Mage Evilwizardington from Brian Clevinger's 8-Bit
-# Theater (Nuklear Power), not a silent FF1 class.
+# Final Fantasy I's Black Mage. The voice is Black Mage Evilwizardington from
+# Brian Clevinger's 8-Bit Theater (Nuklear Power).
 
 name = "Black Mage"
 scale = 3
+
+[source]
+art = """
+Sliced from a custom sprite sheet by GigaGuy on \
+The Spriters Resource (asset 17261). The voice is Black Mage \
+Evilwizardington from Brian Clevinger's 8-Bit Theater (Nuklear Power)."""
+license = """
+MIT for the package — prose, manifest, and the frames as arranged here. The \
+art they adapt is not: a custom sprite sheet by GigaGuy on The Spriters \
+Resource, which declares no license. The Black Mage is Square Enix IP."""
 
 # Proactive model calls: after each one with no one addressing the buddy,
 # the wait becomes wait * model_base ^ model_power. Two and one doubles.

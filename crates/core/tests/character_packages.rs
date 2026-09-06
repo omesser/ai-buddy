@@ -70,6 +70,48 @@ fn assert_required_animations(character: &character::Character) {
     }
 }
 
+/// Every Character Package directory in the workspace root.
+fn shipped_packages() -> Vec<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("core is in crates/")
+        .parent()
+        .expect("crates/ is in workspace")
+        .join("characters");
+
+    let mut names: Vec<String> = std::fs::read_dir(&root)
+        .unwrap_or_else(|e| panic!("{}: {e}", root.display()))
+        .map(|entry| entry.expect("characters/ is readable").path())
+        .filter(|path| path.join("character.manifest").is_file())
+        .map(|path| {
+            path.file_name()
+                .expect("a package directory has a name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    assert!(!names.is_empty(), "characters/ holds no Character Package");
+    names
+}
+
+/// `[source]` is optional to the loader and required of anything shipped here
+/// (#289). The gallery publishes what a package declares at a public URL, and
+/// a package that declares nothing gets no attribution panel at all — which is
+/// right for a stranger's package and wrong for one of ours. Nothing but this
+/// test makes the difference.
+#[test]
+fn every_shipped_package_declares_where_its_art_came_from() {
+    for name in shipped_packages() {
+        let character = load_package(&name).unwrap_or_else(|e| panic!("{name}: {e:#?}"));
+        assert!(
+            character.source.is_some(),
+            "{name} declares no [source]; the gallery would publish its art with no \
+             word on where it came from or what covers it"
+        );
+    }
+}
+
 /// Entry test: package parses, has personality, and walk is the shipped 20-frame loop.
 #[test]
 fn timber_wolf_package_loads_with_all_required_animations() {

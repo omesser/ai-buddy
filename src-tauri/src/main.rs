@@ -2038,6 +2038,7 @@ mod tests {
             model_power: DEFAULT_MODEL_POWER,
             near_reaction: CursorReaction::default(),
             rush_reaction: CursorReaction::default(),
+            source: None,
         }
     }
 

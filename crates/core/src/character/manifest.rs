@@ -6,8 +6,8 @@ use std::time::Duration;
 use toml_edit::{Document, Item};
 
 use super::{
-    CursorReaction, Primitive, Trigger, CHARACTER_MANIFEST_FILE, DEFAULT_FPS, DEFAULT_WEIGHT,
-    MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
+    CursorReaction, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE, DEFAULT_FPS,
+    DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
 };
 
 /// A Character Manifest as written, before its declarations are checked
@@ -21,6 +21,7 @@ pub(super) struct Declared {
     pub(super) model_power: Option<u32>,
     pub(super) near_reaction: Option<CursorReaction>,
     pub(super) rush_reaction: Option<CursorReaction>,
+    pub(super) source: Option<Source>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
 }
@@ -130,16 +131,102 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
+            "source" => parse_source(item, manifest, &mut declared, errors),
             "director" => parse_director(item, manifest, &mut declared, errors),
             "cursor" => parse_cursor(item, manifest, &mut declared, errors),
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
-                 name, render_mode, scale, animations, behaviors, director and cursor"
+                 name, render_mode, scale, source, animations, behaviors, \
+                 director and cursor"
             )),
         }
     }
 
     Some(declared)
+}
+
+/// `[source]`: where the art came from, for whatever publishes it.
+///
+/// Nothing in the Engine reads this — it is carried for the gallery
+/// (`scripts/make-character-gallery.py`), which used to scrape the manifest's
+/// leading comment and so published art-production notes alongside the
+/// attribution. Validated here anyway, because the parser knows every
+/// declaration or it knows none.
+fn parse_source(item: &Item, manifest: &str, declared: &mut Declared, errors: &mut Vec<String>) {
+    let Some(table) = item.as_table_like() else {
+        errors.push(
+            "\"source\" is not a table; it reads [source] with \
+             art, url and license below"
+                .to_string(),
+        );
+        return;
+    };
+
+    let mut art = None;
+    let mut url = None;
+    let mut license = None;
+
+    for (key, item) in table.iter() {
+        match key {
+            "art" => match item.as_str() {
+                Some(text) if !text.trim().is_empty() => art = Some(text.to_string()),
+                _ => errors.push(format!(
+                    "\"source.art\" is {}, and must say what the art is \
+                     and where it came from",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            // A page renders this as a link, so the scheme is refused here
+            // rather than trusted there: the manifest is data, and javascript:
+            // in an href is the whole reason to check.
+            "url" => match item.as_str() {
+                Some(text) if text.starts_with("https://") || text.starts_with("http://") => {
+                    url = Some(text.to_string())
+                }
+                _ => errors.push(format!(
+                    "\"source.url\" is {}, and must be an http or https address",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "license" => match item.as_str() {
+                Some(text) if !text.trim().is_empty() => license = Some(text.to_string()),
+                _ => errors.push(format!(
+                    "\"source.license\" is {}, and must name the license \
+                     or say that none is declared",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            other => errors.push(format!(
+                "unknown declaration source.{other:?}; [source] declares \
+                 art, url and license"
+            )),
+        }
+    }
+
+    // Asking the table rather than the parsed value keeps a key that is
+    // present but malformed to the one error its own arm already pushed.
+    if !table.contains_key("art") {
+        errors.push(
+            "[source] declares no art; say what the art is and where it \
+             came from, as art = \"Blip, cut from the Blipworks pack\""
+                .to_string(),
+        );
+    }
+    // Silence about a license reads as permission to whoever publishes the
+    // art. Most shipped packages are MIT over art adapted from a pack that
+    // declares nothing, and that second half is the sentence a reader needs;
+    // only a required key makes an author write it.
+    if !table.contains_key("license") {
+        errors.push(
+            "[source] declares no license; name it, or say that none is \
+             declared, as license = \"None declared\""
+                .to_string(),
+        );
+    }
+
+    if let (Some(art), Some(license)) = (art, license) {
+        declared.source = Some(Source { art, url, license });
+    }
 }
 
 /// `[director]`: how proactive model calls space themselves.
@@ -619,7 +706,8 @@ mod tests {
             errors,
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
-                 name, render_mode, scale, animations, behaviors, director and cursor"
+                 name, render_mode, scale, source, animations, behaviors, \
+                 director and cursor"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"

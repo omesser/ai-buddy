@@ -1,9 +1,14 @@
-# Nim, the modern pixel-art Character: a palette larger than sixteen colours,
-# shaded on a ramp lit from the upper left, a translucent contact shadow, and
-# enough in-between frames that the motion eases rather than steps.
-# Regenerate the frames with scripts/make-shipped-characters.py.
+# Nim, a modern pixel-art character... creature ... thing. He's nice.
 
 name = "Nim"
+
+[source]
+art = """
+Original to this repository. Every frame is drawn by \
+scripts/make-shipped-characters.py rather than cut from a pack."""
+license = """
+MIT for the whole package — prose, manifest and art are all this project's \
+own. Every frame is drawn by scripts/make-shipped-characters.py."""
 
 # Proactive model calls: after each one with no one addressing the buddy,
 # the wait becomes wait * model_base ^ model_power. Two and one doubles.
