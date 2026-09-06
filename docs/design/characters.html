@@ -106,6 +106,9 @@
   .source a { color: var(--accent); }
   /* The license line is the one a reader must not skim past. */
   .source .license { color: var(--ink); }
+  /* An undeclared source is a gap in the package, so it reads as one. */
+  .source.undeclared { border-left-color: var(--warn); }
+  .source.undeclared p { color: var(--warn); }
   .source .license em { font-style: normal; color: var(--ink-3); }
 
   .strip { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1rem; }
@@ -200,11 +203,18 @@
       meta.append(count);
       section.append(meta);
 
-      // Declared, never inferred: a package that says nothing gets no panel,
-      // which is not the same as a page claiming the art is this project's.
-      if (character.source) {
-        const box = el("div", "source");
-        box.append(el("b", null, "characters/" + character.dir + "/character.manifest"));
+      // Declared, never inferred — but a package that declares nothing still
+      // gets the panel, saying so. This page is the only place the art's
+      // origin is published, so an absent panel would read as "nothing to
+      // say" when it means "nobody wrote it down", and for art cut from
+      // someone else's pack those are not the same claim.
+      const box = el("div", "source");
+      box.append(el("b", null, "characters/" + character.dir + "/character.manifest"));
+      if (!character.source) {
+        box.classList.add("undeclared");
+        box.append(el("p", null, "No [source] declared. Where this art came "
+          + "from, and what license covers it, is not recorded."));
+      } else {
         box.append(el("p", null, character.source.art));
         if (character.source.url) {
           const cite = el("p");
@@ -218,8 +228,8 @@
         license.append(el("em", null, "License: "));
         license.append(document.createTextNode(character.source.license));
         box.append(license);
-        section.append(box);
       }
+      section.append(box);
 
       const strip = el("div", "strip");
       for (const animation of character.animations) {
