@@ -78,6 +78,10 @@ pub fn update_input_region(
 
 /// Apply the extended window styles: non-activating, topmost, toolwindow, transparent.
 fn set_window_styles(hwnd: HWND) -> Result<(), String> {
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle (validated
+    // in configure_overlay). GetWindowLongW, SetWindowLongW, and SetWindowPos
+    // are documented safe with valid HWNDs; SetWindowLongW returns 0 on error
+    // or when the previous value was 0, disambiguated by checking equality.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style
@@ -110,6 +114,8 @@ fn set_window_styles(hwnd: HWND) -> Result<(), String> {
 
 /// Make the window topmost without changing its size or position.
 fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. SetWindowPos
+    // is documented safe with valid HWNDs and standard z-order/positioning flags.
     unsafe {
         if SetWindowPos(
             hwnd,
@@ -133,6 +139,8 @@ fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
 /// screen sharing, matching macOS's NSWindowSharingType::None. This is DESIGN.md
 /// decision 8's screen-share rule.
 fn exclude_from_capture(hwnd: HWND) -> Result<(), String> {
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
+    // SetWindowDisplayAffinity is documented safe with valid HWNDs.
     unsafe {
         if SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) == 0 {
             return Err("Failed to exclude window from capture".to_string());
@@ -156,6 +164,11 @@ fn apply_input_mask(
 ) -> Result<(), String> {
     let (width, height, opaque) = mask.raw();
 
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. CreateRectRgn,
+    // CombineRgn, DeleteObject, and SetWindowRgn are documented safe with valid
+    // HWNDs and HRGNs. Region handles are checked for null and freed on all error
+    // paths before returning. SetWindowRgn takes ownership of combined_rgn on
+    // success, so it is not freed afterward.
     unsafe {
         let mut combined_rgn: HRGN = std::ptr::null_mut();
 
@@ -238,6 +251,9 @@ fn apply_input_mask(
 /// Applies WS_EX_TRANSPARENT so all clicks pass through, then removes any
 /// existing window region.
 fn clear_input_region(hwnd: HWND) -> Result<(), String> {
+    // SAFETY: hwnd is a valid HWND from Tauri's raw window handle. GetWindowLongW,
+    // SetWindowLongW, and SetWindowRgn are documented safe with valid HWNDs; passing
+    // null to SetWindowRgn clears the region.
     unsafe {
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let new_style = current_style | (WS_EX_TRANSPARENT as i32);
