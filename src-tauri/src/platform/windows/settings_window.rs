@@ -10,8 +10,11 @@ use std::ffi::CString;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows_sys::Win32::Graphics::Gdi::{GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ};
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ,
+    HMONITOR, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
+};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
@@ -461,6 +464,50 @@ pub fn refresh_if_showing() {
     });
 }
 
+fn get_secondary_monitor_position() -> Option<(i32, i32)> {
+    unsafe {
+        struct MonitorData {
+            count: u32,
+            secondary_rect: Option<RECT>,
+        }
+
+        unsafe extern "system" fn enum_proc(
+            hmonitor: HMONITOR,
+            _hdc: windows_sys::Win32::Graphics::Gdi::HDC,
+            _lprect: *mut RECT,
+            lparam: LPARAM,
+        ) -> BOOL {
+            let data = &mut *(lparam as *mut MonitorData);
+            let mut info: MONITORINFO = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+
+            if GetMonitorInfoA(hmonitor, &mut info) != 0 {
+                data.count += 1;
+                if data.count == 2 {
+                    data.secondary_rect = Some(info.rcWork);
+                    return 0;
+                }
+            }
+            1
+        }
+
+        let mut data = MonitorData {
+            count: 0,
+            secondary_rect: None,
+        };
+
+        EnumDisplayMonitors(
+            ptr::null_mut(),
+            ptr::null(),
+            Some(enum_proc),
+            &mut data as *mut _ as LPARAM,
+        );
+
+        data.secondary_rect
+            .map(|rect| (rect.left + 50, rect.top + 50))
+    }
+}
+
 fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String> {
     unsafe {
         let class_name = c"AiBuddySettings";
@@ -490,13 +537,15 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             }
         }
 
+        let (x, y) = get_secondary_monitor_position().unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
+
         let hwnd = CreateWindowExA(
             0,
             class_name.as_ptr() as *const u8,
             c"ai-buddy Settings".as_ptr() as *const u8,
             WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
+            x,
+            y,
             WINDOW_WIDTH,
             WINDOW_HEIGHT,
             ptr::null_mut(),
