@@ -16,8 +16,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows_sys::Win32::UI::Controls::{
-    CBS_DROPDOWNLIST, CB_ADDSTRING, CB_SETCURSEL, TCIF_TEXT, TCITEMA, TCM_GETCURSEL,
-    TCM_INSERTITEMA, WC_TABCONTROLA,
+    TCIF_TEXT, TCITEMA, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
@@ -47,6 +46,9 @@ const TCN_FIRST: u32 = 0xFFFFFDDA_u32;
 const TCN_SELCHANGE_CODE: u32 = TCN_FIRST.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
 const SS_LEFT: u32 = 0x0;
+const CBS_DROPDOWNLIST: u32 = 0x0003;
+const CB_ADDSTRING: u32 = 0x0143;
+const CB_SETCURSEL: u32 = 0x014E;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
