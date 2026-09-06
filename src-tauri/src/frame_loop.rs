@@ -19,9 +19,9 @@ use super::settings::SettingsOp;
 use super::{
     apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, menu, model,
     note_happened, open_chat, overlay_label, place_overlays, platform, publish_instances,
-    remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply, ChatStatus,
-    ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel, MenuHold,
-    MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
+    push_chat_opening, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
+    ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
+    MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
     CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
@@ -456,6 +456,13 @@ pub(crate) fn run_frame_loop(
                                     Arc::clone(&loaded),
                                     &config,
                                     &director,
+                                );
+                                push_chat_opening(
+                                    &app,
+                                    &roster,
+                                    &id,
+                                    config.configured,
+                                    config.enabled,
                                 );
                             }
                         } else {

@@ -118,6 +118,19 @@ function note(text) {
 // turn back on. Both are fixed in Settings, and neither stops the buddy
 // moving. The composer is disabled rather than hidden, so the window reads as
 // waiting rather than as broken.
+function showWho(opening) {
+  them = opening.name;
+  document.getElementById("name").textContent = opening.name;
+  document.getElementById("character").textContent = opening.character;
+  for (const node of document.querySelectorAll(".i-name")) {
+    node.textContent = opening.name;
+  }
+  for (const node of document.querySelectorAll(".i-character")) {
+    node.textContent = opening.character;
+  }
+  attached(opening);
+}
+
 function attached(opening) {
   const ready = opening.configured && opening.enabled;
   empty.hidden = ready;
@@ -234,6 +247,16 @@ async function start() {
     { target: chat.label },
   );
 
+  // Same fields as `chat_opening`. The command is one-shot at start(); a
+  // Character switch has to reach a window that is already listening. #375.
+  await listen(
+    "chat-opening",
+    ({ payload }) => {
+      showWho(payload);
+    },
+    { target: chat.label },
+  );
+
   // Both listeners are up, so the state as it stands can be asked for. The bar
   // is pushed on change and a window opened between two of them would sit at
   // dashes until the sprite next did something different.
@@ -242,16 +265,7 @@ async function start() {
   });
 
   const opening = await invoke("chat_opening", { instance });
-  them = opening.name;
-  document.getElementById("name").textContent = opening.name;
-  document.getElementById("character").textContent = opening.character;
-  for (const node of document.querySelectorAll(".i-name")) {
-    node.textContent = opening.name;
-  }
-  for (const node of document.querySelectorAll(".i-character")) {
-    node.textContent = opening.character;
-  }
-  attached(opening);
+  showWho(opening);
   line.focus();
 }
 

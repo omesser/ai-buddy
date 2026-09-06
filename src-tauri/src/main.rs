@@ -61,7 +61,7 @@ use base64::Engine as _;
 use secrets::{KeyringStore, SecretStore};
 use serde::Serialize;
 use settings::{InstanceRow, Settings, SettingsOp, SettingsSession};
-use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// Where the shipped Character Packages sit inside the app's resources. Kept in
@@ -114,6 +114,11 @@ const CHAT_EVENT: &str = "chat";
 /// Separate from `CHAT_EVENT`: this arrives whenever the sprite does something
 /// different, whether or not anyone has typed.
 const CHAT_STATUS_EVENT: &str = "chat-status";
+
+/// The event carrying who an already-open Chat surface belongs to, after a
+/// Character switch. Same fields as `chat_opening`; an event rather than a
+/// second command, because the window is already listening. #375.
+const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
@@ -668,6 +673,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
     if let Err(why) = app.run_on_main_thread(move || {
         let window = match handle.get_webview_window(&label) {
             Some(window) => {
+                // The title is the Instance name, which a Character switch can
+                // change without this window being rebuilt. #375.
+                let _ = window.set_title(&title);
                 let _ = window.unminimize();
                 window
             }
@@ -729,7 +737,7 @@ fn note_happened(happened: &mut Happened, what: Happened) {
 }
 
 /// What a Chat surface needs to draw itself before anything is typed.
-#[derive(Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct ChatOpening {
     name: String,
     character: String,
@@ -738,6 +746,17 @@ struct ChatOpening {
     /// Whether the switch is on as well. Configured and switched off is a
     /// different sentence from never configured, and the surface says which.
     enabled: bool,
+}
+
+/// Name and Character the open Chat surface should paint, read off the Roster
+/// after a switch so the shell does not copy the rename predicate. #375.
+fn chat_opening_from(instance: &roster::Instance, configured: bool, enabled: bool) -> ChatOpening {
+    ChatOpening {
+        name: instance.name.clone(),
+        character: instance.character_name().to_string(),
+        configured,
+        enabled,
+    }
 }
 
 /// The Chat surface asking who it belongs to, and whether anything can answer.
@@ -765,6 +784,35 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         configured: inspect.as_ref().is_some_and(|read| read.configured),
         enabled: inspect.as_ref().is_some_and(|read| read.enabled),
     }
+}
+
+/// Push name and Character to an already-open Chat surface, without creating
+/// one. Always after switch: a chosen Instance name stays, but the Character
+/// line still has to move. #375.
+fn push_chat_opening(
+    app: &tauri::AppHandle,
+    roster: &Roster,
+    id: &InstanceId,
+    configured: bool,
+    enabled: bool,
+) {
+    let Some(instance) = roster.get(id) else {
+        return;
+    };
+    let opening = chat_opening_from(instance, configured, enabled);
+    let label = chat_label(id);
+    let title = opening.name.clone();
+    let handle = app.clone();
+    if let Err(why) = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(&label) {
+            if let Err(why) = window.set_title(&title) {
+                eprintln!("chat: {label} could not be retitled: {why}");
+            }
+        }
+    }) {
+        eprintln!("chat: could not reach the main thread: {why}");
+    }
+    let _ = app.emit_to(chat_label(id), CHAT_OPENING_EVENT, opening);
 }
 
 struct ChatLine {
@@ -1050,6 +1098,7 @@ fn apply_menu_action(
                     config,
                     director,
                 );
+                push_chat_opening(app, roster, instance_id, config.configured, config.enabled);
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -1968,7 +2017,68 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_buddy_core::character::{PackageBytes, CHARACTER_MANIFEST_FILE, REQUIRED_ANIMATIONS};
+    use ai_buddy_core::character::{
+        Character, CursorReaction, PackageBytes, CHARACTER_MANIFEST_FILE, DEFAULT_MODEL_BASE,
+        DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
+    };
+    use ai_buddy_core::memory::MemoryManifest;
+
+    fn stub_character(name: &str) -> Character {
+        Character {
+            name: name.to_string(),
+            personality: String::new(),
+            animations: BTreeMap::new(),
+            behaviors: BTreeMap::new(),
+            art: BTreeMap::new(),
+            smooth: false,
+            scale: 1,
+            model_base: DEFAULT_MODEL_BASE,
+            model_power: DEFAULT_MODEL_POWER,
+            near_reaction: CursorReaction::default(),
+            rush_reaction: CursorReaction::default(),
+        }
+    }
+
+    /// Production change that would fail this: emitting the pre-switch name or
+    /// Character, or copying the rename predicate instead of reading the Roster.
+    #[test]
+    fn chat_opening_after_switch_uses_the_roster_name_and_character() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-opening-rename.md"));
+        let mut roster = Roster::new(memory);
+        let first = stub_character("bmo");
+        let second = stub_character("nim");
+        let id = roster.spawn(&first, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
+        assert!(roster.retarget(&id, &second));
+        let instance = roster.get(&id).expect("still there");
+
+        let opening = chat_opening_from(instance, true, true);
+        assert_eq!(opening.name, "nim", "the payload name is the Instance's");
+        assert_eq!(
+            opening.character, "nim",
+            "the payload Character is the Instance's"
+        );
+        assert!(opening.configured);
+        assert!(opening.enabled);
+    }
+
+    /// A chosen name survives retarget; the Chat header still has to name the
+    /// new Character. Copying only `character.name` into both fields would fail.
+    #[test]
+    fn chat_opening_after_switch_keeps_a_chosen_name() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-opening-pip.md"));
+        let mut roster = Roster::new(memory);
+        let first = stub_character("bmo");
+        let second = stub_character("nim");
+        let id = roster.spawn(&first, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        assert!(roster.retarget(&id, &second));
+        let instance = roster.get(&id).expect("still there");
+
+        let opening = chat_opening_from(instance, false, false);
+        assert_eq!(opening.name, "Pip");
+        assert_eq!(opening.character, "nim");
+        assert!(!opening.configured);
+        assert!(!opening.enabled);
+    }
 
     /// #17: losing a line that is waiting in `happened` would answer a question
     /// the user never asked and drop the one they are waiting on.
