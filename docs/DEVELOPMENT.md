@@ -288,7 +288,7 @@ A Character Package is a directory or `.zip` archive holding a `character.manife
 
 #### Declaring where the art came from
 
-`[source]` is the one part of the manifest documented before v2, because the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html) publishes it. A package that omits it appears there with no attribution at all.
+`[source]` is the one part of the manifest documented before v2, because the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html) publishes it. A package that omits it shows up there with no attribution.
 
 ```toml
 [source]
@@ -297,7 +297,7 @@ url     = "https://example.com/the-pack"   # optional, http or https only
 license = "The license the art carries, or that none is declared."
 ```
 
-Whenever `[source]` is present, `license` is required. "None is declared" is a valid answer, and the common one for fan art. Omitting the key is not, because a reader cannot tell an unlicensed pack from an unfinished manifest. The loader accepts a package with no `[source]` at all, but `every_shipped_package_declares_where_its_art_came_from` stops one shipping from this repository.
+`license` is required whenever `[source]` is present. "None is declared" is a valid answer; leaving the key out is not, because a reader cannot tell an unlicensed pack from an unfinished manifest. A package with no `[source]` at all still loads, but one cannot ship from this repository.
 
 #### Writing a personality
 

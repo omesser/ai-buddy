@@ -248,8 +248,7 @@
       root.append(section);
     }
 
-    // A Character kept off the page is still a fact about the roster, so the
-    // page says which and why rather than reading as the whole set.
+    // A Character kept off the page is still a fact about the roster.
     for (const held of data.withheld || []) {
       const note = el("p", "withheld");
       note.append(el("b", null, "characters/" + held.dir + "/"));

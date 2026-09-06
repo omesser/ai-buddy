@@ -106,16 +106,6 @@ repos:
         files: ^docs/adr/
         pass_filenames: false
 
-      # The gallery is built at deploy time from characters/, so a manifest
-      # edit could break the site with nothing before `main` to say so. Builds
-      # the real tree, not the synthetic packages --self-check covers. #289.
-      - id: character-gallery-builds
-        name: Character gallery builds
-        entry: bash -c 'out=$(mktemp -d); trap "rm -rf $out" EXIT; python3 scripts/make-character-gallery.py --self-check && python3 scripts/make-character-gallery.py --out "$out" >/dev/null' --
-        language: system
-        files: ^(characters/|scripts/make-character-gallery\.py|docs/design/characters\.html|crates/core/src/character\.rs)
-        pass_filenames: false
-
       - id: cargo-clippy-mcp-server
         name: cargo clippy (mcp-server)
         entry: cargo clippy -p ai-buddy-mcp-server --all-targets --

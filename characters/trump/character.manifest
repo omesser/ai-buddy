@@ -1,24 +1,4 @@
-# Mapping: idle<-row 0, walk<-running-right row 1
-# (the row drawn heading right), talk<-waving row 3,
-# fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6
-# (idle variant), sit<-review row 8; sleep is idle's stillest frame
-# with a one-pixel breath. The other walk row (the engine mirrors
-# instead) and row 7 (running in place) go unused.
-# Remapped for this pet's art (--map): react<-row 6, sit<-row 5[2,3], sleep<-row 5[5,6], waiting<-row 7.
-#
-# Hand-tuned after import: sit and sleep were adjacent cells of the
-# failed row, so each cycle mixed two poses. The desk-hunch is
-# sleep-0/1 — sleep plays it once and holds sleep-2 (the face-down
-# nap). Sit cannot be omitted (Perched draws it), and no other row
-# is a chair; react-4 is the waist-up crossed-arms, which reads as
-# sitting behind a title bar rather than nodding off. Land ends on
-# idle's rest frame — the jump row's last cell is a yellow burst,
-# and `loop = "once"` would hold it. Cycles slowed so the idle ring
-# and the wave read as motion, not a twitch. Every frame is
-# resampled to 85% so he sits a bit smaller on the desk. Walk keeps
-# the sheet's own proportion: a running pose is drawn shorter than a
-# standing one, so stretching it to idle's height grew the whole
-# figure, head and all, every time he set off.
+# A chibi Trump pet, imported from petscodex (petdex).
 
 name = "Trump"
 render_mode = "smooth"
@@ -26,13 +6,11 @@ scale = 1
 
 [source]
 art = """
-Cut from the petscodex pet `trump` by scripts/import-pet.py, then hand-tuned \
-and resampled to 85%."""
+Cut from the petscodex pet `trump`, and hand-modified."""
 url = "https://petscodex.com/pets/trump"
-license = """MIT, this repository's license: the personality prose, the manifest — animations, Behaviors, Director and cursor tuning — and the frames as cut, hand-tuned, resampled and arranged here are this \
-project's work. The art those frames adapt is not. It comes from the \
-petscodex pet `trump`, which declares no license anywhere in the source \
-ecosystem."""
+license = """
+MIT for the package — prose, manifest, and the frames as arranged here. The \
+art they adapt is not: the petscodex pet `trump`, which declares no license."""
 
 # Proactive model calls: Trump treats the desk as a rally, so the wait
 # does not grow. One and one keeps every two minutes.

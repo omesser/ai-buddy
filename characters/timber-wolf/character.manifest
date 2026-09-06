@@ -1,17 +1,4 @@
-# Matted against a background sampled from each capture's margins, so the
-# silhouette keeps the mech's dark legs and shadowed panels instead of
-# chewing them; the interior is opaque and only the edge is feathered.
-# Cropped UI, padded to a shared 176x160 canvas, walk flipped to face right.
-#
-# Scale 1: frames are 3D captures (like Jotaro at scale 1), not pixel art
-# scaled up (Black Mage at 37px uses scale 3). Render smooth. The mech stands
-# ~136px at its tallest, so a 75-ton OmniMech reads heavier than Jotaro's 110px
-# without dwarfing the desktop.
-# Quiet-art remat (tw-cr2): sleep/talk crotch+armpit plate cleared; sit crouches
-# via thigh shorten at full torso scale. Weapon arms restored from c283cee idle alpha; sit crouch no longer squashes outer/arm columns.
-# Every pose stands on the canvas floor: the lowest opaque pixel is the bottom
-# row, and a foot is planted in every walk frame. Only fall hangs in the air.
-# Walk is a 20-frame two-step loop (seam last→first MSE within 20% of median).
+# Timber Wolf (Mad Cat) OmniMech from Battletech.
 
 name = "Timber Wolf"
 render_mode = "smooth"
@@ -19,18 +6,13 @@ scale = 1
 
 [source]
 art = """
-The Timber Wolf (Mad Cat) OmniMech from BattleTech, captured frame by frame \
+The Timber Wolf (Mad Cat) OmniMech from BattleTech, derived \
 from a Sketchfab viewer recording of Clan's Timberwolf Battlemech by \
 MekaRamen."""
 url = "https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f"
-license = """Mixed, and unresolved for the art — see #388. The personality prose and the \
-manifest are MIT like every other package, and the matting, cropping and \
-retiming are this project's work. The frames are the problem: each captures a \
-Sketchfab model published under Sketchfab's Editorial license, use only in \
-connection with events that are newsworthy or of public interest. That does \
-not cover shipping it in an application, and it restricts the use rather than \
-the amount of editing, so a capture stays a derivative of the model. The \
-Timber Wolf is also BattleTech IP."""
+license = """
+Mixed, and unresolved for the art. The personality prose and the manifest \
+are MIT. The Timber Wolf is also BattleTech IP."""
 
 # Cursor reactions: a patrol mech acquires the contact rather than closing on
 # it — the cursor gets tracked, and a rush at the chassis earns a weapon raise.

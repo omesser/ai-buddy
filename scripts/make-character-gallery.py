@@ -46,12 +46,10 @@ SHELL = ROOT / "docs" / "design" / "characters.html"
 PLACEHOLDER = '{"characters": [], "required": [], "defaults": {}, "withheld": []}'
 
 # Packages that stay off the published page, and why. The gallery is a public
-# URL, so a Character whose art this project has no right to publish does not
-# go on it — the package stays in the repository, where the manifest states the
-# position and the issue tracks the fix.
+# URL; a Character this project has no right to publish there does not go on
+# it, and the manifest keeps the full position.
 WITHHELD = {
-    "timber-wolf": "its frames capture a Sketchfab model licensed for editorial "
-                   "use only, which does not cover publishing them here (#388)",
+    "timber-wolf": "its art is licensed for editorial use only (#388)",
 }
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"

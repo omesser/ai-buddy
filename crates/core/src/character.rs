@@ -356,14 +356,10 @@ pub struct Character {
 
 /// Where a Character's art came from, as the package declares it (#289).
 ///
-/// Prose and not an identifier, because the interesting cases are not
-/// identifiers: a package is prose, a manifest and art, and those halves can
-/// answer differently. Most are MIT throughout over art adapted from a pack
-/// that declares nothing, and `timber-wolf` is MIT prose and manifest around
-/// frames whose upstream license does not cover shipping them (#388). `license` is required whenever
-/// `[source]` is present so that "none is declared" has to be written down —
-/// a gallery publishing this at a public URL can lose that sentence by
-/// omission, and no shape but a required field stops an author omitting it.
+/// Prose and not an identifier: a package is prose, a manifest and art, and
+/// those halves can answer differently. `license` is required whenever
+/// `[source]` is present, because a gallery publishing this at a public URL
+/// can lose the caveat by omission, and only a required key stops that.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Source {
     /// What the art is and where it came from.

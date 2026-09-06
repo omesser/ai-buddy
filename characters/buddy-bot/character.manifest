@@ -1,9 +1,4 @@
-# Resized to 90×90 RGBA (transparent); the sprite reads a bit smaller than the
-# authored 108 pack. Walk frames are horizontally flipped so the nose faces
-# RIGHT; the Engine mirrors for leftward travel. Cheek LED omitted on walk only
-# (#345). Soft anti-aliased lines → render_mode smooth (ADR-0006). Scale 1:
-# frames are already desktop-sized; fractional scale is not in the schema
-# (1–4 only).
+# Buddy Bot - An original desktop AI mascot bot for ai-buddy.
 
 name = "Buddy Bot"
 render_mode = "smooth"
@@ -12,11 +7,10 @@ scale = 1
 [source]
 art = """
 Buddy Bot, a desktop AI mascot drawn from ai-buddy's own logo and generated \
-as a character pack with Grok Imagine."""
-license = """MIT, this repository's license, covering the whole package. The personality \
-prose, the manifest and the art are all this project's own: the frames were \
-generated for this project from ai-buddy's own logo rather than taken from a \
-third-party pack."""
+as a character pack."""
+license = """
+MIT for the whole package — prose, manifest and art are all this project's \
+own. The frames were generated for this project."""
 
 # Proactive model calls: a helpful buddy offers before being asked. One and
 # one keeps every two minutes — same mild pace as BMO and Cat.

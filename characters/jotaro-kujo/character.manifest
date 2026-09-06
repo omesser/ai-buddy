@@ -1,11 +1,5 @@
-# Hand-tuned after import based on actual spritesheet art (petscodex labels
-# do not match this pet's frames). Spritesheet: 8x9 grid of 192x208 cells.
-# Final mapping: idle+waiting<-row 0[0,1] at fps=2 (blink, destrobed from 6),
-# walk<-row 2[0-7] mirrored to head right (8-frame two-step cycle),
-# sit<-row 7[2-5] (cross-legged sit, 4 frames), sleep<-row 6[4,5] (lying
-# down, 2 frames), land<-row 6[0,1] (crouch), talk<-row 8 (gestures, 6),
-# react<-row 5 (Stand aura, 8), fall/hold<-row 4 (run/lunge).
-# All frames: 1px silhouette erode + re-ground to remove green chroma halo.
+# A chibi Jotaro Kujo pet (from JoJo's Bizarre Adventure), imported from
+# petscodex (petdex).
 
 name = "Jotaro Kujo"
 render_mode = "smooth"
@@ -13,14 +7,12 @@ scale = 1
 
 [source]
 art = """
-A chibi Jotaro Kujo pet, cut from the petscodex pet `jotaro-kujo` by \
-scripts/import-pet.py."""
+A chibi Jotaro Kujo pet, cut from the petscodex pet `jotaro-kujo`."""
 url = "https://petscodex.com/pets/jotaro-kujo"
-license = """MIT, this repository's license: the personality prose, the manifest — animations, Behaviors, Director and cursor tuning — and the frames as cut, remapped and arranged here are this project's \
-work. The art those frames adapt is not. It comes from the petscodex pet \
-`jotaro-kujo`, which declares no license anywhere in the source ecosystem and \
-was accepted at import with --accept-license, and Jotaro Kujo is Shueisha / \
-Hirohiko Araki IP."""
+license = """
+MIT for the package — prose, manifest, and the frames as arranged here. The \
+art they adapt is not: the petscodex pet `jotaro-kujo`, which declares no \
+license. Jotaro Kujo is Shueisha / Hirohiko Araki IP."""
 
 # Cursor reactions: cool and unfazed, doesn't react to proximity but faces challenges.
 
