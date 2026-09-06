@@ -610,6 +610,7 @@ unsafe extern "system" fn window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_CREATE, WM_DESTROY};
     match msg {
         WM_CREATE => 0,
         WM_COMMAND => {
