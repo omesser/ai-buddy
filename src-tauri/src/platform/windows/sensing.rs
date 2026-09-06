@@ -18,6 +18,11 @@ pub struct WindowsActivitySource;
 
 impl ActivitySource for WindowsActivitySource {
     fn frontmost_application(&self) -> Option<String> {
+        // SAFETY: GetForegroundWindow takes nothing and returns either a valid
+        // HWND or null; null is checked. GetWindowTextW receives the HWND,
+        // a live buffer matching the declared length, and a length that fits
+        // an i32. The buffer lives for the call and String::from_utf16 safely
+        // decodes the UTF-16 slice.
         unsafe {
             let hwnd = GetForegroundWindow();
             if hwnd.is_null() {
@@ -35,6 +40,11 @@ impl ActivitySource for WindowsActivitySource {
     }
 
     fn idle(&self) -> Duration {
+        // SAFETY: LASTINPUTINFO is properly initialized with its size as
+        // documented. GetLastInputInfo receives a mutable reference that lives
+        // for the call and fills dwTime on success. GetTickCount takes nothing
+        // and returns the current tick count. Both are documented as safe to
+        // call from any thread.
         unsafe {
             let mut lii = LASTINPUTINFO {
                 cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
@@ -52,6 +62,10 @@ impl ActivitySource for WindowsActivitySource {
     }
 
     fn displays_asleep(&self) -> bool {
+        // SAFETY: SYSTEM_POWER_STATUS is a struct of integers and bytes; zeroed
+        // initializes it validly. GetSystemPowerStatus receives a mutable
+        // reference that lives for the call and fills the fields on success.
+        // The function is documented as safe to call.
         unsafe {
             let mut status: SYSTEM_POWER_STATUS = std::mem::zeroed();
             if GetSystemPowerStatus(&mut status) == 0 {
