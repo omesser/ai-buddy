@@ -1,6 +1,6 @@
 //! Spatial queries over a `WorldSnapshot`.
 
-use super::{Point, Rect, Window, WorldSnapshot, CEILING_CLEARANCE, EDGE_CLEARANCE};
+use super::{Point, Rect, Window, WorldSnapshot, EDGE_CLEARANCE};
 use crate::window_source::DOCK_PERCH_ID;
 
 /// A surface the sprite can come to rest on.
@@ -25,7 +25,11 @@ pub(super) enum Surface {
 /// Window sides and bottoms are not surfaces, so a rectangle only counts when
 /// the sprite is above its top edge. That is what lets the sprite rise through
 /// a window from underneath instead of being trapped below it.
-pub(super) fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option<Support> {
+pub(super) fn support_below(
+    position: Point,
+    snapshot: &WorldSnapshot,
+    clearance: f64,
+) -> Option<Support> {
     let floor = floor_under(position.x, snapshot).map(|y| Support {
         y,
         surface: Surface::Floor,
@@ -36,7 +40,7 @@ pub(super) fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option
         .iter()
         .enumerate()
         .filter(|(index, window)| {
-            window.rect.y >= position.y && is_perch(*index, position.x, snapshot)
+            window.rect.y >= position.y && is_perch(*index, position.x, snapshot, clearance)
         })
         .map(|(_, window)| Support {
             y: window.rect.y,
@@ -70,10 +74,10 @@ pub(super) fn support_below(position: Point, snapshot: &WorldSnapshot) -> Option
 /// - Too close to the usable top. The feet are the contact point and the art
 ///   hangs above them, so a title bar under the menu bar leaves only legs on
 ///   screen. #100.
-pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
+pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot, clearance: f64) -> bool {
     let window = &snapshot.windows[index].rect;
     window.spans_x(x)
-        && on_a_display(Point { x, y: window.y }, snapshot)
+        && on_a_display(Point { x, y: window.y }, snapshot, clearance)
         && !snapshot.windows[..index].iter().any(|front| {
             front.rect.spans_x(x) && window.y >= front.rect.y && window.y <= front.rect.bottom()
         })
@@ -83,9 +87,9 @@ pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot) -> bool {
 /// with the room the art needs above. The second of `is_perch`'s three
 /// questions, on its own because a ride between polls has no window sample to
 /// ask the other two of and still must not place the sprite out there. #128.
-pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot) -> bool {
+pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot, clearance: f64) -> bool {
     displays_spanning(position.x, snapshot).any(|display| {
-        position.y >= display.y + CEILING_CLEARANCE && position.y <= display.bottom()
+        position.y >= display.y + room_above(clearance, display) && position.y <= display.bottom()
     })
 }
 
@@ -108,10 +112,11 @@ pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot) -> bool {
 pub(super) fn footing(
     position: Point,
     snapshot: &WorldSnapshot,
+    clearance: f64,
     swallowing: impl Fn(&Window) -> bool,
 ) -> Option<Support> {
     if floor_under(position.x, snapshot) == Some(position.y) {
-        return support_below(position, snapshot);
+        return support_below(position, snapshot, clearance);
     }
 
     // The Perch it is on: a window whose top edge is exactly its own height.
@@ -133,7 +138,7 @@ pub(super) fn footing(
     // after alt-tab. A window that already contained the sprite still
     // swallows nothing, so this falls rather than hoisting it under the
     // menu bar. #100, and #78 still holds.
-    let held = (is_perch(perch, position.x, snapshot)
+    let held = (is_perch(perch, position.x, snapshot, clearance)
         && !snapshot.windows[..perch].iter().any(&swallowing))
     .then_some(Support {
         y: position.y,
@@ -146,13 +151,15 @@ pub(super) fn footing(
         // Swallowed only onto a top edge that is somewhere to stand: lifting
         // the sprite onto an edge that is hidden or off-screen strands it in
         // the place this is meant to get it out of.
-        .filter(|(index, window)| swallowing(window) && is_perch(*index, position.x, snapshot))
+        .filter(|(index, window)| {
+            swallowing(window) && is_perch(*index, position.x, snapshot, clearance)
+        })
         .map(|(_, window)| Support {
             y: window.rect.y,
             surface: Surface::Perch,
         })
         .chain(held)
-        .chain(support_below(position, snapshot))
+        .chain(support_below(position, snapshot, clearance))
         .min_by(|a, b| a.y.total_cmp(&b.y))
 }
 
@@ -180,10 +187,18 @@ fn floor_under(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
 
 /// The highest the feet may go: the usable top plus the room the art needs
 /// above them. A climb lets go here; a Throw bumps it. #100.
-pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
+pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot, clearance: f64) -> Option<f64> {
     displays_spanning(x, snapshot)
-        .map(|display| display.y + CEILING_CLEARANCE)
+        .map(|display| display.y + room_above(clearance, display))
         .min_by(f64::total_cmp)
+}
+
+/// The clearance actually applied on one display.
+///
+/// Art taller than the screen would otherwise leave nowhere to stand: no
+/// display may give up more than half its height to the ceiling. #395.
+fn room_above(clearance: f64, display: &Rect) -> f64 {
+    clearance.min(display.height / 2.0)
 }
 
 fn displays_spanning<'a>(

@@ -169,6 +169,10 @@ impl Roster {
         let id = uuid.to_string();
         let engine = Engine::new(position)
             .with_behaviors(character.behaviors.clone())
+            // How much room a Perch near the top of a display has to leave,
+            // which is this Character's own height rather than a guess at the
+            // tallest one anybody ships. #395.
+            .with_sprite_height(character.sprite_height())
             .with_cursor_reactions(character.near_reaction, character.rush_reaction)
             // The id is already this Instance's one random number, so it is
             // also what keeps two buddies of one Character from drawing the

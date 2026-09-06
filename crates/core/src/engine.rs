@@ -279,11 +279,17 @@ const WALK_SPEED: f64 = 120.0;
 /// the flight above the usable frame. #100.
 const GRAVITY: f64 = 3600.0;
 
-/// How far below the usable top the feet must stay so the art hanging above
-/// them stays on screen. The Engine does not know the art's size; 128 is
-/// 32px at 4×, and a perch closer than that is the title bar under the
-/// menu bar that used to show only legs. #100.
-const CEILING_CLEARANCE: f64 = 128.0;
+/// How much of the art must stay below the usable top for the feet to be put
+/// down there. Half: a buddy clipped at the crown still reads as itself, and
+/// demanding a whole sprite's height refused every window in the top 15% of a
+/// 1080 display — a dead zone sized for the tallest Character anyone might
+/// ship and charged to all of them. #100 set that bar, #395 lowered it.
+const CEILING_VISIBLE_SHARE: f64 = 0.5;
+
+/// The clearance an Engine built without an art height uses: what #100 chose,
+/// 32px at 4×. Production always supplies one; this keeps a bare `Engine::new`
+/// standing where it always did.
+const CEILING_CLEARANCE_UNKNOWN: f64 = 128.0;
 
 /// How far from a horizontal display edge the feet must stay so the full
 /// sprite is on-screen when standing (not climbing). The Engine does not know
@@ -354,6 +360,8 @@ pub struct Engine {
     variants: Seeded,
     /// The Behaviors the Character declares, which a proposal names.
     behaviors: BTreeMap<String, Behavior>,
+    /// This Instance's standing height in points, when it is known.
+    sprite_height: Option<f64>,
     /// The windows of the previous tick, to tell a window that has come to
     /// contain the sprite from one that contained it all along. See
     /// `swallowed_by`.
@@ -454,6 +462,7 @@ impl Engine {
             variant_draw: 0,
             variants: Seeded::new(0),
             behaviors: BTreeMap::new(),
+            sprite_height: None,
             previous_windows: Vec::new(),
             previous_position: position,
             playing: Vec::new(),
@@ -499,6 +508,23 @@ impl Engine {
     /// has no clock, and a draw no test could reproduce would be worse than no
     /// draw at all. The first is taken here, because the Animation a sprite
     /// spawns in is one the seed should reach as well.
+    /// How tall this Instance's art stands, in points.
+    ///
+    /// Without it the Engine falls back to #100's fixed guess, which is a
+    /// dead zone sized for the tallest Character charged to every one. #395.
+    pub fn with_sprite_height(mut self, height: f64) -> Self {
+        self.sprite_height = height.is_finite().then_some(height).filter(|h| *h > 0.0);
+        self
+    }
+
+    /// How far below a display's usable top the feet may be put down.
+    fn ceiling_clearance(&self) -> f64 {
+        self.sprite_height
+            .map_or(CEILING_CLEARANCE_UNKNOWN, |height| {
+                height * CEILING_VISIBLE_SHARE
+            })
+    }
+
     pub fn with_variant_seed(mut self, seed: u64) -> Self {
         self.variants = Seeded::new(seed);
         self.variant_draw = self.variants.draw();
@@ -1111,7 +1137,9 @@ impl Engine {
                     // Rising only: a Grab can put the feet above the ceiling,
                     // and snapping them down would teleport a drop. #100.
                     if self.velocity.y < 0.0 {
-                        if let Some(ceiling) = ceiling_over(self.position.x, snapshot) {
+                        if let Some(ceiling) =
+                            ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
+                        {
                             let stop_at = self.position.y.min(ceiling);
                             if next_y < stop_at {
                                 self.position.y = stop_at;
@@ -1121,7 +1149,7 @@ impl Engine {
                         }
                     }
 
-                    match support_below(self.position, snapshot) {
+                    match support_below(self.position, snapshot, self.ceiling_clearance()) {
                         Some(support) if next_y >= support.y => {
                             self.position.y = support.y;
                             self.velocity = Point::default();
@@ -1155,7 +1183,8 @@ impl Engine {
                 // Off the top of the display there is nothing left to hold, so
                 // it lets go. A sprite over no display at all is already
                 // holding nothing, hence its own y as the fallback ceiling.
-                let ceiling = ceiling_over(self.position.x, snapshot).unwrap_or(self.position.y);
+                let ceiling = ceiling_over(self.position.x, snapshot, self.ceiling_clearance())
+                    .unwrap_or(self.position.y);
                 if self.position.y <= ceiling {
                     self.position.y = ceiling;
                     Some(Contact::Ceiling)
@@ -1236,7 +1265,7 @@ impl Engine {
                         // rather than on one — so an extrapolation off the
                         // displays is a long absence, not a frame of one. It
                         // lets go instead. #128.
-                        if !on_a_display(coasted, snapshot) {
+                        if !on_a_display(coasted, snapshot, self.ceiling_clearance()) {
                             self.rest_perch();
                             return Some(Contact::Airborne);
                         }
@@ -1246,7 +1275,12 @@ impl Engine {
                     return Some(Contact::Standing);
                 }
 
-                match footing(self.position, snapshot, |window| self.swallowed_by(window)) {
+                match footing(
+                    self.position,
+                    snapshot,
+                    self.ceiling_clearance(),
+                    |window| self.swallowed_by(window),
+                ) {
                     Some(footing) if footing.y < self.position.y => {
                         self.position.y = footing.y;
                         Some(Contact::Lifted(footing.surface))
@@ -1279,7 +1313,12 @@ impl Engine {
         // already standing on it. #100. Asked at the arrival x, because both
         // answers below place the sprite and a sideways ride carries it as
         // far as the window went. #128.
-        if !is_perch(index, self.arrival_x(current), snapshot) {
+        if !is_perch(
+            index,
+            self.arrival_x(current),
+            snapshot,
+            self.ceiling_clearance(),
+        ) {
             return PerchCarry::Lost;
         }
         let delta = Point {
@@ -3214,6 +3253,93 @@ mod tests {
             State::Grounded,
             "it has only just landed, so it has not been idle a minute"
         );
+    }
+
+    /// A window whose top edge sits `y` points down a 800-point display.
+    fn perch_at_height(y: f64) -> WorldSnapshot {
+        WorldSnapshot {
+            windows: vec![window(
+                1,
+                Rect {
+                    x: 100.0,
+                    y,
+                    width: 800.0,
+                    height: 200.0,
+                },
+            )],
+            displays: vec![one_display()],
+            elapsed_ms: 16,
+            ..WorldSnapshot::default()
+        }
+    }
+
+    /// Falls onto the window from above it and reports where it came to rest.
+    ///
+    /// Longer than `settle`: a sprite the window refuses falls the whole
+    /// display, which takes more ticks than one that lands part way down.
+    fn dropped_onto(mut engine: Engine, world: &WorldSnapshot) -> (State, f64) {
+        let frame = (0..120).map(|_| engine.tick(world)).last().unwrap();
+        (frame.state, frame.position.y)
+    }
+
+    /// #395: the dead zone is the Character's own height, not the tallest one
+    /// anybody ships. A 64-point buddy needs 32 above its feet, so a title bar
+    /// at y=80 holds it — the fixed 128 refused every window in the top 128
+    /// points to every Character alike.
+    #[test]
+    fn a_short_character_perches_where_a_tall_one_may_not() {
+        let world = perch_at_height(80.0);
+
+        let (short_state, short_y) = dropped_onto(
+            Engine::new(Point { x: 500.0, y: 0.0 }).with_sprite_height(64.0),
+            &world,
+        );
+        let (tall_state, _) = dropped_onto(
+            Engine::new(Point { x: 500.0, y: 0.0 }).with_sprite_height(300.0),
+            &world,
+        );
+
+        assert_eq!(
+            short_state,
+            State::Perched,
+            "64-point art needs 32 above it"
+        );
+        assert_eq!(short_y, 80.0, "it should be standing on the title bar");
+        assert_eq!(
+            tall_state,
+            State::Grounded,
+            "300-point art needs 150 above it, which y=80 does not leave"
+        );
+    }
+
+    /// An Engine told nothing keeps #100's fixed clearance, which is what
+    /// every existing test in this file is written against.
+    #[test]
+    fn an_unknown_height_keeps_the_old_clearance() {
+        let world = perch_at_height(80.0);
+
+        let (state, _) = dropped_onto(Engine::new(Point { x: 500.0, y: 0.0 }), &world);
+
+        assert_eq!(
+            state,
+            State::Grounded,
+            "without a height the ceiling is 128, so y=80 is still refused"
+        );
+    }
+
+    /// Art taller than the screen must not leave nowhere to stand: no display
+    /// gives up more than half its height. #395.
+    #[test]
+    fn art_taller_than_the_display_still_leaves_somewhere_to_stand() {
+        let world = perch_at_height(500.0);
+
+        let (state, y) = dropped_onto(
+            Engine::new(Point { x: 500.0, y: 0.0 }).with_sprite_height(4000.0),
+            &world,
+        );
+
+        assert_eq!(state, State::Perched, "the clamp caps the ceiling at 400");
+        assert_eq!(y, 500.0);
     }
 
     /// A window wide enough to walk along, with its top edge at y=400.
