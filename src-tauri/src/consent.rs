@@ -462,4 +462,33 @@ mod tests {
     fn process_listed_as_is_not_empty() {
         assert!(!process_listed_as().is_empty());
     }
+
+    /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn linux_pane_intro_is_tcc_free_and_explains_consent() {
+        let prose = linux_pane_intro();
+        assert!(!prose.is_empty(), "Linux prose must not be empty");
+        assert!(
+            prose.contains("no permission is requested")
+                || prose.contains("no permission requested"),
+            "Linux prose must say nothing is requested, got {prose:?}"
+        );
+        assert!(
+            prose.contains("window") || prose.contains("Window"),
+            "Linux prose must name what is read (window positions), got {prose:?}"
+        );
+        assert!(
+            !prose.contains("Accessibility"),
+            "Linux prose must not mention TCC Accessibility, got {prose:?}"
+        );
+        assert!(
+            !prose.contains("Screen Recording"),
+            "Linux prose must not mention TCC Screen Recording, got {prose:?}"
+        );
+        assert!(
+            !prose.contains("Privacy & Security"),
+            "Linux prose must not mention macOS Privacy & Security, got {prose:?}"
+        );
+    }
 }

@@ -1337,6 +1337,10 @@ mod tests {
                     || comment.contains("no permission requested"),
                 "Linux prose must say nothing is requested, got {comment:?}"
             );
+            assert!(
+                comment.contains("window") || comment.contains("Window"),
+                "Linux prose must name what is read without a grant, got {comment:?}"
+            );
         }
     }
 
