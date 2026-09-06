@@ -43,6 +43,15 @@ const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
 
+const ES_MULTILINE: u32 = 0x0004;
+const ES_AUTOVSCROLL: u32 = 0x0040;
+const ES_AUTOHSCROLL: u32 = 0x0080;
+const ES_WANTRETURN: u32 = 0x1000;
+const ES_PASSWORD: u32 = 0x0020;
+const ES_READONLY: u32 = 0x0800;
+const CBS_DROPDOWNLIST: u32 = 0x0003;
+const LBS_STANDARD: u32 = 0x0001;
+
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
 }
@@ -564,7 +573,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         window
                             .controls
                             .borrow_mut()
-                            .insert(control_id.to_string(), Control::Checkbox(hwnd));
+                            .insert(id.clone(), Control::Checkbox(hwnd));
                         y += ROW_HEIGHT + ROW_GAP;
                         control_id += 1;
                     }
@@ -595,7 +604,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         window
                             .controls
                             .borrow_mut()
-                            .insert(control_id.to_string(), Control::Edit(hwnd));
+                            .insert(id.clone(), Control::Edit(hwnd));
                         y += ROW_HEIGHT + ROW_GAP;
                         control_id += 1;
                     }
