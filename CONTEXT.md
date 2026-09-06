@@ -213,7 +213,7 @@ _Avoid_: Preprocessor, filter, throttle
 **Grab**:
 Press and move — the sprite follows the cursor. `grab` is also the optional
 Animation drawn while one lasts; a package that declares none draws its `fall`,
-and never `hold`, which belongs to the Perch ride.
+and never `hold`, which belongs to the Perch ride. #364.
 
 **Throw**:
 Release a Grab with velocity — the sprite travels ballistically until it lands.

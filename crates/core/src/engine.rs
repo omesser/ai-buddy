@@ -3108,12 +3108,9 @@ mod tests {
         assert_eq!(grabbed.state, State::Dragged);
         assert_eq!(
             grabbed.animation, "grab",
-            "being picked up is not the same beat as tumbling"
+            "being picked up is neither tumbling nor `hold`, which #98 spent \
+             the ninth required slot on and ADR-0007 keeps for a Perch ride"
         );
-
-        // And never the perch-ride Animation, which #98 spent the ninth
-        // required slot on and ADR-0007 keeps for Holding a moving Perch.
-        assert_ne!(grabbed.animation, "hold");
 
         let thrown = engine.tick(&WorldSnapshot {
             verbs: vec![Verb::Throw {

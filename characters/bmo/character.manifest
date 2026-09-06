@@ -60,10 +60,8 @@ frames = ["frames/ballwalk-0.png", "frames/ballwalk-1.png"]
 fps = 5
 variant_of = "walk"
 
-# Climbing is one of the two optional Animations the engine itself asks for,
-# scaling a display edge; a package without it climbs in its walk art. The
-# other is `grab`, drawn while the cursor holds the sprite, and a package
-# without that one hangs from the cursor in its fall art.
+# Climbing is optional, scaling a display edge; a package without it climbs in
+# its walk art. BMO draws its own.
 
 [animations.climb]
 frames = ["frames/climb-0.png", "frames/climb-1.png", "frames/climb-2.png"]
