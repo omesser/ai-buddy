@@ -1437,10 +1437,16 @@ mod tests {
         const EXPECTED_ROW_GAP: i32 = 12;
         const EXPECTED_SECTION_GAP: i32 = 24;
 
-        assert_eq!(WINDOW_WIDTH, EXPECTED_WINDOW_WIDTH, "WINDOW_WIDTH must match macOS/GTK");
+        assert_eq!(
+            WINDOW_WIDTH, EXPECTED_WINDOW_WIDTH,
+            "WINDOW_WIDTH must match macOS/GTK"
+        );
         assert_eq!(MARGIN, EXPECTED_MARGIN, "MARGIN must match macOS/GTK");
         assert_eq!(ROW_GAP, EXPECTED_ROW_GAP, "ROW_GAP must match macOS/GTK");
-        assert_eq!(SECTION_GAP, EXPECTED_SECTION_GAP, "SECTION_GAP must match macOS/GTK");
+        assert_eq!(
+            SECTION_GAP, EXPECTED_SECTION_GAP,
+            "SECTION_GAP must match macOS/GTK"
+        );
         assert_eq!(
             FIELD_WIDTH,
             EXPECTED_WINDOW_WIDTH - EXPECTED_MARGIN * 2,
