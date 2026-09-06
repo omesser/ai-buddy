@@ -3,6 +3,15 @@ name: Release
 on:
   release:
     types: [published]
+  # Dispatching takes write access, so whoever fills these in could already
+  # push the commit they build. Traced in #384: `version-override` is the only
+  # input that reaches a shell, it gets there through `env:` rather than
+  # spliced into a `run:`, and it must match semver before anything downstream
+  # sees it. The three booleans are read by nothing until #387 repairs the job
+  # `if:` that names them. No input names a ref, an action, a secret or an
+  # upload target.
+  #
+  # checkov:skip=CKV_GHA_7:reviewed in #384, see above
   workflow_dispatch:
     inputs:
       version-override:
@@ -97,13 +106,20 @@ jobs:
               version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
             fi
           fi
-          # A typo in the input reaches the bundle filenames and the macOS
-          # Info.plist, where it is nobody's idea of a version. This checks
-          # semver's shape, not every rule in it.
-          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || {
-            echo "::error::version '$version' is not semver: expected 1.2.3, 1.2.3-dev.gabc1234"
+          # A leading `v` is already stripped from all three sources above, so
+          # `v1.2.3` and `1.2.3` both arrive here as `1.2.3` — semver itself
+          # carries no prefix, and the bundles must not either. A typo reaches
+          # the bundle filenames and the macOS Info.plist, so this checks
+          # semver's shape, though not every rule in it.
+          #
+          # bash's `=~`, not `grep`: grep matches a line, so a two-line
+          # override passed on its first and carried the second into
+          # GITHUB_OUTPUT as another output. `=~` matches the whole string. #384.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! $version =~ $semver ]]; then
+            echo "::error::version '$version' is not semver: expected 1.2.3 or v1.2.3, 1.2.3-dev.gabc1234"
             exit 1
-          }
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building \`$version\`" >> "$GITHUB_STEP_SUMMARY"
 
