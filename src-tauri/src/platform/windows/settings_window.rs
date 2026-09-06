@@ -22,9 +22,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
-    EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
-    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
-    WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
+    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER,
+    WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -575,7 +575,12 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
             right: client_rect.right - MARGIN,
             bottom: client_rect.bottom - MARGIN,
         };
-        SendMessageA(tab, TCM_ADJUSTRECT, 0, &mut display_rect as *mut _ as LPARAM);
+        SendMessageA(
+            tab,
+            TCM_ADJUSTRECT,
+            0,
+            &mut display_rect as *mut _ as LPARAM,
+        );
 
         let display_left = display_rect.left + MARGIN;
         let display_top = display_rect.top;

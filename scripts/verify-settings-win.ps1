@@ -161,15 +161,20 @@ $script:TabHwnd = [IntPtr]::Zero
 if ($script:Checkboxes.Count -eq 0) { Fail "No visible checkboxes on Presence tab" }
 Pass "Presence tab: $($script:Checkboxes.Count) visible checkbox(es)"
 
-# Switch to Director tab (index 2) by clicking tab and sending TCN_SELCHANGE
+# Switch to Director tab (index 2) by clicking tab header
 if ($script:TabHwnd -eq [IntPtr]::Zero) { Fail "Tab control not found" }
 
-# Get tab control rect and click on "Director" tab (approximate position)
+# Get tab control rect and click on "Director" tab
 $tabRect = New-Object SettingsVerify+RECT
 [SettingsVerify]::GetWindowRect($script:TabHwnd, [ref]$tabRect) | Out-Null
-$tabClickX = $tabRect.Left + 240  # Approximate x for third tab
-$tabClickY = $tabRect.Top + 12    # Tab header height
-[SettingsVerify]::SetCursorPos($tabClickX, $tabClickY) | Out-Null
+
+# Calculate tab positions (each tab is ~80px wide, starting after 4px margin)
+$tabHeaderHeight = 24
+$directorTabX = $tabRect.Left + 4 + (80 * 2) + 40  # Third tab (0=Presence, 1=Character, 2=Director)
+$directorTabY = $tabRect.Top + ($tabHeaderHeight / 2)
+
+Info "Clicking Director tab at $directorTabX,$directorTabY"
+[SettingsVerify]::SetCursorPos($directorTabX, $directorTabY) | Out-Null
 Start-Sleep -Milliseconds 50
 [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
 Start-Sleep -Milliseconds 30
@@ -177,7 +182,7 @@ Start-Sleep -Milliseconds 30
 Start-Sleep -Milliseconds 300
 Info "Clicked Director tab"
 
-# Verify we're on Director tab (index 2)
+# Verify we're on Director tab (TCM_GETCURSEL)
 $curTab = [SettingsVerify]::SendMessage($script:TabHwnd, 0x130b, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
 if ($curTab -ne 2) { 
   Write-Host "[WARN] Expected tab 2 (Director), got $curTab" -ForegroundColor Yellow 
@@ -215,8 +220,10 @@ foreach ($lbl in $script:DirectorLabels) {
 }
 
 # Switch to Development tab (index 4) by clicking
-$tabClickX = $tabRect.Left + 400  # Approximate x for fifth tab
-[SettingsVerify]::SetCursorPos($tabClickX, $tabClickY) | Out-Null
+$devTabX = $tabRect.Left + 4 + (80 * 4) + 40  # Fifth tab
+$devTabY = $tabRect.Top + ($tabHeaderHeight / 2)
+Info "Clicking Development tab at $devTabX,$devTabY"
+[SettingsVerify]::SetCursorPos($devTabX, $devTabY) | Out-Null
 Start-Sleep -Milliseconds 50
 [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
 Start-Sleep -Milliseconds 30
