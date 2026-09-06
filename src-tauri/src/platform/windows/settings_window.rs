@@ -41,14 +41,6 @@ const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
 
-const ES_MULTILINE: u32 = 0x0004;
-const ES_AUTOVSCROLL: u32 = 0x0040;
-const ES_AUTOHSCROLL: u32 = 0x0080;
-const ES_WANTRETURN: u32 = 0x1000;
-const ES_PASSWORD: u32 = 0x0020;
-const ES_READONLY: u32 = 0x0800;
-const CBS_DROPDOWNLIST: u32 = 0x0003;
-const LBS_STANDARD: u32 = 0x0001;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -279,12 +271,12 @@ impl SettingsWindow {
                 let guard = self.session.lock().unwrap();
                 guard.as_ref().map(|s| s.view())
             };
-        if let Some(_view) = view {
-            let controls = self.controls.borrow();
-            for id in [form::APPLY_ID, form::CANCEL_ID] {
-                if let Some(Control::Button(_)) = controls.get(id) {
-                    let description = form::describe();
-                    let _dirty = self.director_draft(&description).patch(&view).is_some();
+            if let Some(_view) = view {
+                let controls = self.controls.borrow();
+                for id in [form::APPLY_ID, form::CANCEL_ID] {
+                    if let Some(Control::Button(_)) = controls.get(id) {
+                        let description = form::describe();
+                        let _dirty = self.director_draft(&description).patch(&view).is_some();
                     }
                 }
             }
@@ -549,7 +541,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
             for row in &section.rows {
                 match row {
                     FormRow::Checkbox {
-                        id, label, writes: _, ..
+                        id,
+                        label,
+                        writes: _,
+                        ..
                     } => {
                         let hwnd = CreateWindowExA(
                             0,
