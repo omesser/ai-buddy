@@ -556,10 +556,16 @@ fn presence_sections() -> Vec<FormSection> {
 }
 
 fn privacy_sections() -> Vec<FormSection> {
+    #[cfg(target_os = "macos")]
+    let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
+
+    #[cfg(not(target_os = "macos"))]
+    let consent_comment = Some(consent::linux_pane_intro());
+
     vec![
         FormSection {
             heading: "What the buddy can see".to_string(),
-            comment: Some(consent::pane_intro(&consent::process_listed_as())),
+            comment: consent_comment,
             rows: vec![
                 FormRow::Checkbox {
                     id: CONSENT_ACCESSIBILITY_ID.to_string(),
@@ -1240,63 +1246,102 @@ mod tests {
             .find(|s| s.heading == "What the buddy can see")
             .expect("Consent section exists");
 
-        assert_eq!(consent.rows.len(), 2);
-        let listed = crate::consent::process_listed_as();
-        assert!(
-            consent
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(consent.rows.len(), 2);
+            let listed = crate::consent::process_listed_as();
+            assert!(
+                consent
+                    .comment
+                    .as_ref()
+                    .is_some_and(|c| { c.contains(&listed) && c.contains("Privacy & Security") }),
+                "Consent section has to name the TCC row ({listed}), got {:?}",
+                consent.comment
+            );
+
+            let accessibility = consent
+                .rows
+                .iter()
+                .find(
+                    |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_ACCESSIBILITY_ID),
+                )
+                .expect("Accessibility checkbox exists");
+
+            let screen_recording = consent
+                .rows
+                .iter()
+                .find(
+                    |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_SCREEN_RECORDING_ID),
+                )
+                .expect("Screen Recording checkbox exists");
+
+            match accessibility {
+                FormRow::Checkbox { label, help, .. } => {
+                    assert_eq!(label, "Accessibility");
+                    assert!(
+                        help.as_ref().is_some_and(|h| h.contains("Dock")),
+                        "Accessibility help should mention Dock"
+                    );
+                }
+                _ => panic!("Accessibility row must be a checkbox"),
+            }
+
+            match screen_recording {
+                FormRow::Checkbox { label, help, .. } => {
+                    assert_eq!(label, "Screen Recording");
+                    assert!(
+                        help.as_ref().is_some_and(|h| h.contains("title")),
+                        "Screen Recording help should mention titles"
+                    );
+                }
+                _ => panic!("Screen Recording row must be a checkbox"),
+            }
+
+            // The compiler pins each of these to *a* bool; only the test pins it
+            // to the right one, and a swap here would grant the other capability.
+            assert_eq!(
+                description.bool_write(CONSENT_ACCESSIBILITY_ID),
+                Some(BoolField::UseAccessibility)
+            );
+            assert_eq!(
+                description.bool_write(CONSENT_SCREEN_RECORDING_ID),
+                Some(BoolField::UseScreenRecording)
+            );
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                consent.rows.len(),
+                2,
+                "Linux still declares the rows; the renderer omits them"
+            );
+            let comment = consent
                 .comment
                 .as_ref()
-                .is_some_and(|c| { c.contains(&listed) && c.contains("Privacy & Security") }),
-            "Consent section has to name the TCC row ({listed}), got {:?}",
-            consent.comment
-        );
-
-        let accessibility = consent
-            .rows
-            .iter()
-            .find(|r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_ACCESSIBILITY_ID))
-            .expect("Accessibility checkbox exists");
-
-        let screen_recording = consent
-            .rows
-            .iter()
-            .find(
-                |r| matches!(r, FormRow::Checkbox { id, .. } if id == CONSENT_SCREEN_RECORDING_ID),
-            )
-            .expect("Screen Recording checkbox exists");
-
-        match accessibility {
-            FormRow::Checkbox { label, help, .. } => {
-                assert_eq!(label, "Accessibility");
-                assert!(
-                    help.as_ref().is_some_and(|h| h.contains("Dock")),
-                    "Accessibility help should mention Dock"
-                );
-            }
-            _ => panic!("Accessibility row must be a checkbox"),
+                .expect("Linux section has prose when rows are omitted");
+            assert!(
+                !comment.contains("Accessibility"),
+                "Linux prose must not use TCC vocabulary, got {comment:?}"
+            );
+            assert!(
+                !comment.contains("Screen Recording"),
+                "Linux prose must not use TCC vocabulary, got {comment:?}"
+            );
+            assert!(
+                !comment.contains("Privacy & Security"),
+                "Linux prose must not use TCC vocabulary, got {comment:?}"
+            );
+            assert!(
+                comment.contains("no permission is requested")
+                    || comment.contains("no permission requested"),
+                "Linux prose must say nothing is requested, got {comment:?}"
+            );
+            assert!(
+                comment.contains("window") || comment.contains("Window"),
+                "Linux prose must name what is read without a grant, got {comment:?}"
+            );
         }
-
-        match screen_recording {
-            FormRow::Checkbox { label, help, .. } => {
-                assert_eq!(label, "Screen Recording");
-                assert!(
-                    help.as_ref().is_some_and(|h| h.contains("title")),
-                    "Screen Recording help should mention titles"
-                );
-            }
-            _ => panic!("Screen Recording row must be a checkbox"),
-        }
-
-        // The compiler pins each of these to *a* bool; only the test pins it
-        // to the right one, and a swap here would grant the other capability.
-        assert_eq!(
-            description.bool_write(CONSENT_ACCESSIBILITY_ID),
-            Some(BoolField::UseAccessibility)
-        );
-        assert_eq!(
-            description.bool_write(CONSENT_SCREEN_RECORDING_ID),
-            Some(BoolField::UseScreenRecording)
-        );
     }
 
     fn development_tab(description: &FormDescription) -> &FormTab {

@@ -299,17 +299,26 @@ pub fn enable(id: CapabilityId, probe: &dyn Probe) {
 /// A `cargo run` binary is unsigned, so TCC attributes the grant to whoever
 /// launched it — Cursor, Terminal — not to "ai-buddy". A packaged
 /// `.app` is listed under its own name.
+#[cfg(target_os = "macos")]
 pub fn listed_under_hint(name: &str) -> String {
     format!("macOS lists this app as {name}, under Privacy & Security.")
 }
 
 /// The pane copy. The listed name is live: a `cargo run` from Cursor is
 /// Cursor, a packaged build is ai-buddy.
+#[cfg(target_os = "macos")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
         "Checking a box asks macOS for the permission. {}",
         listed_under_hint(listed_as)
     )
+}
+
+/// Linux-specific intro: no consent system, names what is read without a grant.
+#[cfg(not(target_os = "macos"))]
+pub fn linux_pane_intro() -> String {
+    "On Linux, no permission is requested. Window positions are read to keep the buddy visible."
+        .to_string()
 }
 
 /// The localized name TCC will show. Packaged builds are this app; `cargo run`
@@ -435,6 +444,7 @@ mod tests {
     /// A `cargo run` from Cursor is listed as Cursor, not ai-buddy. The
     /// hint has to carry that name or the Accessibility list is a guessing game.
     #[test]
+    #[cfg(target_os = "macos")]
     fn the_grant_hint_names_the_app_macos_will_list() {
         let hint = listed_under_hint("Cursor");
         assert!(
@@ -451,5 +461,34 @@ mod tests {
     #[test]
     fn process_listed_as_is_not_empty() {
         assert!(!process_listed_as().is_empty());
+    }
+
+    /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn linux_pane_intro_is_tcc_free_and_explains_consent() {
+        let prose = linux_pane_intro();
+        assert!(!prose.is_empty(), "Linux prose must not be empty");
+        assert!(
+            prose.contains("no permission is requested")
+                || prose.contains("no permission requested"),
+            "Linux prose must say nothing is requested, got {prose:?}"
+        );
+        assert!(
+            prose.contains("window") || prose.contains("Window"),
+            "Linux prose must name what is read (window positions), got {prose:?}"
+        );
+        assert!(
+            !prose.contains("Accessibility"),
+            "Linux prose must not mention TCC Accessibility, got {prose:?}"
+        );
+        assert!(
+            !prose.contains("Screen Recording"),
+            "Linux prose must not mention TCC Screen Recording, got {prose:?}"
+        );
+        assert!(
+            !prose.contains("Privacy & Security"),
+            "Linux prose must not mention macOS Privacy & Security, got {prose:?}"
+        );
     }
 }
