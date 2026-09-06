@@ -34,7 +34,6 @@ fn package_bytes(name: &str) -> BTreeMap<String, Vec<u8>> {
     files
 }
 
-/// Load a workspace Character Package, or panic with the loader's errors.
 fn load_package(name: &str) -> Result<character::Character, Vec<String>> {
     character::load(&package_bytes(name))
 }
@@ -59,7 +58,6 @@ fn collect(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> st
     Ok(())
 }
 
-/// Assert that a Character declares every required animation.
 fn assert_required_animations(character: &character::Character) {
     for required in REQUIRED_ANIMATIONS {
         assert!(

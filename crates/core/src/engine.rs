@@ -501,13 +501,6 @@ impl Engine {
         self
     }
 
-    /// The seed this Instance's variant draws come from, so two buddies of one
-    /// Character do not idle in lockstep.
-    ///
-    /// Passed in rather than read, like the Static Director's seed: the Engine
-    /// has no clock, and a draw no test could reproduce would be worse than no
-    /// draw at all. The first is taken here, because the Animation a sprite
-    /// spawns in is one the seed should reach as well.
     /// How tall this Instance's art stands, in points.
     ///
     /// Without it the Engine falls back to #100's fixed guess, which is a
@@ -525,6 +518,13 @@ impl Engine {
             })
     }
 
+    /// The seed this Instance's variant draws come from, so two buddies of one
+    /// Character do not idle in lockstep.
+    ///
+    /// Passed in rather than read, like the Static Director's seed: the Engine
+    /// has no clock, and a draw no test could reproduce would be worse than no
+    /// draw at all. The first is taken here, because the Animation a sprite
+    /// spawns in is one the seed should reach as well.
     pub fn with_variant_seed(mut self, seed: u64) -> Self {
         self.variants = Seeded::new(seed);
         self.variant_draw = self.variants.draw();
@@ -922,6 +922,7 @@ impl Engine {
         // landed it is already standing, and `land` is the animation of the
         // moment in between. The Engine plays it itself because no Director
         // could propose it in time.
+        //
         // Not a sprite woken onto the same footing it fell asleep on: settling
         // that by falling is how the Engine asks what is underneath, and a
         // sprite that answers in the tick it was asked never left the ground.
@@ -6809,12 +6810,11 @@ mod tests {
         assert!(!past.addressed, "not addressed after passing through");
     }
 
-    /// TDD: window_source::Rect should be usable as engine::Rect without mapping
+    /// `window_source::Rect` reaches the Engine without a field-by-field copy.
     #[test]
     fn window_source_rect_accepts_as_engine_rect() {
         use crate::window_source;
 
-        // This should compile: function taking engine::Rect called with window_source::Rect
         fn takes_engine_rect(_rect: Rect) {}
 
         let source_rect = window_source::Rect {
@@ -6824,7 +6824,6 @@ mod tests {
             height: 400.0,
         };
 
-        // This should work without field-by-field mapping
         takes_engine_rect(source_rect);
 
         // Also test direct assignment in WorldSnapshot assembly
@@ -6834,7 +6833,6 @@ mod tests {
             dock: None,
         };
 
-        // This should work without .map(rect)
         let _snapshot = WorldSnapshot {
             displays: geometry.usable_frames, // No .map(rect) needed
             windows: vec![],

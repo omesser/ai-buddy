@@ -151,10 +151,7 @@ mod helpers {
         Failed,
     }
 
-    /// Enqueue an expression proposal following tools.rs logic.
-    ///
-    /// Both speak and play_behavior follow the same pattern of resolving target
-    /// and enqueueing proposals through the expression handle.
+    /// Resolve the target Instance and enqueue, for `speak` and `play_behavior`.
     pub fn enqueue_expression(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
@@ -172,7 +169,6 @@ mod helpers {
             }
         };
 
-        // Try to enqueue the proposal
         if let Some(handle) = expression {
             let _enqueue_result = handle.enqueue(&target_id, proposal);
             // Regardless of enqueue result, we report success
@@ -200,7 +196,6 @@ mod helpers {
     ) -> TargetResolution {
         match instance_id {
             Some(id) => {
-                // Check if the given id exists in roster
                 if roster.iter().any(|info| info.id == id) {
                     TargetResolution::Resolved(id.to_string())
                 } else {
@@ -226,7 +221,6 @@ pub(crate) fn speak(
     roster: &[InstanceInfo],
     expression: Option<&mut dyn ExpressionHandle>,
 ) -> SpeakResult {
-    // Early return for empty message
     if message.is_empty() {
         return SpeakResult {
             success: false,
@@ -257,7 +251,6 @@ pub(crate) fn play_behavior(
     roster: &[InstanceInfo],
     expression: Option<&mut dyn ExpressionHandle>,
 ) -> PlayBehaviorResult {
-    // Early return for empty behavior
     if behavior.is_empty() {
         return PlayBehaviorResult {
             success: false,

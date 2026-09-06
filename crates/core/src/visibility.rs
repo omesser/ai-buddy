@@ -293,17 +293,13 @@ mod tests {
         })
     }
 
-    /// The desktop the Character spends almost all of its life on. Nothing to
-    /// say means nothing said: an overlay told what it already is sixty times a
-    /// second is the flicker decision 8 exists to avoid.
-    /// Measured on a real desktop, which is the only way this was ever going
-    /// to be found. While an application is fullscreen macOS keeps the hidden
-    /// menu bar in the window list, in front of everything, as a full-width
-    /// strip sitting just above the display it belongs to. Asking only the
-    /// frontmost window therefore asks whether the menu bar is fullscreen, and
-    /// the answer is always no: the Character faded out for the half second
-    /// the transition took, then came back and sat on top of the fullscreen
-    /// application for as long as it was open.
+    /// While an application is fullscreen macOS keeps the hidden menu bar in
+    /// the window list, in front of everything, as a full-width strip sitting
+    /// just above the display it belongs to. Asking only the frontmost window
+    /// therefore asks whether the menu bar is fullscreen, and the answer is
+    /// always no: the Character faded out for the half second the transition
+    /// took, then came back and sat on top of the fullscreen application for
+    /// as long as it was open.
     #[test]
     fn the_hidden_menu_bar_does_not_answer_for_the_window_behind_it() {
         let displays = [
@@ -392,6 +388,9 @@ mod tests {
         );
     }
 
+    /// The desktop the Character spends almost all of its life on. Nothing to
+    /// say means nothing said: an overlay told what it already is sixty times a
+    /// second is the flicker decision 8 exists to avoid.
     #[test]
     fn a_quiet_desktop_leaves_the_character_on_screen_and_says_nothing() {
         let mut rules = HideRules::default();
