@@ -73,16 +73,23 @@ impl WindowSource for WindowsWindowSource {
 /// Engine's expectation. Filters to visible, non-tool windows with WS_VISIBLE
 /// and without WS_EX_TOOLWINDOW.
 fn visible_windows() -> Vec<WindowRect> {
+    let windows: Mutex<Vec<WindowRect>> = Mutex::new(Vec::new());
+
+    // SAFETY: EnumWindows takes a callback and a pointer-sized parameter. The
+    // callback's signature matches the required WNDENUMPROC ABI. The windows
+    // reference lives until EnumWindows returns, and the callback never escapes.
     unsafe {
-        let windows: Mutex<Vec<WindowRect>> = Mutex::new(Vec::new());
-
         EnumWindows(Some(enum_window_callback), &windows as *const _ as LPARAM);
-
-        windows.into_inner().unwrap()
     }
+
+    windows.into_inner().unwrap()
 }
 
 /// EnumWindows callback that collects visible application windows.
+///
+/// SAFETY: EnumWindows contract guarantees hwnd is valid for the call, and
+/// lparam is the pointer visible_windows passed in — still live, correctly
+/// aligned, and pointing at the Mutex that owns the Vec.
 unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let windows = &*(lparam as *const Mutex<Vec<WindowRect>>);
 
@@ -97,61 +104,69 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BO
 
 /// Read one window's geometry and owner, or None if it should be skipped.
 fn window_rect(hwnd: HWND) -> Option<WindowRect> {
-    unsafe {
-        if IsWindowVisible(hwnd) == 0 {
-            return None;
-        }
-
-        let style = GetWindowLongW(hwnd, GWL_STYLE);
-        if (style & (WS_VISIBLE as i32)) == 0 {
-            return None;
-        }
-
-        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        if (ex_style & (WS_EX_TOOLWINDOW as i32)) != 0 {
-            return None;
-        }
-
-        let mut rect: RECT = std::mem::zeroed();
-        if GetWindowRect(hwnd, &mut rect) == 0 {
-            return None;
-        }
-
-        if rect.right <= rect.left || rect.bottom <= rect.top {
-            return None;
-        }
-
-        let owner = window_title(hwnd).unwrap_or_else(|| "Unknown".to_string());
-
-        if is_own_overlay(&owner, hwnd) {
-            return None;
-        }
-
-        Some(WindowRect {
-            id: hwnd as u64,
-            bounds: Rect {
-                x: f64::from(rect.left),
-                y: f64::from(rect.top),
-                width: f64::from(rect.right - rect.left),
-                height: f64::from(rect.bottom - rect.top),
-            },
-            owner,
-            layer: 0,
-        })
+    // SAFETY: hwnd comes from EnumWindows, which guarantees it is valid for
+    // the callback's execution. IsWindowVisible is a simple read.
+    if unsafe { IsWindowVisible(hwnd) } == 0 {
+        return None;
     }
+
+    // SAFETY: GetWindowLongW on GWL_STYLE reads the window's style bits.
+    // hwnd is still valid.
+    let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) };
+    if (style & (WS_VISIBLE as i32)) == 0 {
+        return None;
+    }
+
+    // SAFETY: GetWindowLongW on GWL_EXSTYLE reads the extended style bits.
+    let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) };
+    if (ex_style & (WS_EX_TOOLWINDOW as i32)) != 0 {
+        return None;
+    }
+
+    // SAFETY: zeroed RECT is valid for GetWindowRect to write into — all
+    // zeroes is a valid but empty rectangle.
+    let mut rect: RECT = unsafe { std::mem::zeroed() };
+    // SAFETY: GetWindowRect writes into the out-pointer rect, which lives
+    // until this function returns.
+    if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
+        return None;
+    }
+
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+        return None;
+    }
+
+    let owner = window_title(hwnd).unwrap_or_else(|| "Unknown".to_string());
+
+    if is_own_overlay(&owner, hwnd) {
+        return None;
+    }
+
+    Some(WindowRect {
+        id: hwnd as u64,
+        bounds: Rect {
+            x: f64::from(rect.left),
+            y: f64::from(rect.top),
+            width: f64::from(rect.right - rect.left),
+            height: f64::from(rect.bottom - rect.top),
+        },
+        owner,
+        layer: 0,
+    })
 }
 
 /// Read window title as the owner identifier.
 fn window_title(hwnd: HWND) -> Option<String> {
-    unsafe {
-        let mut title_buf = [0u16; MAX_TITLE_LENGTH];
-        let len = GetWindowTextW(hwnd, title_buf.as_mut_ptr(), MAX_TITLE_LENGTH as i32);
-        if len <= 0 {
-            return None;
-        }
-
-        String::from_utf16(&title_buf[..len as usize]).ok()
+    let mut title_buf = [0u16; MAX_TITLE_LENGTH];
+    // SAFETY: GetWindowTextW writes into the buffer we own, up to the length
+    // we pass. hwnd is still valid from EnumWindows, and the buffer lives
+    // until this function returns.
+    let len = unsafe { GetWindowTextW(hwnd, title_buf.as_mut_ptr(), MAX_TITLE_LENGTH as i32) };
+    if len <= 0 {
+        return None;
     }
+
+    String::from_utf16(&title_buf[..len as usize]).ok()
 }
 
 /// Whether this window is one of our own overlay windows.
@@ -164,12 +179,15 @@ fn is_own_overlay(title: &str, hwnd: HWND) -> bool {
         return true;
     }
 
+    let mut window_pid: u32 = 0;
+    // SAFETY: GetWindowThreadProcessId writes the process ID into the
+    // out-pointer window_pid, which lives until this function returns.
+    // hwnd is still valid from EnumWindows.
     unsafe {
-        let mut window_pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut window_pid);
-        let current_pid = std::process::id();
-        window_pid == current_pid
     }
+    let current_pid = std::process::id();
+    window_pid == current_pid
 }
 
 #[cfg(test)]
