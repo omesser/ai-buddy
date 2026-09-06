@@ -40,7 +40,8 @@ repos:
       - id: codespell
         additional_dependencies: ["tomli"]
         # "crate" is Rust vocabulary, not a misspelling of "create".
-        args: ["--ignore-words-list=crate,crates"]
+        # "statics" is Win32 vocabulary (STATIC window class), not "statistics".
+        args: ["--ignore-words-list=crate,crates,statics"]
         exclude: ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
