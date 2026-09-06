@@ -58,6 +58,36 @@ rectangles handed over are real geometry and a window missing from the list
 costs one Perch — the same shortfall an unmanaged window already causes under a
 real X server.
 
+## The GTK3 bindings are unmaintained, and the lane accepts that
+
+RUSTSEC-2024-0411 through RUSTSEC-2024-0420 mark ten gtk-rs GTK3 crates
+unmaintained: `atk`, `atk-sys`, `gdk`, `gdk-sys`, `gdkx11`, `gdkx11-sys`, `gtk`,
+`gtk-sys`, `gtk3-macros` and `gdk-pixbuf-sys`. None of them names a
+vulnerability; each says the crate has no maintainer. They reach `Cargo.lock`
+through Tauri's Linux window and tray stack, not through anything this
+repository asks for. #397 raised the cluster and this record accepts it.
+
+There is no version to move to. gtk-rs migrated to GTK4, which is a different C
+library rather than a newer release of the same one, and Tauri v2 builds its
+Linux surface on GTK3 by way of webkit2gtk. Upgrading is a Tauri migration, not
+an edit to a version requirement here. Pinning or vendoring buys nothing either,
+because these crates are current rather than stale — unowned is the whole
+finding.
+
+The exposure is what the X11 lane already is. GTK3 draws the Linux Settings
+window and the tray, and both read input from this process. An unmaintained
+binding matters when a vulnerability is found and nobody ships the fix, so the
+cost of accepting it is a longer wait on that day, not a hole open today.
+`glib` is the one crate in this stack with a live advisory, RUSTSEC-2024-0429,
+and it is tracked separately in #383.
+
+Two things end the acceptance. A RustSec advisory against any of the ten that
+names a vulnerability rather than an absent maintainer moves this to a fix, on
+whatever path exists at the time. Tauri shipping a GTK4 Linux backend removes
+the cluster without a decision. Until one of those lands, the repository owner
+revisits this at each `/security-review` run of the Rust lane, which is where
+the cluster surfaces.
+
 ## Considered Options
 
 - **Gate the lane on the session type.** What shipped before #269, and it read

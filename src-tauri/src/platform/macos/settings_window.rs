@@ -598,6 +598,8 @@ impl SettingsController {
                 NSSize::new(width - 90.0, 22.0),
             ));
             stretch_x(&label);
+            // SAFETY: an AppKit convenience constructor. `self` outlives the button
+            // it targets, and implements dismiss:.
             let dismiss = unsafe {
                 NSButton::buttonWithTitle_target_action(
                     &NSString::from_str(dismiss_label),
@@ -918,6 +920,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         .borrow_mut()
                                         .insert(tag, id.clone());
 
+                                    // SAFETY: the controller outlives every button it targets, and
+                                    // implements handleAction:.
                                     let btn = unsafe {
                                         NSButton::buttonWithTitle_target_action(
                                             &NSString::from_str(label),
@@ -1006,6 +1010,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().new_name.borrow_mut() = new_name_field;
     *controller.ivars().instances.borrow_mut() = instances_view;
 
+    // SAFETY: NSWindow's designated initializer over a window this call just
+    // allocated, on the main thread `mtm` proves.
     let window = unsafe {
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
@@ -1127,6 +1133,8 @@ fn checkbox(
     controller: &SettingsController,
     mtm: MainThreadMarker,
 ) -> Retained<NSButton> {
+    // SAFETY: an AppKit convenience constructor. The controller outlives the
+    // button it targets, and implements toggle:.
     let button = unsafe {
         NSButton::buttonWithTitle_target_action(
             &NSString::from_str(title),
@@ -1202,6 +1210,8 @@ fn freeze_or_bind(
     if frozen {
         field.setEditable(false);
     } else if batched {
+        // SAFETY: setDelegate: does not retain, and the controller outlives the
+        // field it owns.
         unsafe {
             field.setDelegate(Some(ProtocolObject::from_ref(controller)));
         }
@@ -1220,14 +1230,20 @@ fn field_text(cell: &RefCell<Option<Retained<NSTextField>>>) -> String {
 
 /// Commit on Return and on blur.
 fn bind_commit(field: &NSTextField, controller: &SettingsController) {
+    // SAFETY: setDelegate: does not retain, and the controller outlives the
+    // field it owns.
     unsafe {
         field.setDelegate(Some(ProtocolObject::from_ref(controller)));
     }
     if let Some(cell) = field.cell() {
+        // SAFETY: NSCell's setSendsActionOnEndEditing: takes a BOOL, which is
+        // what this message sends.
         unsafe {
             let _: () = msg_send![&cell, setSendsActionOnEndEditing: true];
         }
     }
+    // SAFETY: setTarget: does not retain, and the controller outlives the
+    // field it owns. endpointEnded: is implemented above.
     unsafe {
         field.setTarget(Some(controller));
         field.setAction(Some(sel!(endpointEnded:)));
@@ -1254,6 +1270,8 @@ fn popup(
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
         false,
     );
+    // SAFETY: setTarget: does not retain, and the controller outlives every
+    // popup it owns. The selector is one the caller took from this class.
     unsafe {
         popup.setTarget(Some(controller));
         popup.setAction(Some(action));
@@ -1294,6 +1312,8 @@ fn fill_popup(cell: &RefCell<Option<Retained<NSPopUpButton>>>, options: &[String
 /// falls behind it, and tray Settings then looks like a no-op.
 fn raise(window: &NSWindow, mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
+    // SAFETY: four AppKit messages sent with the argument types their
+    // signatures declare, on the main thread `mtm` proves.
     unsafe {
         let _: () = msg_send![window, setLevel: NSStatusWindowLevel as NSWindowLevel];
         let _: () = msg_send![window, setHidesOnDeactivate: false];
@@ -1318,6 +1338,8 @@ fn size_document(document: &NSView, size: NSSize) {
 }
 
 fn stretch_x(view: &NSView) {
+    // SAFETY: setTranslatesAutoresizingMaskIntoConstraints: takes a BOOL,
+    // which is what this message sends.
     unsafe {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
@@ -1325,6 +1347,8 @@ fn stretch_x(view: &NSView) {
 }
 
 fn stretch_xy(view: &NSView) {
+    // SAFETY: setTranslatesAutoresizingMaskIntoConstraints: takes a BOOL,
+    // which is what this message sends.
     unsafe {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
@@ -1334,6 +1358,8 @@ fn stretch_xy(view: &NSView) {
 }
 
 fn pin_right(view: &NSView) {
+    // SAFETY: setTranslatesAutoresizingMaskIntoConstraints: takes a BOOL,
+    // which is what this message sends.
     unsafe {
         let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
     }
@@ -1347,6 +1373,7 @@ fn release_window_when_closed() -> bool {
 }
 
 fn retain_after_close(window: &NSWindow) {
+    // SAFETY: a plain NSWindow setter over a BOOL.
     unsafe {
         window.setReleasedWhenClosed(release_window_when_closed());
     }
@@ -1359,6 +1386,8 @@ mod tests {
     fn test_mtm() -> MainThreadMarker {
         // cargo test is a worker thread. NSObject alloc/init and ivars() do
         // not need a run loop. NSWindow init does, and raises there.
+        // SAFETY: the marker is never used to reach a main-thread-only API here,
+        // which is what the comment above rules out.
         unsafe { MainThreadMarker::new_unchecked() }
     }
 

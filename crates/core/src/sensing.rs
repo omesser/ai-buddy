@@ -54,6 +54,10 @@ impl Clock for SystemClock {
 /// out of v1 (SPEC); that build reports UTC until a local clock exists there.
 #[cfg(unix)]
 fn system_local_hm() -> (u8, u8) {
+    // SAFETY: three libc calls over locals that outlive them. `time` and
+    // `localtime_r` write through pointers to those locals, a zeroed `tm` is
+    // the shape `localtime_r` fills, and both returns are checked before
+    // `tm` is read.
     unsafe {
         let mut t: libc::time_t = 0;
         if libc::time(&mut t) == -1 {

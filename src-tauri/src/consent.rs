@@ -211,6 +211,7 @@ mod macos {
     /// Walk parents until one is a bundled app. A `cargo run` from Cursor's
     /// terminal is often zsh → Cursor Helper → Cursor; TCC names Cursor.
     fn bundled_ancestor_name() -> Option<String> {
+        // SAFETY: getppid takes no argument, returns a pid, and cannot fail.
         let mut pid = unsafe { getppid() };
         for _ in 0..24 {
             if pid <= 1 {
@@ -241,6 +242,8 @@ mod macos {
 
     fn parent_pid(pid: i32) -> Option<i32> {
         let mut buf = [0u8; 232];
+        // SAFETY: `buf` is a local array and the call is handed its own length,
+        // so proc_pidinfo cannot write past it.
         let wrote = unsafe {
             proc_pidinfo(
                 pid,
