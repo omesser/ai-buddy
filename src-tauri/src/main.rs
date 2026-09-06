@@ -1973,6 +1973,12 @@ fn main() {
             });
             app.manage(Arc::clone(&rules));
 
+            // Dev/test hook: open settings immediately if AI_BUDDY_OPEN_SETTINGS=1.
+            // For verify/smoke scripts that need the settings window on launch.
+            if model::env_switch("AI_BUDDY_OPEN_SETTINGS").unwrap_or(false) {
+                show_settings(app.handle());
+            }
+
             let tray = {
                 let installed: Vec<String> = character_cache.keys().cloned().collect();
                 let current = lives
