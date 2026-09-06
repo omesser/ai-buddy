@@ -599,6 +599,183 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         y += ROW_HEIGHT + ROW_GAP;
                         control_id += 1;
                     }
+                    FormRow::Multiline {
+                        id,
+                        label,
+                        editable,
+                        ..
+                    } => {
+                        if let Some(label_text) = label {
+                            y += LABEL_HEIGHT + HINT_GAP;
+                        }
+                        let hwnd = CreateWindowExA(
+                            WS_EX_CLIENTEDGE,
+                            b"EDIT\0".as_ptr(),
+                            ptr::null(),
+                            WS_CHILD
+                                | WS_VISIBLE
+                                | WS_TABSTOP
+                                | WS_BORDER
+                                | WS_VSCROLL
+                                | 0x0004
+                                | 0x1000
+                                | if !editable { 0x0800 } else { 0 },
+                            MARGIN * 2,
+                            y,
+                            FIELD_WIDTH,
+                            ROW_HEIGHT * 3,
+                            parent,
+                            control_id as _,
+                            GetModuleHandleA(ptr::null()),
+                            ptr::null_mut(),
+                        );
+                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                        window
+                            .controls
+                            .borrow_mut()
+                            .insert(id.clone(), Control::Edit(hwnd));
+                        y += (ROW_HEIGHT * 3) + ROW_GAP;
+                        control_id += 1;
+                    }
+                    FormRow::SecureField {
+                        id, label, frozen, ..
+                    } => {
+                        if let Some(label_text) = label {
+                            y += LABEL_HEIGHT + HINT_GAP;
+                        }
+                        let hwnd = CreateWindowExA(
+                            WS_EX_CLIENTEDGE,
+                            b"EDIT\0".as_ptr(),
+                            ptr::null(),
+                            WS_CHILD
+                                | WS_VISIBLE
+                                | WS_TABSTOP
+                                | WS_BORDER
+                                | ES_PASSWORD
+                                | if *frozen { ES_READONLY } else { 0 },
+                            MARGIN * 2,
+                            y,
+                            FIELD_WIDTH,
+                            ROW_HEIGHT,
+                            parent,
+                            control_id as _,
+                            GetModuleHandleA(ptr::null()),
+                            ptr::null_mut(),
+                        );
+                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                        window
+                            .controls
+                            .borrow_mut()
+                            .insert(id.clone(), Control::Edit(hwnd));
+                        y += ROW_HEIGHT + ROW_GAP;
+                        control_id += 1;
+                    }
+                    FormRow::InspectBlock { id, label, .. } => {
+                        if label.is_some() {
+                            y += LABEL_HEIGHT + HINT_GAP;
+                        }
+                        let hwnd = CreateWindowExA(
+                            WS_EX_CLIENTEDGE,
+                            b"EDIT\0".as_ptr(),
+                            ptr::null(),
+                            WS_CHILD
+                                | WS_VISIBLE
+                                | WS_BORDER
+                                | WS_VSCROLL
+                                | 0x0004
+                                | 0x1000
+                                | 0x0800,
+                            MARGIN * 2,
+                            y,
+                            FIELD_WIDTH,
+                            ROW_HEIGHT * 2,
+                            parent,
+                            control_id as _,
+                            GetModuleHandleA(ptr::null()),
+                            ptr::null_mut(),
+                        );
+                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                        window
+                            .controls
+                            .borrow_mut()
+                            .insert(id.clone(), Control::Edit(hwnd));
+                        y += (ROW_HEIGHT * 2) + ROW_GAP;
+                        control_id += 1;
+                    }
+                    FormRow::InspectPath { id } => {
+                        let hwnd = CreateWindowExA(
+                            WS_EX_CLIENTEDGE,
+                            b"EDIT\0".as_ptr(),
+                            ptr::null(),
+                            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY,
+                            MARGIN * 2,
+                            y,
+                            FIELD_WIDTH,
+                            ROW_HEIGHT,
+                            parent,
+                            control_id as _,
+                            GetModuleHandleA(ptr::null()),
+                            ptr::null_mut(),
+                        );
+                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                        window
+                            .controls
+                            .borrow_mut()
+                            .insert(id.clone(), Control::Edit(hwnd));
+                        y += ROW_HEIGHT + ROW_GAP;
+                        control_id += 1;
+                    }
+                    FormRow::List {
+                        id, dismiss_label, ..
+                    } => {
+                        let hwnd = CreateWindowExA(
+                            WS_EX_CLIENTEDGE,
+                            b"LISTBOX\0".as_ptr(),
+                            ptr::null(),
+                            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_STANDARD,
+                            MARGIN * 2,
+                            y,
+                            FIELD_WIDTH,
+                            ROW_HEIGHT * 4,
+                            parent,
+                            control_id as _,
+                            GetModuleHandleA(ptr::null()),
+                            ptr::null_mut(),
+                        );
+                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                        window
+                            .controls
+                            .borrow_mut()
+                            .insert(id.clone(), Control::Edit(hwnd));
+                        y += (ROW_HEIGHT * 4) + ROW_GAP;
+                        control_id += 1;
+                    }
+                    FormRow::Popup { id, label, .. } => {
+                        if label.is_some() {
+                            y += LABEL_HEIGHT + HINT_GAP;
+                        }
+                        let hwnd = CreateWindowExA(
+                            0,
+                            b"COMBOBOX\0".as_ptr(),
+                            ptr::null(),
+                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+                            MARGIN * 2,
+                            y,
+                            FIELD_WIDTH,
+                            ROW_HEIGHT * 5,
+                            parent,
+                            control_id as _,
+                            GetModuleHandleA(ptr::null()),
+                            ptr::null_mut(),
+                        );
+                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                        window
+                            .controls
+                            .borrow_mut()
+                            .insert(id.clone(), Control::Edit(hwnd));
+                        y += ROW_HEIGHT + ROW_GAP;
+                        control_id += 1;
+                    }
                     FormRow::Composite { controls, .. } => {
                         let mut x = MARGIN * 2;
                         for control in controls {
@@ -653,9 +830,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 _ => {}
                             }
                         }
-                        y += ROW_HEIGHT + ROW_GAP;
-                    }
-                    _ => {
                         y += ROW_HEIGHT + ROW_GAP;
                     }
                 }
