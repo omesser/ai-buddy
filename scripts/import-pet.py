@@ -104,15 +104,16 @@ def license_prose(license_line):
     declared = normalize_license(license_line or "")
     if not declared:
         return (
-            "None declared anywhere in the source ecosystem, and the importer "
-            "warned so. A development asset unless a license surfaces — this "
-            "repository's license claims do not cover the art."
+            "MIT for these frames as cut and arranged here, along with the "
+            "personality prose and the manifest. The art those frames adapt is "
+            "not: it declares no license anywhere in the source ecosystem, and "
+            "the importer warned so."
         )
     if declared not in KNOWN_NORMALIZED:
         return (
-            f"{license_line}, which the importer does not recognize and warned "
-            "about. Read it before shipping the art — this repository's license "
-            "claims do not cover it."
+            f"The art it adapts declares {license_line}, which the importer "
+            "does not recognize and warned about. Read it before shipping the "
+            "art; this repository's license claims do not cover it."
         )
     return f"{license_line}."
 
@@ -1055,7 +1056,7 @@ def self_test():
     # The license the package declares. An import that found none says so in
     # the field the gallery publishes, rather than saying nothing.
     assert license_prose("CC0-1.0") == "CC0-1.0."
-    assert "None declared anywhere" in license_prose(None)
+    assert "declares no license anywhere" in license_prose(None)
     assert "All Rights Reserved" in license_prose("All Rights Reserved")
     assert license_prose("   ") == license_prose(None)
 
@@ -1174,7 +1175,7 @@ def self_test():
         declared = tomllib.loads(manifest)["source"]
         assert "a test dot" in declared["art"]
         assert declared["url"] == "https://petscodex.com/pets/dot"
-        assert "None declared anywhere" in declared["license"]
+        assert "declares no license anywhere" in declared["license"]
         assert "Mapping:" not in declared["art"], "art notes stay in the comments"
         assert "# Mapping:" in manifest
 

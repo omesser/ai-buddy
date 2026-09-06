@@ -213,8 +213,9 @@ fn parse_source(item: &Item, manifest: &str, declared: &mut Declared, errors: &m
         );
     }
     // Silence about a license reads as permission to whoever publishes the
-    // art. Six of the eight shipped packages have no license to name and have
-    // to say so, which they can only be made to do by the key being required.
+    // art. Most shipped packages are MIT over art adapted from a pack that
+    // declares nothing, and that second half is the sentence a reader needs;
+    // only a required key makes an author write it.
     if !table.contains_key("license") {
         errors.push(
             "[source] declares no license; name it, or say that none is \

@@ -83,10 +83,10 @@
                font-size: .95em; }
   .short { color: var(--warn); }
 
-  /* The package's own [source] declaration. Most packages cite third-party
-     art, and six say this repository's license does not cover it; this page
-     is a public, indexed URL, so it prints what the manifest declares rather
-     than paraphrasing a caveat into a weaker one. */
+  /* The package's own [source] declaration. Most packages are MIT over art
+     adapted from someone else's pack; this page is a public, indexed URL, so
+     it prints what the manifest declares rather than paraphrasing a caveat
+     into a weaker one. */
   .source {
     margin: .7rem 0 0;
     padding: .7rem .85rem;
@@ -334,7 +334,11 @@
     if (playing) {
       for (const state of stages) {
         const last = state.images.length - 1;
-        const step = Math.floor((now - state.start) * state.fps / 1000);
+        // A rAF timestamp can predate the start captured just before it, and a
+        // negative step indexes past the end of the ring. The loop is only
+        // rescheduled at the bottom of this function, so one throw here would
+        // freeze every Animation on the page for good.
+        const step = Math.max(0, Math.floor((now - state.start) * state.fps / 1000));
         draw(state, state.looping ? step % state.images.length : Math.min(step, last));
       }
     }

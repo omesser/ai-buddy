@@ -141,6 +141,8 @@ def frame(package, declared, art_root):
     one-liner: a manifest is data, and this script is what stands between it
     and a public URL now that the workflow no longer names each file.
     """
+    if not isinstance(declared, str):
+        raise Malformed(f"{package.name}: frame {declared!r} is not a path")
     parts = pathlib.PurePosixPath(declared).parts
     if declared.startswith("/") or ".." in parts:
         raise Malformed(f"{package.name}: frame {declared!r} points outside the package")
@@ -148,6 +150,12 @@ def frame(package, declared, art_root):
         raise Malformed(f"{package.name}: frame {declared!r} is not a .png")
 
     source = package / pathlib.PurePosixPath(declared)
+    # The textual check above rules out `..` and an absolute path; a symlink
+    # is the third way out, and it survives every one of them. Compare the
+    # resolved paths so what gets copied is the file the manifest named.
+    if source.resolve().parent != (package / pathlib.PurePosixPath(declared)).parent.resolve() \
+            or not source.resolve().is_relative_to(package.resolve()):
+        raise Malformed(f"{package.name}: frame {declared!r} resolves outside the package")
     if not source.is_file():
         raise Malformed(f"{package.name}: declares frame {declared!r}, which the package lacks")
     art = source.read_bytes()
@@ -312,7 +320,7 @@ def self_check():
         assert data["characters"][0]["source"] is None, "a package declaring no source got one"
 
     print(f"self-check: {len(required)} Required Animations, "
-          f"defaults fps={defaults['fps']} scale={defaults['scale']}, 6 checks passed")
+          f"defaults fps={defaults['fps']} scale={defaults['scale']}, 8 checks passed")
 
 
 def main():
@@ -326,6 +334,13 @@ def main():
     if arguments.self_check:
         self_check()
         return
+
+    # A withheld name that matches no package is not a package being kept off
+    # the page — it is one that publishes the next time somebody renames a
+    # directory. Checked against the real tree, which self_check does not use.
+    stale = sorted(set(WITHHELD) - {p.name for p in CHARACTERS.iterdir() if p.is_dir()})
+    if stale:
+        sys.exit(f"character gallery: WITHHELD names no such package: {', '.join(stale)}")
 
     out = arguments.out
     out.mkdir(parents=True, exist_ok=True)

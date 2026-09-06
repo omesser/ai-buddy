@@ -25,11 +25,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default. The Pages token lives on `deploy` alone, because
+# `build` now runs pull request code and nothing it does needs to write.
 permissions:
   contents: read
-  pages: write
-  # Deploying to Pages is an OIDC exchange, so the job needs to mint a token.
-  id-token: write
 
 jobs:
   # Everything that can fail because of what is in the repository, split out so
@@ -93,6 +92,11 @@ jobs:
     needs: build
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      # Deploying to Pages is an OIDC exchange, so the job mints a token.
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
