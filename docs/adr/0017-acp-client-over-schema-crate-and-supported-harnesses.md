@@ -2,10 +2,10 @@
 
 `src-tauri/src/harness.rs` speaks the Agent Client Protocol v1 to a Harness
 it spawns: newline-delimited JSON-RPC 2.0 on the child's stdin and stdout, a
-reader thread, and `serde_json::Value` for the eight messages we use
+reader thread, and `serde_json::Value` for the seven messages we use
 (`initialize`, `session/new`, `session/load`, `session/prompt`,
-`session/cancel`, `session/update`, `session/request_permission`, and a
-method-not-found reply for `fs/*` and `terminal/*`). No protocol crate.
+`session/cancel`, `session/update`, `session/request_permission`) plus a
+method-not-found reply for `fs/*` and `terminal/*`. No protocol crate.
 
 `AI_BUDDY_HARNESS` picks the Harness: `claude`, `hermes`, `opencode`, or a
 command line of the user's own. Unset leaves the HTTP Completer in `model.rs`
@@ -46,6 +46,10 @@ and a rewritten file. Where "the turn finished" is read is one function,
 | `opencode` | `opencode acp` | First-party. **Untested**: not installed where this was written. |
 | anything else | as typed, split on whitespace | The escape hatch for the next adapter. |
 
+`AI_BUDDY_HARNESS` is env-only: no settings-window row, because the row
+would cost more than the variable it names until a second Harness setting
+joins it.
+
 Deferred, and named so nobody reads their absence as a decision: Pi has no
 first-party ACP and the research says it wants a second adapter, not a
 compromise; Grok Build has no ACP documentation page; Codex, Gemini and
@@ -63,6 +67,12 @@ so a login mid-session is picked up without a restart.
 A permission request is forwarded to every open Chat surface and answered
 only by a click there. A turn that times out first sends the protocol's
 `cancelled` outcome, which is a withdrawal, not an answer.
+
+The Action Log's `prompt` event carries the session id and the prompt's
+length, not which Instance woke or whether the wake was reactive: the
+`Completer` seam hands over the prompt text and nothing else. Whether the
+reply parsed as a proposal is not logged anywhere — `crates/core` parses it
+and does no I/O, and the shell's near-miss line is a trace, not a record.
 
 There is no loopback HTTP MCP server yet (#166). The session gets the
 `ai-buddy-mcp` binary over stdio when it can be found beside the app or at

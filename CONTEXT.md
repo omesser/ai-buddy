@@ -169,13 +169,14 @@ behalf. Supplied by the user, never bundled.
 _Avoid_: Backend, provider, model
 
 **Completer**:
-An HTTP chat-completions endpoint standing in for a Harness until one is
-attached, behind the same session trait
-([ADR-0008](./docs/adr/0008-one-harness-session.md)). Settings names its timeout
-and reply cap, which is where the word reaches the screen. It streams, so the
-first token arrives long before the reply and a dropped call stops the host
-generating rather than merely going unheard; one that will not stream is
-answered whole instead.
+Whatever answers a Character Prompt behind the one session trait
+([ADR-0008](./docs/adr/0008-one-harness-session.md)): the attached Harness
+over ACP, or the HTTP chat-completions endpoint when none is attached
+([ADR-0017](./docs/adr/0017-acp-client-over-schema-crate-and-supported-harnesses.md)).
+Settings names the HTTP one's timeout and reply cap, which is where the word
+reaches the screen. That one streams, so the first token arrives long before
+the reply and a dropped call stops the host generating rather than merely
+going unheard; one that will not stream is answered whole instead.
 _Avoid_: Model, LLM, provider, API
 
 **Executor**:
