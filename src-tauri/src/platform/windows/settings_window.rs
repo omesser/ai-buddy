@@ -35,15 +35,15 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use crate::settings::form::{self, FormRow, RowOperation};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
-const WINDOW_WIDTH: i32 = 580;
+const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
-const MARGIN: i32 = 12;
+const MARGIN: i32 = 28;
 const ROW_HEIGHT: i32 = 24;
 const LABEL_HEIGHT: i32 = 18;
-const ROW_GAP: i32 = 8;
+const ROW_GAP: i32 = 12;
 const HINT_GAP: i32 = 4;
-const SECTION_GAP: i32 = 20;
-const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
+const SECTION_GAP: i32 = 24;
+const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 2;
 const MULTILINE_HEIGHT: i32 = 120;
 const INSPECT_BLOCK_HEIGHT: i32 = 100;
 
@@ -553,18 +553,24 @@ fn set_window_text(hwnd: HWND, text: &str) {
 }
 
 pub fn show(session: SettingsSession) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{BringWindowToTop, SetForegroundWindow};
+
     WINDOW.with(|cell| {
         let mut borrow = cell.borrow_mut();
         if let Some(existing) = borrow.as_ref() {
             existing.set_session(session);
             unsafe {
                 ShowWindow(existing.hwnd, SW_SHOW);
+                BringWindowToTop(existing.hwnd);
+                SetForegroundWindow(existing.hwnd);
             }
         } else {
             match create_window(session) {
                 Ok(window) => {
                     unsafe {
                         ShowWindow(window.hwnd, SW_SHOW);
+                        BringWindowToTop(window.hwnd);
+                        SetForegroundWindow(window.hwnd);
                     }
                     *borrow = Some(window);
                 }
