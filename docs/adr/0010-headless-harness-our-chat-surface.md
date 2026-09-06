@@ -104,5 +104,41 @@ Attachment is opt-in, and settings says the price in words: ai-buddy spawns and
 holds a full agent process for as long as the app runs. Static weights and the
 HTTP Completer stay the path for everyone who declines.
 
+The spawned Harness authenticates itself, and ai-buddy holds no credential for
+it (#371). All five keep their credential in a home-relative file or the OS
+keychain and read it at process start, so a CLI the user has already logged in
+to hands its login to a subprocess we spawn as the same user. Anthropic permits
+that shape by name and forbids the alternative: an end user may sign in to the
+unmodified Claude Code binary with their own subscription, and a third-party
+developer may not collect, store, or intermediate Claude.ai credentials.
+`SecretStore` also fits the Director key for a reason that does not carry over
+— ai-buddy *is* the HTTP client there, and with a Harness the Harness talks to
+the provider while we talk ACP over a pipe. A credential we store and never
+send buys nothing.
+
+So `director-api-key` stays the only account ai-buddy owns, and a pull request
+touching attachment may not:
+
+1. Prompt for a Harness password, token, or API key.
+2. Read another tool's credential file or keychain item.
+3. Copy a Harness credential into `SecretStore`.
+4. Set a provider key into the child environment on the user's behalf.
+   `ANTHROPIC_API_KEY` overrides a subscription login with no prompt in
+   non-interactive mode, which bills a subscriber twice without saying so.
+5. Set `CLAUDE_CONFIG_DIR` or pass `--bare`. Both cut the child off from the
+   login the user already has.
+6. Render, proxy, or intermediate a vendor login. Name the command and let the
+   user run it in their own terminal.
+7. Log, print, or fingerprint a Harness credential.
+8. Modify, repackage, or wrap a Harness binary, or disable one of its
+   authentication methods.
+
+The Chat surface therefore distinguishes three states rather than two. Not
+attached is the `empty-none` copy it already draws. Attached but not
+authenticated names the one command that fixes it, read from ACP's
+`authMethods` and `auth_required` where the Harness implements them and from a
+pre-flight probe where it does not. Attached and refused is a failed turn,
+which ADR-0008 already routes to `StaticDirector`.
+
 Reversing this means writing a terminal host and giving up the turn-completion
 signal, or keeping ACP and accepting two conversations.
