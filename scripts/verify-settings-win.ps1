@@ -47,6 +47,7 @@ public class SettingsVerify {
   public const int TCM_SETCURSEL = 0x130c;
   public const int TCM_GETITEMRECT = 0x130a;
   public const uint WM_NOTIFY = 0x004E;
+  public const int GA_ROOT = 2;
   [DllImport("user32.dll")] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
   [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
   public delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
@@ -60,6 +61,10 @@ public class SettingsVerify {
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT pt);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hWnd, int gaFlags);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -226,14 +231,52 @@ $script:TabHwnd = [IntPtr]::Zero
 if ($script:Checkboxes.Count -eq 0) { Fail "No visible checkboxes on Presence tab" }
 Pass "Presence tab: $($script:Checkboxes.Count) visible checkbox(es)"
 
+# Helper function to assert a screen point is over the Settings window before clicking
+function AssertClickOverSettings {
+  param([IntPtr]$settingsHwnd, [int]$screenX, [int]$screenY, [string]$context)
+
+  # Check that Settings window is foreground
+  $foreground = [SettingsVerify]::GetForegroundWindow()
+  if ($foreground -ne $settingsHwnd) {
+    Info "$context - Settings not foreground, bringing to front"
+    [SettingsVerify]::SetForegroundWindow($settingsHwnd) | Out-Null
+    Start-Sleep -Milliseconds 100
+    $foreground = [SettingsVerify]::GetForegroundWindow()
+    if ($foreground -ne $settingsHwnd) {
+      Fail "$context - Cannot bring Settings to foreground (foreground is $foreground, expected $settingsHwnd)"
+    }
+  }
+
+  # Verify the click point is over the Settings window
+  $pt = New-Object SettingsVerify+POINT
+  $pt.X = $screenX
+  $pt.Y = $screenY
+  $hwndAtPoint = [SettingsVerify]::WindowFromPoint($pt)
+
+  if ($hwndAtPoint -eq [IntPtr]::Zero) {
+    Fail "$context - WindowFromPoint($screenX,$screenY) returned null"
+  }
+
+  # Walk up to root window
+  $rootHwnd = [SettingsVerify]::GetAncestor($hwndAtPoint, [SettingsVerify]::GA_ROOT)
+  if ($rootHwnd -ne $settingsHwnd) {
+    $sb = New-Object System.Text.StringBuilder(256)
+    [SettingsVerify]::GetClassName($rootHwnd, $sb, 256) | Out-Null
+    $rootClass = $sb.ToString()
+    Fail "$context - Click point ($screenX,$screenY) is NOT over Settings window! WindowFromPoint -> $hwndAtPoint, root -> $rootHwnd (class: $rootClass). Expected root: $settingsHwnd. Aborting to prevent clicking unrelated apps."
+  }
+
+  Info "$context - Verified click point ($screenX,$screenY) is over Settings window"
+}
+
 # Helper function to click a tab by index using TCM_GETITEMRECT
 function ClickTab {
-  param([IntPtr]$tabHwnd, [int]$tabIndex, [string]$tabName)
+  param([IntPtr]$settingsHwnd, [IntPtr]$tabHwnd, [int]$tabIndex, [string]$tabName)
 
   $tabItemRect = New-Object SettingsVerify+RECT
   $result = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETITEMRECT, [IntPtr]$tabIndex, [ref]$tabItemRect)
   if ($result -eq [IntPtr]::Zero) {
-    Fail "TCM_GETITEMRECT failed for $tabName tab (index $tabIndex)"
+    Fail "TCM_GETITEMRECT failed for $tabName tab (index $tabIndex) - cannot safely determine click coordinates"
   }
 
   # Convert center of tab item rect from client to screen coordinates
@@ -241,6 +284,9 @@ function ClickTab {
   $centerPt.X = ($tabItemRect.Left + $tabItemRect.Right) / 2
   $centerPt.Y = ($tabItemRect.Top + $tabItemRect.Bottom) / 2
   [SettingsVerify]::ClientToScreen($tabHwnd, [ref]$centerPt) | Out-Null
+
+  # Assert click point is over Settings window before clicking
+  AssertClickOverSettings $settingsHwnd $centerPt.X $centerPt.Y "$tabName tab click"
 
   Info "Clicking $tabName tab at $($centerPt.X),$($centerPt.Y) (from TCM_GETITEMRECT)"
   [SettingsVerify]::SetCursorPos($centerPt.X, $centerPt.Y) | Out-Null
@@ -259,7 +305,7 @@ function ClickTab {
 
 # Click Director tab (index 2)
 if ($script:TabHwnd -eq [IntPtr]::Zero) { Fail "Tab control not found" }
-ClickTab $script:TabHwnd 2 "Director"
+ClickTab $settingsHwnd $script:TabHwnd 2 "Director"
 
 # Re-enumerate to find Director tab's visible STATIC controls (field labels)
 $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObject]
@@ -293,7 +339,7 @@ foreach ($lbl in $script:DirectorLabels) {
 }
 
 # Click Development tab (index 4)
-ClickTab $script:TabHwnd 4 "Development"
+ClickTab $settingsHwnd $script:TabHwnd 4 "Development"
 
 # Find Trace* checkboxes
 $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObject]
