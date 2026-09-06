@@ -3,29 +3,13 @@ name: Release
 on:
   release:
     types: [published]
-  # Dispatching a workflow takes write access to the repository, so whoever
-  # fills these in could already push the commit they build. The inputs are
-  # still the part a reviewer may not wave through, because this is the
-  # workflow whose output people install. Traced in #384; where each lands:
-  #
-  #   version-override - the only string, and the only input that reaches a
-  #     shell. It gets there through `env:`, never spliced into a `run:`
-  #     block, and the version derived from it has to match semver before it
-  #     is written to GITHUB_OUTPUT. That pattern admits `[0-9A-Za-z.+-]` and
-  #     nothing else, which is what holds downstream, where the version is
-  #     spliced into the JSON handed to `tauri build --config` and into every
-  #     bundle filename.
-  #   linux / macos / windows - booleans, and read by nothing at all today.
-  #     The job `if:` meant to read them names the `matrix` context, which a
-  #     job-level `if:` may not, so GitHub rejects this whole file and has
-  #     since #343; #387 is the repair. Dead inputs are no trust risk, and
-  #     once they are live the expression engine is their only reader: they
-  #     pick whether a runner runs, never what it runs.
-  #
-  # None of them names a ref, an action, a secret, or an upload target: a
-  # dispatch builds the commit it was pointed at, with the same actions and
-  # the same signing a Release run gets. An input that named any of those
-  # would be a different trust boundary, not another knob.
+  # Dispatching takes write access, so whoever fills these in could already
+  # push the commit they build. Traced in #384: `version-override` is the only
+  # input that reaches a shell, it gets there through `env:` rather than
+  # spliced into a `run:`, and it must match semver before anything downstream
+  # sees it. The three booleans are read by nothing until #387 repairs the job
+  # `if:` that names them. No input names a ref, an action, a secret or an
+  # upload target.
   #
   # checkov:skip=CKV_GHA_7:reviewed in #384, see above
   workflow_dispatch:
@@ -122,17 +106,18 @@ jobs:
               version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
             fi
           fi
-          # A typo in the input reaches the bundle filenames and the macOS
-          # Info.plist, where it is nobody's idea of a version. This checks
-          # semver's shape, not every rule in it.
+          # A leading `v` is already stripped from all three sources above, so
+          # `v1.2.3` and `1.2.3` both arrive here as `1.2.3` — semver itself
+          # carries no prefix, and the bundles must not either. A typo reaches
+          # the bundle filenames and the macOS Info.plist, so this checks
+          # semver's shape, though not every rule in it.
           #
-          # bash's `=~` rather than `grep`: grep matches a line, so a two-line
-          # override passed on its first line and carried the second into
-          # GITHUB_OUTPUT as a line of its own, which is how that file is told
-          # to set another output. `=~` matches the whole string. #384.
+          # bash's `=~`, not `grep`: grep matches a line, so a two-line
+          # override passed on its first and carried the second into
+          # GITHUB_OUTPUT as another output. `=~` matches the whole string. #384.
           semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
           if [[ ! $version =~ $semver ]]; then
-            echo "::error::version '$version' is not semver: expected 1.2.3, 1.2.3-dev.gabc1234"
+            echo "::error::version '$version' is not semver: expected 1.2.3 or v1.2.3, 1.2.3-dev.gabc1234"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
