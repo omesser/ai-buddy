@@ -34,6 +34,11 @@ tmp/
 .env.*
 !.env.example
 
+# What the Pages workflow assembles, and what
+# scripts/make-character-gallery.py writes when it is run with no --out. A
+# copy of the shipped art, so committing it would duplicate every frame.
+/_site/
+
 # Python
 __pycache__/
 *.py[cod]

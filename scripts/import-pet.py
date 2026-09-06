@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zipfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -35,7 +36,7 @@ STAND_BAND = (100, 130)
 MAX_FPS = 60
 
 # Licenses an import may proceed on without a human weighing in: permissive
-# enough that recording the license in the manifest header discharges what
+# enough that recording the license in the manifest's [source] discharges what
 # they ask of us. SPDX identifiers, plus the vernacular spellings the
 # ecosystems print — petdex's submit flow offers "CC0" on its own, and case
 # and spacing vary everywhere. Free-form prose ("The MIT License (MIT)") is
@@ -91,28 +92,30 @@ def license_warning(license_line):
     return None
 
 
-def license_header(license_line):
-    """The manifest header's account of the license the art arrived under.
+def license_prose(license_line):
+    """What the package will declare as `source.license`.
 
     The one durable record: the import prints its warning once, into a
-    terminal nobody keeps, and this is what the next reader of the package
-    finds instead.
+    terminal nobody keeps, and this is what the next reader of the package —
+    and the gallery's published page (#289) — finds instead. Prose because the
+    interesting answers are not identifiers: "none declared anywhere" is the
+    sentence that matters most and no SPDX id says it.
     """
     declared = normalize_license(license_line or "")
     if not declared:
-        return [
-            "License: none declared anywhere in the source ecosystem, and",
-            "the importer warned so. A development asset unless a license",
-            "surfaces — this repository's license claims do not cover the",
-            "art.",
-        ]
+        return (
+            "MIT for these frames as cut and arranged here, along with the "
+            "personality prose and the manifest. The art those frames adapt is "
+            "not: it declares no license anywhere in the source ecosystem, and "
+            "the importer warned so."
+        )
     if declared not in KNOWN_NORMALIZED:
-        return [
-            f"License: {license_line}, which the importer does not",
-            "recognize and warned about. Read it before shipping the art —",
-            "this repository's license claims do not cover it.",
-        ]
-    return [f"License: {license_line}."]
+        return (
+            f"The art it adapts declares {license_line}, which the importer "
+            "does not recognize and warned about. Read it before shipping the "
+            "art; this repository's license claims do not cover it."
+        )
+    return f"{license_line}."
 
 
 # petscodex (petdex) sheets are a fixed grid of 8 columns, 192x208 cells, in
@@ -562,15 +565,30 @@ def synthesized_sleep(idle_frames):
     }
 
 
-def manifest_text(name, mode, scale, header, animations):
-    """The Character Manifest, provenance as comments — the loader's key set
-    is closed, so provenance lives in `#` lines like BMO's."""
-    lines = [f"# {line}".rstrip() for line in header]
+def manifest_text(name, mode, scale, notes, source, animations):
+    """The Character Manifest: art-production notes as comments, and where the
+    art came from in `[source]`.
+
+    Two audiences, so two places. A row mapping is for whoever re-runs the
+    import; the attribution and the license are for whoever reads the gallery,
+    which publishes the declared key and nothing else (#289). Before that key
+    existed both lived in the leading comment and the page published the lot.
+    """
+    lines = [f"# {line}".rstrip() for line in notes]
     lines += [
         "",
         f'name = "{name}"',
         f'render_mode = "{mode}"',
         f"scale = {scale}",
+        "",
+        "[source]",
+        # json.dumps writes a TOML basic string: same escapes, same quoting.
+        f"art = {json.dumps(source['art'], ensure_ascii=False)}",
+    ]
+    if source["url"]:
+        lines.append(f"url = {json.dumps(source['url'], ensure_ascii=False)}")
+    lines += [
+        f"license = {json.dumps(source['license'], ensure_ascii=False)}",
         "",
         "# Proactive model calls: after each one with no one addressing the buddy,",
         "# the wait becomes wait * model_base ^ model_power. Two and one doubles.",
@@ -663,10 +681,8 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
         animations["sleep"] = synthesized_sleep(animations["idle"]["frames"])
 
     mirrored = ", mirrored to head right" if mirror_walk else ""
-    header = [
-        f"{pet['displayName']} imported from petscodex (petdex) by scripts/import-pet.py.",
-        f"Source pet id: {pet['id']} — https://petscodex.com/pets/{pet['id']}",
-        f"Source description: {pet.get('description', '').strip()}",
+    described = pet.get("description", "").strip()
+    notes = [
         f"Mapping: idle<-row 0, walk<-{walk_state} row {walk_row}{mirrored}",
         "(the row drawn heading right), talk<-waving row 3,",
         "fall/land/hold<-jumping row 4, react<-failed row 5, waiting<-row 6",
@@ -680,14 +696,20 @@ def read_petscodex(source, walk_row=2, mirror_walk=False, overrides=None):
             + (f"[{','.join(map(str, indices))}]" if indices else "")
             for animation, (row, indices) in sorted(overrides.items())
         )
-        header.append(f"Remapped for this pet's art (--map): {remapped}.")
+        notes.append(f"Remapped for this pet's art (--map): {remapped}.")
     # A pet.json may carry the key with nothing in it, which is the same
     # as not carrying it: one meaning of "undeclared" for every reader.
     license_line = (pet.get("pet_license") or pet.get("license") or "").strip()
     return {
         "name": pet["displayName"],
         "license": license_line or None,
-        "header": header,
+        "source": {
+            "art": f"{pet['displayName']}, cut from the petscodex (petdex) pet "
+                   f"`{pet['id']}` by scripts/import-pet.py."
+                   + (f" {described}" if described else ""),
+            "url": f"https://petscodex.com/pets/{pet['id']}",
+        },
+        "notes": notes,
         "animations": animations,
     }
 
@@ -795,8 +817,7 @@ def read_shimeji(source, name=None):
     print("mapped:", ", ".join(chosen))
 
     name = name or source.name
-    header = [
-        f"{name} imported from a Shimeji-ee pack by scripts/import-pet.py.",
+    notes = [
         "Every frame is mirrored to head right: shimeji art walks left, and",
         "the engine mirrors right-facing art back for leftward travel (#96).",
         "Mapping (animation <- this pack's actions.xml action):",
@@ -805,7 +826,11 @@ def read_shimeji(source, name=None):
     return {
         "name": name,
         "license": None,
-        "header": header,
+        "source": {
+            "art": f"{name}, cut from a Shimeji-ee pack by scripts/import-pet.py.",
+            "url": None,
+        },
+        "notes": notes,
         "animations": animations,
     }
 
@@ -907,8 +932,8 @@ def emit(pet, out, validate=True, stand=None):
             page.paste(frame, (dx, dy))
             page.save(frames_dir / f"{animation}-{i}.png")
 
-    header = pet["header"] + license_header(pet["license"])
-    manifest = manifest_text(pet["name"], mode, scale, header, animations)
+    source = dict(pet["source"], license=license_prose(pet["license"]))
+    manifest = manifest_text(pet["name"], mode, scale, pet["notes"], source, animations)
     (out / "character.manifest").write_text(manifest)
 
     print(f"{pet['name']}: {sum(len(s['frames']) for s in animations.values())} "
@@ -1028,10 +1053,12 @@ def self_test():
     assert license_warning(None) == license_warning(""), "blank is undeclared"
     assert license_warning("   ") == license_warning(None)
 
-    assert license_header("CC0-1.0") == ["License: CC0-1.0."]
-    assert "none declared" in " ".join(license_header(None))
-    assert "All Rights Reserved" in " ".join(license_header("All Rights Reserved"))
-    assert license_header("   ") == license_header(None)
+    # The license the package declares. An import that found none says so in
+    # the field the gallery publishes, rather than saying nothing.
+    assert license_prose("CC0-1.0") == "CC0-1.0."
+    assert "declares no license anywhere" in license_prose(None)
+    assert "All Rights Reserved" in license_prose("All Rights Reserved")
+    assert license_prose("   ") == license_prose(None)
 
     assert fps_for(6, 1100) == 5
     assert fps_for(8, 1060) == 8
@@ -1141,7 +1168,16 @@ def self_test():
         assert "model_power = 1" in manifest
         # A personality is authored, never derived from the pet description.
         assert not (out / "personality.txt").exists()
-        assert "Source description: a test dot" in manifest
+
+        # An imported package declares where its art came from, because the
+        # gallery publishes that key and publishes nothing else (#289). The
+        # license sentence is the part an import must never leave to silence.
+        declared = tomllib.loads(manifest)["source"]
+        assert "a test dot" in declared["art"]
+        assert declared["url"] == "https://petscodex.com/pets/dot"
+        assert "declares no license anywhere" in declared["license"]
+        assert "Mapping:" not in declared["art"], "art notes stay in the comments"
+        assert "# Mapping:" in manifest
 
         # Grounding and registration: every frame of every animation lands
         # its dot on the canvas bottom at one x — the jitter baked into the

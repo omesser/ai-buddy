@@ -118,18 +118,8 @@ def main():
     )
     print(f"✓ nim-sleep.gif ({os.path.getsize(out_dir / 'nim-sleep.gif') / 1024:.1f} KB)")
 
-    # Timber Wolf: scan animation (TAC laser sweep, unique differentiator)
-    # Manifest frames: scan-1, scan-2, scan-3, scan-2 (bounce)
-    timber_scan_frames = [
-        chars_dir / "timber-wolf" / "frames" / "scan-1.png",
-        chars_dir / "timber-wolf" / "frames" / "scan-2.png",
-        chars_dir / "timber-wolf" / "frames" / "scan-3.png",
-        chars_dir / "timber-wolf" / "frames" / "scan-2.png",
-    ]
-    create_looping_gif(
-        timber_scan_frames, out_dir / "timber-wolf-scan.gif", fps=4, target_height=target_height
-    )
-    print(f"✓ timber-wolf-scan.gif ({os.path.getsize(out_dir / 'timber-wolf-scan.gif') / 1024:.1f} KB)")
+    # Timber Wolf has no GIF: its frames capture a Sketchfab model licensed for
+    # editorial use only, and the README renders on a public page (#388).
 
     # Trump: talk animation (rally wave, 3 frames)
     trump_talk_frames = [
