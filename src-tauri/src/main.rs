@@ -1718,6 +1718,36 @@ fn load_named(
     })
 }
 
+/// Build the anchor window that appears in the taskbar/panel on Windows and Linux.
+///
+/// A small, invisible window that gives the running app a taskbar presence
+/// matching the macOS Dock. Clicking it opens Settings, matching the macOS
+/// expectation that the Dock icon is the settings door. The tray remains the
+/// alternate path.
+///
+/// Main thread only: builds a window and registers event handlers.
+#[cfg(not(target_os = "macos"))]
+fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
+        .title("ai-buddy")
+        .inner_size(1.0, 1.0)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .visible(false)
+        .build()?;
+
+    let app_handle = app.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(true) = event {
+            show_settings(&app_handle);
+        }
+    });
+
+    window.show()?;
+    Ok(())
+}
+
 fn main() {
     // Same Completer, no overlay. scripts/probe-model.sh is the face of this.
     if std::env::args().any(|arg| arg == "--probe-model") {
@@ -1787,6 +1817,12 @@ fn main() {
             // bar is crowded. The tray icon remains the settings door.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
+            // On Windows and Linux, create a hidden anchor window that appears
+            // in the taskbar/panel, matching the macOS Dock presence.
+            // Clicking it opens Settings. Overlays stay off the taskbar.
+            #[cfg(not(target_os = "macos"))]
+            build_anchor_window(app.handle())?;
 
             // Read before the overlays are built rather than after the loop
             // starts: reading which part of a display is usable means asking
