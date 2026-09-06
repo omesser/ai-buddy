@@ -25,7 +25,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_VISIBLE, WS_VSCROLL,
 };
 
-use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
+use crate::settings::form::{self, FormRow, RowOperation};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 580;
@@ -160,10 +160,10 @@ impl SettingsWindow {
                         };
                         set_window_text(*hwnd, &text);
                     }
-                    Control::Button(hwnd) => {
+                    Control::Button(_) => {
                         if id == form::APPLY_ID || id == form::CANCEL_ID {
                             let description = form::describe();
-                            let dirty = self.director_draft(&description).patch(&view).is_some();
+                            let _dirty = self.director_draft(&description).patch(&view).is_some();
                         }
                     }
                 }
@@ -279,12 +279,12 @@ impl SettingsWindow {
                 let guard = self.session.lock().unwrap();
                 guard.as_ref().map(|s| s.view())
             };
-            if let Some(view) = view {
-                let controls = self.controls.borrow();
-                for id in [form::APPLY_ID, form::CANCEL_ID] {
-                    if let Some(Control::Button(hwnd)) = controls.get(id) {
-                        let description = form::describe();
-                        let dirty = self.director_draft(&description).patch(&view).is_some();
+        if let Some(_view) = view {
+            let controls = self.controls.borrow();
+            for id in [form::APPLY_ID, form::CANCEL_ID] {
+                if let Some(Control::Button(_)) = controls.get(id) {
+                    let description = form::describe();
+                    let _dirty = self.director_draft(&description).patch(&view).is_some();
                     }
                 }
             }
@@ -549,7 +549,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
             for row in &section.rows {
                 match row {
                     FormRow::Checkbox {
-                        id, label, writes, ..
+                        id, label, writes: _, ..
                     } => {
                         let hwnd = CreateWindowExA(
                             0,
@@ -579,7 +579,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         placeholder,
                         ..
                     } => {
-                        if let Some(label_text) = label {
+                        if label.is_some() {
                             y += LABEL_HEIGHT + HINT_GAP;
                         }
                         let hwnd = CreateWindowExA(
