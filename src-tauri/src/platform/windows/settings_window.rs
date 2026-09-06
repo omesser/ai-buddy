@@ -41,7 +41,6 @@ const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
 
-
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
 }
@@ -276,7 +275,7 @@ impl SettingsWindow {
                 for id in [form::APPLY_ID, form::CANCEL_ID] {
                     if let Some(Control::Button(_)) = controls.get(id) {
                         let description = form::describe();
-                        let _dirty = self.director_draft(&description).patch(&view).is_some();
+                        let _dirty = self.director_draft(&description).patch(&_view).is_some();
                     }
                 }
             }
@@ -540,12 +539,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
             for row in &section.rows {
                 match row {
-                    FormRow::Checkbox {
-                        id,
-                        label,
-                        writes: _,
-                        ..
-                    } => {
+                    FormRow::Checkbox { id, label, .. } => {
                         let hwnd = CreateWindowExA(
                             0,
                             c"BUTTON".as_ptr() as *const u8,
