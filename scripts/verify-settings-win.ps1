@@ -107,20 +107,23 @@ Info "Waiting for settings window..."
 $settingsHwnd = [IntPtr]::Zero
 for ($i = 0; $i -lt 50; $i++) {
   $settingsHwnd = [SettingsVerify]::FindWindow("AiBuddySettings", $null)
-  if ($settingsHwnd -ne [IntPtr]::Zero) { break }
+  if ($settingsHwnd -ne [IntPtr]::Zero) { 
+    # Move immediately to secondary display before user notices
+    $winX = $secLeft + 50
+    $winY = $secTop + 50
+    $winW = 580
+    $winH = 720
+    [SettingsVerify]::SetWindowPos($settingsHwnd, [IntPtr]::Zero, $winX, $winY, $winW, $winH, 0) | Out-Null
+    Pass "Settings window appeared and moved to secondary display"
+    break 
+  }
   Start-Sleep -Milliseconds 100
 }
 if ($settingsHwnd -eq [IntPtr]::Zero) { Fail "Settings window never appeared" }
-Pass "Settings window appeared"
 
-# Move to secondary display
-$winX = $secLeft + 50
-$winY = $secTop + 50
-$winW = 580
-$winH = 720
-[SettingsVerify]::SetWindowPos($settingsHwnd, [IntPtr]::Zero, $winX, $winY, $winW, $winH, 0) | Out-Null
+# Brief settle time after move
 Start-Sleep -Milliseconds 200
-Info "Settings window moved to secondary display"
+Info "Settings window at ${winX},${winY} on secondary display"
 
 # Find tab control and collect all visible checkboxes/STATICs on Presence tab (tab 0)
 $script:Checkboxes = New-Object System.Collections.Generic.List[PSCustomObject]
