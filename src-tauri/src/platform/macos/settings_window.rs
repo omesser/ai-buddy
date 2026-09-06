@@ -598,6 +598,9 @@ impl SettingsController {
                 NSSize::new(width - 90.0, 22.0),
             ));
             stretch_x(&label);
+            // SAFETY: buttonWithTitle_target_action does not retain its target,
+            // so `self` must outlive the button. The `CONTROLLER` thread-local
+            // holds it for the life of the process, and it implements dismiss:.
             let dismiss = unsafe {
                 NSButton::buttonWithTitle_target_action(
                     &NSString::from_str(dismiss_label),
@@ -918,6 +921,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         .borrow_mut()
                                         .insert(tag, id.clone());
 
+                                    // SAFETY: the target is not retained, and the
+                                    // `CONTROLLER` thread-local holds the controller
+                                    // for the life of the process. It implements
+                                    // handleAction:.
                                     let btn = unsafe {
                                         NSButton::buttonWithTitle_target_action(
                                             &NSString::from_str(label),
@@ -1006,12 +1013,14 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().new_name.borrow_mut() = new_name_field;
     *controller.ivars().instances.borrow_mut() = instances_view;
 
+    let style = NSWindowStyleMask::Titled
+        | NSWindowStyleMask::Closable
+        | NSWindowStyleMask::Miniaturizable
+        | NSWindowStyleMask::Resizable;
+    // SAFETY: NSWindow's designated initializer, over a window this call just
+    // allocated and has not yet handed anywhere else.
     let window = unsafe {
-        let style = NSWindowStyleMask::Titled
-            | NSWindowStyleMask::Closable
-            | NSWindowStyleMask::Miniaturizable
-            | NSWindowStyleMask::Resizable;
-        let window = NSWindow::initWithContentRect_styleMask_backing_defer(
+        NSWindow::initWithContentRect_styleMask_backing_defer(
             NSWindow::alloc(mtm),
             NSRect::new(
                 NSPoint::new(100.0, 100.0),
@@ -1020,14 +1029,13 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
             style,
             NSBackingStoreType::Buffered,
             false,
-        );
-        window.setTitle(&NSString::from_str("Settings"));
-        window.setContentView(Some(&tab_view));
-        window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
-        retain_after_close(&window);
-        window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
-        window
+        )
     };
+    window.setTitle(&NSString::from_str("Settings"));
+    window.setContentView(Some(&tab_view));
+    window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
+    retain_after_close(&window);
+    window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
 
     *controller.ivars().window.borrow_mut() = Some(window.clone());
     *controller.ivars().tab_view.borrow_mut() = Some(tab_view);
@@ -1127,6 +1135,9 @@ fn checkbox(
     controller: &SettingsController,
     mtm: MainThreadMarker,
 ) -> Retained<NSButton> {
+    // SAFETY: buttonWithTitle_target_action does not retain its target, so the
+    // controller must outlive the button. The `CONTROLLER` thread-local holds it
+    // for the life of the process, and it implements toggle:.
     let button = unsafe {
         NSButton::buttonWithTitle_target_action(
             &NSString::from_str(title),
@@ -1202,6 +1213,9 @@ fn freeze_or_bind(
     if frozen {
         field.setEditable(false);
     } else if batched {
+        // SAFETY: setDelegate: does not retain, so the delegate must outlive
+        // the field. The `CONTROLLER` thread-local holds the controller for the
+        // life of the process and is never cleared, so it does.
         unsafe {
             field.setDelegate(Some(ProtocolObject::from_ref(controller)));
         }
@@ -1220,14 +1234,18 @@ fn field_text(cell: &RefCell<Option<Retained<NSTextField>>>) -> String {
 
 /// Commit on Return and on blur.
 fn bind_commit(field: &NSTextField, controller: &SettingsController) {
+    // SAFETY: setDelegate: does not retain, so the delegate must outlive the
+    // field. The `CONTROLLER` thread-local holds the controller for the life of
+    // the process and is never cleared, so it does.
     unsafe {
         field.setDelegate(Some(ProtocolObject::from_ref(controller)));
     }
     if let Some(cell) = field.cell() {
-        unsafe {
-            let _: () = msg_send![&cell, setSendsActionOnEndEditing: true];
-        }
+        cell.setSendsActionOnEndEditing(true);
     }
+    // SAFETY: setTarget: does not retain, so the target must outlive the field.
+    // The `CONTROLLER` thread-local holds the controller for the life of the
+    // process. endpointEnded: is implemented above.
     unsafe {
         field.setTarget(Some(controller));
         field.setAction(Some(sel!(endpointEnded:)));
@@ -1254,6 +1272,9 @@ fn popup(
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(FIELD_WIDTH, 24.0)),
         false,
     );
+    // SAFETY: setTarget: does not retain, so the target must outlive the popup.
+    // The `CONTROLLER` thread-local holds the controller for the life of the
+    // process. The selector is one the caller took from this class.
     unsafe {
         popup.setTarget(Some(controller));
         popup.setAction(Some(action));
@@ -1294,12 +1315,16 @@ fn fill_popup(cell: &RefCell<Option<Retained<NSPopUpButton>>>, options: &[String
 /// falls behind it, and tray Settings then looks like a no-op.
 fn raise(window: &NSWindow, mtm: MainThreadMarker) {
     let app = NSApplication::sharedApplication(mtm);
-    unsafe {
-        let _: () = msg_send![window, setLevel: NSStatusWindowLevel as NSWindowLevel];
-        let _: () = msg_send![window, setHidesOnDeactivate: false];
-        let _: () = msg_send![&app, activateIgnoringOtherApps: true];
-        let _: () = msg_send![window, orderFrontRegardless];
-    }
+    window.setLevel(NSStatusWindowLevel as NSWindowLevel);
+    window.setHidesOnDeactivate(false);
+    // ponytail: the deprecated forcing call, kept on purpose. Its replacement
+    // `activate` is cooperative and documents that it may not activate at all,
+    // which is the no-op this function exists to prevent. Swap it when AppKit
+    // offers a forcing call that is not deprecated, or when a Settings window
+    // that sometimes stays behind the overlay becomes acceptable.
+    #[allow(deprecated)]
+    app.activateIgnoringOtherApps(true);
+    window.orderFrontRegardless();
     window.makeKeyAndOrderFront(None);
 }
 
@@ -1318,25 +1343,19 @@ fn size_document(document: &NSView, size: NSSize) {
 }
 
 fn stretch_x(view: &NSView) {
-    unsafe {
-        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
-    }
+    view.setTranslatesAutoresizingMaskIntoConstraints(true);
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
 }
 
 fn stretch_xy(view: &NSView) {
-    unsafe {
-        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
-    }
+    view.setTranslatesAutoresizingMaskIntoConstraints(true);
     view.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );
 }
 
 fn pin_right(view: &NSView) {
-    unsafe {
-        let _: () = msg_send![view, setTranslatesAutoresizingMaskIntoConstraints: true];
-    }
+    view.setTranslatesAutoresizingMaskIntoConstraints(true);
     view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinXMargin);
 }
 
@@ -1347,6 +1366,10 @@ fn release_window_when_closed() -> bool {
 }
 
 fn retain_after_close(window: &NSWindow) {
+    // SAFETY: `true` here would hand AppKit ownership and dangle the
+    // `Retained<NSWindow>` we keep for the next tray click, which is why objc2
+    // marks this setter unsafe. `release_window_when_closed` only ever returns
+    // false, so the call never transfers ownership.
     unsafe {
         window.setReleasedWhenClosed(release_window_when_closed());
     }
@@ -1359,6 +1382,12 @@ mod tests {
     fn test_mtm() -> MainThreadMarker {
         // cargo test is a worker thread. NSObject alloc/init and ivars() do
         // not need a run loop. NSWindow init does, and raises there.
+        // SAFETY: the contract is that this thread is the main thread, and
+        // under `cargo test` it is not — the claim is knowingly false. It holds
+        // because the only APIs these tests reach with the marker are the
+        // alloc/init and `ivars()` calls named above, none of which touch
+        // AppKit's main-thread state. A test that reached a real main-thread
+        // API through this marker would be unsound, so keep them off it.
         unsafe { MainThreadMarker::new_unchecked() }
     }
 
