@@ -116,8 +116,9 @@ const CHAT_EVENT: &str = "chat";
 const CHAT_STATUS_EVENT: &str = "chat-status";
 
 /// The event carrying who an already-open Chat surface belongs to, after a
-/// Character switch. Same fields as `chat_opening`; an event rather than a
-/// second command, because the window is already listening. #375.
+/// Character switch. Name and Character only — whether anything can answer
+/// stays on the `chat_opening` command. An event rather than a second
+/// command, because the window is already listening. #375.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// Director config and the last Character Prompt, for the frame loop.
@@ -675,7 +676,9 @@ fn open_chat(app: &tauri::AppHandle, id: &InstanceId, title: String) {
             Some(window) => {
                 // The title is the Instance name, which a Character switch can
                 // change without this window being rebuilt. #375.
-                let _ = window.set_title(&title);
+                if let Err(why) = window.set_title(&title) {
+                    eprintln!("chat: {label} could not be retitled: {why}");
+                }
                 let _ = window.unminimize();
                 window
             }
@@ -737,7 +740,7 @@ fn note_happened(happened: &mut Happened, what: Happened) {
 }
 
 /// What a Chat surface needs to draw itself before anything is typed.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Serialize)]
 struct ChatOpening {
     name: String,
     character: String,
@@ -748,14 +751,18 @@ struct ChatOpening {
     enabled: bool,
 }
 
-/// Name and Character the open Chat surface should paint, read off the Roster
-/// after a switch so the shell does not copy the rename predicate. #375.
-fn chat_opening_from(instance: &roster::Instance, configured: bool, enabled: bool) -> ChatOpening {
-    ChatOpening {
+/// Name and Character an already-open Chat surface should paint. Read off the
+/// Roster after a switch so this path cannot disagree with `retarget`. #375.
+#[derive(Clone, Serialize)]
+struct ChatWho {
+    name: String,
+    character: String,
+}
+
+fn chat_who_from(instance: &roster::Instance) -> ChatWho {
+    ChatWho {
         name: instance.name.clone(),
         character: instance.character_name().to_string(),
-        configured,
-        enabled,
     }
 }
 
@@ -788,21 +795,17 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
 
 /// Push name and Character to an already-open Chat surface, without creating
 /// one. Always after switch: a chosen Instance name stays, but the Character
-/// line still has to move. #375.
-fn push_chat_opening(
-    app: &tauri::AppHandle,
-    roster: &Roster,
-    id: &InstanceId,
-    configured: bool,
-    enabled: bool,
-) {
+/// line still has to move. Does not carry configured/enabled — those stay on
+/// the `chat_opening` command, which reads `DirectorInspect`. #375.
+fn push_chat_opening(app: &tauri::AppHandle, roster: &Roster, id: &InstanceId) {
     let Some(instance) = roster.get(id) else {
         return;
     };
-    let opening = chat_opening_from(instance, configured, enabled);
+    let who = chat_who_from(instance);
     let label = chat_label(id);
-    let title = opening.name.clone();
+    let title = who.name.clone();
     let handle = app.clone();
+    let _ = app.emit_to(label.clone(), CHAT_OPENING_EVENT, who);
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
             if let Err(why) = window.set_title(&title) {
@@ -812,7 +815,6 @@ fn push_chat_opening(
     }) {
         eprintln!("chat: could not reach the main thread: {why}");
     }
-    let _ = app.emit_to(chat_label(id), CHAT_OPENING_EVENT, opening);
 }
 
 struct ChatLine {
@@ -1098,7 +1100,7 @@ fn apply_menu_action(
                     config,
                     director,
                 );
-                push_chat_opening(app, roster, instance_id, config.configured, config.enabled);
+                push_chat_opening(app, roster, instance_id);
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -2040,10 +2042,10 @@ mod tests {
     }
 
     /// Production change that would fail this: emitting the pre-switch name or
-    /// Character, or copying the rename predicate instead of reading the Roster.
+    /// Character, or stuffing `character.name` into both fields.
     #[test]
-    fn chat_opening_after_switch_uses_the_roster_name_and_character() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-opening-rename.md"));
+    fn chat_who_after_switch_uses_the_roster_name_and_character() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-who-rename.md"));
         let mut roster = Roster::new(memory);
         let first = stub_character("bmo");
         let second = stub_character("nim");
@@ -2051,21 +2053,19 @@ mod tests {
         assert!(roster.retarget(&id, &second));
         let instance = roster.get(&id).expect("still there");
 
-        let opening = chat_opening_from(instance, true, true);
-        assert_eq!(opening.name, "nim", "the payload name is the Instance's");
+        let who = chat_who_from(instance);
+        assert_eq!(who.name, "nim", "the payload name is the Instance's");
         assert_eq!(
-            opening.character, "nim",
+            who.character, "nim",
             "the payload Character is the Instance's"
         );
-        assert!(opening.configured);
-        assert!(opening.enabled);
     }
 
     /// A chosen name survives retarget; the Chat header still has to name the
     /// new Character. Copying only `character.name` into both fields would fail.
     #[test]
-    fn chat_opening_after_switch_keeps_a_chosen_name() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-opening-pip.md"));
+    fn chat_who_after_switch_keeps_a_chosen_name() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-who-pip.md"));
         let mut roster = Roster::new(memory);
         let first = stub_character("bmo");
         let second = stub_character("nim");
@@ -2073,11 +2073,9 @@ mod tests {
         assert!(roster.retarget(&id, &second));
         let instance = roster.get(&id).expect("still there");
 
-        let opening = chat_opening_from(instance, false, false);
-        assert_eq!(opening.name, "Pip");
-        assert_eq!(opening.character, "nim");
-        assert!(!opening.configured);
-        assert!(!opening.enabled);
+        let who = chat_who_from(instance);
+        assert_eq!(who.name, "Pip");
+        assert_eq!(who.character, "nim");
     }
 
     /// #17: losing a line that is waiting in `happened` would answer a question

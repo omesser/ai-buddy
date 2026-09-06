@@ -391,14 +391,11 @@ pub(crate) fn run_frame_loop(
                     &app,
                 );
             }
-            if !picked.is_empty() {
-                remember_instances(&roster, &settings, &settings_path);
-            }
+            let mut menu_acted = !picked.is_empty();
 
             // Tray clicks have no menu_hold: the same ids land here, and the
             // first Instance is the one they apply to when nobody's menu is open.
             if picked.is_empty() {
-                let mut tray_applied = false;
                 for id in &chosen {
                     if let Some(action) = tray_actions.get(id).cloned() {
                         let target = lives
@@ -420,15 +417,15 @@ pub(crate) fn run_frame_loop(
                             &inspect,
                             &app,
                         );
-                        tray_applied = true;
+                        menu_acted = true;
                     }
                 }
-                // Same persist as the sprite-menu path. A tray switch already
-                // renames in the Roster; without this, settings.instances keeps
-                // the old {character, name} and the rename dies on restart. #375.
-                if tray_applied {
-                    remember_instances(&roster, &settings, &settings_path);
-                }
+            }
+            if menu_acted {
+                // Sprite and tray share this persist. A tray switch used to
+                // skip it, so settings.instances kept the old name and the
+                // rename died on restart. #375.
+                remember_instances(&roster, &settings, &settings_path);
             }
 
             let mut settings_ops = false;
@@ -465,13 +462,7 @@ pub(crate) fn run_frame_loop(
                                     &config,
                                     &director,
                                 );
-                                push_chat_opening(
-                                    &app,
-                                    &roster,
-                                    &id,
-                                    config.configured,
-                                    config.enabled,
-                                );
+                                push_chat_opening(&app, &roster, &id);
                             }
                         } else {
                             eprintln!("settings: no Character named {character}");
@@ -511,7 +502,10 @@ pub(crate) fn run_frame_loop(
                 remember_instances(&roster, &settings, &settings_path);
             }
             publish_instances(&roster, &instance_rows);
-            if settings_ops {
+            // After publish so the Settings roster reads the post-switch
+            // InstanceRow, not the one from last tick. Menu-driven switches
+            // never set `settings_ops`. #375.
+            if settings_ops || menu_acted {
                 let _ = app.run_on_main_thread(|| {
                     platform::refresh_settings();
                 });

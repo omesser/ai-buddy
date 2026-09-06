@@ -142,7 +142,9 @@ function showWho(opening) {
   for (const node of document.querySelectorAll(".i-character")) {
     node.textContent = opening.character;
   }
-  attached(opening);
+  if (!line.disabled) {
+    line.placeholder = `Ask ${opening.name}…`;
+  }
 }
 
 composer.addEventListener("submit", (event) => {
@@ -247,8 +249,9 @@ async function start() {
     { target: chat.label },
   );
 
-  // Same fields as `chat_opening`. The command is one-shot at start(); a
-  // Character switch has to reach a window that is already listening. #375.
+  // Name and Character only. The command is one-shot at start() for
+  // whether anything can answer; a Character switch has to reach a
+  // window that is already listening. #375.
   await listen(
     "chat-opening",
     ({ payload }) => {
@@ -266,6 +269,7 @@ async function start() {
 
   const opening = await invoke("chat_opening", { instance });
   showWho(opening);
+  attached(opening);
   line.focus();
 }
 
