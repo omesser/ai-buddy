@@ -15,9 +15,9 @@ art = """
 A chibi gray-and-white Scottish Fold cat, cut from the petscodex pet `cat` by \
 scripts/import-pet.py."""
 url = "https://petscodex.com/pets/cat"
-license = """MIT for these frames as cut, remapped and arranged here. They adapt the \
-petscodex pet `cat`, which declares no license anywhere in the source \
-ecosystem, so treat the underlying art as a development asset."""
+license = """MIT, this repository's license: the personality prose, the manifest — animations, Behaviors, Director and cursor tuning — and the frames as cut, remapped and arranged here are this project's work. The \
+art those frames adapt is not. It comes from the petscodex pet `cat`, which \
+declares no license anywhere in the source ecosystem."""
 
 # Proactive model calls: Cat supervises the desk, so the wait does not grow.
 # One and one keeps every two minutes.

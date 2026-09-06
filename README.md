@@ -168,7 +168,7 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. ai-buddy is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
-Character art provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html). Most Characters adapt art this project did not draw: the frames as arranged here are MIT, the underlying art is not ours to license, and each manifest says which is which.
+Character provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html). A package is prose, a manifest and art: the personality and the manifest — animations, Behaviors, Director and cursor tuning — are this project's work and MIT throughout. The art is not always ours. Most Characters adapt a pack that declares no license, and each manifest names what it adapts and whose IP the character is.
 
 ## License
 

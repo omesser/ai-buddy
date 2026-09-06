@@ -13,9 +13,10 @@ scale = 1
 art = """
 Buddy Bot, a desktop AI mascot drawn from ai-buddy's own logo and generated \
 as a character pack with Grok Imagine."""
-license = """MIT, this repository's license. The frames were generated for this project \
-from ai-buddy's own logo, not taken from a third-party pack, so the art is \
-this project's own."""
+license = """MIT, this repository's license, covering the whole package. The personality \
+prose, the manifest and the art are all this project's own: the frames were \
+generated for this project from ai-buddy's own logo rather than taken from a \
+third-party pack."""
 
 # Proactive model calls: a helpful buddy offers before being asked. One and
 # one keeps every two minutes — same mild pace as BMO and Cat.
