@@ -346,13 +346,6 @@ struct Placement<'a> {
     sound: bool,
 }
 
-/// What one Instance's tick decided to draw, in the space every display shares.
-///
-/// The step between ticking the Instances and telling the overlays. Every
-/// overlay is told about every Instance in its own coordinates, so the
-/// placement is worked out once here and turned into each overlay's rectangle
-/// below — and the art names are owned rather than borrowed so that this
-/// outlives the borrow of the Character it came from.
 /// A spoken line, when, and the overlay that was showing it.
 struct Spoken {
     line: String,
@@ -396,6 +389,13 @@ fn carry_line(
     Some(carried.line.clone())
 }
 
+/// What one Instance's tick decided to draw, in the space every display shares.
+///
+/// The step between ticking the Instances and telling the overlays. Every
+/// overlay is told about every Instance in its own coordinates, so the
+/// placement is worked out once here and turned into each overlay's rectangle
+/// in `frame_loop`. The art names are owned rather than borrowed, so that this
+/// outlives the borrow of the Character it came from.
 struct Placed {
     id: InstanceId,
     character: String,
@@ -1824,7 +1824,7 @@ fn main() {
             // The sprite size is the first Instance's idle Animation, blown up.
             // Animations may declare different frame sizes, so this is what the
             // Character is usually drawn at rather than what it is always drawn
-            // at; it is here because scripts/verify-overlay.sh crops a
+            // at. It is here because scripts/verify-overlay.sh crops a
             // screenshot to it, and that script runs one Instance.
             let (sprite_width, sprite_height) = loaded
                 .first()

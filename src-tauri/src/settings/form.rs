@@ -484,9 +484,9 @@ fn character_sections() -> Vec<FormSection> {
 fn presence_sections() -> Vec<FormSection> {
     vec![
         FormSection {
-            heading: "Do Not Disturb".to_string(),
             // Named for quiet rather than for hiding: Do Not Disturb leaves the
             // buddy on screen, and a Hide heading would teach the opposite.
+            heading: "Do Not Disturb".to_string(),
             comment: None,
             rows: vec![
                 FormRow::Checkbox {

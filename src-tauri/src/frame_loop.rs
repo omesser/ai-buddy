@@ -136,8 +136,8 @@ pub(crate) fn run_frame_loop(
         let mask_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
 
         // Cache last applied mask parameters to avoid rebuilding the region
-        // every 16ms. Only update the input region when mask data or position changes.
-        // Shared with main thread so update_input_region can report success.
+        // every 16ms. Shared with the main thread, which writes the params back
+        // here once update_input_region has accepted them.
         #[cfg(not(target_os = "macos"))]
         let last_mask: Arc<Mutex<Vec<MaskParams>>> =
             Arc::new(Mutex::new(vec![(None, 0, 0, 1, 1); covered.len()]));
@@ -1250,16 +1250,17 @@ pub(crate) fn run_frame_loop(
                 // frames. Resolving it here rather than in the webview keeps the
                 // frame the hit-test measures and the frame the user sees the
                 // same one.
-                // A Character with no drawable Animation at all, which a
-                // validated Character Package cannot be. Left out of `placed`,
-                // and the webview reads absence as dismissal: it takes the
-                // sprite away, bubble and interpolation with it. That is the
-                // right answer for art that cannot be drawn, and the reason
-                // nothing else in this loop may skip an Instance silently.
                 let Some(drawn) =
                     live.character
                         .draw(frame.animation, frame.animation_ms, frame.variant_draw)
                 else {
+                    // A Character with no drawable Animation at all, which a
+                    // validated Character Package cannot be. Left out of
+                    // `placed`, and the webview reads absence as dismissal: it
+                    // takes the sprite away, bubble and interpolation with it.
+                    // That is the right answer for art that cannot be drawn,
+                    // and the reason nothing else in this loop may skip an
+                    // Instance silently.
                     continue;
                 };
                 let scale = live.character.scale as i32;
@@ -1521,7 +1522,6 @@ pub(crate) fn run_frame_loop(
                     if !ignore && presence.visible {
                         let sprite_on_overlay = placed.iter().find(|instance| {
                             let local = instance.sprite.in_overlay(*display);
-                            // Sprite is on this overlay if any part of it is visible
                             local.x + instance.width > 0
                                 && local.x < display.width as i32
                                 && local.y + instance.height > 0
