@@ -8,7 +8,7 @@
 #   .\scripts\verify-settings-win.ps1
 #   $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\verify-settings-win.ps1
 #
-# Expects a built debug binary (does not cargo build — pair with VsDevCmd).
+# Expects a built debug binary (does not cargo build - pair with VsDevCmd).
 # Dual-display required. Logs under .verify/settings-win-<stamp>/.
 
 $ErrorActionPreference = "Stop"
@@ -94,7 +94,7 @@ public class SettingsVerify {
 "@
 
 $Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root "target\debug\ai-buddy.exe" }
-if (-not (Test-Path $Bin)) { Fail "missing $Bin — build with VsDevCmd first, or set AI_BUDDY_VERIFY_BIN" }
+if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with VsDevCmd first, or set AI_BUDDY_VERIFY_BIN" }
 Pass "Binary ready"
 
 $sec = [SettingsVerify]::GetSecondaryWorkArea()
@@ -313,5 +313,5 @@ Pass "Development tab: $($script:DevCheckboxes.Count) Trace checkbox(es) visible
 if ($script:AppProc -and -not $script:AppProc.HasExited) {
   Stop-Process -Id $script:AppProc.Id -Force -ErrorAction SilentlyContinue
 }
-Pass "Settings window smoke test finished — $Out"
+Pass "Settings window smoke test finished - $Out"
 exit 0
