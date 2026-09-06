@@ -152,6 +152,7 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 - `yes` — implemented.
 - `degraded` — runs in reduced form. A supported mode, not an error.
+- `in progress` — foundation in place, iteration ongoing.
 - `†` — needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Developing
