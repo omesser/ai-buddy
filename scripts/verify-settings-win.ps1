@@ -176,9 +176,9 @@ if ($settingsHwnd -eq [IntPtr]::Zero) { Fail "Settings window never appeared" }
 Start-Sleep -Milliseconds 200
 Info "Settings window at ${winX},${winY} on secondary display"
 
-# Find tab control and collect all visible checkboxes/STATICs on Presence tab (tab 0)
+# Find tab control and collect all visible checkboxes/STATIC controls on Presence tab (tab 0)
 $script:Checkboxes = New-Object System.Collections.Generic.List[PSCustomObject]
-$script:Statics = New-Object System.Collections.Generic.List[PSCustomObject]
+$script:StaticLabels = New-Object System.Collections.Generic.List[PSCustomObject]
 $script:TabHwnd = [IntPtr]::Zero
 
 [SettingsVerify]::EnumChildWindows($settingsHwnd, {
@@ -205,7 +205,7 @@ $script:TabHwnd = [IntPtr]::Zero
       if ($len -gt 0) {
         $txt = New-Object System.Text.StringBuilder($len + 1)
         [SettingsVerify]::GetWindowText($hChild, $txt, $txt.Capacity) | Out-Null
-        $script:Statics.Add([PSCustomObject]@{ Hwnd = $hChild; Text = $txt.ToString(); Length = $len })
+        $script:StaticLabels.Add([PSCustomObject]@{ Hwnd = $hChild; Text = $txt.ToString(); Length = $len })
       }
     }
   }
@@ -242,7 +242,7 @@ if ($curTab -ne 2) {
   Write-Host "[WARN] Expected tab 2 (Director), got $curTab" -ForegroundColor Yellow
 }
 
-# Re-enumerate to find Director tab's visible STATICs (field labels)
+# Re-enumerate to find Director tab's visible STATIC controls (field labels)
 $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObject]
 [SettingsVerify]::EnumChildWindows($settingsHwnd, {
   param($hChild, $lParam)
@@ -266,7 +266,7 @@ $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObje
 }, [IntPtr]::Zero) | Out-Null
 
 if ($script:DirectorLabels.Count -eq 0) {
-  Fail "Director tab: no field caption STATICs with non-zero text (label-wipe bug not fixed)"
+  Fail "Director tab: no field caption STATIC controls with non-zero text (label-wipe bug not fixed)"
 }
 Pass "Director tab: $($script:DirectorLabels.Count) field label(s) with non-zero text (label-wipe fix verified)"
 foreach ($lbl in $script:DirectorLabels) {
