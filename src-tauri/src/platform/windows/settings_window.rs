@@ -22,12 +22,14 @@ use windows_sys::Win32::UI::Controls::{
     TCIF_TEXT, TCITEMA, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
-    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
-    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
-    EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
-    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER,
-    WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    CreateWindowExA, DestroyWindow, GetClientRect, GetDlgItem, GetWindow, GetWindowLongPtrA,
+    GetWindowTextA, GetWindowTextLengthA, GW_CHILD, GW_HWNDNEXT, GWLP_USERDATA, IDYES,
+    MB_ICONQUESTION, MB_OK, MB_YESNO, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA,
+    SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX,
+    BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD, ES_READONLY,
+    ES_WANTRETURN, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT,
+    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_HSCROLL, WS_OVERLAPPEDWINDOW,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -42,6 +44,8 @@ const ROW_GAP: i32 = 8;
 const HINT_GAP: i32 = 4;
 const SECTION_GAP: i32 = 20;
 const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
+const MULTILINE_HEIGHT: i32 = 120;
+const INSPECT_BLOCK_HEIGHT: i32 = 100;
 
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
@@ -49,6 +53,9 @@ const TCN_SELCHANGE_CODE: u32 = 0xFFFFFDDA_u32.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
 const SS_LEFT: u32 = 0x0;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
+const CB_ADDSTRING: u32 = 0x0143;
+const CB_SETCURSEL: u32 = 0x014E;
+const CB_GETCURSEL: u32 = 0x0147;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -69,6 +76,8 @@ enum Control {
     Edit(HWND, usize),
     Label(HWND, usize),
     Button(HWND, usize),
+    ComboBox(HWND, usize, Vec<String>),
+    InstancesList(HWND, usize),
 }
 
 impl SettingsWindow {
@@ -174,6 +183,23 @@ impl SettingsWindow {
                             let _dirty = self.director_draft(&description).patch(&view).is_some();
                         }
                     }
+                    Control::ComboBox(hwnd, _, options) => {
+                        if id == form::CHARACTER_ID || id == form::NEW_CHARACTER_ID {
+                            SendMessageA(*hwnd, 0x014B, 0, 0);
+                            for (idx, character) in view.installed.iter().enumerate() {
+                                let c_str = CString::new(character.as_str()).unwrap();
+                                SendMessageA(*hwnd, CB_ADDSTRING, 0, c_str.as_ptr() as LPARAM);
+                                if id == form::CHARACTER_ID && character == &view.character {
+                                    SendMessageA(*hwnd, CB_SETCURSEL, idx, 0);
+                                }
+                            }
+                        }
+                    }
+                    Control::InstancesList(hwnd, _) => {
+                        if id == form::INSTANCES_ID {
+                            self.rebuild_instances_list(*hwnd, &view);
+                        }
+                    }
                 }
             }
         }
@@ -237,6 +263,10 @@ impl SettingsWindow {
     }
 
     fn handle_button_click(&self, control_id: i32) {
+        if control_id >= ID_BASE + 5000 {
+            self.handle_dismiss((control_id - ID_BASE - 5000) as usize);
+            return;
+        }
         let id_str = control_id.to_string();
         if let Some(Control::Checkbox(..)) = self.controls.borrow().get(&id_str) {
             self.handle_checkbox_toggle(control_id);
@@ -279,7 +309,32 @@ impl SettingsWindow {
     fn handle_text_change(&self, control_id: i32) {
         let id_str = control_id.to_string();
 
-        if form::DIRECTOR_BASE_URL_ID == id_str
+        if form::EXCLUDED_ID == id_str {
+            let controls = self.controls.borrow();
+            if let Some(Control::Edit(hwnd, _)) = controls.get(&id_str) {
+                let text = unsafe {
+                    let len = GetWindowTextLengthA(*hwnd);
+                    if len > 0 {
+                        let mut buffer = vec![0u8; (len + 1) as usize];
+                        GetWindowTextA(*hwnd, buffer.as_mut_ptr(), len + 1);
+                        CString::from_vec_with_nul(buffer)
+                            .ok()
+                            .and_then(|c| c.into_string().ok())
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                };
+                drop(controls);
+
+                if let Some(writes) = form::describe().text_write(form::EXCLUDED_ID) {
+                    let mut patch = SettingsPatch::default();
+                    if patch.set_text(writes, &text) {
+                        self.apply(patch);
+                    }
+                }
+            }
+        } else if form::DIRECTOR_BASE_URL_ID == id_str
             || form::DIRECTOR_MODEL_ID == id_str
             || form::DIRECTOR_API_KEY_ID == id_str
         {
@@ -392,6 +447,8 @@ impl SettingsWindow {
                     Control::Edit(hwnd, tab_index) => (hwnd, tab_index),
                     Control::Label(hwnd, tab_index) => (hwnd, tab_index),
                     Control::Button(hwnd, tab_index) => (hwnd, tab_index),
+                    Control::ComboBox(hwnd, tab_index, _) => (hwnd, tab_index),
+                    Control::InstancesList(hwnd, tab_index) => (hwnd, tab_index),
                 };
                 ShowWindow(
                     *hwnd,
@@ -401,6 +458,70 @@ impl SettingsWindow {
                         SW_HIDE
                     },
                 );
+            }
+        }
+    }
+
+    fn rebuild_instances_list(&self, container: HWND, view: &SettingsView) {
+        unsafe {
+            let mut child = GetWindow(container, GW_CHILD);
+            while !child.is_null() {
+                let next = GetWindow(child, GW_HWNDNEXT);
+                DestroyWindow(child);
+                child = next;
+            }
+
+            let hfont = GetStockObject(DEFAULT_GUI_FONT) as HGDIOBJ;
+            let mut y = 0;
+            for (index, instance) in view.instances.iter().enumerate() {
+                let line = format!("{} ({})", instance.name, instance.character);
+                let label = CreateWindowExA(
+                    0,
+                    c"STATIC".as_ptr() as *const u8,
+                    CString::new(line).unwrap().as_ptr() as *const u8,
+                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                    0,
+                    y,
+                    FIELD_WIDTH - 100,
+                    ROW_HEIGHT,
+                    container,
+                    ptr::null_mut(),
+                    GetModuleHandleA(ptr::null()),
+                    ptr::null_mut(),
+                );
+                SendMessageA(label, WM_SETFONT, hfont as WPARAM, 1);
+
+                let button = CreateWindowExA(
+                    0,
+                    c"BUTTON".as_ptr() as *const u8,
+                    c"Dismiss".as_ptr() as *const u8,
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
+                    FIELD_WIDTH - 90,
+                    y,
+                    80,
+                    ROW_HEIGHT,
+                    container,
+                    (ID_BASE + 5000 + index as i32) as _,
+                    GetModuleHandleA(ptr::null()),
+                    ptr::null_mut(),
+                );
+                SendMessageA(button, WM_SETFONT, hfont as WPARAM, 1);
+
+                y += ROW_HEIGHT + ROW_GAP;
+            }
+        }
+    }
+
+    fn handle_dismiss(&self, index: usize) {
+        let view = {
+            let guard = self.session.lock().unwrap();
+            guard.as_ref().map(|s| s.view())
+        };
+        if let Some(view) = view {
+            if let Some(instance) = view.instances.get(index) {
+                if let Some(session) = self.session.lock().unwrap().as_ref() {
+                    session.dismiss(instance.id.clone());
+                }
             }
         }
     }
@@ -644,7 +765,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                 for row in &section.rows {
                     match row {
-                        FormRow::Checkbox { id, label, .. } => {
+                        FormRow::Checkbox { id, label, help, .. } => {
                             let hwnd = CreateWindowExA(
                                 0,
                                 c"BUTTON".as_ptr() as *const u8,
@@ -665,6 +786,28 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Checkbox(hwnd, tab_index));
                             y += ROW_HEIGHT + ROW_GAP;
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
                             control_id += 1;
                         }
                         FormRow::TextField {
@@ -774,7 +917,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             y += ROW_HEIGHT + ROW_GAP;
                             control_id += 1;
                         }
-                        FormRow::Popup { id, label, .. } => {
+                        FormRow::Popup { id, label, help, .. } => {
                             if let Some(label_text) = label {
                                 let label_hwnd = CreateWindowExA(
                                     0,
@@ -814,39 +957,79 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                            window
-                                .controls
-                                .borrow_mut()
-                                .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                            window.controls.borrow_mut().insert(
+                                id.clone(),
+                                Control::ComboBox(hwnd, tab_index, Vec::new()),
+                            );
                             y += ROW_HEIGHT + ROW_GAP;
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
                             control_id += 1;
                         }
-                        FormRow::List { id, .. } => {
-                            let label_hwnd = CreateWindowExA(
+                        FormRow::List { id, help, .. } => {
+                            let container_hwnd = CreateWindowExA(
                                 0,
                                 c"STATIC".as_ptr() as *const u8,
                                 ptr::null(),
-                                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                WS_CHILD | WS_VISIBLE,
                                 display_left,
                                 y,
                                 FIELD_WIDTH,
-                                LABEL_HEIGHT,
+                                MULTILINE_HEIGHT,
                                 parent,
                                 ptr::null_mut(),
                                 GetModuleHandleA(ptr::null()),
                                 ptr::null_mut(),
                             );
-                            let placeholder_cstr =
-                                CString::new("Instances list (not yet implemented)").unwrap();
-                            SetWindowTextA(label_hwnd, placeholder_cstr.as_ptr() as *const u8);
-                            SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
                             window.controls.borrow_mut().insert(
-                                format!("{}_placeholder", id),
-                                Control::Label(label_hwnd, tab_index),
+                                id.clone(),
+                                Control::InstancesList(container_hwnd, tab_index),
                             );
-                            y += LABEL_HEIGHT + ROW_GAP;
+                            y += MULTILINE_HEIGHT + ROW_GAP;
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
                         }
-                        FormRow::Composite { controls, .. } => {
+                        FormRow::Composite { controls, help, .. } => {
                             let mut x = display_left;
                             for control in controls {
                                 match control {
@@ -901,10 +1084,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             ptr::null_mut(),
                                         );
                                         SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                        window
-                                            .controls
-                                            .borrow_mut()
-                                            .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                                        window.controls.borrow_mut().insert(
+                                            id.clone(),
+                                            Control::ComboBox(hwnd, tab_index, Vec::new()),
+                                        );
                                         x += combo_width + 8;
                                         control_id += 1;
                                     }
@@ -936,6 +1119,217 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 }
                             }
                             y += ROW_HEIGHT + ROW_GAP;
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("composite_help_{}", control_id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                        }
+                        FormRow::Multiline {
+                            id,
+                            label,
+                            help,
+                            editable,
+                            ..
+                        } => {
+                            if let Some(label_text) = label {
+                                let label_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                let label_cstr = CString::new(label_text.as_str()).unwrap();
+                                SetWindowTextA(label_hwnd, label_cstr.as_ptr() as *const u8);
+                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_label", id),
+                                    Control::Label(label_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                            let style = if *editable {
+                                WS_CHILD
+                                    | WS_VISIBLE
+                                    | WS_TABSTOP
+                                    | WS_BORDER
+                                    | WS_VSCROLL
+                                    | ES_MULTILINE as u32
+                                    | ES_AUTOVSCROLL as u32
+                                    | ES_WANTRETURN as u32
+                            } else {
+                                WS_CHILD
+                                    | WS_VISIBLE
+                                    | WS_BORDER
+                                    | WS_VSCROLL
+                                    | ES_MULTILINE as u32
+                                    | ES_AUTOVSCROLL as u32
+                                    | ES_READONLY as u32
+                            };
+                            let hwnd = CreateWindowExA(
+                                WS_EX_CLIENTEDGE,
+                                c"EDIT".as_ptr() as *const u8,
+                                ptr::null(),
+                                style,
+                                display_left,
+                                y,
+                                FIELD_WIDTH,
+                                MULTILINE_HEIGHT,
+                                parent,
+                                control_id as _,
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                            y += MULTILINE_HEIGHT + ROW_GAP;
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                            control_id += 1;
+                        }
+                        FormRow::InspectBlock { id, label, help } => {
+                            if let Some(label_text) = label {
+                                let label_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                let label_cstr = CString::new(label_text.as_str()).unwrap();
+                                SetWindowTextA(label_hwnd, label_cstr.as_ptr() as *const u8);
+                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_label", id),
+                                    Control::Label(label_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                            let hwnd = CreateWindowExA(
+                                WS_EX_CLIENTEDGE,
+                                c"EDIT".as_ptr() as *const u8,
+                                ptr::null(),
+                                WS_CHILD
+                                    | WS_VISIBLE
+                                    | WS_BORDER
+                                    | WS_VSCROLL
+                                    | ES_MULTILINE as u32
+                                    | ES_AUTOVSCROLL as u32
+                                    | ES_READONLY as u32,
+                                display_left,
+                                y,
+                                FIELD_WIDTH,
+                                INSPECT_BLOCK_HEIGHT,
+                                parent,
+                                ptr::null_mut(),
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Label(hwnd, tab_index));
+                            y += INSPECT_BLOCK_HEIGHT + ROW_GAP;
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                        }
+                        FormRow::InspectPath { id } => {
+                            let hwnd = CreateWindowExA(
+                                0,
+                                c"STATIC".as_ptr() as *const u8,
+                                ptr::null(),
+                                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                display_left,
+                                y,
+                                FIELD_WIDTH,
+                                LABEL_HEIGHT,
+                                parent,
+                                ptr::null_mut(),
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Label(hwnd, tab_index));
+                            y += LABEL_HEIGHT + ROW_GAP;
                         }
                         _ => {
                             y += ROW_HEIGHT + ROW_GAP;
