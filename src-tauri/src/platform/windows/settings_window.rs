@@ -204,7 +204,12 @@ impl SettingsWindow {
                 eprintln!("settings: {why}");
                 unsafe {
                     let msg = format!("Could not save settings: {}\0", why);
-                    MessageBoxA(self.hwnd, msg.as_ptr() as *const u8, c"Error".as_ptr() as *const u8, MB_OK);
+                    MessageBoxA(
+                        self.hwnd,
+                        msg.as_ptr() as *const u8,
+                        c"Error".as_ptr() as *const u8,
+                        MB_OK,
+                    );
                 }
                 false
             }
