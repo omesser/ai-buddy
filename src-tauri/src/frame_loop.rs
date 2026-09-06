@@ -398,6 +398,7 @@ pub(crate) fn run_frame_loop(
             // Tray clicks have no menu_hold: the same ids land here, and the
             // first Instance is the one they apply to when nobody's menu is open.
             if picked.is_empty() {
+                let mut tray_applied = false;
                 for id in &chosen {
                     if let Some(action) = tray_actions.get(id).cloned() {
                         let target = lives
@@ -419,7 +420,14 @@ pub(crate) fn run_frame_loop(
                             &inspect,
                             &app,
                         );
+                        tray_applied = true;
                     }
+                }
+                // Same persist as the sprite-menu path. A tray switch already
+                // renames in the Roster; without this, settings.instances keeps
+                // the old {character, name} and the rename dies on restart. #375.
+                if tray_applied {
+                    remember_instances(&roster, &settings, &settings_path);
                 }
             }
 

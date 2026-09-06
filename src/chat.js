@@ -118,19 +118,6 @@ function note(text) {
 // turn back on. Both are fixed in Settings, and neither stops the buddy
 // moving. The composer is disabled rather than hidden, so the window reads as
 // waiting rather than as broken.
-function showWho(opening) {
-  them = opening.name;
-  document.getElementById("name").textContent = opening.name;
-  document.getElementById("character").textContent = opening.character;
-  for (const node of document.querySelectorAll(".i-name")) {
-    node.textContent = opening.name;
-  }
-  for (const node of document.querySelectorAll(".i-character")) {
-    node.textContent = opening.character;
-  }
-  attached(opening);
-}
-
 function attached(opening) {
   const ready = opening.configured && opening.enabled;
   empty.hidden = ready;
@@ -143,6 +130,19 @@ function attached(opening) {
   document.getElementById("empty-none").hidden = opening.configured;
   document.getElementById("empty-off").hidden = !opening.configured;
   return ready;
+}
+
+function showWho(opening) {
+  them = opening.name;
+  document.getElementById("name").textContent = opening.name;
+  document.getElementById("character").textContent = opening.character;
+  for (const node of document.querySelectorAll(".i-name")) {
+    node.textContent = opening.name;
+  }
+  for (const node of document.querySelectorAll(".i-character")) {
+    node.textContent = opening.character;
+  }
+  attached(opening);
 }
 
 composer.addEventListener("submit", (event) => {
