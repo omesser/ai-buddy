@@ -442,7 +442,7 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             hInstance: hinstance,
             hIcon: ptr::null_mut(),
             hCursor: windows_sys::Win32::UI::WindowsAndMessaging::LoadCursorA(
-                0,
+                ptr::null_mut(),
                 32512 as *const u8,
             ),
             hbrBackground: (5 + 1) as _,
@@ -499,7 +499,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
         let tab = CreateWindowExA(
             0,
-            WC_TABCONTROLA.as_ptr(),
+            WC_TABCONTROLA,
             ptr::null(),
             WS_CHILD | WS_VISIBLE | WS_TABSTOP,
             MARGIN,
@@ -512,7 +512,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
             ptr::null_mut(),
         );
 
-        if tab == 0 {
+        if tab.is_null() {
             return Err("Failed to create tab control".to_string());
         }
 
@@ -552,7 +552,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             0,
                             b"BUTTON\0".as_ptr(),
                             CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
-                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
                             MARGIN * 2,
                             y,
                             FIELD_WIDTH,
@@ -811,7 +811,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         0,
                                         b"BUTTON\0".as_ptr(),
                                         CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
-                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
                                         x,
                                         y,
                                         if label.len() > 10 { 140 } else { 72 },
@@ -862,7 +862,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_SIZE => {
             let tab = GetDlgItem(hwnd, ID_TAB_CONTROL);
-            if tab != 0 {
+            if !tab.is_null() {
                 let mut rect: RECT = std::mem::zeroed();
                 GetClientRect(hwnd, &mut rect);
                 SetWindowPos(
