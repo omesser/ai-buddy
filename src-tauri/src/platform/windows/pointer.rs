@@ -21,5 +21,9 @@ pub fn buttons_down() -> ButtonsDown {
 }
 
 fn button_down(vk_button: i32) -> bool {
+    // SAFETY: GetAsyncKeyState takes a virtual-key code and returns a SHORT
+    // indicating button state. The high bit signals the button is currently
+    // pressed. The call is documented as safe; a bad vk_button yields zero
+    // (not pressed), which is the safe answer.
     unsafe { GetAsyncKeyState(vk_button) < 0 }
 }
