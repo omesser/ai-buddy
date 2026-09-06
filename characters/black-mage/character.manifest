@@ -14,10 +14,10 @@ Final Fantasy I's Black Mage, sliced from a custom sprite sheet by GigaGuy on \
 The Spriters Resource (asset 17261). The voice is Black Mage \
 Evilwizardington from Brian Clevinger's 8-Bit Theater (Nuklear Power), not \
 the silent FF1 class."""
-license = """
-None declared for the sprite sheet. Final Fantasy is Square Enix IP and the \
-sheet is fan art, so the character is a development asset and none of this \
-repository's license claims cover the art."""
+license = """MIT for these frames as sliced, matted and arranged here. They adapt a custom \
+sprite sheet by GigaGuy on The Spriters Resource, which declares no license, \
+and the Black Mage is Square Enix IP — the underlying character is not this \
+project's to license, so treat it as a development asset."""
 
 # Proactive model calls: after each one with no one addressing the buddy,
 # the wait becomes wait * model_base ^ model_power. Two and one doubles.

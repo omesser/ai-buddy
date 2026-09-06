@@ -14,10 +14,10 @@ art = """
 BMO from Adventure Time, cut from the free BMO shimeji pack on shimejishop, \
 with a one-pixel breathing shift added for sleep."""
 url = "https://shimejishop.com/free/bmo-shimeji/"
-license = """
-None declared. BMO is Cartoon Network IP and the pack is fan art, so the \
-character is a development asset and none of this repository's license claims \
-cover the art."""
+license = """MIT for these frames as cut, cleaned and arranged here. They adapt the free \
+BMO shimeji pack on shimejishop, which declares no license, and BMO is \
+Cartoon Network IP — the underlying character is not this project's to \
+license, so treat it as a development asset."""
 
 # Proactive model calls: BMO offers to help before being asked, so the wait
 # does not grow. One and one keeps every two minutes.

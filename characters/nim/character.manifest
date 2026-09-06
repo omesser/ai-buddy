@@ -10,7 +10,9 @@ art = """
 Nim, the modern pixel-art Character and the one original to this repository: \
 every frame is drawn by scripts/make-shipped-characters.py rather than cut \
 from a pack."""
-license = "This repository's MIT license, which covers the art as it covers the code."
+license = """MIT, this repository's license. Every frame is drawn by \
+scripts/make-shipped-characters.py, so the art is this project's own with no \
+upstream to credit."""
 
 # Proactive model calls: after each one with no one addressing the buddy,
 # the wait becomes wait * model_base ^ model_power. Two and one doubles.

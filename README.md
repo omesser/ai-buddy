@@ -63,7 +63,7 @@ Buddy Bot is the default. Eight Characters ship in the repo; each moves and spea
 | <img src="./docs/readme/cat-walk.gif" height="96" alt="Cat" /><br>**Cat** | Scottish Fold, chibi gray-and-white. | Treats every window as furniture. Busy, curious, never generic, never helpful. [full prompt](./characters/cat/personality.txt) |
 | <img src="./docs/readme/jotaro-kujo-react.gif" height="96" alt="Jotaro Kujo" /><br>**Jotaro Kujo** | Chibi JoJo delinquent (petscodex import). | Terse, perpetually bored, tougher than his indifference suggests. [full prompt](./characters/jotaro-kujo/personality.txt) |
 | <img src="./docs/readme/nim-sleep.gif" height="96" alt="Nim" /><br>**Nim** | Modern pixel art with a soft shadow. | Sleeps eleven hours a day. Soft-spoken, easily charmed, slow to arrive anywhere. [full prompt](./characters/nim/personality.txt) |
-| <img src="./docs/readme/timber-wolf-scan.gif" height="96" alt="Timber Wolf" /><br>**Timber Wolf** | BattleTech OmniMech (Sketchfab, CC BY 4.0). | Patrol mech. Desktop is a sector to secure, reports are brief. Clan warriors don't waste words. [full prompt](./characters/timber-wolf/personality.txt) |
+| <img src="./docs/readme/timber-wolf-scan.gif" height="96" alt="Timber Wolf" /><br>**Timber Wolf** | BattleTech OmniMech (Sketchfab capture; licensing unresolved, [#388](https://github.com/omesser/ai-buddy/issues/388)). | Patrol mech. Desktop is a sector to secure, reports are brief. Clan warriors don't waste words. [full prompt](./characters/timber-wolf/personality.txt) |
 | <img src="./docs/readme/trump-talk.gif" height="96" alt="Trump" /><br>**Trump** | Caricature in a navy suit and red tie. | The desktop is his rally. Bombastic, sure this is the greatest desktop in history. [full prompt](./characters/trump/personality.txt) |
 
 Characters are packages of art, personality, and tuning. Packaging details live in [DEVELOPMENT.md](./docs/DEVELOPMENT.md); the on-disk format is still evolving.
@@ -168,7 +168,7 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 [WindowPet](https://github.com/SeakMengs/WindowPet) (MIT) inspired the Tauri desktop-pet shape. ai-buddy is a greenfield build, not a fork ([ADR-0001](./docs/adr/0001-greenfield-tauri-not-fork-windowpet.md)). Overlay code is independent; tray, launch-at-login, and updater follow WindowPet's MIT-licensed patterns.
 
-Character art provenance is in each Character Package manifest.
+Character art provenance is in each Character Package manifest, under `[source]`, and on the [Character Gallery](https://omesser.github.io/ai-buddy/characters.html). Most Characters adapt art this project did not draw: the frames as arranged here are MIT, the underlying art is not ours to license, and each manifest says which is which.
 
 ## License
 

@@ -16,11 +16,11 @@ art = """
 A chibi Jotaro Kujo pet, cut from the petscodex pet `jotaro-kujo` by \
 scripts/import-pet.py."""
 url = "https://petscodex.com/pets/jotaro-kujo"
-license = """
-None declared anywhere in the source ecosystem; accepted at import with \
---accept-license. Jotaro Kujo is Shueisha / Hirohiko Araki IP and the pack is \
-fan art, so the character is a development asset unless a license surfaces — \
-this repository's license claims do not cover the art."""
+license = """MIT for these frames as cut, remapped and arranged here. They adapt the \
+petscodex pet `jotaro-kujo`, which declares no license anywhere in the source \
+ecosystem and was accepted at import with --accept-license, and Jotaro Kujo \
+is Shueisha / Hirohiko Araki IP — the underlying character is not this \
+project's to license, so treat it as a development asset."""
 
 # Cursor reactions: cool and unfazed, doesn't react to proximity but faces challenges.
 

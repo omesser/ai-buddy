@@ -357,8 +357,9 @@ pub struct Character {
 /// Where a Character's art came from, as the package declares it (#289).
 ///
 /// Prose and not an identifier, because the interesting cases are not
-/// identifiers: `timber-wolf` is CC BY 4.0 art of BattleTech IP, and `cat` has
-/// no license at all and needs to say so. `license` is required whenever
+/// identifiers: most Characters are MIT for the frames as arranged here over
+/// art this project did not draw, and `timber-wolf` captures a model whose
+/// own license does not cover shipping it (#388). `license` is required whenever
 /// `[source]` is present so that "none is declared" has to be written down —
 /// a gallery publishing this at a public URL can lose that sentence by
 /// omission, and no shape but a required field stops an author omitting it.

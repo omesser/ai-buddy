@@ -29,10 +29,9 @@ art = """
 Cut from the petscodex pet `trump` by scripts/import-pet.py, then hand-tuned \
 and resampled to 85%."""
 url = "https://petscodex.com/pets/trump"
-license = """
-None declared anywhere in the source ecosystem, as with the other petscodex \
-imports. A development asset unless a license surfaces — this repository's \
-license claims do not cover the art."""
+license = """MIT for these frames as cut, hand-tuned, resampled and arranged here. They \
+adapt the petscodex pet `trump`, which declares no license anywhere in the \
+source ecosystem, so treat the underlying art as a development asset."""
 
 # Proactive model calls: Trump treats the desk as a rally, so the wait
 # does not grow. One and one keeps every two minutes.

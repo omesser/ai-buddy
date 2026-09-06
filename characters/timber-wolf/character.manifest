@@ -20,13 +20,16 @@ scale = 1
 [source]
 art = """
 The Timber Wolf (Mad Cat) OmniMech from BattleTech, captured frame by frame \
-from a Sketchfab viewer recording of Clans Timberwolf Battlemech by \
-oded1africa."""
+from a Sketchfab viewer recording of Clan's Timberwolf Battlemech by \
+MekaRamen."""
 url = "https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f"
-license = """
-The model is CC BY 4.0, credited to oded1africa. The mech is BattleTech IP, \
-so the character is a development asset and none of this repository's license \
-claims cover the art."""
+license = """Unresolved, and no license is claimed for these frames — see #388. The \
+matting, cropping and retiming are this project's work, but each frame \
+captures a Sketchfab model published under Sketchfab's Editorial license: \
+use only in connection with events that are newsworthy or of public \
+interest. That does not cover shipping it in an application, and it restricts \
+the use rather than the amount of editing, so a capture stays a derivative of \
+the model. The Timber Wolf is also BattleTech IP."""
 
 # Cursor reactions: a patrol mech acquires the contact rather than closing on
 # it — the cursor gets tracked, and a rush at the chassis earns a weapon raise.
