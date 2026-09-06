@@ -200,9 +200,19 @@ impl Roster {
 
     /// Switch one Instance's Character. False when the id is unknown.
     pub fn retarget(&mut self, id: &str, character: &Character) -> bool {
+        let lone = self.instances.len() == 1;
         match self.instances.get_mut(id) {
             Some(instance) => {
+                let previous_character = instance.character_name().to_string();
+                let previous_name = instance.name.clone();
                 instance.retarget(character);
+                // A user-chosen name is indistinguishable from the default after
+                // spawn, so still wearing the previous Character's name is the
+                // tell. Several running Instances use names to tell them apart.
+                // #375.
+                if lone && previous_name == previous_character {
+                    instance.name = character.name.clone();
+                }
                 true
             }
             None => false,
@@ -659,6 +669,70 @@ mod tests {
         assert_eq!(instance.character_name(), "nim");
         assert_eq!(instance.name, "Beemo");
         assert!(!roster.retarget("missing", &second));
+    }
+
+    /// The name spawn assigns is the Character's. Switching that Character
+    /// should take the name with it, or the buddy still answers to someone
+    /// who is gone.
+    #[test]
+    fn retargeting_renames_a_lone_instance_still_named_after_its_character() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget-default.md"));
+        let mut roster = Roster::new(memory);
+        let first = test_character("bmo");
+        let second = test_character("nim");
+        let id = roster.spawn(&first, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
+
+        assert!(roster.retarget(&id, &second));
+        let instance = roster.get(&id).expect("still there");
+        assert_eq!(instance.id, id, "the id is unchanged");
+        assert_eq!(instance.character_name(), "nim");
+        assert_eq!(
+            instance.name, "nim",
+            "the Instance name follows the Character"
+        );
+    }
+
+    /// A name that is not the Character's was given on purpose. Switching
+    /// Character is not a reason to take it away.
+    #[test]
+    fn retargeting_keeps_a_name_that_is_not_the_characters() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget-pip.md"));
+        let mut roster = Roster::new(memory);
+        let first = test_character("bmo");
+        let second = test_character("nim");
+        let id = roster.spawn(&first, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+
+        assert!(roster.retarget(&id, &second));
+        let instance = roster.get(&id).expect("still there");
+        assert_eq!(instance.name, "Pip", "a chosen name survives the switch");
+        assert_eq!(instance.character_name(), "nim");
+    }
+
+    /// Several running Instances use names to tell them apart. Implicit rename
+    /// would collapse two "bmo"s onto the new Character's name.
+    #[test]
+    fn retargeting_does_not_rename_when_several_instances_are_running() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget-two.md"));
+        let mut roster = Roster::new(memory);
+        let first = test_character("bmo");
+        let second = test_character("nim");
+        let id_a = roster.spawn(&first, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
+        let id_b = roster.spawn(&first, "bmo".to_string(), Point { x: 30.0, y: 40.0 });
+
+        assert!(roster.retarget(&id_a, &second));
+        let switched = roster.get(&id_a).expect("still there");
+        assert_eq!(
+            switched.name, "bmo",
+            "several Instances keep their names across a switch"
+        );
+        assert_eq!(switched.character_name(), "nim");
+        let other = roster.get(&id_b).expect("the other is still there");
+        assert_eq!(
+            other.name, "bmo",
+            "the Instance that was not switched is untouched"
+        );
+        assert_eq!(other.character_name(), "bmo");
+        assert_eq!(other.id, id_b);
     }
 
     #[test]
