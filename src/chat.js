@@ -1,12 +1,12 @@
 // The Chat surface: one window per Summoned Character Instance, drawn by
-// ai-buddy rather than by whatever answers (ADR-0010). Three kinds of line
-// today — the user's turns, the answer as it arrives, and a line the user drew
-// out without typing, labelled with what it was reacting to — plus the Shell's
-// own note about a turn that produced nothing. ADR-0010 gives the log two more,
-// a tool call as a one-liner and a forwarded permission request, and both
-// arrive with the client that can emit one (#16). It holds no authoritative
-// state, like the overlay: the log is what has been said in this window, and
-// the Shell owns the session behind it.
+// ai-buddy rather than by whatever answers (ADR-0010). Four kinds of line —
+// the user's turns, the answer as it arrives, a line the user drew out without
+// typing, labelled with what it was reacting to, and a forwarded permission
+// request with its options as buttons — plus the Shell's own note about a turn
+// that produced nothing. ADR-0010's tool-call one-liner waits on the Action Log
+// getting a reader. It holds no authoritative state, like the overlay: the log
+// is what has been said in this window, and the Shell owns the session behind
+// it.
 
 import { statusCells } from "./chat-status.js";
 
@@ -111,6 +111,47 @@ function note(text) {
   return add(row);
 }
 
+// A permission request the Harness asked, drawn as the options it offered.
+// Nothing is chosen here or in the Shell: a click is the only answer, and
+// a turn that times out first is cancelled by the Shell, not decided
+// (ADR-0010). The buttons stay disabled after the click so the row reads as
+// what was decided.
+//
+// ponytail: buttons freeze on the click, not on the Shell's cancel; a row the
+// user never answered keeps live buttons whose click goes nowhere. A settled
+// event would fix that, once there is more than this one row to settle.
+function asked(ask) {
+  const row = el("row ask");
+  const label = el("who-label");
+  label.textContent = `${them} · asks`;
+  const body = el("said");
+  body.textContent = ask.kind ? `${ask.kind}: ${ask.title}` : ask.title;
+  const buttons = el("options");
+  for (const option of ask.options) {
+    const button = el("", "button");
+    button.type = "button";
+    button.textContent = option.name || option.id;
+    button.addEventListener("click", () => {
+      for (const other of buttons.querySelectorAll("button")) {
+        other.disabled = true;
+      }
+      button.classList.add("chosen");
+      invoke("permission_answer", { request: ask.request, option: option.id }).catch((why) => {
+        console.error("chat: the answer did not reach the Harness:", why);
+        note("That answer did not get through.");
+      });
+    });
+    buttons.append(button);
+  }
+  body.append(buttons);
+  row.append(label, body);
+  return add(row);
+}
+
+// The login command the log last named, so re-asking `chat_opening` on every
+// send does not repeat it.
+let loginSaid = null;
+
 // Whether anything can answer, and what to say when nothing can.
 //
 // SPEC gives this window the job of explaining how to connect something
@@ -130,8 +171,17 @@ function attached(opening) {
   // copy is markup, and what to attach is not what to switch back on.
   document.getElementById("empty-none").hidden = opening.configured;
   document.getElementById("empty-off").hidden = !opening.configured;
+
+  // The third state: attached, and the Harness has nobody signed in. Said
+  // once per command, in the log, because the fix is a command for the user's
+  // own terminal and never a prompt of ours (ADR-0010).
+  if (opening.login && opening.login !== loginSaid) {
+    loginSaid = opening.login;
+    note(`${opening.name} is attached but not signed in. Run \`${opening.login}\` in a terminal.`);
+  }
   return ready;
 }
+
 
 function showWho(opening) {
   them = opening.name;
@@ -235,6 +285,14 @@ async function start() {
         turn.them.remove();
         note("No answer came back.");
       }
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-permission",
+    ({ payload }) => {
+      asked(payload);
     },
     { target: chat.label },
   );
