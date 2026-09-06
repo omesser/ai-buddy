@@ -64,6 +64,7 @@ enum Control {
 
 impl SettingsWindow {
     fn new(hwnd: HWND) -> Arc<Self> {
+        #[allow(clippy::arc_with_non_send_sync)]
         Arc::new(Self {
             hwnd,
             session: Mutex::new(None),
