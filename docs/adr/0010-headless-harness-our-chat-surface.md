@@ -94,7 +94,8 @@ dependencies would carry most of that: `acp-cli` is a Rust crate whose
 `AcpBridge` is the ACP client and which already knows the launch command for
 seventeen agents, and `@hafbit/acp-components-core` is framework-agnostic
 JavaScript holding the session, streaming and permission state. Both are
-pre-1.0 and neither has an unambiguous canonical home. Review before adopting.
+pre-1.0 and neither has an unambiguous canonical home. Reviewed in ADR-0017:
+neither was adopted.
 
 The Harness is spawned with its working directory at `~/.ai-buddy`, not the
 user's project, so nothing the buddy says is flavoured by a repository it was

@@ -127,6 +127,12 @@ AI_BUDDY_DIRECTOR_MODEL=gemma4 \
 cargo run -p ai-buddy
 ```
 
+**Optional Harness.** An agent you already run answers instead, over ACP, and signs in on its own:
+
+```sh
+AI_BUDDY_HARNESS=claude cargo run -p ai-buddy   # or hermes, opencode
+```
+
 **Switch characters** (env or Settings):
 
 ```sh
