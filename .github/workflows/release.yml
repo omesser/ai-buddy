@@ -51,22 +51,43 @@ jobs:
   # Release run additionally attaches them to the Release the human
   # published in GitHub's UI, which is also what created the tag; this job
   # never creates either. tests.yml already gated the merge.
+  # Which platforms this run builds. A Release builds all three; a manual
+  # dispatch builds the ones its checkboxes asked for. The choice cannot live
+  # in the package job's `if:`, because that is evaluated before the matrix
+  # exists and may not name it — which is what made this whole file invalid
+  # from #343 until #387. A job the matrix depends on can decide it instead.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          # Empty on a Release, where every platform builds regardless.
+          RELEASE: ${{ github.event_name == 'release' }}
+          LINUX: ${{ inputs.linux }}
+          MACOS: ${{ inputs.macos }}
+          WINDOWS: ${{ inputs.windows }}
+        run: |
+          entries=()
+          wanted() { [ "$RELEASE" = true ] || [ "$1" = true ]; }
+          wanted "$MACOS"   && entries+=('{"os":"macos-latest","bundles":"dmg","key":"macos"}')
+          wanted "$LINUX"   && entries+=('{"os":"ubuntu-latest","bundles":"appimage,deb","key":"linux"}')
+          wanted "$WINDOWS" && entries+=('{"os":"windows-latest","bundles":"nsis","key":"windows"}')
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo "::error::no platform selected: tick at least one of linux, macos, windows"
+            exit 1
+          fi
+          printf 'matrix={"include":[%s]}\n' "$(IFS=,; echo "${entries[*]}")" >> "$GITHUB_OUTPUT"
+
   package:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            bundles: dmg
-            key: macos
-          - os: ubuntu-latest
-            bundles: appimage,deb
-            key: linux
-          - os: windows-latest
-            bundles: nsis
-            key: windows
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && ((matrix.key == 'linux' && inputs.linux) || (matrix.key == 'macos' && inputs.macos) || (matrix.key == 'windows' && inputs.windows)))
     timeout-minutes: 45
 
     steps:
