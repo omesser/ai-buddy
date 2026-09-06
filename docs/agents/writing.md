@@ -20,6 +20,15 @@ and the body is empty, so nothing else reaches `git log`.
 That last point overrides `developer-voice`, which puts the reasoning in the
 commit body. Here the body does not survive.
 
+## Pre-commit hooks gate every commit
+
+Run `pre-commit run --files <touched>` or `pre-commit run --all-files` before
+every commit and push. Do not use `--no-verify` to skip hooks. The suite
+catches trailing whitespace, codespell findings, formatting drift, and clippy
+warnings — all of which would fail in CI. Hooks that autofix (trailing
+whitespace, formatters) rewrite files in place; stage the fixes and commit
+again.
+
 ## The title carries its type
 
 Titles follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
