@@ -10,21 +10,19 @@ use std::ffi::CString;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
-use windows_sys::Win32::UI::Controls::{
-    TCIF_TEXT, TCITEMA, TCM_INSERTITEMA, TCN_SELCHANGE, WC_TABCONTROLA,
-};
+use windows_sys::Win32::UI::Controls::{TCIF_TEXT, TCITEMA, TCM_INSERTITEMA, WC_TABCONTROLA};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
     CW_USEDEFAULT, EN_CHANGE, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
-    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_NOTIFY,
-    WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT,
+    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+    WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
