@@ -43,11 +43,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CHARACTERS = ROOT / "characters"
 RUST = ROOT / "crates" / "core" / "src" / "character.rs"
 SHELL = ROOT / "docs" / "design" / "characters.html"
-PLACEHOLDER = '{"characters": [], "required": [], "defaults": {}, "withheld": []}'
+PLACEHOLDER = '{"characters": [], "required": [], "defaults": {}}'
 
 # Packages that stay off the published page, and why. The gallery is a public
 # URL; a Character this project has no right to publish there does not go on
-# it, and the manifest keeps the full position.
+# it. Nothing about the omission reaches the page — saying "we ship art whose
+# license we are unsure of" is its own kind of publishing, and the manifest
+# already keeps the full position for anyone reading the repository.
 WITHHELD = {
     "timber-wolf": "its art is licensed for editorial use only (#388)",
 }
@@ -218,7 +220,6 @@ def gallery(characters_root, rust_source, out):
     if not packages:
         raise Malformed(f"{characters_root} holds no Character Package")
 
-    held = [p for p in packages if p.name in WITHHELD]
     packages = [p for p in packages if p.name not in WITHHELD]
 
     art_root = out / "characters"
@@ -226,9 +227,6 @@ def gallery(characters_root, rust_source, out):
         "characters": [character(p, required, defaults, art_root) for p in packages],
         "required": required,
         "defaults": defaults,
-        # Named on the page so the gallery does not quietly claim to be
-        # everything while showing less.
-        "withheld": [{"dir": p.name, "why": WITHHELD[p.name]} for p in held],
     }
 
     # Escaped so the JSON can never close the <script> element it sits in, and
