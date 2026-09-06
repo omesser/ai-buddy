@@ -1,0 +1,367 @@
+<!doctype html>
+<!--
+  The Character gallery for omesser.github.io/ai-buddy: every Character this
+  project can publish, every Animation in its Required Animation Set, playing
+  at the fps its own manifest declares. A package whose art carries terms that
+  do not cover publishing it is named but not shown — see WITHHELD in
+  scripts/make-character-gallery.py.
+
+  A Generated page under ADR-0011. This file is the chrome; everything it says
+  about a Character — which Animations exist, their frame counts, fps, loop,
+  render_mode and scale — arrives in the <script id="gallery"> block, which
+  scripts/make-character-gallery.py substitutes at deploy time from
+  characters/. Opened straight from a clone the block is still the empty
+  placeholder, so the page says it has no data rather than inventing some.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-buddy Character Gallery</title>
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --card: #FFFFFF;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #2C8C7C;
+    --warn: #B4552A;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --card: #1E222C;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      --warn: #E0906A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --card: #1E222C;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    --warn: #E0906A;
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 66rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .3rem; letter-spacing: -0.01em; }
+  .cls { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+         font-size: .78rem; color: var(--ink-3); }
+  .lede { color: var(--ink-2); margin: .8rem 0 1.4rem; max-width: 40rem; }
+
+  .controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+              position: sticky; top: 0; z-index: 2; padding: .7rem 0;
+              background: var(--paper); border-bottom: 1px solid var(--line); }
+  button { font: inherit; font-size: .9rem; color: var(--ink);
+           background: var(--card); border: 1px solid var(--line);
+           border-radius: 7px; padding: .35rem .8rem; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { color: var(--ink-3); font-size: .85rem; }
+
+  section.character { margin-top: 2.4rem; }
+  h2 { font-size: 1.15rem; margin: 0; color: var(--accent); }
+  .meta { color: var(--ink-2); font-size: .87rem; margin-top: .2rem; }
+  .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+               font-size: .95em; }
+  .short { color: var(--warn); }
+
+  /* The package's own [source] declaration. Most packages are MIT over art
+     adapted from someone else's pack; this page is a public, indexed URL, so
+     it prints what the manifest declares rather than paraphrasing a caveat
+     into a weaker one. */
+  .source {
+    margin: .7rem 0 0;
+    padding: .7rem .85rem;
+    max-width: 44rem;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ink-3);
+    border-radius: 7px;
+    font-size: .82rem;
+    line-height: 1.55;
+    color: var(--ink-2);
+    overflow-wrap: break-word;
+  }
+  .source b { display: block; color: var(--ink-3); font-weight: 500;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+              font-size: .95em; margin-bottom: .4rem; }
+  .source p { margin: 0 0 .35rem; }
+  .source p:last-child { margin-bottom: 0; }
+  .source a { color: var(--accent); }
+  /* The license line is the one a reader must not skim past. */
+  .source .license { color: var(--ink); }
+  .withheld { margin: 2rem 0 0; padding: .7rem .85rem; max-width: 44rem;
+              border: 1px dashed var(--line); border-radius: 7px;
+              font-size: .82rem; line-height: 1.55; color: var(--ink-2); }
+  .withheld b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: .95em; color: var(--ink-3); font-weight: 500; }
+
+  /* An undeclared source is a gap in the package, so it reads as one. */
+  .source.undeclared { border-left-color: var(--warn); }
+  .source.undeclared p { color: var(--warn); }
+  .source .license em { font-style: normal; color: var(--ink-3); }
+
+  .strip { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1rem; }
+  .tile { background: var(--card); border: 1px solid var(--line);
+          border-radius: 9px; padding: .55rem; display: flex;
+          flex-direction: column; gap: .45rem; }
+  .stage { position: relative; align-self: center; cursor: pointer; }
+  .stage img { position: absolute; bottom: 0; display: none;
+               -webkit-user-drag: none; }
+  .stage img.on { display: block; }
+  /* ADR-0006: true pixel art is nearest-neighbour at an integer scale, which
+     is what src/main.css does for the overlay. A Character declaring
+     render_mode = "smooth" overrides it, as src/main.js does there. */
+  .stage img { image-rendering: pixelated; }
+  .smooth .stage img { image-rendering: auto; }
+  .label { font-size: .8rem; text-align: center; }
+  .label b { font-weight: 650; }
+  .label span { display: block; color: var(--ink-3); font-size: .93em; }
+  .tile.missing { border-style: dashed; border-color: var(--warn); }
+  .tile.missing .stage { display: flex; align-items: center;
+                         justify-content: center; cursor: default; }
+  .tile.missing .label { color: var(--warn); }
+  .absent { color: var(--warn); font-size: 1.6rem; line-height: 1; }
+  .empty { color: var(--warn); font-size: .78rem; text-align: center;
+           max-width: 12rem; overflow-wrap: break-word; }
+
+  footer { margin-top: 3rem; color: var(--ink-3); font-size: .87rem; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ai-buddy Character Gallery</h1>
+  <div class="cls">Generated from characters/ at deploy</div>
+  <p class="lede">Every Character this project can publish, and every Animation in the
+    Required Animation Set, playing at the frame rate its own Character
+    Manifest declares. A repository can show you a PNG; it cannot show you
+    eight frames at 12 fps.</p>
+
+  <div class="controls">
+    <button id="toggle" type="button">Pause</button>
+    <button id="replay" type="button">Replay all</button>
+    <span class="hint">Click any Animation to replay it. The ones that
+      <code>loop = "once"</code> hold their last frame, the way the Engine
+      holds it.</span>
+  </div>
+
+  <div id="gallery-root"></div>
+
+  <footer>
+    Built from <a href="https://github.com/omesser/ai-buddy">omesser/ai-buddy</a>
+    by <code>scripts/make-character-gallery.py</code>.
+  </footer>
+</main>
+
+<script id="gallery" type="application/json">{"characters": [], "required": [], "defaults": {}, "withheld": []}</script>
+<script>
+  const data = JSON.parse(document.getElementById("gallery").textContent);
+  const root = document.getElementById("gallery-root");
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  // Every Animation on the page, driven from one clock: a rAF loop reading
+  // each one's own fps rather than a shared frame rate is the whole point of
+  // the page, and one loop keeps 70-odd of them from each holding a timer.
+  const stages = [];
+
+  function build() {
+    if (!data.characters.length) {
+      root.append(el("p", "empty",
+        "No Character data in this page. It is a template until "
+        + "scripts/make-character-gallery.py fills it in."));
+      return;
+    }
+    for (const character of data.characters) {
+      const section = el("section", "character" + (character.smooth ? " smooth" : ""));
+      section.append(el("h2", null, character.name));
+
+      const declared = character.animations.filter((a) => !a.missing).length;
+      const meta = el("div", "meta");
+      meta.append(el("code", null, "characters/" + character.dir));
+      meta.append(document.createTextNode(
+        " · render_mode " + (character.smooth ? "smooth" : "pixelated")
+        + " · scale " + character.scale + " · "));
+      const count = el("span", declared < data.required.length ? "short" : null,
+        declared + " of " + data.required.length + " Required Animations");
+      meta.append(count);
+      section.append(meta);
+
+      // Declared, never inferred — but a package that declares nothing still
+      // gets the panel, saying so. This page is the only place the art's
+      // origin is published, so an absent panel would read as "nothing to
+      // say" when it means "nobody wrote it down", and for art cut from
+      // someone else's pack those are not the same claim.
+      const box = el("div", "source");
+      box.append(el("b", null, "characters/" + character.dir + "/character.manifest"));
+      if (!character.source) {
+        box.classList.add("undeclared");
+        box.append(el("p", null, "No [source] declared. Where this art came "
+          + "from, and what license covers it, is not recorded."));
+      } else {
+        box.append(el("p", null, character.source.art));
+        if (character.source.url) {
+          const cite = el("p");
+          const link = el("a", null, character.source.url);
+          link.href = character.source.url;
+          link.rel = "noopener nofollow";
+          cite.append(link);
+          box.append(cite);
+        }
+        const license = el("p", "license");
+        license.append(el("em", null, "License: "));
+        license.append(document.createTextNode(character.source.license));
+        box.append(license);
+      }
+      section.append(box);
+
+      const strip = el("div", "strip");
+      for (const animation of character.animations) {
+        strip.append(animation.missing ? missingTile(animation)
+                                       : playingTile(character, animation));
+      }
+      section.append(strip);
+      root.append(section);
+    }
+
+    // A Character kept off the page is still a fact about the roster.
+    for (const held of data.withheld || []) {
+      const note = el("p", "withheld");
+      note.append(el("b", null, "characters/" + held.dir + "/"));
+      note.append(document.createTextNode(" ships with ai-buddy but is not shown here: " + held.why + "."));
+      root.append(note);
+    }
+  }
+
+  function missingTile(animation) {
+    const tile = el("div", "tile missing");
+    const stage = el("div", "stage");
+    stage.style.width = "96px";
+    stage.style.height = "96px";
+    stage.append(el("div", "absent", "\u2014"));
+    tile.append(stage);
+    const label = el("div", "label");
+    label.append(el("b", null, animation.name));
+    label.append(el("span", null, "missing — no [animations] block"));
+    tile.append(label);
+    return tile;
+  }
+
+  function playingTile(character, animation) {
+    const tile = el("div", "tile");
+    const stage = el("div", "stage");
+    const scale = character.scale;
+    const width = Math.max(...animation.frames.map((f) => f.w)) * scale;
+    const height = Math.max(...animation.frames.map((f) => f.h)) * scale;
+    stage.style.width = Math.max(width, 72) + "px";
+    stage.style.height = Math.max(height, 72) + "px";
+
+    const images = animation.frames.map((frame, index) => {
+      const img = document.createElement("img");
+      img.src = frame.src;
+      img.alt = character.name + " " + animation.name + " frame " + index;
+      img.width = frame.w * scale;
+      img.height = frame.h * scale;
+      // Centred on a whole pixel: art drawn at an integer scale and then
+      // offset by half a pixel is resampled, which is the one thing
+      // nearest-neighbour is here to avoid.
+      img.style.left = Math.round((Math.max(width, 72) - frame.w * scale) / 2) + "px";
+      if (index === 0) img.className = "on";
+      stage.append(img);
+      return img;
+    });
+
+    const state = { images, fps: animation.fps, looping: animation.loop, start: 0, shown: 0 };
+    stages.push(state);
+    stage.addEventListener("click", () => {
+      state.start = performance.now();
+      if (!playing) draw(state, 0);
+    });
+    tile.append(stage);
+
+    const label = el("div", "label");
+    label.append(el("b", null, animation.name));
+    label.append(el("span", null,
+      animation.frames.length + (animation.frames.length === 1 ? " frame" : " frames")
+      + " · " + animation.fps + " fps"
+      + (animation.loop ? "" : " · once")));
+    tile.append(label);
+    return tile;
+  }
+
+  function draw(state, index) {
+    if (index === state.shown) return;
+    state.images[state.shown].classList.remove("on");
+    state.images[index].classList.add("on");
+    state.shown = index;
+  }
+
+  // prefers-reduced-motion gets the still first frame and the button, not an
+  // empty box: a reader who asked the system for less motion still came here
+  // to see the motion, and should be the one who starts it.
+  let playing = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function restart(now) {
+    for (const state of stages) state.start = now;
+  }
+
+  function tick(now) {
+    if (playing) {
+      for (const state of stages) {
+        const last = state.images.length - 1;
+        // A rAF timestamp can predate the start captured just before it, and a
+        // negative step indexes past the end of the ring. The loop is only
+        // rescheduled at the bottom of this function, so one throw here would
+        // freeze every Animation on the page for good.
+        const step = Math.max(0, Math.floor((now - state.start) * state.fps / 1000));
+        draw(state, state.looping ? step % state.images.length : Math.min(step, last));
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  const toggle = document.getElementById("toggle");
+  function label() { toggle.textContent = playing ? "Pause" : "Play"; }
+
+  build();
+  toggle.addEventListener("click", () => {
+    playing = !playing;
+    // Playing again starts every Animation over, which is the only way to see
+    // a `loop = "once"` one twice.
+    if (playing) restart(performance.now());
+    label();
+  });
+  document.getElementById("replay").addEventListener("click", () => {
+    restart(performance.now());
+    if (!playing) for (const state of stages) draw(state, 0);
+  });
+  label();
+  restart(performance.now());
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

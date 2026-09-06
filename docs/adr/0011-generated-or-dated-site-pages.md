@@ -32,8 +32,12 @@ holds at five, because grouping five entries adds a level of navigation and
 removes none. A fourth page is not commissioned; one exists when a design
 question arrives that has to be heard or operated before it can be answered.
 
-The gallery is Generated and shows every installed Character — `bmo`,
-`jotaro-kujo` and `trump` included. It is also the one page meant to be found in
+The gallery is Generated and shows every Character this project can publish.
+That is not the same as every installed Character: a package whose art carries
+terms that do not cover publishing it is named on the page but not shown, and
+`WITHHELD` in `scripts/make-character-gallery.py` is the list. Naming rather
+than omitting is deliberate — a page that shows less than the roster should say
+which package it holds back and why. It is also the one page meant to be found in
 search: proposal pages carry `<meta name="robots" content="noindex">` so a
 superseded proposal does not become the canonical result for the thing it
 proposed.
