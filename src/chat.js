@@ -2,10 +2,11 @@
 // ai-buddy rather than by whatever answers (ADR-0010). Three kinds of line
 // today — the user's turns, the answer as it arrives, and a line the user drew
 // out without typing, labelled with what it was reacting to — plus the Shell's
-// own note about a turn that produced nothing. ADR-0010 gives the log two more, a tool call as a one-liner
-// and a forwarded permission request, and both arrive with the client that can
-// emit one (#16). It holds no authoritative state, like the overlay: the log is
-// what has been said in this window, and the Shell owns the session behind it.
+// own note about a turn that produced nothing. ADR-0010 gives the log two more,
+// a tool call as a one-liner and a forwarded permission request, and both
+// arrive with the client that can emit one (#16). It holds no authoritative
+// state, like the overlay: the log is what has been said in this window, and
+// the Shell owns the session behind it.
 
 import { statusCells } from "./chat-status.js";
 
