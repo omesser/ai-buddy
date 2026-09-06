@@ -250,7 +250,7 @@ impl Completer for AnyCompleter {
     fn complete(&self, prompt: &str) -> Result<String, String> {
         match self {
             AnyCompleter::Http(endpoint) => endpoint.complete(prompt),
-            AnyCompleter::Harness(session) => Completer::complete(session.as_ref(), prompt),
+            AnyCompleter::Harness(session) => session.complete(prompt),
         }
     }
 }

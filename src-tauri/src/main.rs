@@ -2100,8 +2100,15 @@ fn main() {
             );
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("ai-buddy failed to start");
+        .build(tauri::generate_context!())
+        .expect("ai-buddy failed to start")
+        // Every exit path ends here — window close, `ExitRequested`, the tray
+        // Quit's `quit_now` aside — so the Harness child is never orphaned.
+        .run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                harness::shutdown();
+            }
+        });
 }
 
 #[cfg(test)]

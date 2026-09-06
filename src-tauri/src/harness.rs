@@ -71,21 +71,23 @@ pub struct Launch {
 /// are deferred (ADR-0017).
 pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
-    let argv: Vec<String> = match value {
+    let (name, argv): (&str, Vec<&str>) = match value {
         "" => return None,
-        "claude" => ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        "hermes" => vec!["hermes".into(), "acp".into()],
-        "opencode" => vec!["opencode".into(), "acp".into()],
-        custom => custom.split_whitespace().map(str::to_string).collect(),
+        "claude" => (
+            value,
+            vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+        ),
+        "hermes" => (value, vec!["hermes", "acp"]),
+        "opencode" => (value, vec!["opencode", "acp"]),
+        custom => {
+            let argv: Vec<&str> = custom.split_whitespace().collect();
+            (argv[0], argv)
+        }
     };
-    let name = match value {
-        "claude" | "hermes" | "opencode" => value.to_string(),
-        _ => argv[0].clone(),
-    };
-    Some(Launch { name, argv })
+    Some(Launch {
+        name: name.to_string(),
+        argv: argv.into_iter().map(str::to_string).collect(),
+    })
 }
 
 pub fn from_env() -> Option<Launch> {
@@ -114,7 +116,6 @@ impl Launch {
 /// A forwarded `session/request_permission`, as the Chat surface draws it.
 #[derive(Clone, Debug, Serialize)]
 pub struct PermissionAsk {
-    /// The Harness's own request id, handed back with the answer.
     pub request: Value,
     pub title: String,
     pub kind: Option<String>,
@@ -225,28 +226,25 @@ impl Session {
         self.timeout.max(Duration::from_secs(10))
     }
 
-    fn log(&self, event: &str, fields: Value) {
-        action_log::append(&self.dir, event, fields);
-    }
-
     /// Where the Harness should be by the time the first wake arrives. Spawned
     /// so startup does not wait on `npx`; the outcome is one stderr line.
     pub fn spawn_preflight(self: &Arc<Self>) {
         let session = Arc::clone(self);
         thread::spawn(move || match session.attach() {
             Ok((_, id)) => eprintln!("harness: {} attached, session {id}", session.launch.name),
-            Err(why) => eprintln!("harness: {why}; using StaticDirector until it answers"),
+            Err(why) => eprintln!("harness: {why}; StaticDirector is in force until it answers"),
         });
     }
 
-    /// One turn. The whole of `Completer::complete`.
-    pub fn complete(&self, prompt: &str) -> Result<String, String> {
+    /// One turn. The whole of `Completer::complete`, minus the trace.
+    fn turn(&self, prompt: &str) -> Result<String, String> {
         let Ok(_turn) = self.turn.try_lock() else {
             return Err("harness busy".to_string());
         };
         let (link, session_id) = self.attach()?;
         link.begin_turn();
-        self.log(
+        action_log::append(
+            &self.dir,
             "prompt",
             json!({"session_id": session_id, "chars": prompt.len()}),
         );
@@ -266,7 +264,7 @@ impl Session {
                 link.notify("session/cancel", json!({"sessionId": session_id}));
                 link.cancel_asks();
                 let _ = receiver.recv_timeout(CANCEL_GRACE);
-                self.log("timeout", json!({"session_id": session_id}));
+                action_log::append(&self.dir, "timeout", json!({"session_id": session_id}));
                 return Err(format!(
                     "harness turn exceeded {}s; cancelled",
                     self.timeout.as_secs()
@@ -277,7 +275,11 @@ impl Session {
         match reply {
             Ok(result) => {
                 let stop = turn_finished(&result);
-                self.log("turn", json!({"stop": stop.as_ref().err(), "text": text}));
+                action_log::append(
+                    &self.dir,
+                    "turn",
+                    json!({"stop": stop.as_ref().err(), "text": text}),
+                );
                 stop?;
                 if let Ok(mut state) = self.state.lock() {
                     state.spawn_failures = 0;
@@ -285,7 +287,7 @@ impl Session {
                 Ok(text)
             }
             Err(error) => {
-                self.log("turn", json!({"error": error}));
+                action_log::append(&self.dir, "turn", json!({"error": error}));
                 Err(format!("harness: {}", error_text(&error)))
             }
         }
@@ -303,7 +305,8 @@ impl Session {
         let Some(link) = self.current_link() else {
             return;
         };
-        self.log(
+        action_log::append(
+            &self.dir,
             "permission_answer",
             json!({"request": request, "option": option}),
         );
@@ -368,7 +371,7 @@ impl Session {
         }
         if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
             if tried.elapsed() < self.auth_retry {
-                return Err(format!("harness not authenticated: run `{command}`"));
+                return Err(not_authenticated(command));
             }
         }
         let id = self.open_session(&link, &mut state)?;
@@ -399,7 +402,7 @@ impl Session {
             .recv_timeout(self.attach_timeout())
             .map_err(|_| {
                 link.close();
-                "harness did not answer initialize".to_string()
+                format!("`{}` did not answer initialize", self.launch.line())
             })?
             .map_err(|error| {
                 link.close();
@@ -427,6 +430,10 @@ impl Session {
             inspect.mcp_http = mcp_http;
             inspect.alive = true;
         });
+        // A fresh process is a fresh chance to sign in: the gate belonged to
+        // the one that died.
+        state.login = None;
+        state.auth_tried = None;
         if let Ok(mut slot) = self.link.lock() {
             *slot = Some(Arc::clone(&link));
         }
@@ -473,7 +480,7 @@ impl Session {
                         state.login = Some(command.clone());
                         state.auth_tried = Some(Instant::now());
                         self.update_inspect(|inspect| inspect.login = Some(command.clone()));
-                        return Err(format!("harness not authenticated: run `{command}`"));
+                        return Err(not_authenticated(&command));
                     }
                     Err(error) => return Err(format!("session/new: {}", error_text(&error))),
                 }
@@ -486,7 +493,8 @@ impl Session {
             inspect.session_id = Some(id.clone());
         });
         self.save_session(&id);
-        self.log(
+        action_log::append(
+            &self.dir,
             "attach",
             json!({"harness": self.launch.name, "session_id": id, "mcp": mcp_note}),
         );
@@ -513,7 +521,7 @@ impl Completer for Session {
         if crate::model::tracing() {
             eprintln!("harness: prompt to {}", self.launch.name);
         }
-        let reply = Session::complete(self, prompt);
+        let reply = self.turn(prompt);
         if crate::model::tracing() {
             match &reply {
                 Ok(text) => eprintln!("harness: reply {text}"),
@@ -532,6 +540,10 @@ fn turn_finished(result: &Value) -> Result<(), String> {
         Some(other) => Err(format!("harness stopped: {other}")),
         None => Err("harness reply named no stopReason".to_string()),
     }
+}
+
+fn not_authenticated(command: &str) -> String {
+    format!("harness not authenticated: run `{command}`")
 }
 
 fn backoff(failures: u32) -> Duration {
@@ -780,13 +792,13 @@ impl Link {
     /// Send a request; the receiver yields the reply, or disconnects when the
     /// child is gone. `Err` means the write itself failed.
     fn request(&self, method: &str, params: Value) -> Result<Receiver<Reply>, ()> {
+        if self.dead.load(Ordering::SeqCst) {
+            return Err(());
+        }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel();
         if let Ok(mut pending) = self.pending.lock() {
             pending.insert(id, tx);
-        }
-        if self.dead.load(Ordering::SeqCst) {
-            return Err(());
         }
         self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
             .then_some(rx)
@@ -1281,10 +1293,7 @@ mod tests {
     fn auth_required_names_the_login_and_the_retry_gate_holds() {
         let (fx, session) = Fixture::new("auth");
         let reply = session.complete("hi");
-        assert_eq!(
-            reply,
-            Err("harness not authenticated: run `fake --login`".to_string())
-        );
+        assert_eq!(reply, Err(not_authenticated("fake --login")));
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         // Inside the gate: fails fast, no second session/new on the wire.
         assert!(session.complete("hi").is_err());
