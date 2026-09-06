@@ -335,8 +335,9 @@ fn dark_eyes_left_of_silhouette_mid(width: usize, height: usize, rgba: &[[u8; 4]
     (sx / n, sil_mid)
 }
 
-/// #161: every grounded pose has a foot on the canvas bottom row.
-/// Only `fall` is airborne.
+/// #161: every grounded pose has a foot on the canvas bottom row. The
+/// airborne Animations are `fall` and the optional `grab` (#364), which draws
+/// the sprite hanging from the cursor.
 #[test]
 fn timber_wolf_stands_on_the_canvas_floor() {
     for (animation, frame, bytes) in frames_of("timber-wolf") {
@@ -344,10 +345,11 @@ fn timber_wolf_stands_on_the_canvas_floor() {
         let (_, bottom, bottom_pixels) = silhouette(width, height, &alpha);
         let gap = height - 1 - bottom;
 
-        if animation == "fall" {
+        if matches!(animation.as_str(), "fall" | "grab") {
             assert!(
                 (1..=20).contains(&gap),
-                "{frame} is a fall frame, so it hangs clear of the floor by 1-20px, not {gap}px"
+                "{frame} is a {animation} frame, so it hangs clear of the floor \
+                 by 1-20px, not {gap}px"
             );
             continue;
         }

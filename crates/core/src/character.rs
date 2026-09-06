@@ -489,7 +489,7 @@ impl Character {
 
 /// Optional Animations, and what draws when a package does not declare them:
 /// used when present, and absent silently, never as a missing sprite.
-const OPTIONAL_FALLBACKS: [(&str, &str); 1] = [("climb", "walk")];
+const OPTIONAL_FALLBACKS: [(&str, &str); 2] = [("climb", "walk"), ("grab", "fall")];
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
 ///
@@ -1223,6 +1223,28 @@ mod tests {
 
         // The fallback list is closed: an unknown name still draws nothing.
         assert!(character.draw("saunter", 0, 0).is_none());
+    }
+
+    /// The same contract for the other optional Animation. A package that
+    /// draws no pickup pose keeps the behavior every package had before #364:
+    /// dangling from the cursor in its `fall`.
+    #[test]
+    fn grab_is_optional_and_falls_back_to_fall() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(
+            character.draw("grab", 0, 0).expect("draws").animation,
+            "fall"
+        );
+
+        let manifest = format!(
+            "{}[animations.grab]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&manifest).expect("loads");
+        assert_eq!(
+            character.draw("grab", 0, 0).expect("draws").animation,
+            "grab"
+        );
     }
 
     #[test]

@@ -1094,8 +1094,9 @@ mod tests {
 
     /// A contact shadow drawn where there is no contact is not a contact
     /// shadow. `fall` is the one Animation the Engine plays with the sprite off
-    /// the ground — it draws a throw and a drag as well as a fall — so it is
-    /// the one Animation of Nim's with nothing under its feet.
+    /// the ground — it draws a throw as well as a fall, and a drag too in a
+    /// package like Nim's that declares no optional `grab` — so it is the one
+    /// Animation of Nim's with nothing under its feet.
     #[test]
     fn nim_casts_a_shadow_only_when_it_has_something_to_cast_it_on() {
         let nim = shipped_character("nim");

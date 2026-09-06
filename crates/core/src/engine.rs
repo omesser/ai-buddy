@@ -1546,15 +1546,20 @@ fn animation_of(primitive: Primitive) -> &'static str {
     }
 }
 
-/// Which of the Required Animation Set a State plays.
+/// Which Animation a State plays.
 ///
-/// A dragged sprite dangles from the cursor, which is what `fall` already
-/// draws; being picked up is not the same as Holding onto a moving Perch,
-/// and the required set spends its ninth Animation on the latter. #98.
+/// Being picked up is not Holding onto a moving Perch, and the required set
+/// spends its ninth Animation on the latter (#98), so a grab cannot reuse
+/// `hold`. It gets an optional Animation of its own instead: held and tumbling
+/// are different beats, and a package should not have to draw one strip that
+/// reads as both. A package that declares no `grab` goes on dangling from the
+/// cursor in its `fall`, resolved by the renderer like any other optional
+/// Animation. #364.
 fn animation_for(state: State) -> &'static str {
     match state {
         State::Grounded => "idle",
-        State::Falling | State::Dragged => "fall",
+        State::Falling => "fall",
+        State::Dragged => "grab",
         State::Perched => "sit",
         // An optional Animation: a Character without climb art draws its walk
         // instead, resolved by the renderer, never by a missing sprite here.
@@ -3073,14 +3078,48 @@ mod tests {
             "and exactly where the cursor left it"
         );
         assert_eq!(
-            proposed.animation, "fall",
-            "it dangles from the cursor rather than sitting down in mid-air"
+            proposed.animation, "grab",
+            "it hangs from the cursor rather than sitting down in mid-air"
         );
         assert_eq!(
             proposed.dialogue.as_deref(),
             Some("off we go"),
             "it may still speak, which moves nothing"
         );
+    }
+
+    /// #364: held and tumbling are different beats, so they name different
+    /// Animations. The Engine asks for `grab` whoever is being dragged; a
+    /// package that declares none draws its `fall` instead, which is the
+    /// renderer's business and is asserted on the loader in `character.rs`.
+    #[test]
+    fn a_grab_and_a_fall_ask_for_different_animations() {
+        let mut engine = a_character_at(Point { x: 500.0, y: 100.0 });
+
+        let falling = engine.tick(&snapshot(100));
+        assert_eq!(falling.state, State::Falling);
+        assert_eq!(falling.animation, "fall");
+
+        let grabbed = engine.tick(&WorldSnapshot {
+            cursor: Point { x: 300.0, y: 300.0 },
+            verbs: vec![Verb::Grab],
+            ..snapshot(100)
+        });
+        assert_eq!(grabbed.state, State::Dragged);
+        assert_eq!(
+            grabbed.animation, "grab",
+            "being picked up is neither tumbling nor `hold`, which #98 spent \
+             the ninth required slot on and ADR-0007 keeps for a Perch ride"
+        );
+
+        let thrown = engine.tick(&WorldSnapshot {
+            verbs: vec![Verb::Throw {
+                velocity: Point { x: 0.0, y: -100.0 },
+            }],
+            ..snapshot(100)
+        });
+        assert_eq!(thrown.state, State::Falling);
+        assert_eq!(thrown.animation, "fall", "let go, it is tumbling again");
     }
 
     /// #39 left this decision to #6 and asked for it to be asserted: a held
