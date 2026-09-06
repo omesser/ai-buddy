@@ -229,7 +229,7 @@ impl SettingsWindow {
 
     fn handle_button_click(&self, control_id: i32) {
         let id_str = control_id.to_string();
-        if let Some(Control::Checkbox(_)) = self.controls.borrow().get(&id_str) {
+        if let Some(Control::Checkbox(..)) = self.controls.borrow().get(&id_str) {
             self.handle_checkbox_toggle(control_id);
         } else {
             self.handle_operation(control_id);
@@ -723,7 +723,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_NOTIFY => {
             let window_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA);
-            if window_ptr != 0 && !lparam.is_null() {
+            if window_ptr != 0 && lparam != 0 {
                 let nmhdr = &*(lparam as *const NMHDR);
                 if nmhdr.code == TCN_SELCHANGE_CODE {
                     let window = &*(window_ptr as *const SettingsWindow);
