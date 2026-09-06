@@ -23,13 +23,13 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, DestroyWindow, GetClientRect, GetDlgItem, GetWindow, GetWindowLongPtrA,
-    GetWindowTextA, GetWindowTextLengthA, GW_CHILD, GW_HWNDNEXT, GWLP_USERDATA, IDYES,
-    MB_ICONQUESTION, MB_OK, MB_YESNO, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA,
-    SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX,
-    BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD, ES_READONLY,
-    ES_WANTRETURN, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT,
-    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_HSCROLL, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
+    SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
+    BS_AUTOCHECKBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE,
+    ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, IDYES,
+    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
+    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_HSCROLL,
+    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -765,7 +765,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                 for row in &section.rows {
                     match row {
-                        FormRow::Checkbox { id, label, help, .. } => {
+                        FormRow::Checkbox {
+                            id, label, help, ..
+                        } => {
                             let hwnd = CreateWindowExA(
                                 0,
                                 c"BUTTON".as_ptr() as *const u8,
@@ -917,7 +919,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             y += ROW_HEIGHT + ROW_GAP;
                             control_id += 1;
                         }
-                        FormRow::Popup { id, label, help, .. } => {
+                        FormRow::Popup {
+                            id, label, help, ..
+                        } => {
                             if let Some(label_text) = label {
                                 let label_hwnd = CreateWindowExA(
                                     0,
@@ -957,10 +961,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                            window.controls.borrow_mut().insert(
-                                id.clone(),
-                                Control::ComboBox(hwnd, tab_index, Vec::new()),
-                            );
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::ComboBox(hwnd, tab_index, Vec::new()));
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
                                 let help_hwnd = CreateWindowExA(
