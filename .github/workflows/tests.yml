@@ -7,6 +7,14 @@ on:
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
+permissions:
+  # Read is all either job spends the token on: the checkout, and the shfmt
+  # step's query for a release on mvdan/sh. changed-files diffs the checked-out
+  # `.git` rather than the pull request API, so it wants no `pull-requests`
+  # scope, and the two cache steps authenticate to the cache service with the
+  # runner's own token. Nothing here writes a comment, a commit or a deployment.
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   # Keep an in-flight run when a triage label fires `labeled`.
