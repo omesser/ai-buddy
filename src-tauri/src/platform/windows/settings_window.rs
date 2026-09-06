@@ -16,7 +16,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows_sys::Win32::UI::Controls::{
-    TCIF_TEXT, TCITEMA, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
+    TCIF_TEXT, TCITEMA, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
@@ -42,8 +42,7 @@ const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
 
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
-const TCN_FIRST: u32 = 0xFFFFFDDA_u32;
-const TCN_SELCHANGE_CODE: u32 = TCN_FIRST.wrapping_sub(1);
+const TCN_SELCHANGE_CODE: u32 = 0xFFFFFDDA_u32.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
 const SS_LEFT: u32 = 0x0;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
@@ -157,7 +156,12 @@ impl SettingsWindow {
                                 .last_payload
                                 .clone()
                                 .unwrap_or_else(|| "Nothing sent yet.".to_string()),
-                            _ => String::new(),
+                            _ => {
+                                if id.ends_with("_label") || id.ends_with("_placeholder") {
+                                    continue;
+                                }
+                                String::new()
+                            }
                         };
                         set_window_text(*hwnd, &text);
                     }
@@ -565,10 +569,21 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
             );
         }
 
+        let mut display_rect = RECT {
+            left: MARGIN,
+            top: MARGIN,
+            right: client_rect.right - MARGIN,
+            bottom: client_rect.bottom - MARGIN,
+        };
+        SendMessageA(tab, TCM_ADJUSTRECT, 0, &mut display_rect as *mut _ as LPARAM);
+
+        let display_left = display_rect.left + MARGIN;
+        let display_top = display_rect.top;
+
         let mut control_id = ID_BASE;
 
         for (tab_index, tab_def) in description.tabs.iter().enumerate() {
-            let mut y = MARGIN + 30;
+            let mut y = display_top + MARGIN;
 
             for section in tab_def.sections.iter() {
                 y += SECTION_GAP;
@@ -581,7 +596,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 c"BUTTON".as_ptr() as *const u8,
                                 CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
-                                MARGIN * 2,
+                                display_left,
                                 y,
                                 FIELD_WIDTH,
                                 ROW_HEIGHT,
@@ -610,7 +625,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     c"STATIC".as_ptr() as *const u8,
                                     ptr::null(),
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    MARGIN * 2,
+                                    display_left,
                                     y,
                                     FIELD_WIDTH,
                                     LABEL_HEIGHT,
@@ -633,7 +648,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
-                                MARGIN * 2,
+                                display_left,
                                 y,
                                 FIELD_WIDTH,
                                 ROW_HEIGHT,
@@ -662,7 +677,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     c"STATIC".as_ptr() as *const u8,
                                     ptr::null(),
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    MARGIN * 2,
+                                    display_left,
                                     y,
                                     FIELD_WIDTH,
                                     LABEL_HEIGHT,
@@ -685,7 +700,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_PASSWORD as u32,
-                                MARGIN * 2,
+                                display_left,
                                 y,
                                 FIELD_WIDTH,
                                 ROW_HEIGHT,
@@ -712,7 +727,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     c"STATIC".as_ptr() as *const u8,
                                     ptr::null(),
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    MARGIN * 2,
+                                    display_left,
                                     y,
                                     FIELD_WIDTH,
                                     LABEL_HEIGHT,
@@ -735,7 +750,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 c"COMBOBOX".as_ptr() as *const u8,
                                 ptr::null(),
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-                                MARGIN * 2,
+                                display_left,
                                 y,
                                 FIELD_WIDTH,
                                 200,
@@ -758,7 +773,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 c"STATIC".as_ptr() as *const u8,
                                 ptr::null(),
                                 WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                MARGIN * 2,
+                                display_left,
                                 y,
                                 FIELD_WIDTH,
                                 LABEL_HEIGHT,
@@ -778,7 +793,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             y += LABEL_HEIGHT + ROW_GAP;
                         }
                         FormRow::Composite { controls, .. } => {
-                            let mut x = MARGIN * 2;
+                            let mut x = display_left;
                             for control in controls {
                                 match control {
                                     form::CompositeControl::TextField { id, placeholder } => {
@@ -924,7 +939,7 @@ unsafe extern "system" fn window_proc(
                 GetClientRect(hwnd, &mut rect);
                 SetWindowPos(
                     tab,
-                    HWND_TOP,
+                    ptr::null_mut(),
                     MARGIN,
                     MARGIN,
                     rect.right - MARGIN * 2,
