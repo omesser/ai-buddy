@@ -45,6 +45,7 @@ public class SettingsVerify {
   public const uint MONITORINFOF_PRIMARY = 1;
   public const int TCM_GETCURSEL = 0x130b;
   public const int TCM_SETCURSEL = 0x130c;
+  public const int TCM_GETITEMRECT = 0x130a;
   public const uint WM_NOTIFY = 0x004E;
   [DllImport("user32.dll")] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
   [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
@@ -57,6 +58,8 @@ public class SettingsVerify {
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -66,6 +69,7 @@ public class SettingsVerify {
   public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO {
     public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags;
   }
@@ -280,17 +284,33 @@ foreach ($lbl in $script:DirectorLabels) {
   Info "  Label: '$($lbl.Text)' (len=$($lbl.Length))"
 }
 
-# Switch to Development tab (index 4) by clicking
-$devTabX = $tabRect.Left + 4 + (80 * 4) + 40  # Fifth tab
-$devTabY = $tabRect.Top + ($tabHeaderHeight / 2)
-Info "Clicking Development tab at $devTabX,$devTabY"
-[SettingsVerify]::SetCursorPos($devTabX, $devTabY) | Out-Null
+# Click Development tab (index 4) using TCM_GETITEMRECT
+$devTabIdx = 4
+$tabItemRect = New-Object SettingsVerify+RECT
+$result = [SettingsVerify]::SendMessage($script:TabHwnd, [SettingsVerify]::TCM_GETITEMRECT, [IntPtr]$devTabIdx, [ref]$tabItemRect)
+if ($result -eq [IntPtr]::Zero) {
+  Fail "TCM_GETITEMRECT failed for Development tab (index $devTabIdx)"
+}
+
+# Convert center of tab item rect from client to screen coordinates
+$centerPt = New-Object SettingsVerify+POINT
+$centerPt.X = ($tabItemRect.Left + $tabItemRect.Right) / 2
+$centerPt.Y = ($tabItemRect.Top + $tabItemRect.Bottom) / 2
+[SettingsVerify]::ClientToScreen($script:TabHwnd, [ref]$centerPt) | Out-Null
+
+Info "Clicking Development tab at $($centerPt.X),$($centerPt.Y) (from TCM_GETITEMRECT)"
+[SettingsVerify]::SetCursorPos($centerPt.X, $centerPt.Y) | Out-Null
 Start-Sleep -Milliseconds 50
 [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
 Start-Sleep -Milliseconds 30
 [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
 Start-Sleep -Milliseconds 300
-Info "Clicked Development tab"
+
+# Assert we're on Development tab
+$curTab = [SettingsVerify]::SendMessage($script:TabHwnd, [SettingsVerify]::TCM_GETCURSEL, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
+if ($curTab -ne $devTabIdx) {
+  Fail "Development tab click failed: expected tab $devTabIdx, got $curTab"
+}
 
 # Find Trace* checkboxes
 $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObject]
