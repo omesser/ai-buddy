@@ -1,8 +1,10 @@
 <!doctype html>
 <!--
-  The Character gallery for omesser.github.io/ai-buddy: every installed
-  Character, every Animation in its Required Animation Set, playing at the fps
-  its own manifest declares.
+  The Character gallery for omesser.github.io/ai-buddy: every Character this
+  project can publish, every Animation in its Required Animation Set, playing
+  at the fps its own manifest declares. A package whose art carries terms that
+  do not cover publishing it is named but not shown — see WITHHELD in
+  scripts/make-character-gallery.py.
 
   A Generated page under ADR-0011. This file is the chrome; everything it says
   about a Character — which Animations exist, their frame counts, fps, loop,
@@ -106,6 +108,12 @@
   .source a { color: var(--accent); }
   /* The license line is the one a reader must not skim past. */
   .source .license { color: var(--ink); }
+  .withheld { margin: 2rem 0 0; padding: .7rem .85rem; max-width: 44rem;
+              border: 1px dashed var(--line); border-radius: 7px;
+              font-size: .82rem; line-height: 1.55; color: var(--ink-2); }
+  .withheld b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: .95em; color: var(--ink-3); font-weight: 500; }
+
   /* An undeclared source is a gap in the package, so it reads as one. */
   .source.undeclared { border-left-color: var(--warn); }
   .source.undeclared p { color: var(--warn); }
@@ -164,7 +172,7 @@
   </footer>
 </main>
 
-<script id="gallery" type="application/json">{"characters": [], "required": [], "defaults": {}}</script>
+<script id="gallery" type="application/json">{"characters": [], "required": [], "defaults": {}, "withheld": []}</script>
 <script>
   const data = JSON.parse(document.getElementById("gallery").textContent);
   const root = document.getElementById("gallery-root");
@@ -238,6 +246,15 @@
       }
       section.append(strip);
       root.append(section);
+    }
+
+    // A Character kept off the page is still a fact about the roster, so the
+    // page says which and why rather than reading as the whole set.
+    for (const held of data.withheld || []) {
+      const note = el("p", "withheld");
+      note.append(el("b", null, "characters/" + held.dir + "/"));
+      note.append(document.createTextNode(" ships with ai-buddy but is not shown here: " + held.why + "."));
+      root.append(note);
     }
   }
 
