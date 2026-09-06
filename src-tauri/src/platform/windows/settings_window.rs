@@ -14,14 +14,17 @@ use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, W
 use windows_sys::Win32::Graphics::Gdi::{GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::{
-    TCM_INSERTITEMA, TCIF_TEXT, TCN_SELCHANGE, TCIA, WC_TABCONTROLA,
+    TCIF_TEXT, TCITEMA, TCM_INSERTITEMA, TCN_SELCHANGE, WC_TABCONTROLA,
+};
+use windows_sys::Win32::UI::Controls::{
+    BST_CHECKED, BST_UNCHECKED,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
+    CreateWindowExA, EnableWindow, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
-    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BST_CHECKED, BST_UNCHECKED,
+    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
     BS_AUTOCHECKBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, GWLP_USERDATA, HWND_TOP, IDYES,
-    MB_ICONQUESTION, MB_OK, MB_YESNO, SW_HIDE, SW_SHOW, SWP_NOZORDER, WM_CLOSE, WM_COMMAND,
+    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
     WM_CREATE, WM_DESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD,
     WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
@@ -174,10 +177,7 @@ impl SettingsWindow {
         self.director_draft(&description).staged(view)
     }
 
-    fn director_draft<'a>(
-        &self,
-        description: &'a form::FormDescription,
-    ) -> DirectorDraft<'a> {
+    fn director_draft<'a>(&self, description: &'a form::FormDescription) -> DirectorDraft<'a> {
         let controls = self.controls.borrow();
         DirectorDraft {
             base_url: get_control_text(&controls, form::DIRECTOR_BASE_URL_ID),
@@ -280,10 +280,7 @@ impl SettingsWindow {
                         let description = form::describe();
                         let dirty = self.director_draft(&description).patch(&view).is_some();
                         unsafe {
-                            windows_sys::Win32::UI::WindowsAndMessaging::EnableWindow(
-                                *hwnd,
-                                dirty as BOOL,
-                            );
+                            EnableWindow(*hwnd, dirty as BOOL);
                         }
                     }
                 }
@@ -293,7 +290,9 @@ impl SettingsWindow {
 
     fn do_spawn(&self) {
         let controls = self.controls.borrow();
-        let name = get_control_text(&controls, form::NEW_NAME_ID).trim().to_string();
+        let name = get_control_text(&controls, form::NEW_NAME_ID)
+            .trim()
+            .to_string();
         let character = get_control_text(&controls, form::NEW_CHARACTER_ID);
 
         if !name.is_empty() && !character.is_empty() {
@@ -521,7 +520,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
         for (tab_index, tab_def) in description.tabs.iter().enumerate() {
             let tab_name = CString::new(tab_def.title.as_str()).unwrap();
-            let mut tie = TCIA {
+            let mut tie = TCITEMA {
                 mask: TCIF_TEXT,
                 dwState: 0,
                 dwStateMask: 0,
@@ -530,7 +529,12 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                 iImage: 0,
                 lParam: 0,
             };
-            SendMessageA(tab, TCM_INSERTITEMA, tab_index, &mut tie as *mut _ as LPARAM);
+            SendMessageA(
+                tab,
+                TCM_INSERTITEMA,
+                tab_index,
+                &mut tie as *mut _ as LPARAM,
+            );
         }
 
         let mut control_id = ID_BASE;
@@ -605,9 +609,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     let hwnd = CreateWindowExA(
                                         WS_EX_CLIENTEDGE,
                                         b"EDIT\0".as_ptr(),
-                                        CString::new(placeholder.as_str())
-                                            .unwrap()
-                                            .as_ptr()
+                                        CString::new(placeholder.as_str()).unwrap().as_ptr()
                                             as *const u8,
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
                                         x,
