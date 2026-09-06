@@ -24,9 +24,11 @@
 // The ceiling is that dead code added inside them goes unwarned there; narrow
 // it to `mod form` and the view types when a Windows-only item first lands.
 #[cfg_attr(not(unix), allow(dead_code))]
+mod action_log;
 mod consent;
 mod dev_flags;
 mod frame_loop;
+mod harness;
 mod menu;
 mod model;
 mod package;
@@ -121,6 +123,12 @@ const CHAT_STATUS_EVENT: &str = "chat-status";
 /// command, because the window is already listening. #375.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
 
+/// The event carrying a forwarded `session/request_permission` to every open
+/// Chat surface. Every one, because the session is shared and the Shell does
+/// not know which window the user is looking at; the first answer wins and
+/// the rest are dropped by `Link::answer_ask`. Never answered here (ADR-0010).
+const CHAT_PERMISSION_EVENT: &str = "chat-permission";
+
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
     config: model::DirectorConfig,
@@ -178,7 +186,7 @@ struct InstanceState {
     /// running the same one.
     character: Arc<Character>,
     director: StaticDirector,
-    model: Option<Arc<ModelDirector<model::Endpoint>>>,
+    model: Option<Arc<ModelDirector<model::AnyCompleter>>>,
     recent: Vec<String>,
     pace: Pace,
     since_wake: Duration,
@@ -749,6 +757,9 @@ struct ChatOpening {
     /// Whether the switch is on as well. Configured and switched off is a
     /// different sentence from never configured, and the surface says which.
     enabled: bool,
+    /// A Harness is attached but not signed in: the command that fixes it,
+    /// for the user's own terminal. The third state ADR-0010 names.
+    login: Option<String>,
 }
 
 /// Name and Character an already-open Chat surface should paint. Read off the
@@ -784,12 +795,30 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
                 .map(|row| (row.name.clone(), row.character.clone()))
         })
         .unwrap_or_default();
+    // Re-read on every opening: a login the user ran mid-session moves the
+    // Harness out of the not-authenticated state, and nothing else pushes it.
+    if let Ok(mut inspect) = state.inspect.lock() {
+        inspect.harness = harness::attached().map(|session| session.inspect());
+    }
     let inspect = state.inspect.lock().ok();
     ChatOpening {
         name,
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
         enabled: inspect.as_ref().is_some_and(|read| read.enabled),
+        login: inspect
+            .as_ref()
+            .and_then(|read| read.harness.as_ref())
+            .and_then(|attached| attached.login.clone()),
+    }
+}
+
+/// The user's pick on a forwarded permission request. The only path by which
+/// a `session/request_permission` is ever answered.
+#[tauri::command]
+fn permission_answer(request: serde_json::Value, option: String) {
+    if let Some(session) = harness::attached() {
+        session.answer_permission(&request, &option);
     }
 }
 
@@ -1194,6 +1223,7 @@ fn apply_menu_action(
 /// the window server drops the overlays with the process.
 fn quit_now() -> ! {
     eprintln!("quit");
+    harness::shutdown();
     std::process::exit(0);
 }
 
@@ -1276,7 +1306,7 @@ fn spawn_live(
         director: StaticDirector::new(character.behaviors.clone(), seed),
         model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
-                model::endpoint_from(settings).expect("configured means a Completer exists"),
+                model::completer_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
             ))
         }),
@@ -1533,7 +1563,7 @@ fn spawn_instances(
             // show the spend, which is #18's panel.
             model: config.configured.then(|| {
                 Arc::new(ModelDirector::new(
-                    model::endpoint_from(settings).expect("configured means a Completer exists"),
+                    model::completer_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                 ))
             }),
@@ -1765,7 +1795,8 @@ fn main() {
             overlay_secondary,
             chat_opening,
             chat_send,
-            chat_ready
+            chat_ready,
+            permission_answer
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
@@ -1912,6 +1943,19 @@ fn main() {
                     model::resolve(&settings.director_base_url, &settings.director_model, None)
                 }
             };
+            // Before `config_from`, which asks whether a Harness is attached.
+            let forward_to = app.handle().clone();
+            harness::attach(Box::new(move |ask| {
+                eprintln!(
+                    "harness: permission asked for `{}`; answer it in the Chat window",
+                    ask.title
+                );
+                for label in forward_to.webview_windows().into_keys() {
+                    if label.starts_with("chat-") {
+                        let _ = forward_to.emit_to(label, CHAT_PERMISSION_EVENT, ask.clone());
+                    }
+                }
+            }));
             let mut config = model::config_from(&director);
             config.apply_switch(settings.director_enabled);
             config.ambient_allowed = settings.ambient_wakes;
