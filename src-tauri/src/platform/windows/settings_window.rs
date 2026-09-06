@@ -13,15 +13,18 @@ use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
-use windows_sys::Win32::UI::Controls::{TCIF_TEXT, TCITEMA, TCM_INSERTITEMA, WC_TABCONTROLA};
+use windows_sys::Win32::UI::Controls::{
+    TCIF_TEXT, TCITEMA, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
-    EN_CHANGE, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
-    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD,
-    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
+    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
+    WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -39,6 +42,8 @@ const FIELD_WIDTH: i32 = WINDOW_WIDTH - MARGIN * 4 - 60;
 
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
+const TCN_FIRST: u32 = 0xFFFFFDDA_u32;
+const TCN_SELCHANGE_CODE: u32 = TCN_FIRST.wrapping_sub(1);
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -50,16 +55,16 @@ struct SettingsWindow {
     controls: RefCell<HashMap<String, Control>>,
     clear_pending: RefCell<bool>,
     refreshing: RefCell<bool>,
+    current_tab: RefCell<usize>,
 }
 
 #[derive(Clone)]
 enum Control {
-    Checkbox(HWND),
-    Edit(HWND),
+    Checkbox(HWND, usize),
+    Edit(HWND, usize),
     #[allow(dead_code)]
-    Label(HWND),
-    #[allow(dead_code)]
-    Button(HWND),
+    Label(HWND, usize),
+    Button(HWND, usize),
 }
 
 impl SettingsWindow {
@@ -71,6 +76,7 @@ impl SettingsWindow {
             controls: RefCell::new(HashMap::new()),
             clear_pending: RefCell::new(false),
             refreshing: RefCell::new(false),
+            current_tab: RefCell::new(0),
         })
     }
 
@@ -106,7 +112,7 @@ impl SettingsWindow {
         unsafe {
             for (id, control) in controls.iter() {
                 match control {
-                    Control::Checkbox(hwnd) => {
+                    Control::Checkbox(hwnd, _) => {
                         let checked = match id.as_str() {
                             form::DIRECTOR_ID => view.director_enabled,
                             form::AMBIENT_ID => view.ambient_wakes,
@@ -123,7 +129,7 @@ impl SettingsWindow {
                             0,
                         );
                     }
-                    Control::Edit(hwnd) => {
+                    Control::Edit(hwnd, _) => {
                         let text = match id.as_str() {
                             form::DIRECTOR_BASE_URL_ID if !staged.base_url => {
                                 view.director_base_url.clone()
@@ -141,7 +147,7 @@ impl SettingsWindow {
                         };
                         set_window_text(*hwnd, &text);
                     }
-                    Control::Label(hwnd) => {
+                    Control::Label(hwnd, _) => {
                         let text = match id.as_str() {
                             form::MEMORY_PATH_ID => view.memory_path.clone(),
                             form::HOTKEY_ID => view.hide_hotkey.clone(),
@@ -153,7 +159,7 @@ impl SettingsWindow {
                         };
                         set_window_text(*hwnd, &text);
                     }
-                    Control::Button(_) => {
+                    Control::Button(_, _) => {
                         if id == form::APPLY_ID || id == form::CANCEL_ID {
                             let description = form::describe();
                             let _dirty = self.director_draft(&description).patch(&view).is_some();
@@ -233,7 +239,7 @@ impl SettingsWindow {
     fn handle_checkbox_toggle(&self, control_id: i32) {
         let id_str = control_id.to_string();
         let controls = self.controls.borrow();
-        if let Some(Control::Checkbox(hwnd)) = controls.get(&id_str) {
+        if let Some(Control::Checkbox(hwnd, _)) = controls.get(&id_str) {
             let checked = unsafe { SendMessageA(*hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED as isize };
 
             if let Some(field) = form::describe().bool_write(&id_str) {
@@ -275,7 +281,7 @@ impl SettingsWindow {
             if let Some(_view) = view {
                 let controls = self.controls.borrow();
                 for id in [form::APPLY_ID, form::CANCEL_ID] {
-                    if let Some(Control::Button(_)) = controls.get(id) {
+                    if let Some(Control::Button(_, _)) = controls.get(id) {
                         let description = form::describe();
                         let _dirty = self.director_draft(&description).patch(&_view).is_some();
                     }
@@ -294,7 +300,7 @@ impl SettingsWindow {
         if !name.is_empty() && !character.is_empty() {
             if let Some(session) = self.session.lock().unwrap().as_ref() {
                 session.spawn(character, name);
-                if let Some(Control::Edit(hwnd)) = controls.get(form::NEW_NAME_ID) {
+                if let Some(Control::Edit(hwnd, _)) = controls.get(form::NEW_NAME_ID) {
                     unsafe {
                         SetWindowTextA(*hwnd, c"".as_ptr() as *const u8);
                     }
@@ -333,7 +339,8 @@ impl SettingsWindow {
 
     fn do_clear_key(&self) {
         *self.clear_pending.borrow_mut() = true;
-        if let Some(Control::Edit(hwnd)) = self.controls.borrow().get(form::DIRECTOR_API_KEY_ID) {
+        if let Some(Control::Edit(hwnd, _)) = self.controls.borrow().get(form::DIRECTOR_API_KEY_ID)
+        {
             unsafe {
                 SetWindowTextA(*hwnd, c"".as_ptr() as *const u8);
             }
@@ -365,11 +372,34 @@ impl SettingsWindow {
     fn do_cancel(&self) {
         self.draw(true);
     }
+
+    fn update_tab_visibility(&self) {
+        let current_tab = *self.current_tab.borrow();
+        let controls = self.controls.borrow();
+        unsafe {
+            for control in controls.values() {
+                let (hwnd, tab_index) = match control {
+                    Control::Checkbox(hwnd, tab_index) => (hwnd, tab_index),
+                    Control::Edit(hwnd, tab_index) => (hwnd, tab_index),
+                    Control::Label(hwnd, tab_index) => (hwnd, tab_index),
+                    Control::Button(hwnd, tab_index) => (hwnd, tab_index),
+                };
+                ShowWindow(
+                    *hwnd,
+                    if *tab_index == current_tab {
+                        SW_SHOW
+                    } else {
+                        SW_HIDE
+                    },
+                );
+            }
+        }
+    }
 }
 
 fn get_control_text(controls: &HashMap<String, Control>, id: &str) -> String {
     unsafe {
-        if let Some(Control::Edit(hwnd)) = controls.get(id) {
+        if let Some(Control::Edit(hwnd, _)) = controls.get(id) {
             let len = GetWindowTextLengthA(*hwnd);
             if len == 0 {
                 return String::new();
@@ -534,73 +564,139 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
         }
 
         let mut control_id = ID_BASE;
-        let mut y = MARGIN + 30;
 
-        for section in description.tabs[0].sections.iter() {
-            y += SECTION_GAP;
+        for (tab_index, tab_def) in description.tabs.iter().enumerate() {
+            let mut y = MARGIN + 30;
 
-            for row in &section.rows {
-                match row {
-                    FormRow::Checkbox { id, label, .. } => {
-                        let hwnd = CreateWindowExA(
-                            0,
-                            c"BUTTON".as_ptr() as *const u8,
-                            CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
-                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
-                            MARGIN * 2,
-                            y,
-                            FIELD_WIDTH,
-                            ROW_HEIGHT,
-                            parent,
-                            control_id as _,
-                            GetModuleHandleA(ptr::null()),
-                            ptr::null_mut(),
-                        );
-                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                        window
-                            .controls
-                            .borrow_mut()
-                            .insert(id.clone(), Control::Checkbox(hwnd));
-                        y += ROW_HEIGHT + ROW_GAP;
-                        control_id += 1;
-                    }
-                    FormRow::TextField {
-                        id,
-                        label,
-                        placeholder,
-                        ..
-                    } => {
-                        if label.is_some() {
-                            y += LABEL_HEIGHT + HINT_GAP;
+            for section in tab_def.sections.iter() {
+                y += SECTION_GAP;
+
+                for row in &section.rows {
+                    match row {
+                        FormRow::Checkbox { id, label, .. } => {
+                            let hwnd = CreateWindowExA(
+                                0,
+                                c"BUTTON".as_ptr() as *const u8,
+                                CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
+                                WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+                                MARGIN * 2,
+                                y,
+                                FIELD_WIDTH,
+                                ROW_HEIGHT,
+                                parent,
+                                control_id as _,
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Checkbox(hwnd, tab_index));
+                            y += ROW_HEIGHT + ROW_GAP;
+                            control_id += 1;
                         }
-                        let hwnd = CreateWindowExA(
-                            WS_EX_CLIENTEDGE,
-                            c"EDIT".as_ptr() as *const u8,
-                            CString::new(placeholder.as_str()).unwrap().as_ptr() as *const u8,
-                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
-                            MARGIN * 2,
-                            y,
-                            FIELD_WIDTH,
-                            ROW_HEIGHT,
-                            parent,
-                            control_id as _,
-                            GetModuleHandleA(ptr::null()),
-                            ptr::null_mut(),
-                        );
-                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                        window
-                            .controls
-                            .borrow_mut()
-                            .insert(id.clone(), Control::Edit(hwnd));
-                        y += ROW_HEIGHT + ROW_GAP;
-                        control_id += 1;
-                    }
-                    _ => {
-                        y += ROW_HEIGHT + ROW_GAP;
+                        FormRow::TextField {
+                            id,
+                            label,
+                            placeholder,
+                            ..
+                        } => {
+                            if label.is_some() {
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                            let hwnd = CreateWindowExA(
+                                WS_EX_CLIENTEDGE,
+                                c"EDIT".as_ptr() as *const u8,
+                                CString::new(placeholder.as_str()).unwrap().as_ptr() as *const u8,
+                                WS_CHILD | WS_TABSTOP | WS_BORDER,
+                                MARGIN * 2,
+                                y,
+                                FIELD_WIDTH,
+                                ROW_HEIGHT,
+                                parent,
+                                control_id as _,
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                            y += ROW_HEIGHT + ROW_GAP;
+                            control_id += 1;
+                        }
+                        FormRow::SecureField { id, label, .. } => {
+                            if label.is_some() {
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                            let hwnd = CreateWindowExA(
+                                WS_EX_CLIENTEDGE,
+                                c"EDIT".as_ptr() as *const u8,
+                                ptr::null(),
+                                WS_CHILD | WS_TABSTOP | WS_BORDER | ES_PASSWORD as u32,
+                                MARGIN * 2,
+                                y,
+                                FIELD_WIDTH,
+                                ROW_HEIGHT,
+                                parent,
+                                control_id as _,
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                            y += ROW_HEIGHT + ROW_GAP;
+                            control_id += 1;
+                        }
+                        FormRow::Composite { controls, .. } => {
+                            let mut x = MARGIN * 2;
+                            for control in controls {
+                                match control {
+                                    form::CompositeControl::Button { id, label, .. } => {
+                                        let button_width = 80;
+                                        let hwnd = CreateWindowExA(
+                                            0,
+                                            c"BUTTON".as_ptr() as *const u8,
+                                            CString::new(label.as_str()).unwrap().as_ptr()
+                                                as *const u8,
+                                            WS_CHILD | WS_TABSTOP,
+                                            x,
+                                            y,
+                                            button_width,
+                                            ROW_HEIGHT,
+                                            parent,
+                                            control_id as _,
+                                            GetModuleHandleA(ptr::null()),
+                                            ptr::null_mut(),
+                                        );
+                                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                        window
+                                            .controls
+                                            .borrow_mut()
+                                            .insert(id.clone(), Control::Button(hwnd, tab_index));
+                                        x += button_width + 8;
+                                        control_id += 1;
+                                    }
+                                    form::CompositeControl::TextField { .. }
+                                    | form::CompositeControl::Popup { .. } => {}
+                                }
+                            }
+                            y += ROW_HEIGHT + ROW_GAP;
+                        }
+                        _ => {
+                            y += ROW_HEIGHT + ROW_GAP;
+                        }
                     }
                 }
             }
         }
+
+        window.update_tab_visibility();
 
         Ok(())
     }
@@ -622,6 +718,22 @@ unsafe extern "system" fn window_proc(
                 let control_id = (wparam & 0xFFFF) as i32;
                 let notification = ((wparam >> 16) & 0xFFFF) as u16;
                 window.handle_command(control_id, notification);
+            }
+            0
+        }
+        WM_NOTIFY => {
+            let window_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA);
+            if window_ptr != 0 && !lparam.is_null() {
+                let nmhdr = &*(lparam as *const NMHDR);
+                if nmhdr.code == TCN_SELCHANGE_CODE {
+                    let window = &*(window_ptr as *const SettingsWindow);
+                    let tab = GetDlgItem(hwnd, ID_TAB_CONTROL);
+                    if !tab.is_null() {
+                        let new_tab = SendMessageA(tab, TCM_GETCURSEL, 0, 0) as usize;
+                        *window.current_tab.borrow_mut() = new_tab;
+                        window.update_tab_visibility();
+                    }
+                }
             }
             0
         }
