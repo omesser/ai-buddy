@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  # Keep an in-flight run when a triage label fires `labeled`.
+  # Keep an in-flight run when the `windows` label fires `labeled`.
   cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
@@ -32,6 +32,7 @@ jobs:
   # that arm had silently rotted, and nothing caught it because the shell was
   # built on one platform only. This is that gap closed.
   checks:
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     strategy:
       # One platform failing should still report the other, since the whole
       # point is telling them apart.
@@ -286,6 +287,7 @@ jobs:
   # Clippy always runs — a path gate would miss `not(unix)` arms outside the list.
   # Tests only on the path list below, the `windows` label, or non-PR events.
   windows:
+    if: github.event.action != 'labeled' || github.event.label.name == 'windows'
     runs-on: windows-latest
     timeout-minutes: 45
 
