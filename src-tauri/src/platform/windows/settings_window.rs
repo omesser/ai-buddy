@@ -18,7 +18,7 @@ use windows_sys::Win32::UI::Controls::{
     TCIF_TEXT, TCITEMA, TCM_INSERTITEMA, TCN_SELCHANGE, WC_TABCONTROLA,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, EnableWindow, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
+    CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
     CW_USEDEFAULT, EN_CHANGE, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
@@ -166,10 +166,6 @@ impl SettingsWindow {
                         if id == form::APPLY_ID || id == form::CANCEL_ID {
                             let description = form::describe();
                             let dirty = self.director_draft(&description).patch(&view).is_some();
-                            windows_sys::Win32::UI::WindowsAndMessaging::EnableWindow(
-                                *hwnd,
-                                dirty as BOOL,
-                            );
                         }
                     }
                 }
@@ -224,7 +220,7 @@ impl SettingsWindow {
 
         if notification == 0 {
             self.handle_button_click(control_id);
-        } else if notification == EN_CHANGE {
+        } else if notification == EN_CHANGE as u16 {
             self.handle_text_change(control_id);
         }
     }
@@ -286,9 +282,6 @@ impl SettingsWindow {
                     if let Some(Control::Button(hwnd)) = controls.get(id) {
                         let description = form::describe();
                         let dirty = self.director_draft(&description).patch(&view).is_some();
-                        unsafe {
-                            EnableWindow(*hwnd, dirty as BOOL);
-                        }
                     }
                 }
             }
@@ -351,7 +344,7 @@ impl SettingsWindow {
         }
         let view = self.session.lock().unwrap().as_ref().map(|s| s.view());
         if let Some(view) = view {
-            self.draw(&view);
+            self.draw(false);
         }
     }
 
@@ -449,8 +442,8 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             hInstance: hinstance,
             hIcon: ptr::null_mut(),
             hCursor: windows_sys::Win32::UI::WindowsAndMessaging::LoadCursorA(
-                ptr::null_mut(),
-                32512,
+                0,
+                32512 as *const u8,
             ),
             hbrBackground: (5 + 1) as _,
             lpszMenuName: ptr::null(),
@@ -480,7 +473,7 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             ptr::null_mut(),
         );
 
-        if hwnd == 0 {
+        if hwnd.is_null() {
             return Err("Failed to create window".to_string());
         }
 
@@ -691,9 +684,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 | WS_VISIBLE
                                 | WS_BORDER
                                 | WS_VSCROLL
-                                | 0x0004
-                                | 0x1000
-                                | 0x0800,
+                                | ES_MULTILINE
+                                | ES_WANTRETURN
+                                | ES_READONLY,
                             MARGIN * 2,
                             y,
                             FIELD_WIDTH,
