@@ -3,6 +3,31 @@ name: Release
 on:
   release:
     types: [published]
+  # Dispatching a workflow takes write access to the repository, so whoever
+  # fills these in could already push the commit they build. The inputs are
+  # still the part a reviewer may not wave through, because this is the
+  # workflow whose output people install. Traced in #384; where each lands:
+  #
+  #   version-override - the only string, and the only input that reaches a
+  #     shell. It gets there through `env:`, never spliced into a `run:`
+  #     block, and the version derived from it has to match semver before it
+  #     is written to GITHUB_OUTPUT. That pattern admits `[0-9A-Za-z.+-]` and
+  #     nothing else, which is what holds downstream, where the version is
+  #     spliced into the JSON handed to `tauri build --config` and into every
+  #     bundle filename.
+  #   linux / macos / windows - booleans, and read by nothing at all today.
+  #     The job `if:` meant to read them names the `matrix` context, which a
+  #     job-level `if:` may not, so GitHub rejects this whole file and has
+  #     since #343; #387 is the repair. Dead inputs are no trust risk, and
+  #     once they are live the expression engine is their only reader: they
+  #     pick whether a runner runs, never what it runs.
+  #
+  # None of them names a ref, an action, a secret, or an upload target: a
+  # dispatch builds the commit it was pointed at, with the same actions and
+  # the same signing a Release run gets. An input that named any of those
+  # would be a different trust boundary, not another knob.
+  #
+  # checkov:skip=CKV_GHA_7:reviewed in #384, see above
   workflow_dispatch:
     inputs:
       version-override:
@@ -100,10 +125,16 @@ jobs:
           # A typo in the input reaches the bundle filenames and the macOS
           # Info.plist, where it is nobody's idea of a version. This checks
           # semver's shape, not every rule in it.
-          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || {
+          #
+          # bash's `=~` rather than `grep`: grep matches a line, so a two-line
+          # override passed on its first line and carried the second into
+          # GITHUB_OUTPUT as a line of its own, which is how that file is told
+          # to set another output. `=~` matches the whole string. #384.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! $version =~ $semver ]]; then
             echo "::error::version '$version' is not semver: expected 1.2.3, 1.2.3-dev.gabc1234"
             exit 1
-          }
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building \`$version\`" >> "$GITHUB_STEP_SUMMARY"
 
