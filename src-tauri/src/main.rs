@@ -1197,6 +1197,20 @@ fn quit_now() -> ! {
     std::process::exit(0);
 }
 
+/// One Instance's wake clock: where the config says to start, grown at the
+/// Character's own rate.
+///
+/// The two halves come from different places every time — the interval is the
+/// user's and the growth is the Character's — so the pairing is written once
+/// rather than at each of the four sites that builds a `Pace`.
+pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pace {
+    Pace::with_growth(
+        config.ambient_first,
+        character.model_base,
+        character.model_power,
+    )
+}
+
 fn switch_instance(
     roster: &mut Roster,
     lives: &mut [InstanceState],
@@ -1210,11 +1224,7 @@ fn switch_instance(
     if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
         live.character = character;
         live.director = StaticDirector::new(live.character.behaviors.clone(), 0);
-        live.pace = Pace::with_growth(
-            config.ambient_first,
-            live.character.model_base,
-            live.character.model_power,
-        );
+        live.pace = paced(config, &live.character);
         // The old session is the previous Character's. A Wake still on the
         // wire would propose as them; drop it and ask for this opening turn.
         model::retarget_model(
@@ -1271,11 +1281,7 @@ fn spawn_live(
             ))
         }),
         recent: Vec::new(),
-        pace: Pace::with_growth(
-            config.ambient_first,
-            character.model_base,
-            character.model_power,
-        ),
+        pace: paced(config, &character),
         since_wake: Duration::ZERO,
         since_state: Duration::ZERO,
         since_ambient: Duration::ZERO,
@@ -1532,11 +1538,7 @@ fn spawn_instances(
                 ))
             }),
             recent: Vec::new(),
-            pace: Pace::with_growth(
-                config.ambient_first,
-                character.model_base,
-                character.model_power,
-            ),
+            pace: paced(config, character),
             // Started somewhere inside the interval rather than at nothing, so
             // that N buddies do not all decide on the same tick. What each
             // decides already differs — every Instance has its own seed — but

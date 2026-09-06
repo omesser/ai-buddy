@@ -102,7 +102,10 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
     ])
 }
 
-/// The Completer limits, by row id, with the same precedence.
+/// Every numeric row a variable can own, by row id, with the same precedence.
+///
+/// Both windows fill such a row from this map by id, so the tab it is drawn on
+/// does not matter: the wake interval is the Director tab's.
 fn development_texts(settings: &Settings) -> HashMap<String, String> {
     HashMap::from([
         (
@@ -112,6 +115,10 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
         (
             form::DIRECTOR_MAX_TOKENS_ID.to_string(),
             limit_in_force::<u32>(model::MAX_TOKENS, &settings.director_max_tokens),
+        ),
+        (
+            form::DIRECTOR_WAKE_SECS_ID.to_string(),
+            limit_in_force::<u64>(model::WAKE_SECS, &settings.director_wake_secs),
         ),
     ])
 }
@@ -340,6 +347,13 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
+        // The wake interval reaches a running Director the same way, for its
+        // own reason: the rebuild is where `model::config_from` reads it, and
+        // the frame loop re-paces every Instance from what it rebuilt (#262).
+        || patch
+            .director_wake_secs
+            .as_ref()
+            .is_some_and(|secs| secs != &settings.director_wake_secs)
 }
 
 /// Which of the Director tab's fields hold an edit.
@@ -644,6 +658,7 @@ pub struct SettingsPatch {
     pub director_model: Option<String>,
     pub director_timeout_secs: Option<String>,
     pub director_max_tokens: Option<String>,
+    pub director_wake_secs: Option<String>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
@@ -694,6 +709,7 @@ pub enum TextField {
     DirectorModel,
     DirectorTimeoutSecs,
     DirectorMaxTokens,
+    DirectorWakeSecs,
     DirectorApiKey,
     ExcludedApplications,
 }
@@ -737,6 +753,7 @@ impl SettingsPatch {
             TextField::DirectorModel => self.director_model = Some(value.to_string()),
             TextField::DirectorTimeoutSecs => self.director_timeout_secs = Some(value.to_string()),
             TextField::DirectorMaxTokens => self.director_max_tokens = Some(value.to_string()),
+            TextField::DirectorWakeSecs => self.director_wake_secs = Some(value.to_string()),
             TextField::DirectorApiKey if key_was_typed(value) => {
                 self.director_api_key = Some(value.to_string())
             }
@@ -768,6 +785,7 @@ impl fmt::Debug for SettingsPatch {
             .field("director_model", &self.director_model)
             .field("director_timeout_secs", &self.director_timeout_secs)
             .field("director_max_tokens", &self.director_max_tokens)
+            .field("director_wake_secs", &self.director_wake_secs)
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
@@ -833,6 +851,9 @@ impl Settings {
         }
         if let Some(value) = patch.director_max_tokens {
             self.director_max_tokens = value;
+        }
+        if let Some(value) = patch.director_wake_secs {
+            self.director_wake_secs = value;
         }
         if let Some(value) = patch.trace_frames {
             self.trace_frames = value;
@@ -914,6 +935,10 @@ pub struct Settings {
     pub director_timeout_secs: String,
     /// Reply cap, in tokens. Empty means unset, as on the two above.
     pub director_max_tokens: String,
+    /// First ambient wait, in seconds. Empty means unset, and leaves
+    /// `Pace::FIRST`. The Character's `model_base` and `model_power` grow the
+    /// wait from here; this is only where it starts (#262).
+    pub director_wake_secs: String,
     /// Development switches. Off is the shipped answer for all of them; see
     /// `dev_flags`, which holds the live value each read site loads.
     pub trace_frames: bool,
@@ -947,6 +972,7 @@ impl Default for Settings {
             director_model: String::new(),
             director_timeout_secs: String::new(),
             director_max_tokens: String::new(),
+            director_wake_secs: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -1193,6 +1219,7 @@ mod tests {
             director_model: "grok-4.6".into(),
             director_timeout_secs: "45".into(),
             director_max_tokens: "300".into(),
+            director_wake_secs: "300".into(),
             trace_frames: true,
             trace_hittest: true,
             trace_director: true,
@@ -1484,6 +1511,7 @@ mod tests {
             director_model: String::new(),
             director_timeout_secs: String::new(),
             director_max_tokens: String::new(),
+            director_wake_secs: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -2361,6 +2389,52 @@ mod tests {
                 ..SettingsPatch::default()
             }
         ));
+    }
+
+    /// The wake interval rides the rebuild for a reason of its own: it is
+    /// `model::config_from` that reads it, and the frame loop re-paces every
+    /// Instance from the config it rebuilds there (#262).
+    #[test]
+    fn an_edited_wake_interval_reaches_the_running_director() {
+        let settings = Settings {
+            director_wake_secs: "120".into(),
+            ..endpoint_settings()
+        };
+
+        assert!(completer_retargets(
+            &settings,
+            &SettingsPatch {
+                director_wake_secs: Some("300".into()),
+                ..SettingsPatch::default()
+            }
+        ));
+        assert!(!completer_retargets(
+            &settings,
+            &SettingsPatch {
+                director_wake_secs: Some("120".into()),
+                ..SettingsPatch::default()
+            }
+        ));
+    }
+
+    /// The row is the Director tab's, and the window fills it from the same
+    /// keyed map the Development rows use, so a missing key draws blank over
+    /// a value that is in force.
+    #[test]
+    fn the_view_shows_the_wake_interval_the_env_imposes() {
+        model::tests::with_env(None, None, None, || {
+            let file = Settings {
+                director_wake_secs: "300".into(),
+                ..Settings::default()
+            };
+            let view = endpoint_view(&file);
+            assert_eq!(view.development_texts[form::DIRECTOR_WAKE_SECS_ID], "300");
+
+            std::env::set_var(model::WAKE_SECS, "30");
+            let view = endpoint_view(&file);
+            assert_eq!(view.development_texts[form::DIRECTOR_WAKE_SECS_ID], "30");
+            std::env::remove_var(model::WAKE_SECS);
+        });
     }
 
     /// The switch is only worth a checkbox if the read sites see it move
