@@ -23,7 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
     EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
-    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
+    SS_LEFT, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
     WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
@@ -44,6 +44,7 @@ const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
 const TCN_FIRST: u32 = 0xFFFFFDDA_u32;
 const TCN_SELCHANGE_CODE: u32 = TCN_FIRST.wrapping_sub(1);
+const EM_SETCUEBANNER: u32 = 0x1501;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -62,7 +63,6 @@ struct SettingsWindow {
 enum Control {
     Checkbox(HWND, usize),
     Edit(HWND, usize),
-    #[allow(dead_code)]
     Label(HWND, usize),
     Button(HWND, usize),
 }
@@ -602,13 +602,33 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             placeholder,
                             ..
                         } => {
-                            if label.is_some() {
+                            if let Some(label_text) = label {
+                                let label_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(label_text.as_str()).unwrap().as_ptr()
+                                        as *const u8,
+                                    WS_CHILD | SS_LEFT as u32,
+                                    MARGIN * 2,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    0,
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_label", id),
+                                    Control::Label(label_hwnd, tab_index),
+                                );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             let hwnd = CreateWindowExA(
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
-                                CString::new(placeholder.as_str()).unwrap().as_ptr() as *const u8,
+                                ptr::null(),
                                 WS_CHILD | WS_TABSTOP | WS_BORDER,
                                 MARGIN * 2,
                                 y,
@@ -620,6 +640,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            let cue_text: Vec<u16> = placeholder
+                                .encode_utf16()
+                                .chain(std::iter::once(0))
+                                .collect();
+                            SendMessageA(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
                             window
                                 .controls
                                 .borrow_mut()
@@ -628,7 +653,27 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             control_id += 1;
                         }
                         FormRow::SecureField { id, label, .. } => {
-                            if label.is_some() {
+                            if let Some(label_text) = label {
+                                let label_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    CString::new(label_text.as_str()).unwrap().as_ptr()
+                                        as *const u8,
+                                    WS_CHILD | SS_LEFT as u32,
+                                    MARGIN * 2,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    0,
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_label", id),
+                                    Control::Label(label_hwnd, tab_index),
+                                );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             let hwnd = CreateWindowExA(
@@ -646,6 +691,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            let cue_text: Vec<u16> =
+                                "••••".encode_utf16().chain(std::iter::once(0)).collect();
+                            SendMessageA(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
                             window
                                 .controls
                                 .borrow_mut()
