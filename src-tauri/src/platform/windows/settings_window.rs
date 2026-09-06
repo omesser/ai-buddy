@@ -18,11 +18,10 @@ use windows_sys::Win32::UI::Controls::{TCIF_TEXT, TCITEMA, TCM_INSERTITEMA, WC_T
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
-    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
-    CW_USEDEFAULT, EN_CHANGE, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
-    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT,
-    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
-    WS_VISIBLE, WS_VSCROLL,
+    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
+    EN_CHANGE, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
+    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -57,6 +56,7 @@ struct SettingsWindow {
 enum Control {
     Checkbox(HWND),
     Edit(HWND),
+    #[allow(dead_code)]
     Label(HWND),
     Button(HWND),
 }
@@ -194,7 +194,7 @@ impl SettingsWindow {
             Err(why) => {
                 eprintln!("settings: {why}");
                 unsafe {
-                    let msg = format!("Could not save settings: {}\0", why);
+                    let msg = CString::new(format!("Could not save settings: {}", why)).unwrap();
                     MessageBoxA(
                         self.hwnd,
                         msg.as_ptr() as *const u8,
@@ -337,7 +337,7 @@ impl SettingsWindow {
             }
         }
         let view = self.session.lock().unwrap().as_ref().map(|s| s.view());
-        if let Some(view) = view {
+        if view.is_some() {
             self.draw(false);
         }
     }
