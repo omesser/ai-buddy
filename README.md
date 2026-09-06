@@ -108,8 +108,6 @@ The Release ships an NSIS installer (x86_64). Run it and follow the prompts.
 
 SmartScreen may warn on the first open because the build is not Authenticode signed. Choose More info → Run anyway. Code signing is a follow-up.
 
-The installer is real; some overlay features on Windows are still degraded or stubbed — see [Platform Support](#platform-support).
-
 ## Running it
 
 **Works offline.** With no API key, Static weights pick idle Behaviors from the Character. No model, no account required.
@@ -144,17 +142,16 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 | Capability | macOS | Linux | Windows |
 |---|---|---|---|
-| Overlay that never takes focus | yes | yes † | degraded |
+| Overlay that never takes focus | yes | yes † | yes |
 | Click-through off the sprite | yes | yes † | yes |
-| Grab, Throw and Poke | yes | yes † | degraded |
-| Perch on window edges | yes | yes † | degraded |
+| Grab, Throw and Poke | yes | yes † | yes |
+| Perch on window edges | yes | yes † | yes |
 | Dock or panel as a Perch | yes | degraded | degraded |
 | Fade out for a fullscreen app | yes | yes † | degraded |
-| Never captured in a screen share | yes | degraded | stub |
+| Never captured in a screen share | yes | degraded | yes |
 
 - `yes` — implemented.
 - `degraded` — runs in reduced form. A supported mode, not an error.
-- `stub` — the arm compiles and does nothing. Windows only.
 - `†` — needs an X server (usually XWayland). See [DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Developing

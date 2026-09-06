@@ -570,7 +570,6 @@ Deferred to a later version, decided but not built:
 - Ambient Capture and On-Demand Capture, the Local Gate, on-device OCR, and Screen
   Recording consent. The sprite-as-privacy-indicator rule lands with them.
 - Window titles as Director context.
-- Windows platform parity. Releases already ship an NSIS installer; remaining stub and degraded cells are listed in the README platform table.
 - Publishing the Character Package format and authoring documentation. The format is
   first-class internally and stays undocumented until v2.
 
