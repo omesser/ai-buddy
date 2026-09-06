@@ -144,7 +144,7 @@ impl SettingsWindow {
             .filter(|row| !self.should_omit_row(row))
             .collect();
 
-        if visible_rows.is_empty() {
+        if visible_rows.is_empty() && section.comment.is_none() {
             return false;
         }
 
@@ -210,10 +210,6 @@ impl SettingsWindow {
                 help,
                 comment: _,
             } => {
-                if id == form::CONSENT_ACCESSIBILITY_ID || id == form::CONSENT_SCREEN_RECORDING_ID {
-                    return;
-                }
-
                 let check = gtk::CheckButton::with_label(label);
                 check.set_sensitive(!frozen);
 
