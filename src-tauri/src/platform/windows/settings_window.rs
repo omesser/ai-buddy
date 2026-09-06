@@ -28,7 +28,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     BS_AUTOCHECKBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE,
     ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, IDYES,
     MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
-    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_HSCROLL,
+    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE,
     WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
@@ -55,7 +55,6 @@ const SS_LEFT: u32 = 0x0;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
 const CB_ADDSTRING: u32 = 0x0143;
 const CB_SETCURSEL: u32 = 0x014E;
-const CB_GETCURSEL: u32 = 0x0147;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -183,7 +182,7 @@ impl SettingsWindow {
                             let _dirty = self.director_draft(&description).patch(&view).is_some();
                         }
                     }
-                    Control::ComboBox(hwnd, _, options) => {
+                    Control::ComboBox(hwnd, _, _options) => {
                         if id == form::CHARACTER_ID || id == form::NEW_CHARACTER_ID {
                             SendMessageA(*hwnd, 0x014B, 0, 0);
                             for (idx, character) in view.installed.iter().enumerate() {
@@ -1334,9 +1333,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Label(hwnd, tab_index));
                             y += LABEL_HEIGHT + ROW_GAP;
-                        }
-                        _ => {
-                            y += ROW_HEIGHT + ROW_GAP;
                         }
                     }
                 }
