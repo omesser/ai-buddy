@@ -47,6 +47,8 @@ public class SettingsVerify {
   public const int TCM_SETCURSEL = 0x130c;
   public const int TCM_GETITEMRECT = 0x130a;
   public const uint WM_NOTIFY = 0x004E;
+  public const uint WM_LBUTTONDOWN = 0x0201;
+  public const uint WM_LBUTTONUP = 0x0202;
   public const int GA_ROOT = 2;
   [DllImport("user32.dll")] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
   [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
@@ -60,6 +62,7 @@ public class SettingsVerify {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT pt);
   [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hWnd, int gaFlags);
@@ -73,6 +76,7 @@ public class SettingsVerify {
   [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
   public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO {
@@ -269,31 +273,71 @@ function AssertClickOverSettings {
   Info "$context - Verified click point ($screenX,$screenY) is over Settings window"
 }
 
-# Helper function to click a tab by index using TCM_GETITEMRECT
+# Helper function to click a tab by posting mouse messages directly to tab HWND
+# This avoids global SetCursorPos/mouse_event and cannot hit Chrome or other apps
 function ClickTab {
-  param([IntPtr]$settingsHwnd, [IntPtr]$tabHwnd, [int]$tabIndex, [string]$tabName)
+  param([IntPtr]$tabHwnd, [int]$tabIndex, [string]$tabName)
 
-  $tabItemRect = New-Object SettingsVerify+RECT
-  $result = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETITEMRECT, [IntPtr]$tabIndex, [ref]$tabItemRect)
-  if ($result -eq [IntPtr]::Zero) {
-    Fail "TCM_GETITEMRECT failed for $tabName tab (index $tabIndex) - cannot safely determine click coordinates"
+  # Get tab client rect to determine click area
+  $clientRect = New-Object SettingsVerify+RECT
+  if (-not [SettingsVerify]::GetClientRect($tabHwnd, [ref]$clientRect)) {
+    Fail "GetClientRect failed for tab control"
   }
 
-  # Convert center of tab item rect from client to screen coordinates
-  $centerPt = New-Object SettingsVerify+POINT
-  $centerPt.X = ($tabItemRect.Left + $tabItemRect.Right) / 2
-  $centerPt.Y = ($tabItemRect.Top + $tabItemRect.Bottom) / 2
-  [SettingsVerify]::ClientToScreen($tabHwnd, [ref]$centerPt) | Out-Null
+  $clientWidth = $clientRect.Right - $clientRect.Left
+  if ($clientWidth -le 0) {
+    Fail "Tab control has zero or negative width: $clientWidth"
+  }
 
-  # Assert click point is over Settings window before clicking
-  AssertClickOverSettings $settingsHwnd $centerPt.X $centerPt.Y "$tabName tab click"
+  # Walk across tab header at y=10, posting clicks to find which X selects target tab
+  # Record X ranges for each tab index, then click the midpoint
+  $headerY = 10
+  $tabRanges = @{}
+  $lastSeenTab = -1
 
-  Info "Clicking $tabName tab at $($centerPt.X),$($centerPt.Y) (from TCM_GETITEMRECT)"
-  [SettingsVerify]::SetCursorPos($centerPt.X, $centerPt.Y) | Out-Null
-  Start-Sleep -Milliseconds 50
-  [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+  for ($x = 5; $x -lt $clientWidth; $x += 10) {
+    # Post mouse down/up to tab HWND at client coordinates (no global cursor)
+    $lParam = [IntPtr]($x -bor ($headerY -shl 16))
+    [SettingsVerify]::PostMessage($tabHwnd, [SettingsVerify]::WM_LBUTTONDOWN, [IntPtr]0, $lParam) | Out-Null
+    Start-Sleep -Milliseconds 20
+    [SettingsVerify]::PostMessage($tabHwnd, [SettingsVerify]::WM_LBUTTONUP, [IntPtr]0, $lParam) | Out-Null
+    Start-Sleep -Milliseconds 50
+
+    $curTab = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETCURSEL, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
+
+    # Record range transitions
+    if ($curTab -ne $lastSeenTab) {
+      if ($curTab -ge 0 -and -not $tabRanges.ContainsKey($curTab)) {
+        $tabRanges[$curTab] = @{ MinX = $x; MaxX = $x }
+      }
+      $lastSeenTab = $curTab
+    }
+
+    # Expand range for current tab
+    if ($curTab -ge 0 -and $tabRanges.ContainsKey($curTab)) {
+      $tabRanges[$curTab].MaxX = $x
+    }
+
+    # If we've found the target tab range, we can stop early
+    if ($tabRanges.ContainsKey($tabIndex) -and $x -gt ($tabRanges[$tabIndex].MinX + 20)) {
+      break
+    }
+  }
+
+  # Check if we found the target tab
+  if (-not $tabRanges.ContainsKey($tabIndex)) {
+    Fail "$tabName tab (index $tabIndex) not found during sweep (found tabs: $($tabRanges.Keys -join ', '))"
+  }
+
+  # Click the midpoint of the target tab range
+  $range = $tabRanges[$tabIndex]
+  $midX = ($range.MinX + $range.MaxX) / 2
+  Info "Clicking $tabName tab at client coords ($midX,$headerY) via PostMessage to tab HWND"
+
+  $lParam = [IntPtr]([int]$midX -bor ($headerY -shl 16))
+  [SettingsVerify]::PostMessage($tabHwnd, [SettingsVerify]::WM_LBUTTONDOWN, [IntPtr]0, $lParam) | Out-Null
   Start-Sleep -Milliseconds 30
-  [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+  [SettingsVerify]::PostMessage($tabHwnd, [SettingsVerify]::WM_LBUTTONUP, [IntPtr]0, $lParam) | Out-Null
   Start-Sleep -Milliseconds 300
 
   # Assert we're on the expected tab
@@ -301,11 +345,13 @@ function ClickTab {
   if ($curTab -ne $tabIndex) {
     Fail "$tabName tab click failed: expected tab $tabIndex, got $curTab"
   }
+
+  Pass "$tabName tab selected successfully"
 }
 
 # Click Director tab (index 2)
 if ($script:TabHwnd -eq [IntPtr]::Zero) { Fail "Tab control not found" }
-ClickTab $settingsHwnd $script:TabHwnd 2 "Director"
+ClickTab $script:TabHwnd 2 "Director"
 
 # Re-enumerate to find Director tab's visible STATIC controls (field labels)
 $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObject]
@@ -339,7 +385,7 @@ foreach ($lbl in $script:DirectorLabels) {
 }
 
 # Click Development tab (index 4)
-ClickTab $settingsHwnd $script:TabHwnd 4 "Development"
+ClickTab $script:TabHwnd 4 "Development"
 
 # Find Trace* checkboxes
 $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObject]
