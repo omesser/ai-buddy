@@ -80,10 +80,10 @@ fps = 2
 frames = ["frames/hold-0.png", "frames/hold-1.png"]
 fps = 4
 
-# The mech never sleeps. Power-down is a slow torso twist on station.
+# The mech never sleeps. Power down is idle plus torso twists: scanning.
 [animations.sleep]
-frames = ["frames/sleep-0.png", "frames/sleep-1.png"]
-fps = 1
+frames = ["frames/sleep-0.png", "frames/sleep-1.png", "frames/sleep-2.png", "frames/sleep-3.png"]
+fps = 3
 
 
 # TAC laser sweep as an idle variant. scan-0.png is a byte-copy of idle-0 and

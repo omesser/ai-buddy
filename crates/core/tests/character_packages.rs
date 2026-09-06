@@ -364,6 +364,49 @@ fn timber_wolf_stands_on_the_canvas_floor() {
     }
 }
 
+/// #296: sleep is idle + left/right torso-twist scan — idle height (~123–125px),
+/// not the taller alternate stand (~134–136px) that shipped with #161. Four
+/// frames at 3 fps so the scan reads on station.
+#[test]
+fn timber_wolf_sleep_is_idle_height_torso_scan() {
+    let character = load_package("timber-wolf").expect("Timber Wolf package is valid");
+    let sleep = &character.animations["sleep"];
+    assert_eq!(
+        sleep.frames.len(),
+        4,
+        "sleep is a four-frame idle + torso-twist scan cycle"
+    );
+    assert_eq!(sleep.fps, 3, "sleep plays at 3 fps so the scan is readable");
+
+    let frames = frames_of("timber-wolf");
+    let sil_h = |anim: &str| -> Vec<usize> {
+        frames
+            .iter()
+            .filter(|(a, _, _)| a == anim)
+            .map(|(_, _, bytes)| {
+                let (w, h, alpha) = frame_alpha(bytes);
+                let (top, bottom, _) = silhouette(w, h, &alpha);
+                bottom - top + 1
+            })
+            .collect()
+    };
+
+    let idle_heights = sil_h("idle");
+    let sleep_heights = sil_h("sleep");
+    assert_eq!(idle_heights.len(), 2, "idle ships two frames");
+    assert_eq!(sleep_heights.len(), 4, "sleep ships four frames");
+
+    let idle_lo = *idle_heights.iter().min().expect("idle");
+    let idle_hi = *idle_heights.iter().max().expect("idle");
+    for (i, h) in sleep_heights.iter().enumerate() {
+        assert!(
+            (idle_lo.saturating_sub(2)..=idle_hi + 2).contains(h),
+            "sleep-{i} silhouette is {h}px; idle is {idle_lo}–{idle_hi}px — sleep must \
+             match idle height, not the tall ~134–136px alternate stand"
+        );
+    }
+}
+
 /// #161: one canvas for the package, silhouette heavy beside Jotaro's 110px
 /// without dwarfing the desktop.
 #[test]
