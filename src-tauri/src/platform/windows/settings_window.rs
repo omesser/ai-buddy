@@ -58,6 +58,7 @@ enum Control {
     Edit(HWND),
     #[allow(dead_code)]
     Label(HWND),
+    #[allow(dead_code)]
     Button(HWND),
 }
 
@@ -313,7 +314,7 @@ impl SettingsWindow {
         unsafe {
             let result = MessageBoxA(
                 self.hwnd,
-                b"Wipe Memory?\nA backup is kept beside the file.\0".as_ptr(),
+                c"Wipe Memory?\nA backup is kept beside the file.".as_ptr() as *const u8,
                 c"Confirm".as_ptr() as *const u8,
                 MB_YESNO | MB_ICONQUESTION,
             );
