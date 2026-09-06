@@ -125,6 +125,23 @@ impl Instance {
     }
 }
 
+/// Whether a name is the one an Instance gets when nobody named it.
+///
+/// That is the Character's own name, but it reaches `spawn` in two spellings:
+/// the display name a package declares (`Timber Wolf`) and the package id the
+/// Shell passes when settings carry only the package (`timber-wolf`). Case and
+/// separators are what differ, so both squash to the same thing and an exact
+/// comparison would quietly never match the spelling the app actually runs.
+fn unnamed(name: &str, character: &str) -> bool {
+    let squash = |text: &str| -> String {
+        text.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect()
+    };
+    squash(name) == squash(character)
+}
+
 /// The roster of Character Instances.
 pub struct Roster {
     instances: BTreeMap<InstanceId, Instance>,
@@ -152,6 +169,10 @@ impl Roster {
         let id = uuid.to_string();
         let engine = Engine::new(position)
             .with_behaviors(character.behaviors.clone())
+            // How much room a Perch near the top of a display has to leave,
+            // which is this Character's own height rather than a guess at the
+            // tallest one anybody ships. #395.
+            .with_sprite_height(character.sprite_height())
             .with_cursor_reactions(character.near_reaction, character.rush_reaction)
             // The id is already this Instance's one random number, so it is
             // also what keeps two buddies of one Character from drawing the
@@ -199,20 +220,21 @@ impl Roster {
     }
 
     /// Switch one Instance's Character. False when the id is unknown.
+    ///
+    /// A lone Instance that never got a name of its own takes the new
+    /// Character's, so switching a BMO to Timber Wolf does not leave a wolf
+    /// called `bmo` in the roster and the window title. Both conditions are
+    /// the rule: a name the user typed is not the Character's and survives,
+    /// and with several buddies up names are what tell them apart, so a rename
+    /// there could hand one a name another already answers to. #375.
     pub fn retarget(&mut self, id: &str, character: &Character) -> bool {
-        let lone = self.instances.len() == 1;
+        let alone = self.instances.len() == 1;
         match self.instances.get_mut(id) {
             Some(instance) => {
-                let previous_character = instance.character_name().to_string();
-                let previous_name = instance.name.clone();
-                instance.retarget(character);
-                // A user-chosen name is indistinguishable from the default after
-                // spawn, so still wearing the previous Character's name is the
-                // tell. Several running Instances use names to tell them apart.
-                // #375.
-                if lone && previous_name == previous_character {
-                    instance.name = character.name.clone();
+                if alone && unnamed(&instance.name, &instance.character_name) {
+                    instance.rename(character.name.clone());
                 }
+                instance.retarget(character);
                 true
             }
             None => false,
@@ -671,68 +693,80 @@ mod tests {
         assert!(!roster.retarget("missing", &second));
     }
 
-    /// The name spawn assigns is the Character's. Switching that Character
-    /// should take the name with it, or the buddy still answers to someone
-    /// who is gone.
+    /// #375: the Instance a first buddy gets is named after its Character, so
+    /// switching Character left a wolf on the desk called `bmo`. Both forms of
+    /// that default count, because the Shell passes the package id as the name
+    /// when settings carry only the package.
     #[test]
-    fn retargeting_renames_a_lone_instance_still_named_after_its_character() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget-default.md"));
-        let mut roster = Roster::new(memory);
-        let first = test_character("bmo");
-        let second = test_character("nim");
-        let id = roster.spawn(&first, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
+    fn switching_renames_an_instance_that_still_wears_its_characters_name() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-follow.md"));
+        let wolf = test_character("Timber Wolf");
 
-        assert!(roster.retarget(&id, &second));
-        let instance = roster.get(&id).expect("still there");
-        assert_eq!(instance.id, id, "the id is unchanged");
-        assert_eq!(instance.character_name(), "nim");
+        let mut roster = Roster::new(memory);
+        let id = roster.spawn(
+            &test_character("BMO"),
+            "BMO".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
+        assert!(roster.retarget(&id, &wolf));
         assert_eq!(
-            instance.name, "nim",
-            "the Instance name follows the Character"
+            roster.list(),
+            vec![(id, "Timber Wolf".to_string())],
+            "the display name follows the Character"
+        );
+
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-follow-id.md"));
+        let mut roster = Roster::new(memory);
+        let id = roster.spawn(
+            &test_character("BMO"),
+            "bmo".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
+        assert!(roster.retarget(&id, &wolf));
+        assert_eq!(
+            roster.list(),
+            vec![(id, "Timber Wolf".to_string())],
+            "the package id is the same default, spelled the way settings spell it"
         );
     }
 
-    /// A name that is not the Character's was given on purpose. Switching
-    /// Character is not a reason to take it away.
+    /// A name the user typed is the one thing the rule has to protect.
     #[test]
-    fn retargeting_keeps_a_name_that_is_not_the_characters() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget-pip.md"));
+    fn switching_leaves_a_name_the_user_chose() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-keep-name.md"));
         let mut roster = Roster::new(memory);
-        let first = test_character("bmo");
-        let second = test_character("nim");
-        let id = roster.spawn(&first, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let id = roster.spawn(
+            &test_character("BMO"),
+            "Pip".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
 
-        assert!(roster.retarget(&id, &second));
-        let instance = roster.get(&id).expect("still there");
-        assert_eq!(instance.name, "Pip", "a chosen name survives the switch");
-        assert_eq!(instance.character_name(), "nim");
+        assert!(roster.retarget(&id, &test_character("Timber Wolf")));
+        assert_eq!(roster.list(), vec![(id, "Pip".to_string())]);
     }
 
-    /// Several running Instances use names to tell them apart. Implicit rename
-    /// would collapse two "bmo"s onto the new Character's name.
+    /// With several buddies up, names are what tell them apart, and renaming
+    /// one on a switch could hand it a name another already answers to.
     #[test]
-    fn retargeting_does_not_rename_when_several_instances_are_running() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget-two.md"));
+    fn switching_renames_nothing_when_more_than_one_instance_runs() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-two-no-rename.md"));
         let mut roster = Roster::new(memory);
-        let first = test_character("bmo");
-        let second = test_character("nim");
-        let id_a = roster.spawn(&first, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
-        let id_b = roster.spawn(&first, "bmo".to_string(), Point { x: 30.0, y: 40.0 });
+        let bmo = test_character("BMO");
+        let first = roster.spawn(&bmo, "BMO".to_string(), Point { x: 10.0, y: 20.0 });
+        let second = roster.spawn(&bmo, "BMO".to_string(), Point { x: 40.0, y: 20.0 });
 
-        assert!(roster.retarget(&id_a, &second));
-        let switched = roster.get(&id_a).expect("still there");
+        assert!(roster.retarget(&first, &test_character("Timber Wolf")));
+        let names: Vec<_> = roster.list().into_iter().map(|(_, name)| name).collect();
+        assert_eq!(names, vec!["BMO".to_string(), "BMO".to_string()]);
         assert_eq!(
-            switched.name, "bmo",
-            "several Instances keep their names across a switch"
+            roster.get(&first).expect("still there").character_name(),
+            "Timber Wolf",
+            "the Character still switches"
         );
-        assert_eq!(switched.character_name(), "nim");
-        let other = roster.get(&id_b).expect("the other is still there");
         assert_eq!(
-            other.name, "bmo",
-            "the Instance that was not switched is untouched"
+            roster.get(&second).expect("still there").character_name(),
+            "BMO"
         );
-        assert_eq!(other.character_name(), "bmo");
-        assert_eq!(other.id, id_b);
     }
 
     #[test]

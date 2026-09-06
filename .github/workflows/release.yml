@@ -3,6 +3,15 @@ name: Release
 on:
   release:
     types: [published]
+  # Dispatching takes write access, so whoever fills these in could already
+  # push the commit they build. Traced in #384: `version-override` is the only
+  # input that reaches a shell, it gets there through `env:` rather than
+  # spliced into a `run:`, and it must match semver before anything downstream
+  # sees it. The three booleans are read by nothing until #387 repairs the job
+  # `if:` that names them. No input names a ref, an action, a secret or an
+  # upload target.
+  #
+  # checkov:skip=CKV_GHA_7:reviewed in #384, see above
   workflow_dispatch:
     inputs:
       version-override:
@@ -42,22 +51,43 @@ jobs:
   # Release run additionally attaches them to the Release the human
   # published in GitHub's UI, which is also what created the tag; this job
   # never creates either. tests.yml already gated the merge.
+  # Which platforms this run builds. A Release builds all three; a manual
+  # dispatch builds the ones its checkboxes asked for. The choice cannot live
+  # in the package job's `if:`, because that is evaluated before the matrix
+  # exists and may not name it — which is what made this whole file invalid
+  # from #343 until #387. A job the matrix depends on can decide it instead.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          # Empty on a Release, where every platform builds regardless.
+          RELEASE: ${{ github.event_name == 'release' }}
+          LINUX: ${{ inputs.linux }}
+          MACOS: ${{ inputs.macos }}
+          WINDOWS: ${{ inputs.windows }}
+        run: |
+          entries=()
+          wanted() { [ "$RELEASE" = true ] || [ "$1" = true ]; }
+          wanted "$MACOS"   && entries+=('{"os":"macos-latest","bundles":"dmg","key":"macos"}')
+          wanted "$LINUX"   && entries+=('{"os":"ubuntu-latest","bundles":"appimage,deb","key":"linux"}')
+          wanted "$WINDOWS" && entries+=('{"os":"windows-latest","bundles":"nsis","key":"windows"}')
+          if [ ${#entries[@]} -eq 0 ]; then
+            echo "::error::no platform selected: tick at least one of linux, macos, windows"
+            exit 1
+          fi
+          printf 'matrix={"include":[%s]}\n' "$(IFS=,; echo "${entries[*]}")" >> "$GITHUB_OUTPUT"
+
   package:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            bundles: dmg
-            key: macos
-          - os: ubuntu-latest
-            bundles: appimage,deb
-            key: linux
-          - os: windows-latest
-            bundles: nsis
-            key: windows
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && ((matrix.key == 'linux' && inputs.linux) || (matrix.key == 'macos' && inputs.macos) || (matrix.key == 'windows' && inputs.windows)))
     timeout-minutes: 45
 
     steps:
@@ -97,13 +127,20 @@ jobs:
               version="${base:-0.0.0}-dev.g$(git rev-parse --short=7 HEAD)"
             fi
           fi
-          # A typo in the input reaches the bundle filenames and the macOS
-          # Info.plist, where it is nobody's idea of a version. This checks
-          # semver's shape, not every rule in it.
-          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || {
-            echo "::error::version '$version' is not semver: expected 1.2.3, 1.2.3-dev.gabc1234"
+          # A leading `v` is already stripped from all three sources above, so
+          # `v1.2.3` and `1.2.3` both arrive here as `1.2.3` — semver itself
+          # carries no prefix, and the bundles must not either. A typo reaches
+          # the bundle filenames and the macOS Info.plist, so this checks
+          # semver's shape, though not every rule in it.
+          #
+          # bash's `=~`, not `grep`: grep matches a line, so a two-line
+          # override passed on its first and carried the second into
+          # GITHUB_OUTPUT as another output. `=~` matches the whole string. #384.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! $version =~ $semver ]]; then
+            echo "::error::version '$version' is not semver: expected 1.2.3 or v1.2.3, 1.2.3-dev.gabc1234"
             exit 1
-          }
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building \`$version\`" >> "$GITHUB_STEP_SUMMARY"
 

@@ -30,7 +30,7 @@ use super::{
 /// Named because the tuple is three types deep and clippy's `type_complexity`
 /// rejects it inline. Only the X11 lane keeps one, since XShape is what has to
 /// be spared a rebuild every tick.
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32);
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
@@ -130,15 +130,15 @@ pub(crate) fn run_frame_loop(
 
         // Track whether configure_overlay / update_input_region work is in flight
         // to avoid queuing redundant main-thread posts every 16ms.
-        #[cfg(all(unix, not(target_os = "macos")))]
+        #[cfg(not(target_os = "macos"))]
         let configure_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
-        #[cfg(all(unix, not(target_os = "macos")))]
+        #[cfg(not(target_os = "macos"))]
         let mask_in_flight = Arc::new(Mutex::new(vec![false; covered.len()]));
 
-        // Cache last applied mask parameters to avoid rebuilding the X pixmap
-        // every 16ms. Only update XShape when mask data or position changes.
+        // Cache last applied mask parameters to avoid rebuilding the region
+        // every 16ms. Only update the input region when mask data or position changes.
         // Shared with main thread so update_input_region can report success.
-        #[cfg(all(unix, not(target_os = "macos")))]
+        #[cfg(not(target_os = "macos"))]
         let last_mask: Arc<Mutex<Vec<MaskParams>>> =
             Arc::new(Mutex::new(vec![(None, 0, 0, 1, 1); covered.len()]));
 
@@ -202,17 +202,17 @@ pub(crate) fn run_frame_loop(
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), false);
-            #[cfg(all(unix, not(target_os = "macos")))]
+            #[cfg(not(target_os = "macos"))]
             configure_in_flight
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), false);
-            #[cfg(all(unix, not(target_os = "macos")))]
+            #[cfg(not(target_os = "macos"))]
             mask_in_flight
                 .lock()
                 .unwrap()
                 .resize(displays.frames.len(), false);
-            #[cfg(all(unix, not(target_os = "macos")))]
+            #[cfg(not(target_os = "macos"))]
             last_mask
                 .lock()
                 .unwrap()
@@ -1407,7 +1407,7 @@ pub(crate) fn run_frame_loop(
                 // Retried until it succeeds: GTK has no window handle until the
                 // widget is realized (shown and ticked), and `window_handle`
                 // must run on the GTK main thread.
-                #[cfg(all(unix, not(target_os = "macos")))]
+                #[cfg(not(target_os = "macos"))]
                 if !configured
                     .lock()
                     .unwrap()
@@ -1509,7 +1509,7 @@ pub(crate) fn run_frame_loop(
                 // window_handle() requires the GTK main thread, so marshal the X11
                 // calls. Only set ignore-cursor-events false after the mask applies,
                 // or the overlay becomes a fullscreen click-eater.
-                #[cfg(all(unix, not(target_os = "macos")))]
+                #[cfg(not(target_os = "macos"))]
                 {
                     if !ignore && presence.visible {
                         let sprite_on_overlay = placed.iter().find(|instance| {
