@@ -211,7 +211,9 @@ _Avoid_: Preprocessor, filter, throttle
 ### Interaction verbs
 
 **Grab**:
-Press and move — the sprite follows the cursor.
+Press and move — the sprite follows the cursor. `grab` is also the optional
+Animation drawn while one lasts; a package that declares none draws its `fall`,
+and never `hold`, which belongs to the Perch ride.
 
 **Throw**:
 Release a Grab with velocity — the sprite travels ballistically until it lands.
