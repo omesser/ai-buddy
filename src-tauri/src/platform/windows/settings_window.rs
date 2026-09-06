@@ -16,11 +16,12 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows_sys::Win32::UI::Controls::{
-    TCIF_TEXT, TCITEMA, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
+    CBS_DROPDOWNLIST, CB_ADDSTRING, CB_SETCURSEL, TCIF_TEXT, TCITEMA, TCM_GETCURSEL,
+    TCM_INSERTITEMA, WC_TABCONTROLA,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, GetClientRect, GetDlgItem, GetWindowLongPtrA, GetWindowTextA,
-    GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
+    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
     EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
     SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
@@ -579,7 +580,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 0,
                                 c"BUTTON".as_ptr() as *const u8,
                                 CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
-                                WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
                                 MARGIN * 2,
                                 y,
                                 FIELD_WIDTH,
@@ -607,9 +608,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(label_text.as_str()).unwrap().as_ptr()
-                                        as *const u8,
-                                    WS_CHILD | SS_LEFT,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     MARGIN * 2,
                                     y,
                                     FIELD_WIDTH,
@@ -619,6 +619,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     GetModuleHandleA(ptr::null()),
                                     ptr::null_mut(),
                                 );
+                                let label_cstr = CString::new(label_text.as_str()).unwrap();
+                                SetWindowTextA(label_hwnd, label_cstr.as_ptr() as *const u8);
                                 SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
                                 window.controls.borrow_mut().insert(
                                     format!("{}_label", id),
@@ -630,7 +632,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
-                                WS_CHILD | WS_TABSTOP | WS_BORDER,
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
                                 MARGIN * 2,
                                 y,
                                 FIELD_WIDTH,
@@ -645,7 +647,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .encode_utf16()
                                 .chain(std::iter::once(0))
                                 .collect();
-                            SendMessageA(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
+                            SendMessageW(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
                             window
                                 .controls
                                 .borrow_mut()
@@ -658,9 +660,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(label_text.as_str()).unwrap().as_ptr()
-                                        as *const u8,
-                                    WS_CHILD | SS_LEFT,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     MARGIN * 2,
                                     y,
                                     FIELD_WIDTH,
@@ -670,6 +671,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     GetModuleHandleA(ptr::null()),
                                     ptr::null_mut(),
                                 );
+                                let label_cstr = CString::new(label_text.as_str()).unwrap();
+                                SetWindowTextA(label_hwnd, label_cstr.as_ptr() as *const u8);
                                 SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
                                 window.controls.borrow_mut().insert(
                                     format!("{}_label", id),
@@ -681,7 +684,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
-                                WS_CHILD | WS_TABSTOP | WS_BORDER | ES_PASSWORD as u32,
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_PASSWORD as u32,
                                 MARGIN * 2,
                                 y,
                                 FIELD_WIDTH,
@@ -694,7 +697,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
                             let cue_text: Vec<u16> =
                                 "••••".encode_utf16().chain(std::iter::once(0)).collect();
-                            SendMessageA(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
+                            SendMessageW(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
                             window
                                 .controls
                                 .borrow_mut()
@@ -702,10 +705,143 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             y += ROW_HEIGHT + ROW_GAP;
                             control_id += 1;
                         }
+                        FormRow::Popup { id, label, .. } => {
+                            if let Some(label_text) = label {
+                                let label_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    MARGIN * 2,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                let label_cstr = CString::new(label_text.as_str()).unwrap();
+                                SetWindowTextA(label_hwnd, label_cstr.as_ptr() as *const u8);
+                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_label", id),
+                                    Control::Label(label_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
+                            let hwnd = CreateWindowExA(
+                                0,
+                                c"COMBOBOX".as_ptr() as *const u8,
+                                ptr::null(),
+                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST as u32,
+                                MARGIN * 2,
+                                y,
+                                FIELD_WIDTH,
+                                200,
+                                parent,
+                                control_id as _,
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                            y += ROW_HEIGHT + ROW_GAP;
+                            control_id += 1;
+                        }
+                        FormRow::List { id, .. } => {
+                            let label_hwnd = CreateWindowExA(
+                                0,
+                                c"STATIC".as_ptr() as *const u8,
+                                ptr::null(),
+                                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                MARGIN * 2,
+                                y,
+                                FIELD_WIDTH,
+                                LABEL_HEIGHT,
+                                parent,
+                                ptr::null_mut(),
+                                GetModuleHandleA(ptr::null()),
+                                ptr::null_mut(),
+                            );
+                            let placeholder_cstr =
+                                CString::new("Instances list (not yet implemented)").unwrap();
+                            SetWindowTextA(label_hwnd, placeholder_cstr.as_ptr() as *const u8);
+                            SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window.controls.borrow_mut().insert(
+                                format!("{}_placeholder", id),
+                                Control::Label(label_hwnd, tab_index),
+                            );
+                            y += LABEL_HEIGHT + ROW_GAP;
+                        }
                         FormRow::Composite { controls, .. } => {
                             let mut x = MARGIN * 2;
                             for control in controls {
                                 match control {
+                                    form::CompositeControl::TextField { id, placeholder } => {
+                                        let field_width = 120;
+                                        let hwnd = CreateWindowExA(
+                                            WS_EX_CLIENTEDGE,
+                                            c"EDIT".as_ptr() as *const u8,
+                                            ptr::null(),
+                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
+                                            x,
+                                            y,
+                                            field_width,
+                                            ROW_HEIGHT,
+                                            parent,
+                                            control_id as _,
+                                            GetModuleHandleA(ptr::null()),
+                                            ptr::null_mut(),
+                                        );
+                                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                        let cue_text: Vec<u16> = placeholder
+                                            .encode_utf16()
+                                            .chain(std::iter::once(0))
+                                            .collect();
+                                        SendMessageW(
+                                            hwnd,
+                                            EM_SETCUEBANNER,
+                                            0,
+                                            cue_text.as_ptr() as LPARAM,
+                                        );
+                                        window
+                                            .controls
+                                            .borrow_mut()
+                                            .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                                        x += field_width + 8;
+                                        control_id += 1;
+                                    }
+                                    form::CompositeControl::Popup { id } => {
+                                        let combo_width = 100;
+                                        let hwnd = CreateWindowExA(
+                                            0,
+                                            c"COMBOBOX".as_ptr() as *const u8,
+                                            ptr::null(),
+                                            WS_CHILD
+                                                | WS_VISIBLE
+                                                | WS_TABSTOP
+                                                | CBS_DROPDOWNLIST as u32,
+                                            x,
+                                            y,
+                                            combo_width,
+                                            200,
+                                            parent,
+                                            control_id as _,
+                                            GetModuleHandleA(ptr::null()),
+                                            ptr::null_mut(),
+                                        );
+                                        SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                        window
+                                            .controls
+                                            .borrow_mut()
+                                            .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                                        x += combo_width + 8;
+                                        control_id += 1;
+                                    }
                                     form::CompositeControl::Button { id, label, .. } => {
                                         let button_width = 80;
                                         let hwnd = CreateWindowExA(
@@ -713,7 +849,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             c"BUTTON".as_ptr() as *const u8,
                                             CString::new(label.as_str()).unwrap().as_ptr()
                                                 as *const u8,
-                                            WS_CHILD | WS_TABSTOP,
+                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                             x,
                                             y,
                                             button_width,
@@ -731,8 +867,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += button_width + 8;
                                         control_id += 1;
                                     }
-                                    form::CompositeControl::TextField { .. }
-                                    | form::CompositeControl::Popup { .. } => {}
                                 }
                             }
                             y += ROW_HEIGHT + ROW_GAP;
