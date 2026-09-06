@@ -158,7 +158,7 @@ Info "Waiting for settings window..."
 $settingsHwnd = [IntPtr]::Zero
 for ($i = 0; $i -lt 50; $i++) {
   $settingsHwnd = [SettingsVerify]::FindWindow("AiBuddySettings", $null)
-  if ($settingsHwnd -ne [IntPtr]::Zero) { 
+  if ($settingsHwnd -ne [IntPtr]::Zero) {
     # Move immediately to secondary display before user notices
     $winX = $secLeft + 50
     $winY = $secTop + 50
@@ -166,7 +166,7 @@ for ($i = 0; $i -lt 50; $i++) {
     $winH = 720
     [SettingsVerify]::SetWindowPos($settingsHwnd, [IntPtr]::Zero, $winX, $winY, $winW, $winH, 0) | Out-Null
     Pass "Settings window appeared and moved to secondary display"
-    break 
+    break
   }
   Start-Sleep -Milliseconds 100
 }
@@ -186,11 +186,11 @@ $script:TabHwnd = [IntPtr]::Zero
   $sb = New-Object System.Text.StringBuilder(256)
   [SettingsVerify]::GetClassName($hChild, $sb, 256) | Out-Null
   $className = $sb.ToString()
-  
+
   if ($className -eq "SysTabControl32") {
     $script:TabHwnd = $hChild
   }
-  
+
   if ([SettingsVerify]::IsWindowVisible($hChild)) {
     if ($className -eq "Button") {
       $len = [SettingsVerify]::GetWindowTextLength($hChild)
@@ -238,8 +238,8 @@ Info "Clicked Director tab"
 
 # Verify we're on Director tab (TCM_GETCURSEL)
 $curTab = [SettingsVerify]::SendMessage($script:TabHwnd, 0x130b, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
-if ($curTab -ne 2) { 
-  Write-Host "[WARN] Expected tab 2 (Director), got $curTab" -ForegroundColor Yellow 
+if ($curTab -ne 2) {
+  Write-Host "[WARN] Expected tab 2 (Director), got $curTab" -ForegroundColor Yellow
 }
 
 # Re-enumerate to find Director tab's visible STATICs (field labels)
@@ -249,7 +249,7 @@ $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObje
   $sb = New-Object System.Text.StringBuilder(256)
   [SettingsVerify]::GetClassName($hChild, $sb, 256) | Out-Null
   $className = $sb.ToString()
-  
+
   if ($className -eq "Static" -and [SettingsVerify]::IsWindowVisible($hChild)) {
     $len = [SettingsVerify]::GetWindowTextLength($hChild)
     if ($len -gt 0) {
@@ -265,7 +265,7 @@ $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObje
   return $true
 }, [IntPtr]::Zero) | Out-Null
 
-if ($script:DirectorLabels.Count -eq 0) { 
+if ($script:DirectorLabels.Count -eq 0) {
   Fail "Director tab: no field caption STATICs with non-zero text (label-wipe bug not fixed)"
 }
 Pass "Director tab: $($script:DirectorLabels.Count) field label(s) with non-zero text (label-wipe fix verified)"
@@ -292,7 +292,7 @@ $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObjec
   $sb = New-Object System.Text.StringBuilder(256)
   [SettingsVerify]::GetClassName($hChild, $sb, 256) | Out-Null
   $className = $sb.ToString()
-  
+
   if ($className -eq "Button" -and [SettingsVerify]::IsWindowVisible($hChild)) {
     $len = [SettingsVerify]::GetWindowTextLength($hChild)
     if ($len -gt 0) {
