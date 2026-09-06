@@ -226,32 +226,40 @@ $script:TabHwnd = [IntPtr]::Zero
 if ($script:Checkboxes.Count -eq 0) { Fail "No visible checkboxes on Presence tab" }
 Pass "Presence tab: $($script:Checkboxes.Count) visible checkbox(es)"
 
-# Switch to Director tab (index 2) by clicking tab header
-if ($script:TabHwnd -eq [IntPtr]::Zero) { Fail "Tab control not found" }
+# Helper function to click a tab by index using TCM_GETITEMRECT
+function ClickTab {
+  param([IntPtr]$tabHwnd, [int]$tabIndex, [string]$tabName)
 
-# Get tab control rect and click on "Director" tab
-$tabRect = New-Object SettingsVerify+RECT
-[SettingsVerify]::GetWindowRect($script:TabHwnd, [ref]$tabRect) | Out-Null
+  $tabItemRect = New-Object SettingsVerify+RECT
+  $result = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETITEMRECT, [IntPtr]$tabIndex, [ref]$tabItemRect)
+  if ($result -eq [IntPtr]::Zero) {
+    Fail "TCM_GETITEMRECT failed for $tabName tab (index $tabIndex)"
+  }
 
-# Calculate tab positions (each tab is ~80px wide, starting after 4px margin)
-$tabHeaderHeight = 24
-$directorTabX = $tabRect.Left + 4 + (80 * 2) + 40  # Third tab (0=Presence, 1=Character, 2=Director)
-$directorTabY = $tabRect.Top + ($tabHeaderHeight / 2)
+  # Convert center of tab item rect from client to screen coordinates
+  $centerPt = New-Object SettingsVerify+POINT
+  $centerPt.X = ($tabItemRect.Left + $tabItemRect.Right) / 2
+  $centerPt.Y = ($tabItemRect.Top + $tabItemRect.Bottom) / 2
+  [SettingsVerify]::ClientToScreen($tabHwnd, [ref]$centerPt) | Out-Null
 
-Info "Clicking Director tab at $directorTabX,$directorTabY"
-[SettingsVerify]::SetCursorPos($directorTabX, $directorTabY) | Out-Null
-Start-Sleep -Milliseconds 50
-[SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 30
-[SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 300
-Info "Clicked Director tab"
+  Info "Clicking $tabName tab at $($centerPt.X),$($centerPt.Y) (from TCM_GETITEMRECT)"
+  [SettingsVerify]::SetCursorPos($centerPt.X, $centerPt.Y) | Out-Null
+  Start-Sleep -Milliseconds 50
+  [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 30
+  [SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 300
 
-# Verify we're on Director tab (TCM_GETCURSEL)
-$curTab = [SettingsVerify]::SendMessage($script:TabHwnd, 0x130b, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
-if ($curTab -ne 2) {
-  Write-Host "[WARN] Expected tab 2 (Director), got $curTab" -ForegroundColor Yellow
+  # Assert we're on the expected tab
+  $curTab = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETCURSEL, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
+  if ($curTab -ne $tabIndex) {
+    Fail "$tabName tab click failed: expected tab $tabIndex, got $curTab"
+  }
 }
+
+# Click Director tab (index 2)
+if ($script:TabHwnd -eq [IntPtr]::Zero) { Fail "Tab control not found" }
+ClickTab $script:TabHwnd 2 "Director"
 
 # Re-enumerate to find Director tab's visible STATIC controls (field labels)
 $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObject]
@@ -284,33 +292,8 @@ foreach ($lbl in $script:DirectorLabels) {
   Info "  Label: '$($lbl.Text)' (len=$($lbl.Length))"
 }
 
-# Click Development tab (index 4) using TCM_GETITEMRECT
-$devTabIdx = 4
-$tabItemRect = New-Object SettingsVerify+RECT
-$result = [SettingsVerify]::SendMessage($script:TabHwnd, [SettingsVerify]::TCM_GETITEMRECT, [IntPtr]$devTabIdx, [ref]$tabItemRect)
-if ($result -eq [IntPtr]::Zero) {
-  Fail "TCM_GETITEMRECT failed for Development tab (index $devTabIdx)"
-}
-
-# Convert center of tab item rect from client to screen coordinates
-$centerPt = New-Object SettingsVerify+POINT
-$centerPt.X = ($tabItemRect.Left + $tabItemRect.Right) / 2
-$centerPt.Y = ($tabItemRect.Top + $tabItemRect.Bottom) / 2
-[SettingsVerify]::ClientToScreen($script:TabHwnd, [ref]$centerPt) | Out-Null
-
-Info "Clicking Development tab at $($centerPt.X),$($centerPt.Y) (from TCM_GETITEMRECT)"
-[SettingsVerify]::SetCursorPos($centerPt.X, $centerPt.Y) | Out-Null
-Start-Sleep -Milliseconds 50
-[SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 30
-[SettingsVerify]::mouse_event([SettingsVerify]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 300
-
-# Assert we're on Development tab
-$curTab = [SettingsVerify]::SendMessage($script:TabHwnd, [SettingsVerify]::TCM_GETCURSEL, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
-if ($curTab -ne $devTabIdx) {
-  Fail "Development tab click failed: expected tab $devTabIdx, got $curTab"
-}
+# Click Development tab (index 4)
+ClickTab $script:TabHwnd 4 "Development"
 
 # Find Trace* checkboxes
 $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObject]
