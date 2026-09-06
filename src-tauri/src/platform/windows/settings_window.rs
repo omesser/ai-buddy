@@ -204,7 +204,7 @@ impl SettingsWindow {
                 eprintln!("settings: {why}");
                 unsafe {
                     let msg = format!("Could not save settings: {}\0", why);
-                    MessageBoxA(self.hwnd, msg.as_ptr(), c"Error".as_ptr(), MB_OK);
+                    MessageBoxA(self.hwnd, msg.as_ptr() as *const u8, c"Error".as_ptr() as *const u8, MB_OK);
                 }
                 false
             }
@@ -298,7 +298,7 @@ impl SettingsWindow {
                 session.spawn(character, name);
                 if let Some(Control::Edit(hwnd)) = controls.get(form::NEW_NAME_ID) {
                     unsafe {
-                        SetWindowTextA(*hwnd, c"".as_ptr());
+                        SetWindowTextA(*hwnd, c"".as_ptr() as *const u8);
                     }
                 }
             }
@@ -318,7 +318,7 @@ impl SettingsWindow {
             let result = MessageBoxA(
                 self.hwnd,
                 b"Wipe Memory?\nA backup is kept beside the file.\0".as_ptr(),
-                c"Confirm".as_ptr(),
+                c"Confirm".as_ptr() as *const u8,
                 MB_YESNO | MB_ICONQUESTION,
             );
             if result != IDYES {
@@ -337,7 +337,7 @@ impl SettingsWindow {
         *self.clear_pending.borrow_mut() = true;
         if let Some(Control::Edit(hwnd)) = self.controls.borrow().get(form::DIRECTOR_API_KEY_ID) {
             unsafe {
-                SetWindowTextA(*hwnd, c"".as_ptr());
+                SetWindowTextA(*hwnd, c"".as_ptr() as *const u8);
             }
         }
         let view = self.session.lock().unwrap().as_ref().map(|s| s.view());
@@ -445,7 +445,7 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             ),
             hbrBackground: (5 + 1) as _,
             lpszMenuName: ptr::null(),
-            lpszClassName: class_name.as_ptr(),
+            lpszClassName: class_name.as_ptr() as *const u8,
         };
 
         let result = windows_sys::Win32::UI::WindowsAndMessaging::RegisterClassA(&wc);
@@ -458,8 +458,8 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
 
         let hwnd = CreateWindowExA(
             0,
-            class_name.as_ptr(),
-            c"ai-buddy Settings".as_ptr(),
+            class_name.as_ptr() as *const u8,
+            c"ai-buddy Settings".as_ptr() as *const u8,
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -548,7 +548,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                     } => {
                         let hwnd = CreateWindowExA(
                             0,
-                            c"BUTTON".as_ptr(),
+                            c"BUTTON".as_ptr() as *const u8,
                             CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
                             MARGIN * 2,
@@ -579,7 +579,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         }
                         let hwnd = CreateWindowExA(
                             WS_EX_CLIENTEDGE,
-                            c"EDIT".as_ptr(),
+                            c"EDIT".as_ptr() as *const u8,
                             CString::new(placeholder.as_str()).unwrap().as_ptr() as *const u8,
                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
                             MARGIN * 2,
@@ -610,7 +610,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         }
                         let hwnd = CreateWindowExA(
                             WS_EX_CLIENTEDGE,
-                            c"EDIT".as_ptr(),
+                            c"EDIT".as_ptr() as *const u8,
                             ptr::null(),
                             WS_CHILD
                                 | WS_VISIBLE
@@ -645,7 +645,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         }
                         let hwnd = CreateWindowExA(
                             WS_EX_CLIENTEDGE,
-                            c"EDIT".as_ptr(),
+                            c"EDIT".as_ptr() as *const u8,
                             ptr::null(),
                             WS_CHILD
                                 | WS_VISIBLE
@@ -676,7 +676,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         }
                         let hwnd = CreateWindowExA(
                             WS_EX_CLIENTEDGE,
-                            c"EDIT".as_ptr(),
+                            c"EDIT".as_ptr() as *const u8,
                             ptr::null(),
                             WS_CHILD
                                 | WS_VISIBLE
@@ -705,7 +705,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                     FormRow::InspectPath { id } => {
                         let hwnd = CreateWindowExA(
                             WS_EX_CLIENTEDGE,
-                            c"EDIT".as_ptr(),
+                            c"EDIT".as_ptr() as *const u8,
                             ptr::null(),
                             WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY,
                             MARGIN * 2,
@@ -730,7 +730,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                     } => {
                         let hwnd = CreateWindowExA(
                             WS_EX_CLIENTEDGE,
-                            c"LISTBOX".as_ptr(),
+                            c"LISTBOX".as_ptr() as *const u8,
                             ptr::null(),
                             WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_STANDARD,
                             MARGIN * 2,
@@ -756,7 +756,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         }
                         let hwnd = CreateWindowExA(
                             0,
-                            c"COMBOBOX".as_ptr(),
+                            c"COMBOBOX".as_ptr() as *const u8,
                             ptr::null(),
                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
                             MARGIN * 2,
@@ -783,7 +783,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 CompositeControl::TextField { id, placeholder } => {
                                     let hwnd = CreateWindowExA(
                                         WS_EX_CLIENTEDGE,
-                                        c"EDIT".as_ptr(),
+                                        c"EDIT".as_ptr() as *const u8,
                                         CString::new(placeholder.as_str()).unwrap().as_ptr()
                                             as *const u8,
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
@@ -807,7 +807,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 CompositeControl::Button { id, label, .. } => {
                                     let hwnd = CreateWindowExA(
                                         0,
-                                        c"BUTTON".as_ptr(),
+                                        c"BUTTON".as_ptr() as *const u8,
                                         CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
                                         x,
