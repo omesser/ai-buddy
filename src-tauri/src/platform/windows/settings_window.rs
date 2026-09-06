@@ -23,7 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthA, MessageBoxA, SendMessageA, SetWindowLongPtrA, SetWindowPos,
     SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, CW_USEDEFAULT,
     EN_CHANGE, ES_PASSWORD, GWLP_USERDATA, HWND_TOP, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
-    SS_LEFT, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
+    SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NOTIFY, WM_SETFONT, WM_SIZE,
     WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
@@ -45,6 +45,7 @@ const ID_BASE: i32 = 2000;
 const TCN_FIRST: u32 = 0xFFFFFDDA_u32;
 const TCN_SELCHANGE_CODE: u32 = TCN_FIRST.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
+const SS_LEFT: u32 = 0x0;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -608,13 +609,13 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     c"STATIC".as_ptr() as *const u8,
                                     CString::new(label_text.as_str()).unwrap().as_ptr()
                                         as *const u8,
-                                    WS_CHILD | SS_LEFT as u32,
+                                    WS_CHILD | SS_LEFT,
                                     MARGIN * 2,
                                     y,
                                     FIELD_WIDTH,
                                     LABEL_HEIGHT,
                                     parent,
-                                    0,
+                                    ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
                                     ptr::null_mut(),
                                 );
@@ -659,13 +660,13 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     c"STATIC".as_ptr() as *const u8,
                                     CString::new(label_text.as_str()).unwrap().as_ptr()
                                         as *const u8,
-                                    WS_CHILD | SS_LEFT as u32,
+                                    WS_CHILD | SS_LEFT,
                                     MARGIN * 2,
                                     y,
                                     FIELD_WIDTH,
                                     LABEL_HEIGHT,
                                     parent,
-                                    0,
+                                    ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
                                     ptr::null_mut(),
                                 );
