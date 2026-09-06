@@ -11,14 +11,13 @@ and is not. From `crates/core/src/character.rs`:
 ```rust
 /// How long a Personality Prompt may be, in characters.
 ///
-/// A bound rather than a preference: the prompt is untrusted text that goes
-/// into every Character Prompt the Director sends, so an unbounded one is a way
-/// to spend a user's tokens and to bury the sensing context under prose.
-/// Generous enough for a paragraph of personality.
+/// The prompt is untrusted text that goes into every Character Prompt the
+/// Director sends, so an unbounded one spends a user's tokens and buries the
+/// sensing context under prose. Generous enough for a paragraph of personality.
 pub const PERSONALITY_LIMIT: usize = 2000;
 ```
 
-Six lines for a constant, and every one is load-bearing. Without them, 2000 is
+Five lines for a constant, and every one is load-bearing. Without them, 2000 is
 a number the next reader is free to change.
 
 ## What does not
