@@ -8,10 +8,6 @@ use ai_buddy_core::dispatch::DenyList;
 use serde::Deserialize;
 use std::path::Path;
 
-/// Load DenyList from settings.json file.
-///
-/// Missing or unreadable file produces empty excluded list with
-/// filter_password_fields: true (first-run product behavior).
 pub fn load_denylist_from_settings(path: &Path) -> DenyList {
     #[derive(Deserialize, Default)]
     struct SettingsDoc {

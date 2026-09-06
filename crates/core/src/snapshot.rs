@@ -208,8 +208,7 @@ fn world_snapshot(
         elapsed_ms,
         verbs,
         poll_generation,
-        // The frame loop writes `proposal` after assemble(). None means no
-        // proposal this tick.
+        // The frame loop writes `proposal` after assemble().
         ..WorldSnapshot::default()
     }
 }

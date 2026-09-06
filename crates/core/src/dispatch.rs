@@ -613,21 +613,18 @@ mod tests {
             .as_str()
             .expect("description is string");
 
-        // Verify both tools excluded the same applications
         assert_eq!(allowed_apps.len(), 2);
         assert!(allowed_apps.contains(&"Terminal".to_string()));
         assert!(allowed_apps.contains(&"Safari".to_string()));
         assert!(!allowed_apps.contains(&"Keychain Access".to_string()));
         assert!(!allowed_apps.contains(&"1Password".to_string()));
 
-        // The description should mention exactly the same applications as list_windows returned
         assert!(description.contains("2 visible windows"));
         assert!(description.contains("Terminal"));
         assert!(description.contains("Safari"));
         assert!(!description.contains("Keychain Access"));
         assert!(!description.contains("1Password"));
 
-        // This assertion would fail if the tools filtered differently
         for app in &allowed_apps {
             assert!(
                 description.contains(app),
@@ -709,7 +706,6 @@ mod tests {
         }
     }
 
-    /// Build roster with grounded instance - settle ~50 ticks so sprite is Grounded
     fn test_roster_with_grounded_instance(
         name: &str,
         memory_path: &std::path::Path,
@@ -808,7 +804,6 @@ mod tests {
         let (mut roster, instance_id) =
             test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
 
-        // Build roster info from the roster
         let roster_info = roster
             .list()
             .into_iter()

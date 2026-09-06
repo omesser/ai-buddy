@@ -403,6 +403,18 @@ pub struct Drawn<'a> {
 }
 
 impl Character {
+    /// How tall this Character stands, in points: the idle Animation's frame
+    /// at this Character's scale.
+    ///
+    /// The art hangs above the feet, so this is the room a Perch near the top
+    /// of a display has to leave. Animations may declare different frame
+    /// sizes; idle is what the Character is usually drawn at. #395.
+    pub fn sprite_height(&self) -> f64 {
+        self.draw("idle", 0, 0)
+            .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
+            * f64::from(self.scale)
+    }
+
     /// Which frame of `animation` is on screen `animation_ms` after it
     /// started, and the mask that outlines it.
     ///
@@ -421,18 +433,6 @@ impl Character {
     /// nine required Animations, and a package missing one was rejected.
     /// Substituting a different Animation would be worse than drawing nothing,
     /// because the renderer would still be told the name it asked for.
-    /// How tall this Character stands, in points: the idle Animation's frame
-    /// at this Character's scale.
-    ///
-    /// The art hangs above the feet, so this is the room a Perch near the top
-    /// of a display has to leave. Animations may declare different frame
-    /// sizes; idle is what the Character is usually drawn at. #395.
-    pub fn sprite_height(&self) -> f64 {
-        self.draw("idle", 0, 0)
-            .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
-            * f64::from(self.scale)
-    }
-
     pub fn draw(&self, animation: &str, animation_ms: u32, variant_draw: u64) -> Option<Drawn<'_>> {
         let (name, animation) = self.resolve(animation, variant_draw)?;
         let index = animation.frame_at(animation_ms);
