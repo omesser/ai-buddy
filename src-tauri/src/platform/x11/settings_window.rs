@@ -1094,10 +1094,12 @@ fn confirm_wipe(parent: &Window) -> bool {
 pub fn show(session: SettingsSession) {
     // Tauri already initialized GTK and owns the main loop. Calling gtk::init()
     // from the running main loop deadlocks. Only mark gtk-rs initialized.
-    // SAFETY: set_initialized asserts that GTK is already initialized on
-    // this thread, and that is the invariant the comment above relies on.
-    // Tauri initializes GTK before any window exists to open Settings
-    // from, and show() only ever runs on Tauri's main loop thread.
+    // SAFETY: set_initialized requires that GTK really is initialized on this
+    // thread, and lying to it hands every later gtk-rs call a false premise.
+    // `main.rs` routes the Linux `show_settings` through `idle_add_local_once`
+    // when it already owns the MainContext and `MainContext::invoke` when it
+    // does not, so both arms land on the GTK main loop thread — the thread
+    // Tauri initialized GTK on before that loop began running.
     unsafe {
         gtk::set_initialized();
     }

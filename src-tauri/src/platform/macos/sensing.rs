@@ -59,8 +59,9 @@ impl ActivitySource for MacosActivitySource {
     fn displays_asleep(&self) -> bool {
         // One display is enough: a lid-closed Mac sleeps the main one.
         // `boolean_t` is a C int, not Rust `bool`.
-        // SAFETY: neither call takes a pointer, and the display id comes from
-        // CoreGraphics itself.
+        // SAFETY: both are documented thread-safe, which is what this needs —
+        // sensing runs off the main thread. Neither takes a pointer, and the
+        // display id comes from CoreGraphics itself.
         unsafe { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
     }
 }

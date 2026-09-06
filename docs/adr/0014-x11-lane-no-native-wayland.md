@@ -58,35 +58,46 @@ rectangles handed over are real geometry and a window missing from the list
 costs one Perch — the same shortfall an unmanaged window already causes under a
 real X server.
 
-## The GTK3 bindings are unmaintained, and the lane accepts that
+## The GTK3 stack is frozen, and the lane accepts what that pins
 
 RUSTSEC-2024-0411 through RUSTSEC-2024-0420 mark ten gtk-rs GTK3 crates
-unmaintained: `atk`, `atk-sys`, `gdk`, `gdk-sys`, `gdkx11`, `gdkx11-sys`, `gtk`,
-`gtk-sys`, `gtk3-macros` and `gdk-pixbuf-sys`. None of them names a
-vulnerability; each says the crate has no maintainer. They reach `Cargo.lock`
-through Tauri's Linux window and tray stack, not through anything this
-repository asks for. #397 raised the cluster and this record accepts it.
+unmaintained: `gdkwayland-sys` (0411), `gdk` (0412), `atk` (0413), `gdkx11-sys`
+(0414), `gtk` (0415), `atk-sys` (0416), `gdkx11` (0417), `gdk-sys` (0418),
+`gtk3-macros` (0419) and `gtk-sys` (0420). None of them names a
+vulnerability; each says the crate has no maintainer. RUSTSEC-2024-0429 is the
+eleventh crate and the different one: `glib` 0.18.5 is unsound, a real defect in
+`VariantStrIter`, not an absent maintainer. #397 raised all eleven and this
+record accepts them together.
 
-There is no version to move to. gtk-rs migrated to GTK4, which is a different C
-library rather than a newer release of the same one, and Tauri v2 builds its
-Linux surface on GTK3 by way of webkit2gtk. Upgrading is a Tauri migration, not
-an edit to a version requirement here. Pinning or vendoring buys nothing either,
-because these crates are current rather than stale — unowned is the whole
-finding.
+They are one finding because they are one pin. The crates reach `Cargo.lock`
+through Tauri's Linux window and tray stack, not through anything this
+repository asks for, and `gtk` is frozen at 0.18.2, which requires `glib ^0.18`.
+So `glib` cannot be bumped independently: the patched 0.20 line is unreachable
+while the GTK3 lane holds, whatever the advisory says. #383 opened on the bump
+and closed `NOT_PLANNED` for exactly that reason. Treating `glib` as its own
+track would mean carrying an issue nobody can act on.
+
+There is no version to move to for the other ten either. gtk-rs migrated to
+GTK4, which is a different C library rather than a newer release of the same
+one, and Tauri v2 builds its Linux surface on GTK3 by way of webkit2gtk.
+Upgrading is a Tauri migration, not an edit to a version requirement here.
+Pinning or vendoring buys nothing, because these crates are current rather than
+stale — unowned is the whole finding.
 
 The exposure is what the X11 lane already is. GTK3 draws the Linux Settings
 window and the tray, and both read input from this process. An unmaintained
 binding matters when a vulnerability is found and nobody ships the fix, so the
-cost of accepting it is a longer wait on that day, not a hole open today.
-`glib` is the one crate in this stack with a live advisory, RUSTSEC-2024-0429,
-and it is tracked separately in #383.
+cost of accepting it is a longer wait on that day, not a hole open today. The
+`glib` unsoundness is the sharper edge, and it is bounded the same way: reached
+through GTK's own calls on the Linux lane, on a code path no Character pack
+steers.
 
-Two things end the acceptance. A RustSec advisory against any of the ten that
-names a vulnerability rather than an absent maintainer moves this to a fix, on
-whatever path exists at the time. Tauri shipping a GTK4 Linux backend removes
-the cluster without a decision. Until one of those lands, the repository owner
-revisits this at each `/security-review` run of the Rust lane, which is where
-the cluster surfaces.
+Two things end the acceptance, and they end it for all eleven crates at once. A
+RustSec advisory naming a vulnerability rather than an absent maintainer moves
+this to a fix, on whatever path exists at the time. Tauri shipping a GTK4 Linux
+backend removes the cluster and unpins `glib` without a decision. Until one of
+those lands, the repository owner revisits this at each `/security-review` run
+of the Rust lane, which is where the cluster surfaces.
 
 ## Considered Options
 
