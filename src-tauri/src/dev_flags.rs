@@ -69,16 +69,19 @@ pub static TRACE_ENGINE: Flag = Flag::new("AI_BUDDY_TRACE_ENGINE");
 #[cfg(target_os = "macos")]
 pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
 
-/// Completer timeout and reply cap, as the variable or the file gives them.
+/// Completer timeout, reply cap, and first ambient wait, as the variable or
+/// the file gives them.
 ///
 /// Zero is unset, and covers a blank field and a non-numeric one alike: a
-/// zero timeout could not complete and a zero cap leaves no room to answer in,
-/// so neither is a value worth telling apart from absent.
+/// zero timeout could not complete, a zero cap leaves no room to answer in,
+/// and a zero wait is no wait at all, so none is a value worth telling apart
+/// from absent.
 ///
 /// Numbers rather than `Flag`s. `model` still picks between the local and
 /// hosted default when neither the variable nor the file says anything.
 static TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 static MAX_TOKENS: AtomicU32 = AtomicU32::new(0);
+static WAKE_SECS: AtomicU64 = AtomicU64::new(0);
 
 /// The Completer timeout in force, in seconds.
 pub fn director_timeout_secs() -> Option<u64> {
@@ -90,6 +93,12 @@ pub fn director_timeout_secs() -> Option<u64> {
 pub fn director_max_tokens() -> Option<u32> {
     let cap = MAX_TOKENS.load(Ordering::Relaxed);
     (cap > 0).then_some(cap)
+}
+
+/// The first ambient wait in force, in seconds.
+pub fn director_wake_secs() -> Option<u64> {
+    let secs = WAKE_SECS.load(Ordering::Relaxed);
+    (secs > 0).then_some(secs)
 }
 
 /// One variable per switch on the Development tab.
@@ -121,7 +130,7 @@ pub fn switch_vars() -> Vec<&'static str> {
 pub(crate) fn test_vars() -> Vec<&'static str> {
     flag_vars()
         .into_iter()
-        .chain([model::TIMEOUT_SECS, model::MAX_TOKENS])
+        .chain([model::TIMEOUT_SECS, model::MAX_TOKENS, model::WAKE_SECS])
         .collect()
 }
 
@@ -146,6 +155,13 @@ pub fn seed(settings: &Settings) {
     );
     MAX_TOKENS.store(
         model::env_or_file(model::MAX_TOKENS, &settings.director_max_tokens)
+            .trim()
+            .parse()
+            .unwrap_or(0),
+        Ordering::Relaxed,
+    );
+    WAKE_SECS.store(
+        model::env_or_file(model::WAKE_SECS, &settings.director_wake_secs)
             .trim()
             .parse()
             .unwrap_or(0),
@@ -263,6 +279,31 @@ mod tests {
 
             std::env::remove_var(model::TIMEOUT_SECS);
             std::env::remove_var(model::MAX_TOKENS);
+        });
+    }
+
+    /// The wait a user can now type is worth nothing if a stale process
+    /// variable keeps deciding it, so the export has to win here too.
+    #[test]
+    fn an_exported_wake_interval_outranks_the_file() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert_eq!(director_wake_secs(), None, "blank is unset");
+
+            seed(&Settings {
+                director_wake_secs: "300".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(director_wake_secs(), Some(300));
+
+            std::env::set_var(model::WAKE_SECS, "30");
+            seed(&Settings {
+                director_wake_secs: "300".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(director_wake_secs(), Some(30));
+
+            std::env::remove_var(model::WAKE_SECS);
         });
     }
 }

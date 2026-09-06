@@ -278,6 +278,7 @@ pub const TRACE_ENGINE_ID: &str = "trace_engine";
 pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
 pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
+pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 
 /// The label of a row an environment variable can own, and whether it does.
 ///
@@ -331,6 +332,7 @@ fn director_sections() -> Vec<FormSection> {
     let (model_label, model_frozen) = env_row("Model", model::MODEL);
     let (api_key_label, api_key_frozen) = env_row("API key", model::API_KEY);
     let (director_label, director_frozen) = switch_row("Director on", model::ENABLED);
+    let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
 
     vec![
         FormSection {
@@ -352,6 +354,18 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
+                },
+                // Not batched, and above the Apply the three endpoint rows
+                // answer to: this one is a number the user turns to watch the
+                // buddy get chattier or quieter, and a button between the
+                // change and its effect would undo that (#262).
+                FormRow::TextField {
+                    id: DIRECTOR_WAKE_SECS_ID.to_string(),
+                    label: Some(wake_label),
+                    placeholder: model::wake_secs_placeholder(),
+                    writes: TextField::DirectorWakeSecs,
+                    frozen: wake_frozen,
+                    batched: false,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_BASE_URL_ID.to_string(),
@@ -390,9 +404,12 @@ fn director_sections() -> Vec<FormSection> {
                 // answer for the four rows above, and Clear key is one of the
                 // four. Never frozen, because Cancel has to stay reachable
                 // even when a variable owns every field it would restore.
+                //
+                // The help says which rows, now that the wake interval sits
+                // above them and commits on its own.
                 FormRow::Composite {
                     id: "director_actions".to_string(),
-                    help: Some("The rows above take effect on Apply.".to_string()),
+                    help: Some("The endpoint rows take effect on Apply.".to_string()),
                     controls: vec![
                         CompositeControl::Button {
                             id: APPLY_ID.to_string(),
@@ -951,7 +968,7 @@ mod tests {
             .find(|s| s.heading == "Director")
             .expect("Director section");
 
-        assert_eq!(director.rows.len(), 7);
+        assert_eq!(director.rows.len(), 8);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -960,24 +977,30 @@ mod tests {
             director.rows[1],
             FormRow::Checkbox { ref id, .. } if id == AMBIENT_ID
         ));
+        // Under the switch that turns ambient wakes on, because it is how
+        // often those wakes start out (#262).
         assert!(matches!(
             director.rows[2],
-            FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_WAKE_SECS_ID
         ));
         assert!(matches!(
             director.rows[3],
-            FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
         ));
         assert!(matches!(
             director.rows[4],
-            FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
         ));
         assert!(matches!(
             director.rows[5],
-            FormRow::Composite { ref id, .. } if id == "api_key_actions"
+            FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
         ));
         assert!(matches!(
             director.rows[6],
+            FormRow::Composite { ref id, .. } if id == "api_key_actions"
+        ));
+        assert!(matches!(
+            director.rows[7],
             FormRow::Composite { ref id, .. } if id == "director_actions"
         ));
     }

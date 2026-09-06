@@ -18,7 +18,7 @@ use tauri::{Emitter, Manager};
 use super::settings::SettingsOp;
 use super::{
     apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, menu, model,
-    note_happened, open_chat, overlay_label, place_overlays, platform, publish_instances,
+    note_happened, open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
     push_chat_opening, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
     ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
     MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
@@ -474,6 +474,10 @@ pub(crate) fn run_frame_loop(
                         ambient_allowed,
                         configured,
                     } => {
+                        // What every live `Pace` was built from, and the only
+                        // way to tell an edited wake interval from a Retarget
+                        // that changed the host and left the interval alone.
+                        let was_first = config.ambient_first;
                         director = settings;
                         config = model::config_from(&director);
                         config.enabled = enabled;
@@ -484,7 +488,16 @@ pub(crate) fn run_frame_loop(
                             inspect.configured = config.configured;
                             inspect.ambient_wakes = config.ambient_allowed;
                         }
+                        let interval_moved = config.ambient_first != was_first;
                         for live in &mut lives {
+                            // `Pace` took the interval at spawn, so a rebuilt
+                            // config is the only thing that can hand it a new
+                            // one. Back to `first` with it: a buddy that had
+                            // grown to a two-hour wait is exactly the one whose
+                            // owner just asked for a shorter one.
+                            if interval_moved {
+                                live.pace = paced(&config, &live.character);
+                            }
                             // Completer target changed, not Character. A Wake
                             // still on the wire would propose against the old
                             // host and session; drop it and open a new turn.

@@ -154,11 +154,11 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 | `AI_BUDDY_DIRECTOR` | The Director on or off, whatever Settings saved. Off keeps Static even when a key is set; on still needs a key or a local server. The window and the tray name the variable and disable the toggle. |
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
-| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds (default 120). After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
+| `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → Director's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 ### Settings and Keyring
 
-Settings → Director persists base URL and model, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Completer timeout and reply cap. Editing any of the five retargets the running Director: the next wake reaches the new host, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
+Settings → Director persists base URL, model, and the first wake interval, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Completer timeout and reply cap. Editing any of the six retargets the running Director: the next wake reaches the new host on the new interval, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
 
 `cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
 

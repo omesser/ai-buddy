@@ -49,7 +49,9 @@ pub(crate) const BASE_URL: &str = "AI_BUDDY_DIRECTOR_BASE_URL";
 pub(crate) const MODEL: &str = "AI_BUDDY_DIRECTOR_MODEL";
 pub(crate) const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// First ambient session wait, in seconds. Not a heartbeat.
-const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
+///
+/// `pub(crate)` like the four above: the row it owns has to name it.
+pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
 /// Completer timeout, in seconds, and the reply cap, in tokens. Both have a
 /// local default that differs from the hosted one; these override either.
@@ -222,7 +224,7 @@ pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
         env_says,
         key_invalid: settings.key_invalid,
         wake_every: WAKE_EVERY,
-        ambient_first: env_secs(WAKE_SECS).unwrap_or(Pace::FIRST),
+        ambient_first: ambient_first(),
         ambient_allowed: true,
     }
 }
@@ -379,11 +381,14 @@ pub(crate) fn director_in_force(saved_on: bool) -> bool {
     env_switch(ENABLED).unwrap_or(saved_on)
 }
 
-/// A positive number of seconds from `var`, or nothing when it is unset,
-/// unparsable, or zero.
-fn env_secs(var: &str) -> Option<Duration> {
-    let secs: u64 = std::env::var(var).ok()?.parse().ok()?;
-    (secs > 0).then_some(Duration::from_secs(secs))
+/// The first ambient wait in force.
+///
+/// As with the timeout, the variable-or-file decision is `dev_flags::seed`'s,
+/// so this is a read rather than a second place precedence is settled. Zero
+/// and unparsable are unset there: a buddy waking every no seconds is not a
+/// value to keep (#262).
+fn ambient_first() -> Duration {
+    crate::dev_flags::director_wake_secs().map_or(Pace::FIRST, Duration::from_secs)
 }
 
 /// Is this base URL served from this machine or this LAN?
@@ -462,6 +467,12 @@ pub(crate) fn timeout_placeholder() -> String {
 /// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
 pub(crate) fn max_tokens_placeholder() -> String {
     format!("{HOSTED_MAX_TOKENS} ({LOCAL_MAX_TOKENS} for a local server)")
+}
+
+/// What an empty wake-interval field means, in seconds. One default here:
+/// the first wait does not depend on where the Completer runs.
+pub(crate) fn wake_secs_placeholder() -> String {
+    Pace::FIRST.as_secs().to_string()
 }
 
 /// An OpenAI-compatible chat Completer, or `None` when a remote host has no
@@ -2478,6 +2489,28 @@ pub(crate) mod tests {
             assert_eq!(max_tokens_for(false), 11);
             std::env::remove_var(TIMEOUT_SECS);
             std::env::remove_var(MAX_TOKENS);
+        });
+    }
+
+    /// The read site, where `dev_flags` only holds the decision: a wait no
+    /// source names is `Pace::FIRST`, not zero seconds.
+    #[test]
+    fn an_exported_wake_interval_outranks_the_persisted_one() {
+        with_env(None, None, None, || {
+            let file = crate::settings::Settings {
+                director_wake_secs: "300".into(),
+                ..Default::default()
+            };
+            crate::dev_flags::seed(&file);
+            assert_eq!(ambient_first(), Duration::from_secs(300));
+
+            std::env::set_var(WAKE_SECS, "30");
+            crate::dev_flags::seed(&file);
+            assert_eq!(ambient_first(), Duration::from_secs(30));
+            std::env::remove_var(WAKE_SECS);
+
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(ambient_first(), Pace::FIRST);
         });
     }
 
