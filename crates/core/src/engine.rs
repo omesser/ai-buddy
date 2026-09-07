@@ -459,6 +459,11 @@ pub struct Engine {
     /// proposal that would move the sprite is refused; a Grab, a Throw or
     /// losing the ground ends it at once. #177.
     poke_cooldown_ms: u32,
+    /// Whether the previous tick already carried `Verb::Menu`. The Shell
+    /// re-injects that verb every tick the popup is held (#507), so a cue
+    /// keyed on the verb would fire for as long as the menu is open. The
+    /// press edge is the cue; a gap clears this and the next press cues again.
+    menu_held: bool,
 }
 
 impl Engine {
@@ -503,6 +508,7 @@ impl Engine {
             rush_reported: false,
             chase_ms: 0,
             poke_cooldown_ms: 0,
+            menu_held: false,
         }
     }
 
@@ -1054,7 +1060,20 @@ impl Engine {
         // right-click during a drag, say — and the hand is what the user is
         // plainly doing. Among the click verbs the first is taken, which is
         // every case there is: two clicks cannot land inside one tick.
-        let cue = cue.or_else(|| snapshot.verbs.iter().find_map(Cue::of_verb));
+        //
+        // Menu is the Grab shape: the Shell leaves the verb on every held
+        // tick, so the cue keys on the press edge, not the level. #507.
+        let menu_now = snapshot.verbs.iter().any(|verb| matches!(verb, Verb::Menu));
+        let cue = cue.or_else(|| {
+            snapshot
+                .verbs
+                .iter()
+                .find_map(|verb| match Cue::of_verb(verb) {
+                    Some(Cue::Menu) if self.menu_held => None,
+                    other => other,
+                })
+        });
+        self.menu_held = menu_now;
 
         // A Behavior is drawn over whatever the sprite is doing, so a Poke shows
         // even mid-fall. It changes nothing about where the sprite is.
@@ -2876,6 +2895,33 @@ mod tests {
             let after = engine.tick(&snapshot(100));
             assert_eq!(after.cue, None, "and rides one tick only, after {verb:?}");
         }
+    }
+
+    /// #507: the Shell re-injects `Verb::Menu` every tick the popup is held, the
+    /// way `Verb::Grab` is present for a whole drag. A cue keyed on the verb
+    /// would sound sixty times a second under the menu. Only the press edge
+    /// cues, and a later right-click after a gap cues again.
+    #[test]
+    fn the_menu_cue_fires_on_the_press_and_not_every_held_tick() {
+        let mut engine = Engine::new(Point { x: 500.0, y: 100.0 });
+        settle(&mut engine, &snapshot(100));
+
+        let held = WorldSnapshot {
+            verbs: vec![Verb::Menu],
+            ..snapshot(100)
+        };
+        let opened = engine.tick(&held);
+        assert_eq!(opened.cue, Some(Cue::Menu));
+
+        let carried: Vec<Option<Cue>> = (0..5).map(|_| engine.tick(&held).cue).collect();
+        assert!(
+            carried.iter().all(Option::is_none),
+            "held, and cued once: {carried:?}"
+        );
+
+        let _ = engine.tick(&snapshot(100));
+        let again = engine.tick(&held);
+        assert_eq!(again.cue, Some(Cue::Menu), "a later press after a gap");
     }
 
     /// #277: `Verb::Grab` is present on every tick the sprite is held, so a cue
