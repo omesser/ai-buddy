@@ -821,7 +821,7 @@ mod windows_job {
         unsafe {
             let process = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
             if process.is_null() || process == INVALID_HANDLE_VALUE {
-                CloseHandle(job);
+                // Intentional leak: job has KILL_ON_JOB_CLOSE; closing it could kill the child.
                 eprintln!("harness: OpenProcess failed for pid {pid}; resuming without job");
                 if resume_primary_thread(pid).is_err() {
                     let _ = child.kill();
@@ -836,7 +836,7 @@ mod windows_job {
             CloseHandle(process);
 
             if assigned == 0 {
-                CloseHandle(job);
+                // Intentional leak: job has KILL_ON_JOB_CLOSE; closing it could kill the child.
                 eprintln!(
                     "harness: AssignProcessToJobObject failed for pid {pid}; resuming without job"
                 );
