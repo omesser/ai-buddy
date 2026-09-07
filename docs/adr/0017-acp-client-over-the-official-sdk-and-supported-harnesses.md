@@ -69,10 +69,34 @@ seventeen-agent list inherited from a CLI.
 
 | Name | Command | Standing |
 |---|---|---|
-| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Tested against the fake only. |
-| `hermes` | `hermes acp` | First-party. Tested against the fake; `initialize` smoked against the real binary. |
-| `opencode` | `opencode acp` | First-party. **Untested**: not installed where this was written. |
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
+| `hermes` | `hermes acp` | First-party. **Verified 2026-09-07** on a fresh session; a resumed one is #448, and it is ours. |
+| `opencode` | `opencode acp` | First-party. **Unverified**: not installed on the machine either #433 or #434 was written on. |
 | anything else | as typed, split on whitespace | The escape hatch for every row below, and the next adapter. |
+
+`scripts/probe-harness.sh` is what "verified" means: it attaches the
+configured Harness with no overlay, runs one fixed prompt, and prints the
+handshake, the stop reason, the reply and whether the reply parsed as a
+proposal. A row moves in this table when that command exits zero, and the
+handshake it printed is what the next paragraph records.
+
+What the two installed Harnesses advertise in `initialize` differs enough to
+matter. `hermes` 0.18.2 offers `loadSession` and two `authMethods` — `custom
+runtime credentials` and `Configure Hermes provider`, the second a `terminal`
+method — and no `mcpCapabilities.http`, so #166 has to keep the stdio path for
+it. Claude Code's adapter offers `loadSession` and `mcpCapabilities.http` and,
+signed in, an empty `authMethods`: the list is what is *available*, not what is
+outstanding, so it is no test of whether a login is needed. Only `session/new`
+answering `-32000` is that, which is why the gate hangs off the error and not
+the handshake. `hermes` also advertises `sessionCapabilities` (`fork`, `list`,
+`resume`) and `promptCapabilities.image`, neither of which anything here reads
+yet.
+
+The one thing a real turn contradicted is the fallback above: `session/load`
+refusing is not always an error. `hermes` answers a session it cannot restore
+with a success result and logs the reason to its stderr, which leaves the id
+cached and every later turn a `refusal`. #448 has the fix, and the fake agent's
+error-shaped refusal is why the tests missed it.
 
 Protocol-compatible and not yet named, all first-party ACP on stdio and all
 reachable today through the custom value: Grok Build (`grok agent stdio`),
