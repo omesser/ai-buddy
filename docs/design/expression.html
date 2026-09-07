@@ -7,6 +7,18 @@
   scripts/make-expression-page.py copies beside it at deploy. Opened from a
   clone without that copy, the module 404s rather than inventing a second
   formula.
+
+  The sprite is Buddy Bot, the shipped Character Package — its own frames at
+  its own fps, read from characters/buddy-bot/character.manifest by the same
+  script and rewritten into the <script id="sprite"> block below. The
+  committed block names the packages where this file can see them, two
+  directories up, so the paths it declares are checkable; the build rewrites
+  them to the copies it lays down beside the page, and fails if the manifest
+  and this block disagree.
+
+  Judge the page from the build, not from this directory: bubble.css is a
+  slice of src/main.css and cannot exist in a clone without inventing one, so
+  `python3 scripts/make-expression-page.py --out _site` and serve that.
 -->
 <html lang="en">
 <head>
@@ -94,26 +106,27 @@
     position: relative;
     height: 100%;
   }
-  /* Overlay bubble rules are absolute over a sprite; here the stand-in is
-     the only occupant, so pin the bubble above its head without calling
+  /* Overlay bubble rules are absolute over a sprite; here the sprite is the
+     only occupant, so pin the bubble above its head without calling
      placeBubble — that function is ceiling-clearance, not reading time. */
   .stage .bubble {
     left: 50%;
-    bottom: 118px;
+    bottom: 136px;
     transform: translateX(-50%);
   }
-  .stand-in {
+  /* Frames at their own size: 90px art drawn at 90px, which is what the
+     overlay does for a Character declaring scale = 1. Scaled down, a facing
+     or a jaw frame stops being judgeable. */
+  #sprite-img {
     position: absolute;
     left: 50%;
     bottom: 36px;
-    width: 56px;
-    height: 72px;
-    margin-left: -28px;
-    border-radius: 10px 10px 8px 8px;
-    background: #2C8C7C;
-    box-shadow: inset 0 -10px 0 rgba(0,0,0,.18);
+    transform: translateX(-50%);
+    /* The overlay pixel-snaps its art (src/main.css) and lets a smooth pack
+       override, as src/main.js does; the block below says which this is. */
+    image-rendering: pixelated;
   }
-  .desk[data-wall="dark"] .stand-in { background: #5CC9B5; }
+  #sprite-img[data-smooth="true"] { image-rendering: auto; }
 
   .controls {
     display: grid; gap: 10px; margin-top: 16px;
@@ -135,6 +148,7 @@
     font-family: var(--mono); font-size: 13px; color: var(--ink-2);
     margin: 10px 0 0; min-height: 1.5em;
   }
+  #turn { color: var(--ink); font-weight: 600; }
   footer { margin-top: 2rem; color: var(--ink-3); font-size: .87rem; }
   footer a { color: inherit; }
 </style>
@@ -143,17 +157,18 @@
 <div class="page">
   <header>
     <h1>Overlay Expression</h1>
-    <div class="cls">Generated from src/bubble.js at deploy</div>
+    <div class="cls">Generated from src/bubble.js and characters/buddy-bot/ at deploy</div>
     <p class="lede">Speech bubble reading time and the thinking ellipsis while a
       reactive Director turn is in flight. Type a line, Poke to start a turn,
-      reply while it is thinking. A proactive wake frames the same machine with
-      thinking off, so the indicator stays down. The hold is whatever
-      <code>bubbleDuration</code> returns for that line; speech and the
-      indicator share one surface, and speech wins.</p>
+      reply while it is thinking. A proactive wake runs the same machine with
+      the indicator held down — an unasked turn never shows an ellipsis — and
+      then lands its line anyway, which is the contrast the two buttons draw.
+      The hold is whatever <code>bubbleDuration</code> returns for that line;
+      speech and the indicator share one surface, and speech wins.</p>
   </header>
 
   <div class="desk-bar">
-    <span class="hint">A CSS stand-in, not a Character: the thing being judged is timing.</span>
+    <span class="hint">Buddy Bot, playing its own <code>idle</code> and <code>talk</code> strips.</span>
     <div class="seg" role="group" aria-label="Wallpaper">
       <button type="button" data-wall="light" aria-pressed="true">Light</button>
       <button type="button" data-wall="dark" aria-pressed="false">Dark</button>
@@ -165,7 +180,7 @@
         <div class="bubble-content" id="speech"></div>
         <div class="thinking-dots" aria-hidden="true"><span></span><span></span><span></span></div>
       </div>
-      <div class="stand-in" aria-hidden="true"></div>
+      <img id="sprite-img" alt="" aria-hidden="true">
     </div>
   </div>
 
@@ -180,6 +195,7 @@
       <button class="play" id="wake" type="button">Proactive wake</button>
     </div>
   </div>
+  <p class="live" id="turn" role="status"></p>
   <p class="live" id="status"></p>
 
   <footer>
@@ -187,6 +203,52 @@
     by <code>scripts/make-expression-page.py</code>.
   </footer>
 </div>
+
+<!-- Buddy Bot's own Animations, rewritten from its Character Manifest at
+     deploy by scripts/make-expression-page.py. Which frames and what fps are
+     the package's, never this page's. -->
+<script type="application/json" id="sprite">
+{
+  "package": "buddy-bot",
+  "name": "Buddy Bot",
+  "smooth": true,
+  "art": "../../characters/buddy-bot/",
+  "animations": {
+    "idle": {
+      "fps": 5,
+      "frames": [
+        "frames/idle-0.png",
+        "frames/idle-1.png",
+        "frames/idle-2.png",
+        "frames/idle-3.png",
+        "frames/idle-4.png",
+        "frames/idle-5.png",
+        "frames/idle-6.png",
+        "frames/idle-7.png",
+        "frames/idle-8.png",
+        "frames/idle-9.png",
+        "frames/idle-10.png",
+        "frames/idle-11.png",
+        "frames/idle-12.png",
+        "frames/idle-13.png",
+        "frames/idle-14.png",
+        "frames/idle-15.png"
+      ]
+    },
+    "talk": {
+      "fps": 6,
+      "frames": [
+        "frames/talk-0.png",
+        "frames/talk-1.png",
+        "frames/talk-2.png",
+        "frames/talk-3.png",
+        "frames/talk-4.png",
+        "frames/talk-5.png"
+      ]
+    }
+  }
+}
+</script>
 
 <script type="module">
 import {
@@ -200,17 +262,60 @@ const bubbleEl = document.getElementById("bubble");
 const speechEl = document.getElementById("speech");
 const lineEl = document.getElementById("line");
 const statusEl = document.getElementById("status");
+const turnEl = document.getElementById("turn");
 const desk = document.getElementById("desk");
+
+// The sprite. `talk` while a line is displayed, `idle` the rest of the time —
+// the two strips the Engine plays around Speech. The frame loop here is a
+// timer per Animation's own fps, not the Engine's; nothing on this page is
+// judging playback rate, and a port of the Engine's clock would drift from it
+// (ADR-0011).
+const spriteEl = document.getElementById("sprite-img");
+const sprite = JSON.parse(document.getElementById("sprite").textContent);
+spriteEl.dataset.smooth = String(sprite.smooth);
+spriteEl.alt = sprite.name;
+
+const strips = {};
+for (const [name, animation] of Object.entries(sprite.animations)) {
+  // Decoded up front: a strip swapping in mid-turn must not blink a
+  // half-loaded frame at the moment the bubble opens.
+  strips[name] = animation.frames.map((path) => {
+    const image = new Image();
+    image.src = sprite.art + path;
+    return image;
+  });
+}
+
+let strip = "idle";
+let index = 0;
+let spriteTimer = null;
+
+function drawFrame() {
+  const frames = strips[strip];
+  spriteEl.src = frames[index % frames.length].src;
+  index += 1;
+  spriteTimer = setTimeout(drawFrame, 1000 / sprite.animations[strip].fps);
+}
+
+function play(name) {
+  if (name === strip) return;
+  strip = name;
+  index = 0;
+  clearTimeout(spriteTimer);
+  drawFrame();
+}
 
 function showSpeech(text) {
   speechEl.textContent = text;
   bubbleEl.dataset.mode = "speech";
   bubbleEl.classList.add("visible");
+  play("talk");
 }
 function hideSpeech() {
   if (bubbleEl.dataset.mode === "speech") {
     bubbleEl.classList.remove("visible");
     bubbleEl.removeAttribute("data-mode");
+    play("idle");
   }
 }
 function showThinking() {
@@ -245,31 +350,72 @@ function live() {
     `bubbleDuration → ${ms} ms · grace ${THINKING_GRACE_MS} ms · hold ≥ ${THINKING_MIN_HOLD_MS} ms`;
 }
 
-function speakLine() {
-  const said = text();
+// What a control just did, on the page rather than in the reader's head. A
+// button whose whole point is what does *not* appear has to say so, or it
+// reads as broken.
+function note(said) {
+  turnEl.textContent = said;
+}
+
+function say(said) {
+  cancelWake();
   const tick = placement({ dialogue: said });
   machine.event(tick);
   machine.frame(tick);
   live();
+}
+
+function speakLine() {
+  const said = text();
+  say(said);
+  note(`speech shown, held ${bubbleDuration(said)} ms`);
 }
 
 function poke() {
+  cancelWake();
   machine.frame(placement({ thinking: true }));
   live();
+  note(`reactive turn in flight · ellipsis after the ${THINKING_GRACE_MS} ms grace`);
+}
+
+// A proactive wake is the same machine with `thinking` never raised. The
+// Shell decides that, not this page: `Slots::thinking` is `waiting &&
+// reactive` (src-tauri/src/model.rs), and the frame's `thinking` is
+// `reactive_wake || slots.thinking(..)` (src-tauri/src/frame_loop.rs), so a
+// turn the user did not ask for cannot arm the grace however long it runs.
+//
+// What lands is still seen. `director::fallback` returns a proposal whose
+// `dialogue` reaches the frame like any other, so an unasked line opens the
+// bubble with nothing before it. "Proactive wakes stay invisible" in
+// CONTEXT.md is the ellipsis entry and means the indicator, not the answer.
+//
+// The wait is this demo's pacing, not a shipped timer — long enough that the
+// grace above visibly passes with the indicator still down.
+const WAKE_WAIT_MS = 1500;
+let waking = null;
+
+// Any other control starts its own turn, so a wake still counting down would
+// otherwise speak over it a second later.
+function cancelWake() {
+  clearTimeout(waking);
+  waking = null;
 }
 
 function wake() {
-  // Proactive wakes stay invisible: same machine, thinking off, no dialogue.
+  cancelWake();
+  const said = text();
   machine.frame(placement({ thinking: false }));
-  live();
+  note("proactive turn in flight · no ellipsis, however long it takes");
+  waking = setTimeout(() => {
+    waking = null;
+    say(said);
+    note("proactive line landed · the bubble opened with nothing before it");
+  }, WAKE_WAIT_MS);
 }
 
 function replyNow() {
-  const said = text();
-  const tick = placement({ dialogue: said });
-  machine.event(tick);
-  machine.frame(tick);
-  live();
+  say(text());
+  note("reply landed · speech wins, the ellipsis goes down the same frame");
 }
 
 document.getElementById("speak").addEventListener("click", speakLine);
@@ -289,6 +435,7 @@ document.querySelectorAll(".seg button").forEach((button) => {
   });
 });
 live();
+drawFrame();
 </script>
 </body>
 </html>

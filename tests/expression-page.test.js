@@ -16,6 +16,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "make-expression-page.py");
 const FORMULA = /900\s*\+\s*55/;
 
+// The generator owns the line that names the page's sources, and its own
+// self-check already asserts the page carries it. Read it from there rather
+// than restating it: a third copy is a third thing to forget when a source
+// is added, which is exactly how this test went stale.
+const SOURCE_LINE = readFileSync(SCRIPT, "utf8").match(
+  /^SOURCE_LINE = "(.+)"$/m,
+)[1];
+
 function python(args, options = {}) {
   return execFileSync("python3", [SCRIPT, ...args], {
     cwd: ROOT,
@@ -44,7 +52,10 @@ test("the published page loads bubble.js and calls its machine", () => {
       /<meta\s+name="robots"\s+content="noindex"/i,
       "Generated pages stay indexed",
     );
-    assert.match(html, /Generated from src\/bubble\.js at deploy/);
+    assert.ok(
+      html.includes(SOURCE_LINE),
+      `the page must name its sources as the generator does: ${SOURCE_LINE}`,
+    );
     assert.match(html, /id="wake"/, "a proactive wake must be operable");
     assert.match(
       html,
