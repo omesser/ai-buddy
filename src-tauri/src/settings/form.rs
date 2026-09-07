@@ -290,7 +290,7 @@ pub const TRACE_FRAMES_ID: &str = "trace_frames";
 pub const TRACE_HITTEST_ID: &str = "trace_hittest";
 pub const TRACE_DIRECTOR_ID: &str = "trace_director";
 pub const TRACE_ENGINE_ID: &str = "trace_engine";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
 pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";

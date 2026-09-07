@@ -105,7 +105,7 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
             form::TRACE_ENGINE_ID.to_string(),
             dev_flags::TRACE_ENGINE.in_force(settings.trace_engine),
         ),
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         (
             form::CAPTURABLE_ID.to_string(),
             dev_flags::CAPTURABLE.in_force(settings.capturable),
@@ -967,7 +967,7 @@ impl SettingsPatch {
             BoolField::TraceHittest => self.trace_hittest = Some(value),
             BoolField::TraceDirector => self.trace_director = Some(value),
             BoolField::TraceEngine => self.trace_engine = Some(value),
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             BoolField::Capturable => self.capturable = Some(value),
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
             BoolField::UseScreenRecording => self.use_screen_recording = Some(value),

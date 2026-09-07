@@ -67,9 +67,9 @@ pub static TRACE_FRAMES: Flag = Flag::new("AI_BUDDY_TRACE_FRAMES");
 pub static TRACE_HITTEST: Flag = Flag::new("AI_BUDDY_TRACE_HITTEST");
 pub static TRACE_DIRECTOR: Flag = Flag::new("AI_BUDDY_TRACE_DIRECTOR");
 pub static TRACE_ENGINE: Flag = Flag::new("AI_BUDDY_TRACE_ENGINE");
-/// The capture exclusion is an AppKit window property; no other platform has
-/// one to drop.
-#[cfg(target_os = "macos")]
+/// Capture exclusion setting. macOS and Windows both support it; Linux degrades
+/// gracefully (no exclusion API).
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
 
 /// Completer timeout, reply cap, and first ambient wait, as the variable or
@@ -135,7 +135,7 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_HITTEST.var(),
         TRACE_DIRECTOR.var(),
         TRACE_ENGINE.var(),
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         CAPTURABLE.var(),
     ]
 }
@@ -177,7 +177,7 @@ pub fn seed(settings: &Settings) {
     TRACE_HITTEST.seed(settings.trace_hittest);
     TRACE_DIRECTOR.seed(settings.trace_director);
     TRACE_ENGINE.seed(settings.trace_engine);
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     CAPTURABLE.seed(settings.capturable);
     TIMEOUT_SECS.store(
         model::env_or_file(model::TIMEOUT_SECS, &settings.director_timeout_secs)
