@@ -1875,7 +1875,14 @@ mod tests {
 
         // #243: the same shape as speech on the wire, and a different thing —
         // the name it named is what makes it readable as a miss.
-        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"), None, None);
+        let missed = parsed_fields(
+            "buddy-1",
+            &spoke("prowll"),
+            true,
+            Some("prowll"),
+            None,
+            None,
+        );
         assert_eq!(missed["result"], json!("near_miss"));
         assert_eq!(missed["behavior"], json!("prowll"));
 
@@ -2303,7 +2310,14 @@ mod tests {
 
         let withdrawn = session.claim_withdrawn_wake("buddy-1");
         assert_eq!(withdrawn.as_deref(), Some("buddy-2"));
-        let parsed = parsed_fields("buddy-1", &Wake::Failed, true, None, withdrawn.as_deref());
+        let parsed = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            None,
+            withdrawn.as_deref(),
+        );
         assert_eq!(parsed["result"], json!("withdrawn"), "{parsed}");
         assert_eq!(
             session.claim_withdrawn_wake("buddy-1"),
