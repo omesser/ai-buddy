@@ -406,10 +406,15 @@ fn harness_env_row(label: &str) -> (String, bool) {
 ///
 /// That leaves a third state, and #469 is what it costs: the handle stays the
 /// configured Completer whether or not its child is up, so an edit here is
-/// read at the next launch and not before. Live, because it is the way back;
-/// labelled, because a row that takes a key and changes nothing is worse than
-/// a frozen one. Handing the Director to the HTTP Completer the moment a
-/// session dies is the second mind ADR-0008 refuses.
+/// saved and not used. Live, because it is the way back; labelled, because a
+/// row that takes a key and changes nothing is worse than a frozen one.
+/// Handing the Director to the HTTP Completer the moment a session dies is the
+/// second mind ADR-0008 refuses.
+///
+/// #500 narrowed the label rather than removing it. The wait is no longer a
+/// relaunch — the Session retries the child on its own backoff, and Off in the
+/// source row hands these three back at once — so the label names the pick
+/// that ends it instead of a launch.
 fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String, bool) {
     if driving {
         return (
@@ -420,7 +425,7 @@ fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String,
     let (label, frozen) = env_row(label, var);
     match configured {
         true => (
-            format!("{label} (read at the next launch: a Harness is still the Completer)"),
+            format!("{label} (not in use until the source below is Off: a Harness is still the Completer)"),
             frozen,
         ),
         false => (label, frozen),
@@ -600,17 +605,17 @@ fn completer_source_section() -> FormSection {
                 label: Some(source_label),
                 writes: TextField::Harness,
                 help: Some(
-                    "Off leaves the HTTP Completer and takes effect now. Switching \
-                     to a Harness takes effect on the next launch; the line below \
-                     says what is attached."
+                    "Every pick takes effect now: Off leaves the HTTP Completer, \
+                     and a Harness is attached at once, answering once its \
+                     child is up. The line below says what is attached."
                         .to_string(),
                 ),
                 options: harness_options(),
                 frozen,
             },
-            // Not batched: one launch stands between this and the Completer
-            // either way, so a button between the typing and the file would
-            // only be one more thing to click.
+            // Not batched: the blur that writes the row is what re-opens the
+            // attachment since #500, so a button between the typing and the
+            // file would only be one more thing to click.
             FormRow::TextField {
                 id: HARNESS_COMMAND_ID.to_string(),
                 label: Some("Custom command line".to_string()),
@@ -1807,11 +1812,14 @@ mod tests {
     }
 
     /// #469: the rows a dead Harness leaves live take an edit the Director
-    /// will not read until the next launch, because the handle stays the
+    /// does not read while the handle is set, because that handle stays the
     /// configured Completer (ADR-0008). Editable so there is a way back, and
     /// labelled so the wait is on screen rather than discovered.
+    ///
+    /// #500: the wait ends with a pick rather than a relaunch, so the label
+    /// names the pick.
     #[test]
-    fn a_dead_harness_leaves_the_http_rows_editable_and_says_they_wait() {
+    fn a_dead_harness_leaves_the_http_rows_editable_and_names_the_way_back() {
         crate::model::tests::with_env(None, None, None, || {
             for (label, var) in [
                 ("Base URL", crate::model::BASE_URL),
@@ -1821,10 +1829,37 @@ mod tests {
                 let (label, frozen) = http_row(label, var, false, true);
                 assert!(!frozen, "the way back has to stay typeable, got {label:?}");
                 assert!(
-                    label.contains("next launch"),
-                    "the row has to say the edit waits, not {label:?}"
+                    !label.contains("next launch"),
+                    "no edit here waits for one any more, got {label:?}"
+                );
+                assert!(
+                    label.contains("Off"),
+                    "the row has to name what ends the wait, not {label:?}"
                 );
             }
+        });
+    }
+
+    /// Production change that would fail this: source copy still promising a
+    /// relaunch after `harness::retarget` made every pick live. A row that
+    /// tells the user to restart is how #452's limit was survivable and is now
+    /// just wrong (#500).
+    #[test]
+    fn no_completer_source_copy_promises_a_relaunch() {
+        crate::model::tests::with_harness(None, || {
+            let section = completer_source_section();
+            let mut copy = section.comment.clone().unwrap_or_default();
+            for row in &section.rows {
+                if let FormRow::Popup { help, .. } | FormRow::InspectBlock { help, .. } = row {
+                    copy.push(' ');
+                    copy.push_str(help.as_deref().unwrap_or_default());
+                }
+            }
+            assert!(
+                !copy.to_lowercase().contains("next launch")
+                    && !copy.to_lowercase().contains("restart"),
+                "got {copy:?}"
+            );
         });
     }
 }
