@@ -743,19 +743,19 @@ mod tests {
 mod windows_job {
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectA, JobObjectExtendedLimitInformation,
+        AssignProcessToJobObject, JobObjectExtendedLimitInformation,
         SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        CreateJobObjectA, OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
     };
 
-    /// Job Objects by child PID, stored as isize for Send safety. The handle
-    /// is terminated and closed on shutdown so descendants die with us.
-    static JOBS: Mutex<Option<HashMap<u32, isize>>> = Mutex::new(None);
+    /// Job Objects by child PID. Stored as HANDLE (raw pointer) that we cast
+    /// to/from for Win32 API calls. Access is mutex-protected.
+    static JOBS: Mutex<Option<HashMap<u32, HANDLE>>> = Mutex::new(None);
 
     /// Create a Job Object with kill-on-close, assign the child to it, and
     /// store it for later termination. Returns true if the job was created
@@ -763,7 +763,7 @@ mod windows_job {
     pub(super) fn assign_to_job(pid: u32) -> bool {
         unsafe {
             let job = CreateJobObjectA(std::ptr::null(), std::ptr::null());
-            if job == 0 {
+            if job.is_null() {
                 eprintln!("harness: CreateJobObjectA failed for pid {pid}");
                 return false;
             }
@@ -785,7 +785,7 @@ mod windows_job {
             }
 
             let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
-            if process == 0 {
+            if process.is_null() {
                 eprintln!("harness: OpenProcess failed for pid {pid}");
                 CloseHandle(job);
                 return false;
