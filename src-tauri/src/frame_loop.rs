@@ -450,6 +450,7 @@ pub(crate) fn run_frame_loop(
                         roster.dismiss(&id);
                         lives.retain(|live| live.id != id);
                         slots.abandon(&id);
+                        session_log::forget(&app, &id);
                         close_chat(&app, &id);
                     }
                     SettingsOp::SwitchAll { character } => {
@@ -464,6 +465,7 @@ pub(crate) fn run_frame_loop(
                                     Arc::clone(&loaded),
                                     &config,
                                     &director,
+                                    &app,
                                 );
                                 if let Ok(inspect) = inspect.lock() {
                                     push_chat_opening(&app, &roster, &id, &inspect);
@@ -479,11 +481,14 @@ pub(crate) fn run_frame_loop(
                         ambient_allowed,
                         configured,
                     } => {
-                        session_log::clear(&app);
                         // What every live `Pace` was built from, and the only
                         // way to tell an edited wake interval from a Retarget
                         // that changed the host and left the interval alone.
                         let was_first = config.ambient_first;
+                        // Nothing could answer a moment ago, so the session
+                        // starting here is the first one rather than a
+                        // replacement. Read before `config` is rebuilt.
+                        let first_connection = !config.configured && configured;
                         director = settings;
                         config = model::config_from(&director);
                         config.enabled = enabled;
@@ -514,6 +519,15 @@ pub(crate) fn run_frame_loop(
                                 live.character.behaviors.keys().cloned(),
                                 &director,
                                 configured,
+                            );
+                            session_log::new_session(
+                                &app,
+                                &live.id,
+                                if first_connection {
+                                    "something can answer now"
+                                } else {
+                                    "settings changed what answers"
+                                },
                             );
                         }
                     }
