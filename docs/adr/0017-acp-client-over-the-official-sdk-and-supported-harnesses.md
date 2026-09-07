@@ -30,7 +30,8 @@ One session per app lifetime, and across restarts when the Harness allows
 it: `{session_id, harness, agent}` goes to `harness-session.json` in the data
 folder, and an `initialize` that reports `loadSession` gets a `session/load`
 with that id before any `session/new`. Any failure there is a fresh session
-and a rewritten file. `session/new` and `session/load` go out as raw requests
+and a rewritten file, and the first turn on a loaded session counts as one:
+a load that answered proves nothing (#448). `session/new` and `session/load` go out as raw requests
 rather than through the SDK's session builders, which tear the connection
 down when the Harness refuses — and `auth_required` is a refusal we recover
 from. Where "the turn finished" is read is one function, `acp_wire::turn`,
@@ -72,7 +73,7 @@ seventeen-agent list inherited from a CLI.
 | Name | Command | Standing |
 |---|---|---|
 | `claude` | `npx -y @agentclientprotocol/claude-agent-acp` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
-| `hermes` | `hermes acp` | First-party. **Verified 2026-09-07** on a fresh session; a resumed one is #448, and it is ours. |
+| `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once the reopen above has replaced the session it only said it loaded (#448). |
 | `opencode` | `opencode acp` | First-party. **Unverified**: not installed on the machine either #433 or #434 was written on. |
 | anything else | as typed, split on whitespace | The escape hatch for every row below, and the next adapter. |
 
@@ -107,9 +108,13 @@ Harness. The stdio server is built and tested on its own; that it is reachable
 
 The one thing a real turn contradicted is the fallback above: `session/load`
 refusing is not always an error. `hermes` answers a session it cannot restore
-with a success result and logs the reason to its stderr, which leaves the id
-cached and every later turn a `refusal`. #448 has the fix, and the fake agent's
-error-shaped refusal is why the tests missed it.
+with a success result and logs the reason to its stderr, which left the id
+cached and every later turn a `refusal`. So a successful load is not evidence
+the session works, and the first turn on it is: a turn that fails on a loaded
+session throws the id away, deletes the session file, opens one `session/new`
+and asks again. A second failure is the Harness's answer, and a session that
+has served a turn is never reopened. The fake agent's error-shaped refusal is
+why the tests missed it (#448).
 
 Protocol-compatible and not yet named, all first-party ACP on stdio and all
 reachable today through the custom value: Grok Build (`grok agent stdio`),
