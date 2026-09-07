@@ -122,7 +122,18 @@ struct SavedSession {
     agent: Option<String>,
 }
 
-type Forward = Box<dyn Fn(PermissionAsk) + Send + Sync>;
+/// What the Chat surface is told about a forwarded permission request.
+///
+/// `Settled` exists because the ask goes to every open surface and only one of
+/// them takes the click: without it the others keep offering live buttons on a
+/// question already answered, cancelled, or dead with its turn.
+pub enum Permission {
+    Ask(PermissionAsk),
+    /// The request id that is no longer answerable.
+    Settled(String),
+}
+
+type Forward = Box<dyn Fn(Permission) + Send + Sync>;
 
 /// One ACP session for the app's lifetime, shared by every Instance.
 pub struct Session {
@@ -472,8 +483,9 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
-            forward(ask);
+            forward(Permission::Ask(ask));
         }
+        Event::PermissionSettled { request } => forward(Permission::Settled(request)),
     }
 }
 
@@ -753,7 +765,7 @@ mod tests {
     struct Fixture {
         dir: PathBuf,
         count: PathBuf,
-        asks: Receiver<PermissionAsk>,
+        forwarded: Receiver<Permission>,
     }
 
     impl Fixture {
@@ -780,16 +792,39 @@ mod tests {
                     format!("count={}", count.display()),
                 ],
             };
-            let (tx, asks) = mpsc::channel();
+            let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
                 launch,
                 dir.clone(),
-                Box::new(move |ask| {
-                    let _ = tx.send(ask);
+                Box::new(move |permission| {
+                    let _ = tx.send(permission);
                 }),
             )
             .with_timeout(Duration::from_secs(10));
-            (Self { dir, count, asks }, session)
+            (
+                Self {
+                    dir,
+                    count,
+                    forwarded,
+                },
+                session,
+            )
+        }
+
+        /// The next forwarded ask, or a panic naming what came instead.
+        fn ask(&self) -> PermissionAsk {
+            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Permission::Ask(ask)) => ask,
+                other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
+            }
+        }
+
+        /// The next forwarded settlement, by request id.
+        fn settled(&self) -> String {
+            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Permission::Settled(request)) => request,
+                other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+            }
         }
 
         fn count(&self, what: &str) -> usize {
@@ -897,13 +932,15 @@ mod tests {
             let session = Arc::clone(&session);
             thread::spawn(move || session.complete("hi"))
         };
-        let ask = fx.asks.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ask = fx.ask();
         assert_eq!(ask.title, "rm -rf /");
         assert_eq!(ask.kind.as_deref(), Some("execute"));
         assert_eq!(ask.options.len(), 2);
         session.answer_permission(&ask.request, "allow");
         assert_eq!(worker.join().unwrap(), Ok("ok:allow".to_string()));
         assert!(fx.wait_for("perm:selected", 1));
+        // Every other open window has to retire the row this one answered.
+        assert_eq!(fx.settled(), ask.request);
         session.shutdown();
     }
 
@@ -913,9 +950,11 @@ mod tests {
         let session = session.with_timeout(Duration::from_millis(700));
         let reply = session.complete("hi");
         assert!(reply.is_err(), "{reply:?}");
-        fx.asks.recv_timeout(Duration::from_secs(1)).unwrap();
+        let ask = fx.ask();
         assert!(fx.wait_for("cancel", 1));
         assert!(fx.wait_for("perm:cancelled", 1));
+        // A row nobody answered is retired too, or its buttons outlive the turn.
+        assert_eq!(fx.settled(), ask.request);
         session.shutdown();
     }
 

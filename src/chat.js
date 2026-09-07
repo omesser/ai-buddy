@@ -111,16 +111,38 @@ function note(text) {
   return add(row);
 }
 
+// The rows still offering buttons, by request id. One request reaches every
+// open window and only one of them takes the click, so the Shell's settled
+// event is what retires the rest.
+const asks = new Map();
+
+// A request nothing can answer any more: answered here or in another window,
+// cancelled with its turn, or gone with the Harness. The buttons go dead
+// rather than the row, so the log still says what was asked.
+function retire(request) {
+  const buttons = asks.get(request);
+  if (!buttons) {
+    return;
+  }
+  asks.delete(request);
+  for (const button of buttons.querySelectorAll("button")) {
+    button.disabled = true;
+  }
+}
+
 // A permission request the Harness asked, drawn as the options it offered.
 // Nothing is chosen here or in the Shell: a click is the only answer, and
 // a turn that times out first is cancelled by the Shell, not decided
 // (ADR-0010). The buttons stay disabled after the click so the row reads as
 // what was decided.
 //
-// ponytail: buttons freeze on the click, not on the Shell's cancel; a row the
-// user never answered keeps live buttons whose click goes nowhere. A settled
-// event would fix that, once there is more than this one row to settle.
+// Ignored the second time a request arrives: the Shell hands an unsettled
+// request to a window that opens after it was asked, and this window may
+// already have drawn it.
 function asked(ask) {
+  if (asks.has(ask.request)) {
+    return null;
+  }
   const row = el("row ask");
   const label = el("who-label");
   label.textContent = `${them} · asks`;
@@ -145,6 +167,7 @@ function asked(ask) {
   }
   body.append(buttons);
   row.append(label, body);
+  asks.set(ask.request, buttons);
   return add(row);
 }
 
@@ -293,6 +316,14 @@ async function start() {
     "chat-permission",
     ({ payload }) => {
       asked(payload);
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-permission-settled",
+    ({ payload }) => {
+      retire(payload);
     },
     { target: chat.label },
   );
