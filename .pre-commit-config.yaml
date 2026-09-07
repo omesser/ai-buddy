@@ -61,6 +61,19 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
+    # PowerShell linting
+  - repo: local
+    hooks:
+      - id: psscriptanalyzer-check
+        name: PSScriptAnalyzer
+        # Runs when pwsh is available; skips cleanly otherwise.
+        entry: scripts/hooks/psscriptanalyzer.sh
+        language: system
+        files: \.ps1$
+        # Severity Error: only fail on actual errors, not style warnings.
+        # Keeps PSUseBOMForUnicodeEncodedFile active (default in PSScriptAnalyzer)
+        # to catch encoding issues like the #392 em-dash footgun.
+
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
     hooks:
