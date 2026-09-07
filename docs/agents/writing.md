@@ -106,7 +106,7 @@ agent writes with one line of its own:
 _— Cursor agent (<AgentName>), on [@omesser](https://github.com/omesser)'s behalf._
 ```
 
-`<AgentName>` is this agent's profile name (Architect, Coder, …). This applies
+`<AgentName>` is the agent's profile name if available (Architect, Coder, …). This applies
 to every issue, PR body, review, comment, and gist on any GitHub repository when
 writing through Oded's account.
 
