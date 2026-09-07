@@ -133,19 +133,19 @@ fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// Apply capture exclusion based on user settings.
+/// Apply capture policy based on user settings.
 ///
-/// WDA_EXCLUDEFROMCAPTURE makes the window invisible to screen recording and
-/// screen sharing when the user has checked "Hide from screenshots and screen shares".
-/// The setting is inverted: `capturable: true` means hide (checked = excluded).
-/// Default (false/unchecked) makes the buddy capturable (WDA_NONE, no exclusion).
+/// `capturable: true` (default) allows the window to appear in screen recordings and
+/// shares (WDA_NONE). `capturable: false` excludes it via WDA_EXCLUDEFROMCAPTURE.
+/// The Presence checkbox "Hide from screenshots and screen shares" writes the inverse:
+/// checked → `capturable = false` → excluded.
 fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
     // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
     // SetWindowDisplayAffinity is documented safe with valid HWNDs.
     let affinity = if crate::dev_flags::CAPTURABLE.is_on() {
-        WDA_EXCLUDEFROMCAPTURE
-    } else {
         0 // WDA_NONE - window is capturable
+    } else {
+        WDA_EXCLUDEFROMCAPTURE
     };
 
     unsafe {

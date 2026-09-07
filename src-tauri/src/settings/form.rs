@@ -747,10 +747,10 @@ fn presence_sections() -> Vec<FormSection> {
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 FormRow::Checkbox {
                     id: CAPTURABLE_ID.to_string(),
-                    label: "Hide from screenshots and screen shares".to_string(),
+                    label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
                     frozen: false,
-                    help: Some("Excludes the buddy from screen captures and shares.".to_string()),
+                    help: Some("Checked: buddy is visible in screen captures (default). Unchecked: excluded.".to_string()),
                     comment: None,
                 },
                 FormRow::InspectBlock {

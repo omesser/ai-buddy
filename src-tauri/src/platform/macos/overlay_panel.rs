@@ -101,14 +101,15 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether this run excludes itself from capture. See `configure_overlay`.
+/// Whether this run allows itself to be captured. See `configure_overlay`.
 ///
-/// The setting is inverted: `capturable: true` means "hide from captures"
-/// (checkbox checked = excluded). When false or unset, the buddy is capturable.
+/// `capturable: true` (default) means the buddy appears in screenshots and shares.
+/// `capturable: false` excludes it. The env var `AI_BUDDY_CAPTURABLE` can override:
+/// `=1` forces visible, `=0` forces hidden.
 fn sharing_type() -> NSWindowSharingType {
     if crate::dev_flags::CAPTURABLE.is_on() {
-        NSWindowSharingType::None
-    } else {
         NSWindowSharingType::ReadOnly
+    } else {
+        NSWindowSharingType::None
     }
 }

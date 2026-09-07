@@ -144,14 +144,14 @@ Set environment variables for live debugging (all off by default):
 | `AI_BUDDY_TRACE_FRAMES` | Engine frames (state, position, animation) per tick |
 | `AI_BUDDY_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played, Behavior refused |
 | `AI_BUDDY_TRACE_ENGINE` | Behavior/Primitive/Animation/State changes |
-| `AI_BUDDY_CAPTURABLE` | Hide from screen captures (inverted: `1` = excluded) — normally capturable, set to hide |
+| `AI_BUDDY_CAPTURABLE` | Force capturable (`1`) or hidden (`0`); overrides setting — for verify scripts/CI |
 
 Values: `1`/`on`/`true`/`yes` for on, `0`/`off`/`false`/`no` for off (case-insensitive).
 
-By default, the overlay appears in screen captures. Set `AI_BUDDY_CAPTURABLE=1`
-to exclude it from screenshots and shares (overriding the Presence setting).
-Most users control this via Settings → Presence → "Hide from screenshots and
-screen shares". The env var is primarily for CI or scripted testing when
+By default, the overlay appears in screen captures (capturable). Set `AI_BUDDY_CAPTURABLE=1`
+to force it visible (for verify scripts that screenshot the buddy), or `=0` to force
+exclusion (testing the hide path). Most users control this via Settings → Presence →
+"Appear in screenshots and screen shares" checkbox. The env var is for CI/testing when
 sprite's appearance.
 
 ## Running with a Completer

@@ -15,18 +15,18 @@ about WYSIWYG. Appearing in captures should be the default; opting out of captur
 ## Decision
 
 1. **Default = capturable.** Fresh install or empty settings: the buddy appears in a
-   screenshot/share without setting an env var.
-2. **Presence checkbox.** "Hide from screenshots and screen shares" on the Presence tab
-   (all platforms that implement exclusion: macOS and Windows). Checked = excluded
-   (user opt-out). Unchecked = default capturable.
-3. **Inverted polarity.** `Settings::capturable` was `false` for "visible" (dev flag
-   to opt-in). Now `true` means "hidden" (user opt-out from default visible). The
-   BoolField name stays `Capturable` but the checkbox label and help text reflect the
-   inversion.
-4. **Platform support.** macOS (`NSWindowSharingType`) and Windows (`WDA_EXCLUDEFROMCAPTURE`)
+   screenshot/share without setting an env var. `Settings::capturable` defaults to `true`.
+2. **Field semantics.** `capturable: true` means the buddy is visible in captures;
+   `false` means excluded. The field name matches its meaning (not inverted).
+3. **Presence checkbox.** "Appear in screenshots and screen shares" on the Presence tab
+   (all platforms that implement exclusion: macOS and Windows). Checked = visible (default);
+   unchecked = excluded. Direct binding: checkbox state = `capturable` field value.
+4. **Platform support.** macOS (`NSWindowSharingType::ReadOnly` for visible, `::None` for
+   excluded) and Windows (`WDA_NONE` for visible, `WDA_EXCLUDEFROMCAPTURE` for excluded)
    both read the setting; Linux/Wayland degrades gracefully (no capture exclusion API).
-5. **Env override kept.** `AI_BUDDY_CAPTURABLE=1` still works for CI/verify scripts
-   that need a capturable or uncapturable buddy regardless of the file setting.
+5. **Env override kept.** `AI_BUDDY_CAPTURABLE=1` forces visible (for verify scripts that
+   screenshot the buddy); `=0` forces hidden (testing the exclusion path). Overrides file
+   setting, preserving historical meaning (`=1` = capturable).
 
 ## Consequences
 
@@ -35,15 +35,18 @@ about WYSIWYG. Appearing in captures should be the default; opting out of captur
 - **Pride/usefulness.** Users who want their AI companion visible in demos/shares get
   that without dev flags.
 - **Meeting privacy still available.** Users who need the buddy hidden during screen
-  shares check the Presence box — one setting, clearly labelled, not buried in
+  shares uncheck the Presence box — one setting, clearly labelled, not buried in
   Development.
 - **Platform table updated.** README, DESIGN.md, and DEVELOPMENT.md now say
   "Capturable; opt-out in settings" instead of "Never captured."
-- **Tests updated.** Default changed from `capturable: false` to `true`; form tests
-  moved from Development to Presence.
-- **Breaking for existing users.** Anyone who relied on the old default (buddy always
-  hidden) will see it in captures until they check the new box. Acceptable: the new
-  default is more honest, and the control is now visible to all users, not dev-only.
+- **Tests updated.** Default changed from `capturable: false` to `true`; form checkbox
+  moved from Development to Presence with label matching field semantics.
+- **Field migration.** Old files with `capturable: false` (excluded) keep that meaning;
+  old files with `capturable: true` (the `AI_BUDDY_CAPTURABLE=1` override) keep that
+  meaning (visible). New installs with no key get default `true` (visible). Semantics
+  unchanged from v0; only the default flipped.
+- **Env var preserved.** `AI_BUDDY_CAPTURABLE=1` keeps historical meaning (force visible
+  for verify scripts); `=0` forces hidden. CI/verify scripts unchanged.
 
 ## Alternatives Considered
 

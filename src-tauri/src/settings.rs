@@ -1268,9 +1268,9 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
-    /// Hide from screenshots and screen shares. False (default) means capturable;
-    /// true excludes the overlay from capture. macOS and Windows read it; the
-    /// field is unconditional so the document round-trips on every platform.
+    /// Appear in screenshots and screen shares. True (default) means the buddy
+    /// is capturable; false excludes it. macOS and Windows read it; the field
+    /// is unconditional so the document round-trips on every platform.
     pub capturable: bool,
     /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
     pub use_accessibility: bool,
