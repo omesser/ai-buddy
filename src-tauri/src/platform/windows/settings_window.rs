@@ -308,7 +308,24 @@ impl SettingsWindow {
     fn handle_text_change(&self, control_id: i32) {
         let id_str = control_id.to_string();
 
-        if form::EXCLUDED_ID == id_str {
+        if form::DIRECTOR_BASE_URL_ID == id_str
+            || form::DIRECTOR_MODEL_ID == id_str
+            || form::DIRECTOR_API_KEY_ID == id_str
+        {
+            let view = {
+                let guard = self.session.lock().unwrap();
+                guard.as_ref().map(|s| s.view())
+            };
+            if let Some(_view) = view {
+                let controls = self.controls.borrow();
+                for id in [form::APPLY_ID, form::CANCEL_ID] {
+                    if let Some(Control::Button(_, _)) = controls.get(id) {
+                        let description = form::describe();
+                        let _dirty = self.director_draft(&description).patch(&_view).is_some();
+                    }
+                }
+            }
+        } else {
             let controls = self.controls.borrow();
             if let Some(Control::Edit(hwnd, _)) = controls.get(&id_str) {
                 let text = unsafe {
@@ -326,27 +343,10 @@ impl SettingsWindow {
                 };
                 drop(controls);
 
-                if let Some(writes) = form::describe().text_write(form::EXCLUDED_ID) {
+                if let Some(writes) = form::describe().text_write(&id_str) {
                     let mut patch = SettingsPatch::default();
                     if patch.set_text(writes, &text) {
                         self.apply(patch);
-                    }
-                }
-            }
-        } else if form::DIRECTOR_BASE_URL_ID == id_str
-            || form::DIRECTOR_MODEL_ID == id_str
-            || form::DIRECTOR_API_KEY_ID == id_str
-        {
-            let view = {
-                let guard = self.session.lock().unwrap();
-                guard.as_ref().map(|s| s.view())
-            };
-            if let Some(_view) = view {
-                let controls = self.controls.borrow();
-                for id in [form::APPLY_ID, form::CANCEL_ID] {
-                    if let Some(Control::Button(_, _)) = controls.get(id) {
-                        let description = form::describe();
-                        let _dirty = self.director_draft(&description).patch(&_view).is_some();
                     }
                 }
             }
@@ -550,6 +550,18 @@ fn set_window_text(hwnd: HWND, text: &str) {
         let text_cstr = CString::new(text).unwrap_or_default();
         SetWindowTextA(hwnd, text_cstr.as_ptr() as *const u8);
     }
+}
+
+/// Build an Edit control's style flags from frozen and password flags.
+fn edit_style(frozen: bool, password: bool) -> u32 {
+    let mut style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER;
+    if frozen {
+        style |= ES_READONLY as u32;
+    }
+    if password {
+        style |= ES_PASSWORD as u32;
+    }
+    style
 }
 
 pub fn show(session: SettingsSession) {
@@ -821,6 +833,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             id,
                             label,
                             placeholder,
+                            frozen,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -851,7 +864,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
+                                edit_style(*frozen, false),
                                 display_left,
                                 y,
                                 FIELD_WIDTH,
@@ -874,7 +887,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             y += ROW_HEIGHT + ROW_GAP;
                             control_id += 1;
                         }
-                        FormRow::SecureField { id, label, .. } => {
+                        FormRow::SecureField {
+                            id, label, frozen, ..
+                        } => {
                             if let Some(label_text) = label {
                                 let label_hwnd = CreateWindowExA(
                                     0,
@@ -903,7 +918,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_PASSWORD as u32,
+                                edit_style(*frozen, true),
                                 display_left,
                                 y,
                                 FIELD_WIDTH,
@@ -1451,6 +1466,103 @@ mod tests {
             FIELD_WIDTH,
             EXPECTED_WINDOW_WIDTH - EXPECTED_MARGIN * 2,
             "FIELD_WIDTH calculation must match macOS/GTK"
+        );
+    }
+
+    /// edit_style builds the correct flags for frozen and password controls.
+    #[test]
+    fn edit_style_sets_readonly_and_password_flags() {
+        let editable_plain = edit_style(false, false);
+        let frozen_plain = edit_style(true, false);
+        let frozen_password = edit_style(true, true);
+
+        assert_eq!(
+            editable_plain & ES_READONLY as u32,
+            0,
+            "editable field must not have ES_READONLY"
+        );
+        assert_ne!(
+            frozen_plain & ES_READONLY as u32,
+            0,
+            "frozen field must have ES_READONLY"
+        );
+        assert_ne!(
+            frozen_password & ES_READONLY as u32,
+            0,
+            "frozen password field must have ES_READONLY"
+        );
+        assert_ne!(
+            frozen_password & ES_PASSWORD as u32,
+            0,
+            "password field must have ES_PASSWORD"
+        );
+    }
+
+    /// text_write returns the field for known text ids, so generic commit works.
+    #[test]
+    fn generic_text_commit_via_text_write() {
+        let description = form::describe();
+
+        // Wake interval (Director tab, not special-cased today)
+        let wake_field = description.text_write(form::DIRECTOR_WAKE_SECS_ID);
+        assert!(wake_field.is_some(), "wake interval must have a TextField");
+        assert_eq!(
+            wake_field,
+            Some(crate::settings::TextField::DirectorWakeSecs),
+            "wake interval writes to DirectorWakeSecs"
+        );
+
+        // Completer timeout (Development tab)
+        let timeout_field = description.text_write(form::DIRECTOR_TIMEOUT_SECS_ID);
+        assert!(timeout_field.is_some(), "timeout must have a TextField");
+        assert_eq!(
+            timeout_field,
+            Some(crate::settings::TextField::DirectorTimeoutSecs),
+            "timeout writes to DirectorTimeoutSecs"
+        );
+
+        // Completer max tokens (Development tab)
+        let max_tokens_field = description.text_write(form::DIRECTOR_MAX_TOKENS_ID);
+        assert!(
+            max_tokens_field.is_some(),
+            "max tokens must have a TextField"
+        );
+        assert_eq!(
+            max_tokens_field,
+            Some(crate::settings::TextField::DirectorMaxTokens),
+            "max tokens writes to DirectorMaxTokens"
+        );
+
+        // Excluded applications (already working, verify it stays)
+        let excluded_field = description.text_write(form::EXCLUDED_ID);
+        assert!(
+            excluded_field.is_some(),
+            "excluded apps must have a TextField"
+        );
+    }
+
+    /// SettingsPatch.set_text commits through the generic text field enum.
+    #[test]
+    fn patch_commits_non_batched_text_fields() {
+        let mut patch = SettingsPatch::default();
+
+        // Wake interval
+        let changed = patch.set_text(crate::settings::TextField::DirectorWakeSecs, "300");
+        assert!(changed, "wake interval change must succeed");
+        assert_eq!(
+            patch.director_wake_secs,
+            Some("300".to_string()),
+            "wake interval must be set in patch"
+        );
+
+        // Completer timeout
+        let mut patch2 = SettingsPatch::default();
+        let changed2 = patch2.set_text(crate::settings::TextField::DirectorTimeoutSecs, "60");
+        assert!(changed2, "timeout change must succeed");
+        assert_eq!(
+            patch2.director_timeout_secs,
+            Some("60".to_string()),
+            "timeout must be set in patch"
         );
     }
 }
