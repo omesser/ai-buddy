@@ -56,8 +56,8 @@ The chat surface (#17) is in. It is unbuilt, so it is born in the chat UI.
   thinking ellipsis (`src/bubble.js`, #119) are drawn in that same overlay
   window, above the sprite and beside the art: they are the Character's
   expression rather than the chat surface's chrome, and they keep the palette
-  #119 shipped. **That last clause is amended by #441** — the next section
-  says which half of it survives. Cues (`src/cue.js`) are tuned to read over
+  #119 shipped. **That last clause is amended by #441** — the sections below
+  say which half of it survives. Cues (`src/cue.js`) are tuned to read over
   arbitrary wallpaper and arbitrary Character art, not against window chrome
   (#277).
 - **Tray icon and menus** — out. The system draws them; `tray.rs` and
@@ -75,32 +75,101 @@ Amended by #441. The bullet above is too wide by one step, and the step is
 worth naming rather than deleting.
 
 What it defends is real. The bubble is drawn over whatever the user has on
-their desktop, and this file's one shipped design is a dark panel whose
-separation comes from alpha: fills at 2 to 6 percent white, rules at 7 to 13.
-Over a photograph a 7 percent hairline is not a border, and a `#14171e` bubble
-on a dark wallpaper is a hole. That reasoning reaches those tokens and stops
+their desktop, and this file's one shipped design gets its separation from
+alpha: fills at 2 to 6 percent white, rules at 7 to 13. Over a photograph a 7
+percent hairline is not a border. That reasoning reaches those tokens and stops
 there.
 
 `chat-ui.css` holds two kinds of token. Shape, rhythm and literal hue —
-`--chat-radius`, `--chat-radius-tail`, the padding step `.row.you .said` uses,
-`--chat-sans`, the body size and the `.row.them .said` line height, and the
-opaque ends of the ramp, `--chat-ink` and `--chat-panel` — mean the same thing
-on any ground. A 12px corner is a 12px corner over a photograph. Alpha over an
-assumed panel — every `--chat-fill*`, `--chat-rule`, `--chat-line`,
-`--chat-accent-soft`, and the `color-scheme: dark` that makes the panel
-legible — is not a colour at all. It is an instruction for sitting on
-`--chat-panel`, and the overlay has no panel.
+`--chat-radius`, `--chat-sans`, the body size, the `.row.them .said` line
+height, the inset `.composer input` uses, and the opaque ends of the ramp,
+`--chat-panel` and `--chat-ink` — mean the same thing on any ground. A 12px
+corner is a 12px corner over a photograph. Alpha over an assumed panel — every
+`--chat-fill*`, `--chat-rule`, `--chat-line`, `--chat-accent-soft`, and the
+`color-scheme: dark` that makes the panel legible — is not a colour at all. It
+is an instruction for sitting on `--chat-panel`, and the overlay has no panel.
 
 The bubble may take the first kind and may never take the second. That is the
 whole amendment, and it is checkable by pointing at a token and saying which
-kind it is. The bubble keeps an opaque fill, a full-strength border and its
-shadow, because that border is the only thing between the text and a
-photograph.
+kind it is.
 
-Nothing else in the bullet moves. The sprite still has no chrome to style, the
-thinking indicator keeps the round silhouette and trailing dots that tell a
-reader which mode they are looking at before anything animates, and Cues stay
-as #277 tuned them.
+## The bubble is dark, and the edge is what makes that safe
+
+`.chat-ui-minimal` is unconditionally dark — `color-scheme: dark`,
+`--chat-panel: #14171e`, `--chat-ink: #e8ebf2`. So the bubble is dark. Not the
+ramp inverted into a light bubble: that would be legible and would be a second
+surface, which is the thing this amendment exists to stop.
+
+The objection to a dark bubble is sound — over a dark wallpaper a `#14171e`
+fill is a hole — and it is answered at the edge rather than in the palette. A
+2px `--chat-ink` ring around a `--chat-panel` fill fails in opposite
+directions: over a blown-out ground the ring disappears and the dark fill
+carries the shape; over a near-black ground the fill disappears and the ring
+carries it. They are the two ends of one ramp, so no single ground can hide
+both, which is a promise a single-value edge cannot make. A drop shadow closes
+the mid-tone case. The tail is the same sandwich, because a lone
+`--chat-panel` spike would vanish exactly where the ring is doing the work.
+
+## It echoes the Character's turn, not the user's
+
+Only `.row.you .said` has a fill, a radius and a padding. `.row.them .said` —
+the Character's own line — is bare ink at `line-height: 1.55` on the panel.
+The overlay bubble speaks for the Character, so it takes the Character's ink
+and leading, and the box it needs (there being no panel under it to be bare on)
+is the *panel's*: `--chat-panel` filled, `--chat-radius` cornered, inset at
+`.composer input`'s `10px 13px`, which is what this stylesheet already uses for
+a bordered box holding one piece of text.
+
+`--chat-radius-tail` therefore does not travel, reversing the first draft of
+this amendment. That tightened corner is `.row.you`'s gesture for *you said
+this*, and putting it on the Character's speech would say the wrong thing.
+
+## One bubble for both states, reversing #119
+
+#119 drew the two apart on purpose. `src/main.css:75-117` gives the thinking
+state a round silhouette and a trail of shrinking discs, and its comment says
+why: the idiom tells a reader at a glance which of the two they are looking at,
+before the dots inside have moved at all. **This amendment reverses that
+decision.** One bubble — same shape, same fill, same edge — and the ellipsis
+alone carries the difference.
+
+What is given up is the glance, and it is a real loss rather than a detail
+being tidied. What is bought is that the Character has one bubble instead of
+two objects that happen to appear in the same place, and that the state a user
+watches for two seconds is visibly the box the answer arrives in. The chat
+surface already makes the same trade: `.caret` is `--chat-accent` blinking
+inside the log, so waiting there is a small repeated glyph in the same
+container as the words, not a second container. The overlay's ellipsis is that
+caret, and the two surfaces then say *waiting* the same way.
+
+Quotation marks around the spoken line are recorded as an **open option**, not
+a decision — a second way to separate the states without a second silhouette.
+They are a typographic change with their own wrap and measure consequences and
+should be judged on their own.
+
+## The bubble never flips below the head
+
+The bubble always sits above the sprite. That retires the flip, and the case
+the flip answered has to be answered again: near the top of a display there is
+no room above the head.
+
+**Clamp and overlap, bubble in front.** `placeBubble` already clamps `y` into
+the display bounds and `.bubble` already carries `z-index: 1` over an unindexed
+sprite, so this is what the code does once the flip branch is gone rather than
+a new mechanism. The tail still points down at the head, and the bubble is
+transient where the sprite is constant: a line that cannot be read is a worse
+failure than art briefly covered. The cost is real and is on the page — the
+tallest legal bubble, six lines, clamps to the display edge and covers most of
+the sprite.
+
+`CEILING_CLEARANCE` in `src/bubble.js` exists only to trigger the flip, so it
+becomes **dead**, not repurposed: the follow-up deletes the constant, the
+`ceilingClearance` parameter and the `spriteHeadY < ceilingClearance` branch,
+and the clamp below them does the rest unchanged. Keeping it alive as a
+minimum-gap knob was considered and dropped, because nothing asks for one.
+
+Nothing else in the bullet moves. The sprite still has no chrome to style, and
+Cues stay as #277 tuned them.
 
 Values are not settled here. `docs/design/bubble.html` is the Dated page they
 are judged on, and `src/main.css` changes only after it is approved.
@@ -164,7 +233,8 @@ Both arrive with #17's chat window; the grep above is what keeps the literals
 out afterwards. The overlay is untouched: `src/main.css` and `src/bubble.js`
 keep the colours and fonts they shipped with. Amended by #441 — `src/main.css`
 takes the type, shape and opaque hues by hand once `docs/design/bubble.html` is
-approved, and `src/bubble.js` is untouched either way.
+approved, and `src/bubble.js` loses `CEILING_CLEARANCE` and the flip branch it
+gates. Its wrap cap, durations and timers are untouched.
 
 CONTEXT.md gains **Chat UI** beside **Chat surface**, so the design has a word
 of its own that is not read as another name for the window.

@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
   The bubble proposal for omesser/ai-buddy#441: the overlay's speech bubble and
-  thinking indicator brought into the chat surface's design family, without
-  taking the part of that family that only works inside a window.
+  thinking indicator drawn as a piece of the chat surface, carried out onto the
+  desktop — without taking the part of that surface that only works inside a
+  window.
 
   The <style> block marked "spec" is what src/main.css ports if this is
   approved. Everything else on this page is the harness that makes it
@@ -36,11 +37,11 @@
     /* The three grounds. Light and dark are lifted from docs/design/cues.html,
        which already asks this question of the cues. The busy one is not: a
        flat 45-degree stripe is busy in hue and calm in luminance, and
-       luminance is what eats a 2px border. This one is built to be hostile —
-       a blown-out patch and a near-black patch within a bubble's width of each
+       luminance is what eats an edge. This one is built to be hostile — a
+       blown-out patch and a near-black patch within a bubble's width of each
        other, under fractal grain at photographic frequency. It is a synthetic
-       stand-in for a photograph, not a photograph; judge the border against
-       it, not the taste of it. */
+       stand-in for a photograph, not a photograph; judge the edge against it,
+       not the taste of it. */
     --desk-light: linear-gradient(160deg, #F7F8FA, #DCE1EA);
     --desk-dark: linear-gradient(160deg, #262A36, #101218);
     --desk-busy:
@@ -141,13 +142,29 @@
        a flex column, because the arithmetic is bubble.js's and is not what is
        being proposed here. */
     gap: 10px;
-    min-height: 330px; padding: 26px 16px;
+    min-height: 340px; padding: 26px 16px;
   }
-  .stage.flip { flex-direction: column-reverse; }
+  /* The ceiling case. The top edge of the desk is the top edge of the display:
+     the sprite's head is inside CEILING_CLEARANCE, so there is no room for a
+     bubble above it and placeBubble's clamp takes over. */
+  .stage.ceil { display: block; padding: 0; min-height: 440px; }
+  /* Head 96px below the display edge — inside CEILING_CLEARANCE's 128, and a
+     realistic "dragged near the top" rather than a worst case chosen to make
+     the point. The proposed bubble's own top is computed in render() from its
+     measured height, exactly as placeBubble would: headY - height - 10,
+     clamped at the edge. Hardcoding it would be drawing the conclusion. */
+  .stage.ceil .sprite { position: absolute; left: 50%; margin-left: -63px; top: 96px; }
+  .stage.ceil .bub { position: absolute; left: 50%; transform: translateX(-50%); }
+  .stage.ceil .b-now { top: 234px; }  /* 96 + 128 + 10: flipped under the art */
+  /* The display edge the clamp stops at. */
+  .stage.ceil::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 2;
+    background: repeating-linear-gradient(90deg, rgba(255,92,92,.85) 0 7px, transparent 7px 14px);
+  }
   .stage + .stage { border-left: 1px solid rgba(128,128,128,.35); }
   @media (max-width: 720px) { .stage + .stage { border-left: 0; border-top: 1px solid rgba(128,128,128,.35); } }
   .tag {
-    position: absolute; top: 8px; left: 10px;
+    position: absolute; top: 8px; left: 10px; z-index: 3;
     font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
     padding: 2px 7px; border-radius: 4px;
     background: rgba(0,0,0,.55); color: #fff;
@@ -157,14 +174,14 @@
   /* ================================================================
      spec — what src/main.css takes if this is approved
      ================================================================
-     Two bubbles are drawn: `.b-now` is src/main.css:19-140 as it ships
-     today, quoted so the comparison is against the real thing and not a
-     memory of it. `.b-new` is the proposal.
+     Two bubbles are drawn. `.b-now` is src/main.css:19-140 as it ships today,
+     quoted so the comparison is against the real thing and not a memory of
+     it. `.b-new` is the proposal.
 
-     The proposal's rule, in one line: a token from src/chat-ui.css may cross
-     into the overlay when its value means the same thing on any ground, and
-     may not when its value is an alpha over `--chat-panel`. The overlay has
-     no panel. Every literal below carries the chat token it came from.
+     The rule, in one line: a token from src/chat-ui.css may cross into the
+     overlay when its value means the same thing on any ground, and may not
+     when its value is an alpha over `--chat-panel`. The overlay has no panel.
+     Every literal below carries the chat token it came from.
      ---------------------------------------------------------------- */
 
   .bub {
@@ -172,6 +189,7 @@
     max-width: 260px;
     pointer-events: none;
     word-wrap: break-word;
+    z-index: 1;             /* over the sprite, which is what the ceiling case needs */
   }
   .bub .bc { white-space: pre-wrap; }
   /* The 6-line cap is bubble.js's `MAX_LINES`, applied there by measuring and
@@ -195,7 +213,9 @@
     30% { opacity: 1; transform: translateY(-3px); }
   }
 
-  /* ---- shipped today (src/main.css:19-140, verbatim) ---- */
+  /* ---- shipped today (src/main.css:19-140, verbatim) ----
+     Including the flip and the round thought silhouette, because both are
+     what the proposal retires and the comparison is the argument. */
   .b-now {
     padding: 12px 16px;
     background: white;
@@ -235,86 +255,68 @@
   .b-now[data-mode="thinking"].flipped::after  { bottom: auto; top: -18px; }
   .b-now .dots span { background: #333; }
 
-  /* ---- proposed ---- */
+  /* ---- proposed ----
+     A piece of the chat surface's panel, carried out onto the desktop and
+     holding the Character's line as the log draws it. `.chat-ui-minimal` is
+     unconditionally dark, so the bubble is dark: not the ramp inverted, the
+     ramp as it actually renders. */
   .b-new {
-    /* The ramp's two opaque ends, roles swapped. These are chat-ui.css's
-       --chat-ink and --chat-panel exactly. Swapped because the chat is a dark
-       panel inside a window that guarantees its own ground, and the overlay
-       guarantees nothing: a #14171e bubble on a dark wallpaper is a hole,
-       where the light end of the same ramp is legible on all three grounds
-       below. Same two colours, so the two surfaces are the same family; the
-       inversion is what the wallpaper costs. */
-    --bub-paper: #e8ebf2;         /* chat-ui.css --chat-ink */
-    --bub-ink: #14171e;           /* chat-ui.css --chat-panel */
+    --bub-panel: #14171e;         /* chat-ui.css --chat-panel */
+    --bub-ink: #e8ebf2;           /* chat-ui.css --chat-ink */
     --bub-accent: #5cc9b5;        /* chat-ui.css --chat-accent */
     --bub-radius: 12px;           /* chat-ui.css --chat-radius */
-    --bub-radius-tail: 3px;       /* chat-ui.css --chat-radius-tail */
 
-    /* .row.you .said, value for value. The chat's own bubble is 9px 13px on
-       a 12px corner with one corner tightened to 3px, and there is no reason
-       for the Character's bubble to sit on a different step. */
-    padding: 9px 13px;
-    border-radius: var(--bub-radius) var(--bub-radius) var(--bub-radius-tail) var(--bub-radius);
+    /* The Character's line in the chat is `.row.them .said`: bare ink at
+       line-height 1.55, no fill, no radius, no padding. Those are the three
+       things the overlay cannot copy, because there is no panel under it to
+       be bare on. So the box is the panel's own: --chat-panel filled,
+       --chat-radius cornered, inset at the step the chat uses for a bordered
+       box holding one piece of text — `.composer input`'s 10px 13px.
 
-    background: var(--bub-paper);
-    /* Full strength, and opaque, and 2px. This is the one place the proposal
-       refuses the chat surface outright: --chat-line is 13% white and
-       --chat-rule is 7%, and neither is a colour without --chat-panel behind
-       it. Over the busy ground this border is the only thing between the text
-       and the photograph. */
+       Deliberately not `.row.you .said`. That is the *user's* turn: its
+       --chat-accent-soft fill and its --chat-radius-tail corner are the
+       gesture that says "you said this". Dressing the Character's speech in
+       the user's bubble would say the wrong thing, so --chat-radius-tail does
+       not travel and the corner stays uniform. */
+    padding: 10px 13px;
+    border-radius: var(--bub-radius);
+    background: var(--bub-panel);
+    color: var(--bub-ink);
+
+    /* The edge, and the whole answer to "a dark bubble on a dark wallpaper is
+       a hole". The fill and the border fail on opposite grounds: over a light
+       or blown-out ground the dark fill separates on its own and the light
+       ring is what disappears; over a dark or near-black ground the fill
+       vanishes and the ring is what carries. They are never both invisible,
+       which a single-value edge cannot promise. The shadow closes the
+       mid-tone case, where neither is at full strength. */
     border: 2px solid var(--bub-ink);
-    /* Deeper and softer than the shipped 15%: the shadow does the separating
-       where the ground happens to land near --bub-paper, and a light desktop
-       is the common case. */
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
     font-family: system-ui, -apple-system, sans-serif;  /* --chat-sans */
     font-size: 13.5px;                                   /* chat-ui.css body */
     line-height: 1.55;                                   /* .row.them .said */
-    color: var(--bub-ink);
   }
-  /* The flip mirrors which corner is tightened, so the tightened corner is
-     always the one nearest the head. */
-  .b-new.flipped {
-    border-radius: var(--bub-radius) var(--bub-radius-tail) var(--bub-radius) var(--bub-radius);
-  }
-  .b-new[data-mode="speech"]::after {
-    content: ""; position: absolute; bottom: -10px; left: 50%;
+  /* The tail is the same sandwich as the box: a ring triangle with a fill
+     triangle over it. A single --bub-panel spike would vanish on exactly the
+     grounds the ring exists for. 10px tall, which is the gap placeBubble
+     leaves over the sprite's head. */
+  .b-new::before,
+  .b-new::after {
+    content: ""; position: absolute; left: 50%; width: 0; height: 0;
     transform: translateX(calc(-50% + var(--tail-offset, 0px)));
-    width: 0; height: 0;
     border-left: 10px solid transparent; border-right: 10px solid transparent;
-    border-top: 10px solid var(--bub-ink);
   }
-  .b-new[data-mode="speech"].flipped::after {
-    bottom: auto; top: -10px; border-top: none; border-bottom: 10px solid var(--bub-ink);
+  .b-new::before { bottom: -10px; border-top: 10px solid var(--bub-ink); }
+  .b-new::after {
+    bottom: -7px;
+    border-left-width: 8px; border-right-width: 8px;
+    border-top: 8px solid var(--bub-panel);
   }
-  /* The round silhouette and the trailing dots are untouched. That idiom is
-     what tells a reader which of the two modes they are looking at, before
-     anything has moved, and the chat surface has no opinion about it. */
-  .b-new[data-mode="thinking"] {
-    padding: 8px 12px;
-    border-radius: 999px;
-  }
-  .b-new[data-mode="thinking"].flipped { border-radius: 999px; }
-  .b-new[data-mode="thinking"]::before,
-  .b-new[data-mode="thinking"]::after {
-    content: ""; position: absolute; left: 50%; box-sizing: border-box;
-    background: var(--bub-paper); border: 2px solid var(--bub-ink); border-radius: 50%;
-  }
-  .b-new[data-mode="thinking"]::before {
-    width: 9px; height: 9px; bottom: -10px;
-    transform: translateX(calc(-50% + var(--tail-offset, 0px) - 5px));
-  }
-  .b-new[data-mode="thinking"]::after {
-    width: 6px; height: 6px; bottom: -18px;
-    transform: translateX(calc(-50% + var(--tail-offset, 0px) + 3px));
-  }
-  .b-new[data-mode="thinking"].flipped::before { bottom: auto; top: -10px; }
-  .b-new[data-mode="thinking"].flipped::after  { bottom: auto; top: -18px; }
-  /* The accent, as a mark rather than a fill. Three small saturated dots on an
-     opaque ground read on any wallpaper, where --chat-accent-soft — the same
-     colour at 13% — reads on --chat-panel and nowhere else. This is the
-     fastest signal a user gets that the two surfaces are one product. */
+  /* One bubble, two states. Thinking is this same box holding an ellipsis —
+     no second silhouette, no trailing discs. The mark is the chat's own
+     `.caret`: --chat-accent on --chat-panel, which is what the chat surface
+     already draws while it waits. */
   .b-new .dots span { background: var(--bub-accent); }
 
   /* ---- end spec ---- */
@@ -339,23 +341,23 @@
   <header>
     <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/441">#441</a> · 2026-09-07 · hand-written and frozen, not a description of shipped behavior</p>
     <h1>Buddy Bubble</h1>
-    <p class="lede">The overlay's speech bubble and thinking indicator, drawn in
-      the same design family as the chat surface — and drawn over a desktop the
-      chat surface never has to survive. Left is what ships today
-      (<code>src/main.css:19-140</code>); right is the proposal. Same content,
-      same moment, three grounds.</p>
+    <p class="lede">The overlay's bubble drawn as a piece of the chat surface's
+      panel, carried out onto a desktop the chat surface never has to survive.
+      One bubble for both states, always above the head. Left is what ships
+      today (<code>src/main.css:19-140</code>); right is the proposal. Same
+      content, same moment, three grounds.</p>
   </header>
 
   <div class="bar">
-    <span class="lbl">Mode</span>
+    <span class="lbl">State</span>
     <div class="seg" id="mode">
       <button type="button" data-v="speech" aria-pressed="true">Speech</button>
       <button type="button" data-v="thinking" aria-pressed="false">Thinking</button>
     </div>
     <span class="lbl">Placement</span>
-    <div class="seg" id="flip">
-      <button type="button" data-v="0" aria-pressed="true">Above the head</button>
-      <button type="button" data-v="1" aria-pressed="false">Flipped below</button>
+    <div class="seg" id="place">
+      <button type="button" data-v="head" aria-pressed="true">Above the head</button>
+      <button type="button" data-v="ceiling" aria-pressed="false">At the ceiling</button>
     </div>
     <span class="lbl">Line</span>
     <div class="seg" id="sample">
@@ -366,6 +368,81 @@
   </div>
 
   <div class="grounds" id="grounds"></div>
+
+  <h2>One bubble, dark, always above the head</h2>
+
+  <p>Three things changed from the first draft of this page, and each one has a
+    consequence worth stating rather than absorbing.</p>
+
+  <p><b>The bubble is dark, because the chat surface is.</b>
+    <code>.chat-ui-minimal</code> is unconditionally dark —
+    <code>color-scheme: dark</code>, <code>--chat-panel: #14171e</code>,
+    <code>--chat-ink: #e8ebf2</code>. The earlier draft inverted that ramp so the
+    bubble would be light, which made it legible and made it a different
+    surface. The legibility problem it was solving is real and does not go away,
+    so it is solved at the edge instead: a 2px <code>--chat-ink</code> ring
+    around a <code>--chat-panel</code> fill. The two fail on opposite grounds —
+    over a blown-out patch the ring disappears and the dark fill carries; over a
+    near-black patch the fill disappears and the ring carries — so there is no
+    ground on which both are gone. Drive the busy row and watch the bubble cross
+    the white disc and the black one. A drop shadow at 55% closes the mid-tone
+    case where neither is at full strength.</p>
+
+  <p><b>It echoes the Character's turn, not the user's.</b> In
+    <code>src/chat-ui.css</code> only <code>.row.you .said</code> has a fill, a
+    radius and a padding; <code>.row.them .said</code> — the Character's own
+    line — is bare ink at <code>line-height: 1.55</code> on the panel. The
+    overlay bubble speaks for the Character, so it takes the Character's ink and
+    leading, and the box around it is the <i>panel's</i>, not the user
+    bubble's: <code>--chat-panel</code> filled, <code>--chat-radius</code>
+    cornered, inset at <code>.composer input</code>'s <code>10px 13px</code> —
+    the step the chat already uses for a bordered box holding one piece of text.
+    <code>--chat-radius-tail</code> no longer travels. That tightened corner is
+    <code>.row.you</code>'s gesture for <i>you said this</i>, and putting it on
+    the Character's speech would say the wrong thing.</p>
+
+  <p><b>Thinking is the same bubble with an ellipsis in it.</b> No round
+    silhouette, no trailing discs. The dots take <code>--chat-accent</code>,
+    which is what <code>.caret</code> in the chat surface already is: the accent
+    on the panel, marking a turn in flight. Switch between the two states above
+    — the box does not move or change, only what is inside it does.</p>
+
+  <h2>The ceiling case</h2>
+
+  <p>The bubble never flips below the sprite. That removes the answer the flip
+    was giving, so the case it answered has to be answered again: near the top
+    of a display there is no room above the head.</p>
+
+  <p><b>Clamp and overlap, with the bubble in front.</b>
+    <code>placeBubble</code> already clamps <code>y</code> into the display
+    bounds, and <code>.bubble</code> already carries <code>z-index: 1</code> over
+    an unindexed sprite — so this is what the code does once the flip branch is
+    gone, not a new mechanism. The bubble sits against the display edge and the
+    art passes behind it. The tail still points down at the head, so it is never
+    unclear who is speaking, and the bubble is transient where the sprite is
+    constant: a line you cannot read is a worse failure than art briefly
+    covered. The <b>At the ceiling</b> control puts the head 96px below the
+    display edge — inside <code>CEILING_CLEARANCE</code>'s 128 — and the red
+    dashes are that edge. Left, for comparison, is today's flip.</p>
+
+  <p>The bubble's position there is computed on the page from its measured
+    height, not hardcoded, so the overlap you see is the overlap the arithmetic
+    produces. That makes the cost visible and it is not small: switch <b>Line</b>
+    between the three. A short line near the ceiling still clears the head and
+    never clamps at all. The <b>6-line cap</b> — the tallest bubble the Shell
+    will ever draw — clamps to the edge and covers the sprite almost entirely.
+    That is the real worst case of dropping the flip, it is on the page rather
+    than in a footnote, and it is the part of this proposal most worth
+    rejecting if the answer is that the art must stay visible.</p>
+
+  <p><code>CEILING_CLEARANCE</code> in <code>src/bubble.js</code> exists only to
+    trigger that flip, and with no flip it is <b>dead</b>, not repurposed. The
+    follow-up deletes the constant, the <code>ceilingClearance</code> parameter
+    and the <code>spriteHeadY &lt; ceilingClearance</code> branch from
+    <code>placeBubble</code>; the clamp two lines below does the rest unchanged.
+    Repurposing it as a minimum-gap knob was considered and dropped — nothing
+    asks for one, and a constant kept alive for a use nobody has is how a
+    threshold outlives its reason.</p>
 
   <h2>What travels, and what does not</h2>
 
@@ -388,31 +465,56 @@
       <tr><td class="tok">body font-size</td><td class="tok">13.5px</td><td class="yes">travels</td>
         <td>A line the Character says gets the measure it would have had in the log. Down from 14px.</td></tr>
       <tr><td class="tok">.row.them .said</td><td class="tok">line-height 1.55</td><td class="yes">travels</td>
-        <td>The bubble's 1.4 is tighter than anything in the chat, and the six-line cap is where that shows.</td></tr>
+        <td>The Character's own turn. The bubble's 1.4 is tighter than anything in the chat, and the six-line cap is where that shows.</td></tr>
+      <tr><td class="tok">--chat-panel</td><td class="tok">#14171e</td><td class="yes">travels</td>
+        <td>The bubble's fill. The chat is dark, so the bubble is dark — not the ramp inverted.</td></tr>
+      <tr><td class="tok">--chat-ink</td><td class="tok">#e8ebf2</td><td class="yes">travels</td>
+        <td>Text, and the 2px ring. Opaque, so it means the same on any wallpaper.</td></tr>
+      <tr><td class="tok">--chat-accent</td><td class="tok">#5cc9b5</td><td class="yes">travels</td>
+        <td>The thinking ellipsis, which is <code>.caret</code>'s job in the chat: the accent on the panel, marking a turn in flight.</td></tr>
       <tr><td class="tok">--chat-radius</td><td class="tok">12px</td><td class="yes">travels</td>
         <td>Identical today by coincidence. Stated, so a future design moves both or neither.</td></tr>
-      <tr><td class="tok">--chat-radius-tail</td><td class="tok">3px</td><td class="yes">travels</td>
-        <td>The chat tightens the corner nearest the speaker. The bubble tightens the one nearest the head, and mirrors it on the flip.</td></tr>
-      <tr><td class="tok">.row.you .said padding</td><td class="tok">9px 13px</td><td class="yes">travels</td>
-        <td>The chat's own bubble step, replacing 12px 16px.</td></tr>
-      <tr><td class="tok">--chat-ink</td><td class="tok">#e8ebf2</td><td class="yes">travels</td>
-        <td>Becomes the bubble's ground. Opaque, so it means the same on any wallpaper.</td></tr>
-      <tr><td class="tok">--chat-panel</td><td class="tok">#14171e</td><td class="yes">travels</td>
-        <td>Becomes the bubble's ink and border. Replaces <code>#333</code>, which belongs to no palette here.</td></tr>
-      <tr><td class="tok">--chat-accent</td><td class="tok">#5cc9b5</td><td class="yes">travels</td>
-        <td>The thinking dots. Small, saturated, opaque — legible on all three grounds.</td></tr>
+      <tr><td class="tok">.composer input padding</td><td class="tok">10px 13px</td><td class="yes">travels</td>
+        <td>The chat's inset for a bordered box holding one piece of text, which is structurally what the bubble is.</td></tr>
+      <tr><td class="tok">--chat-radius-tail</td><td class="tok">3px</td><td class="no">refused</td>
+        <td><code>.row.you .said</code>'s corner. It is the gesture for <i>you said this</i>, and the bubble speaks for the Character.</td></tr>
+      <tr><td class="tok">.row.you .said padding</td><td class="tok">9px 13px</td><td class="no">refused</td>
+        <td>Same reason. Close to the composer's step either way, so nothing is lost by taking the one that means the right thing.</td></tr>
       <tr><td class="tok">--chat-fill, -dim, -soft</td><td class="tok">2–6% white</td><td class="no">refused</td>
         <td>An alpha with no panel under it. Over the busy ground it is nothing at all.</td></tr>
       <tr><td class="tok">--chat-rule / --chat-line</td><td class="tok">7% / 13% white</td><td class="no">refused</td>
-        <td>The border stays 2px opaque ink. It is the only thing between the text and the photograph.</td></tr>
+        <td>The ring stays 2px opaque ink. A 13%-white hairline over a photograph is not an edge.</td></tr>
       <tr><td class="tok">--chat-accent-soft</td><td class="tok">13% accent</td><td class="no">refused</td>
         <td>Same failure, and it would put a tint where the bubble needs its highest contrast.</td></tr>
-      <tr><td class="tok">color-scheme: dark</td><td class="tok">—</td><td class="no">refused</td>
-        <td>The bubble is one appearance on every ground. It does not follow the desktop's theme, because the Character's expression should not change identity when the wallpaper does.</td></tr>
       <tr><td class="tok">.chat-ui-minimal</td><td class="tok">the root class</td><td class="no">refused</td>
         <td>See below. The overlay is a different document, and it never loads this stylesheet.</td></tr>
     </tbody>
   </table>
+
+  <h2>What #119 decided, and what this reverses</h2>
+
+  <p>The speech bubble and the thinking indicator were drawn apart on purpose.
+    <code>src/main.css:75-117</code> gives the thinking state a round silhouette
+    and a trail of shrinking discs, and its comment says why: the idiom is what
+    tells a reader at a glance which of the two they are looking at, before the
+    dots inside have moved at all. <b>This proposal reverses that.</b> One
+    bubble, one shape, one fill, one border; the ellipsis alone carries the
+    difference.</p>
+
+  <p>What is given up is the glance. What is bought is that the Character has
+    one bubble rather than two objects that happen to appear in the same place,
+    and the state a user sees for two seconds before an answer is visibly the
+    box that answer arrives in. The ellipsis is not a weak signal on its own —
+    three animating dots in a bubble is the most legible <i>waiting</i> mark
+    there is, and the chat surface already spends <code>.caret</code> on the
+    same job. Judge it by switching <b>State</b> above and asking whether the
+    two read as different enough.</p>
+
+  <p><b>Open, not decided:</b> quotation marks around the spoken line, as a
+    second way to separate the two states without a second silhouette. Parked
+    deliberately — it is a typographic change with its own wrap and measure
+    consequences, and it should be judged on its own rather than smuggled in
+    with this.</p>
 
   <h2>When the switcher lands</h2>
 
@@ -435,16 +537,12 @@
 
   <h2>What is not proposed</h2>
 
-  <p>The thinking indicator keeps its round silhouette and its trailing dots.
-    That idiom is what tells a reader which of the two modes they are looking at
-    before anything animates, and it is the one part of the bubble the chat
-    surface has no equivalent for. Cues (<a
-    href="cues.html">cues.html</a>, <a
+  <p>Cues (<a href="cues.html">cues.html</a>, <a
     href="https://github.com/omesser/ai-buddy/issues/277">#277</a>) are white on
-    ink and already tuned for arbitrary wallpaper; they are untouched. So is
-    <code>src/bubble.js</code> — the six-line cap, the durations, the grace and
-    min-hold timers and <code>placeBubble</code>'s arithmetic are all unchanged
-    by this. Nothing here is per-Character or per-Instance; <a
+    ink and already tuned for arbitrary wallpaper; they are untouched. The
+    six-line cap, the durations and the grace and min-hold timers in
+    <code>src/bubble.js</code> are unchanged — the only edit there is deleting
+    the dead ceiling branch. Nothing here is per-Character or per-Instance; <a
     href="https://github.com/omesser/ai-buddy/issues/119">#119</a> closed that
     and it stays closed.</p>
 
@@ -454,15 +552,15 @@
 </div>
 
 <script>
-  // The page, not the spec. Six bubbles driven by three controls, so mode,
+  // The page, not the spec. Six bubbles driven by three controls, so state,
   // placement and line length are compared across all three grounds at once
   // rather than one ground at a time.
   const SPRITE = "data:image/png;base64,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";
 
   const GROUNDS = [
-    ["light", "Light", "The common case, and the one the shipped white bubble was drawn for."],
-    ["dark", "Dark", "Where a bubble taking the chat surface's own <b>#14171e</b> panel would become a hole."],
-    ["busy", "Busy", "A synthetic stand-in for a photograph: a blown-out patch and a near-black patch within a bubble's width of each other, under fractal grain. What a 2px border is for."],
+    ["light", "Light", "The common case. A dark bubble separates on its own here; the ring is the part that disappears, and does not need to."],
+    ["dark", "Dark", "Where the <b>#14171e</b> fill goes to nothing and the 2px <b>#e8ebf2</b> ring is the whole edge."],
+    ["busy", "Busy", "A synthetic stand-in for a photograph: a blown-out patch and a near-black patch within a bubble's width of each other, under fractal grain. The fill carries over the white disc, the ring over the black one."],
   ];
 
   const SAMPLES = {
@@ -473,14 +571,14 @@
     cap: "I looked at the failing job and it is not the test. The Windows runner picked up a different toolchain than rust-toolchain.toml names, so clippy ran with an older lint set and denied a warning the other two platforms never emit. Re-running it will not help — pin the toolchain in the workflow and it goes green.",
   };
 
-  const state = { mode: "speech", flip: "0", sample: "cap" };
+  const state = { mode: "speech", place: "head", sample: "cap" };
 
   // A state is linkable, so a review comment can point at the one that is
   // wrong rather than describing which three buttons to press:
-  // bubble.html#thinking,flip,word
+  // bubble.html#thinking,ceiling,word
   for (const part of location.hash.slice(1).split(",")) {
     if (part === "speech" || part === "thinking") state.mode = part;
-    else if (part === "flip") state.flip = "1";
+    else if (part === "head" || part === "ceiling") state.place = part;
     else if (Object.hasOwn(SAMPLES, part)) state.sample = part;
   }
 
@@ -499,25 +597,39 @@
     </section>`).join("");
 
   function render() {
-    for (const key of ["mode", "flip", "sample"]) {
+    for (const key of ["mode", "place", "sample"]) {
       for (const b of document.querySelectorAll(`#${key} button`)) {
         b.setAttribute("aria-pressed", String(b.dataset.v === state[key]));
       }
     }
-    const flipped = state.flip === "1";
+    const ceiling = state.place === "ceiling";
     const text = SAMPLES[state.sample];
     for (const stage of document.querySelectorAll(".stage")) {
-      stage.classList.toggle("flip", flipped);
+      stage.classList.toggle("ceil", ceiling);
       const bub = stage.querySelector(".bub");
       bub.dataset.mode = state.mode;
-      bub.classList.toggle("flipped", flipped);
+      // Only the shipped bubble flips. That is the difference the ceiling
+      // control exists to show.
+      bub.classList.toggle("flipped", ceiling && bub.classList.contains("b-now"));
       const bc = bub.querySelector(".bc");
       bc.textContent = text;
       bc.classList.toggle("cap", state.sample === "cap");
+
+      // placeBubble's arithmetic, run for real rather than hardcoded, so the
+      // overlap on screen is the overlap the Shell would produce: sit 10px
+      // over the head, and clamp at the display edge when there is no room.
+      // A short line near the ceiling still fits above the head and does not
+      // clamp at all — which is the honest answer, not a dodge.
+      if (ceiling && bub.classList.contains("b-new")) {
+        const HEAD_Y = 96, GAP = 10;
+        bub.style.top = Math.max(0, HEAD_Y - bub.offsetHeight - GAP) + "px";
+      } else {
+        bub.style.top = "";
+      }
     }
   }
 
-  for (const key of ["mode", "flip", "sample"]) {
+  for (const key of ["mode", "place", "sample"]) {
     const seg = document.getElementById(key);
     seg.addEventListener("click", (e) => {
       const btn = e.target.closest("button");
