@@ -744,6 +744,15 @@ fn presence_sections() -> Vec<FormSection> {
                     help: Some("Steps aside for fullscreen apps.".to_string()),
                     comment: None,
                 },
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                FormRow::Checkbox {
+                    id: CAPTURABLE_ID.to_string(),
+                    label: "Hide from screenshots and screen shares".to_string(),
+                    writes: BoolField::Capturable,
+                    frozen: false,
+                    help: Some("Excludes the buddy from screen captures and shares.".to_string()),
+                    comment: None,
+                },
                 FormRow::InspectBlock {
                     id: HOTKEY_ID.to_string(),
                     label: Some("Hide/Show Toggle".to_string()),
@@ -870,20 +879,6 @@ fn development_sections() -> Vec<FormSection> {
             BoolField::TraceEngine,
             "Trace Engine",
             "Prints each change of Behavior or Animation.",
-        ),
-        // Only AppKit has a capture exclusion to drop. Gating the element
-        // rather than pushing it keeps the binding immutable on the platforms
-        // that skip it, which `-D warnings` insists on.
-        #[cfg(target_os = "macos")]
-        flag_row(
-            CAPTURABLE_ID,
-            &dev_flags::CAPTURABLE,
-            BoolField::Capturable,
-            "Show in screenshots and shares",
-            // `configure_overlay` reads this when a window is built, and only
-            // the Linux frame loop re-runs it. Honest rather than silently
-            // inert.
-            "Normally left out of both. Needs a restart.",
         ),
     ];
 

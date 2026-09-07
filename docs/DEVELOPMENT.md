@@ -144,14 +144,14 @@ Set environment variables for live debugging (all off by default):
 | `AI_BUDDY_TRACE_FRAMES` | Engine frames (state, position, animation) per tick |
 | `AI_BUDDY_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played, Behavior refused |
 | `AI_BUDDY_TRACE_ENGINE` | Behavior/Primitive/Animation/State changes |
-| `AI_BUDDY_CAPTURABLE` | Allow screen captures (default: excluded) — the sprite appears in screenshots when set |
+| `AI_BUDDY_CAPTURABLE` | Hide from screen captures (inverted: `1` = excluded) — normally capturable, set to hide |
 
 Values: `1`/`on`/`true`/`yes` for on, `0`/`off`/`false`/`no` for off (case-insensitive).
 
-Without `AI_BUDDY_CAPTURABLE=1`, the overlay window excludes itself from all
-screen captures by design (NSWindowSharingNone), so screenshots show only the
-desktop where the sprite is. Set this flag when capturing artifacts of
-rendering changes or when running `scripts/verify-overlay.sh` to verify the
+By default, the overlay appears in screen captures. Set `AI_BUDDY_CAPTURABLE=1`
+to exclude it from screenshots and shares (overriding the Presence setting).
+Most users control this via Settings → Presence → "Hide from screenshots and
+screen shares". The env var is primarily for CI or scripted testing when
 sprite's appearance.
 
 ## Running with a Completer

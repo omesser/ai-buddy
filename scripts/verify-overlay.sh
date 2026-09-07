@@ -17,9 +17,8 @@
 # For unattended runs: export AI_BUDDY_DIRECTOR_API_KEY to avoid Keychain
 # prompts. See docs/DEVELOPMENT.md for Director configuration.
 #
-# For screenshottable overlays: export AI_BUDDY_CAPTURABLE=1 to make the sprite
-# visible in screenshots (by design, the overlay excludes itself from screen
-# capture without this flag).
+# The sprite is now capturable by default. To test the hide-from-captures
+# setting, export AI_BUDDY_CAPTURABLE=1 to exclude it from screenshots.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

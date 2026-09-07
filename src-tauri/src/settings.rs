@@ -916,9 +916,9 @@ pub enum BoolField {
     TraceHittest,
     TraceDirector,
     TraceEngine,
-    /// Only AppKit has a capture exclusion to drop, so only AppKit offers the
-    /// row. The patch field itself is not gated: the file carries it anywhere.
-    #[cfg(target_os = "macos")]
+    /// macOS and Windows support capture exclusion. The patch field itself is
+    /// not gated: the file carries it anywhere.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     Capturable,
     UseAccessibility,
     UseScreenRecording,
@@ -1268,8 +1268,9 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
-    /// Drop the overlay's capture exclusion. macOS reads it; the field is
-    /// unconditional so the document round-trips on every platform.
+    /// Hide from screenshots and screen shares. False (default) means capturable;
+    /// true excludes the overlay from capture. macOS and Windows read it; the
+    /// field is unconditional so the document round-trips on every platform.
     pub capturable: bool,
     /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
     pub use_accessibility: bool,
@@ -1304,7 +1305,7 @@ impl Default for Settings {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
-            capturable: false,
+            capturable: true,
             use_accessibility: false,
             use_screen_recording: false,
         }
@@ -1851,7 +1852,7 @@ mod tests {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
-            capturable: false,
+            capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
         };

@@ -35,7 +35,7 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 
     set_window_styles(hwnd)?;
     set_window_topmost(hwnd)?;
-    exclude_from_capture(hwnd)?;
+    apply_capture_exclusion(hwnd)?;
 
     Ok(())
 }
@@ -133,17 +133,24 @@ fn set_window_topmost(hwnd: HWND) -> Result<(), String> {
     Ok(())
 }
 
-/// Exclude the overlay from screen capture.
+/// Apply capture exclusion based on user settings.
 ///
 /// WDA_EXCLUDEFROMCAPTURE makes the window invisible to screen recording and
-/// screen sharing, matching macOS's NSWindowSharingType::None. This is DESIGN.md
-/// decision 8's screen-share rule.
-fn exclude_from_capture(hwnd: HWND) -> Result<(), String> {
+/// screen sharing when the user has checked "Hide from screenshots and screen shares".
+/// The setting is inverted: `capturable: true` means hide (checked = excluded).
+/// Default (false/unchecked) makes the buddy capturable (WDA_NONE, no exclusion).
+fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
     // SAFETY: hwnd is a valid HWND from Tauri's raw window handle.
     // SetWindowDisplayAffinity is documented safe with valid HWNDs.
+    let affinity = if crate::dev_flags::CAPTURABLE.is_on() {
+        WDA_EXCLUDEFROMCAPTURE
+    } else {
+        0 // WDA_NONE - window is capturable
+    };
+
     unsafe {
-        if SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) == 0 {
-            return Err("Failed to exclude window from capture".to_string());
+        if SetWindowDisplayAffinity(hwnd, affinity) == 0 {
+            return Err("Failed to set window display affinity".to_string());
         }
     }
     Ok(())
