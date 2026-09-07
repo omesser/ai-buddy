@@ -41,13 +41,18 @@ An attached handle stays the configured Completer once it exists, alive or
 not. #469 asked the other way round: a Harness whose child never spawned, or
 died mid-session, leaves `model::completer_from` handing the Director a handle
 that answers nothing, so a key typed into the HTTP rows #452 keeps live is not
-read. Treating a dead handle as unconfigured would recover faster and put the
-HTTP Completer behind one session's failure, which is the second mind this
-decision refuses — and it would do it unasked, at the moment the user is least
-able to tell which mind replied. So the failure still goes to Static, and
-Settings says the wait rather than hiding it: the source row's line names
-static weights as what is answering, and the three HTTP rows say they are not
-in use.
+read until the next launch. Treating a dead handle as unconfigured would
+recover faster and put the HTTP Completer behind one session's failure, which
+is the second mind this decision refuses — and it would do it unasked, at the
+moment the user is least able to tell which mind replied. So the failure still
+goes to Static, and Settings says the wait rather than hiding it: the source
+row's line names static weights as what is answering, and the three HTTP rows
+say they are read at the next launch. Live recovery, if it is ever wanted,
+belongs in re-opening the attachment (#469's third option), not in swapping
+the mind out from under it.
+
+**The three next-launch clauses above are amended by #500**, which took up
+#469's third option. What follows is what shipped.
 
 What #500 shipped is the recovery #469 left to the attachment rather than to
 the mind. Two retries, neither of which can reach the HTTP Completer:
@@ -63,15 +68,18 @@ the mind. Two retries, neither of which can reach the HTTP Completer:
   instead of at the next launch. Off, a different Harness, and a corrected
   custom command line all shut the old Session down and open the one the row
   names, under the lock `harness::attached` reads, so no wake falls into the
-  gap. Only a row that names *no* Harness lands on the HTTP Completer, and
-  that row is the user picking Off.
+  gap. Only a row that names *no* Harness lands on the HTTP Completer:
+  Off, or a Custom row whose command line has been blanked. Both are the user
+  choosing, never a death.
 
 Aliveness is not an input to either. That is what keeps the recovery inside
 this decision: a dead child is retried, never traded for a second mind.
 
 Choosing Off in Settings is the user naming the HTTP Completer. That drop
 happens in this process: the handle is shut down and Retarget installs the
-HTTP Completer. It is not a dead session falling through unasked.
+HTTP Completer. It is not a dead session falling through unasked. Switching
+to a different Harness still waits for the next launch — **also amended by
+#500**.
 
 Reversing this means living with split-brain, or rewriting how #15–#17
 talk to a model.

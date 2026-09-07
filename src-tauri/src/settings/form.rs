@@ -606,8 +606,8 @@ fn completer_source_section() -> FormSection {
                 writes: TextField::Harness,
                 help: Some(
                     "Every pick takes effect now: Off leaves the HTTP Completer, \
-                     and a Harness is attached as soon as it answers. The line \
-                     below says what is attached."
+                     and a Harness is attached at once, answering once its \
+                     child is up. The line below says what is attached."
                         .to_string(),
                 ),
                 options: harness_options(),
