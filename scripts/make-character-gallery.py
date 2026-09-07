@@ -85,7 +85,7 @@ def from_rust(source):
         raise Malformed(f"REQUIRED_ANIMATIONS says {block.group(1)} names and lists {len(required)}")
 
     def constant(name):
-        found = re.search(rf"pub const {name}:\s*u32\s*=\s*(\d+);", source)
+        found = re.search(rf"pub(?:\(crate\))? const {name}:\s*u32\s*=\s*(\d+);", source)
         if not found:
             raise Malformed(f"{RUST.name} declares no {name}")
         return int(found.group(1))
@@ -371,7 +371,8 @@ def self_check():
         # the Engine moved.
         rust_text = RUST.read_text(encoding="utf-8")
         expected_weight = int(re.search(
-            r"pub const DEFAULT_WEIGHT:\s*u32\s*=\s*(\d+);", rust_text).group(1))
+            r"pub(?:\(crate\))? const DEFAULT_WEIGHT:\s*u32\s*=\s*(\d+);",
+            rust_text).group(1))
         assert defaults.get("weight") == expected_weight, (
             "DEFAULT_WEIGHT never reached the gallery defaults")
 
