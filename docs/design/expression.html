@@ -1,0 +1,285 @@
+<!doctype html>
+<!--
+  Overlay Expression for omesser.github.io/ai-buddy: Speech bubble reading
+  time and the thinking ellipsis, operated from src/bubble.js. A Generated
+  page under ADR-0011. This file is the chrome; the durations and the
+  speech-wins machine arrive by importing bubble.js, which
+  scripts/make-expression-page.py copies beside it at deploy. Opened from a
+  clone without that copy, the module 404s rather than inventing a second
+  formula.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay Expression</title>
+<link rel="stylesheet" href="bubble.css">
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #3FB3A0;
+    --accent-ink: #0F3F38;
+    --accent-soft: #D6F1EB;
+    --desk-light: linear-gradient(160deg, #F7F8FA, #DCE1EA);
+    --desk-dark: linear-gradient(160deg, #262A36, #101218);
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1F232D;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      --accent-ink: #0F3F38;
+      --accent-soft: #1F3A37;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --paper-2: #1F232D;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    --accent-ink: #0F3F38;
+    --accent-soft: #1F3A37;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .page { max-width: 40rem; margin: 0 auto; padding: 40px 24px 72px; }
+  h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  .cls { font-family: var(--mono); font-size: .78rem; color: var(--ink-3); margin-top: .35rem; }
+  .lede { color: var(--ink-2); max-width: 62ch; margin: .8rem 0 1.6rem; }
+
+  .desk-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .desk-bar .hint { color: var(--ink-2); font-size: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper-2); gap: 2px; }
+  .seg button {
+    font: inherit; font-weight: 700; font-size: 13px;
+    border: 0; background: transparent; color: var(--ink-2);
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .desk {
+    position: relative; height: 280px; border-radius: 14px; overflow: hidden;
+    background: var(--desk-light);
+    border: 1px solid var(--line);
+  }
+  .desk[data-wall="dark"] { background: var(--desk-dark); }
+
+  .stage {
+    position: relative;
+    height: 100%;
+  }
+  /* Overlay bubble rules are absolute over a sprite; here the stand-in is
+     the only occupant, so pin the bubble above its head without calling
+     placeBubble — that function is ceiling-clearance, not reading time. */
+  .stage .bubble {
+    left: 50%;
+    bottom: 118px;
+    transform: translateX(-50%);
+  }
+  .stand-in {
+    position: absolute;
+    left: 50%;
+    bottom: 36px;
+    width: 56px;
+    height: 72px;
+    margin-left: -28px;
+    border-radius: 10px 10px 8px 8px;
+    background: #2C8C7C;
+    box-shadow: inset 0 -10px 0 rgba(0,0,0,.18);
+  }
+  .desk[data-wall="dark"] .stand-in { background: #5CC9B5; }
+
+  .controls {
+    display: grid; gap: 10px; margin-top: 16px;
+  }
+  label { display: grid; gap: 4px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+  input[type="text"] {
+    font: inherit; font-weight: 500; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--line);
+    border-radius: 8px; padding: .5rem .7rem;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .play {
+    font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--paper-2); color: var(--ink);
+    border-radius: 999px; padding: 6px 12px;
+  }
+  .play.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .live {
+    font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+    margin: 10px 0 0; min-height: 1.5em;
+  }
+  footer { margin-top: 2rem; color: var(--ink-3); font-size: .87rem; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Overlay Expression</h1>
+    <div class="cls">Generated from src/bubble.js at deploy</div>
+    <p class="lede">Speech bubble reading time and the thinking ellipsis while a
+      reactive Director turn is in flight. Type a line, Poke to start a turn,
+      reply while it is thinking. The hold is whatever <code>bubbleDuration</code>
+      returns for that line; speech and the indicator share one surface, and
+      speech wins.</p>
+  </header>
+
+  <div class="desk-bar">
+    <span class="hint">A CSS stand-in, not a Character: the thing being judged is timing.</span>
+    <div class="seg" role="group" aria-label="Wallpaper">
+      <button type="button" data-wall="light" aria-pressed="true">Light</button>
+      <button type="button" data-wall="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+  <div class="desk" id="desk" data-wall="light">
+    <div class="stage">
+      <div class="bubble" id="bubble">
+        <div class="bubble-content" id="speech"></div>
+        <div class="thinking-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      </div>
+      <div class="stand-in" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label>Line
+      <input id="line" type="text" value="hello there" autocomplete="off">
+    </label>
+    <div class="row">
+      <button class="play primary" id="speak" type="button">Speak</button>
+      <button class="play" id="poke" type="button">Poke</button>
+      <button class="play" id="reply" type="button">Reply now</button>
+    </div>
+  </div>
+  <p class="live" id="status"></p>
+
+  <footer>
+    Built from <a href="https://github.com/omesser/ai-buddy">omesser/ai-buddy</a>
+    by <code>scripts/make-expression-page.py</code>.
+  </footer>
+</div>
+
+<script type="module">
+import {
+  bubbleDuration,
+  createBubbleMachine,
+  THINKING_GRACE_MS,
+  THINKING_MIN_HOLD_MS,
+} from "./bubble.js";
+
+const bubbleEl = document.getElementById("bubble");
+const speechEl = document.getElementById("speech");
+const lineEl = document.getElementById("line");
+const statusEl = document.getElementById("status");
+const desk = document.getElementById("desk");
+
+function showSpeech(text) {
+  speechEl.textContent = text;
+  bubbleEl.dataset.mode = "speech";
+  bubbleEl.classList.add("visible");
+}
+function hideSpeech() {
+  if (bubbleEl.dataset.mode === "speech") {
+    bubbleEl.classList.remove("visible");
+    bubbleEl.removeAttribute("data-mode");
+  }
+}
+function showThinking() {
+  bubbleEl.dataset.mode = "thinking";
+  bubbleEl.classList.add("visible");
+}
+function hideThinking() {
+  if (bubbleEl.dataset.mode === "thinking") {
+    bubbleEl.classList.remove("visible");
+    bubbleEl.removeAttribute("data-mode");
+  }
+}
+
+const machine = createBubbleMachine({
+  showSpeech,
+  hideSpeech,
+  showThinking,
+  hideThinking,
+});
+
+function placement(overrides) {
+  return { dialogue: null, thinking: false, visible: true, ...overrides };
+}
+
+function text() {
+  return lineEl.value;
+}
+
+function live() {
+  const ms = bubbleDuration(text());
+  statusEl.textContent =
+    `bubbleDuration → ${ms} ms · grace ${THINKING_GRACE_MS} ms · hold ≥ ${THINKING_MIN_HOLD_MS} ms`;
+}
+
+function speakLine() {
+  const said = text();
+  const tick = placement({ dialogue: said });
+  machine.event(tick);
+  machine.frame(tick);
+  live();
+}
+
+function poke() {
+  machine.frame(placement({ thinking: true }));
+  live();
+}
+
+function replyNow() {
+  const said = text();
+  const tick = placement({ dialogue: said });
+  machine.event(tick);
+  machine.frame(tick);
+  live();
+}
+
+document.getElementById("speak").addEventListener("click", speakLine);
+document.getElementById("poke").addEventListener("click", poke);
+document.getElementById("reply").addEventListener("click", replyNow);
+lineEl.addEventListener("input", live);
+lineEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") speakLine();
+});
+document.querySelectorAll(".seg button").forEach((button) => {
+  button.addEventListener("click", () => {
+    desk.dataset.wall = button.dataset.wall;
+    document.querySelectorAll(".seg button").forEach((other) => {
+      other.setAttribute("aria-pressed", String(other === button));
+    });
+  });
+});
+live();
+</script>
+</body>
+</html>

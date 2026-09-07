@@ -62,6 +62,10 @@ jobs:
           cp docs/design/chat-mockups.html _site/chat-mockups.html
           python3 scripts/make-character-gallery.py --self-check
           python3 scripts/make-character-gallery.py --out _site
+          # overlay-expression
+          python3 scripts/make-expression-page.py --self-check
+          python3 scripts/make-expression-page.py --out _site
+          # /overlay-expression
 
       - name: Verify nothing but a page or its art reached _site
         # The generator is trusted to enumerate; this is not trusted to be
