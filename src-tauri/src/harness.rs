@@ -120,9 +120,8 @@ impl Launch {
     /// The child, inheriting our environment untouched. ADR-0010 rules 4 and
     /// 5: no provider key, no `CLAUDE_CONFIG_DIR`, no `--bare`. A test pins it.
     ///
-    /// Own process group so a Ctrl+C aimed at `cargo run` does not SIGINT the
-    /// Harness: Claude's ACP adapter dumps `Query closed before response
-    /// received` from that signal instead of dying on our shutdown path.
+    /// Own process group once `own_interrupt` has taken Ctrl+C, so a SIGINT
+    /// aimed at `cargo run` does not dump inside Claude's ACP adapter.
     fn command(&self, cwd: &Path) -> Command {
         let mut command = Command::new(&self.argv[0]);
         command.args(&self.argv[1..]).current_dir(cwd);
@@ -135,7 +134,30 @@ impl Launch {
     }
 }
 
+/// Tests isolate without installing a `ctrlc` handler. Production stays
+/// false until `own_interrupt` — a failed handler must not orphan a tree
+/// Ctrl+C can no longer reach.
+static INTERRUPT_OWNED: AtomicBool = AtomicBool::new(cfg!(test));
+static INTERRUPT_QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// Isolation is on: Ctrl+C is ours, so the child may leave this process group.
+pub fn own_interrupt() {
+    INTERRUPT_OWNED.store(true, Ordering::SeqCst);
+}
+
+/// True on the second Ctrl+C, which should `exit` rather than nest `shutdown`.
+pub fn interrupt_already_quitting() -> bool {
+    INTERRUPT_QUITTING.swap(true, Ordering::SeqCst)
+}
+
 fn isolate_from_interrupt(command: &mut Command) {
+    apply_isolation(command, INTERRUPT_OWNED.load(Ordering::SeqCst));
+}
+
+fn apply_isolation(command: &mut Command, isolate: bool) {
+    if !isolate {
+        return;
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -144,6 +166,9 @@ fn isolate_from_interrupt(command: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        // CREATE_NEW_PROCESS_GROUP is not a Unix process-group twin.
+        // Grandchildren still need a Job Object if they linger; this PR
+        // has not smoked Ctrl+C on Windows.
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
@@ -1474,9 +1499,92 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn an_unowned_interrupt_leaves_the_child_in_the_app_group() {
+        let mut command = std::process::Command::new("/bin/sleep");
+        command.arg("8");
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+        apply_isolation(&mut command, false);
+        let mut child = command.spawn().expect("sleep");
+        let child_pgid = pgid_of(child.id()).expect("child pgid");
+        let app_pgid = pgid_of(std::process::id()).expect("app pgid");
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(
+            child_pgid, app_pgid,
+            "a failed ctrlc handler must not orphan a tree Ctrl+C can no longer reap"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutdown_kills_the_harness_process_group() {
+        let launch = Launch {
+            name: "shell".into(),
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                r#"trap "" HUP; sleep 30 & wait"#.into(),
+            ],
+        };
+        let mut command = launch.command(Path::new("/tmp"));
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+        let mut child = command.spawn().expect("sh");
+        let pgid = pgid_of(child.id()).expect("child pgid");
+        let members = wait_for_group_members(pgid, 2);
+        crate::acp_wire::kill_harness_tree(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        let lingering: Vec<_> = members.into_iter().filter(|&pid| alive(pid)).collect();
+        assert!(
+            lingering.is_empty(),
+            "grandchildren survived a direct kill: {lingering:?}"
+        );
+    }
+
+    #[cfg(unix)]
     fn pgid_of(pid: u32) -> Option<i32> {
         let n = unsafe { libc::getpgid(pid as libc::pid_t) };
         (n >= 0).then_some(n)
+    }
+
+    #[cfg(unix)]
+    fn alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    #[cfg(unix)]
+    fn live_pids_in_group(pgid: i32) -> Vec<u32> {
+        let output = std::process::Command::new("ps")
+            .args(["-axo", "pid=,pgid="])
+            .output()
+            .expect("ps");
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let mut cols = line.split_whitespace();
+                let pid: u32 = cols.next()?.parse().ok()?;
+                let group: i32 = cols.next()?.parse().ok()?;
+                (group == pgid && alive(pid)).then_some(pid)
+            })
+            .collect()
+    }
+
+    #[cfg(unix)]
+    fn wait_for_group_members(pgid: i32, n: usize) -> Vec<u32> {
+        let until = Instant::now() + Duration::from_secs(2);
+        loop {
+            let pids = live_pids_in_group(pgid);
+            if pids.len() >= n {
+                return pids;
+            }
+            if Instant::now() >= until {
+                panic!("group {pgid} never grew to {n}: {pids:?}");
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
     }
 
     #[test]
