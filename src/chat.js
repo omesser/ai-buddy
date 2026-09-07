@@ -8,6 +8,7 @@
 // is what has been said in this window, and the Shell owns the session behind
 // it.
 
+import { stampWhen } from "./chat-stamp.js";
 import { statusCells } from "./chat-status.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -37,6 +38,10 @@ const cells = Object.fromEntries(
 // The WHO label on the Instance's own turns, filled in once the Shell says who
 // this window belongs to.
 let them = "";
+
+// Last stamped instant in this window, so a line after midnight can say the
+// new day once. #445.
+let previousAt = null;
 
 // The last thing the Shell said about the Spatial Layer, and when the ambient
 // wake it named falls due. The Shell pushes that deadline once rather than a
@@ -70,13 +75,26 @@ function add(node) {
   return node;
 }
 
+function when() {
+  const at = new Date();
+  const stamp = stampWhen(at, previousAt);
+  previousAt = at;
+  const node = el("when", "time");
+  node.dateTime = stamp.datetime;
+  node.title = stamp.title;
+  node.textContent = stamp.label;
+  return node;
+}
+
 function said(who, text, cls) {
   const row = el(`row ${cls}`);
+  const cluster = el("who");
   const label = el("who-label");
   label.textContent = who;
+  cluster.append(label, when());
   const body = el("said");
   body.textContent = text;
-  row.append(label, body);
+  row.append(cluster, body);
   return add(row);
 }
 
@@ -107,7 +125,7 @@ function settled(row) {
 
 function note(text) {
   const row = el("note");
-  row.textContent = text;
+  row.append(when(), document.createTextNode(text));
   return add(row);
 }
 
