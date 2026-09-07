@@ -211,6 +211,8 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 
 Settings → Director persists base URL, model, and the first wake interval, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Completer timeout and reply cap. Editing any of the six retargets the running Director: the next wake reaches the new host on the new interval, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
 
+The title-bar grip is small, so the window also moves with a modifier-drag on its background: Command-drag on macOS, Super-drag on Linux, Alt-drag on Windows. The drag starts from empty chrome, not from a field, button, popup, or the tab strip. Nothing in the window names the gesture; this paragraph is how you find it.
+
 `cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
 
 **Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.

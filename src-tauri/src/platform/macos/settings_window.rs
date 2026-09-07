@@ -6,14 +6,18 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
+use std::ptr::NonNull;
+
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly, Message};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
     NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControlStateValueOff,
-    NSControlStateValueOn, NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView,
-    NSSecureTextField, NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
+    NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventMask,
+    NSEventModifierFlags, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
+    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
     NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
     NSWindowLevel, NSWindowStyleMask,
 };
@@ -22,6 +26,7 @@ use objc2_foundation::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow};
+use crate::settings::move_drag::{should_begin_move, Hit, MoveModifier};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
@@ -83,6 +88,8 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
+    /// Keeps the local mouse-down monitor alive for the window's life. #460.
+    move_monitor: RefCell<Option<Retained<AnyObject>>>,
 }
 
 define_class!(
@@ -1102,6 +1109,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
     retain_after_close(&window);
     window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
+    install_move_drag(&window, &controller);
 
     *controller.ivars().window.borrow_mut() = Some(window.clone());
     *controller.ivars().tab_view.borrow_mut() = Some(tab_view);
@@ -1431,6 +1439,87 @@ fn release_window_when_closed() -> bool {
     false
 }
 
+fn class_chain(view: &NSView) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current = Some(view.retain());
+    while let Some(v) = current {
+        names.push(v.class().name().to_string_lossy().into_owned());
+        // SAFETY: the view is still in the window for this mouse-down.
+        current = unsafe { v.superview() };
+    }
+    names
+}
+
+const _: () = assert!(matches!(MoveModifier::MACOS, MoveModifier::Command));
+
+fn install_move_drag(window: &NSWindow, controller: &SettingsController) {
+    let window = window.retain();
+    let mtm = controller.mtm();
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        let ptr = event.as_ptr();
+        let event = unsafe { event.as_ref() };
+        let Some(event_window) = event.window(mtm) else {
+            return ptr;
+        };
+        if event_window.windowNumber() != window.windowNumber() {
+            return ptr;
+        }
+        let command = event
+            .modifierFlags()
+            .contains(NSEventModifierFlags::Command);
+        let hit = event_window
+            .contentView()
+            .and_then(|content| {
+                let point = content.convertPoint_fromView(event.locationInWindow(), None);
+                content.hitTest(point)
+            })
+            .map(|view| {
+                let names = class_chain(&view);
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                hit_from_class_chain(&refs)
+            })
+            .unwrap_or(Hit::Background);
+        if should_begin_move(command, hit) {
+            window.performWindowDragWithEvent(event);
+            std::ptr::null_mut()
+        } else {
+            ptr
+        }
+    });
+    // SAFETY: the block returns either the same event pointer or null, which
+    // is what AppKit's local monitor contract asks for.
+    let monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::LeftMouseDown, &handler)
+    };
+    *controller.ivars().move_monitor.borrow_mut() = monitor;
+}
+
+/// Classify the AppKit class chain from the hit-test leaf up. NSTabView is
+/// the content view, so a page click always lists it; only a hit that never
+/// passed through the scroll is the strip. #460.
+fn hit_from_class_chain(classes: &[&str]) -> Hit {
+    let mut through_page = false;
+    for class in classes {
+        if matches!(
+            *class,
+            "NSButton" | "NSPopUpButton" | "NSTextField" | "NSSecureTextField" | "NSTextView"
+        ) {
+            return Hit::Control;
+        }
+        if matches!(*class, "NSScrollView" | "NSClipView") {
+            through_page = true;
+        }
+        if *class == "NSTabView" {
+            return if through_page {
+                Hit::Background
+            } else {
+                Hit::Control
+            };
+        }
+    }
+    Hit::Background
+}
+
 fn retain_after_close(window: &NSWindow) {
     // SAFETY: `true` here would hand AppKit ownership and dangle the
     // `Retained<NSWindow>` we keep for the next tray click, which is why objc2
@@ -1476,6 +1565,52 @@ mod tests {
         assert!(
             !release_window_when_closed(),
             "the next tray Settings raises this same Retained window"
+        );
+    }
+
+    #[test]
+    fn empty_document_under_the_tab_is_background() {
+        assert_eq!(
+            hit_from_class_chain(&["NSView", "NSClipView", "NSScrollView", "NSTabView"]),
+            crate::settings::move_drag::Hit::Background
+        );
+    }
+
+    #[test]
+    fn a_button_in_the_chain_is_a_control() {
+        assert_eq!(
+            hit_from_class_chain(&[
+                "NSButton",
+                "NSView",
+                "NSClipView",
+                "NSScrollView",
+                "NSTabView"
+            ]),
+            crate::settings::move_drag::Hit::Control
+        );
+    }
+
+    #[test]
+    fn a_field_popup_or_text_view_is_a_control() {
+        for class in [
+            "NSTextField",
+            "NSSecureTextField",
+            "NSPopUpButton",
+            "NSTextView",
+        ] {
+            assert_eq!(
+                hit_from_class_chain(&[class, "NSView", "NSScrollView", "NSTabView"]),
+                crate::settings::move_drag::Hit::Control,
+                "{class} must keep the press"
+            );
+        }
+    }
+
+    #[test]
+    fn the_tab_strip_is_a_control() {
+        assert_eq!(
+            hit_from_class_chain(&["NSTabView"]),
+            crate::settings::move_drag::Hit::Control
         );
     }
 }

@@ -15,6 +15,7 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
+use crate::settings::move_drag::{should_begin_move, Hit, MoveModifier};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -91,6 +92,7 @@ impl SettingsWindow {
         });
 
         this.build_ui();
+        install_move_drag(&this.window);
         this
     }
 
@@ -1201,4 +1203,114 @@ fn reset_director_tab() {
             window.draw(true);
         }
     });
+}
+
+/// Super-drag from empty page chrome, not from a field or the tab strip. #460.
+fn hit_from_widget_type_names(names: &[&str]) -> Hit {
+    let mut through_page = false;
+    for name in names {
+        if matches!(
+            *name,
+            "GtkEntry"
+                | "GtkTextView"
+                | "GtkButton"
+                | "GtkComboBox"
+                | "GtkComboBoxText"
+                | "GtkCheckButton"
+                | "GtkToggleButton"
+        ) {
+            return Hit::Control;
+        }
+        if matches!(*name, "GtkScrolledWindow" | "GtkViewport") {
+            through_page = true;
+        }
+        if *name == "GtkNotebook" {
+            return if through_page {
+                Hit::Background
+            } else {
+                Hit::Control
+            };
+        }
+    }
+    Hit::Background
+}
+
+fn widget_type_chain(widget: &gtk::Widget) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current = Some(widget.clone());
+    while let Some(w) = current {
+        names.push(w.type_().name().to_string());
+        current = w.parent();
+    }
+    names
+}
+
+const _: () = assert!(matches!(MoveModifier::LINUX, MoveModifier::Super));
+
+fn install_move_drag(window: &Window) {
+    window.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+    let win = window.clone();
+    window.connect_button_press_event(move |_, event| {
+        if event.button() != 1 {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let super_held = event.state().contains(gtk::gdk::ModifierType::MOD4_MASK);
+        let mut ev = event.clone();
+        let hit = gtk::event_widget(&mut ev)
+            .map(|widget| {
+                let names = widget_type_chain(&widget);
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                hit_from_widget_type_names(&refs)
+            })
+            .unwrap_or(Hit::Background);
+        if should_begin_move(super_held, hit) {
+            let (x, y) = event.root();
+            win.begin_move_drag(event.button() as i32, x as i32, y as i32, event.time());
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_page_under_the_notebook_is_background() {
+        assert_eq!(
+            hit_from_widget_type_names(&[
+                "GtkBox",
+                "GtkViewport",
+                "GtkScrolledWindow",
+                "GtkNotebook"
+            ]),
+            Hit::Background
+        );
+    }
+
+    #[test]
+    fn an_entry_button_or_combo_is_a_control() {
+        for name in [
+            "GtkEntry",
+            "GtkTextView",
+            "GtkButton",
+            "GtkComboBox",
+            "GtkCheckButton",
+        ] {
+            assert_eq!(
+                hit_from_widget_type_names(&[name, "GtkBox", "GtkNotebook"]),
+                Hit::Control,
+                "{name} must keep the press"
+            );
+        }
+    }
+
+    #[test]
+    fn the_notebook_tab_strip_is_a_control() {
+        assert_eq!(
+            hit_from_widget_type_names(&["GtkLabel", "GtkNotebook"]),
+            Hit::Control
+        );
+    }
 }

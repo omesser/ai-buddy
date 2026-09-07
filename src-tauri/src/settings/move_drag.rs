@@ -1,8 +1,6 @@
 //! Whether a Settings-window press may start a move-drag.
 //!
 //! The three platform windows share this so they cannot disagree on the gate. #460.
-#![cfg_attr(not(test), allow(dead_code))] // the windows call this; they are not wired yet.
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hit {
     Background,
@@ -15,6 +13,7 @@ pub fn should_begin_move(modifier_held: bool, hit: Hit) -> bool {
 }
 
 /// The key a platform window must see held, named as that OS names it. #460.
+#[allow(dead_code)] // one OS names one variant; the other two are the other targets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveModifier {
     Command,
@@ -22,6 +21,7 @@ pub enum MoveModifier {
     Alt,
 }
 
+#[allow(dead_code)]
 impl MoveModifier {
     pub const MACOS: Self = Self::Command;
     pub const LINUX: Self = Self::Super;

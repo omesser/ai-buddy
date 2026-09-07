@@ -10,29 +10,33 @@ use std::ffi::CString;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ,
-    HMONITOR, MONITORINFO,
+    EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, ScreenToClient, UpdateWindow,
+    DEFAULT_GUI_FONT, HGDIOBJ, HMONITOR, MONITORINFO,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows_sys::Win32::UI::Controls::{
-    TCIF_TEXT, TCITEMA, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
+    TCHITTESTINFO, TCHT_ONITEM, TCIF_TEXT, TCITEMA, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_HITTEST,
+    TCM_INSERTITEMA, WC_TABCONTROLA,
 };
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, DestroyWindow, GetClientRect, GetDlgItem, GetWindow, GetWindowLongPtrA,
-    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
-    SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
-    BS_AUTOCHECKBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE,
-    ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, IDYES,
-    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
-    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE,
+    ChildWindowFromPointEx, CreateWindowExA, DestroyWindow, GetClassNameA, GetClientRect,
+    GetDlgItem, GetWindow, GetWindowLongPtrA, GetWindowTextA, GetWindowTextLengthA, MessageBoxA,
+    SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow,
+    BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT,
+    EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN,
+    GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK,
+    MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NCHITTEST, WM_NOTIFY,
+    WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE,
     WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
+use crate::settings::move_drag::{should_begin_move, Hit, MoveModifier};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -1409,6 +1413,74 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
     }
 }
 
+const _: () = assert!(matches!(MoveModifier::WINDOWS, MoveModifier::Alt));
+
+fn caption_hit_test(alt_held: bool, hit: Hit) -> LRESULT {
+    if should_begin_move(alt_held, hit) {
+        HTCAPTION as LRESULT
+    } else {
+        HTCLIENT as LRESULT
+    }
+}
+
+/// `tab_on_item` is only meaningful for the tab control; ignored otherwise. #460.
+fn hit_from_win32(class: &str, tab_on_item: bool) -> Hit {
+    match class {
+        "Edit" | "Button" | "ComboBox" => Hit::Control,
+        "SysTabControl32" => {
+            if tab_on_item {
+                Hit::Control
+            } else {
+                Hit::Background
+            }
+        }
+        _ => Hit::Background,
+    }
+}
+
+fn hit_at(hwnd: HWND, lparam: LPARAM) -> Hit {
+    let screen = POINT {
+        x: lparam as i16 as i32,
+        y: (lparam >> 16) as i16 as i32,
+    };
+    let mut client = screen;
+    // SAFETY: `client` is a stack POINT the API writes in place.
+    unsafe {
+        ScreenToClient(hwnd, &mut client);
+    }
+    // SAFETY: parent is our settings HWND; the POINT is in its client space.
+    let child = unsafe { ChildWindowFromPointEx(hwnd, client, CWP_SKIPINVISIBLE) };
+    if child.is_null() || child == hwnd {
+        return Hit::Background;
+    }
+    let mut buf = [0u8; 256];
+    // SAFETY: buffer is a writable C string of known size.
+    let n = unsafe { GetClassNameA(child, buf.as_mut_ptr(), buf.len() as i32) };
+    if n <= 0 {
+        return Hit::Background;
+    }
+    let class = std::str::from_utf8(&buf[..n as usize]).unwrap_or("");
+    let tab_on_item = if class == "SysTabControl32" {
+        let mut tab_pt = screen;
+        // SAFETY: `child` is the tab control still owned by this window.
+        unsafe {
+            ScreenToClient(child, &mut tab_pt);
+        }
+        let mut info = TCHITTESTINFO {
+            pt: tab_pt,
+            flags: 0,
+        };
+        // SAFETY: `info` lives for the SendMessage; TCM_HITTEST only reads/writes it.
+        unsafe {
+            SendMessageA(child, TCM_HITTEST, 0, &mut info as *mut _ as LPARAM);
+        }
+        info.flags & TCHT_ONITEM != 0
+    } else {
+        false
+    };
+    hit_from_win32(class, tab_on_item)
+}
+
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
@@ -1418,6 +1490,16 @@ unsafe extern "system" fn window_proc(
     use windows_sys::Win32::UI::WindowsAndMessaging::{WM_CREATE, WM_DESTROY};
     match msg {
         WM_CREATE => 0,
+        WM_NCHITTEST => {
+            let def = windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcA(
+                hwnd, msg, wparam, lparam,
+            );
+            if def != HTCLIENT as LRESULT {
+                return def;
+            }
+            let alt = GetAsyncKeyState(VK_MENU) < 0;
+            caption_hit_test(alt, hit_at(hwnd, lparam))
+        }
         WM_COMMAND => {
             let window_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA);
             if window_ptr != 0 {
@@ -1653,5 +1735,48 @@ mod tests {
             !should_update_label_text("composite_help_45"),
             "all composite_help_* labels must be preserved"
         );
+    }
+
+    #[test]
+    fn alt_on_background_is_caption() {
+        assert_eq!(
+            caption_hit_test(true, Hit::Background),
+            HTCAPTION as LRESULT
+        );
+    }
+
+    #[test]
+    fn without_alt_stays_client() {
+        assert_eq!(
+            caption_hit_test(false, Hit::Background),
+            HTCLIENT as LRESULT
+        );
+    }
+
+    #[test]
+    fn alt_on_a_control_stays_client() {
+        assert_eq!(caption_hit_test(true, Hit::Control), HTCLIENT as LRESULT);
+    }
+
+    #[test]
+    fn edit_button_and_combo_are_controls() {
+        for class in ["Edit", "Button", "ComboBox"] {
+            assert_eq!(
+                hit_from_win32(class, false),
+                Hit::Control,
+                "{class} must keep the press"
+            );
+        }
+    }
+
+    #[test]
+    fn tab_item_is_a_control_empty_tab_body_is_background() {
+        assert_eq!(hit_from_win32("SysTabControl32", true), Hit::Control);
+        assert_eq!(hit_from_win32("SysTabControl32", false), Hit::Background);
+    }
+
+    #[test]
+    fn a_static_label_is_background() {
+        assert_eq!(hit_from_win32("Static", false), Hit::Background);
     }
 }
