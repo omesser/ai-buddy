@@ -523,6 +523,15 @@ fn director_sections() -> Vec<FormSection> {
 /// No credential row of any kind, now or later: the Harness signs itself in
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
+///
+/// ponytail: AppKit draws all three rows; GTK and Win32 fill a `Popup` from
+/// the Character list by id rather than from `options`, and neither fills an
+/// `InspectBlock` it does not name, so on those two the picker and the state
+/// line come up empty until each grows one arm. The command line row needs
+/// nothing on GTK, whose `TextField` arm is already generic. Deferred rather
+/// than written blind: neither renderer compiles on the machine this landed
+/// from. The file field is the setting either way, so a hand-edit works
+/// everywhere today.
 fn completer_source_section() -> FormSection {
     let (source_label, frozen) = env_row("Harness", crate::harness::VAR);
     FormSection {
