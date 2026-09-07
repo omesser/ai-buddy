@@ -19,9 +19,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::director::Completer;
+use ai_buddy_core::director::{Completer, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::acp_wire::{Event, Handshake, OpenError, TurnError, Wire};
 use crate::action_log;
@@ -215,17 +215,28 @@ impl Session {
     }
 
     /// One turn. The whole of `Completer::complete`, minus the trace.
-    fn turn(&self, prompt: &str) -> Result<String, String> {
+    fn turn(&self, request: &WakeRequest) -> Result<String, String> {
         let Ok(_turn) = self.turn.try_lock() else {
-            return Err("harness busy".to_string());
+            return Err(self.refused(request, "harness busy"));
         };
-        let (wire, session_id) = self.attach()?;
+        let (wire, session_id) = match self.attach() {
+            Ok(attached) => attached,
+            Err(why) => return Err(self.refused(request, &why)),
+        };
+        // The Instance and the wake kind come through the seam rather than
+        // from anything here: one session serves every buddy (ADR-0008), so
+        // the session id alone cannot say whose wake this is (#435).
         action_log::append(
             &self.dir,
             "prompt",
-            json!({"session_id": session_id, "chars": prompt.len()}),
+            json!({
+                "session_id": session_id,
+                "instance": request.instance,
+                "wake": wake_kind(request.reactive),
+                "chars": request.prompt.len(),
+            }),
         );
-        match wire.prompt(prompt, self.timeout) {
+        match wire.prompt(&request.prompt, self.timeout) {
             Ok(text) => {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
                 if let Ok(mut state) = self.state.lock() {
@@ -251,6 +262,26 @@ impl Session {
                 Err(format!("harness: {why}"))
             }
         }
+    }
+
+    /// A wake that never reached `session/prompt`: the Harness was busy with
+    /// another, or there was no session to send it to.
+    ///
+    /// Logged because the Shell writes a `parsed` line for every reply it
+    /// takes, this refusal included — and a `parsed` with no line of its own
+    /// to join would read as the outcome of whichever wake was logged last.
+    /// Returns `why` so the one call site stays one line (#435).
+    fn refused(&self, request: &WakeRequest, why: &str) -> String {
+        action_log::append(
+            &self.dir,
+            "refused",
+            json!({
+                "instance": request.instance,
+                "wake": wake_kind(request.reactive),
+                "why": why,
+            }),
+        );
+        why.to_string()
     }
 
     /// The wire died under a turn. Say so, and let the next wake respawn.
@@ -418,11 +449,11 @@ impl Session {
 }
 
 impl Completer for Session {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
         if crate::model::tracing() {
             eprintln!("harness: prompt to {}", self.launch.name);
         }
-        let reply = self.turn(prompt);
+        let reply = self.turn(request);
         if crate::model::tracing() {
             match &reply {
                 Ok(text) => eprintln!("harness: reply {text}"),
@@ -459,6 +490,61 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
             );
             forward(ask);
         }
+    }
+}
+
+/// The Action Log line for what one reply parsed to.
+///
+/// Written by the Shell where it takes the wake out of `Slots`, because
+/// `crates/core` parses and does no I/O — and only with a Harness attached,
+/// since the Action Log is that path's (#435).
+pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) {
+    if let Some(session) = attached() {
+        action_log::append(
+            &session.dir,
+            "parsed",
+            parsed_fields(instance, wake, reactive, near_miss),
+        );
+    }
+}
+
+/// The four answers the Shell has to "what did the reply parse to".
+///
+/// A Near Miss is its own outcome and not `speech`, though it arrives as
+/// speech: a Character that declares `prowl` and a model that answers `prowll`
+/// is a contract miss the log has to be able to show, which is what CONTEXT.md
+/// asks and what the trace flag was the only witness to (#243).
+///
+/// `failed` says only that no reply was usable. Why is already a line of its
+/// own — `refused`, `timeout`, or a `turn` carrying the stop reason — written
+/// where the failure was seen.
+///
+/// The wake kind rides along so a reader can join this to the `prompt` or
+/// `refused` line for the same wake.
+fn parsed_fields(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) -> Value {
+    let (result, behavior) = match (near_miss, wake) {
+        (Some(named), _) => ("near_miss", Some(named)),
+        (None, Wake::Proposed(proposal)) if !proposal.behavior.is_empty() => {
+            ("proposal", Some(proposal.behavior.as_str()))
+        }
+        (None, Wake::Proposed(_)) => ("speech", None),
+        (None, Wake::Failed) => ("failed", None),
+    };
+    json!({
+        "instance": instance,
+        "wake": wake_kind(reactive),
+        "result": result,
+        "behavior": behavior,
+    })
+}
+
+/// The Action Log's word for each of ADR-0008's two wake kinds. Proactive is
+/// the wake policy's word; Ambient in the glossary is Ambient Capture.
+fn wake_kind(reactive: bool) -> &'static str {
+    if reactive {
+        "reactive"
+    } else {
+        "proactive"
     }
 }
 
@@ -563,7 +649,7 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
+    use ai_buddy_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
 
@@ -774,6 +860,15 @@ mod tests {
             recorded(Some(&self.count), what)
         }
 
+        /// Every Action Log line of one kind, oldest first.
+        fn events(&self, event: &str) -> Vec<Value> {
+            let text = std::fs::read_to_string(self.dir.join(action_log::FILE)).unwrap_or_default();
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter(|line| line["event"] == json!(event))
+                .collect()
+        }
+
         fn wait_for(&self, what: &str, n: usize) -> bool {
             let until = Instant::now() + Duration::from_secs(5);
             while Instant::now() < until {
@@ -783,6 +878,15 @@ mod tests {
                 thread::sleep(Duration::from_millis(20));
             }
             false
+        }
+    }
+
+    /// One reactive wake for `buddy-1`, which is every turn a test sends.
+    fn asking(prompt: &str) -> WakeRequest {
+        WakeRequest {
+            prompt: prompt.to_string(),
+            instance: "buddy-1".to_string(),
+            reactive: true,
         }
     }
 
@@ -833,7 +937,7 @@ mod tests {
     #[test]
     fn happy_path_concatenates_chunks_and_records_the_session() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         let saved: SavedSession =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
@@ -849,10 +953,76 @@ mod tests {
         session.shutdown();
     }
 
+    /// #435: one session serves every buddy, so `session_id` cannot answer
+    /// "which Instance woke, and did the user ask for it". Both come through
+    /// the `WakeRequest` or not at all.
+    #[test]
+    fn the_prompt_event_names_the_instance_and_the_wake_kind() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        let proactive = WakeRequest {
+            reactive: false,
+            ..asking("nobody asked")
+        };
+        assert_eq!(session.complete(&proactive), Ok("Hello".to_string()));
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 2, "{prompts:?}");
+        assert_eq!(prompts[0]["instance"], json!("buddy-1"));
+        assert_eq!(prompts[0]["wake"], json!("reactive"));
+        assert_eq!(prompts[0]["chars"], json!(2));
+        assert_eq!(prompts[1]["wake"], json!("proactive"));
+        assert_eq!(prompts[1]["session_id"], json!("fresh-id"));
+    }
+
+    /// #435: without this the log said a prompt went out and never what came
+    /// of it, so "did we take what the Harness proposed" needed the trace flag.
+    #[test]
+    fn the_parsed_event_says_what_the_reply_became() {
+        let spoke = |line: &str| {
+            Wake::Proposed(BehaviorProposal {
+                behavior: String::new(),
+                dialogue: Some(line.to_string()),
+            })
+        };
+
+        let named = parsed_fields(
+            "buddy-1",
+            &Wake::Proposed(BehaviorProposal {
+                behavior: "prowl".to_string(),
+                dialogue: Some("mine now".to_string()),
+            }),
+            true,
+            None,
+        );
+        assert_eq!(named["instance"], json!("buddy-1"));
+        assert_eq!(named["wake"], json!("reactive"));
+        assert_eq!(named["result"], json!("proposal"));
+        assert_eq!(named["behavior"], json!("prowl"));
+
+        // An empty name is the Engine's "talk and speak": the model chose to
+        // talk rather than name a Behavior.
+        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None);
+        assert_eq!(talked["wake"], json!("proactive"));
+        assert_eq!(talked["result"], json!("speech"));
+        assert_eq!(talked["behavior"], json!(null));
+
+        // #243: the same shape as speech on the wire, and a different thing —
+        // the name it named is what makes it readable as a miss.
+        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"));
+        assert_eq!(missed["result"], json!("near_miss"));
+        assert_eq!(missed["behavior"], json!("prowll"));
+
+        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None);
+        assert_eq!(failed["result"], json!("failed"));
+        assert_eq!(failed["behavior"], json!(null));
+    }
+
     #[test]
     fn a_refusal_is_an_err() {
         let (_fx, session) = Fixture::new("refusal");
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("refusal")),
             "{reply:?}"
@@ -863,7 +1033,7 @@ mod tests {
     #[test]
     fn garbage_between_messages_is_skipped() {
         let (_fx, session) = Fixture::new("garbage");
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         session.shutdown();
     }
 
@@ -873,7 +1043,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete("hi"))
+            thread::spawn(move || session.complete(&asking("hi")))
         };
         let ask = fx.asks.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(ask.title, "rm -rf /");
@@ -889,7 +1059,7 @@ mod tests {
     fn a_timeout_before_the_answer_sends_the_cancelled_outcome() {
         let (fx, session) = Fixture::new("permission");
         let session = session.with_timeout(Duration::from_millis(700));
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert!(reply.is_err(), "{reply:?}");
         fx.asks.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(fx.wait_for("cancel", 1));
@@ -901,13 +1071,13 @@ mod tests {
     fn a_slow_turn_is_cancelled_and_the_next_one_works() {
         let (fx, session) = Fixture::new("slow");
         let session = session.with_timeout(Duration::from_millis(500));
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("cancelled")),
             "{reply:?}"
         );
         assert!(fx.wait_for("cancel", 1));
-        assert_eq!(session.complete("again"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
         assert_eq!(fx.count("spawn"), 1, "cancel is not a respawn");
         session.shutdown();
     }
@@ -915,9 +1085,12 @@ mod tests {
     #[test]
     fn a_child_that_exits_mid_turn_is_respawned_on_the_next_wake() {
         let (fx, session) = Fixture::new("exit");
-        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err("harness exited".to_string())
+        );
         assert!(!session.inspect().alive);
-        assert_eq!(session.complete("again"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
         assert_eq!(fx.count("spawn"), 2);
         assert!(session.inspect().alive);
         session.shutdown();
@@ -926,18 +1099,18 @@ mod tests {
     #[test]
     fn auth_required_names_the_login_and_the_retry_gate_holds() {
         let (fx, session) = Fixture::new("auth");
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert_eq!(reply, Err(not_authenticated("fake --login")));
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         // Inside the gate: fails fast, no second session/new on the wire.
-        assert!(session.complete("hi").is_err());
+        assert!(session.complete(&asking("hi")).is_err());
         assert_eq!(fx.count("new"), 1);
         session.shutdown();
 
         let (fx, session) = Fixture::new("auth");
         let session = session.with_auth_retry(Duration::ZERO);
-        assert!(session.complete("hi").is_err());
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert!(session.complete(&asking("hi")).is_err());
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
         session.shutdown();
@@ -951,7 +1124,7 @@ mod tests {
             r#"{"session_id":"saved-ok","harness":"fake"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 0);
         assert_eq!(session.inspect().session_id.as_deref(), Some("saved-ok"));
@@ -963,7 +1136,7 @@ mod tests {
             r#"{"session_id":"stale","harness":"fake"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 1);
         let saved = std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap();
@@ -977,7 +1150,7 @@ mod tests {
             r#"{"session_id":"saved-ok","harness":"other"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 0);
         session.shutdown();
     }
@@ -990,9 +1163,9 @@ mod tests {
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
         let session = Session::new(launch, dir.clone(), Box::new(|_| {}));
-        let first = session.complete("hi").unwrap_err();
+        let first = session.complete(&asking("hi")).unwrap_err();
         assert!(first.contains("could not start"), "{first}");
-        let second = session.complete("hi").unwrap_err();
+        let second = session.complete(&asking("hi")).unwrap_err();
         assert!(second.contains("retrying in"), "{second}");
         assert_eq!(backoff(1), Duration::from_secs(5));
         assert_eq!(backoff(2), Duration::from_secs(10));
@@ -1002,16 +1175,29 @@ mod tests {
 
     #[test]
     fn a_second_turn_while_one_is_in_flight_is_busy() {
-        let (_fx, session) = Fixture::new("slow");
+        let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session.with_timeout(Duration::from_secs(3)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete("hi"))
+            thread::spawn(move || session.complete(&asking("hi")))
         };
         thread::sleep(Duration::from_millis(300));
-        assert_eq!(session.complete("again"), Err("harness busy".to_string()));
+        assert_eq!(
+            session.complete(&asking("again")),
+            Err("harness busy".to_string())
+        );
         let _ = worker.join();
         session.shutdown();
+
+        // #435: the busy wake sent no prompt, so without a line of its own the
+        // `parsed` line the Shell writes for it would read against the prompt
+        // the wake before it logged.
+        let refused = fx.events("refused");
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert_eq!(refused[0]["instance"], json!("buddy-1"));
+        assert_eq!(refused[0]["wake"], json!("reactive"));
+        assert_eq!(refused[0]["why"], json!("harness busy"));
+        assert_eq!(fx.events("prompt").len(), 1, "the busy wake sent none");
     }
 
     #[test]

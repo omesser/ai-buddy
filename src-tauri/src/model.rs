@@ -16,7 +16,7 @@ use std::thread;
 use std::time::Duration;
 
 use ai_buddy_core::director::{
-    Completer, Context, Happened, ModelDirector, Pace, Wake, WAKE_EVERY,
+    self, Completer, Context, ModelDirector, Pace, Wake, WakeRequest, WAKE_EVERY,
 };
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
@@ -247,10 +247,10 @@ pub enum AnyCompleter {
 }
 
 impl Completer for AnyCompleter {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
         match self {
-            AnyCompleter::Http(endpoint) => endpoint.complete(prompt),
-            AnyCompleter::Harness(session) => session.complete(prompt),
+            AnyCompleter::Http(endpoint) => endpoint.complete(request),
+            AnyCompleter::Harness(session) => session.complete(request),
         }
     }
 }
@@ -831,7 +831,10 @@ impl Endpoint {
 }
 
 impl Completer for Endpoint {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
+    /// The Instance and the wake kind go unread here: they are the Action
+    /// Log's, and the Action Log belongs to the Harness path (#435).
+    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+        let prompt = &request.prompt;
         if tracing() {
             eprintln!("director: sending POST {} model={}", self.url, self.model);
             trace_block("prompt", prompt);
@@ -1454,8 +1457,21 @@ struct Slot {
 /// One worker's answer, stamped with the call it belongs to.
 struct Delivered {
     epoch: u64,
-    wake: Wake,
-    context: Context,
+    answered: Answered,
+}
+
+/// What one wake came back with.
+///
+/// The three travel together because each is meaningless without the others: a
+/// proposal only means anything against the moment that asked for it, and the
+/// near miss is the only thing that tells a proposal-shaped reply naming an
+/// undeclared Behavior apart from a model that chose to talk (#243).
+pub struct Answered {
+    pub wake: Wake,
+    pub context: Context,
+    /// The Behavior name the reply proposed that this Character declares none
+    /// of. `None` on every other reply.
+    pub near_miss: Option<String>,
 }
 
 impl Default for Slot {
@@ -1521,7 +1537,7 @@ impl Slots {
         let slot = self.slots.entry(id.clone()).or_default();
         slot.supersede();
         slot.waiting = true;
-        slot.reactive = context.happened != Happened::Ambient;
+        slot.reactive = director::reactive(&context.happened);
         let epoch = slot.epoch;
         let tx = slot.tx.clone();
         let abandoned = Arc::clone(&slot.abandoned);
@@ -1530,34 +1546,36 @@ impl Slots {
             ABANDONED.with_borrow_mut(|flag| *flag = Some(abandoned));
             // Always send. A panic here would leave the slot waiting forever
             // and skip StaticDirector on every later tick.
-            let wake = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (wake, near_miss) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let (wake, near_miss) = director.wake_and_near_miss(&context);
-                // Traced here, beside the reply it came from, rather than in
-                // the frame loop: the Wake reaching the frame loop is speech,
-                // and speech is what a near miss is indistinguishable from.
+                // Traced here, beside the reply it came from. The Action Log
+                // takes it from `take` instead, where a superseded reply has
+                // already been dropped.
                 if tracing() {
-                    if let Some(name) = near_miss {
-                        eprintln!("{}", near_miss_line(&traced, &name, director.behaviors()));
+                    if let Some(name) = &near_miss {
+                        eprintln!("{}", near_miss_line(&traced, name, director.behaviors()));
                     }
                 }
-                wake
+                (wake, near_miss)
             }))
-            .unwrap_or(Wake::Failed);
+            .unwrap_or((Wake::Failed, None));
             let _ = tx.send(Delivered {
                 epoch,
-                wake,
-                context,
+                answered: Answered {
+                    wake,
+                    context,
+                    near_miss,
+                },
             });
         });
     }
 
-    /// The reply for `id`, with the Context it was computed for.
+    /// The reply for `id`, with the moment it was computed for.
     ///
-    /// The pair travels together because a proposal only means anything against
-    /// the moment that asked for it, and a reply from a superseded moment is
-    /// dropped here rather than handed out for a caller to compare — which is
-    /// what stops a buddy saying "put me down" from the floor it landed on.
-    pub fn take(&mut self, id: &InstanceId) -> Option<(Wake, Context)> {
+    /// A reply from a superseded moment is dropped here rather than handed out
+    /// for a caller to compare — which is what stops a buddy saying "put me
+    /// down" from the floor it landed on.
+    pub fn take(&mut self, id: &InstanceId) -> Option<Answered> {
         let slot = self.slots.get_mut(id)?;
         while let Ok(delivered) = slot.rx.try_recv() {
             if delivered.epoch != slot.epoch {
@@ -1565,7 +1583,7 @@ impl Slots {
             }
             slot.waiting = false;
             slot.reactive = false;
-            return Some((delivered.wake, delivered.context));
+            return Some(delivered.answered);
         }
         None
     }
@@ -1616,6 +1634,7 @@ pub fn retarget_model(
         Arc::new(ModelDirector::new(
             completer_from(settings).expect("configured means a Completer exists"),
             behaviors,
+            id.clone(),
         ))
     });
 }
@@ -1623,6 +1642,7 @@ pub fn retarget_model(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use ai_buddy_core::director::Happened;
 
     /// Run `body` with the three Director vars set as given and the switch
     /// cleared, then all four restored.
@@ -2675,6 +2695,7 @@ pub(crate) mod tests {
                         saw: Arc::clone(&saw),
                     },
                     ["stroll"],
+                    id.clone(),
                 )),
                 wake_context(),
             );
@@ -2811,7 +2832,7 @@ pub(crate) mod tests {
     }
 
     impl Completer for Watchful {
-        fn complete(&self, _: &str) -> Result<String, String> {
+        fn complete(&self, _: &WakeRequest) -> Result<String, String> {
             for _ in 0..400 {
                 if abandoned() {
                     self.saw.store(true, Ordering::SeqCst);
@@ -2841,7 +2862,7 @@ pub(crate) mod tests {
     }
 
     impl Completer for Answers {
-        fn complete(&self, _: &str) -> Result<String, String> {
+        fn complete(&self, _: &WakeRequest) -> Result<String, String> {
             thread::sleep(self.delay);
             Ok(self.behavior.to_string())
         }
@@ -2854,6 +2875,7 @@ pub(crate) mod tests {
                 delay: Duration::from_millis(delay_ms),
             },
             ["stroll", "nap"],
+            "buddy",
         ))
     }
 
@@ -2867,7 +2889,7 @@ pub(crate) mod tests {
     }
 
     /// Poll the slot the way the frame loop does, until an answer lands.
-    fn polled(slots: &mut Slots, id: &InstanceId) -> Option<(Wake, Context)> {
+    fn polled(slots: &mut Slots, id: &InstanceId) -> Option<Answered> {
         for _ in 0..200 {
             if let Some(taken) = slots.take(id) {
                 return Some(taken);
@@ -2895,13 +2917,33 @@ pub(crate) mod tests {
         slots.wake(&id, answering("stroll", 120), wake_context());
         slots.wake(&id, answering("nap", 0), wake_context());
 
-        let (wake, _) = polled(&mut slots, &id).expect("the newest call answers");
-        assert_eq!(behavior_of(&wake), "nap");
+        let answered = polled(&mut slots, &id).expect("the newest call answers");
+        assert_eq!(behavior_of(&answered.wake), "nap");
 
         thread::sleep(Duration::from_millis(200));
         assert!(
             slots.take(&id).is_none(),
             "the superseded reply must be dropped, not delivered a tick later"
+        );
+    }
+
+    /// #243, #435: a name nobody declared arrives as speech, so the name is the
+    /// only thing that tells the two apart — and the Action Log is written at
+    /// `take`, not in the worker, so it has to survive the trip.
+    #[test]
+    fn take_carries_the_near_miss_the_worker_saw() {
+        let mut slots = Slots::new();
+        let id = "buddy".to_string();
+
+        // `answering` declares stroll and nap, so cartwheel is neither.
+        slots.wake(&id, answering("cartwheel", 0), wake_context());
+
+        let answered = polled(&mut slots, &id).expect("the call answers");
+        assert_eq!(answered.near_miss.as_deref(), Some("cartwheel"));
+        assert_eq!(
+            behavior_of(&answered.wake),
+            "",
+            "a near miss is still played as speech"
         );
     }
 
@@ -2919,7 +2961,7 @@ pub(crate) mod tests {
 
         slots.wake(&id, answering("stroll", 0), asked);
 
-        let (_, carried) = polled(&mut slots, &id).expect("the call answers");
+        let carried = polled(&mut slots, &id).expect("the call answers").context;
         assert_eq!(carried.happened, Happened::Poke);
         assert_eq!(carried.standing, "Finder");
     }
@@ -2936,10 +2978,10 @@ pub(crate) mod tests {
         // Supersedes `first` only. `second` has said nothing about it.
         slots.wake(&first, answering("nap", 0), wake_context());
 
-        let (theirs, _) = polled(&mut slots, &second).expect("the second buddy still answers");
-        assert_eq!(behavior_of(&theirs), "nap");
-        let (ours, _) = polled(&mut slots, &first).expect("the first buddy answers too");
-        assert_eq!(behavior_of(&ours), "nap");
+        let theirs = polled(&mut slots, &second).expect("the second buddy still answers");
+        assert_eq!(behavior_of(&theirs.wake), "nap");
+        let ours = polled(&mut slots, &first).expect("the first buddy answers too");
+        assert_eq!(behavior_of(&ours.wake), "nap");
     }
 
     /// Superseding has to reach the worker, not just the epoch it answers on.
@@ -2959,6 +3001,7 @@ pub(crate) mod tests {
                     saw: Arc::clone(&saw),
                 },
                 ["stroll"],
+                id.clone(),
             )),
             wake_context(),
         );
@@ -3020,7 +3063,7 @@ pub(crate) mod tests {
         let cat = ai_buddy_core::character::load(&files).expect("and loads");
         let behaviors: Vec<String> = cat.behaviors.keys().cloned().collect();
 
-        let director = ModelDirector::new(endpoint, behaviors.clone());
+        let director = ModelDirector::new(endpoint, behaviors.clone(), "buddy");
 
         // Vary the wake so the prompts differ: the reactive verbs plus ambient.
         let occasions = [

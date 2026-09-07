@@ -17,7 +17,7 @@ use tauri::{Emitter, Manager};
 
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, menu, model,
+    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, menu, model,
     note_happened, open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
     push_chat_opening, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
     ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
@@ -903,21 +903,37 @@ pub(crate) fn run_frame_loop(
 
                 let answering_chat = arrived
                     .as_ref()
-                    .is_some_and(|(_, context)| matches!(context.happened, Happened::Chat(_)));
+                    .is_some_and(|answered| matches!(answered.context.happened, Happened::Chat(_)));
 
                 // The session Director answered, as against a failed call that
                 // left `fallback` running on static weights.
                 let responded = arrived
                     .as_ref()
-                    .is_some_and(|(wake, _)| matches!(wake, Wake::Proposed(_)));
+                    .is_some_and(|answered| matches!(answered.wake, Wake::Proposed(_)));
 
                 // Read here because the `Context` is consumed just below and
                 // the emit that needs it is further down still.
                 let reacting_to = arrived
                     .as_ref()
-                    .map(|(_, context)| director::reacting_to(&context.happened));
+                    .map(|answered| director::reacting_to(&answered.context.happened));
 
-                if let Some((wake, context)) = arrived {
+                if let Some(model::Answered {
+                    wake,
+                    context,
+                    near_miss,
+                }) = arrived
+                {
+                    // Here rather than in the worker: this is where core's
+                    // parse result first reaches something that may do I/O,
+                    // and a reply this Instance has moved past never arrives
+                    // here at all. The Harness logs the wakes that never got
+                    // a reply, so every line here has a prompt to join.
+                    harness::note_parsed(
+                        &live.id,
+                        &wake,
+                        director::reactive(&context.happened),
+                        near_miss.as_deref(),
+                    );
                     if model::tracing() {
                         match &wake {
                             Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(
