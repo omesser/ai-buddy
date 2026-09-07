@@ -414,7 +414,7 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     use ai_buddy_core::character::{self, Character};
-    use ai_buddy_core::director::{Context, Director, StaticDirector};
+    use ai_buddy_core::director::{Context, StaticDirector};
     use ai_buddy_core::engine::{BehaviorProposal, Engine, Point, Rect, WorldSnapshot};
     use ai_buddy_core::overlay::{AlphaMask, SpriteRect};
     use ai_buddy_core::sensing::Activity;

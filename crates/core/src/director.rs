@@ -126,12 +126,6 @@ pub struct Context {
     pub standing: String,
 }
 
-/// Whatever decides what the buddy does next.
-pub trait Director {
-    /// A Behavior to play, or nothing when this moment suits none.
-    fn propose(&mut self, context: &Context) -> Option<BehaviorProposal>;
-}
-
 /// One wake on its way to a Completer: the Character Prompt, and who is
 /// asking for it.
 ///
@@ -499,9 +493,7 @@ impl StaticDirector {
             seeded: Seeded(seed),
         }
     }
-}
 
-impl Director for StaticDirector {
     /// Pick among the Behaviors this moment permits, by weight.
     ///
     /// Three filters and a draw. A Behavior of no weight is one the author took
@@ -513,7 +505,7 @@ impl Director for StaticDirector {
     /// with two Behaviors and three of them remembered would otherwise go still
     /// for ever. Repeating is worse than pausing only while there is something
     /// else to do.
-    fn propose(&mut self, context: &Context) -> Option<BehaviorProposal> {
+    pub fn propose(&mut self, context: &Context) -> Option<BehaviorProposal> {
         let suits = |(name, behavior): (&String, &Behavior)| {
             let triggered = match &behavior.trigger {
                 None => true,

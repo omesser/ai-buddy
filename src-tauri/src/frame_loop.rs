@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ai_buddy_core::director::{self, Context, Director, Happened, Wake};
+use ai_buddy_core::director::{self, Context, Happened, Wake};
 use ai_buddy_core::dispatch::DenyList;
 use ai_buddy_core::engine::{Cue, State, Verb};
 use ai_buddy_core::input::press_target;
