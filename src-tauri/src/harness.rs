@@ -174,9 +174,9 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // CREATE_NEW_PROCESS_GROUP is not a Unix process-group twin.
-        // Grandchildren still need a Job Object if they linger; this PR
-        // has not smoked Ctrl+C on Windows.
+        // Job Object assigned after spawn in `acp_wire::run` ensures
+        // descendants die on shutdown (#515). Still in a new process group
+        // so Ctrl+C does not reach the child.
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }

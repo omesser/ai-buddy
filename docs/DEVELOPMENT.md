@@ -464,6 +464,12 @@ Single build with runtime lane selection. XWayland usually answers. Wayland-only
 
 NSIS installer ships. Some cells stub/degraded (see platform table in main README). Shell binary is real; stubs are about overlay depth.
 
+#### Harness Process Termination
+
+On Windows, the ACP Harness child and its descendants (e.g. `npx` spawning Node) are assigned to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. When the app quits or the Harness is detached, terminating the job ensures grandchildren do not linger. The child is also in its own process group (`CREATE_NEW_PROCESS_GROUP`) so Ctrl+C into `cargo run` does not interrupt it.
+
+**Known limitation: post-spawn assignment race.** The Job Object is assigned after spawn returns. `npx` can fork Node in that window; children created before the parent enters the job are not auto-joined, so Job Object teardown may miss the real adapter. The race is narrow but real. Proper fix: create-time association via `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_JOB_LIST` (requires raw CreateProcess APIs; see #517).
+
 ## Further Reading
 
 - Main README: What it does, how to run, platform support
