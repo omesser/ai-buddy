@@ -173,6 +173,20 @@ jobs:
         if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
         run: brew install shellcheck
 
+      - name: Install PowerShell
+        # Required for PSScriptAnalyzer pre-commit hook to lint .ps1 files.
+        # Linux: Microsoft's official install script. macOS: brew cask.
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            curl -fsSL https://aka.ms/install-powershell.sh | sudo bash -s
+          elif [ "$RUNNER_OS" = macOS ]; then
+            brew install --cask powershell
+          fi
+          pwsh --version
+        env:
+          RUNNER_OS: ${{ runner.os }}
+
       - name: Install the Linux system packages
         # Only Linux needs the Tauri libraries: macOS has WebKit in the system
         # already. Without them the shell crate cannot link, which is why the
