@@ -231,6 +231,14 @@ jobs:
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
 
+      - name: Harness table is generated, not written
+        # Not gated on `code`, unlike every step below it. The table's inputs
+        # are a Rust file and a TOML manifest, but what it writes is Markdown,
+        # and a pull request that changes only Markdown skips the gated steps
+        # entirely — which is precisely the pull request that hand-edits the
+        # table this check exists to catch. #458.
+        run: python3 scripts/make-harness-table.py --check
+
       - name: Core crate reaches no platform binding
         # The property the crate split exists to guarantee.
         #
