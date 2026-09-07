@@ -315,24 +315,30 @@ fn run(
         }
     };
     runtime.block_on(async move {
-        let mut async_command = async_process::Command::from(command);
-        async_command
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit());
-        let mut child = match async_command.spawn() {
+        #[cfg(windows)]
+        let mut child = match windows_job::spawn_in_job(command) {
             Ok(child) => child,
             Err(why) => {
                 let _ = ready.send(Err(format!("could not start: {why}")));
                 return;
             }
         };
-        #[cfg(windows)]
-        {
-            if !windows_job::assign_to_job(child.id()) {
-                eprintln!("harness: Job Object assignment failed; grandchildren may linger");
+
+        #[cfg(not(windows))]
+        let mut child = {
+            let mut async_command = async_process::Command::from(command);
+            async_command
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::inherit());
+            match async_command.spawn() {
+                Ok(child) => child,
+                Err(why) => {
+                    let _ = ready.send(Err(format!("could not start: {why}")));
+                    return;
+                }
             }
-        }
+        };
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             let _ = ready.send(Err("no pipes to the child".to_string()));
             return;
@@ -743,42 +749,36 @@ mod tests {
 mod windows_job {
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        OpenProcess, OpenThread, ResumeThread, CREATE_SUSPENDED, PROCESS_ALL_ACCESS,
+        THREAD_SUSPEND_RESUME,
     };
 
-    /// Send-safe wrapper for HANDLE. Win32 HANDLEs are safe to send between
-    /// threads when properly synchronized (which our Mutex provides).
     struct SafeHandle(HANDLE);
     unsafe impl Send for SafeHandle {}
 
-    /// Job Objects by child PID. Wrapped in SafeHandle for Send safety.
     static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
 
-    /// Create a Job Object with kill-on-close, assign the child to it, and
-    /// store it for later termination. Returns true if the job was created
-    /// and assigned successfully.
+    /// Spawn a command with create-time Job Object association via CREATE_SUSPENDED.
     ///
-    /// ## Known limitation: post-spawn assignment race
-    ///
-    /// This assigns the job **after** spawn returns. `npx` can fork Node in
-    /// that window; children created before the parent enters the job are not
-    /// auto-joined, so Job Object teardown may miss the real adapter. The
-    /// race is narrow but real. Proper fix: create-time association via
-    /// `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_JOB_LIST` (requires raw
-    /// CreateProcess APIs, deferred to #517).
-    pub(super) fn assign_to_job(pid: u32) -> bool {
-        unsafe {
+    /// Creates Job Object, spawns the process suspended, assigns to job,
+    /// resumes. The process cannot fork children until after job assignment,
+    /// closing the post-spawn race.
+    pub(super) fn spawn_in_job(
+        mut command: std::process::Command,
+    ) -> Result<async_process::Child, String> {
+        use std::os::windows::process::CommandExt;
+
+        let job = unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job.is_null() {
-                eprintln!("harness: CreateJobObjectW failed for pid {pid}");
-                return false;
+            if job == 0 || job == INVALID_HANDLE_VALUE {
+                return spawn_fallback_no_job(command, "CreateJobObjectW failed");
             }
 
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
@@ -792,25 +792,50 @@ mod windows_job {
             );
 
             if ok == 0 {
-                eprintln!("harness: SetInformationJobObject failed for pid {pid}");
                 CloseHandle(job);
-                return false;
+                return spawn_fallback_no_job(command, "SetInformationJobObject failed");
             }
 
-            let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
-            if process.is_null() {
-                eprintln!("harness: OpenProcess failed for pid {pid}");
+            job
+        };
+
+        let creation_flags = crate::harness::get_creation_flags() | CREATE_SUSPENDED;
+        command.creation_flags(creation_flags);
+
+        let mut async_command = async_process::Command::from(command);
+        async_command
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit());
+
+        let child = match async_command.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                unsafe { CloseHandle(job) };
+                return Err(format!("spawn failed: {e}"));
+            }
+        };
+
+        let pid = child.id();
+
+        unsafe {
+            let process = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
+            if process == 0 || process == INVALID_HANDLE_VALUE {
                 CloseHandle(job);
-                return false;
+                return Ok(child);
             }
 
             let assigned = AssignProcessToJobObject(job, process);
             CloseHandle(process);
 
             if assigned == 0 {
-                eprintln!("harness: AssignProcessToJobObject failed for pid {pid}");
                 CloseHandle(job);
-                return false;
+                eprintln!("harness: AssignProcessToJobObject failed for pid {pid}");
+                return Ok(child);
+            }
+
+            if let Err(_) = resume_primary_thread(pid) {
+                eprintln!("harness: ResumeThread failed for pid {pid}, process may be hung");
             }
 
             match JOBS.lock() {
@@ -821,16 +846,85 @@ mod windows_job {
                 Err(_) => {
                     eprintln!("harness: JOBS lock poisoned, handle leaked for pid {pid}");
                     CloseHandle(job);
-                    return false;
                 }
             }
+        }
 
-            true
+        Ok(child)
+    }
+
+    fn resume_primary_thread(pid: u32) -> Result<(), String> {
+        unsafe {
+            let tid = find_primary_thread(pid)?;
+            let thread = OpenThread(THREAD_SUSPEND_RESUME, 0, tid);
+            if thread == 0 || thread == INVALID_HANDLE_VALUE {
+                return Err("OpenThread failed".to_string());
+            }
+
+            let result = ResumeThread(thread);
+            CloseHandle(thread);
+
+            if result == u32::MAX {
+                return Err("ResumeThread failed".to_string());
+            }
+
+            Ok(())
         }
     }
 
-    /// Terminate the Job Object for this PID so descendants die. The handle
-    /// is closed whether termination succeeds or not, and removed from the map.
+    fn find_primary_thread(pid: u32) -> Result<u32, String> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
+            THREADENTRY32,
+        };
+
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            if snapshot == INVALID_HANDLE_VALUE {
+                return Err("CreateToolhelp32Snapshot failed".to_string());
+            }
+
+            let mut te: THREADENTRY32 = std::mem::zeroed();
+            te.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+
+            if Thread32First(snapshot, &mut te) == 0 {
+                CloseHandle(snapshot);
+                return Err("Thread32First failed".to_string());
+            }
+
+            loop {
+                if te.th32OwnerProcessID == pid {
+                    let tid = te.th32ThreadID;
+                    CloseHandle(snapshot);
+                    return Ok(tid);
+                }
+
+                if Thread32Next(snapshot, &mut te) == 0 {
+                    break;
+                }
+            }
+
+            CloseHandle(snapshot);
+            Err("No thread found for process".to_string())
+        }
+    }
+
+    fn spawn_fallback_no_job(
+        command: std::process::Command,
+        why: &str,
+    ) -> Result<async_process::Child, String> {
+        eprintln!("harness: {why}; spawning without Job Object (grandchildren may linger)");
+        let mut async_command = async_process::Command::from(command);
+        async_command
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit());
+        async_command
+            .spawn()
+            .map_err(|e| format!("fallback spawn failed: {e}"))
+    }
+
     pub(super) fn terminate_job(pid: u32) {
         let job = {
             let mut slot = match JOBS.lock() {
@@ -856,13 +950,6 @@ mod windows_job {
     #[cfg(test)]
     mod tests {
         use super::*;
-
-        #[test]
-        fn test_assign_to_job_bogus_pid_fails_cleanly() {
-            let bogus_pid = 0xFFFF_FFFF;
-            let result = assign_to_job(bogus_pid);
-            assert!(!result, "assign_to_job should fail on bogus pid");
-        }
 
         #[test]
         fn test_terminate_job_missing_pid_is_noop() {
