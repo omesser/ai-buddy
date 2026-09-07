@@ -6,17 +6,8 @@ if ! command -v pwsh >/dev/null 2>&1; then
   exit 0
 fi
 
->&2 echo "running PSScriptAnalyzer on: $*"
+pwsh -NoProfile -Command 'if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) { Install-Module PSScriptAnalyzer -Force -Scope CurrentUser }' >/dev/null 2>&1
 
-pwsh -NoProfile -Command "
-  if (!(Get-Module -ListAvailable PSScriptAnalyzer)) {
-    Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-  }
-  foreach (\$file in \$args) {
-    \$results = Invoke-ScriptAnalyzer -Path \$file -Severity Error
-    if (\$results) {
-      \$results | Format-Table -AutoSize
-      exit 1
-    }
-  }
-" "$@"
+for f in "$@"; do
+  pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error -EnableExit"
+done
