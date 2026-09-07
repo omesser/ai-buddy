@@ -61,17 +61,18 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
-    # PowerShell linting (Windows only)
-  - repo: local
+    # PowerShell linting (Windows only; delegates to ophiosdev on Windows, skips elsewhere)
+  - repo: https://github.com/ophiosdev/pre-commit-psscriptanalyzer.git
+    rev: v2.0.0
     hooks:
       - id: psscriptanalyzer-check
         name: PSScriptAnalyzer (Windows only)
-        # Wraps PSScriptAnalyzer to skip on non-Windows. PSScriptAnalyzer and pwsh
-        # are Windows-native; forcing them onto Linux/macOS dev machines is heavy-handed.
-        # CI enforces via windows job.
-        entry: bash -c 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) ;; *) echo "skipped - PSScriptAnalyzer runs on Windows"; exit 0 ;; esac; pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction SilentlyContinue; foreach (\$f in \$args) { \$results = Invoke-ScriptAnalyzer -Path \$f -Severity Error; if (\$results) { \$results | Format-Table -AutoSize; exit 1 } }" -- "$@"' --
-        language: system
-        files: \.ps1$
+        # Thin wrapper: skip on non-Windows (mirrors swiftc-typecheck pattern),
+        # delegate to ophiosdev entry on Windows. No pwsh forced onto Linux/macOS.
+        entry: scripts/hooks/psscriptanalyzer-wrapper.sh
+        args:
+          - '-Severity'
+          - 'Error'
         # Severity Error: only fail on actual errors, not style warnings.
         # Keeps PSUseBOMForUnicodeEncodedFile active (default in PSScriptAnalyzer)
         # to catch encoding issues like the #392 em-dash footgun.
