@@ -1683,6 +1683,22 @@ fn load_instances(
     Ok(instances)
 }
 
+/// A lone leftover default — `{ character: "Timber Wolf", name: "bmo" }` —
+/// takes this Character's name before the overlay log prints it and before
+/// spawn persists it. Several Instances keep the names that tell them apart.
+/// #375.
+fn follow_lone_default(
+    loaded: &mut [(InstanceSpec, Arc<Character>)],
+    known: &BTreeMap<String, Arc<Character>>,
+) {
+    if loaded.len() != 1 {
+        return;
+    }
+    let names: Vec<&str> = known.keys().map(String::as_str).collect();
+    let (spec, character) = &mut loaded[0];
+    spec.name = roster::adopted_name(&spec.name, &character.name, names);
+}
+
 /// Spawn every requested Instance into a Roster, and build the Shell state each
 /// one keeps beside its Engine.
 ///
@@ -1694,8 +1710,10 @@ fn spawn_instances(
     start: Point,
     config: &model::DirectorConfig,
     settings: &model::DirectorSettings,
+    known_names: impl IntoIterator<Item = String>,
 ) -> (Roster, Vec<InstanceState>) {
     let mut roster = Roster::new(MemoryManifest::new(memory::shared_path()));
+    roster.set_known_names(known_names);
     let mut lives = Vec::with_capacity(loaded.len());
 
     // The wall clock, so that two runs are not the same afternoon — the one
@@ -2003,8 +2021,8 @@ fn main() {
                 eprintln!("instances: {why}");
                 std::process::exit(1);
             });
-            let loaded =
-                load_instances(&app.handle().clone(), &wanted, &settings).unwrap_or_else(|why| {
+            let mut loaded = load_instances(&app.handle().clone(), &wanted, &settings)
+                .unwrap_or_else(|why| {
                     eprintln!("character: {why}");
                     std::process::exit(1);
                 });
@@ -2012,6 +2030,7 @@ fn main() {
             // Every installed package's art, so a switch or a spawn does not
             // have to wait for a reload the overlay never does.
             let (art, character_cache) = load_all_characters(&app.handle().clone());
+            follow_lone_default(&mut loaded, &character_cache);
             let mut characters = art;
             for (_, character) in &loaded {
                 characters
@@ -2150,7 +2169,13 @@ fn main() {
                 model::spawn_preflight(&director);
             }
 
-            let (mut roster, lives) = spawn_instances(&loaded, start, &config, &director);
+            let (mut roster, lives) = spawn_instances(
+                &loaded,
+                start,
+                &config,
+                &director,
+                character_cache.keys().cloned(),
+            );
             if settings.do_not_disturb {
                 for (id, _) in roster.list() {
                     if let Some(instance) = roster.get_mut(&id) {
@@ -2162,6 +2187,23 @@ fn main() {
                 if let Some((_, character)) = loaded.first() {
                     settings.character = character.name.clone();
                 }
+            }
+            // Startup used to persist the specs it loaded, so a leftover
+            // `{ character: "Timber Wolf", name: "bmo" }` wrote itself back
+            // after spawn had already adopted. The roster is the name that
+            // will show. #375.
+            if !settings.instances.is_empty() {
+                settings.instances = roster
+                    .list()
+                    .into_iter()
+                    .map(|(id, name)| InstanceSpec {
+                        character: roster
+                            .get(&id)
+                            .map(|instance| instance.character_name().to_string())
+                            .unwrap_or_default(),
+                        name,
+                    })
+                    .collect();
             }
             persist_settings(&settings, &settings_file);
 
@@ -2314,6 +2356,48 @@ mod tests {
             rush_reaction: CursorReaction::default(),
             source: None,
         }
+    }
+
+    /// Production change that would fail this: leaving `bmo` on a Timber Wolf
+    /// spec. That is the leftover settings persist, and the overlay log reads
+    /// these specs before spawn.
+    #[test]
+    fn follow_lone_default_renames_a_foreign_package_id() {
+        let wolf = Arc::new(stub_character("Timber Wolf"));
+        let bmo = Arc::new(stub_character("BMO"));
+        let mut loaded = vec![(
+            InstanceSpec {
+                character: "Timber Wolf".to_string(),
+                name: "bmo".to_string(),
+            },
+            Arc::clone(&wolf),
+        )];
+        let mut known = BTreeMap::new();
+        known.insert("BMO".to_string(), bmo);
+        known.insert("Timber Wolf".to_string(), Arc::clone(&wolf));
+
+        follow_lone_default(&mut loaded, &known);
+
+        assert_eq!(loaded[0].0.name, "Timber Wolf");
+    }
+
+    #[test]
+    fn follow_lone_default_keeps_a_chosen_name() {
+        let wolf = Arc::new(stub_character("Timber Wolf"));
+        let mut loaded = vec![(
+            InstanceSpec {
+                character: "Timber Wolf".to_string(),
+                name: "Pip".to_string(),
+            },
+            Arc::clone(&wolf),
+        )];
+        let mut known = BTreeMap::new();
+        known.insert("BMO".to_string(), Arc::new(stub_character("BMO")));
+        known.insert("Timber Wolf".to_string(), wolf);
+
+        follow_lone_default(&mut loaded, &known);
+
+        assert_eq!(loaded[0].0.name, "Pip");
     }
 
     /// Production change that would fail this: emitting the pre-switch name or

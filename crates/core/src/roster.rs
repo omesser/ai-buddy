@@ -142,10 +142,36 @@ fn unnamed(name: &str, character: &str) -> bool {
     squash(name) == squash(character)
 }
 
+/// The name a lone Instance should wear for `character`.
+///
+/// This Character's own default, any spelling, is left alone so a BMO called
+/// `bmo` stays the package id the Shell stored. A default that belongs to a
+/// *different* Character is a leftover from a switch that persisted the old
+/// name — that is what `{ character: "Timber Wolf", name: "bmo" }` is — and
+/// takes this Character's. A name the user typed matches nobody and survives.
+/// `known` is the catalog of Character names; empty, only this Character
+/// counts and the leftover cannot be seen. #375.
+pub fn adopted_name<'a, I>(name: &str, character: &str, known: I) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    if unnamed(name, character) {
+        return name.to_string();
+    }
+    if known.into_iter().any(|n| unnamed(name, n)) {
+        return character.to_string();
+    }
+    name.to_string()
+}
+
 /// The roster of Character Instances.
 pub struct Roster {
     instances: BTreeMap<InstanceId, Instance>,
     memory: Arc<MemoryManifest>,
+    /// Display names of installed Characters. A leftover default is a name
+    /// that squashes to one of these and not to the Instance's current
+    /// Character; without the catalog that leftover looks chosen. #375.
+    known_names: Vec<String>,
 }
 
 impl Roster {
@@ -153,7 +179,13 @@ impl Roster {
         Self {
             instances: BTreeMap::new(),
             memory: Arc::new(memory),
+            known_names: Vec::new(),
         }
+    }
+
+    /// Install the catalog `adopted_name` needs to see a leftover default.
+    pub fn set_known_names(&mut self, names: impl IntoIterator<Item = impl Into<String>>) {
+        self.known_names = names.into_iter().map(Into::into).collect();
     }
 
     /// Spawn a Character Instance with the given name at the given position.
@@ -178,6 +210,15 @@ impl Roster {
             // also what keeps two buddies of one Character from drawing the
             // same idle variants at the same moments. #316.
             .with_variant_seed(uuid.as_u64_pair().0);
+        let name = if self.instances.is_empty() {
+            adopted_name(
+                &name,
+                &character.name,
+                self.known_names.iter().map(String::as_str),
+            )
+        } else {
+            name
+        };
         let instance = Instance {
             id: id.clone(),
             name,
@@ -223,16 +264,22 @@ impl Roster {
     ///
     /// A lone Instance that never got a name of its own takes the new
     /// Character's, so switching a BMO to Timber Wolf does not leave a wolf
-    /// called `bmo` in the roster and the window title. Both conditions are
-    /// the rule: a name the user typed is not the Character's and survives,
-    /// and with several buddies up names are what tell them apart, so a rename
-    /// there could hand one a name another already answers to. #375.
+    /// called `bmo` in the roster and the window title. A leftover that
+    /// already mixed them — name `bmo`, Character Timber Wolf — is the same
+    /// default, seen through `known_names`. A name the user typed matches
+    /// neither and survives. With several buddies up, names tell them apart,
+    /// so a rename there could hand one a name another already answers to.
+    /// #375.
     pub fn retarget(&mut self, id: &str, character: &Character) -> bool {
         let alone = self.instances.len() == 1;
         match self.instances.get_mut(id) {
             Some(instance) => {
-                if alone && unnamed(&instance.name, &instance.character_name) {
-                    instance.rename(character.name.clone());
+                if alone {
+                    let known: Vec<&str> = std::iter::once(instance.character_name.as_str())
+                        .chain(self.known_names.iter().map(String::as_str))
+                        .collect();
+                    let next = adopted_name(&instance.name, &character.name, known);
+                    instance.rename(next);
                 }
                 instance.retarget(character);
                 true
@@ -769,6 +816,74 @@ mod tests {
             roster.get(&second).expect("still there").character_name(),
             "BMO"
         );
+    }
+
+    /// Production change that would fail this: returning `name` unchanged
+    /// when it is another Character's default. That is the leftover #375
+    /// persisted as `{ character: "Timber Wolf", name: "bmo" }`.
+    #[test]
+    fn adopted_name_replaces_another_characters_default() {
+        assert_eq!(
+            adopted_name("bmo", "Timber Wolf", ["BMO", "Timber Wolf"]),
+            "Timber Wolf"
+        );
+        assert_eq!(
+            adopted_name("BMO", "Timber Wolf", ["BMO", "Timber Wolf"]),
+            "Timber Wolf"
+        );
+    }
+
+    #[test]
+    fn adopted_name_keeps_this_characters_package_id() {
+        assert_eq!(
+            adopted_name("bmo", "BMO", ["BMO", "Timber Wolf"]),
+            "bmo",
+            "this Character's default spelling is not a leftover"
+        );
+    }
+
+    #[test]
+    fn adopted_name_keeps_a_name_the_user_chose() {
+        assert_eq!(
+            adopted_name("Pip", "Timber Wolf", ["BMO", "Timber Wolf"]),
+            "Pip"
+        );
+    }
+
+    /// Settings persisted `{ character: "Timber Wolf", name: "bmo" }` after a
+    /// switch that predated the rename. Spawn is the launch path, so the
+    /// leftover has to die here or every restart reprints `Timber Wolf as bmo`.
+    #[test]
+    fn spawning_a_lone_instance_drops_another_characters_default_name() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-spawn-foreign.md"));
+        let mut roster = Roster::new(memory);
+        roster.set_known_names(["BMO", "Timber Wolf"]);
+        let id = roster.spawn(
+            &test_character("Timber Wolf"),
+            "bmo".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
+        assert_eq!(roster.list(), vec![(id, "Timber Wolf".to_string())]);
+    }
+
+    /// The leftover is already on the desk; a later switch still has to
+    /// follow, because unnamed(name, current Character) is false once the
+    /// persist has mixed them.
+    #[test]
+    fn switching_renames_a_default_that_belongs_to_a_different_character() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-switch-foreign.md"));
+        let mut roster = Roster::new(memory);
+        roster.set_known_names(["BMO", "Timber Wolf", "Cat"]);
+        let id = roster.spawn(
+            &test_character("Timber Wolf"),
+            "bmo".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
+        // Force the leftover onto the Instance so this test does not depend
+        // on spawn already having adopted. The persist looks like this.
+        assert!(roster.rename(&id, "bmo".to_string()));
+        assert!(roster.retarget(&id, &test_character("Cat")));
+        assert_eq!(roster.list(), vec![(id, "Cat".to_string())]);
     }
 
     #[test]
