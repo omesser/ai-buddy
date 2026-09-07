@@ -21,7 +21,7 @@ function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
-function hm(at) {
+function localHm(at) {
   return `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
 }
 
@@ -37,8 +37,13 @@ function sameLocalDay(a, b) {
   );
 }
 
+// Drawn on a 420-point Chat surface, so the label is five characters until the
+// local day actually changes — then the date prefixes once, and later lines on
+// that day go back to HH:mm. Year and seconds would not fit; they live on
+// title. A first line has no previous day to differ from, so it is HH:mm too.
+// #445.
 export function stampWhen(at, previousAt) {
-  const time = hm(at);
+  const time = localHm(at);
   const dayChanged = previousAt !== null && !sameLocalDay(previousAt, at);
   return {
     label: dayChanged ? `${dayMonth(at)} ${time}` : time,

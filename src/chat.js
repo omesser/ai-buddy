@@ -41,7 +41,7 @@ let them = "";
 
 // Last stamped instant in this window, so a line after midnight can say the
 // new day once. #445.
-let previousStamp = null;
+let previousAt = null;
 
 // The last thing the Shell said about the Spatial Layer, and when the ambient
 // wake it named falls due. The Shell pushes that deadline once rather than a
@@ -77,8 +77,8 @@ function add(node) {
 
 function when() {
   const at = new Date();
-  const stamp = stampWhen(at, previousStamp);
-  previousStamp = at;
+  const stamp = stampWhen(at, previousAt);
+  previousAt = at;
   const node = el("when", "time");
   node.dateTime = stamp.datetime;
   node.title = stamp.title;
