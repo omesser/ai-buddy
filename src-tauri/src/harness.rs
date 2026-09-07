@@ -2405,7 +2405,7 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        let session = Session::new(launch, dir.clone(), Box::new(|_| {}));
+        let session = Session::new(launch, dir.clone(), silent());
 
         // buddy-2 takes the session from buddy-1, whose turn names itself.
         session.note_withdrawal(Some("buddy-2".to_string()));
