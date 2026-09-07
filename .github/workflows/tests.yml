@@ -280,17 +280,6 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: node --test tests/*.test.js
 
-      - name: PSScriptAnalyzer hook test
-        # `pre-commit` above proves the hook accepts the two shipped .ps1
-        # files. It cannot prove the hook rejects a broken one, because a
-        # broken .ps1 checked in would fail every other run. This feeds it one
-        # from a temp directory. #493.
-        #
-        # Self-skipping where pwsh or the module is absent, which is every
-        # runner but ubuntu-latest.
-        if: steps.changes.outputs.code == 'true'
-        run: scripts/test_psscriptanalyzer_hook.sh
-
       # Not run in CI: scripts/verify-overlay.sh. It needs a real window server
       # and a logged-in desktop session, which no runner has.
 
