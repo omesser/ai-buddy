@@ -808,7 +808,7 @@ mod windows_job {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit());
 
-        let child = match async_command.spawn() {
+        let mut child = match async_command.spawn() {
             Ok(child) => child,
             Err(e) => {
                 unsafe { CloseHandle(job) };
