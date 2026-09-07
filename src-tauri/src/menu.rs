@@ -135,6 +135,20 @@ const HOTKEY_ID: &str = "hotkey";
 /// cannot drift onto different strings.
 pub(crate) const QUIT_ID: &str = "quit";
 
+/// Native id of Quit for one tray (or sprite) draw.
+///
+/// The description still keys the action as `QUIT_ID`. The native item uses
+/// this so replacing the tray mints a new id: muda can deliver the dropped
+/// item's teardown as a click, and that click must not be the live Quit.
+pub(crate) fn quit_item_id(generation: u64) -> String {
+    format!("{QUIT_ID}:{generation}")
+}
+
+/// Whether `id` is Quit on the menu that is showing now.
+pub(crate) fn is_live_quit(id: &str, generation: u64) -> bool {
+    id == quit_item_id(generation)
+}
+
 /// The id prefix for a Character row, so `character:bmo` cannot collide with a
 /// package that happens to be called `hide`.
 const CHARACTER_PREFIX: &str = "character:";
@@ -316,17 +330,25 @@ pub fn replace_if_changed(
 pub fn build(
     app: &tauri::AppHandle,
     description: &MenuDescription,
+    quit_generation: u64,
 ) -> Result<tauri::menu::Menu<tauri::Wry>, tauri::Error> {
     use tauri::menu::{CheckMenuItem, Menu, MenuItem, Submenu};
 
     // Built one item at a time rather than with `with_items`, because the rows
     // are of three different types and a Vec of them needs boxing either way.
     let menu = Menu::new(app)?;
+    let native_id = |id: &str| {
+        if id == QUIT_ID {
+            quit_item_id(quit_generation)
+        } else {
+            id.to_string()
+        }
+    };
 
     for entry in &description.entries {
         match entry {
             MenuEntry::Item { id, label, enabled } => {
-                let item = MenuItem::with_id(app, id, label, *enabled, None::<&str>)?;
+                let item = MenuItem::with_id(app, native_id(id), label, *enabled, None::<&str>)?;
                 menu.append(&item)?;
             }
             MenuEntry::Check {
@@ -390,10 +412,11 @@ pub fn show(
     description: &MenuDescription,
     window_label: &str,
     position: tauri::LogicalPosition<f64>,
+    quit_generation: u64,
 ) -> Result<(), tauri::Error> {
     use tauri::Manager;
 
-    let menu = build(app, description)?;
+    let menu = build(app, description, quit_generation)?;
     let window = app
         .get_webview_window(window_label)
         .ok_or(tauri::Error::WindowNotFound)?;
@@ -640,6 +663,56 @@ mod tests {
             })
         );
         assert_eq!(description.actions.get("quit"), Some(&MenuAction::Quit));
+    }
+
+    /// Dismiss rebuilds the tray. The old Quit item must not still be the live
+    /// one, or its teardown click is `quit_now` and the app leaves with the
+    /// buddy that was only meant to go.
+    #[test]
+    fn a_replaced_tray_quit_is_not_the_live_one() {
+        assert_ne!(
+            quit_item_id(1),
+            quit_item_id(2),
+            "each tray draw must mint a new Quit id"
+        );
+        assert!(
+            is_live_quit(&quit_item_id(2), 2),
+            "the showing menu's Quit is live"
+        );
+        assert!(
+            !is_live_quit(&quit_item_id(1), 2),
+            "the replaced menu's Quit must not leave"
+        );
+    }
+
+    /// Two Instances, then one: the remaining buddy is still on the menu, and
+    /// Quit is still Quit rather than hanging off a row that was dismissed.
+    #[test]
+    fn dismissing_one_of_two_instances_leaves_the_other_and_quit() {
+        let installed = names(&["bmo", "trump"]);
+        let two = [
+            ("id-pip".to_string(), "Pip".to_string()),
+            ("id-trump".to_string(), "trump".to_string()),
+        ];
+        let mut snap = snapshot(&installed, "bmo", false);
+        snap.instances = &two;
+        let before = describe(snap.clone());
+
+        let one = [("id-trump".to_string(), "trump".to_string())];
+        snap.instances = &one;
+        let after = describe(snap);
+
+        assert_eq!(instance_labels(&after), ["trump", "New…"]);
+        assert_eq!(
+            after.actions.get(QUIT_ID),
+            Some(&MenuAction::Quit),
+            "Quit survives a dismiss"
+        );
+        assert_eq!(
+            before.actions.get(QUIT_ID),
+            after.actions.get(QUIT_ID),
+            "dismiss must not retarget Quit"
+        );
     }
 
     fn clickable_ids(description: &MenuDescription) -> Vec<&String> {
