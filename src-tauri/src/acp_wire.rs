@@ -875,8 +875,7 @@ mod windows_job {
     fn find_primary_thread(pid: u32) -> Result<u32, String> {
         use windows_sys::Win32::Foundation::CloseHandle;
         use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
-            THREADENTRY32,
+            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
         };
 
         unsafe {
