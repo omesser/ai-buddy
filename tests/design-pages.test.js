@@ -51,6 +51,18 @@ test("index chat-mockups entry is the #339 Dated proposal", () => {
   assert.doesNotMatch(named, /in review on #17/);
 });
 
+test("ADR-0011 no longer calls cues.html Described", () => {
+  const adr = readFileSync(
+    new URL("../docs/adr/0011-generated-or-dated-site-pages.md", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    adr,
+    /cues\.html` is Described today/,
+    "the relabel exit is taken; Consequences must not still name the forbidden class as current",
+  );
+});
+
 test("chat-mockups.html class line attributes #339", () => {
   const html = design("chat-mockups.html");
   const classLine = html.match(/<p class="class">([\s\S]*?)<\/p>/);

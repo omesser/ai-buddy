@@ -45,6 +45,12 @@ test("the published page loads bubble.js and calls its machine", () => {
       "Generated pages stay indexed",
     );
     assert.match(html, /Generated from src\/bubble\.js at deploy/);
+    assert.match(html, /id="wake"/, "a proactive wake must be operable");
+    assert.match(
+      html,
+      /thinking:\s*false/,
+      "a proactive wake frames the machine with thinking off",
+    );
     assert.doesNotMatch(
       html,
       /THINKING_GRACE_MS\s*=\s*250|THINKING_MIN_HOLD_MS\s*=\s*600/,

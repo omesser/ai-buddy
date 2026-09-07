@@ -146,9 +146,10 @@
     <div class="cls">Generated from src/bubble.js at deploy</div>
     <p class="lede">Speech bubble reading time and the thinking ellipsis while a
       reactive Director turn is in flight. Type a line, Poke to start a turn,
-      reply while it is thinking. The hold is whatever <code>bubbleDuration</code>
-      returns for that line; speech and the indicator share one surface, and
-      speech wins.</p>
+      reply while it is thinking. A proactive wake frames the same machine with
+      thinking off, so the indicator stays down. The hold is whatever
+      <code>bubbleDuration</code> returns for that line; speech and the
+      indicator share one surface, and speech wins.</p>
   </header>
 
   <div class="desk-bar">
@@ -176,6 +177,7 @@
       <button class="play primary" id="speak" type="button">Speak</button>
       <button class="play" id="poke" type="button">Poke</button>
       <button class="play" id="reply" type="button">Reply now</button>
+      <button class="play" id="wake" type="button">Proactive wake</button>
     </div>
   </div>
   <p class="live" id="status"></p>
@@ -256,6 +258,12 @@ function poke() {
   live();
 }
 
+function wake() {
+  // Proactive wakes stay invisible: same machine, thinking off, no dialogue.
+  machine.frame(placement({ thinking: false }));
+  live();
+}
+
 function replyNow() {
   const said = text();
   const tick = placement({ dialogue: said });
@@ -267,6 +275,7 @@ function replyNow() {
 document.getElementById("speak").addEventListener("click", speakLine);
 document.getElementById("poke").addEventListener("click", poke);
 document.getElementById("reply").addEventListener("click", replyNow);
+document.getElementById("wake").addEventListener("click", wake);
 lineEl.addEventListener("input", live);
 lineEl.addEventListener("keydown", (event) => {
   if (event.key === "Enter") speakLine();
