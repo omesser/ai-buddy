@@ -28,7 +28,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     BS_AUTOCHECKBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE,
     ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, IDYES,
     MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
-    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_EX_CLIENTEDGE,
+    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE,
     WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
@@ -54,6 +54,7 @@ const EM_SETCUEBANNER: u32 = 0x1501;
 const SS_LEFT: u32 = 0x0;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
 const CB_ADDSTRING: u32 = 0x0143;
+const CB_RESETCONTENT: u32 = 0x014B;
 const CB_SETCURSEL: u32 = 0x014E;
 
 thread_local! {
@@ -181,15 +182,22 @@ impl SettingsWindow {
                             let _dirty = self.director_draft(&description).patch(&view).is_some();
                         }
                     }
-                    Control::ComboBox(hwnd, _, _options) => {
-                        if id == form::CHARACTER_ID || id == form::NEW_CHARACTER_ID {
-                            SendMessageA(*hwnd, 0x014B, 0, 0);
-                            for (idx, character) in view.installed.iter().enumerate() {
-                                let c_str = CString::new(character.as_str()).unwrap();
-                                SendMessageA(*hwnd, CB_ADDSTRING, 0, c_str.as_ptr() as LPARAM);
-                                if id == form::CHARACTER_ID && character == &view.character {
-                                    SendMessageA(*hwnd, CB_SETCURSEL, idx, 0);
-                                }
+                    Control::ComboBox(hwnd, _, options) => {
+                        // No options of its own leaves the list to the renderer,
+                        // which is how the two Character rows get the installed
+                        // packages — a list the form cannot see (#468).
+                        let choices: &[String] = if options.is_empty() {
+                            &view.installed
+                        } else {
+                            options
+                        };
+                        let current = view.popup_value(id.as_str()).unwrap_or_default();
+                        SendMessageA(*hwnd, CB_RESETCONTENT, 0, 0);
+                        for (index, choice) in choices.iter().enumerate() {
+                            let title = CString::new(choice.as_str()).unwrap();
+                            SendMessageA(*hwnd, CB_ADDSTRING, 0, title.as_ptr() as LPARAM);
+                            if choice.as_str() == current {
+                                SendMessageA(*hwnd, CB_SETCURSEL, index, 0);
                             }
                         }
                     }
@@ -962,7 +970,12 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             control_id += 1;
                         }
                         FormRow::Popup {
-                            id, label, help, ..
+                            id,
+                            label,
+                            help,
+                            options,
+                            frozen,
+                            ..
                         } => {
                             if let Some(label_text) = label {
                                 let label_hwnd = CreateWindowExA(
@@ -988,11 +1001,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
+                            // An exported variable owns the pick, so the row
+                            // shows it and takes no edit (#272). Set once at
+                            // creation, where AppKit sets `setEnabled`, because
+                            // `frozen` cannot change while the window lives.
+                            let mut style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST;
+                            if *frozen {
+                                style |= WS_DISABLED;
+                            }
                             let hwnd = CreateWindowExA(
                                 0,
                                 c"COMBOBOX".as_ptr() as *const u8,
                                 ptr::null(),
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+                                style,
                                 display_left,
                                 y,
                                 FIELD_WIDTH,
@@ -1003,10 +1024,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                            window
-                                .controls
-                                .borrow_mut()
-                                .insert(id.clone(), Control::ComboBox(hwnd, tab_index, Vec::new()));
+                            window.controls.borrow_mut().insert(
+                                id.clone(),
+                                Control::ComboBox(hwnd, tab_index, options.clone()),
+                            );
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
                                 let help_hwnd = CreateWindowExA(
