@@ -82,10 +82,10 @@ fps = 4
 
 # Garrison point-scan: a body-yaw vigil (turn L, front-stand hold, turn R, loop).
 # Animation key stays `sleep` (required by the engine), but content is this
-# 220-frame patrol: 105 turn_l + 10 stand + 105 turn_r. Distinct from idle
-# variant `scan` (TAC laser). Bookends/stand are path front_stand (p-0028).
-# Classic plant (p-0028..p-0024) densified with SDF ibs; turn_r near-front uses
-# foot-first hybrid so stepping foot moves before torso yaw.
+# 213-frame patrol: 105 turn_l + 3 stand + 105 turn_r. Distinct from idle
+# variant `scan` (TAC laser). R departure (turn_r 000-013) is mirror-symmetric
+# to L approach (turn_l 091-104 flipped), eliminating jump at front junction.
+# Front stand shortened to 3 frames for tighter loop.
 [animations.sleep]
 frames = [
   "frames/garrison-turn_l-000.png",
@@ -196,13 +196,6 @@ frames = [
   "frames/garrison-stand-000.png",
   "frames/garrison-stand-001.png",
   "frames/garrison-stand-002.png",
-  "frames/garrison-stand-003.png",
-  "frames/garrison-stand-004.png",
-  "frames/garrison-stand-005.png",
-  "frames/garrison-stand-006.png",
-  "frames/garrison-stand-007.png",
-  "frames/garrison-stand-008.png",
-  "frames/garrison-stand-009.png",
   "frames/garrison-turn_r-000.png",
   "frames/garrison-turn_r-001.png",
   "frames/garrison-turn_r-002.png",
