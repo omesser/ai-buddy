@@ -270,9 +270,12 @@ impl Session {
     /// One turn. The whole of `Completer::complete`, minus the trace.
     fn turn(&self, request: &WakeRequest) -> Result<String, String> {
         let Ok(_turn) = self.turn.try_lock() else {
-            return Err("harness busy".to_string());
+            return Err(self.refused(request, "harness busy"));
         };
-        let (wire, session_id) = self.attach()?;
+        let (wire, session_id) = match self.attach() {
+            Ok(attached) => attached,
+            Err(why) => return Err(self.refused(request, &why)),
+        };
         // The Instance and the wake kind come through the seam rather than
         // from anything here: one session serves every buddy (ADR-0008), so
         // the session id alone cannot say whose wake this is (#435).
@@ -320,6 +323,26 @@ impl Session {
                 Err(format!("harness: {why}"))
             }
         }
+    }
+
+    /// A wake that never reached `session/prompt`: the Harness was busy with
+    /// another, or there was no session to send it to.
+    ///
+    /// Logged because the Shell writes a `parsed` line for every reply it
+    /// takes, this refusal included — and a `parsed` with no line of its own
+    /// to join would read as the outcome of whichever wake was logged last.
+    /// Returns `why` so the one call site stays one line (#435).
+    fn refused(&self, request: &WakeRequest, why: &str) -> String {
+        action_log::append(
+            &self.dir,
+            "refused",
+            json!({
+                "instance": request.instance,
+                "wake": wake_kind(request.reactive),
+                "why": why,
+            }),
+        );
+        why.to_string()
     }
 
     /// The wire died. Drop it, charge the loss, and let a later wake respawn.
@@ -712,36 +735,53 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
 /// Written by the Shell where it takes the wake out of `Slots`, because
 /// `crates/core` parses and does no I/O — and only with a Harness attached,
 /// since the Action Log is that path's (#435).
-pub fn note_parsed(instance: &str, wake: &Wake) {
+pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) {
     if let Some(session) = attached() {
-        action_log::append(&session.dir, "parsed", parsed_fields(instance, wake));
+        action_log::append(
+            &session.dir,
+            "parsed",
+            parsed_fields(instance, wake, reactive, near_miss),
+        );
     }
 }
 
-/// The three answers the Shell has to "what did the reply parse to".
+/// The four answers the Shell has to "what did the reply parse to".
 ///
-/// A reply that named no declared Behavior arrives as speech, which is what an
-/// unparsable one becomes (#243) — so `speech` is the parse miss, and there is
-/// no fourth case hiding behind it. `failed` says only that no reply was
-/// usable: a stopped or refused turn, or a timeout, is already a `turn` or
-/// `timeout` event written where the failure was seen.
-fn parsed_fields(instance: &str, wake: &Wake) -> Value {
-    let (result, behavior) = match wake {
-        Wake::Proposed(proposal) if !proposal.behavior.is_empty() => {
+/// A Near Miss is its own outcome and not `speech`, though it arrives as
+/// speech: a Character that declares `prowl` and a model that answers `prowll`
+/// is a contract miss the log has to be able to show, which is what CONTEXT.md
+/// asks and what the trace flag was the only witness to (#243).
+///
+/// `failed` says only that no reply was usable. Why is already a line of its
+/// own — `refused`, `timeout`, or a `turn` carrying the stop reason — written
+/// where the failure was seen.
+///
+/// The wake kind rides along so a reader can join this to the `prompt` or
+/// `refused` line for the same wake.
+fn parsed_fields(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) -> Value {
+    let (result, behavior) = match (near_miss, wake) {
+        (Some(named), _) => ("near_miss", Some(named)),
+        (None, Wake::Proposed(proposal)) if !proposal.behavior.is_empty() => {
             ("proposal", Some(proposal.behavior.as_str()))
         }
-        Wake::Proposed(_) => ("speech", None),
-        Wake::Failed => ("failed", None),
+        (None, Wake::Proposed(_)) => ("speech", None),
+        (None, Wake::Failed) => ("failed", None),
     };
-    json!({"instance": instance, "result": result, "behavior": behavior})
+    json!({
+        "instance": instance,
+        "wake": wake_kind(reactive),
+        "result": result,
+        "behavior": behavior,
+    })
 }
 
-/// The Action Log's word for a wake nobody asked for, and for one they did.
+/// The Action Log's word for each of ADR-0008's two wake kinds. Proactive is
+/// the wake policy's word; Ambient in the glossary is Ambient Capture.
 fn wake_kind(reactive: bool) -> &'static str {
     if reactive {
         "reactive"
     } else {
-        "ambient"
+        "proactive"
     }
 }
 
@@ -1193,11 +1233,11 @@ mod tests {
     fn the_prompt_event_names_the_instance_and_the_wake_kind() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
-        let ambient = WakeRequest {
+        let proactive = WakeRequest {
             reactive: false,
             ..asking("nobody asked")
         };
-        assert_eq!(session.complete(&ambient), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&proactive), Ok("Hello".to_string()));
         session.shutdown();
 
         let prompts = fx.events("prompt");
@@ -1205,7 +1245,7 @@ mod tests {
         assert_eq!(prompts[0]["instance"], json!("buddy-1"));
         assert_eq!(prompts[0]["wake"], json!("reactive"));
         assert_eq!(prompts[0]["chars"], json!(2));
-        assert_eq!(prompts[1]["wake"], json!("ambient"));
+        assert_eq!(prompts[1]["wake"], json!("proactive"));
         assert_eq!(prompts[1]["session_id"], json!("fresh-id"));
     }
 
@@ -1213,32 +1253,43 @@ mod tests {
     /// of it, so "did we take what the Harness proposed" needed the trace flag.
     #[test]
     fn the_parsed_event_says_what_the_reply_became() {
+        let spoke = |line: &str| {
+            Wake::Proposed(BehaviorProposal {
+                behavior: String::new(),
+                dialogue: Some(line.to_string()),
+            })
+        };
+
         let named = parsed_fields(
             "buddy-1",
             &Wake::Proposed(BehaviorProposal {
                 behavior: "prowl".to_string(),
                 dialogue: Some("mine now".to_string()),
             }),
+            true,
+            None,
         );
         assert_eq!(named["instance"], json!("buddy-1"));
+        assert_eq!(named["wake"], json!("reactive"));
         assert_eq!(named["result"], json!("proposal"));
         assert_eq!(named["behavior"], json!("prowl"));
 
-        // An empty name is the Engine's "talk and speak": the reply named no
-        // declared Behavior, which is the parse miss.
-        let talked = parsed_fields(
-            "buddy-1",
-            &Wake::Proposed(BehaviorProposal {
-                behavior: String::new(),
-                dialogue: Some("hello?".to_string()),
-            }),
-        );
+        // An empty name is the Engine's "talk and speak": the model chose to
+        // talk rather than name a Behavior.
+        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None);
+        assert_eq!(talked["wake"], json!("proactive"));
         assert_eq!(talked["result"], json!("speech"));
         assert_eq!(talked["behavior"], json!(null));
 
-        let refused = parsed_fields("buddy-1", &Wake::Failed);
-        assert_eq!(refused["result"], json!("failed"));
-        assert_eq!(refused["behavior"], json!(null));
+        // #243: the same shape as speech on the wire, and a different thing —
+        // the name it named is what makes it readable as a miss.
+        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"));
+        assert_eq!(missed["result"], json!("near_miss"));
+        assert_eq!(missed["behavior"], json!("prowll"));
+
+        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None);
+        assert_eq!(failed["result"], json!("failed"));
+        assert_eq!(failed["behavior"], json!(null));
     }
 
     #[test]
@@ -1333,7 +1384,10 @@ mod tests {
     #[test]
     fn a_death_under_a_turn_buys_the_same_wait_a_failed_spawn_does() {
         let (fx, session) = Fixture::new("die");
-        assert_eq!(session.complete(&asking("hi")), Err("harness exited".to_string()));
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err("harness exited".to_string())
+        );
         let next = session.complete(&asking("again")).unwrap_err();
         assert!(next.contains("retrying in"), "{next}");
         assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
@@ -1347,7 +1401,10 @@ mod tests {
     #[test]
     fn a_death_before_the_session_opens_buys_the_same_wait() {
         let (fx, session) = Fixture::new("die-opening");
-        assert_eq!(session.complete(&asking("hi")), Err("harness exited".to_string()));
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err("harness exited".to_string())
+        );
         assert_eq!(fx.count("new"), 1);
         let next = session.complete(&asking("again")).unwrap_err();
         assert!(next.contains("retrying in"), "{next}");
@@ -1362,7 +1419,10 @@ mod tests {
     fn a_turn_the_child_answered_clears_an_earlier_death() {
         let (_fx, session) = Fixture::new("exit");
         let session = session.with_backoff(Duration::ZERO);
-        assert_eq!(session.complete(&asking("hi")), Err("harness exited".to_string()));
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err("harness exited".to_string())
+        );
         assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
         let state = session.state.lock().unwrap();
         assert_eq!(state.spawn_failures, 0, "the death is still counted");
@@ -1453,7 +1513,7 @@ mod tests {
 
     #[test]
     fn a_second_turn_while_one_is_in_flight_is_busy() {
-        let (_fx, session) = Fixture::new("slow");
+        let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session.with_timeout(Duration::from_secs(3)));
         let worker = {
             let session = Arc::clone(&session);
@@ -1466,6 +1526,16 @@ mod tests {
         );
         let _ = worker.join();
         session.shutdown();
+
+        // #435: the busy wake sent no prompt, so without a line of its own the
+        // `parsed` line the Shell writes for it would read against the prompt
+        // the wake before it logged.
+        let refused = fx.events("refused");
+        assert_eq!(refused.len(), 1, "{refused:?}");
+        assert_eq!(refused[0]["instance"], json!("buddy-1"));
+        assert_eq!(refused[0]["wake"], json!("reactive"));
+        assert_eq!(refused[0]["why"], json!("harness busy"));
+        assert_eq!(fx.events("prompt").len(), 1, "the busy wake sent none");
     }
 
     /// The probe's two exit codes are its two phases: 1 is a turn that did

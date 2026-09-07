@@ -146,8 +146,8 @@ pub struct WakeRequest {
     /// Which Character Instance woke. One `ModelDirector` per Instance, so
     /// this is known before the prompt is built.
     pub instance: InstanceId,
-    /// Whether the user addressed the buddy, as against an ambient wake.
-    /// ADR-0008's wake policy.
+    /// Whether the user addressed the buddy, as against a proactive wake.
+    /// ADR-0008's wake policy names the two.
     pub reactive: bool,
 }
 
@@ -1217,7 +1217,7 @@ mod tests {
         director.wake(&unprompted);
         let ambient = director.completer.seen().expect("a request was sent");
         assert_eq!(ambient.instance, "buddy-1");
-        assert!(!ambient.reactive, "nobody asked for an ambient wake");
+        assert!(!ambient.reactive, "nobody asked for a proactive wake");
     }
 
     /// #231: a model writes the Behavior name at the start of a line, so it
