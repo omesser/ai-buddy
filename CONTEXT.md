@@ -172,7 +172,7 @@ _Avoid_: Backend, provider, model
 Whatever answers a Character Prompt behind the one session trait
 ([ADR-0008](./docs/adr/0008-one-harness-session.md)): the attached Harness
 over ACP, or the HTTP chat-completions endpoint when none is attached
-([ADR-0017](./docs/adr/0017-acp-client-over-schema-crate-and-supported-harnesses.md)).
+([ADR-0017](./docs/adr/0017-acp-client-over-the-official-sdk-and-supported-harnesses.md)).
 Settings names the HTTP one's timeout and reply cap, which is where the word
 reaches the screen. That one streams, so the first token arrives long before
 the reply and a dropped call stops the host generating rather than merely
