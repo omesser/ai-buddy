@@ -830,9 +830,31 @@ impl Endpoint {
     }
 }
 
+/// One Action Log pair for an HTTP Completer wake: `prompt` then `turn`.
+///
+/// One pair per `complete`, including after a fallback POST — that is still
+/// one wake. `chars` rather than the Character Prompt body (#435).
+pub(crate) fn note_http_call(
+    dir: &std::path::Path,
+    request: &WakeRequest,
+    result: Result<&str, &str>,
+) {
+    crate::action_log::append(
+        dir,
+        "prompt",
+        serde_json::json!({
+            "instance": request.instance,
+            "wake": if request.reactive { "reactive" } else { "proactive" },
+            "chars": request.prompt.len(),
+        }),
+    );
+    match result {
+        Ok(text) => crate::action_log::append(dir, "turn", serde_json::json!({ "text": text })),
+        Err(why) => crate::action_log::append(dir, "turn", serde_json::json!({ "error": why })),
+    }
+}
+
 impl Completer for Endpoint {
-    /// The Instance and the wake kind go unread here: they are the Action
-    /// Log's, and the Action Log belongs to the Harness path (#435).
     fn complete(&self, request: &WakeRequest) -> Result<String, String> {
         let prompt = &request.prompt;
         if tracing() {
@@ -840,7 +862,7 @@ impl Completer for Endpoint {
             trace_block("prompt", prompt);
             eprintln!("director: waiting for model");
         }
-        match self.post(&self.url, prompt) {
+        let result = match self.post(&self.url, prompt) {
             Ok(content) => {
                 if tracing() {
                     trace_block("model", &content);
@@ -873,7 +895,13 @@ impl Completer for Endpoint {
                     Err(error)
                 }
             }
-        }
+        };
+        let noted = match &result {
+            Ok(text) => Ok(text.as_str()),
+            Err(why) => Err(why.as_str()),
+        };
+        note_http_call(&ai_buddy_core::memory::data_dir(), request, noted);
+        result
     }
 }
 
@@ -3177,5 +3205,77 @@ pub(crate) mod tests {
             wakes,
             "every wake lands in exactly one bucket"
         );
+    }
+
+    /// A directory of our own under the system temp dir, removed when the test ends.
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static NEXT: AtomicU32 = AtomicU32::new(0);
+            let unique = NEXT.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "http-session-{label}-{}-{unique}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).expect("temp dir is creatable");
+            Self(dir)
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Production change that would fail this: Endpoint::complete leaving
+    /// WakeRequest unread because "the Action Log belongs to the Harness".
+    #[test]
+    fn an_http_call_writes_prompt_and_turn() {
+        let dir = TempDir::new("http-session");
+        let request = WakeRequest {
+            prompt: "hi".into(),
+            instance: "buddy-1".into(),
+            reactive: true,
+        };
+        note_http_call(dir.path(), &request, Ok("the desktop floor"));
+
+        let body = std::fs::read_to_string(dir.path().join(crate::action_log::FILE)).unwrap();
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), 2, "{body}");
+        let prompt: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(prompt["event"], "prompt");
+        assert_eq!(prompt["instance"], "buddy-1");
+        assert_eq!(prompt["wake"], "reactive");
+        assert_eq!(prompt["chars"], 2);
+        let turn: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(turn["event"], "turn");
+        assert_eq!(turn["text"], "the desktop floor");
+    }
+
+    /// Production change that would fail this: a failed HTTP wake leaving no
+    /// turn line, so a later parsed/failed cannot be joined to anything.
+    #[test]
+    fn a_failed_http_call_writes_the_error() {
+        let dir = TempDir::new("http-session-err");
+        let request = WakeRequest {
+            prompt: "hi".into(),
+            instance: "buddy-1".into(),
+            reactive: false,
+        };
+        note_http_call(dir.path(), &request, Err("connection refused"));
+
+        let body = std::fs::read_to_string(dir.path().join(crate::action_log::FILE)).unwrap();
+        let turn: serde_json::Value = serde_json::from_str(body.lines().nth(1).unwrap()).unwrap();
+        assert_eq!(turn["wake"], serde_json::Value::Null); // wake lives on prompt, not turn
+        assert_eq!(turn["error"], "connection refused");
+        let prompt: serde_json::Value = serde_json::from_str(body.lines().next().unwrap()).unwrap();
+        assert_eq!(prompt["wake"], "proactive");
     }
 }
