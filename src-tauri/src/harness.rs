@@ -24,7 +24,7 @@ use ai_buddy_core::director::{Completer, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::acp_wire::{Event, Handshake, OpenError, TurnError, Wire};
+use crate::acp_wire::{Event, Handshake, McpLaunch, OpenError, TurnError, Wire};
 use crate::action_log;
 
 pub use crate::acp_wire::PermissionAsk;
@@ -649,7 +649,7 @@ impl Session {
         action_log::append(
             &self.dir,
             "attach",
-            json!({"harness": self.launch.name, "session_id": id, "mcp": mcp}),
+            json!({"harness": self.launch.name, "session_id": id, "mcp": mcp.as_ref().map(McpLaunch::line)}),
         );
         Ok(id)
     }
@@ -756,7 +756,7 @@ fn probe(session: &Session) -> i32 {
     println!("  dir          {}", session.dir.display());
     println!(
         "  mcp          {}",
-        mcp_server().map_or_else(|| "none".to_string(), |path| path.display().to_string())
+        mcp_server().map_or_else(|| "none".to_string(), |launch| launch.line())
     );
     println!(
         "  timeout      turn {}s, attach {}s",
@@ -946,22 +946,41 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
         .unwrap_or_else(|| format!("{name} (run it once in a terminal and sign in)"))
 }
 
-/// The stdio MCP server to hand the session, when the binary can be found.
+/// The stdio MCP server to hand the session, when one can be launched.
 ///
 /// Beside the app, or wherever `AI_BUDDY_MCP_BIN` points. No loopback HTTP
-/// server exists yet (#166), so a missing binary means no tools this session.
-fn mcp_server() -> Option<PathBuf> {
-    std::env::var_os(MCP_BIN)
-        .map(PathBuf::from)
-        .or_else(|| {
-            let beside = std::env::current_exe().ok()?.parent()?.join("ai-buddy-mcp");
-            Some(if cfg!(windows) {
-                beside.with_extension("exe")
-            } else {
-                beside
-            })
-        })
-        .filter(|path| path.is_file())
+/// server exists yet (#166), so a missing binary means no tools this session
+/// unless the app binary itself can speak MCP on stdio.
+fn mcp_server() -> Option<McpLaunch> {
+    let env_bin = std::env::var_os(MCP_BIN).map(PathBuf::from);
+    mcp_launch(env_bin.as_deref(), std::env::current_exe().ok()?.as_path())
+}
+
+fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
+    if let Some(path) = env_bin.filter(|path| path.is_file()) {
+        return Some(McpLaunch {
+            path: path.to_path_buf(),
+            args: Vec::new(),
+        });
+    }
+    let beside = current_exe.parent()?.join("ai-buddy-mcp");
+    let sibling = if cfg!(windows) {
+        beside.with_extension("exe")
+    } else {
+        beside
+    };
+    if sibling.is_file() {
+        return Some(McpLaunch {
+            path: sibling,
+            args: Vec::new(),
+        });
+    }
+    // Sibling / env still win; this is how `cargo run` and a bundle with no
+    // sidecar still hand the Harness a server. #166 is the loopback-HTTP follow-up.
+    (current_exe.file_stem()? == "ai-buddy").then(|| McpLaunch {
+        path: current_exe.to_path_buf(),
+        args: vec!["--mcp-stdio".into()],
+    })
 }
 
 static ATTACHED: OnceLock<Option<Arc<Session>>> = OnceLock::new();
@@ -1027,7 +1046,7 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
             None => {
                 "harness: no ai-buddy-mcp binary found; the session gets no MCP servers".to_string()
             }
-            Some(path) => format!("harness: MCP server {}", path.display()),
+            Some(launch) => format!("harness: MCP server {}", launch.line()),
         },
     ];
     // Startup cannot report a spawn that has not happened: `attach` runs on the
@@ -1867,5 +1886,81 @@ mod tests {
             login_command("x", &Handshake::default()),
             "x (run it once in a terminal and sign in)"
         );
+    }
+
+    fn mcp_tmp(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ai-buddy-mcp-launch-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn touch(path: &Path) {
+        std::fs::write(path, []).unwrap();
+    }
+
+    fn sidecar(dir: &Path) -> PathBuf {
+        dir.join(if cfg!(windows) {
+            "ai-buddy-mcp.exe"
+        } else {
+            "ai-buddy-mcp"
+        })
+    }
+
+    #[test]
+    fn mcp_launch_prefers_an_env_file_over_a_sibling() {
+        let dir = mcp_tmp("env-wins");
+        let env_bin = dir.join("from-env");
+        let current_exe = dir.join("ai-buddy");
+        touch(&env_bin);
+        touch(&sidecar(&dir));
+        touch(&current_exe);
+
+        let launch = mcp_launch(Some(env_bin.as_path()), &current_exe).expect("env file wins");
+        assert_eq!(launch.path, env_bin);
+        assert!(launch.args.is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mcp_launch_falls_through_to_a_sibling_when_env_is_missing() {
+        let dir = mcp_tmp("sibling");
+        let current_exe = dir.join("ai-buddy");
+        let sibling = sidecar(&dir);
+        touch(&sibling);
+        touch(&current_exe);
+
+        let launch = mcp_launch(None, &current_exe).expect("sibling");
+        assert_eq!(launch.path, sibling);
+        assert!(launch.args.is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mcp_launch_runs_the_app_binary_as_stdio_when_nothing_is_beside_it() {
+        let dir = mcp_tmp("stdio");
+        let current_exe = dir.join("ai-buddy");
+        touch(&current_exe);
+
+        let launch = mcp_launch(None, &current_exe).expect("app binary");
+        assert_eq!(launch.path, current_exe);
+        assert_eq!(launch.args, ["--mcp-stdio"]);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mcp_launch_returns_none_when_the_exe_is_not_the_app() {
+        let dir = mcp_tmp("test-bin");
+        let current_exe = dir.join("harness-unit-tests");
+        touch(&current_exe);
+
+        assert_eq!(mcp_launch(None, &current_exe), None);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

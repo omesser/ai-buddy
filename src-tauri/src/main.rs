@@ -1998,6 +1998,13 @@ fn main() {
         std::process::exit(harness::run_probe());
     }
 
+    // This process *is* the stdio MCP server: never the overlay. The Harness
+    // child is a new process, so it does not share the shell's ACP runtime.
+    if std::env::args().any(|arg| arg == "--mcp-stdio") {
+        ai_buddy_mcp_server::run();
+        return;
+    }
+
     // Before the builder, because the builder is where GTK initializes and GDK
     // reads GDK_BACKEND once, when it opens the display. A no-op off Linux.
     platform::prefer_x11_backend();
@@ -2146,7 +2153,10 @@ fn main() {
                 .plugin(tauri_plugin_updater::Builder::new().build())
             {
                 eprintln!("updater: {why}");
-            } else {
+            } else if !cfg!(debug_assertions) {
+                // A success downloads and installs a GitHub release over this
+                // process; `cargo run` is a debug binary that must not be
+                // replaced that way.
                 check_for_update(app.handle().clone());
             }
 

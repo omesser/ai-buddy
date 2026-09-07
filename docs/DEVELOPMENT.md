@@ -204,7 +204,7 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
 | `AI_BUDDY_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `hermes`, `opencode`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the Director tab's Completer source row saved. Unset falls through to that row, which keeps the same four values. ADR-0017, #436. |
-| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Handed to the Harness session as its one MCP server; without it the session gets none. |
+| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Handed to the Harness session as its one MCP server. When unset and no `ai-buddy-mcp` sidecar sits beside the app, the app binary itself is the stdio server (`--mcp-stdio`). |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → Director's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 ### Settings and Keyring
@@ -308,7 +308,7 @@ probe-harness
   harness      hermes
   command      hermes acp
   dir          /Users/you/Library/Application Support/ai-buddy/probe
-  mcp          none
+  mcp          /path/ai-buddy --mcp-stdio
   timeout      turn 20s, attach 20s
 
 attach
