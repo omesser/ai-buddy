@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use crate::character::{Behavior, Trigger, DEFAULT_MODEL_BASE, DEFAULT_MODEL_POWER};
 use crate::engine::{BehaviorProposal, State};
+use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
 mod prompt;
@@ -131,12 +132,39 @@ pub trait Director {
     fn propose(&mut self, context: &Context) -> Option<BehaviorProposal>;
 }
 
+/// One wake on its way to a Completer: the Character Prompt, and who is
+/// asking for it.
+///
+/// The prompt alone left the Shell unable to say which buddy woke, or whether
+/// the user caused it, in the one place that sees a session call — this seam is
+/// all the Harness Completer is handed (#435). Neither field reaches the model:
+/// the HTTP Completer ignores both, and the Harness writes them to the Action
+/// Log.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WakeRequest {
+    pub prompt: String,
+    /// Which Character Instance woke. One `ModelDirector` per Instance, so
+    /// this is known before the prompt is built.
+    pub instance: InstanceId,
+    /// Whether the user addressed the buddy, as against a proactive wake.
+    /// ADR-0008's wake policy names the two.
+    pub reactive: bool,
+}
+
+/// Whether this wake answers something the user did.
+///
+/// One definition, because the Shell's slot bookkeeping and the request the
+/// Completer is handed must not be able to disagree about the same wake.
+pub fn reactive(happened: &Happened) -> bool {
+    *happened != Happened::Ambient
+}
+
 /// Completes a Character Prompt.
 ///
 /// The attached Harness, or the HTTP stand-in in the shell when none is
 /// attached. Tests put a double here.
 pub trait Completer {
-    fn complete(&self, prompt: &str) -> Result<String, String>;
+    fn complete(&self, request: &WakeRequest) -> Result<String, String>;
 }
 
 /// Result of one model call.
@@ -151,16 +179,25 @@ pub enum Wake {
 pub struct ModelDirector<C> {
     completer: C,
     behaviors: Vec<String>,
+    /// Whose wakes these are. A constructor argument rather than something the
+    /// Shell may remember to set: there is one Director per Instance already,
+    /// and a request that named no buddy would log as none.
+    instance: InstanceId,
     /// The Character Prompt is the opening turn only. After a successful
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
 }
 
 impl<C> ModelDirector<C> {
-    pub fn new(completer: C, behaviors: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub fn new(
+        completer: C,
+        behaviors: impl IntoIterator<Item = impl Into<String>>,
+        instance: impl Into<InstanceId>,
+    ) -> Self {
         Self {
             completer,
             behaviors: behaviors.into_iter().map(Into::into).collect(),
+            instance: instance.into(),
             opened: AtomicBool::new(false),
         }
     }
@@ -176,6 +213,15 @@ impl<C: Completer> ModelDirector<C> {
         }
     }
 
+    /// This wake as the Completer receives it.
+    pub fn request(&self, context: &Context) -> WakeRequest {
+        WakeRequest {
+            prompt: self.prompt(context),
+            instance: self.instance.clone(),
+            reactive: reactive(&context.happened),
+        }
+    }
+
     pub fn wake(&self, context: &Context) -> Wake {
         self.wake_and_near_miss(context).0
     }
@@ -188,7 +234,7 @@ impl<C: Completer> ModelDirector<C> {
     /// is invisible, trace flag or not. Reported, never corrected; guessing
     /// a correction is what #231 ruled out (#243).
     pub fn wake_and_near_miss(&self, context: &Context) -> (Wake, Option<String>) {
-        match self.completer.complete(&self.prompt(context)) {
+        match self.completer.complete(&self.request(context)) {
             Ok(reply) => {
                 // The Completer has the opening; later turns stay short
                 // even if this reply failed to parse.
@@ -1089,10 +1135,11 @@ mod tests {
         assert_eq!(inline.dialogue.as_deref(), Some("sleepy"));
     }
 
-    /// Completer that returns a fixed reply and records the prompt it received.
+    /// Completer that returns a fixed reply and records the request it
+    /// received.
     struct Scripted {
         reply: Result<String, String>,
-        seen: std::sync::Mutex<Option<String>>,
+        seen: std::sync::Mutex<Option<WakeRequest>>,
     }
 
     impl Scripted {
@@ -1109,18 +1156,34 @@ mod tests {
                 seen: std::sync::Mutex::new(None),
             }
         }
+
+        fn seen(&self) -> Option<WakeRequest> {
+            self.seen.lock().expect("the lock is not poisoned").clone()
+        }
+
+        fn seen_prompt(&self) -> Option<String> {
+            self.seen().map(|request| request.prompt)
+        }
     }
 
     impl Completer for Scripted {
-        fn complete(&self, prompt: &str) -> Result<String, String> {
-            *self.seen.lock().expect("the lock is not poisoned") = Some(prompt.to_string());
+        fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+            *self.seen.lock().expect("the lock is not poisoned") = Some(request.clone());
             self.reply.clone()
         }
     }
 
+    /// A `ModelDirector` for one Instance, which every test here has.
+    fn directing<C>(
+        completer: C,
+        behaviors: impl IntoIterator<Item = impl Into<String>>,
+    ) -> ModelDirector<C> {
+        ModelDirector::new(completer, behaviors, "buddy-1")
+    }
+
     #[test]
     fn a_model_director_proposes_what_the_completer_replies() {
-        let director = ModelDirector::new(Scripted::says("stroll\nhey"), ["stroll", "wave"]);
+        let director = directing(Scripted::says("stroll\nhey"), ["stroll", "wave"]);
         let moment = context(working(), &[]);
 
         match director.wake(&moment) {
@@ -1132,6 +1195,31 @@ mod tests {
         }
     }
 
+    /// #435: the Action Log's `prompt` event can only name the buddy that woke
+    /// and say whether the user caused it if the request carries both — the
+    /// Completer is handed nothing else.
+    #[test]
+    fn the_request_names_the_instance_and_whether_the_wake_was_reactive() {
+        let director = directing(Scripted::says("wave"), ["wave"]);
+
+        let moment = context(working(), &[]);
+        let expected = director.prompt(&moment);
+        director.wake(&moment);
+        let asked = director.completer.seen().expect("a request was sent");
+        assert_eq!(asked.instance, "buddy-1");
+        assert!(asked.reactive, "Poke is the user addressing the buddy");
+        assert_eq!(asked.prompt, expected, "the prompt still travels whole");
+
+        let unprompted = Context {
+            happened: Happened::Ambient,
+            ..moment
+        };
+        director.wake(&unprompted);
+        let ambient = director.completer.seen().expect("a request was sent");
+        assert_eq!(ambient.instance, "buddy-1");
+        assert!(!ambient.reactive, "nobody asked for a proactive wake");
+    }
+
     /// #231: a model writes the Behavior name at the start of a line, so it
     /// capitalises it — every local model measured in #175 answered `Prowl`
     /// where the manifest declares `prowl`. Matching exactly threw those
@@ -1140,7 +1228,7 @@ mod tests {
     /// this is the same rule for the name beside it.
     #[test]
     fn a_declared_behavior_is_known_however_the_model_capitalises_it() {
-        let director = ModelDirector::new(Scripted::says("Prowl\nMine now."), ["prowl"]);
+        let director = directing(Scripted::says("Prowl\nMine now."), ["prowl"]);
         let moment = context(working(), &[]);
 
         match director.wake(&moment) {
@@ -1159,7 +1247,7 @@ mod tests {
     /// invented by loosening the comparison.
     #[test]
     fn a_name_no_character_declares_is_still_speech() {
-        let director = ModelDirector::new(Scripted::says("Check\nSomething moved."), ["prowl"]);
+        let director = directing(Scripted::says("Check\nSomething moved."), ["prowl"]);
         let moment = context(working(), &[]);
 
         match director.wake(&moment) {
@@ -1178,7 +1266,7 @@ mod tests {
     /// back rather than corrected — the Shell is what prints it.
     #[test]
     fn an_undeclared_name_is_handed_back_as_a_near_miss() {
-        let director = ModelDirector::new(Scripted::says("prowll\nMine now."), ["prowl", "wave"]);
+        let director = directing(Scripted::says("prowll\nMine now."), ["prowl", "wave"]);
 
         let (wake, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
 
@@ -1195,7 +1283,7 @@ mod tests {
     #[test]
     fn a_declared_name_is_no_near_miss() {
         for reply in ["prowl", "Prowl.", "PROWL:", "Prowl | hunting"] {
-            let director = ModelDirector::new(Scripted::says(reply), ["prowl", "wave"]);
+            let director = directing(Scripted::says(reply), ["prowl", "wave"]);
 
             let (_, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
 
@@ -1207,7 +1295,7 @@ mod tests {
     /// takes its own arm above and must not be reported as a miss.
     #[test]
     fn the_say_keyword_is_no_near_miss() {
-        let director = ModelDirector::new(Scripted::says("say | hello"), ["prowl", "wave"]);
+        let director = directing(Scripted::says("say | hello"), ["prowl", "wave"]);
 
         let (_, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
 
@@ -1216,19 +1304,14 @@ mod tests {
 
     #[test]
     fn the_completer_is_sent_the_character_prompt() {
-        let director = ModelDirector::new(Scripted::says("wave"), ["wave"]);
+        let director = directing(Scripted::says("wave"), ["wave"]);
         let moment = context(working(), &["nap"]);
         let expected = character_prompt(&moment, ["wave"]);
 
         director.wake(&moment);
 
         assert_eq!(
-            director
-                .completer
-                .seen
-                .lock()
-                .expect("the lock is not poisoned")
-                .as_deref(),
+            director.completer.seen_prompt().as_deref(),
             Some(expected.as_str()),
             "Completer must receive character_prompt's output"
         );
@@ -1236,7 +1319,7 @@ mod tests {
 
     #[test]
     fn a_director_error_falls_back_to_the_static_director() {
-        let model = ModelDirector::new(Scripted::fails(), ["nap"]);
+        let model = directing(Scripted::fails(), ["nap"]);
         let mut static_director = StaticDirector::new(declaring(&[("nap", 1, None)]), 1);
         let moment = context(working(), &[]);
 
@@ -1249,7 +1332,7 @@ mod tests {
 
     #[test]
     fn a_valid_model_proposal_is_kept_and_the_static_director_is_not_asked() {
-        let model = ModelDirector::new(Scripted::says("wave"), ["wave", "nap"]);
+        let model = directing(Scripted::says("wave"), ["wave", "nap"]);
         let mut static_director = StaticDirector::new(declaring(&[("nap", 1, None)]), 1);
         let moment = context(working(), &[]);
 
@@ -1277,7 +1360,7 @@ mod tests {
 
     #[test]
     fn a_reply_that_is_not_a_behavior_is_said() {
-        let director = ModelDirector::new(
+        let director = directing(
             Scripted::says("It's 23:59! Almost a brand new day!"),
             ["wave", "report"],
         );
@@ -1295,7 +1378,7 @@ mod tests {
 
     #[test]
     fn a_say_prefix_is_stripped_and_the_rest_is_spoken() {
-        let director = ModelDirector::new(Scripted::says("say: hey"), ["wave"]);
+        let director = directing(Scripted::says("say: hey"), ["wave"]);
         match director.wake(&context(working(), &[])) {
             Wake::Proposed(said) => {
                 assert!(said.behavior.is_empty());
@@ -1304,7 +1387,7 @@ mod tests {
             other => panic!("expected speech, got {other:?}"),
         }
 
-        let piped = ModelDirector::new(Scripted::says("say | hey"), ["wave"]);
+        let piped = directing(Scripted::says("say | hey"), ["wave"]);
         match piped.wake(&context(working(), &[])) {
             Wake::Proposed(said) => {
                 assert!(said.behavior.is_empty());
@@ -1316,7 +1399,7 @@ mod tests {
 
     #[test]
     fn an_undeclared_identifier_is_said_not_played() {
-        let director = ModelDirector::new(Scripted::says("cartwheel"), ["wave"]);
+        let director = directing(Scripted::says("cartwheel"), ["wave"]);
         match director.wake(&context(working(), &[])) {
             Wake::Proposed(said) => {
                 assert!(said.behavior.is_empty());
@@ -1422,7 +1505,7 @@ mod tests {
 
     #[test]
     fn a_later_wake_sends_only_the_follow_up() {
-        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let director = directing(Scripted::says("wave"), ["wave", "greet"]);
         let first = context(working(), &["nap"]);
         director.wake(&first);
 
@@ -1435,10 +1518,7 @@ mod tests {
 
         let sent = director
             .completer
-            .seen
-            .lock()
-            .expect("the lock is not poisoned")
-            .clone()
+            .seen_prompt()
             .expect("a follow-up was sent");
         assert_eq!(sent, follow_up(&later));
         assert!(
@@ -1459,11 +1539,11 @@ mod tests {
     /// Character's opening, not a follow-up in the previous conversation.
     #[test]
     fn a_new_director_opens_again() {
-        let first = ModelDirector::new(Scripted::says("wave"), ["wave"]);
+        let first = directing(Scripted::says("wave"), ["wave"]);
         let moment = context(working(), &["nap"]);
         first.wake(&moment);
 
-        let next = ModelDirector::new(Scripted::says("wave"), ["stroll"]);
+        let next = directing(Scripted::says("wave"), ["stroll"]);
         let payload = next.prompt(&moment);
         assert!(
             payload.contains("You may propose"),
@@ -1559,7 +1639,7 @@ mod tests {
     /// not a conversation of its own.
     #[test]
     fn a_chat_turn_sends_no_second_opening() {
-        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let director = directing(Scripted::says("wave"), ["wave", "greet"]);
         let ambient = context(working(), &[]);
         director.wake(&ambient);
 
@@ -1568,10 +1648,7 @@ mod tests {
 
         let sent = director
             .completer
-            .seen
-            .lock()
-            .expect("the lock is not poisoned")
-            .clone()
+            .seen_prompt()
             .expect("a follow-up was sent");
         assert_eq!(sent, follow_up(&asked));
         assert!(
@@ -1589,7 +1666,7 @@ mod tests {
     /// no chat branch of its own.
     #[test]
     fn a_chat_turn_is_the_opening_turn_when_it_is_the_first_thing_that_happens() {
-        let director = ModelDirector::new(Scripted::says("wave"), ["wave", "greet"]);
+        let director = directing(Scripted::says("wave"), ["wave", "greet"]);
         let payload = director.prompt(&typed("hello?"));
 
         assert!(
@@ -1601,8 +1678,7 @@ mod tests {
 
     #[test]
     fn a_chat_reply_that_names_a_declared_behavior_still_plays_it() {
-        let director =
-            ModelDirector::new(Scripted::says("wave\nOn the Dock, obviously."), ["wave"]);
+        let director = directing(Scripted::says("wave\nOn the Dock, obviously."), ["wave"]);
 
         match director.wake(&typed("what are you standing on?")) {
             Wake::Proposed(proposal) => {
@@ -1620,7 +1696,7 @@ mod tests {
     /// name, not a failed turn for `StaticDirector` to answer with silence.
     #[test]
     fn a_chat_reply_that_is_only_words_is_speech() {
-        let director = ModelDirector::new(Scripted::says("Just the desktop floor."), ["wave"]);
+        let director = directing(Scripted::says("Just the desktop floor."), ["wave"]);
 
         match director.wake(&typed("what are you standing on?")) {
             Wake::Proposed(said) => {
@@ -1753,7 +1829,7 @@ mod tests {
 
     #[test]
     fn a_trailing_full_stop_or_colon_still_names_the_behavior() {
-        let director = ModelDirector::new(Scripted::says("Prowl."), ["prowl"]);
+        let director = directing(Scripted::says("Prowl."), ["prowl"]);
         match director.wake(&context(working(), &[])) {
             Wake::Proposed(proposal) => {
                 assert_eq!(proposal.behavior, "prowl");
@@ -1761,7 +1837,7 @@ mod tests {
             other => panic!("trailing full stop should not prevent match: {other:?}"),
         }
 
-        let colon = ModelDirector::new(Scripted::says("prowl:"), ["prowl"]);
+        let colon = directing(Scripted::says("prowl:"), ["prowl"]);
         match colon.wake(&context(working(), &[])) {
             Wake::Proposed(proposal) => {
                 assert_eq!(proposal.behavior, "prowl");
@@ -1769,8 +1845,7 @@ mod tests {
             other => panic!("trailing colon should not prevent match: {other:?}"),
         }
 
-        let with_dialogue =
-            ModelDirector::new(Scripted::says("PROWL. | hunting"), ["prowl", "wave"]);
+        let with_dialogue = directing(Scripted::says("PROWL. | hunting"), ["prowl", "wave"]);
         match with_dialogue.wake(&context(working(), &[])) {
             Wake::Proposed(proposal) => {
                 assert_eq!(proposal.behavior, "prowl");
@@ -1798,19 +1873,19 @@ mod tests {
 
     #[test]
     fn say_with_nothing_to_say_falls_back_rather_than_saying_say() {
-        let director = ModelDirector::new(Scripted::says("say"), ["wave"]);
+        let director = directing(Scripted::says("say"), ["wave"]);
         match director.wake(&context(working(), &[])) {
             Wake::Failed => {}
             other => panic!("bare say should fail, not {other:?}"),
         }
 
-        let colon = ModelDirector::new(Scripted::says("say:"), ["wave"]);
+        let colon = directing(Scripted::says("say:"), ["wave"]);
         match colon.wake(&context(working(), &[])) {
             Wake::Failed => {}
             other => panic!("say: with no dialogue should fail, not {other:?}"),
         }
 
-        let upper = ModelDirector::new(Scripted::says("Say."), ["wave"]);
+        let upper = directing(Scripted::says("Say."), ["wave"]);
         match upper.wake(&context(working(), &[])) {
             Wake::Failed => {}
             other => panic!("Say. should fail, not {other:?}"),

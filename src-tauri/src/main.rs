@@ -1474,12 +1474,13 @@ fn spawn_live(
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_nanos() as u64);
     lives.push(InstanceState {
-        id,
+        id: id.clone(),
         director: StaticDirector::new(character.behaviors.clone(), seed),
         model: config.configured.then(|| {
             Arc::new(ModelDirector::new(
                 model::completer_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
+                id.clone(),
             ))
         }),
         recent: Vec::new(),
@@ -1722,7 +1723,7 @@ fn spawn_instances(
         let id = roster.spawn(character, spec.name.clone(), positions[index]);
 
         lives.push(InstanceState {
-            id,
+            id: id.clone(),
             character: Arc::clone(character),
             director: StaticDirector::new(character.behaviors.clone(), seed ^ index as u64),
             // One per Instance, because each buddy wakes on its own clock and
@@ -1737,6 +1738,7 @@ fn spawn_instances(
                 Arc::new(ModelDirector::new(
                     model::completer_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
+                    id.clone(),
                 ))
             }),
             recent: Vec::new(),
