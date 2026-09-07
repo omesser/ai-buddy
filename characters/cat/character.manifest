@@ -134,3 +134,9 @@ when = "idle over 2m"
 play = ["chase"]
 weight = 20
 when = "idle over 1m"
+
+# Rare on purpose: under half the lightest weight in this file.
+[behaviors.jump]
+play = ["jump"]
+weight = 8
+when = "idle over 30s"

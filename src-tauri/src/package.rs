@@ -1010,9 +1010,12 @@ mod tests {
     /// perches it on a window and puts it to sleep after a minute whoever it
     /// is. What a Character declares is what a Director may set it doing, and
     /// there the two disagree — no Behavior of BMO's ever settles, and every
-    /// Behavior of Nim's but the walk does. Two different lives from the same
-    /// Director, and not before one exists: nothing proposes a Behavior until
-    /// #11.
+    /// Behavior of Nim's that is not bare motion does. Two different lives from
+    /// the same Director, and not before one exists: nothing proposes a
+    /// Behavior until #11.
+    ///
+    /// `walk` and `jump` are both a lone motion Primitive, and a Character that
+    /// ends on its feet has not settled. #374.
     #[test]
     fn switching_between_the_two_changes_the_idle_life_and_not_only_the_art() {
         let bmo = shipped_character("bmo");
@@ -1025,7 +1028,12 @@ mod tests {
         }
 
         let nim = shipped_character("nim");
-        for behavior in nim.behaviors.keys().filter(|name| *name != "walk") {
+        let bare_motion = ["walk", "jump"];
+        for behavior in nim
+            .behaviors
+            .keys()
+            .filter(|name| !bare_motion.contains(&name.as_str()))
+        {
             let seen = played(&nim, behavior);
             assert!(
                 seen.contains("sit") || seen.contains("sleep"),

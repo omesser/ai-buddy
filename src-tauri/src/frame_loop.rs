@@ -1172,6 +1172,22 @@ pub(crate) fn run_frame_loop(
                     }
                 }
 
+                // A Behavior the State gate refused. Under the Director flag
+                // rather than the frame one, next to #318's near-miss line,
+                // because both report a proposal the sprite never played.
+                //
+                // The line names the State the sprite was in, not the reason
+                // it was refused. The Poke cooldown also refuses, and it
+                // refuses on the sprite's feet. #374.
+                if let Some(refused) = &frame.refused {
+                    if model::tracing() {
+                        eprintln!(
+                            "director: {} {refused} refused in {:?}",
+                            live.id, frame.state
+                        );
+                    }
+                }
+
                 // On change, not per tick: the loop turns at display rate and
                 // an unconditional line would bury every other trace in the
                 // log. Above the `draw` below rather than beside the frame

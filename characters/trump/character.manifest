@@ -117,3 +117,9 @@ play = ["walk", "talk", "walk"]
 then = "walk"
 weight = 20
 when = "idle over 2m"
+
+# Rare on purpose: below every other weight in this file.
+[behaviors.jump]
+play = ["jump"]
+weight = 3
+when = "idle over 30s"

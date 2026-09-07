@@ -230,6 +230,14 @@ pub struct Frame {
     /// The cue this interaction earned, if one landed. A one-tick pulse like
     /// `dialogue`, and at most one a tick — the precedence is in `tick`. #277.
     pub cue: Option<Cue>,
+    /// A Behavior this Character declared, proposed this tick, and turned down
+    /// by `permitted`. A one-tick pulse like `behavior`, and never set on the
+    /// same tick as one.
+    ///
+    /// Reported rather than dropped, following #318. Without it a refusal and a
+    /// model that proposed nothing look identical in the trace. `crates/core`
+    /// does no I/O, so the Shell prints it. #374.
+    pub refused: Option<String>,
 }
 
 /// How long one Primitive holds the screen.
@@ -278,6 +286,11 @@ const WALK_SPEED: f64 = 120.0;
 /// 3600 keeps a Throw on the display long enough to see, instead of spending
 /// the flight above the usable frame. #100.
 const GRAVITY: f64 = 3600.0;
+
+/// Points per second a Jump launches upward at. A tuning knob. The peak is
+/// `JUMP_SPEED` squared over twice `GRAVITY`, so 900 clears about 110 points —
+/// roughly a sprite's height — and lands within half a second. #374.
+const JUMP_SPEED: f64 = 900.0;
 
 /// How much of the art must stay below the usable top for the feet to be put
 /// down there. Half: a buddy clipped at the crown still reads as itself, and
@@ -853,6 +866,17 @@ impl Engine {
                         self.velocity.x = self.facing * WALK_SPEED;
                     }
                 }
+                // The whole of a jump: an upward velocity, plus a forward
+                // one so the flight is an arc. The rest is the Throw's path.
+                // `integrate` reads the rising sprite as a lost footing,
+                // `transition` makes that a fall, and the fall lands through
+                // the existing landing. #374.
+                Some(Primitive::Jump) => {
+                    self.velocity = Point {
+                        x: self.facing * WALK_SPEED,
+                        y: -JUMP_SPEED,
+                    };
+                }
                 Some(Primitive::Idle | Primitive::Sit | Primitive::Sleep | Primitive::Hold) => {
                     self.velocity.x = 0.0
                 }
@@ -913,7 +937,12 @@ impl Engine {
 
         // Losing its footing abandons the rest of a Behavior: what the sprite
         // was in the middle of doing was only ever a thing to do standing up.
-        if !self.permitted(&self.playing) {
+        //
+        // A Jump is the exception: it lost the footing on purpose one tick ago,
+        // so this gate would abandon it mid-arc and the flight would draw as a
+        // plain fall. It keeps the screen for its turn. Whatever chains after
+        // it is abandoned on the next turn, as before. #374.
+        if self.on_screen() != Some(Primitive::Jump) && !self.permitted(&self.playing) {
             self.stop_playing();
             started = true;
         }
@@ -958,6 +987,9 @@ impl Engine {
         // #119: dialogue with an empty behavior plays `talk`. Duration is
         // PRIMITIVE_MS, independent of bubble reading time.
         let mut behavior = None;
+        // The State gate's refusals only. Do Not Disturb is a silence the
+        // user asked for, and an undeclared name is traced at the parse (#318).
+        let mut refused = None;
         if let Some(proposal) = &snapshot.proposal {
             if !self.do_not_disturb {
                 if let Some(primitives) = self.chain(&proposal.behavior) {
@@ -973,6 +1005,8 @@ impl Engine {
                         // by Engine-played moments too, and it clears the name
                         // so that they cannot inherit the last proposal's.
                         self.playing_behavior = behavior.clone();
+                    } else {
+                        refused = Some(proposal.behavior.clone());
                     }
                 } else if proposal.behavior.is_empty()
                     && proposal.dialogue.is_some()
@@ -1101,6 +1135,7 @@ impl Engine {
             facing: self.facing,
             addressed,
             cue,
+            refused,
         }
     }
 
@@ -1199,6 +1234,14 @@ impl Engine {
             // close, or walking off the end leaves it in the air, carrying
             // whatever speed it walked off with.
             State::Grounded | State::Perched | State::Asleep => {
+                // Rising off the surface it stood on. A Jump is the only way
+                // a resting sprite gets upward velocity, and reporting the
+                // Contact lets `transition` make the fall, so no State is
+                // written outside that module. The arc starts one tick later.
+                // #374.
+                if self.velocity.y < 0.0 {
+                    return Some(Contact::Airborne);
+                }
                 self.position.x += self.velocity.x * dt;
                 if self.last_perch.is_some() {
                     self.hold_offset_x += self.velocity.x * dt;
@@ -1491,11 +1534,21 @@ impl Engine {
     /// checked here rather than at the proposal, because a proposal is not the
     /// only thing that starts a walk — a cursor reaction or a chase does too,
     /// and every one of them comes through this gate.
+    ///
+    /// A Jump asks what a walk asks — what are the feet on — so it is gated
+    /// with the other motion and inherits the cooldown too. Grounded and
+    /// Perched allow it; Climbing, Falling, Dragged and Asleep refuse.
+    ///
+    /// Perched is the call worth recording. Running out of Perch is already a
+    /// fall the Engine allows, so an edge the sprite may walk off is an edge it
+    /// may jump off. #374.
     fn permitted(&self, primitives: &[Primitive]) -> bool {
         let on_feet = matches!(self.state, State::Grounded | State::Perched);
         primitives.iter().all(|primitive| match primitive {
             Primitive::React | Primitive::Talk => true,
-            Primitive::Walk | Primitive::Chase => on_feet && self.poke_cooldown_ms == 0,
+            Primitive::Walk | Primitive::Chase | Primitive::Jump => {
+                on_feet && self.poke_cooldown_ms == 0
+            }
             _ => on_feet,
         })
     }
@@ -1544,6 +1597,9 @@ fn animation_of(primitive: Primitive) -> &'static str {
         Primitive::Hold => "hold",
         // No chase Animation in the required set; walk is the motion (#153).
         Primitive::Chase => "walk",
+        // Optional art: the renderer resolves it to `fall` when a package
+        // draws none, so the required set stays at nine (ADR-0007, #374).
+        Primitive::Jump => "jump",
     }
 }
 
@@ -1772,6 +1828,15 @@ mod tests {
                 "settle".to_string(),
                 Behavior {
                     primitives: vec![Primitive::Sit, Primitive::Sleep],
+                    then: None,
+                    weight: DEFAULT_WEIGHT,
+                    trigger: None,
+                },
+            ),
+            (
+                "jump".to_string(),
+                Behavior {
+                    primitives: vec![Primitive::Jump],
                     then: None,
                     weight: DEFAULT_WEIGHT,
                     trigger: None,
@@ -2193,6 +2258,11 @@ mod tests {
 
         assert_eq!(falling.state, State::Falling);
         assert_eq!(falling.animation, "fall", "it goes on falling instead");
+        assert_eq!(
+            falling.refused.as_deref(),
+            Some("settle"),
+            "the report covers every Behavior, not the Jump alone (#374)"
+        );
 
         let after = played(&mut engine, 40);
         assert!(
@@ -6842,5 +6912,112 @@ mod tests {
             proposal: None,
             poll_generation: 0,
         };
+    }
+
+    /// #374: a jump leaves the floor, rises, comes down, and arrives through
+    /// the existing landing. No second physics and no State of its own.
+    #[test]
+    fn a_jump_arcs_off_the_floor_and_lands_through_the_landing_path() {
+        let mut engine = a_resting_sprite();
+        let floor = engine.position.y;
+        let launched_from = engine.position.x;
+
+        let launch = engine.tick(&proposing("jump"));
+        assert_eq!(launch.playing_primitive, Some(Primitive::Jump));
+
+        // The tick after the proposal is the launch: a proposal is read after
+        // the sprite has been moved. The launch sets a velocity and loses the
+        // footing; the rise starts on the tick after that.
+        let launched = engine.tick(&snapshot(100));
+        assert_eq!(
+            launched.state,
+            State::Falling,
+            "off the floor: {launched:?}"
+        );
+        assert!(launched.velocity.y < 0.0, "going up: {launched:?}");
+        assert_eq!(
+            launched.playing_primitive,
+            Some(Primitive::Jump),
+            "the Jump holds the screen for its turn, so its art can draw"
+        );
+        assert_eq!(launched.animation, "jump", "optional jump art, if drawn");
+
+        let rising = engine.tick(&snapshot(100));
+        assert!(rising.position.y < floor, "rising: {rising:?}");
+
+        let mut peak = rising.position.y;
+        let mut landed = None;
+        for _ in 0..40 {
+            let frame = engine.tick(&snapshot(100));
+            peak = peak.min(frame.position.y);
+            if frame.state == State::Grounded {
+                landed = Some(frame);
+                break;
+            }
+        }
+
+        let landed = landed.expect("the arc comes down");
+        assert!(
+            floor - peak > 50.0,
+            "clears more than 50 points: peak {peak}, floor {floor}"
+        );
+        assert_eq!(landed.position.y, floor, "back on the same floor");
+        assert_ne!(landed.position.x, launched_from, "the flight travels in x");
+        assert_eq!(
+            landed.animation, "land",
+            "arrives through the existing landing: {landed:?}"
+        );
+    }
+
+    /// #374: the Engine names the optional Animation and the renderer resolves
+    /// it, as it already does for `climb` and `grab`.
+    #[test]
+    fn a_jump_asks_for_optional_jump_art() {
+        assert_eq!(animation_of(Primitive::Jump), "jump");
+    }
+
+    /// #374: the sprite already walks off a window edge, so it may jump off
+    /// one too.
+    #[test]
+    fn a_perched_sprite_may_jump_off_its_edge() {
+        let mut engine =
+            Engine::new(Point { x: 100.0, y: 0.0 }).with_behaviors(declared_behaviors());
+        settle(&mut engine, &perch(50.0, 400.0));
+        assert_eq!(engine.state, State::Perched, "perched to begin with");
+
+        engine.tick(&WorldSnapshot {
+            proposal: proposing("jump").proposal,
+            ..perch(50.0, 400.0)
+        });
+        let rising = engine.tick(&perch(50.0, 400.0));
+
+        assert_eq!(rising.refused, None, "Perched permits a jump");
+        assert_eq!(rising.state, State::Falling, "{rising:?}");
+        assert!(
+            rising.velocity.y < 0.0,
+            "leaves the edge upward: {rising:?}"
+        );
+    }
+
+    /// #374: Asleep refuses a jump, and the Frame reports the refusal instead
+    /// of dropping it (#318).
+    #[test]
+    fn a_jump_is_refused_while_asleep_and_says_it_was() {
+        let mut engine = a_resting_sprite();
+        let asleep = engine.tick(&snapshot(SLEEP_AFTER_MS));
+        assert_eq!(asleep.state, State::Asleep, "asleep to begin with");
+        let resting_at = engine.position;
+
+        let refused = engine.tick(&proposing("jump"));
+
+        assert_eq!(
+            refused.refused.as_deref(),
+            Some("jump"),
+            "the refusal names the Behavior: {refused:?}"
+        );
+        assert_eq!(refused.behavior, None, "nothing was played");
+        assert_eq!(refused.playing_primitive, None, "nothing is on screen");
+        assert_eq!(refused.state, State::Asleep, "still asleep");
+        assert_eq!(refused.position, resting_at, "and has not moved");
     }
 }

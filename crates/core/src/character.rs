@@ -23,8 +23,8 @@
 //! Two properties keep a package from enabling anything. The Character Manifest
 //! rejects every declaration it does not know, so no package can invent a key
 //! that grants a capability. And the Personality Prompt is prose in a file of
-//! its own, never a declaration, so it can describe a Character that jumps
-//! without the Character gaining a jump.
+//! its own, never a declaration, so it can describe a Character that flies
+//! without the Character gaining flight.
 //!
 //! The Character Manifest is TOML (ADR-0015): a name, a table per Animation,
 //! a table per Behavior, an optional `[source]` saying where the art came
@@ -210,10 +210,14 @@ pub enum Primitive {
     /// arrives: give up. The cursor is up on the screen; the buddy chases
     /// its shadow on the floor.
     Chase,
+    /// Leave the ground under the sprite's own power (#374). The launch is an
+    /// upward velocity and nothing more. `Falling` carries the arc and the
+    /// existing landing path ends it, so a jump reuses the Throw's physics.
+    Jump,
 }
 
 /// Every Primitive by the name a Character Manifest writes.
-const PRIMITIVES: [(&str, Primitive); 9] = [
+const PRIMITIVES: [(&str, Primitive); 10] = [
     ("idle", Primitive::Idle),
     ("walk", Primitive::Walk),
     ("land", Primitive::Land),
@@ -223,6 +227,7 @@ const PRIMITIVES: [(&str, Primitive); 9] = [
     ("talk", Primitive::Talk),
     ("hold", Primitive::Hold),
     ("chase", Primitive::Chase),
+    ("jump", Primitive::Jump),
 ];
 
 /// A named frame sequence and how it plays.
@@ -525,7 +530,13 @@ impl Character {
 
 /// Optional Animations, and what draws when a package does not declare them:
 /// used when present, and absent silently, never as a missing sprite.
-const OPTIONAL_FALLBACKS: [(&str, &str); 2] = [("climb", "walk"), ("grab", "fall")];
+const OPTIONAL_FALLBACKS: [(&str, &str); 3] = [
+    ("climb", "walk"),
+    ("grab", "fall"),
+    // The Required Animation Set is closed at nine (ADR-0007), so a jump is
+    // optional art. A Character without it rises and falls in its `fall`. #374.
+    ("jump", "fall"),
+];
 
 /// How many Behaviors of a loop a rejection spells out before it stops.
 ///
@@ -1275,6 +1286,28 @@ mod tests {
         );
     }
 
+    /// #374: jump art is optional, so the Required Animation Set stays at nine
+    /// and every shipped package stays valid. A Character without it uses its
+    /// `fall`.
+    #[test]
+    fn jump_is_optional_and_falls_back_to_fall() {
+        let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        assert_eq!(
+            character.draw("jump", 0, 0, 1.0).expect("draws").animation,
+            "fall"
+        );
+
+        let drawn = format!(
+            "{}[animations.jump]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let character = load_manifest(&drawn).expect("loads");
+        assert_eq!(
+            character.draw("jump", 0, 0, 1.0).expect("draws").animation,
+            "jump"
+        );
+    }
+
     /// The optional Animation contract: used when present, absent silently —
     /// a Character without climb art climbs in its walk art, never as a
     /// missing sprite.
@@ -1480,7 +1513,7 @@ mod tests {
             "idle", "walk", "fall", "sit", "sleep", "react", "talk", "hold",
         ];
         let manifest = format!(
-            "capability = \"screen_recording\"\n{}[behaviors.greet]\nplay = [\"jump\"]\n",
+            "capability = \"screen_recording\"\n{}[behaviors.greet]\nplay = [\"pounce\"]\n",
             declaring(&eight)
         );
         let errors = errors(load_manifest(&manifest));
