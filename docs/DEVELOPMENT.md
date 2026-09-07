@@ -11,6 +11,30 @@ cd ai-buddy
 cargo run -p ai-buddy
 ```
 
+## Local Data Management
+
+ai-buddy writes two files to the data directory (`~/Library/Application Support/ai-buddy` on macOS, `~/.local/share/ai-buddy` on Linux):
+
+- **`memory.md`**: Everything the buddies know about you, shared across all Character Instances. Human-editable Markdown with no automatic size limit.
+- **`action-log.jsonl`**: One JSON line per Harness action (prompts, tool calls, usage). Append-only, automatically rotated.
+
+### Action Log Growth Policy
+
+The Action Log is rotated when it exceeds 2 MB. The current file becomes `action-log.jsonl.1` (replacing any older `.1`), and a fresh log is started. This bounds growth to at most 4 MB total (current + one backup), which holds ~20k typical events.
+
+Rotation is checked on every append and happens before the write. A rotation failure never blocks an append: the log explains the buddy after the fact and must never block a Director turn. Files stay human-tailable JSONL with no binary format.
+
+To inspect the log: `tail -f ~/Library/Application\ Support/ai-buddy/action-log.jsonl`
+
+### Memory Growth Policy
+
+Memory has no automatic size limit. This is deliberate: Memory is user-owned, and auto-deletion or write refusal would violate that contract. The Action Log provides visibility into what the Harness writes, so runaway growth is observable.
+
+Users can:
+- Edit `memory.md` in any text editor to trim or correct content
+- Wipe Memory entirely in Settings (which keeps a timestamped backup)
+- Monitor Memory size and growth via the Action Log
+
 ## Toolchains
 
 Three toolchains, each earning its place:

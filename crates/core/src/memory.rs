@@ -12,6 +12,20 @@
 //! fact on one line, so what is written cannot forge structure the reader would
 //! then believe.
 //!
+//! ## Growth policy
+//!
+//! Memory has no automatic size guard. It can grow without bound. This is
+//! deliberate: Memory is user-owned, and auto-deletion or write refusal would
+//! violate that contract. The Action Log (#433) provides visibility into what
+//! the Harness writes, so runaway growth is observable. The user can manually
+//! edit Memory in any text editor, or wipe it entirely (which keeps a backup).
+//!
+//! A soft guard (refusing writes past a size budget) was considered and rejected:
+//! it would break Harness sessions unpredictably, and the user already has the
+//! tools to manage Memory themselves. If a guard becomes necessary, it belongs in
+//! settings as an explicit user choice with clear UI feedback, not as a silent
+//! failure mode.
+//!
 //! ponytail: every read goes to the file rather than to a cached copy, which is
 //! what makes an external edit visible with no watcher and no reload path.
 //! Recall runs at Harness tool-call rate, never in the frame loop, so a read per
