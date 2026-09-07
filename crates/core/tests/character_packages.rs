@@ -564,7 +564,7 @@ fn timber_wolf_declares_tac_laser_scan_as_idle_variant() {
     );
 
     let drawn = character
-        .draw("scan", 0, 0)
+        .draw("scan", 0, 0, 1.0)
         .expect("scan draws when asked for by name");
     assert_eq!(drawn.animation, "scan");
 
@@ -632,7 +632,12 @@ fn patrol_idle_art(character: &character::Character, seed: u64, stretches: usize
         if on_idle && !idling {
             art.push(
                 character
-                    .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                    .draw(
+                        frame.animation,
+                        frame.animation_ms,
+                        frame.variant_draw,
+                        frame.facing,
+                    )
                     .expect("Timber Wolf draws the idle it is playing")
                     .animation
                     .to_string(),
@@ -721,7 +726,12 @@ fn timber_wolf_scans_on_the_first_perched_idle_whatever_the_seed() {
             .find(|frame| frame.animation == "idle")
             .map(|frame| {
                 character
-                    .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                    .draw(
+                        frame.animation,
+                        frame.animation_ms,
+                        frame.variant_draw,
+                        frame.facing,
+                    )
                     .expect("draws")
                     .animation
                     .to_string()
@@ -940,7 +950,7 @@ fn buddy_bot_declares_idle_life_variants() {
     }
 
     let drawn = character
-        .draw("idle-breathe", 0, 0)
+        .draw("idle-breathe", 0, 0, 1.0)
         .expect("idle-breathe draws when asked for by name");
     assert_eq!(drawn.animation, "idle-breathe");
 }
@@ -1177,7 +1187,12 @@ fn a_behaviors_idle_sweeps_every_frame_of_the_strip_the_cat_drew() {
                 );
             }
             let art = character
-                .draw(frame.animation, frame.animation_ms, frame.variant_draw)
+                .draw(
+                    frame.animation,
+                    frame.animation_ms,
+                    frame.variant_draw,
+                    frame.facing,
+                )
                 .expect("the cat draws the idle it is playing");
             drew.insert(art.animation.to_string());
             swept.insert(art.index);

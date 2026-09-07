@@ -92,6 +92,7 @@ pub(super) fn resolve_animations(
                     fps: declaration.fps,
                     looping: declaration.looping,
                     variants: Vec::new(),
+                    left_strip: None,
                     weight: declaration.weight,
                 },
             );
@@ -161,6 +162,52 @@ pub(super) fn check_variants(
                  a drawn variant plays until the engine asks for something else"
             )),
             Some(_) => pairs.push((name.clone(), base.clone())),
+        }
+    }
+    pairs
+}
+
+/// Validate every `left_of` declaration and hand back the (strip, base) pairs
+/// worth linking.
+///
+/// A left strip is the same walk cycle drawn facing the other way (#345), so
+/// the renderer swaps strips instead of mirroring one — which is the whole
+/// point for art with a mark on one cheek. Same length as its base, then, or
+/// the two headings would play different animations; a strip of a strip and
+/// two strips for one base are both an author asking for a heading nothing
+/// selects. Frame size is checked in `load`, where the art has been read.
+pub(super) fn check_left_strips(
+    declared: &BTreeMap<String, DeclaredAnimation>,
+    errors: &mut Vec<String>,
+) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    let mut taken: BTreeMap<&str, &str> = BTreeMap::new();
+    for (name, animation) in declared {
+        let Some(base) = &animation.left_of else {
+            continue;
+        };
+        match declared.get(base) {
+            _ if base == name => errors.push(format!("animation {name:?} is a left_of itself")),
+            None => errors.push(format!(
+                "animation {name:?} is a left_of {base:?}, which is not declared"
+            )),
+            Some(target) if target.left_of.is_some() => errors.push(format!(
+                "animation {name:?} is a left_of {base:?}, itself a left strip; \
+                 one strip faces each way"
+            )),
+            Some(target) if target.frames.len() != animation.frames.len() => errors.push(format!(
+                "animation {name:?} has {} frames, and its base {base:?} has {}; \
+                 a left strip is the same length as the animation it faces",
+                animation.frames.len(),
+                target.frames.len()
+            )),
+            Some(_) => match taken.insert(base.as_str(), name.as_str()) {
+                Some(first) => errors.push(format!(
+                    "animation {name:?} is a left_of {base:?}, which {first:?} already faces; \
+                     one strip faces each way"
+                )),
+                None => pairs.push((name.clone(), base.clone())),
+            },
         }
     }
     pairs
@@ -522,6 +569,68 @@ mod tests {
                 (budget as u64 + 1) * pixels
             )],
             "the author is told how much art they declared and how much a Character may hold"
+        );
+    }
+
+    /// #345: a left strip stands in for its base whenever the sprite travels
+    /// left, so anything that would leave the two playing differently — a base
+    /// that is not declared, a strip of a strip, a different length — is the
+    /// author's to fix before the package loads.
+    #[test]
+    fn a_left_strip_of_nothing_itself_a_strip_or_another_length_is_rejected_by_name() {
+        let manifest = format!(
+            "{}\
+             [animations.a]\nframes = [\"idle-0.png\"]\nleft_of = \"dance\"\n\
+             [animations.b]\nframes = [\"idle-0.png\"]\nleft_of = \"b\"\n\
+             [animations.c]\nframes = [\"idle-0.png\"]\nleft_of = \"walk\"\n\
+             [animations.d]\nframes = [\"idle-0.png\"]\nleft_of = \"c\"\n\
+             [animations.e]\nframes = [\"idle-0.png\", \"idle-0.png\"]\nleft_of = \"sit\"\n\
+             [animations.f]\nframes = [\"idle-0.png\"]\nleft_of = \"walk\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+
+        assert_eq!(
+            errors(load_manifest(&manifest)),
+            vec![
+                "animation \"a\" is a left_of \"dance\", which is not declared".to_string(),
+                "animation \"b\" is a left_of itself".to_string(),
+                "animation \"d\" is a left_of \"c\", itself a left strip; \
+                 one strip faces each way"
+                    .to_string(),
+                "animation \"e\" has 2 frames, and its base \"sit\" has 1; \
+                 a left strip is the same length as the animation it faces"
+                    .to_string(),
+                "animation \"f\" is a left_of \"walk\", which \"c\" already faces; \
+                 one strip faces each way"
+                    .to_string(),
+            ],
+            "every mistake at once, each naming the declaration at fault"
+        );
+    }
+
+    /// The size a strip is drawn at is read from its art rather than declared,
+    /// so it is the loader that catches art that would resize the sprite when
+    /// it turned round.
+    #[test]
+    fn a_left_strip_whose_art_is_a_different_size_is_rejected() {
+        let mut package = art();
+        package.insert("wide-0.png".to_string(), png_bytes(4, 4));
+        package.insert(
+            CHARACTER_MANIFEST_FILE.to_string(),
+            format!(
+                "{}[animations.walk-left]\nframes = [\"wide-0.png\"]\nleft_of = \"walk\"\n",
+                declaring(&REQUIRED_ANIMATIONS)
+            )
+            .into_bytes(),
+        );
+
+        assert_eq!(
+            errors(load(&package)),
+            vec![
+                "animation \"walk-left\" frames are 4x4, and its base \"walk\" is 2x2; \
+                 a left strip is the same size as the animation it faces"
+                    .to_string()
+            ]
         );
     }
 

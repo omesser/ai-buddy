@@ -60,6 +60,15 @@ Nothing bounds the total. The draw is seeded: one seed and one Character draw
 the same members on every machine. #316.
 _Avoid_: Alternate, costume, skin, random animation, mood
 
+**Left Strip**:
+An Animation declared `left_of` another, drawn in its place while the sprite
+travels left instead of the renderer mirroring the base. The same number of
+frames and the same frame size as the base, so turning round changes only which
+art plays. For asymmetric art: a mark on one cheek survives the turn, where a
+mirror would move it to the other. Optional — an Animation with no strip is
+mirrored as every Character's has always been. #345.
+_Avoid_: Flipped animation, left walk, direction variant
+
 **Required Animation Set**:
 The animations every Character Package must supply for the engine to drive it.
 _Avoid_: Base set, defaults

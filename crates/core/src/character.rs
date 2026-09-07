@@ -49,6 +49,10 @@
 //! frames = ["land-0.png"]
 //! loop = "once"
 //!
+//! [animations.walk-left]
+//! frames = ["walk-left-0.png", "walk-left-1.png"]
+//! left_of = "walk"
+//!
 //! [behaviors.greet]
 //! play = ["react", "talk"]
 //! then = "settle"
@@ -68,7 +72,7 @@ use crate::overlay::AlphaMask;
 mod manifest;
 mod resolve;
 use manifest::parse;
-use resolve::{check_variants, resolve_animations, resolve_behaviors};
+use resolve::{check_left_strips, check_variants, resolve_animations, resolve_behaviors};
 
 /// A Character Package as bytes: file name to contents, as a directory walk or
 /// an archive reader would produce it. The Shell does the reading; the loader
@@ -237,6 +241,11 @@ pub struct Animation {
     /// each of those is drawn by weight and plays until the engine asks for
     /// something else.
     pub variants: Vec<String>,
+    /// The Animation drawn in this one's place when the sprite travels left,
+    /// from the package's `left_of` (#345). `None` — every package before
+    /// #345, and every symmetric one after it — mirrors this Animation's own
+    /// art instead, as the renderer always has.
+    pub left_strip: Option<String>,
     /// This Animation's share of the variant ring it belongs to, against its
     /// fellow members' — the same unbounded relative count a Behavior's
     /// `weight` is, and `DEFAULT_WEIGHT` when the manifest does not say. An
@@ -400,6 +409,14 @@ pub struct Drawn<'a> {
     pub frame_size: (u32, u32),
     /// Which frame of the Animation is on screen.
     pub index: usize,
+    /// Whether this art is drawn flipped horizontally.
+    ///
+    /// The one mirroring decision (#345): the hit-test mask and the webview's
+    /// transform both read it, so the clickable region is the visible art
+    /// whichever strip drew. Leftward travel mirrors, unless the Animation
+    /// named a left strip — that art is already facing left, and mirroring it
+    /// would turn it back round.
+    pub mirrored: bool,
 }
 
 impl Character {
@@ -410,7 +427,7 @@ impl Character {
     /// of a display has to leave. Animations may declare different frame
     /// sizes; idle is what the Character is usually drawn at. #395.
     pub fn sprite_height(&self) -> f64 {
-        self.draw("idle", 0, 0)
+        self.draw("idle", 0, 0, 1.0)
             .map_or(0.0, |drawn| f64::from(drawn.frame_size.1))
             * f64::from(self.scale)
     }
@@ -433,8 +450,26 @@ impl Character {
     /// nine required Animations, and a package missing one was rejected.
     /// Substituting a different Animation would be worse than drawing nothing,
     /// because the renderer would still be told the name it asked for.
-    pub fn draw(&self, animation: &str, animation_ms: u32, variant_draw: u64) -> Option<Drawn<'_>> {
+    pub fn draw(
+        &self,
+        animation: &str,
+        animation_ms: u32,
+        variant_draw: u64,
+        facing: f64,
+    ) -> Option<Drawn<'_>> {
         let (name, animation) = self.resolve(animation, variant_draw)?;
+        // Strip first, mirror second, and never both: an Animation that draws
+        // its own leftward art is handed over as authored, and one that does
+        // not is mirrored exactly as before #345.
+        let (name, animation, mirrored) = match animation
+            .left_strip
+            .as_deref()
+            .filter(|_| facing < 0.0)
+            .and_then(|left| self.animations.get_key_value(left))
+        {
+            Some((left_name, left)) => (left_name.as_str(), left, false),
+            None => (name, animation, facing < 0.0),
+        };
         let index = animation.frame_at(animation_ms);
         let art = self.art.get(animation.frames.get(index)?)?;
 
@@ -443,6 +478,7 @@ impl Character {
             mask: &art.mask,
             frame_size: animation.frame_size,
             index,
+            mirrored,
         })
     }
 
@@ -543,6 +579,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
 
     let personality = personality(package, &mut errors);
     let variant_pairs = check_variants(&declared.animations, &mut errors);
+    let left_pairs = check_left_strips(&declared.animations, &mut errors);
     let (mut animations, art) = resolve_animations(package, declared.animations, &mut errors);
     // Linked after resolution so a variant whose frames failed never joins a
     // ring; its own declaration errors already say why.
@@ -550,6 +587,26 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
         if animations.contains_key(&variant) {
             if let Some(base) = animations.get_mut(&base) {
                 base.variants.push(variant);
+            }
+        }
+    }
+    // Linked after resolution for the same reason variants are, and the frame
+    // size is compared here because it is read from the art rather than
+    // declared: the two strips are drawn one in the other's place, so art of a
+    // different size would move the sprite when it turned round.
+    for (strip, base) in left_pairs {
+        let Some(size) = animations.get(&strip).map(|strip| strip.frame_size) else {
+            continue;
+        };
+        if let Some(faced) = animations.get_mut(&base) {
+            if faced.frame_size == size {
+                faced.left_strip = Some(strip);
+            } else {
+                errors.push(format!(
+                    "animation {strip:?} frames are {}x{}, and its base {base:?} is {}x{}; \
+                     a left strip is the same size as the animation it faces",
+                    size.0, size.1, faced.frame_size.0, faced.frame_size.1
+                ));
             }
         }
     }
@@ -662,6 +719,7 @@ mod tests {
             fps,
             looping,
             variants: Vec::new(),
+            left_strip: None,
             weight: DEFAULT_WEIGHT,
         }
     }
@@ -791,19 +849,25 @@ mod tests {
         package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
         let character = load(&package).expect("package is valid");
 
-        let first = character.draw("idle", 124, 0).expect("idle is declared");
+        let first = character
+            .draw("idle", 124, 0, 1.0)
+            .expect("idle is declared");
         assert_eq!(first.index, 0, "still inside the first of two 125ms frames");
         assert_eq!(first.frame_size, (2, 2));
         assert!(!corner_drawn(&first), "the mask is the one FRAME makes");
 
-        let second = character.draw("idle", 125, 0).expect("idle is declared");
+        let second = character
+            .draw("idle", 125, 0, 1.0)
+            .expect("idle is declared");
         assert_eq!(second.index, 1);
         assert!(
             corner_drawn(&second),
             "and the mask moves to the frame the index landed on"
         );
 
-        let wrapped = character.draw("idle", 250, 0).expect("idle is declared");
+        let wrapped = character
+            .draw("idle", 250, 0, 1.0)
+            .expect("idle is declared");
         assert_eq!(wrapped.index, 0, "a looping strip comes back round");
         assert!(!corner_drawn(&wrapped));
     }
@@ -814,7 +878,7 @@ mod tests {
     #[test]
     fn an_animation_the_character_does_not_have_draws_nothing() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("package is valid");
-        assert!(character.draw("cartwheel", 0, 0).is_none());
+        assert!(character.draw("cartwheel", 0, 0, 1.0).is_none());
     }
 
     #[test]
@@ -1052,7 +1116,7 @@ mod tests {
         let art: Vec<&str> = (0..4000)
             .map(|_| {
                 character
-                    .draw("idle", 0, seeded.draw())
+                    .draw("idle", 0, seeded.draw(), 1.0)
                     .expect("draws")
                     .animation
             })
@@ -1136,7 +1200,7 @@ mod tests {
         let mut seeded = Seeded::new(0xCAFE);
         let art: Vec<&str> = (0..12)
             .map(|_| {
-                ring.draw("idle", 0, seeded.draw())
+                ring.draw("idle", 0, seeded.draw(), 1.0)
                     .expect("draws")
                     .animation
             })
@@ -1185,17 +1249,28 @@ mod tests {
         let character = load(&package).expect("package is valid");
 
         let spinning = (0..)
-            .find(|draw| character.draw("idle", 0, *draw).expect("draws").animation == "spin")
+            .find(|draw| {
+                character
+                    .draw("idle", 0, *draw, 1.0)
+                    .expect("draws")
+                    .animation
+                    == "spin"
+            })
             .expect("some draw lands on the variant");
 
-        let index = |ms: u32| character.draw("idle", ms, spinning).expect("draws").index;
+        let index = |ms: u32| {
+            character
+                .draw("idle", ms, spinning, 1.0)
+                .expect("draws")
+                .index
+        };
         assert_eq!(index(0), 0, "the member's own first frame");
         assert_eq!(index(1000), 1, "a second in, its second frame");
         assert_eq!(index(2000), 0, "and round again rather than stopping");
 
         // Asked for directly, a variant is an ordinary Animation.
         assert_eq!(
-            character.draw("spin", 0, 0).expect("draws").animation,
+            character.draw("spin", 0, 0, 1.0).expect("draws").animation,
             "spin"
         );
     }
@@ -1207,7 +1282,7 @@ mod tests {
     fn climb_is_optional_and_falls_back_to_walk() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
         assert_eq!(
-            character.draw("climb", 0, 0).expect("draws").animation,
+            character.draw("climb", 0, 0, 1.0).expect("draws").animation,
             "walk"
         );
 
@@ -1217,12 +1292,12 @@ mod tests {
         );
         let character = load_manifest(&manifest).expect("loads");
         assert_eq!(
-            character.draw("climb", 0, 0).expect("draws").animation,
+            character.draw("climb", 0, 0, 1.0).expect("draws").animation,
             "climb"
         );
 
         // The fallback list is closed: an unknown name still draws nothing.
-        assert!(character.draw("saunter", 0, 0).is_none());
+        assert!(character.draw("saunter", 0, 0, 1.0).is_none());
     }
 
     /// The same contract for the other optional Animation. A package that
@@ -1232,7 +1307,7 @@ mod tests {
     fn grab_is_optional_and_falls_back_to_fall() {
         let character = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
         assert_eq!(
-            character.draw("grab", 0, 0).expect("draws").animation,
+            character.draw("grab", 0, 0, 1.0).expect("draws").animation,
             "fall"
         );
 
@@ -1242,8 +1317,51 @@ mod tests {
         );
         let character = load_manifest(&manifest).expect("loads");
         assert_eq!(
-            character.draw("grab", 0, 0).expect("draws").animation,
+            character.draw("grab", 0, 0, 1.0).expect("draws").animation,
             "grab"
+        );
+    }
+
+    /// #345: the art is authored facing right and the renderer mirrors it for
+    /// leftward travel, which puts an asymmetric mark — Buddy Bot's cheek LED
+    /// — on the wrong cheek. A package that draws its own left strip gets it
+    /// drawn as authored instead, and one that does not walks exactly as every
+    /// package did before.
+    #[test]
+    fn a_left_strip_replaces_the_mirror_for_the_package_that_draws_one() {
+        let mirroring = load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("loads");
+        let left = mirroring.draw("walk", 0, 0, -1.0).expect("draws");
+        assert_eq!(left.animation, "walk");
+        assert!(
+            left.mirrored,
+            "with no left strip, leftward walk still mirrors"
+        );
+
+        let manifest = format!(
+            "{}[animations.walk-left]\nframes = [\"wave-0.png\"]\nleft_of = \"walk\"\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        );
+        let asymmetric = load_manifest(&manifest).expect("loads");
+
+        let left = asymmetric.draw("walk", 0, 0, -1.0).expect("draws");
+        assert_eq!(left.animation, "walk-left");
+        assert!(!left.mirrored, "the strip is already facing left");
+
+        let right = asymmetric.draw("walk", 0, 0, 1.0).expect("draws");
+        assert_eq!(right.animation, "walk");
+        assert!(
+            !right.mirrored,
+            "rightward travel is the authored strip either way"
+        );
+
+        // climb falls back to walk, so it reaches the strip by the same door.
+        // chase does too: the Engine plays it as the walk Animation.
+        assert_eq!(
+            asymmetric
+                .draw("climb", 0, 0, -1.0)
+                .expect("draws")
+                .animation,
+            "walk-left"
         );
     }
 
