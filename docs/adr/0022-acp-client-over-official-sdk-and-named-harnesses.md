@@ -19,28 +19,22 @@ tools, or maintain a focused list of verified harnesses with an escape hatch.
 ## Decision
 
 ai-buddy is an ACP client built on `agent-client-protocol` 2.x, the SDK Zed
-ships and the protocol's own repository maintains. The wire layer lives in
-`src-tauri/src/acp_wire.rs` and nowhere else. No SDK type crosses out of that
-file.
+ships and the protocol's own repository maintains.
 
-The product layer (`src-tauri/src/harness.rs`) owns the policy around the wire:
-launch table, spawn/respawn logic and backoff, authentication gate, session
-file, and what reaches the Action Log and Chat surface.
+The product layer owns the policy around the wire: launch table, spawn/respawn
+logic and backoff, authentication gate, session file, and what reaches the
+Action Log and Chat surface.
 
-The wire runs on one thread per spawned Harness in a current-thread tokio
-runtime. The frame loop never sees a future (ADR-0004).
+The wire is isolated so the frame loop never sees futures (ADR-0004).
 
-`AI_BUDDY_HARNESS` picks the Harness: `claude`, `hermes`, `opencode`, or a
-custom command line. The launch table names three harnesses with verified
-first-party ACP support and provides an escape hatch for any other command.
-Harnesses earn a named row once a turn has been verified against them.
+The launch table names three harnesses with verified first-party ACP support
+(`claude`, `hermes`, `opencode`) and provides an escape hatch for any custom
+command. Harnesses earn a named row once a turn has been verified against them.
 
 One session per app lifetime, persisted across restarts when the Harness
 supports `loadSession`.
 
 ## Consequences
-
-Reversing the SDK choice rewrites `acp_wire.rs` and nothing beside it.
 
 The Harness is the Completer for every Instance, so ADR-0008's one session
 holds across buddies and across wakes.
@@ -57,6 +51,5 @@ default — the Chat surface owns permissions.
 ## Supersedes
 
 This decision supersedes [ADR-0017](./0017-acp-client-over-the-official-sdk-and-supported-harnesses.md),
-which recorded the same choice alongside file paths, tokio feature lists, MSRV
-narratives, verification diaries, and probe script details that belong
+which recorded the same choice alongside implementation detail that belongs
 elsewhere.

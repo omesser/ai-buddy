@@ -33,13 +33,10 @@ We own the chat surface and the permission prompt. Forwarding the Harness's
 `session/request_permission` is not a second confirmation — ADR-0003's rule is
 that ai-buddy never *answers* it, and never adds one of its own.
 
-The Harness authenticates itself and ai-buddy holds no credential for it. All
-five keep their credential in a home-relative file or the OS keychain and read
-it at process start. A CLI the user has already logged in to hands its login to
-a subprocess we spawn as the same user. Anthropic permits that shape by name
-and forbids the alternative: an end user may sign in to the unmodified Claude
-Code binary with their own subscription, and a third-party developer may not
-collect, store, or intermediate Claude.ai credentials.
+The Harness authenticates itself and ai-buddy holds no credential for it.
+Harnesses keep their credential in a home-relative file or the OS keychain.
+A CLI the user has already logged in to hands its login to a subprocess we
+spawn as the same user.
 
 Attachment is opt-in. ai-buddy spawns and holds a full agent process for as
 long as the app runs. Static weights and the HTTP Completer stay the path for
