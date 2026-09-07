@@ -3234,7 +3234,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Production change that would fail this: Endpoint::complete leaving
+    /// Plan-seam change that would fail this: `note_http_call` leaving
     /// WakeRequest unread because "the Action Log belongs to the Harness".
     #[test]
     fn an_http_call_writes_prompt_and_turn() {
@@ -3259,8 +3259,8 @@ pub(crate) mod tests {
         assert_eq!(turn["text"], "the desktop floor");
     }
 
-    /// Production change that would fail this: a failed HTTP wake leaving no
-    /// turn line, so a later parsed/failed cannot be joined to anything.
+    /// Plan-seam change that would fail this: `note_http_call` writing no
+    /// turn line on a failed HTTP wake, so a later parsed/failed cannot be joined.
     #[test]
     fn a_failed_http_call_writes_the_error() {
         let dir = TempDir::new("http-session-err");

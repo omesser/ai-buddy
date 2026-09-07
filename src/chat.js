@@ -75,10 +75,10 @@ function add(node) {
   return node;
 }
 
-function when() {
-  const at = new Date();
-  const stamp = stampWhen(at, previousAt);
-  previousAt = at;
+function when(at) {
+  const instant = typeof at === "number" ? new Date(at) : new Date();
+  const stamp = stampWhen(instant, previousAt);
+  previousAt = instant;
   const node = el("when", "time");
   node.dateTime = stamp.datetime;
   node.title = stamp.title;
@@ -86,12 +86,12 @@ function when() {
   return node;
 }
 
-function said(who, text, cls) {
+function said(who, text, cls, at) {
   const row = el(`row ${cls}`);
   const cluster = el("who");
   const label = el("who-label");
   label.textContent = who;
-  cluster.append(label, when());
+  cluster.append(label, when(at));
   const body = el("said");
   body.textContent = text;
   row.append(cluster, body);
@@ -297,7 +297,7 @@ async function start() {
     "chat",
     ({ payload }) => {
       if (payload.you) {
-        said("You", payload.said ?? "", "you");
+        said("You", payload.said ?? "", "you", payload.at);
         return;
       }
       if (payload.busy) {
@@ -319,14 +319,14 @@ async function start() {
         // waiting turn for the same reason: that caret is on a question this
         // did not answer. The Shell writes the words, out of the vocabulary
         // the status bar draws below.
-        said(`${them} · ${payload.reacting_to}`, payload.said, "them");
+        said(`${them} · ${payload.reacting_to}`, payload.said, "them", payload.at);
         return;
       }
       const turn = waiting.shift();
       if (!turn) {
         // An answer with no question in this window: the Instance was asked
         // somewhere else, or this window opened after the line was sent.
-        said(them, payload.said ?? "", "them");
+        said(them, payload.said ?? "", "them", payload.at);
         return;
       }
       settled(turn.them);

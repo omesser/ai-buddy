@@ -1062,6 +1062,10 @@ struct ChatReply {
     /// the webview itself, so a true here on that path would duplicate it.
     #[serde(default)]
     you: bool,
+    /// Milliseconds since the epoch when the line was said. `None` on a live
+    /// emit so the surface stamps wall-clock now; replay fills this from
+    /// `Turn.at` so a line said before Chat opened keeps that moment.
+    at: Option<u64>,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
@@ -1121,8 +1125,9 @@ fn chat_send(instance: String, text: String, chat: tauri::State<'_, ChatChannel>
 
 /// A Chat surface reporting that it is listening.
 ///
-/// Where an unsettled permission request reaches a window that opened after it
-/// was asked — this window may be the one the request opened.
+/// Events only reach windows that existed, so this session's turns wait here
+/// too — Speech as well as permission asks that arrived before this window
+/// existed. This window may also be the one a permission request opened.
 #[tauri::command]
 fn chat_ready(
     instance: String,
@@ -1140,6 +1145,12 @@ fn chat_ready(
                     busy: false,
                     reacting_to: turn.reacting_to,
                     you: turn.you,
+                    at: Some(
+                        turn.at
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64,
+                    ),
                 },
             );
         }

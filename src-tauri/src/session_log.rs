@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use std::time::SystemTime;
 
 use tauri::Manager;
 
@@ -13,6 +14,8 @@ pub struct Turn {
     pub you: bool,
     pub said: Option<String>,
     pub reacting_to: Option<String>,
+    /// When the line was said, not when Chat later opened. Replay stamps from this.
+    pub at: SystemTime,
 }
 
 #[derive(Default)]
@@ -25,7 +28,7 @@ impl Log {
         Self::default()
     }
 
-    pub fn remember_you(&mut self, instance: &str, text: impl Into<String>) {
+    pub fn remember_you(&mut self, instance: &str, text: impl Into<String>, at: SystemTime) {
         self.turns
             .entry(instance.to_string())
             .or_default()
@@ -33,6 +36,7 @@ impl Log {
                 you: true,
                 said: Some(text.into()),
                 reacting_to: None,
+                at,
             });
     }
 
@@ -42,6 +46,7 @@ impl Log {
         instance: &str,
         said: Option<String>,
         reacting_to: Option<String>,
+        at: SystemTime,
     ) {
         let Some(said) = said else {
             return;
@@ -53,6 +58,7 @@ impl Log {
                 you: false,
                 said: Some(said),
                 reacting_to,
+                at,
             });
     }
 
@@ -73,8 +79,13 @@ fn with_log(app: &tauri::AppHandle, f: impl FnOnce(&mut Log)) {
     }
 }
 
-pub fn remember_you(app: &tauri::AppHandle, instance: &str, text: impl Into<String>) {
-    with_log(app, |log| log.remember_you(instance, text));
+pub fn remember_you(
+    app: &tauri::AppHandle,
+    instance: &str,
+    text: impl Into<String>,
+    at: SystemTime,
+) {
+    with_log(app, |log| log.remember_you(instance, text, at));
 }
 
 pub fn remember_them(
@@ -82,8 +93,11 @@ pub fn remember_them(
     instance: &str,
     said: Option<String>,
     reacting_to: Option<String>,
+    at: SystemTime,
 ) {
-    with_log(app, |log| log.remember_them(instance, said, reacting_to));
+    with_log(app, |log| {
+        log.remember_them(instance, said, reacting_to, at)
+    });
 }
 
 pub fn replay(app: &tauri::AppHandle, instance: &str) -> Vec<Turn> {
@@ -99,6 +113,7 @@ pub fn clear(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
 
     /// Production change that would fail this: dropping a spoken line because
     /// no Chat surface was listening. ADR-0010 puts every Speech in that log.
@@ -109,6 +124,7 @@ mod tests {
             "buddy-1",
             Some("hello from the bubble".into()),
             Some("when poked".into()),
+            UNIX_EPOCH,
         );
 
         let turns = log.replay("buddy-1");
@@ -123,8 +139,18 @@ mod tests {
     #[test]
     fn replay_is_the_instance_that_said_it() {
         let mut log = Log::new();
-        log.remember_them("a", Some("from A".into()), Some("unprompted".into()));
-        log.remember_them("b", Some("from B".into()), Some("when summoned".into()));
+        log.remember_them(
+            "a",
+            Some("from A".into()),
+            Some("unprompted".into()),
+            UNIX_EPOCH,
+        );
+        log.remember_them(
+            "b",
+            Some("from B".into()),
+            Some("when summoned".into()),
+            UNIX_EPOCH,
+        );
 
         let a = log.replay("a");
         assert_eq!(a.len(), 1);
@@ -137,7 +163,7 @@ mod tests {
     #[test]
     fn a_wake_with_no_speech_is_not_held() {
         let mut log = Log::new();
-        log.remember_them("buddy-1", None, None);
+        log.remember_them("buddy-1", None, None, UNIX_EPOCH);
         assert!(log.replay("buddy-1").is_empty());
     }
 
@@ -150,9 +176,15 @@ mod tests {
             "buddy-1",
             Some("unprompted hi".into()),
             Some("unprompted".into()),
+            UNIX_EPOCH,
         );
-        log.remember_you("buddy-1", "what are you standing on?");
-        log.remember_them("buddy-1", Some("the desktop floor".into()), None);
+        log.remember_you("buddy-1", "what are you standing on?", UNIX_EPOCH);
+        log.remember_them(
+            "buddy-1",
+            Some("the desktop floor".into()),
+            None,
+            UNIX_EPOCH,
+        );
 
         let turns = log.replay("buddy-1");
         assert_eq!(turns.len(), 3);
@@ -168,8 +200,27 @@ mod tests {
     #[test]
     fn retarget_forgets_the_old_session() {
         let mut log = Log::new();
-        log.remember_you("buddy-1", "old session");
+        log.remember_you("buddy-1", "old session", UNIX_EPOCH);
         log.clear();
         assert!(log.replay("buddy-1").is_empty());
+    }
+
+    /// Production change that would fail this: stamping a replayed line with
+    /// Chat-open time instead of the instant it was said (ADR-0010: one conversation).
+    #[test]
+    fn replay_keeps_the_moment_the_line_was_said() {
+        let mut log = Log::new();
+        let first = UNIX_EPOCH + Duration::from_secs(1_000);
+        let second = first + Duration::from_secs(20 * 60);
+        log.remember_you("buddy-1", "typed twenty minutes ago", first);
+        log.remember_them("buddy-1", Some("answered later".into()), None, second);
+
+        let turns = log.replay("buddy-1");
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].at, first);
+        assert_eq!(turns[1].at, second);
+        assert_ne!(turns[0].at, turns[1].at);
+        assert_ne!(turns[0].at, SystemTime::now());
+        assert_ne!(turns[1].at, SystemTime::now());
     }
 }

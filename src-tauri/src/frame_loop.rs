@@ -558,6 +558,7 @@ pub(crate) fn run_frame_loop(
                             busy: false,
                             reacting_to: None,
                             you: false,
+                            at: None,
                         },
                     );
                     continue;
@@ -582,6 +583,7 @@ pub(crate) fn run_frame_loop(
                             busy: false,
                             reacting_to: None,
                             you: false,
+                            at: None,
                         },
                     );
                     continue;
@@ -602,11 +604,12 @@ pub(crate) fn run_frame_loop(
                             busy: true,
                             reacting_to: None,
                             you: false,
+                            at: None,
                         },
                     );
                     continue;
                 }
-                session_log::remember_you(&app, &live.id, &line.text);
+                session_log::remember_you(&app, &live.id, &line.text, SystemTime::now());
                 live.addressed = true;
                 live.happened = Happened::Chat(line.text);
             }
@@ -1064,6 +1067,7 @@ pub(crate) fn run_frame_loop(
                         &live.id,
                         frame.dialogue.clone(),
                         reacting_to.clone(),
+                        SystemTime::now(),
                     );
                     let _ = app.emit_to(
                         chat_label(&live.id),
@@ -1073,6 +1077,7 @@ pub(crate) fn run_frame_loop(
                             busy: false,
                             reacting_to,
                             you: false,
+                            at: None,
                         },
                     );
                 }
@@ -1147,6 +1152,7 @@ pub(crate) fn run_frame_loop(
                                         busy: false,
                                         reacting_to: None,
                                         you: false,
+                                        at: None,
                                     },
                                 );
                             }
