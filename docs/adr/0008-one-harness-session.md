@@ -51,35 +51,12 @@ say they are read at the next launch. Live recovery, if it is ever wanted,
 belongs in re-opening the attachment (#469's third option), not in swapping
 the mind out from under it.
 
-**The three next-launch clauses above are amended by #500**, which took up
-#469's third option. What follows is what shipped.
-
-What #500 shipped is the recovery #469 left to the attachment rather than to
-the mind. Two retries, neither of which can reach the HTTP Completer:
-
-- **The child.** `Session::attach` respawns on the backoff `charge_loss`
-  paces — five seconds doubling to a five-minute cap, cleared by any wake the
-  child answers — so a Harness that is installed, signed in, or simply
-  restarted is picked up on the next wake. There is no give-up: giving up
-  could only mean Static, which is where the wake already goes, or the second
-  mind. So it retries for as long as the row names it, at a cost of one spawn
-  every five minutes.
-- **The attachment.** The Completer source row moves the process global now
-  instead of at the next launch. Off, a different Harness, and a corrected
-  custom command line all shut the old Session down and open the one the row
-  names, under the lock `harness::attached` reads, so no wake falls into the
-  gap. Only a row that names *no* Harness lands on the HTTP Completer:
-  Off, or a Custom row whose command line has been blanked. Both are the user
-  choosing, never a death.
-
-Aliveness is not an input to either. That is what keeps the recovery inside
-this decision: a dead child is retried, never traded for a second mind.
-
 Choosing Off in Settings is the user naming the HTTP Completer. That drop
 happens in this process: the handle is shut down and Retarget installs the
 HTTP Completer. It is not a dead session falling through unasked. Switching
-to a different Harness still waits for the next launch — **also amended by
-#500**.
+to a different Harness does the same, in this process — the third option
+above, taken up in #500. Aliveness is still not an input: a dead child is
+retried, never traded for a second mind.
 
 Reversing this means living with split-brain, or rewriting how #15–#17
 talk to a model.
