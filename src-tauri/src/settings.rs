@@ -579,11 +579,10 @@ impl DirectorDraft<'_> {
     /// Both windows build the tab's fields empty and fill them on the first
     /// redraw, so a draft read before that fill holds `""` for every row and
     /// would otherwise stage the whole tab on open — Apply then wrote the
-    /// saved URL and model away (#530). Same rule `key_was_typed` states for
-    /// the secure field, so clearing a row back to its default is not a
-    /// gesture the tab offers; retype the value instead.
+    /// saved URL and model away (#530). The cost is that clearing a row back
+    /// to its default is not a gesture the tab offers; retype the value.
     fn edit<'t>(&self, id: &str, text: &'t str, live: &str) -> Option<&'t str> {
-        (!text.is_empty() && !self.description.frozen(id) && text != live).then_some(text)
+        (!text.trim().is_empty() && !self.description.frozen(id) && text != live).then_some(text)
     }
 
     /// What the key field means: the typed key, or the empty string for a
@@ -2403,6 +2402,25 @@ mod tests {
                 !draft.staged(&view).any(),
                 "and a redraw has to fill every field from live state"
             );
+        });
+    }
+
+    /// Whitespace is blank: a space is no more an edit than an empty field,
+    /// and letting one through would write a base URL nothing can dial.
+    #[test]
+    fn a_field_holding_only_whitespace_is_untouched() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: "  ".into(),
+                model: " ".into(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert!(draft.patch(&view).is_none(), "a space is not a typed edit");
+            assert!(!draft.staged(&view).any());
         });
     }
 
