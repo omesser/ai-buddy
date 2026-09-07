@@ -45,7 +45,7 @@ released, so no version is derived from it; the value is legibility.
 |---|---|
 | `feat` | A new capability |
 | `fix` | A repair to one that misbehaves |
-| `docs` | Documentation only, including `CONTEXT.md`, `DESIGN.md` and `docs/SPEC.md` |
+| `docs` | Documentation only, including `CONTEXT.md`, `DESIGN.md` and `docs/SPEC.md` (see `docs/agents/docs.md` for where writing belongs) |
 | `test` | Tests and the verification harness, with no change to what ships |
 | `refactor` | A change that keeps behavior and alters structure |
 | `perf` | A change made for speed or footprint |
