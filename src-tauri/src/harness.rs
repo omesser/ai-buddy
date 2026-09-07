@@ -58,8 +58,9 @@ pub struct Launch {
 ///
 /// Claude Code goes through Zed's adapter because it has no first-party ACP
 /// mode; `hermes acp` and `opencode acp` are first-party. Anything else is a
-/// command line of the user's own. Pi, Grok Build, Codex, Gemini and Copilot
-/// are deferred (ADR-0017).
+/// command line of the user's own, which is how Grok Build, Copilot CLI and
+/// Gemini CLI attach until they are smoked; Pi and Codex are deferred
+/// (ADR-0017).
 pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
     let (name, argv): (&str, Vec<&str>) = match value {
