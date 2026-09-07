@@ -62,23 +62,14 @@ repos:
       - id: shellcheck
 
     # PowerShell linting
-  - repo: local
+  - repo: https://github.com/ophiosdev/pre-commit-psscriptanalyzer.git
+    rev: v2.0.0
     hooks:
-      - id: check-powershell-ascii
-        name: PowerShell ASCII-only
-        entry: scripts/hooks/check-powershell-ascii.sh
-        language: system
-        files: \.ps1$
-        exclude: ^test-fixtures/powershell/
-        description: Reject non-ASCII bytes in PowerShell scripts to prevent encoding issues
-
-      - id: check-powershell-parse
-        name: PowerShell parse check
-        entry: scripts/hooks/check-powershell-parse.sh
-        language: system
-        files: \.ps1$
-        exclude: ^test-fixtures/powershell/
-        description: Validate PowerShell syntax using Parser::ParseFile (requires pwsh)
+      - id: psscriptanalyzer-check
+        # Default excludes PSUseBOMForUnicodeEncodedFile; we keep it to catch
+        # encoding issues like the em-dash footgun in #392. Removed -Fix to
+        # keep the hook as check/lint only without unexpected file rewrites.
+        args: []
 
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
