@@ -20,20 +20,20 @@ ai-buddy writes two files to the data directory (`~/Library/Application Support/
 
 ### Action Log Growth Policy
 
-The Action Log uses hand-rolled rotation logic (not a crate). K=10 retention: 10 rotated files + 1 current = 11 files total.
+The Action Log uses the [`file-rotate`](https://crates.io/crates/file-rotate) crate (0.8.x) for automatic rotation. K=10 retention: 10 rotated files + 1 current = 11 files total.
 
 **Rotation policy:**
-- Each file is rotated when it exceeds 2 MB
+- Each file is rotated when a write pushes it past 2 MB (`ContentLimit::BytesSurpassed`)
 - Files are named: `action-log.jsonl` (current), `action-log.jsonl.1`, ..., `action-log.jsonl.10`
-- When the current file exceeds 2 MB, it becomes `.1`, and older files cascade (`.1` → `.2`, ..., `.9` → `.10`)
+- When the current file exceeds 2 MB, file-rotate moves it to `.1`, and older files cascade automatically
 - The oldest (`.10`) is dropped when it would become `.11`
 - **Disk ceiling: ~22 MB** (11 files × 2 MB)
 
-**Single-writer assumption:** Hand-rolled rotation assumes no other process writes to these log files. Concurrent writes from multiple processes are not supported.
+**Single-writer assumption:** file-rotate and this module assume no other process writes to these log files. Concurrent writes from multiple processes are not supported.
 
 **Drop-on-error contract:** Rotation and write failures are dropped silently (rate-limited to stderr max once per 60s). The log explains the buddy after the fact and must never block a Director turn.
 
-**Implementation choice:** Hand-rolled over `file-rotate` crate. file-rotate 0.8.x has file corruption issues when FileRotate instances are cached/reused. Hand-rolled logic is simple (rename cascade), testable, and avoids the corruption.
+**Why BytesSurpassed:** `ContentLimit::Bytes(n)` can split a single write mid-string, breaking JSONL. `BytesSurpassed(n)` rotates *after* a write that pushes past the limit, keeping lines whole. JSON is pre-formatted with `serde_json::to_string` before writing to avoid buffering issues with serde_json's Display impl.
 
 **K=10 rationale:** Light retention (weeks of regular use, days of heavy use) without micro-hygiene that drops recent history too quickly. ~10k typical events per file at 2 MB means months of context before the oldest file is dropped.
 

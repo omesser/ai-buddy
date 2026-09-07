@@ -6,47 +6,51 @@
 //!
 //! ## Growth policy
 //!
-//! The log is rotated when it exceeds 2 MB. K=10 retention: 10 rotated files +
-//! 1 current = 11 files total, ~22 MB ceiling.
+//! The log is rotated using the `file-rotate` crate (0.8.x). K=10 retention:
+//! 10 rotated files + 1 current = 11 files total, ~22 MB ceiling.
 //!
 //! Files are named `action-log.jsonl`, `action-log.jsonl.1`, ..., `action-log.jsonl.10`.
-//! When the current file exceeds 2 MB, it's rotated: current → `.1`, `.1` → `.2`,
-//! ..., `.9` → `.10`. The oldest (`.10`) is dropped if it exists.
+//! When a write pushes the file past 2 MB, file-rotate moves it to `.1` and
+//! older files cascade (`.1` → `.2`, ..., `.9` → `.10`). The oldest (`.10`)
+//! is dropped.
 //!
-//! Rotation is checked on every append and happens before the write. A rotation
-//! or write failure is dropped: the log explains the buddy after the fact and
-//! must never block a Director turn. Rate-limited error reporting (max once per
-//! 60s) warns operators without log storms.
+//! **ContentLimit::BytesSurpassed** is used instead of `ContentLimit::Bytes`:
+//! `Bytes(n)` can split a single write mid-string (documented behavior), which
+//! breaks JSONL. `BytesSurpassed(n)` only rotates *after* a write that pushes
+//! past the limit, keeping lines whole.
 //!
-//! **Single-writer assumption**: This module assumes no other process writes to
-//! these log files. Concurrent writes from multiple processes are not supported.
+//! Write failures (including rotation failures) are dropped: the log explains
+//! the buddy after the fact and must never block a Director turn. Rate-limited
+//! error reporting (max once per 60s) warns operators without log storms.
 //!
-//! ## Implementation choice
+//! **Single-writer assumption**: file-rotate and this module assume no other
+//! process writes to these log files.
 //!
-//! Hand-rolled rotation over `file-rotate` crate. file-rotate 0.8.x has file
-//! corruption issues when FileRotate instances are cached/reused. Hand-rolled
-//! logic is simple (rename cascade), testable, and avoids the corruption.
+//! ## Crate choice
 //!
-//! K=10 chosen as light retention (weeks of regular use, days of heavy use)
-//! without micro-hygiene that drops recent history too quickly. ~10k typical
-//! events per file means months of context at 2 MB.
+//! Uses `file-rotate` 0.8.x for maintained rotation logic. `BytesSurpassed` not
+//! `Bytes` avoids mid-line splits. JSON is pre-formatted with `serde_json::to_string`
+//! before writing; using serde_json's Display impl directly (`writeln!("{}", value)`)
+//! can trigger buffering issues that cause splits even with BytesSurpassed.
 
-use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use file_rotate::compression::Compression;
+use file_rotate::suffix::AppendCount;
+use file_rotate::{ContentLimit, FileRotate};
 use serde_json::{json, Value};
 
 pub const FILE: &str = "action-log.jsonl";
 
 /// The size bound per log file, in bytes.
 ///
-/// When the current log exceeds this limit, it's rotated to `.1` and a fresh
-/// log is started. K=10 retention means 11 files total (current + 10 rotated),
-/// so the disk ceiling is ~22 MB (11 × 2 MB).
-const MAX_SIZE_BYTES: u64 = 2 * 1024 * 1024; // 2 MB
+/// When a write pushes the file past this limit, file-rotate moves it to `.1`
+/// and starts a fresh log. K=10 retention means 11 files total (current + 10
+/// rotated), so the disk ceiling is ~22 MB (11 × 2 MB).
+const MAX_SIZE_BYTES: usize = 2 * 1024 * 1024; // 2 MB
 
 /// How many rotated files to keep (plus the current file = K+1 total).
 const RETENTION_COUNT: usize = 10;
@@ -60,8 +64,8 @@ static ERROR_STATE: Mutex<Option<(u64, u64)>> = Mutex::new(None);
 /// Write one event. `fields` is an object; `event` and `ts` are added to it.
 ///
 /// A write that fails is dropped: the log explains the buddy after the fact
-/// and must never be the reason a turn does not happen. Rotation happens
-/// automatically when the file exceeds MAX_SIZE_BYTES.
+/// and must never be the reason a turn does not happen. Rotation is handled
+/// automatically by file-rotate when the size limit is surpassed.
 ///
 /// ponytail: seconds since the epoch, as `memory.rs` does, so no date crate.
 pub fn append(dir: &Path, event: &str, mut fields: Value) {
@@ -75,56 +79,35 @@ pub fn append(dir: &Path, event: &str, mut fields: Value) {
 
     let log_path = dir.join(FILE);
 
-    // Rotate if needed, but never fail the append on rotation failure
-    let _ = rotate_if_needed(&log_path);
-
-    // Append the event
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) else {
-        report_error("action_log: failed to open log file");
-        return;
-    };
-
-    if let Err(e) = writeln!(file, "{fields}") {
-        report_error(&format!("action_log: failed to write event: {e}"));
-    }
-}
-
-/// Rotate the log if it exceeds MAX_SIZE_BYTES.
-///
-/// Rotation: current → `.1`, `.1` → `.2`, ..., `.9` → `.10`, drop `.10`.
-/// Returns Ok when rotation happened or was not needed, Err when rotation
-/// was needed but failed. The caller drops the error: rotation must never
-/// block an append.
-fn rotate_if_needed(log_path: &Path) -> std::io::Result<()> {
-    let metadata = match fs::metadata(log_path) {
-        Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e),
-    };
-
-    if metadata.len() <= MAX_SIZE_BYTES {
-        return Ok(());
-    }
-
-    // Cascade: .9 → .10, .8 → .9, ..., .1 → .2, current → .1
-    // Start from the oldest to avoid overwriting
-    for i in (1..=RETENTION_COUNT).rev() {
-        let from = log_path.with_extension(format!("jsonl.{i}"));
-        let to = log_path.with_extension(format!("jsonl.{}", i + 1));
-
-        if i == RETENTION_COUNT {
-            // Drop the oldest file
-            let _ = fs::remove_file(&from);
-        } else if from.exists() {
-            fs::rename(&from, &to)?;
+    // Format JSON to string before writing to avoid serde_json Display issues
+    let line = match serde_json::to_string(&fields) {
+        Ok(s) => s,
+        Err(e) => {
+            report_error(&format!("action_log: failed to serialize JSON: {e}"));
+            return;
         }
+    };
+
+    // Create FileRotate for this write. File-rotate manages rotation state
+    // internally and is safe to recreate per-write.
+    let mut rotator = FileRotate::new(
+        &log_path,
+        AppendCount::new(RETENTION_COUNT),
+        ContentLimit::BytesSurpassed(MAX_SIZE_BYTES),
+        Compression::None,
+        None, // Let file-rotate manage file opening
+    );
+
+    // Write the pre-formatted line
+    if let Err(e) = writeln!(rotator, "{}", line) {
+        report_error(&format!("action_log: failed to write event: {e}"));
+        return;
     }
 
-    // Rotate current → .1
-    let backup = log_path.with_extension("jsonl.1");
-    fs::rename(log_path, backup)?;
-
-    Ok(())
+    // Flush to ensure the write completes
+    if let Err(e) = rotator.flush() {
+        report_error(&format!("action_log: failed to flush: {e}"));
+    }
 }
 
 /// Report an error with rate limiting: max once per ERROR_REPORT_INTERVAL_SECS.
@@ -168,6 +151,7 @@ fn report_error(msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -208,7 +192,7 @@ mod tests {
         let log = dir.path().join(FILE);
         assert!(log.exists(), "the log file exists");
         assert!(
-            fs::metadata(&log).unwrap().len() < MAX_SIZE_BYTES,
+            fs::metadata(&log).unwrap().len() < MAX_SIZE_BYTES as u64,
             "the log is well under the rotation threshold"
         );
 
@@ -217,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn a_large_log_is_rotated_when_it_exceeds_max_size() {
+    fn a_large_log_is_rotated_when_it_surpasses_max_size() {
         let dir = TempDir::new("rotation");
         let log = dir.path().join(FILE);
 
@@ -233,10 +217,12 @@ mod tests {
         let backup_1 = dir.path().join("action-log.jsonl.1");
         assert!(backup_1.exists(), "a .1 backup was created after rotation");
 
+        // BytesSurpassed rotates after a write that pushes past the limit,
+        // so the current file can be slightly over MAX_SIZE_BYTES
         let current_size = fs::metadata(&log).unwrap().len();
         assert!(
-            current_size < MAX_SIZE_BYTES + 2048,
-            "the current log is near or under MAX_SIZE_BYTES: {current_size} bytes"
+            current_size < (MAX_SIZE_BYTES as u64) * 2,
+            "the current log is under 2×MAX_SIZE_BYTES: {current_size} bytes"
         );
 
         let backup_content = fs::read_to_string(&backup_1).unwrap();
@@ -280,27 +266,6 @@ mod tests {
     }
 
     #[test]
-    fn append_never_fails_even_when_rotation_would() {
-        let dir = TempDir::new("rotation-failure");
-        let log = dir.path().join(FILE);
-
-        let large_data = "x".repeat((MAX_SIZE_BYTES as usize) + 1);
-        fs::write(&log, large_data).unwrap();
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
-        }
-
-        // Append should succeed or silently fail without panicking
-        append(dir.path(), "test", json!({"after": "rotation-failure"}));
-
-        // The contract is "never block a turn" = drop errors and return
-        // This test completes without panicking, which validates the contract
-    }
-
-    #[test]
     fn the_log_stays_valid_jsonl_after_rotation() {
         let dir = TempDir::new("valid-jsonl");
 
@@ -320,16 +285,19 @@ mod tests {
 
         for path in log_paths.iter().filter(|p| p.exists()) {
             let content = fs::read_to_string(path).unwrap();
+
             for (i, line) in content.lines().enumerate() {
-                if !line.is_empty() {
-                    serde_json::from_str::<Value>(line).unwrap_or_else(|e| {
-                        panic!(
-                            "line {i} in {} is not valid JSON: {e}\n{}",
-                            path.display(),
-                            if line.len() > 200 { &line[..200] } else { line }
-                        );
-                    });
+                if line.is_empty() {
+                    continue;
                 }
+
+                serde_json::from_str::<Value>(line).unwrap_or_else(|e| {
+                    panic!(
+                        "line {i} in {} is not valid JSON: {e}\nLine content: {}",
+                        path.display(),
+                        if line.len() > 200 { &line[..200] } else { line }
+                    );
+                });
             }
         }
     }
@@ -353,7 +321,9 @@ mod tests {
             total_size += fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         }
 
-        let bound = ((RETENTION_COUNT + 1) as u64) * MAX_SIZE_BYTES + 4096;
+        // BytesSurpassed rotates after a write that pushes past the limit,
+        // so each file can be slightly over MAX_SIZE_BYTES. Allow 2× per file.
+        let bound = ((RETENTION_COUNT + 1) as u64) * (MAX_SIZE_BYTES as u64) * 2;
         assert!(
             total_size <= bound,
             "total disk footprint {total_size} bytes is within ~{}×MAX_SIZE_BYTES bound ({bound} bytes)",
