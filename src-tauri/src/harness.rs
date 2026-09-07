@@ -82,8 +82,14 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
     })
 }
 
-pub fn from_env() -> Option<Launch> {
-    launch(std::env::var(VAR).ok().as_deref())
+/// The exported variable, else the Completer source row Settings saved.
+///
+/// The variable outranks the file the way it does on every other Director row
+/// (#272, #436). Through `model::env_override`, so a `$VAR` that expanded to
+/// nothing falls through to the row rather than reading as Off.
+pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
+    let exported = crate::model::env_override(VAR);
+    launch(exported.as_deref().or(saved))
 }
 
 impl Launch {
@@ -510,16 +516,19 @@ fn mcp_server() -> Option<PathBuf> {
 
 static ATTACHED: OnceLock<Option<Arc<Session>>> = OnceLock::new();
 
-/// Read `AI_BUDDY_HARNESS` once and hold the Session for the app's lifetime.
+/// Read the source once — the variable, else `saved` from Settings — and hold
+/// the Session for the app's lifetime.
 ///
 /// A process global rather than a field threaded through `DirectorSettings`:
-/// the variable is env-only, the session is one per app (ADR-0008), and a
-/// Retarget from Settings rebuilds `DirectorSettings` from scratch, which
-/// would drop a field.
-pub fn attach(forward: Forward) -> Option<Arc<Session>> {
+/// the session is one per app (ADR-0008), and a Retarget from Settings
+/// rebuilds `DirectorSettings` from scratch, which would drop a field. That
+/// is also why a changed source row takes effect on the next launch and says
+/// so: nothing here can be re-initialised under a running turn, and Retarget
+/// keeps handing `completer_from` the Session that is already up (#436).
+pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
     ATTACHED
         .get_or_init(|| {
-            from_env().map(|launch| {
+            from_settings(saved.as_deref()).map(|launch| {
                 Arc::new(Session::new(
                     launch,
                     ai_buddy_core::memory::data_dir(),
