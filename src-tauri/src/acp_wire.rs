@@ -745,8 +745,8 @@ mod windows_job {
     use std::sync::Mutex;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, JobObjectExtendedLimitInformation, SetInformationJobObject,
-        TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{
@@ -761,19 +761,23 @@ mod windows_job {
     /// Job Objects by child PID. Wrapped in SafeHandle for Send safety.
     static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
 
-    // CreateJobObjectA binding - windows-sys 0.59 doesn't export this directly.
-    extern "system" {
-        fn CreateJobObjectA(lpJobAttributes: *const std::ffi::c_void, lpName: *const u8) -> HANDLE;
-    }
-
     /// Create a Job Object with kill-on-close, assign the child to it, and
     /// store it for later termination. Returns true if the job was created
     /// and assigned successfully.
+    ///
+    /// ## Known limitation: post-spawn assignment race
+    ///
+    /// This assigns the job **after** spawn returns. `npx` can fork Node in
+    /// that window; children created before the parent enters the job are not
+    /// auto-joined, so Job Object teardown may miss the real adapter. The
+    /// race is narrow but real. Proper fix: create-time association via
+    /// `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_JOB_LIST` (requires raw
+    /// CreateProcess APIs, deferred to #517).
     pub(super) fn assign_to_job(pid: u32) -> bool {
         unsafe {
-            let job = CreateJobObjectA(std::ptr::null(), std::ptr::null());
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if job.is_null() {
-                eprintln!("harness: CreateJobObjectA failed for pid {pid}");
+                eprintln!("harness: CreateJobObjectW failed for pid {pid}");
                 return false;
             }
 
@@ -809,9 +813,16 @@ mod windows_job {
                 return false;
             }
 
-            if let Ok(mut slot) = JOBS.lock() {
-                let map = slot.get_or_insert_with(HashMap::new);
-                map.insert(pid, SafeHandle(job));
+            match JOBS.lock() {
+                Ok(mut slot) => {
+                    let map = slot.get_or_insert_with(HashMap::new);
+                    map.insert(pid, SafeHandle(job));
+                }
+                Err(_) => {
+                    eprintln!("harness: JOBS lock poisoned, handle leaked for pid {pid}");
+                    CloseHandle(job);
+                    return false;
+                }
             }
 
             true
@@ -839,6 +850,23 @@ mod windows_job {
         unsafe {
             let _ = TerminateJobObject(job, 1);
             CloseHandle(job);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_assign_to_job_bogus_pid_fails_cleanly() {
+            let bogus_pid = 0xFFFF_FFFF;
+            let result = assign_to_job(bogus_pid);
+            assert!(!result, "assign_to_job should fail on bogus pid");
+        }
+
+        #[test]
+        fn test_terminate_job_missing_pid_is_noop() {
+            terminate_job(0xFFFF_FFFE);
         }
     }
 }
