@@ -574,8 +574,16 @@ impl DirectorDraft<'_> {
         self.edit(form::DIRECTOR_MODEL_ID, &self.model, &view.director_model)
     }
 
+    /// A blank field is an untouched one, never an edit to the empty string.
+    ///
+    /// Both windows build the tab's fields empty and fill them on the first
+    /// redraw, so a draft read before that fill holds `""` for every row and
+    /// would otherwise stage the whole tab on open — Apply then wrote the
+    /// saved URL and model away (#530). Same rule `key_was_typed` states for
+    /// the secure field, so clearing a row back to its default is not a
+    /// gesture the tab offers; retype the value instead.
     fn edit<'t>(&self, id: &str, text: &'t str, live: &str) -> Option<&'t str> {
-        (!self.description.frozen(id) && text != live).then_some(text)
+        (!text.is_empty() && !self.description.frozen(id) && text != live).then_some(text)
     }
 
     /// What the key field means: the typed key, or the empty string for a
@@ -2368,6 +2376,61 @@ mod tests {
                     key: true,
                 }
             );
+        });
+    }
+
+    /// #530: both windows build the tab empty and fill it on the first
+    /// `refresh`, so the draft that redraw reads holds `""` for every row.
+    /// Reading that as an edit staged the whole tab on open, which enabled
+    /// Apply and let it write the saved URL and model away.
+    #[test]
+    fn an_untouched_tab_over_saved_values_applies_nothing() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: String::new(),
+                model: String::new(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert!(
+                draft.patch(&view).is_none(),
+                "a tab nobody typed in has nothing to apply"
+            );
+            assert!(
+                !draft.staged(&view).any(),
+                "and a redraw has to fill every field from live state"
+            );
+        });
+    }
+
+    /// The other half of #530: the empty guard must not take back what #279
+    /// fixed, so a typed edit still reads as staged and a redraw leaves it.
+    #[test]
+    fn a_typed_endpoint_edit_survives_a_redraw() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: "https://api.x.ai".into(),
+                model: view.director_model.clone(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert_eq!(
+                draft.staged(&view),
+                Staged {
+                    base_url: true,
+                    model: false,
+                    key: false,
+                }
+            );
+            let patch = draft.patch(&view).expect("a typed URL is dirty");
+            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
+            assert!(patch.director_model.is_none());
         });
     }
 
