@@ -61,18 +61,18 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
-    # PowerShell linting (Windows only; delegates to ophiosdev on Windows, skips elsewhere)
-  - repo: https://github.com/ophiosdev/pre-commit-psscriptanalyzer.git
-    rev: v2.0.0
+    # PowerShell linting (Windows only)
+  - repo: local
     hooks:
       - id: psscriptanalyzer-check
         name: PSScriptAnalyzer (Windows only)
-        # Thin wrapper: skip on non-Windows (mirrors swiftc-typecheck pattern),
-        # delegate to ophiosdev entry on Windows. No pwsh forced onto Linux/macOS.
-        entry: scripts/hooks/psscriptanalyzer-wrapper.sh
-        args:
-          - '-Severity'
-          - 'Error'
+        # Thin OS gate (mirrors swiftc-typecheck): skip on non-Windows, run on Windows.
+        # Delegates to ophiosdev/pre-commit-psscriptanalyzer when on Windows by
+        # installing the hook repo and calling its wrapper. No pwsh forced onto
+        # Linux/macOS dev machines. CI enforces via windows job.
+        entry: bash -c 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) echo "skipped - PSScriptAnalyzer runs on Windows"; exit 0 ;; esac; pwsh_path="${PRE_COMMIT_PWSH_PATH:-pwsh}"; if ! command -v "$pwsh_path" > /dev/null 2>&1; then echo "[ERR] $pwsh_path (PowerShell) not found"; exit 1; fi; pwsh_module_installed=$(pwsh -NoProfile -Command "Get-Module -ListAvailable PSScriptAnalyzer | Select-Object -First 1" 2>/dev/null); if [ -z "$pwsh_module_installed" ]; then pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser" > /dev/null 2>&1; fi; for f in "$@"; do pwsh -NoProfile -Command "\$results = Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error; if (\$results) { \$results | Format-Table -AutoSize; exit 1 }"; if [ $? -ne 0 ]; then exit 1; fi; done' --
+        language: system
+        files: \.ps1$
         # Severity Error: only fail on actual errors, not style warnings.
         # Keeps PSUseBOMForUnicodeEncodedFile active (default in PSScriptAnalyzer)
         # to catch encoding issues like the #392 em-dash footgun.
