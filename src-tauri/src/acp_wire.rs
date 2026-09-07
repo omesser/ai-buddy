@@ -11,7 +11,6 @@
 //! caller blocks on `recv_timeout` while the protocol runs here. The frame
 //! loop never sees any of it (ADR-0004): every caller is a `Slots` worker.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self as sync_mpsc, RecvTimeoutError};
@@ -744,33 +743,33 @@ mod tests {
 mod windows_job {
     use std::collections::HashMap;
     use std::sync::Mutex;
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        TerminateJobObject, JobObjectExtendedLimitInformation,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectA, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
-    use windows_sys::Win32::System::Threading::OpenProcess;
-    use windows_sys::Win32::System::Threading::PROCESS_SET_QUOTA;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    };
 
-    /// Job Objects by child PID. Stored so kill_harness_tree can terminate
-    /// the job and its descendants die with it. Cleared on termination.
-    static JOBS: Mutex<Option<HashMap<u32, HANDLE>>> = Mutex::new(None);
+    /// Job Objects by child PID, stored as isize for Send safety. The handle
+    /// is terminated and closed on shutdown so descendants die with us.
+    static JOBS: Mutex<Option<HashMap<u32, isize>>> = Mutex::new(None);
 
     /// Create a Job Object with kill-on-close, assign the child to it, and
     /// store it for later termination. Returns true if the job was created
     /// and assigned successfully.
     pub(super) fn assign_to_job(pid: u32) -> bool {
         unsafe {
-            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            let job = CreateJobObjectA(std::ptr::null(), std::ptr::null());
             if job == 0 {
-                eprintln!("harness: CreateJobObjectW failed for pid {pid}");
+                eprintln!("harness: CreateJobObjectA failed for pid {pid}");
                 return false;
             }
 
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            info.BasicLimitInformation.LimitFlags = 
-                windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 
             let ok = SetInformationJobObject(
                 job,
@@ -785,7 +784,7 @@ mod windows_job {
                 return false;
             }
 
-            let process = OpenProcess(PROCESS_SET_QUOTA, 0, pid);
+            let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
             if process == 0 {
                 eprintln!("harness: OpenProcess failed for pid {pid}");
                 CloseHandle(job);
