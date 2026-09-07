@@ -16,7 +16,7 @@
 //!
 //! Memory has no automatic size guard. It can grow without bound. This is
 //! deliberate: Memory is user-owned, and auto-deletion or write refusal would
-//! violate that contract. The Action Log (#433) provides visibility into what
+//! violate that contract. The Action Log (#443) provides visibility into what
 //! the Harness writes, so runaway growth is observable. The user can manually
 //! edit Memory in any text editor, or wipe it entirely (which keeps a backup).
 //!
