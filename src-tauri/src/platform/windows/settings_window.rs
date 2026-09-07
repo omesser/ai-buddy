@@ -160,6 +160,9 @@ impl SettingsWindow {
                         set_window_text(*hwnd, &text);
                     }
                     Control::Label(hwnd, _) => {
+                        if !should_update_label_text(id) {
+                            continue;
+                        }
                         let text = match id.as_str() {
                             form::MEMORY_PATH_ID => view.memory_path.clone(),
                             form::HOTKEY_ID => view.hide_hotkey.clone(),
@@ -167,12 +170,8 @@ impl SettingsWindow {
                                 .last_payload
                                 .clone()
                                 .unwrap_or_else(|| "Nothing sent yet.".to_string()),
-                            _ => {
-                                if id.ends_with("_label") || id.ends_with("_placeholder") {
-                                    continue;
-                                }
-                                String::new()
-                            }
+                            form::HARNESS_STATE_ID => view.harness_state.clone(),
+                            _ => String::new(),
                         };
                         set_window_text(*hwnd, &text);
                     }
@@ -550,6 +549,29 @@ fn set_window_text(hwnd: HWND, text: &str) {
         let text_cstr = CString::new(text).unwrap_or_default();
         SetWindowTextA(hwnd, text_cstr.as_ptr() as *const u8);
     }
+}
+
+/// Decides whether a label id should have its text updated from the view.
+///
+/// Returns `true` when the label displays dynamic state (memory path, hotkey,
+/// last payload, harness state). Returns `false` when the label holds static
+/// text set at build_ui time: field labels (`*_label`), placeholders
+/// (`*_placeholder`), and help hints (`*_help`, `composite_help_*`).
+fn should_update_label_text(id: &str) -> bool {
+    if id == form::MEMORY_PATH_ID
+        || id == form::HOTKEY_ID
+        || id == form::PAYLOAD_ID
+        || id == form::HARNESS_STATE_ID
+    {
+        return true;
+    }
+    if id.ends_with("_label") || id.ends_with("_placeholder") {
+        return false;
+    }
+    if id.ends_with("_help") || id.starts_with("composite_help_") {
+        return false;
+    }
+    true
 }
 
 /// Build an Edit control's style flags from frozen and password flags.
@@ -1563,6 +1585,52 @@ mod tests {
             patch2.director_timeout_secs,
             Some("60".to_string()),
             "timeout must be set in patch"
+        );
+    }
+
+    /// should_update_label_text decides whether a label id needs dynamic updates.
+    #[test]
+    fn should_update_label_text_preserves_help_hints() {
+        assert!(
+            should_update_label_text(form::MEMORY_PATH_ID),
+            "MEMORY_PATH must be updated dynamically"
+        );
+        assert!(
+            should_update_label_text(form::HOTKEY_ID),
+            "HOTKEY must be updated dynamically"
+        );
+        assert!(
+            should_update_label_text(form::PAYLOAD_ID),
+            "PAYLOAD must be updated dynamically"
+        );
+        assert!(
+            should_update_label_text(form::HARNESS_STATE_ID),
+            "HARNESS_STATE must be updated dynamically"
+        );
+
+        assert!(
+            !should_update_label_text("director_label"),
+            "labels ending with _label must be preserved"
+        );
+        assert!(
+            !should_update_label_text("director_api_key_placeholder"),
+            "labels ending with _placeholder must be preserved"
+        );
+        assert!(
+            !should_update_label_text("director_help"),
+            "labels ending with _help must be preserved"
+        );
+        assert!(
+            !should_update_label_text("ambient_help"),
+            "all _help labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("composite_help_123"),
+            "composite help labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("composite_help_45"),
+            "all composite_help_* labels must be preserved"
         );
     }
 }
