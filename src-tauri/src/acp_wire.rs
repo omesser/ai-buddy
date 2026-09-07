@@ -745,17 +745,26 @@ mod windows_job {
     use std::sync::Mutex;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, JobObjectExtendedLimitInformation, SetInformationJobObject,
+        TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{
-        CreateJobObjectA, OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
     };
 
-    /// Job Objects by child PID. Stored as HANDLE (raw pointer) that we cast
-    /// to/from for Win32 API calls. Access is mutex-protected.
-    static JOBS: Mutex<Option<HashMap<u32, HANDLE>>> = Mutex::new(None);
+    /// Send-safe wrapper for HANDLE. Win32 HANDLEs are safe to send between
+    /// threads when properly synchronized (which our Mutex provides).
+    struct SafeHandle(HANDLE);
+    unsafe impl Send for SafeHandle {}
+
+    /// Job Objects by child PID. Wrapped in SafeHandle for Send safety.
+    static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
+
+    /// CreateJobObjectA binding - windows-sys 0.59 doesn't export this directly.
+    extern "system" {
+        fn CreateJobObjectA(lpJobAttributes: *const std::ffi::c_void, lpName: *const u8) -> HANDLE;
+    }
 
     /// Create a Job Object with kill-on-close, assign the child to it, and
     /// store it for later termination. Returns true if the job was created
@@ -802,7 +811,7 @@ mod windows_job {
 
             if let Ok(mut slot) = JOBS.lock() {
                 let map = slot.get_or_insert_with(HashMap::new);
-                map.insert(pid, job);
+                map.insert(pid, SafeHandle(job));
             }
 
             true
@@ -823,7 +832,7 @@ mod windows_job {
             map.remove(&pid)
         };
 
-        let Some(job) = job else {
+        let Some(SafeHandle(job)) = job else {
             return;
         };
 
