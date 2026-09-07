@@ -56,6 +56,11 @@ tokio = {version = "1", features = ["rt", "sync", "macros"]}
 # `AcpAgent`, which has no working-directory knob, and ADR-0010 puts the
 # Harness in the data folder.
 async-process = "2"
+# Ctrl+C from `cargo run` must shut the Harness down on a dedicated thread:
+# a signal handler itself cannot take the mutex `shutdown` needs, and without
+# the catch the child is isolated from the signal (own process group) and
+# would be left running.
+ctrlc = "3"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
 keyring = {version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"]}
@@ -169,3 +174,5 @@ objc2-foundation = {version = "0.3", default-features = false, features = [
 
 [dev-dependencies]
 uuid = {version = "1.11", features = ["v4"]}
+# `getpgid` for the test that the Harness child is not in the app's process group.
+libc = "0.2"

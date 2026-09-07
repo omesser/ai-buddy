@@ -51,5 +51,10 @@ say they are read at the next launch. Live recovery, if it is ever wanted,
 belongs in re-opening the attachment (#469's third option), not in swapping
 the mind out from under it.
 
+Choosing Off in Settings is the user naming the HTTP Completer. That drop
+happens in this process: the handle is shut down and Retarget installs the
+HTTP Completer. It is not a dead session falling through unasked. Switching
+to a different Harness still waits for the next launch.
+
 Reversing this means living with split-brain, or rewriting how #15–#17
 talk to a model.

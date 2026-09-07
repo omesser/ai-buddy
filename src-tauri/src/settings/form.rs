@@ -600,9 +600,9 @@ fn completer_source_section() -> FormSection {
                 label: Some(source_label),
                 writes: TextField::Harness,
                 help: Some(
-                    "Off leaves the HTTP Completer. Any change here — Off included — \
-                     takes effect on the next launch; the line below says what is \
-                     attached now."
+                    "Off leaves the HTTP Completer and takes effect now. Switching \
+                     to a Harness takes effect on the next launch; the line below \
+                     says what is attached."
                         .to_string(),
                 ),
                 options: harness_options(),
