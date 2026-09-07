@@ -180,9 +180,10 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // Job Object assigned after spawn in `acp_wire::run` ensures
-        // descendants die on shutdown (#515). Still in a new process group
-        // so Ctrl+C does not reach the child.
+        // Job Object is created and assigned at spawn time via CREATE_SUSPENDED
+        // in `acp_wire::windows_job::spawn_in_job` (#517), ensuring descendants
+        // die on shutdown (#515). Still in a new process group so Ctrl+C does
+        // not reach the child.
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
