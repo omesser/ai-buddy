@@ -47,6 +47,13 @@ a Summon and a Poke are prompts too, and only the ambient wake is unprompted.
 A response that proposes a Behavior and no Speech has no line to draw; the bar
 above names the Behavior, and nothing is held for a surface that opens later.
 
+The forwarded permission request is the one exception, and #437 is why: it is a
+question with a deadline that only this surface can answer, so an unsettled one
+is held and handed to the next surface that opens, and a request that reaches no
+surface the user can see opens one — unless Do Not Disturb is on, which the
+request yields to like everything else. None of that bends the rule below: what
+ai-buddy holds is the question, and the answer is still only ever a click.
+
 It is a webview rather than a native window because Settings already priced
 the alternative: `platform/macos/settings_window.rs` and
 `platform/x11/settings_window.rs` are 1046 and 913 lines of hand-written

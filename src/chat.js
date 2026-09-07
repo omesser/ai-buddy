@@ -111,16 +111,46 @@ function note(text) {
   return add(row);
 }
 
+// The rows still offering buttons, by request id. One request reaches every
+// open window and only one of them takes the click, so the Shell's settled
+// event is what retires the rest.
+const asks = new Map();
+
+// A request nothing can answer any more: answered here or in another window,
+// cancelled with its turn, or gone with the Harness. The buttons go dead
+// rather than the row, so the log still says what was asked.
+//
+// `option` is the one that won, which is not necessarily the one clicked here:
+// two surfaces can draw one request and the wire drops every answer after the
+// first, so a window that marked its own click would show a decision that was
+// never taken. Marked here, on the Shell's word, or not at all.
+function retire(request, option) {
+  const buttons = asks.get(request);
+  if (!buttons) {
+    return;
+  }
+  asks.delete(request);
+  for (const button of buttons.querySelectorAll("button")) {
+    button.disabled = true;
+    if (option && button.dataset.option === option) {
+      button.classList.add("chosen");
+    }
+  }
+}
+
 // A permission request the Harness asked, drawn as the options it offered.
 // Nothing is chosen here or in the Shell: a click is the only answer, and
 // a turn that times out first is cancelled by the Shell, not decided
-// (ADR-0010). The buttons stay disabled after the click so the row reads as
-// what was decided.
+// (ADR-0010). The buttons stay disabled after the click, and the row reads as
+// what was decided once the Shell says which option took it.
 //
-// ponytail: buttons freeze on the click, not on the Shell's cancel; a row the
-// user never answered keeps live buttons whose click goes nowhere. A settled
-// event would fix that, once there is more than this one row to settle.
+// Ignored the second time a request arrives: the Shell hands an unsettled
+// request to a window that opens after it was asked, and this window may
+// already have drawn it.
 function asked(ask) {
+  if (asks.has(ask.request)) {
+    return null;
+  }
   const row = el("row ask");
   const label = el("who-label");
   label.textContent = `${them} · asks`;
@@ -131,11 +161,13 @@ function asked(ask) {
     const button = el("", "button");
     button.type = "button";
     button.textContent = option.name || option.id;
+    button.dataset.option = option.id;
     button.addEventListener("click", () => {
+      // Disabled at once so a second click cannot be sent, but nothing is
+      // marked chosen until the Shell says what won: see `retire`.
       for (const other of buttons.querySelectorAll("button")) {
         other.disabled = true;
       }
-      button.classList.add("chosen");
       invoke("permission_answer", { request: ask.request, option: option.id }).catch((why) => {
         console.error("chat: the answer did not reach the Harness:", why);
         note("That answer did not get through.");
@@ -145,6 +177,7 @@ function asked(ask) {
   }
   body.append(buttons);
   row.append(label, body);
+  asks.set(ask.request, buttons);
   return add(row);
 }
 
@@ -293,6 +326,14 @@ async function start() {
     "chat-permission",
     ({ payload }) => {
       asked(payload);
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-permission-settled",
+    ({ payload }) => {
+      retire(payload.request, payload.option);
     },
     { target: chat.label },
   );

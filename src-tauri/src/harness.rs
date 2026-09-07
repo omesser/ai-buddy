@@ -42,10 +42,14 @@ const SESSION_FILE: &str = "harness-session.json";
 /// runs the login command sees the buddy pick it up without a restart.
 const AUTH_RETRY: Duration = Duration::from_secs(60);
 
-/// Respawn backoff after a spawn that failed: doubles from the first up to the
-/// cap, so a missing binary costs one attempt every five minutes, not a loop.
+/// Respawn backoff after a wake the child could not serve: doubles from the
+/// first up to the cap, so a missing binary costs one attempt every five
+/// minutes, not a loop.
 const BACKOFF_FIRST: Duration = Duration::from_secs(5);
 const BACKOFF_CAP: Duration = Duration::from_secs(5 * 60);
+
+/// What every caller is told when the child is gone.
+const LOST: &str = "harness exited";
 
 /// Which Harness, and the command line that starts it in ACP mode.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,7 +126,22 @@ struct SavedSession {
     agent: Option<String>,
 }
 
-type Forward = Box<dyn Fn(PermissionAsk) + Send + Sync>;
+/// What the Chat surface is told about a forwarded permission request.
+///
+/// `Settled` exists because the ask goes to every open surface and only one of
+/// them takes the click: without it the others keep offering live buttons on a
+/// question already answered, cancelled, or dead with its turn.
+pub enum Permission {
+    Ask(PermissionAsk),
+    /// A request that is no longer answerable, and the option that won it —
+    /// `None` when nothing was picked and the turn simply ended.
+    Settled {
+        request: String,
+        option: Option<String>,
+    },
+}
+
+type Forward = Box<dyn Fn(Permission) + Send + Sync>;
 
 /// One ACP session for the app's lifetime, shared by every Instance.
 pub struct Session {
@@ -131,6 +150,7 @@ pub struct Session {
     forward: Arc<Forward>,
     timeout: Duration,
     auth_retry: Duration,
+    backoff_first: Duration,
     /// One prompt in flight. `try_lock` failing is "harness busy", never a
     /// queue (ADR-0008, ADR-0016).
     turn: Mutex<()>,
@@ -152,6 +172,16 @@ struct State {
     spawn_wait_until: Option<Instant>,
 }
 
+impl State {
+    /// The child answered, so no earlier death is a death in a row any more.
+    /// Every outcome but a loss proves it: a stop reason, and even a turn we
+    /// gave up waiting on, came back from a process that is still there.
+    fn answered(&mut self) {
+        self.spawn_failures = 0;
+        self.spawn_wait_until = None;
+    }
+}
+
 impl Session {
     pub fn new(launch: Launch, dir: PathBuf, forward: Forward) -> Self {
         let inspect = HarnessInspect {
@@ -166,6 +196,7 @@ impl Session {
             timeout: crate::dev_flags::director_timeout_secs()
                 .map_or(crate::model::TIMEOUT, Duration::from_secs),
             auth_retry: AUTH_RETRY,
+            backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             state: Mutex::new(State::default()),
             wire: Mutex::new(None),
@@ -183,6 +214,28 @@ impl Session {
     pub fn with_auth_retry(mut self, retry: Duration) -> Self {
         self.auth_retry = retry;
         self
+    }
+
+    #[cfg(test)]
+    pub fn with_backoff(mut self, first: Duration) -> Self {
+        self.backoff_first = first;
+        self
+    }
+
+    /// The wait a wake the child could not serve buys, doubling to the cap.
+    fn backoff(&self, failures: u32) -> Duration {
+        self.backoff_first
+            .saturating_mul(1u32 << failures.saturating_sub(1).min(16))
+            .min(BACKOFF_CAP)
+    }
+
+    /// One counter and one offset for every way a wake goes unserved: a spawn
+    /// that never started, an `initialize` that never came back, and a child
+    /// that died under a turn all cost the same respawn, so reading the ladder
+    /// at two offsets would price the same failure twice (#437).
+    fn charge_loss(&self, state: &mut State) {
+        state.spawn_failures += 1;
+        state.spawn_wait_until = Some(Instant::now() + self.backoff(state.spawn_failures));
     }
 
     pub fn inspect(&self) -> HarnessInspect {
@@ -225,15 +278,23 @@ impl Session {
             "prompt",
             json!({"session_id": session_id, "chars": prompt.len()}),
         );
-        match wire.prompt(prompt, self.timeout) {
+        let outcome = wire.prompt(prompt, self.timeout);
+        // Before the outcome is dressed for the caller: a child that dies under
+        // every turn is respawned on every wake unless the death pays the same
+        // backoff a failed spawn does, and a child that is answering must not
+        // carry a death from hours ago (#437).
+        if let Ok(mut state) = self.state.lock() {
+            match &outcome {
+                Err(TurnError::Lost) => self.lost(&wire, &mut state),
+                _ => state.answered(),
+            }
+        }
+        match outcome {
             Ok(text) => {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
-                if let Ok(mut state) = self.state.lock() {
-                    state.spawn_failures = 0;
-                }
                 Ok(text)
             }
-            Err(TurnError::Lost) => Err(self.lost(&wire)),
+            Err(TurnError::Lost) => Err(LOST.to_string()),
             Err(TurnError::Timeout) => {
                 action_log::append(&self.dir, "timeout", json!({"session_id": session_id}));
                 Err(format!(
@@ -253,18 +314,23 @@ impl Session {
         }
     }
 
-    /// The wire died under a turn. Say so, and let the next wake respawn.
+    /// The wire died. Drop it, charge the loss, and let a later wake respawn.
+    ///
+    /// Every path that finds the child gone comes through here — a turn, and
+    /// `session/new` on a child that answered `initialize` and then exited —
+    /// so this is the one place the backoff can be charged without a caller
+    /// forgetting to (#437).
     ///
     /// The slot is emptied here rather than left for `alive()` to notice:
     /// that flag flips only once the wire's thread has dropped its receiver,
     /// and a wake arriving before then would reuse a dead wire.
-    fn lost(&self, wire: &Wire) -> String {
+    fn lost(&self, wire: &Wire, state: &mut State) {
         wire.shutdown();
         if let Ok(mut slot) = self.wire.lock() {
             *slot = None;
         }
         self.update_inspect(|inspect| inspect.alive = false);
-        "harness exited".to_string()
+        self.charge_loss(state);
     }
 
     /// The user's answer to a forwarded permission request. Never chosen here.
@@ -315,9 +381,7 @@ impl Session {
                 match self.spawn_and_initialize(&mut state) {
                     Ok(wire) => wire,
                     Err(why) => {
-                        state.spawn_failures += 1;
-                        state.spawn_wait_until =
-                            Some(Instant::now() + backoff(state.spawn_failures));
+                        self.charge_loss(&mut state);
                         return Err(why);
                     }
                 }
@@ -374,7 +438,10 @@ impl Session {
         let mcp = mcp_server();
         let id = match wire.open(saved, &self.dir, mcp.clone(), self.attach_timeout()) {
             Ok(id) => id,
-            Err(OpenError::Lost) => return Err(self.lost(wire)),
+            Err(OpenError::Lost) => {
+                self.lost(wire, state);
+                return Err(LOST.to_string());
+            }
             Err(OpenError::AuthRequired) => {
                 let command = login_command(&self.launch.name, &state.handshake);
                 state.login = Some(command.clone());
@@ -457,19 +524,16 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
-            forward(ask);
+            forward(Permission::Ask(ask));
+        }
+        Event::PermissionSettled { request, option } => {
+            forward(Permission::Settled { request, option })
         }
     }
 }
 
 fn not_authenticated(command: &str) -> String {
     format!("harness not authenticated: run `{command}`")
-}
-
-fn backoff(failures: u32) -> Duration {
-    BACKOFF_FIRST
-        .saturating_mul(1u32 << failures.saturating_sub(1).min(16))
-        .min(BACKOFF_CAP)
 }
 
 /// The command that logs the user in, in the Harness's own words where it
@@ -535,11 +599,15 @@ pub fn attached() -> Option<Arc<Session>> {
 }
 
 /// What `startup_lines` says about the attachment, if there is one.
-pub fn startup_lines() -> Vec<String> {
+///
+/// `spawning` is whether one is actually coming: the Director's own switch
+/// gates `spawn_preflight`, and a line promising a spawn that the switch has
+/// already refused is worse than no line.
+pub fn startup_lines(spawning: bool) -> Vec<String> {
     let Some(session) = attached() else {
         return Vec::new();
     };
-    vec![
+    let mut lines = vec![
         format!(
             "harness: {} via `{}`",
             session.launch.name,
@@ -551,7 +619,18 @@ pub fn startup_lines() -> Vec<String> {
             }
             Some(path) => format!("harness: MCP server {}", path.display()),
         },
-    ]
+    ];
+    // Startup cannot report a spawn that has not happened: `attach` runs on the
+    // preflight thread and lands after these lines. Said here so the `harness:`
+    // line that follows reads as this attachment's outcome rather than as
+    // unrelated noise a moment later.
+    if spawning {
+        lines.push(
+            "harness: attaching now; the next `harness:` line on this stream is how it went"
+                .to_string(),
+        );
+    }
+    lines
 }
 
 pub fn shutdown() {
@@ -642,6 +721,9 @@ mod tests {
                 }})),
                 Some("session/new") => {
                     record(count, "new");
+                    if script == "die-opening" {
+                        std::process::exit(3);
+                    }
                     if script == "auth" && recorded(count, "new") == 1 {
                         say(
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "auth required"}}),
@@ -687,6 +769,7 @@ mod tests {
                         }
                         "slow" if prompts == 1 => pending_prompt = Some(id),
                         "exit" if spawns == 1 => std::process::exit(3),
+                        "die" => std::process::exit(3),
                         _ => {
                             chunk(&session, "Hell");
                             if script == "garbage" {
@@ -731,7 +814,7 @@ mod tests {
     struct Fixture {
         dir: PathBuf,
         count: PathBuf,
-        asks: Receiver<PermissionAsk>,
+        forwarded: Receiver<Permission>,
     }
 
     impl Fixture {
@@ -758,16 +841,39 @@ mod tests {
                     format!("count={}", count.display()),
                 ],
             };
-            let (tx, asks) = mpsc::channel();
+            let (tx, forwarded) = mpsc::channel();
             let session = Session::new(
                 launch,
                 dir.clone(),
-                Box::new(move |ask| {
-                    let _ = tx.send(ask);
+                Box::new(move |permission| {
+                    let _ = tx.send(permission);
                 }),
             )
             .with_timeout(Duration::from_secs(10));
-            (Self { dir, count, asks }, session)
+            (
+                Self {
+                    dir,
+                    count,
+                    forwarded,
+                },
+                session,
+            )
+        }
+
+        /// The next forwarded ask, or a panic naming what came instead.
+        fn ask(&self) -> PermissionAsk {
+            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Permission::Ask(ask)) => ask,
+                other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
+            }
+        }
+
+        /// The next forwarded settlement: the request, and what won it.
+        fn settled(&self) -> (String, Option<String>) {
+            match self.forwarded.recv_timeout(Duration::from_secs(5)) {
+                Ok(Permission::Settled { request, option }) => (request, option),
+                other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
+            }
         }
 
         fn count(&self, what: &str) -> usize {
@@ -875,13 +981,16 @@ mod tests {
             let session = Arc::clone(&session);
             thread::spawn(move || session.complete("hi"))
         };
-        let ask = fx.asks.recv_timeout(Duration::from_secs(5)).unwrap();
+        let ask = fx.ask();
         assert_eq!(ask.title, "rm -rf /");
         assert_eq!(ask.kind.as_deref(), Some("execute"));
         assert_eq!(ask.options.len(), 2);
         session.answer_permission(&ask.request, "allow");
         assert_eq!(worker.join().unwrap(), Ok("ok:allow".to_string()));
         assert!(fx.wait_for("perm:selected", 1));
+        // Every other open window has to retire the row this one answered,
+        // and draw the option that actually won rather than its own click.
+        assert_eq!(fx.settled(), (ask.request, Some("allow".to_string())));
         session.shutdown();
     }
 
@@ -891,9 +1000,12 @@ mod tests {
         let session = session.with_timeout(Duration::from_millis(700));
         let reply = session.complete("hi");
         assert!(reply.is_err(), "{reply:?}");
-        fx.asks.recv_timeout(Duration::from_secs(1)).unwrap();
+        let ask = fx.ask();
         assert!(fx.wait_for("cancel", 1));
         assert!(fx.wait_for("perm:cancelled", 1));
+        // A row nobody answered is retired too, or its buttons outlive the
+        // turn — with no option, because nothing was chosen.
+        assert_eq!(fx.settled(), (ask.request, None));
         session.shutdown();
     }
 
@@ -915,11 +1027,61 @@ mod tests {
     #[test]
     fn a_child_that_exits_mid_turn_is_respawned_on_the_next_wake() {
         let (fx, session) = Fixture::new("exit");
+        // The wait a death buys is the next test's subject; this one is about
+        // the respawn that has to happen once the wait is over.
+        let session = session.with_backoff(Duration::ZERO);
         assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
         assert!(!session.inspect().alive);
         assert_eq!(session.complete("again"), Ok("Hello".to_string()));
         assert_eq!(fx.count("spawn"), 2);
         assert!(session.inspect().alive);
+        session.shutdown();
+    }
+
+    /// #437: the count `a_missing_binary_backs_off_instead_of_respawning`
+    /// exercises is shared with every other way a wake goes unserved, so a
+    /// Harness that dies is not respawned on the very next wake.
+    #[test]
+    fn a_death_under_a_turn_buys_the_same_wait_a_failed_spawn_does() {
+        let (fx, session) = Fixture::new("die");
+        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        let next = session.complete("again").unwrap_err();
+        assert!(next.contains("retrying in"), "{next}");
+        assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
+        session.shutdown();
+    }
+
+    /// The death that reaches nobody: `initialize` is answered and the child
+    /// exits before `session/new`, so the loss surfaces in `open_session`
+    /// rather than in a turn. Charged all the same, or this Harness is
+    /// respawned on every wake forever.
+    #[test]
+    fn a_death_before_the_session_opens_buys_the_same_wait() {
+        let (fx, session) = Fixture::new("die-opening");
+        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        assert_eq!(fx.count("new"), 1);
+        let next = session.complete("again").unwrap_err();
+        assert!(next.contains("retrying in"), "{next}");
+        assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
+        session.shutdown();
+    }
+
+    /// The other half of one counter: a turn the child answered clears a death
+    /// from earlier, whether the answer was a reply, a stop reason, or a
+    /// timeout we gave up on.
+    #[test]
+    fn a_turn_the_child_answered_clears_an_earlier_death() {
+        let (_fx, session) = Fixture::new("exit");
+        let session = session.with_backoff(Duration::ZERO);
+        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        assert_eq!(session.complete("again"), Ok("Hello".to_string()));
+        let state = session.state.lock().unwrap();
+        assert_eq!(state.spawn_failures, 0, "the death is still counted");
+        assert!(
+            state.spawn_wait_until.is_none(),
+            "the served turn left a wait behind"
+        );
+        drop(state);
         session.shutdown();
     }
 
@@ -994,9 +1156,9 @@ mod tests {
         assert!(first.contains("could not start"), "{first}");
         let second = session.complete("hi").unwrap_err();
         assert!(second.contains("retrying in"), "{second}");
-        assert_eq!(backoff(1), Duration::from_secs(5));
-        assert_eq!(backoff(2), Duration::from_secs(10));
-        assert_eq!(backoff(40), BACKOFF_CAP);
+        assert_eq!(session.backoff(1), BACKOFF_FIRST);
+        assert_eq!(session.backoff(2), Duration::from_secs(10));
+        assert_eq!(session.backoff(40), BACKOFF_CAP);
         let _ = std::fs::remove_dir_all(dir);
     }
 

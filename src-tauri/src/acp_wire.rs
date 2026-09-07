@@ -85,6 +85,17 @@ pub enum Event {
         size: u64,
     },
     Permission(PermissionAsk),
+    /// A forwarded ask that can no longer be answered: the user answered it,
+    /// the turn ended, or it was cancelled. Every open Chat surface was given
+    /// the ask, so every one of them has to hear this.
+    PermissionSettled {
+        request: String,
+        /// The option that won, and `None` when nothing was picked. Carried so
+        /// the surfaces that did not take the click draw the decision that was
+        /// actually made: two of them can draw one request, and every answer
+        /// after the first is dropped here.
+        option: Option<String>,
+    },
 }
 
 pub type OnEvent = Box<dyn Fn(Event) + Send + Sync>;
@@ -461,12 +472,12 @@ async fn turn(
                     on_event(Event::Permission(ask));
                 }
                 None => {
-                    cancel_asks(&mut asks);
+                    cancel_asks(&mut asks, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             response = &mut finished => {
-                cancel_asks(&mut asks);
+                cancel_asks(&mut asks, on_event);
                 return match response {
                     Ok(response) => match response.stop_reason {
                         StopReason::EndTurn => Ok(said),
@@ -479,14 +490,20 @@ async fn turn(
             command = rx.recv() => match command {
                 Some(Msg::Cancel) | Some(Msg::Shutdown) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
-                    cancel_asks(&mut asks);
+                    cancel_asks(&mut asks, on_event);
                 }
                 Some(Msg::Answer { request, option }) => {
                     if let Some(at) = asks.iter().position(|(id, _)| *id == request) {
                         let (_, responder) = asks.remove(at);
                         let _ = responder.respond(RequestPermissionResponse::new(
-                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option)),
+                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                                option.clone(),
+                            )),
                         ));
+                        on_event(Event::PermissionSettled {
+                            request,
+                            option: Some(option),
+                        });
                     }
                 }
                 Some(Msg::Prompt { reply, .. }) => {
@@ -496,12 +513,12 @@ async fn turn(
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
                 }
                 None => {
-                    cancel_asks(&mut asks);
+                    cancel_asks(&mut asks, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             () = cx.incoming_closed() => {
-                cancel_asks(&mut asks);
+                cancel_asks(&mut asks, on_event);
                 return Err(TurnError::Lost);
             }
         }
@@ -565,11 +582,15 @@ fn note_update(update: SessionUpdate, said: &mut String, on_event: &OnEvent) {
 
 /// The protocol-mandated reply for a question nobody will answer now: the
 /// turn is over, cancelled, or the app is leaving. Not an answer.
-fn cancel_asks(asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>) {
-    for (_, responder) in asks.drain(..) {
+fn cancel_asks(asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>, on_event: &OnEvent) {
+    for (request, responder) in asks.drain(..) {
         let _ = responder.respond(RequestPermissionResponse::new(
             RequestPermissionOutcome::Cancelled,
         ));
+        on_event(Event::PermissionSettled {
+            request,
+            option: None,
+        });
     }
 }
 
