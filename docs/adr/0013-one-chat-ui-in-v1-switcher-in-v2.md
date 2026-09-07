@@ -56,8 +56,10 @@ The chat surface (#17) is in. It is unbuilt, so it is born in the chat UI.
   thinking ellipsis (`src/bubble.js`, #119) are drawn in that same overlay
   window, above the sprite and beside the art: they are the Character's
   expression rather than the chat surface's chrome, and they keep the palette
-  #119 shipped. Cues (`src/cue.js`) are tuned to read over arbitrary wallpaper
-  and arbitrary Character art, not against window chrome (#277).
+  #119 shipped. **That last clause is amended by #441** — the next section
+  says which half of it survives. Cues (`src/cue.js`) are tuned to read over
+  arbitrary wallpaper and arbitrary Character art, not against window chrome
+  (#277).
 - **Tray icon and menus** — out. The system draws them; `tray.rs` and
   `tauri::menu` are portable by #197's constraint and expose nothing to style.
 - **Pages under `docs/design/`** — out. A Dated page is frozen at its approval
@@ -66,6 +68,60 @@ The chat surface (#17) is in. It is unbuilt, so it is born in the chat UI.
 - **The Settings window** — deliberately not addressed here and still
   undecided: it is hand-written AppKit and GTK that `chat-ui.css` cannot reach,
   and nothing in this ADR says whether the visual language extends to it.
+
+## What the overlay exclusion amends to
+
+Amended by #441. The bullet above is too wide by one step, and the step is
+worth naming rather than deleting.
+
+What it defends is real. The bubble is drawn over whatever the user has on
+their desktop, and this file's one shipped design is a dark panel whose
+separation comes from alpha: fills at 2 to 6 percent white, rules at 7 to 13.
+Over a photograph a 7 percent hairline is not a border, and a `#14171e` bubble
+on a dark wallpaper is a hole. That reasoning reaches those tokens and stops
+there.
+
+`chat-ui.css` holds two kinds of token. Shape, rhythm and literal hue —
+`--chat-radius`, `--chat-radius-tail`, the padding step `.row.you .said` uses,
+`--chat-sans`, the body size and the `.row.them .said` line height, and the
+opaque ends of the ramp, `--chat-ink` and `--chat-panel` — mean the same thing
+on any ground. A 12px corner is a 12px corner over a photograph. Alpha over an
+assumed panel — every `--chat-fill*`, `--chat-rule`, `--chat-line`,
+`--chat-accent-soft`, and the `color-scheme: dark` that makes the panel
+legible — is not a colour at all. It is an instruction for sitting on
+`--chat-panel`, and the overlay has no panel.
+
+The bubble may take the first kind and may never take the second. That is the
+whole amendment, and it is checkable by pointing at a token and saying which
+kind it is. The bubble keeps an opaque fill, a full-strength border and its
+shadow, because that border is the only thing between the text and a
+photograph.
+
+Nothing else in the bullet moves. The sprite still has no chrome to style, the
+thinking indicator keeps the round silhouette and trailing dots that tell a
+reader which mode they are looking at before anything animates, and Cues stay
+as #277 tuned them.
+
+Values are not settled here. `docs/design/bubble.html` is the Dated page they
+are judged on, and `src/main.css` changes only after it is approved.
+
+## The switcher does not reach the bubble
+
+The overlay takes no `.chat-ui-*` class and loads no `chat-ui.css`. The two are
+separate documents, and importing the stylesheet would drag the alpha tokens
+into the one document that must not use them. The overlay inherits from the
+default chat UI once, by hand, as literals in `src/main.css`.
+
+So v2's switcher repaints the chat surface and nothing else, and #348's
+out-of-scope bullet stays true as written — only its reason changes, from "the
+overlay is off limits" to "the switcher does not reach it". Selecting terminal
+log leaves the Character's expression alone. A bubble sitting over the user's
+wallpaper that changed identity because of a setting in another window is a
+worse surprise than an inconsistency.
+
+This holds while modern minimal is the default. If v2 makes another design the
+default, the literals in `main.css` are what to revisit, and the revisit is this
+paragraph rather than a second ADR.
 
 ## The unshipped two survive as a Dated page
 
@@ -106,7 +162,9 @@ look like two on one screen to distinguish buddies that are already distinct.
 `src/chat-ui.css` does not exist, and neither does the surface it dresses.
 Both arrive with #17's chat window; the grep above is what keeps the literals
 out afterwards. The overlay is untouched: `src/main.css` and `src/bubble.js`
-keep the colours and fonts they shipped with.
+keep the colours and fonts they shipped with. Amended by #441 — `src/main.css`
+takes the type, shape and opaque hues by hand once `docs/design/bubble.html` is
+approved, and `src/bubble.js` is untouched either way.
 
 CONTEXT.md gains **Chat UI** beside **Chat surface**, so the design has a word
 of its own that is not read as another name for the window.
