@@ -186,10 +186,12 @@ function drawView(view, now) {
   const spriteY = Math.round(at.y);
 
   // Whole pixels, so a sprite drawn at an integer scale is not resampled back
-  // onto a fractional grid by the compositor. ADR-0006. The art is authored
-  // heading right; `scaleX(-1)` mirrors it in place when the Engine says the
-  // sprite faces left. main.css sets the center origin that makes it in-place.
-  view.sprite.style.transform = `translate(${spriteX}px, ${spriteY}px) scaleX(${latest.facing})`;
+  // onto a fractional grid by the compositor. ADR-0006. The art is usually
+  // authored heading right, and `scaleX(-1)` mirrors it in place for the other
+  // heading — but a Character that draws its own left strip is sent as
+  // authored, so the Shell decides this and sends the answer rather than the
+  // heading (#345). main.css sets the center origin that makes it in-place.
+  view.sprite.style.transform = `translate(${spriteX}px, ${spriteY}px) scaleX(${latest.mirror})`;
 
   // The hide rules, carried on every frame rather than announced when they
   // change: a change announced while this file was still fetching its art is a

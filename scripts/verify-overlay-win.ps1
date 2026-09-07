@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Windows Spatial e2e (#372 / PR #373) — twin of verify-overlay-x11.sh
+# Windows Spatial e2e (#372 / PR #373) - twin of verify-overlay-x11.sh
 #
 # Places a Notepad perch on the secondary display, grabs the buddy on the
 # primary, drops it 80px above the title bar, and asserts Perched plus
@@ -10,7 +10,7 @@
 #   $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\verify-overlay-win.ps1
 #   $env:AI_BUDDY_TRACE_HITTEST=1 .\scripts\verify-overlay-win.ps1
 #
-# Expects a built debug binary (does not cargo build — pair with VsDevCmd).
+# Expects a built debug binary (does not cargo build - pair with VsDevCmd).
 # Dual-display required. Logs under .verify/win-<stamp>/.
 
 $ErrorActionPreference = "Stop"
@@ -90,7 +90,7 @@ public class WinVerify {
 "@
 
 $Bin = if ($env:AI_BUDDY_VERIFY_BIN) { $env:AI_BUDDY_VERIFY_BIN } else { Join-Path $Root "target\debug\ai-buddy.exe" }
-if (-not (Test-Path $Bin)) { Fail "missing $Bin — build with VsDevCmd first, or set AI_BUDDY_VERIFY_BIN" }
+if (-not (Test-Path $Bin)) { Fail "missing $Bin - build with VsDevCmd first, or set AI_BUDDY_VERIFY_BIN" }
 Pass "Binary ready"
 
 $sec = [WinVerify]::GetSecondaryWorkArea()
@@ -163,7 +163,7 @@ function Await-Log([string]$Pattern, [int]$Attempts = 50) {
   return $false
 }
 
-if (-not (Await-Log "frame:" 40)) { Fail "No TRACE frames — $Log" }
+if (-not (Await-Log "frame:" 40)) { Fail "No TRACE frames - $Log" }
 Pass "TRACE frames"
 
 $noAct = $false
@@ -185,7 +185,7 @@ if ($affOk) { Pass "WDA_EXCLUDEFROMCAPTURE" } else {
   Write-Host "[WARN] capture affinity not seen" -ForegroundColor Yellow
 }
 
-if (-not (Await-Log "Grounded" 60)) { Fail "Never Grounded — $Log" }
+if (-not (Await-Log "Grounded" 60)) { Fail "Never Grounded - $Log" }
 Pass "Grounded"
 
 $tx = [int](($rect.Left + $rect.Right) / 2)
@@ -206,7 +206,7 @@ Start-Sleep -Milliseconds 80
 # Frame TRACE uses Dragged (not Held) while the button is down on a hit
 if (-not (Await-Log "Dragged" 30)) {
   [WinVerify]::mouse_event([WinVerify]::MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-  Fail "Never Dragged — $Log"
+  Fail "Never Dragged - $Log"
 }
 Pass "Dragged"
 
@@ -223,7 +223,7 @@ Start-Sleep -Milliseconds 150
 Info "Waiting for Perched..."
 if (Await-Log "Perched" 80) { Pass "Perched" } else {
   Get-Content $Log -Tail 30 | Set-Content (Join-Path $Out "tail.log")
-  Fail "Never Perched — $Log"
+  Fail "Never Perched - $Log"
 }
 
 [WinVerify]::SetForegroundWindow($npHwnd) | Out-Null
@@ -253,5 +253,5 @@ if ($script:AppProc -and -not $script:AppProc.HasExited) {
 }
 Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 $sw.Close()
-Pass "E2E finished — $Out"
+Pass "E2E finished - $Out"
 exit 0

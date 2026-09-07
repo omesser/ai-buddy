@@ -184,6 +184,13 @@
     padding: 7px 10px; max-width: 84%;
   }
   .who-label { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #8A90A0; font-weight: 700; }
+  /* Sibling of .who-label, not inside it: that node uppercases and letter-spaces
+     its text, which would pull the digits apart. #445. */
+  .row .who { display: flex; align-items: baseline; gap: 7px; }
+  .when {
+    font-size: 10.5px; font-variant-numeric: tabular-nums; font-weight: 700;
+    letter-spacing: 0; text-transform: none; color: #8A90A0;
+  }
   .tool {
     font-family: var(--mono); font-size: 12px; color: #6C7280;
     display: flex; gap: 8px; align-items: baseline; min-width: 0;
@@ -266,7 +273,10 @@
     ai-buddy draws it: the Harness runs headless in ACP mode and renders nothing. So the
     window carries four kinds of line and no fifth — the user's turns, the agent's text as
     it streams, tool calls as one-liners, and the forwarded
-    <code>session/request_permission</code> prompt with the Harness's own choices.</p>
+    <code>session/request_permission</code> prompt with the Harness's own choices.
+    Each turn's WHO line carries a local <code>HH:mm</code> (#445), compact enough
+    for the 420-point window; hover is not drawn here, the shipped surface puts
+    the full datetime on <code>title</code>.</p>
 
   <p class="note"><b>Deliberately not drawn:</b> tool-call detail, diffs, file trees, plans,
     a skill browser, a settings pane. Those are the Harness's own surfaces, and reaching for
@@ -532,9 +542,18 @@ function scroll() { log.scrollTop = log.scrollHeight; }
 function add(node) { log.append(node); scroll(); return node; }
 function el(cls, html, tag) { const d = document.createElement(tag || "div"); if (cls) d.className = cls; if (html !== undefined) d.innerHTML = html; return d; }
 
+function when() {
+  const at = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const node = el("when", `${pad(at.getHours())}:${pad(at.getMinutes())}`, "time");
+  node.dateTime = at.toISOString();
+  return node;
+}
 function said(who, text, cls) {
   const row = el("row " + cls);
-  row.append(el("who-label", who), el("said", ""));
+  const cluster = el("who");
+  cluster.append(el("who-label", who), when());
+  row.append(cluster, el("said", ""));
   row.querySelector(".said").textContent = text;
   return add(row);
 }

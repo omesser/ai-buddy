@@ -151,6 +151,18 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* Sibling of .who-label, not inside it: that node uppercases and letter-spaces
+   its text, which would pull the digits apart. */
+.when {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--chat-ink-4);
+}
+
+.note .when {
+  margin-inline-end: 0.55em;
+}
+
 /* Wrapped anywhere rather than on words: real turns carry paths and URLs that
    would otherwise push the log sideways. */
 .said {

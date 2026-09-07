@@ -264,14 +264,15 @@ pub(crate) fn run_frame_loop(
                     visible
                         && live.drawn_last.as_ref().is_some_and(|last| {
                             live.character
-                                .draw(last.animation, last.animation_ms, last.variant_draw)
+                                .draw(
+                                    last.animation,
+                                    last.animation_ms,
+                                    last.variant_draw,
+                                    last.facing,
+                                )
                                 .is_some_and(|art| {
-                                    art.mask.hit(
-                                        &last.rect,
-                                        cursor_at.0,
-                                        cursor_at.1,
-                                        last.mirrored,
-                                    )
+                                    art.mask
+                                        .hit(&last.rect, cursor_at.0, cursor_at.1, art.mirrored)
                                 })
                         })
                 })
@@ -1250,10 +1251,12 @@ pub(crate) fn run_frame_loop(
                 // frames. Resolving it here rather than in the webview keeps the
                 // frame the hit-test measures and the frame the user sees the
                 // same one.
-                let Some(drawn) =
-                    live.character
-                        .draw(frame.animation, frame.animation_ms, frame.variant_draw)
-                else {
+                let Some(drawn) = live.character.draw(
+                    frame.animation,
+                    frame.animation_ms,
+                    frame.variant_draw,
+                    frame.facing,
+                ) else {
                     // A Character with no drawable Animation at all, which a
                     // validated Character Package cannot be. Left out of
                     // `placed`, and the webview reads absence as dismissal: it
@@ -1306,14 +1309,15 @@ pub(crate) fn run_frame_loop(
                 // should reach us is a question about where the art is going to
                 // be. A cursor that has just arrived over it must not spend a
                 // frame passing clicks to the application underneath.
-                let mirrored = frame.facing < 0.0;
-                over_sprite |= drawn.mask.hit(&sprite, cursor_at.0, cursor_at.1, mirrored);
+                over_sprite |= drawn
+                    .mask
+                    .hit(&sprite, cursor_at.0, cursor_at.1, drawn.mirrored);
                 live.drawn_last = Some(Drawn {
                     rect: sprite,
                     animation: frame.animation,
                     animation_ms: frame.animation_ms,
                     variant_draw: frame.variant_draw,
-                    mirrored,
+                    facing: frame.facing,
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
@@ -1332,7 +1336,7 @@ pub(crate) fn run_frame_loop(
                     height,
                     animation: drawn.animation.to_string(),
                     frame_index: drawn.index,
-                    facing: frame.facing as i8,
+                    mirror: if drawn.mirrored { -1 } else { 1 },
                     dialogue,
                     thinking,
                     cue: frame.cue,
@@ -1483,7 +1487,7 @@ pub(crate) fn run_frame_loop(
                             height: instance.height,
                             animation: &instance.animation,
                             frame_index: instance.frame_index,
-                            facing: instance.facing,
+                            mirror: instance.mirror,
                             dialogue: instance.dialogue.clone(),
                             thinking: instance.thinking,
                             // Every overlay draws the art; one draws the
@@ -1535,7 +1539,7 @@ pub(crate) fn run_frame_loop(
                                 Some(opaque.to_vec()),
                                 local.x,
                                 local.y,
-                                i32::from(instance.facing),
+                                i32::from(instance.mirror),
                                 instance.sprite.scale,
                             );
 
@@ -1555,7 +1559,7 @@ pub(crate) fn run_frame_loop(
                                 let mask_clone = instance.mask.clone();
                                 let sprite_x = local.x;
                                 let sprite_y = local.y;
-                                let sprite_facing = i32::from(instance.facing);
+                                let sprite_mirror = i32::from(instance.mirror);
                                 let sprite_scale = instance.sprite.scale;
                                 let mask_applied_clone = Arc::clone(&mask_applied);
                                 let last_mask_clone = Arc::clone(&last_mask);
@@ -1572,7 +1576,7 @@ pub(crate) fn run_frame_loop(
                                             Some(&mask_clone),
                                             sprite_x,
                                             sprite_y,
-                                            sprite_facing,
+                                            sprite_mirror,
                                             sprite_scale,
                                         ) {
                                             Ok(()) => {

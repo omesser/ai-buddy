@@ -202,6 +202,10 @@
   .log { flex: 1 1 auto; overflow-y: auto; display: grid; align-content: start; }
   .row { display: grid; }
   .row .said { white-space: pre-wrap; }
+  /* Sibling of .who-label: that node letter-spaces, which would pull the digits
+     apart. Colour is per variant, with the WHO label. #445. */
+  .row .who { display: flex; align-items: baseline; gap: 7px; }
+  .when { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
   .tool { display: flex; align-items: baseline; min-width: 0; }
   /* Truncated rather than wrapped: a tool call is one line, and the path is
      the part that gives. The Harness's own surfaces hold the detail. */
@@ -276,6 +280,7 @@
     font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
     color: #6C7488; font-weight: 800;
   }
+  .v-min .when { font-size: 10px; color: #6C7488; font-weight: 800; }
   .v-min .tool { font-family: var(--mono); font-size: 11.5px; color: #7C8496; gap: 8px; }
   .v-min .tool .glyph { color: #5CC9B5; }
   .v-min .tool .arg { color: #B6BDCC; }
@@ -377,16 +382,18 @@
   .v-term .log { padding: 8px 10px 6px; gap: 2px; }
   /* One line per event: the label sits in the same line as the text, and the
      elapsed-seconds gutter runs down the left the way a log's does. */
-  .v-term .row { grid-template-columns: 46px 62px 1fr; gap: 8px; align-items: baseline; }
+  .v-term .row { grid-template-columns: 46px auto 1fr; gap: 8px; align-items: baseline; }
   .v-term .row::before {
     content: "+" attr(data-t) "s"; color: #46525F; font-size: 11px;
     grid-column: 1; grid-row: 1;
   }
+  .v-term .row .who { grid-column: 2; grid-row: 1; gap: 6px; }
   .v-term .who-label {
-    grid-column: 2; grid-row: 1; font-size: 11px; text-transform: lowercase;
+    font-size: 11px; text-transform: lowercase;
     letter-spacing: 0; color: #6D7A8A;
   }
   .v-term .who-label::after { content: " ›"; }
+  .v-term .when { font-size: 11px; color: #6D7A8A; }
   .v-term .row .said { grid-column: 3; grid-row: 1; }
   .v-term .row.you .said { color: #E4EAF2; }
   .v-term .row.them .said { color: #C6D0DC; }
@@ -513,6 +520,7 @@
     font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
     color: rgba(241,244,249,.6); font-weight: 800;
   }
+  .v-glass .when { font-size: 10px; color: rgba(241,244,249,.6); font-weight: 800; }
   .v-glass .tool {
     font-family: var(--mono); font-size: 11.5px; gap: 8px;
     color: rgba(241,244,249,.66);
@@ -612,7 +620,8 @@
 
   <p class="note"><b>What is new to all three</b> is the Character Prompt tab beside the
     conversation: the Character's <code>personality.txt</code> frozen and read-only above,
-    and this Instance's own prompt editable below, empty by default. The frozen text on
+    and this Instance's own prompt editable below, empty by default. WHO labels carry a
+    local <code>HH:mm</code> (#445), five characters on the same line as the name. The frozen text on
     this page is BMO's, quoted from <code>characters/bmo/personality.txt</code>. The tab is
     a proposal, and its ADR is <a href="https://github.com/omesser/ai-buddy/pull/338">#338</a>;
     what it is doing here is showing whether each design has room for a second pane at
@@ -894,9 +903,18 @@ function add(node) {
 }
 function el(cls, html, tag) { const d = document.createElement(tag || "div"); if (cls) d.className = cls; if (html !== undefined) d.innerHTML = html; return d; }
 
+function when() {
+  const at = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const node = el("when", `${pad(at.getHours())}:${pad(at.getMinutes())}`, "time");
+  node.dateTime = at.toISOString();
+  return node;
+}
 function said(who, text, cls) {
   const row = el("row " + cls);
-  row.append(el("who-label", who), el("said", ""));
+  const cluster = el("who");
+  cluster.append(el("who-label", who), when());
+  row.append(cluster, el("said", ""));
   row.querySelector(".said").textContent = text;
   return add(row);
 }

@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- Still of the shipped Chat surface for #445 screengrabs. Not linked from
+     the product; delete with the PNG if a later shot replaces it. -->
+<html lang="en" class="chat-ui-minimal">
+  <head>
+    <meta charset="utf-8" />
+    <title>bmo</title>
+    <link rel="stylesheet" href="../../src/chat-ui.css" />
+    <style>
+      html,
+      body {
+        width: 420px;
+        height: 520px;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="tb">
+      <span class="who">
+        <span class="name">bmo</span>
+        <span class="of">BMO</span>
+      </span>
+    </header>
+    <div class="log" id="log">
+      <div class="row them">
+        <div class="who">
+          <div class="who-label">bmo · when summoned</div>
+          <time class="when" datetime="2026-09-07T11:32:00Z" title="7 Sep 2026, 14:32:00">14:32</time>
+        </div>
+        <div class="said">hey. what are we doing.</div>
+      </div>
+      <div class="row you">
+        <div class="who">
+          <div class="who-label">You</div>
+          <time class="when" datetime="2026-09-07T11:33:00Z" title="7 Sep 2026, 14:33:00">14:33</time>
+        </div>
+        <div class="said">Did anything break in the overnight CI runs?</div>
+      </div>
+      <div class="row them">
+        <div class="who">
+          <div class="who-label">bmo</div>
+          <time class="when" datetime="2026-09-07T11:33:12Z" title="7 Sep 2026, 14:33:12">14:33</time>
+        </div>
+        <div class="said">Two failures out of twelve, both the windows job, both on lints. macOS and Ubuntu were green each time, which is why nobody noticed.</div>
+      </div>
+      <div class="note">
+        <time class="when" datetime="2026-09-07T11:34:00Z" title="7 Sep 2026, 14:34:00">14:34</time>No answer came back.
+      </div>
+    </div>
+    <form class="composer">
+      <input placeholder="Ask bmo…" />
+      <button type="button">Send</button>
+    </form>
+    <footer class="bar">
+      <span class="v elide" title="Behavior">patrol</span>
+      <span class="sep">›</span>
+      <span class="v" title="Primitive">Walk</span>
+      <span class="sep">›</span>
+      <span class="v elide" title="Animation">walk</span>
+      <span class="sep">·</span>
+      <span class="v" title="State">Grounded</span>
+      <span class="v" title="Which way it faces">→</span>
+      <span class="sep">·</span>
+      <span class="v" title="The Director">wake 23s</span>
+      <span class="sep">·</span>
+      <span class="v" title="What the last wake was told had happened">summoned</span>
+    </footer>
+  </body>
+</html>

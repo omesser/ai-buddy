@@ -148,9 +148,10 @@ struct Drawn {
     /// The variant draw the art was picked with, so the hit-test measures the
     /// strip the user saw rather than whatever the next draw lands on.
     variant_draw: u64,
-    /// Whether the art was drawn mirrored, so the hit-test feels the same
-    /// pixels the user saw — this tick's facing may already differ.
-    mirrored: bool,
+    /// Which way the sprite was pointed, so the hit-test resolves the strip
+    /// the art was drawn from and mirrors it the same way — this tick's
+    /// facing may already differ.
+    facing: f64,
 }
 
 /// What the last `engine:` line said about an Instance.
@@ -306,8 +307,12 @@ struct SpritePlacement<'a> {
     /// the name the Engine asked with.
     animation: &'a str,
     frame_index: usize,
-    /// -1 to mirror the art (heading left), 1 to draw it as authored.
-    facing: i8,
+    /// -1 to mirror the art, 1 to draw it as authored. `Character::draw`'s
+    /// own answer and not the heading (#345): a Character with a left strip
+    /// heads left in art already facing that way, and mirroring it would turn
+    /// it back round. The hit-test mask is taken from the same answer, so the
+    /// clickable region is the art the user sees.
+    mirror: i8,
     /// A line to speak on this tick only. Dialogue is an event, not a state.
     /// #119: the webview latches it and owns display duration.
     dialogue: Option<String>,
@@ -413,7 +418,7 @@ struct Placed {
     height: i32,
     animation: String,
     frame_index: usize,
-    facing: i8,
+    mirror: i8,
     dialogue: Option<String>,
     thinking: bool,
     cue: Option<Cue>,
@@ -906,7 +911,9 @@ struct ChatStatus {
     state: State,
     /// What drove the last wake, in `happened_cell`'s word for it.
     happened: Option<&'static str>,
-    /// -1 heading left, 1 as authored, like `SpritePlacement::facing`.
+    /// -1 heading left, 1 heading right. The heading itself, and not
+    /// `SpritePlacement::mirror`'s answer about the art (#345): the bar says
+    /// which way the sprite is walking, which a left strip does not change.
     facing: i8,
     /// A turn is on the wire. The same bit the thinking ellipsis draws from.
     asking: bool,
@@ -1625,7 +1632,7 @@ fn phase_of(interval: Duration, draw: u64) -> Duration {
 /// at rather than what it is always drawn at.
 fn sprite_width(character: &Character) -> f64 {
     character
-        .draw("idle", 0, 0)
+        .draw("idle", 0, 0, 1.0)
         .map_or(0.0, |drawn| f64::from(drawn.frame_size.0))
         * f64::from(character.scale)
 }
@@ -1898,7 +1905,7 @@ fn main() {
                 .first()
                 .and_then(|(_, character)| {
                     let scale = character.scale as i32;
-                    character.draw("idle", 0, 0).map(|drawn| {
+                    character.draw("idle", 0, 0, 1.0).map(|drawn| {
                         (
                             drawn.frame_size.0 as i32 * scale,
                             drawn.frame_size.1 as i32 * scale,
