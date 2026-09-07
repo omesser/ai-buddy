@@ -195,9 +195,17 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>, wanted: Optio
             // must not read as attached: a Harness this machine has not got
             // leaves the handle in place while the Director runs on Static,
             // and the HTTP rows above are live because of it (#452).
+            //
+            // Live is not the same as in force, which is what this line used
+            // to imply and #469 corrected. `completer_from` hands the Director
+            // the handle for as long as one exists, so a key typed above is
+            // read at the next launch — the alternative, a dead session
+            // falling through to the HTTP Completer, is the second mind
+            // ADR-0008 refuses.
             None if !attached.alive => format!(
-                "{} is set but not running, so the HTTP Completer above is the \
-                 Director's mind until it answers.",
+                "{} is set but not running, so the Director is on static weights until it \
+                 answers. It stays the Completer either way, so a key in the HTTP rows above \
+                 is read at the next launch, not this one.",
                 attached.name
             ),
             None => match &attached.session_id {
@@ -3061,8 +3069,31 @@ mod tests {
             "a handle that never answered must not read as attached, got {line:?}"
         );
         assert!(
-            line.contains("HTTP Completer above"),
+            line.contains("static weights"),
             "the line has to name what is answering instead, got {line:?}"
+        );
+    }
+
+    /// #469: the handle stays authoritative, so the rows #452 kept live are a
+    /// way back on the next launch and not a live switch — handing a dead
+    /// session to the HTTP Completer mid-run is the second mind ADR-0008
+    /// refuses. The line is where the user learns that, so it says it.
+    #[test]
+    fn a_dead_harness_says_a_typed_key_waits_for_the_next_launch() {
+        let dead = crate::harness::HarnessInspect {
+            name: "claude".to_string(),
+            command: "npx -y @agentclientprotocol/claude-agent-acp".to_string(),
+            alive: false,
+            ..Default::default()
+        };
+        let line = harness_state(Some(&dead), Some(&dead.command));
+        assert!(
+            line.contains("next launch"),
+            "a key typed above waits for one, and the line has to say so, got {line:?}"
+        );
+        assert!(
+            !line.contains("is the Director's mind"),
+            "the dead handle is still the Completer; the HTTP rows are not, got {line:?}"
         );
     }
 
