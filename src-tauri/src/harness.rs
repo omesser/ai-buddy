@@ -872,16 +872,17 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
 /// The Action Log line for what one reply parsed to.
 ///
 /// Written by the Shell where it takes the wake out of `Slots`, because
-/// `crates/core` parses and does no I/O — and only with a Harness attached,
-/// since the Action Log is that path's (#435).
+/// `crates/core` parses and does no I/O. A Harness session writes beside
+/// that session; an HTTP wake writes to the same data dir Memory uses (#435).
 pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) {
-    if let Some(session) = attached() {
-        action_log::append(
-            &session.dir,
-            "parsed",
-            parsed_fields(instance, wake, reactive, near_miss),
-        );
-    }
+    let dir = attached()
+        .map(|session| session.dir.clone())
+        .unwrap_or_else(ai_buddy_core::memory::data_dir);
+    action_log::append(
+        &dir,
+        "parsed",
+        parsed_fields(instance, wake, reactive, near_miss),
+    );
 }
 
 /// The four answers the Shell has to "what did the reply parse to".

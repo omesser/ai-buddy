@@ -15,6 +15,7 @@ use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules
 use ai_buddy_core::window_source::{Rect, WindowSource};
 use tauri::{Emitter, Manager};
 
+use super::session_log;
 use super::settings::SettingsOp;
 use super::{
     apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, menu, model,
@@ -478,6 +479,7 @@ pub(crate) fn run_frame_loop(
                         ambient_allowed,
                         configured,
                     } => {
+                        session_log::clear(&app);
                         // What every live `Pace` was built from, and the only
                         // way to tell an edited wake interval from a Retarget
                         // that changed the host and left the interval alone.
@@ -555,6 +557,8 @@ pub(crate) fn run_frame_loop(
                             said: None,
                             busy: false,
                             reacting_to: None,
+                            you: false,
+                            at: None,
                         },
                     );
                     continue;
@@ -578,6 +582,8 @@ pub(crate) fn run_frame_loop(
                             said: None,
                             busy: false,
                             reacting_to: None,
+                            you: false,
+                            at: None,
                         },
                     );
                     continue;
@@ -597,10 +603,13 @@ pub(crate) fn run_frame_loop(
                             said: None,
                             busy: true,
                             reacting_to: None,
+                            you: false,
+                            at: None,
                         },
                     );
                     continue;
                 }
+                session_log::remember_you(&app, &live.id, &line.text, SystemTime::now());
                 live.addressed = true;
                 live.happened = Happened::Chat(line.text);
             }
@@ -1052,13 +1061,23 @@ pub(crate) fn run_frame_loop(
                 }
                 let unasked = responded && !answering_chat && frame.dialogue.is_some();
                 if answering_chat || unasked {
+                    let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
+                    session_log::remember_them(
+                        &app,
+                        &live.id,
+                        frame.dialogue.clone(),
+                        reacting_to.clone(),
+                        SystemTime::now(),
+                    );
                     let _ = app.emit_to(
                         chat_label(&live.id),
                         CHAT_EVENT,
                         ChatReply {
                             said: frame.dialogue.clone(),
                             busy: false,
-                            reacting_to: unasked.then(|| reacting_to.clone()).flatten(),
+                            reacting_to,
+                            you: false,
+                            at: None,
                         },
                     );
                 }
@@ -1132,6 +1151,8 @@ pub(crate) fn run_frame_loop(
                                         said: None,
                                         busy: false,
                                         reacting_to: None,
+                                        you: false,
+                                        at: None,
                                     },
                                 );
                             }
