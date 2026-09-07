@@ -2,9 +2,10 @@
 <!--
   The cue proposal for omesser/ai-buddy#277: one visual and one sound per
   interaction, drawn and synthesized by the Shell so no Character Package
-  changes. The <style> block marked "cues" and the <script> block marked
-  "Cues" are the spec src/main.css and src/main.js port from; the rest is the
-  page that lets a reviewer play them.
+  changes. Frozen as a Dated page (ADR-0011) rather than claiming to be the
+  spec src/ implements — that claim is the Described class the decision
+  forbids, and another change owns loading the live cue.js. The rest is the
+  page that lets a reviewer play the proposal.
 
   Self-contained on purpose. BMO's idle frame is inlined so the page opens
   from a clone, a Pages deploy, or an attachment with no other file beside it.
@@ -13,6 +14,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A frozen proposal on a public site with no access control. Indexing it
+     would make a superseded design the canonical answer for "ai-buddy cues". -->
+<meta name="robots" content="noindex">
 <title>Buddy Cues</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -73,6 +77,12 @@
   .page { max-width: 960px; margin: 0 auto; padding: 40px 24px 72px; }
 
   header { display: flex; flex-direction: column; gap: 6px; margin-bottom: 28px; }
+  .class {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .02em;
+    color: var(--ink-3); margin: 0;
+  }
+  .class a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .class a:hover { text-decoration: underline; }
   h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
   .lede { color: var(--ink-2); max-width: 62ch; margin: 0; }
   .lede code, td code, .spec code { font-family: var(--mono); font-size: 0.92em; }
@@ -226,6 +236,7 @@
 <body>
 <div class="page">
   <header>
+    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/277">#277</a> · 2026-09-03 · hand-written and frozen, not a description of shipped behavior</p>
     <h1>Buddy Cues</h1>
     <p class="lede">Five cues for #277, one per interaction. Click, double-click, right-click, and drag BMO on the desk below. The Summon cue cancels a Poke still in flight; a fast release is a Throw. Every stroke is white on ink, the same pair the speech bubble already uses, so nothing new is introduced to the overlay.</p>
   </header>

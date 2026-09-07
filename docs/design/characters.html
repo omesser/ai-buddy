@@ -8,10 +8,12 @@
 
   A Generated page under ADR-0011. This file is the chrome; everything it says
   about a Character — which Animations exist, their frame counts, fps, loop,
-  render_mode and scale — arrives in the <script id="gallery"> block, which
-  scripts/make-character-gallery.py substitutes at deploy time from
-  characters/. Opened straight from a clone the block is still the empty
-  placeholder, so the page says it has no data rather than inventing some.
+  render_mode, scale, variant rings and optional climb/grab — arrives in the
+  <script id="gallery"> block, which scripts/make-character-gallery.py
+  substitutes at deploy time from characters/. Opened straight from a clone
+  the block is still the empty placeholder, so the page says it has no data
+  rather than inventing some. The page plays every ring member; it does not
+  pick one. A JS port of the Engine's Seeded draw would drift (ADR-0011).
 -->
 <html lang="en">
 <head>
@@ -74,7 +76,9 @@
            border-radius: 7px; padding: .35rem .8rem; cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
   .hint { color: var(--ink-3); font-size: .85rem; }
+  .scale { display: flex; gap: .35rem; align-items: center; }
 
   section.character { margin-top: 2.4rem; }
   h2 { font-size: 1.15rem; margin: 0; color: var(--accent); }
@@ -113,10 +117,18 @@
   .source.undeclared p { color: var(--warn); }
   .source .license em { font-style: normal; color: var(--ink-3); }
 
-  .strip { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1rem; }
+  .strip { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1rem;
+           align-items: flex-end; }
+  /* One box around a base and its variants: the Engine draws one member of
+     that ring, chosen when the Animation starts. The gallery shows every
+     member so a README still cannot. */
+  .ring { display: flex; flex-wrap: wrap; gap: .8rem; align-items: flex-end;
+          padding: .55rem; border: 1px solid var(--line); border-radius: 12px;
+          background: var(--card); }
   .tile { background: var(--card); border: 1px solid var(--line);
           border-radius: 9px; padding: .55rem; display: flex;
           flex-direction: column; gap: .45rem; }
+  .ring .tile { background: var(--paper); }
   .stage { position: relative; align-self: center; cursor: pointer; }
   .stage img { position: absolute; bottom: 0; display: none;
                -webkit-user-drag: none; }
@@ -147,12 +159,20 @@
   <div class="cls">Generated from characters/ at deploy</div>
   <p class="lede">Every Character this project can publish, and every Animation in the
     Required Animation Set, playing at the frame rate its own Character
-    Manifest declares. A repository can show you a PNG; it cannot show you
-    eight frames at 12 fps.</p>
+    Manifest declares. Variants of idle and walk play beside their base —
+    every member, not a seeded pick. Optional climb and grab follow when a
+    package declares them. Preview at an integer multiple of the Character's
+    declared scale; nearest-neighbour is the point a README still cannot show.</p>
 
   <div class="controls">
     <button id="toggle" type="button">Pause</button>
     <button id="replay" type="button">Replay all</button>
+    <span class="scale" role="group" aria-label="Preview of declared scale">
+      <span class="hint">Preview of declared scale</span>
+      <button type="button" class="preview" data-times="1" aria-pressed="true">1×</button>
+      <button type="button" class="preview" data-times="2" aria-pressed="false">2×</button>
+      <button type="button" class="preview" data-times="3" aria-pressed="false">3×</button>
+    </span>
     <span class="hint">Click any Animation to replay it. The ones that
       <code>loop = "once"</code> hold their last frame, the way the Engine
       holds it.</span>
@@ -170,6 +190,8 @@
 <script>
   const data = JSON.parse(document.getElementById("gallery").textContent);
   const root = document.getElementById("gallery-root");
+  const requiredNames = new Set(data.required || []);
+  let previewTimes = 1;
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -184,6 +206,8 @@
   const stages = [];
 
   function build() {
+    root.replaceChildren();
+    stages.length = 0;
     if (!data.characters.length) {
       root.append(el("p", "empty",
         "No Character data in this page. It is a template until "
@@ -194,7 +218,8 @@
       const section = el("section", "character" + (character.smooth ? " smooth" : ""));
       section.append(el("h2", null, character.name));
 
-      const declared = character.animations.filter((a) => !a.missing).length;
+      const declared = character.animations.filter((a) =>
+        requiredNames.has(a.name) && !a.missing).length;
       const meta = el("div", "meta");
       meta.append(el("code", null, "characters/" + character.dir));
       meta.append(document.createTextNode(
@@ -235,8 +260,18 @@
 
       const strip = el("div", "strip");
       for (const animation of character.animations) {
-        strip.append(animation.missing ? missingTile(animation)
-                                       : playingTile(character, animation));
+        const tile = animation.missing ? missingTile(animation)
+                                       : playingTile(character, animation);
+        if (animation.variants && animation.variants.length) {
+          const ring = el("div", "ring");
+          ring.append(tile);
+          for (const member of animation.variants) {
+            ring.append(playingTile(character, member));
+          }
+          strip.append(ring);
+        } else {
+          strip.append(tile);
+        }
       }
       section.append(strip);
       root.append(section);
@@ -260,7 +295,7 @@
   function playingTile(character, animation) {
     const tile = el("div", "tile");
     const stage = el("div", "stage");
-    const scale = character.scale;
+    const scale = character.scale * previewTimes;
     const width = Math.max(...animation.frames.map((f) => f.w)) * scale;
     const height = Math.max(...animation.frames.map((f) => f.h)) * scale;
     stage.style.width = Math.max(width, 72) + "px";
@@ -291,10 +326,19 @@
 
     const label = el("div", "label");
     label.append(el("b", null, animation.name));
-    label.append(el("span", null,
-      animation.frames.length + (animation.frames.length === 1 ? " frame" : " frames")
-      + " · " + animation.fps + " fps"
-      + (animation.loop ? "" : " · once")));
+    const bits = [];
+    if (animation.variant_of) {
+      bits.push("variant of " + animation.variant_of);
+      bits.push("weight " + animation.weight);
+    } else if (!requiredNames.has(animation.name)) {
+      bits.push("optional");
+    } else if (animation.variants && animation.variants.length) {
+      bits.push("weight " + animation.weight);
+    }
+    bits.push(animation.frames.length + (animation.frames.length === 1 ? " frame" : " frames"));
+    bits.push(animation.fps + " fps");
+    if (!animation.loop) bits.push("once");
+    label.append(el("span", null, bits.join(" · ")));
     tile.append(label);
     return tile;
   }
@@ -344,6 +388,16 @@
   document.getElementById("replay").addEventListener("click", () => {
     restart(performance.now());
     if (!playing) for (const state of stages) draw(state, 0);
+  });
+  document.querySelectorAll(".preview").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      previewTimes = Number(btn.dataset.times);
+      document.querySelectorAll(".preview").forEach((other) => {
+        other.setAttribute("aria-pressed", other === btn ? "true" : "false");
+      });
+      build();
+      restart(performance.now());
+    });
   });
   label();
   restart(performance.now());
