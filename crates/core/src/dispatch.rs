@@ -347,43 +347,6 @@ mod tests {
         }
     }
 
-    /// The lone Instance stands in for the shipped roster: without one, these
-    /// two exercise the empty-roster failure instead of the routing they name.
-    fn one_instance() -> [InstanceInfo; 1] {
-        [InstanceInfo {
-            id: "instance-1".to_string(),
-            name: "Buddy".to_string(),
-        }]
-    }
-
-    #[test]
-    fn dispatch_speak_returns_speak_result() {
-        let temp = TempDir::new("speak");
-        let source = fake_source(vec![]);
-        let infos = one_instance();
-        let mut context = test_context(&temp, &source, &infos);
-
-        let args = json!({"message": "Hello, world"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
-
-        assert_eq!(result["success"], true);
-        assert_eq!(result["message"], "Hello, world");
-    }
-
-    #[test]
-    fn dispatch_play_behavior_returns_play_behavior_result() {
-        let temp = TempDir::new("play");
-        let source = fake_source(vec![]);
-        let infos = one_instance();
-        let mut context = test_context(&temp, &source, &infos);
-
-        let args = json!({"behavior": "wave"});
-        let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
-
-        assert_eq!(result["success"], true);
-        assert_eq!(result["behavior"], "wave");
-    }
-
     #[test]
     fn dispatch_list_windows_returns_list_windows_result() {
         let temp = TempDir::new("list-windows");
@@ -971,6 +934,35 @@ mod tests {
         assert_eq!(behavior_result["success"], false);
         assert_eq!(behavior_result["behavior"], "");
         assert_eq!(behavior_result["reason"], "The behavior name is empty");
+    }
+
+    /// Break: a context with no handle reports success again. The stdio path
+    /// runs this way, so a roster it learns to populate must not be enough on
+    /// its own to make the answer say the Expression landed. #502.
+    #[test]
+    fn a_roster_without_a_handle_fails_and_says_there_is_no_connection() {
+        let temp = TempDir::new("no-handle");
+        let source = fake_source(vec![]);
+        let infos = [InstanceInfo {
+            id: "instance-1".to_string(),
+            name: "Buddy".to_string(),
+        }];
+        // `test_context` carries `expression: None`, which is the shipped
+        // stdio shape.
+        let mut context = test_context(&temp, &source, &infos);
+
+        let spoke = dispatch("speak", json!({"message": "Hello"}), &mut context)
+            .expect("dispatch succeeds");
+        assert_eq!(spoke["success"], false);
+        assert_eq!(
+            spoke["reason"],
+            "No live connection to the running app, so nothing changed on screen"
+        );
+
+        let played = dispatch("play_behavior", json!({"behavior": "wave"}), &mut context)
+            .expect("dispatch succeeds");
+        assert_eq!(played["success"], false);
+        assert_eq!(played["reason"], spoke["reason"]);
     }
 
     /// Break: a stale roster entry reports success again. The roster a caller

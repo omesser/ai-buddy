@@ -181,15 +181,22 @@ mod helpers {
             }
         };
 
+        // No handle is no way to reach the Instance the roster just named, so
+        // the proposal lands nowhere however live that Instance is. The stdio
+        // path runs this way today, which is why it cannot report success.
+        let Some(handle) = expression else {
+            return Err(
+                "No live connection to the running app, so nothing changed on screen".to_string(),
+            );
+        };
+
         // The roster is a snapshot, so an Instance can retire between the
         // resolution above and this enqueue. Saying so is the same honesty the
         // empty roster now gets: the proposal reached nobody either way. #502.
-        if let Some(handle) = expression {
-            if !handle.enqueue(&target_id, proposal) {
-                return Err(format!(
-                    "Character Instance {target_id} is no longer running, so nothing changed on screen"
-                ));
-            }
+        if !handle.enqueue(&target_id, proposal) {
+            return Err(format!(
+                "Character Instance {target_id} is no longer running, so nothing changed on screen"
+            ));
         }
 
         Ok(())
