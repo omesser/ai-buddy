@@ -63,6 +63,12 @@ pub enum FormRow {
         label: Option<String>,
         writes: TextField,
         help: Option<String>,
+        /// The choices, when the form knows them. Empty leaves them to the
+        /// renderer, which is how the Character popup gets the installed
+        /// packages — a list the form cannot see.
+        options: Vec<String>,
+        /// Read-only, for the same reason as `TextField::frozen`.
+        frozen: bool,
     },
     /// A multiline text field that writes to Settings.
     Multiline {
@@ -187,6 +193,9 @@ impl FormDescription {
                 }
                 | FormRow::SecureField {
                     id: row_id, frozen, ..
+                }
+                | FormRow::Popup {
+                    id: row_id, frozen, ..
                 } if row_id == id => Some(*frozen),
                 FormRow::Composite { controls, .. } => {
                     controls.iter().find_map(|control| match control {
@@ -279,6 +288,54 @@ pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
 pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
 pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
+pub const HARNESS_ID: &str = "harness";
+pub const HARNESS_COMMAND_ID: &str = "harness_command";
+pub const HARNESS_STATE_ID: &str = "harness_state";
+
+/// The two Completer-source titles the file does not spell the same way: Off
+/// is the empty string and Custom is `custom`, which defers to the command
+/// line beside it.
+pub const HARNESS_OFF: &str = "Off";
+pub const HARNESS_CUSTOM: &str = "Custom";
+/// What `harness_choice` writes for Custom. Not a value `AI_BUDDY_HARNESS`
+/// can take, so it cannot collide with a Harness of that name.
+pub const HARNESS_CUSTOM_VALUE: &str = "custom";
+/// The named launch rows, in ADR-0017's order. Grok, Copilot and Gemini reach
+/// the same Completer through Custom until a turn has been smoked.
+pub const HARNESS_PRESETS: [&str; 3] = ["claude", "hermes", "opencode"];
+
+/// The Completer-source popup's choices, in the order it draws them.
+pub fn harness_options() -> Vec<String> {
+    let mut options = vec![HARNESS_OFF.to_string()];
+    options.extend(HARNESS_PRESETS.iter().map(|name| name.to_string()));
+    options.push(HARNESS_CUSTOM.to_string());
+    options
+}
+
+/// The popup title for a source in force, and the command line that belongs
+/// beside it.
+///
+/// One function because the two rows are one choice spelled two ways:
+/// `AI_BUDDY_HARNESS` puts a custom command line in the value itself, while
+/// the file keeps `custom` plus a field of its own, so picking a preset and
+/// coming back does not lose what was typed (#436).
+pub fn harness_rows(value: &str, command: &str) -> (String, String) {
+    match value.trim() {
+        "" => (HARNESS_OFF.to_string(), command.to_string()),
+        HARNESS_CUSTOM_VALUE => (HARNESS_CUSTOM.to_string(), command.to_string()),
+        preset if HARNESS_PRESETS.contains(&preset) => (preset.to_string(), command.to_string()),
+        line => (HARNESS_CUSTOM.to_string(), line.to_string()),
+    }
+}
+
+/// What a popup title means in the file. The inverse of `harness_rows`.
+pub fn harness_choice(title: &str) -> String {
+    match title {
+        HARNESS_OFF => String::new(),
+        HARNESS_CUSTOM => HARNESS_CUSTOM_VALUE.to_string(),
+        preset => preset.to_string(),
+    }
+}
 
 /// The label of a row an environment variable can own, and whether it does.
 ///
@@ -305,6 +362,24 @@ fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
     }
 }
 
+/// One of the three HTTP rows, which answer to an attachment as well as to a
+/// variable.
+///
+/// An attached Harness *is* the Completer (ADR-0008), so these three drive
+/// nothing while one is up, and #272's rule applies for the same reason it
+/// applies to an exported variable: an edit the Director would discard is not
+/// an edit to offer. The source row below is never frozen by an attachment,
+/// so Off stays one pick and one launch away.
+fn http_row(label: &str, var: &str, attached: bool) -> (String, bool) {
+    match attached {
+        true => (
+            format!("{label} (not in use: a Harness is the Completer)"),
+            true,
+        ),
+        false => env_row(label, var),
+    }
+}
+
 /// A checkbox for one development switch.
 ///
 /// Frozen when the exported value is one `model::env_switch` reads: that
@@ -328,9 +403,10 @@ fn flag_row(
 }
 
 fn director_sections() -> Vec<FormSection> {
-    let (base_url_label, base_url_frozen) = env_row("Base URL", model::BASE_URL);
-    let (model_label, model_frozen) = env_row("Model", model::MODEL);
-    let (api_key_label, api_key_frozen) = env_row("API key", model::API_KEY);
+    let attached = crate::harness::attached().is_some();
+    let (base_url_label, base_url_frozen) = http_row("Base URL", model::BASE_URL, attached);
+    let (model_label, model_frozen) = http_row("Model", model::MODEL, attached);
+    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, attached);
     let (director_label, director_frozen) = switch_row("Director on", model::ENABLED);
     let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
 
@@ -425,6 +501,7 @@ fn director_sections() -> Vec<FormSection> {
                 },
             ],
         },
+        completer_source_section(),
         FormSection {
             heading: "Last user turn".to_string(),
             comment: None,
@@ -437,6 +514,60 @@ fn director_sections() -> Vec<FormSection> {
     ]
 }
 
+/// Which mind answers a wake, and what the current attachment is doing.
+///
+/// One variable owns both rows because `AI_BUDDY_HARNESS` spells the whole
+/// choice in one value — a preset name or a command line (ADR-0017) — so
+/// freezing them apart would offer an edit the launch throws away (#272).
+///
+/// No credential row of any kind, now or later: the Harness signs itself in
+/// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
+/// command the state line names is text, and nothing here runs it.
+fn completer_source_section() -> FormSection {
+    let (source_label, frozen) = env_row("Harness", crate::harness::VAR);
+    FormSection {
+        heading: "Completer source".to_string(),
+        comment: Some(
+            "Director off runs on static weights. Director on with no Harness is the \
+             HTTP Completer above. Director on with a Harness makes that Harness the \
+             mind for every buddy, and the HTTP rows stop driving it."
+                .to_string(),
+        ),
+        rows: vec![
+            FormRow::Popup {
+                id: HARNESS_ID.to_string(),
+                label: Some(source_label),
+                writes: TextField::Harness,
+                help: Some(
+                    "Off leaves the HTTP Completer. A Harness takes over on the next launch."
+                        .to_string(),
+                ),
+                options: harness_options(),
+                frozen,
+            },
+            // Not batched: one launch stands between this and the Completer
+            // either way, so a button between the typing and the file would
+            // only be one more thing to click.
+            FormRow::TextField {
+                id: HARNESS_COMMAND_ID.to_string(),
+                label: Some("Custom command line".to_string()),
+                placeholder: "opencode acp".to_string(),
+                writes: TextField::HarnessCommand,
+                frozen,
+                batched: false,
+            },
+            FormRow::InspectBlock {
+                id: HARNESS_STATE_ID.to_string(),
+                label: None,
+                help: Some(
+                    "ai-buddy never asks for the Harness's credential — it signs itself in."
+                        .to_string(),
+                ),
+            },
+        ],
+    }
+}
+
 fn character_sections() -> Vec<FormSection> {
     vec![
         FormSection {
@@ -447,6 +578,8 @@ fn character_sections() -> Vec<FormSection> {
                 label: None,
                 writes: TextField::Character,
                 help: Some("The character your buddy wears.".to_string()),
+                options: Vec::new(),
+                frozen: false,
             }],
         },
         FormSection {
@@ -774,6 +907,7 @@ mod tests {
         let mut expected = vec![
             "Character",
             "Completer limits",
+            "Completer source",
             "Director",
             "Do Not Disturb",
             "Excluded applications",
@@ -1187,6 +1321,7 @@ mod tests {
 
         assert!(has_help("Director", DIRECTOR_ID));
         assert!(has_help("Director", AMBIENT_ID));
+        assert!(has_help("Completer source", HARNESS_STATE_ID));
         assert!(has_help("Last user turn", PAYLOAD_ID));
         assert!(has_help("Do Not Disturb", DND_ID));
         assert!(has_help("Do Not Disturb", SOUND_ID));
@@ -1457,6 +1592,120 @@ mod tests {
                 }
                 _ => panic!("a limit is a text field"),
             }
+        }
+    }
+
+    fn source_section(description: &FormDescription) -> &FormSection {
+        description
+            .sections()
+            .find(|section| section.heading == "Completer source")
+            .expect("the Completer source section exists")
+    }
+
+    fn popup_row(description: &FormDescription, id: &str) -> (String, Vec<String>, bool) {
+        source_section(description)
+            .rows
+            .iter()
+            .find_map(|row| match row {
+                FormRow::Popup {
+                    id: row_id,
+                    label,
+                    options,
+                    frozen,
+                    ..
+                } if row_id == id => {
+                    Some((label.clone().unwrap_or_default(), options.clone(), *frozen))
+                }
+                _ => None,
+            })
+            .expect("the source popup exists")
+    }
+
+    /// Off, the three named launch rows, and the escape hatch — ADR-0017's
+    /// table, and nothing for Grok, Copilot or Gemini until one is smoked.
+    #[test]
+    fn the_completer_source_offers_off_three_presets_and_custom() {
+        crate::model::tests::with_harness(None, || {
+            let description = describe();
+            let (_, options, _) = popup_row(&description, HARNESS_ID);
+            assert_eq!(options, ["Off", "claude", "hermes", "opencode", "Custom"]);
+            assert_eq!(
+                description.text_write(HARNESS_ID),
+                Some(TextField::Harness),
+                "a pick has to reach the file"
+            );
+            assert_eq!(
+                description.text_write(HARNESS_COMMAND_ID),
+                Some(TextField::HarnessCommand),
+            );
+        });
+    }
+
+    /// #272's rule, for the one variable that owns two rows: `AI_BUDDY_HARNESS`
+    /// spells the preset and the command line in one value, so an edit to
+    /// either would be discarded at launch.
+    #[test]
+    fn an_exported_harness_freezes_both_source_rows_and_names_its_variable() {
+        for exported in ["hermes", "opencode acp"] {
+            crate::model::tests::with_harness(Some(exported), || {
+                let description = describe();
+                let (label, _, frozen) = popup_row(&description, HARNESS_ID);
+                assert!(frozen, "{exported:?} owns the source row");
+                assert!(
+                    label.contains(crate::harness::VAR),
+                    "the row must name the variable, not {label:?}"
+                );
+                assert!(description.frozen(HARNESS_ID));
+                assert!(
+                    description.frozen(HARNESS_COMMAND_ID),
+                    "one value owns the command line too"
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn the_source_rows_are_the_users_when_no_variable_is_exported() {
+        crate::model::tests::with_harness(None, || {
+            let description = describe();
+            let (label, _, frozen) = popup_row(&description, HARNESS_ID);
+            assert!(!frozen);
+            assert!(!label.contains(crate::harness::VAR));
+            assert!(!description.frozen(HARNESS_COMMAND_ID));
+        });
+    }
+
+    /// ADR-0010 rules 1 and 6: no field here ever asks for a Harness
+    /// credential, and the login command is words the user runs themselves.
+    #[test]
+    fn the_completer_source_asks_for_no_credential() {
+        crate::model::tests::with_harness(None, || {
+            let description = describe();
+            for row in &source_section(&description).rows {
+                assert!(
+                    !matches!(row, FormRow::SecureField { .. }),
+                    "the Harness signs itself in; ADR-0010 forbids a field for it"
+                );
+            }
+        });
+    }
+
+    /// An attached Harness is the Completer (ADR-0008), so the three HTTP rows
+    /// drive nothing and say so. Asserted through the labels rather than a
+    /// live attachment: `harness::attached` is a process global one test may
+    /// not set for the whole binary.
+    #[test]
+    fn an_attached_harness_takes_the_http_rows_out_of_use() {
+        for (label, frozen) in [
+            http_row("Base URL", crate::model::BASE_URL, true),
+            http_row("Model", crate::model::MODEL, true),
+            http_row("API key", crate::model::API_KEY, true),
+        ] {
+            assert!(frozen, "an attached Harness discards an edit here");
+            assert!(
+                label.contains("not in use"),
+                "the row has to say why it is dead, not {label:?}"
+            );
         }
     }
 }

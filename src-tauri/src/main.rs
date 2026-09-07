@@ -2126,12 +2126,15 @@ fn main() {
             // Before `config_from`, which asks whether a Harness is attached.
             app.manage(PendingAsks(Mutex::new(Pending::default())));
             let forward_to = app.handle().clone();
-            harness::attach(Box::new(move |permission| match permission {
-                harness::Permission::Ask(ask) => forward_ask(&forward_to, ask),
-                harness::Permission::Settled { request, option } => {
-                    settle_ask(&forward_to, Settled { request, option })
-                }
-            }));
+            harness::attach(
+                settings.harness_source(),
+                Box::new(move |permission| match permission {
+                    harness::Permission::Ask(ask) => forward_ask(&forward_to, ask),
+                    harness::Permission::Settled { request, option } => {
+                        settle_ask(&forward_to, Settled { request, option })
+                    }
+                }),
+            );
             let mut config = model::config_from(&director);
             config.apply_switch(settings.director_enabled);
             config.ambient_allowed = settings.ambient_wakes;

@@ -58,6 +58,12 @@ pub struct SettingsView {
     pub api_key_fingerprint: String,
     /// Non-empty when the last store read failed. Distinct from unset.
     pub api_key_error: String,
+    /// The Completer source popup's title in force: Off, a preset name, or
+    /// Custom. The exported variable outranks the file, as on the endpoint
+    /// rows (#272). The command line beside it is a `development_texts` row.
+    pub harness: String,
+    /// What the attachment is doing, in the three states ADR-0010 names.
+    pub harness_state: String,
     /// The Development rows, by form row id: the value in force, which is the
     /// exported variable's where it owns the row and the file's otherwise.
     ///
@@ -102,12 +108,18 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
     ])
 }
 
-/// Every numeric row a variable can own, by row id, with the same precedence.
+/// Every text row a variable can own, by row id, with the same precedence.
 ///
 /// Both windows fill such a row from this map by id, so the tab it is drawn on
-/// does not matter: the wake interval is the Director tab's.
+/// does not matter: the wake interval and the Harness command line are the
+/// Director tab's. Numbers were all it held when #273 landed it; the name is
+/// the tab those first rows sat on, not a type.
 fn development_texts(settings: &Settings) -> HashMap<String, String> {
     HashMap::from([
+        (
+            form::HARNESS_COMMAND_ID.to_string(),
+            harness_in_force(settings).1,
+        ),
         (
             form::DIRECTOR_TIMEOUT_SECS_ID.to_string(),
             limit_in_force::<u64>(model::TIMEOUT_SECS, &settings.director_timeout_secs),
@@ -146,6 +158,44 @@ where
     }
 }
 
+/// The Completer source rows as the window must draw them: the popup title in
+/// force and the command line beside it.
+///
+/// `AI_BUDDY_HARNESS` outranks the file for the reason it outranks the
+/// endpoint rows — `harness::from_settings` gives it the last word, and a
+/// window that printed the file's value would name a Harness the app never
+/// spawns (#272). Its grammar carries a custom command line in the value
+/// itself, so the file's `harness_command` has nothing to add there.
+fn harness_in_force(settings: &Settings) -> (String, String) {
+    match model::env_override(crate::harness::VAR) {
+        Some(exported) => form::harness_rows(&exported, ""),
+        None => form::harness_rows(&settings.harness, &settings.harness_command),
+    }
+}
+
+/// What the Completer source row says about the attachment.
+///
+/// Three states rather than two: ADR-0010 makes attached-but-not-authenticated
+/// its own, and the fix is one command in the user's own terminal. Named here
+/// and never run — ai-buddy holds no credential for the Harness and asks for
+/// none (ADR-0010 rules 1 and 6).
+fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
+    let Some(attached) = harness else {
+        return "Not attached. The HTTP Completer above is the Director's mind.".to_string();
+    };
+    if let Some(login) = &attached.login {
+        return format!(
+            "{} attached but not authenticated. Run `{login}` in a terminal — \
+             ai-buddy never asks for it.",
+            attached.name
+        );
+    }
+    match &attached.session_id {
+        Some(id) => format!("{} attached, session {id}.", attached.name),
+        None => format!("{} attached; no session opened yet.", attached.name),
+    }
+}
+
 impl SettingsView {
     pub fn from_parts(
         settings: &Settings,
@@ -154,6 +204,7 @@ impl SettingsView {
         installed: Vec<String>,
         instances: Vec<InstanceRow>,
         api_key: (bool, String, String),
+        harness: Option<crate::harness::HarnessInspect>,
     ) -> Self {
         let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
         Self {
@@ -180,6 +231,8 @@ impl SettingsView {
             api_key_set,
             api_key_fingerprint,
             api_key_error,
+            harness: harness_in_force(settings).0,
+            harness_state: harness_state(harness.as_ref()),
             development_switches: development_switches(settings),
             development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
@@ -347,6 +400,12 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
+        // The Completer source rows are deliberately absent: `harness::attach`
+        // holds one Session for the app's lifetime (ADR-0008), so there is
+        // nothing for a Retarget to point at until the next launch — which is
+        // what the row's help says. Retarget keeps handing `completer_from`
+        // the Session already up, so it can neither strand nor drop it (#436).
+        //
         // The wake interval reaches a running Director the same way, for its
         // own reason: the rebuild is where `model::config_from` reads it, and
         // the frame loop re-paces every Instance from what it rebuilt (#262).
@@ -523,11 +582,17 @@ impl SettingsSession {
             .lock()
             .map(|guard| guard.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
-        let last_payload = self
-            .inspect
-            .lock()
-            .ok()
-            .and_then(|inspect| inspect.last_payload.clone());
+        // The attachment is re-read here rather than taken as `inspect` last
+        // recorded it, the way `chat_opening` does: a login the user ran
+        // mid-session moves the Harness out of the not-authenticated state,
+        // and nothing pushes that (#436).
+        let (last_payload, harness) = match self.inspect.lock() {
+            Ok(mut inspect) => {
+                inspect.harness = crate::harness::attached().map(|session| session.inspect());
+                (inspect.last_payload.clone(), inspect.harness.clone())
+            }
+            Err(_) => (None, None),
+        };
         let mut view = SettingsView::from_parts(
             &settings,
             &self.memory_path,
@@ -535,6 +600,7 @@ impl SettingsSession {
             self.installed.clone(),
             instances,
             self.key_status_for_view(),
+            harness,
         );
         view.consent_listed_as = consent::process_listed_as();
         view
@@ -659,6 +725,8 @@ pub struct SettingsPatch {
     pub director_timeout_secs: Option<String>,
     pub director_max_tokens: Option<String>,
     pub director_wake_secs: Option<String>,
+    pub harness: Option<String>,
+    pub harness_command: Option<String>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
@@ -711,6 +779,11 @@ pub enum TextField {
     DirectorMaxTokens,
     DirectorWakeSecs,
     DirectorApiKey,
+    /// The Completer source popup. Written as a title and stored as the value
+    /// `AI_BUDDY_HARNESS` would take; `form::harness_choice` is the one place
+    /// that translates.
+    Harness,
+    HarnessCommand,
     ExcludedApplications,
 }
 
@@ -754,6 +827,10 @@ impl SettingsPatch {
             TextField::DirectorTimeoutSecs => self.director_timeout_secs = Some(value.to_string()),
             TextField::DirectorMaxTokens => self.director_max_tokens = Some(value.to_string()),
             TextField::DirectorWakeSecs => self.director_wake_secs = Some(value.to_string()),
+            // The popup hands over its title; the file keeps the value
+            // `harness::launch` reads, so Off is blank and Custom is `custom`.
+            TextField::Harness => self.harness = Some(form::harness_choice(value)),
+            TextField::HarnessCommand => self.harness_command = Some(value.trim().to_string()),
             TextField::DirectorApiKey if key_was_typed(value) => {
                 self.director_api_key = Some(value.to_string())
             }
@@ -786,6 +863,8 @@ impl fmt::Debug for SettingsPatch {
             .field("director_timeout_secs", &self.director_timeout_secs)
             .field("director_max_tokens", &self.director_max_tokens)
             .field("director_wake_secs", &self.director_wake_secs)
+            .field("harness", &self.harness)
+            .field("harness_command", &self.harness_command)
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
@@ -855,6 +934,12 @@ impl Settings {
         if let Some(value) = patch.director_wake_secs {
             self.director_wake_secs = value;
         }
+        if let Some(value) = patch.harness {
+            self.harness = value;
+        }
+        if let Some(value) = patch.harness_command {
+            self.harness_command = value;
+        }
         if let Some(value) = patch.trace_frames {
             self.trace_frames = value;
         }
@@ -878,6 +963,23 @@ impl Settings {
         }
         // director_api_key is intentionally ignored: the key lives in the
         // secret store, never in the JSON document.
+    }
+
+    /// What `harness::from_settings` reads out of the two source rows: the
+    /// command line under `custom`, the preset name otherwise, and `None` for
+    /// Off.
+    ///
+    /// One grammar with `AI_BUDDY_HARNESS`, so `harness::launch` parses both
+    /// (ADR-0017). A blank command line under `custom` is Off rather than a
+    /// spawn of nothing.
+    pub fn harness_source(&self) -> Option<String> {
+        match self.harness.trim() {
+            "" => None,
+            form::HARNESS_CUSTOM_VALUE => {
+                Some(self.harness_command.trim().to_string()).filter(|line| !line.is_empty())
+            }
+            preset => Some(preset.to_string()),
+        }
     }
 
     pub fn wants_consent(&self, id: CapabilityId) -> bool {
@@ -939,6 +1041,15 @@ pub struct Settings {
     /// `Pace::FIRST`. The Character's `model_base` and `model_power` grow the
     /// wait from here; this is only where it starts (#262).
     pub director_wake_secs: String,
+    /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
+    /// empty for none, a preset name (`claude`, `hermes`, `opencode`), or
+    /// `custom`, which defers to `harness_command`. The variable outranks it,
+    /// and either way the choice reaches the app on the next launch (#436).
+    pub harness: String,
+    /// The command line `custom` runs, split on whitespace as the variable's
+    /// own value is. Kept when a preset is picked, so coming back to Custom
+    /// does not lose what was typed.
+    pub harness_command: String,
     /// Development switches. Off is the shipped answer for all of them; see
     /// `dev_flags`, which holds the live value each read site loads.
     pub trace_frames: bool,
@@ -973,6 +1084,8 @@ impl Default for Settings {
             director_timeout_secs: String::new(),
             director_max_tokens: String::new(),
             director_wake_secs: String::new(),
+            harness: String::new(),
+            harness_command: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -1220,6 +1333,8 @@ mod tests {
             director_timeout_secs: "45".into(),
             director_max_tokens: "300".into(),
             director_wake_secs: "300".into(),
+            harness: "custom".into(),
+            harness_command: "opencode acp".into(),
             trace_frames: true,
             trace_hittest: true,
             trace_director: true,
@@ -1307,6 +1422,7 @@ mod tests {
                 vec!["nim".to_string()],
                 Vec::new(),
                 (true, "len=12 last=key1".to_string(), String::new()),
+                None,
             );
             assert_eq!(view.director_base_url, "https://api.x.ai");
             assert_eq!(view.director_model, "grok-4.6");
@@ -1328,6 +1444,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
                 (false, String::new(), String::new()),
+                None,
             );
             assert_eq!(view.api_key_placeholder(), "Not set");
             assert!(!view.clear_key_enabled());
@@ -1344,6 +1461,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
                 (false, String::new(), "keychain locked".into()),
+                None,
             );
             assert!(!view.api_key_set);
             assert_eq!(view.api_key_placeholder(), "Unavailable — keychain locked");
@@ -1512,6 +1630,8 @@ mod tests {
             director_timeout_secs: String::new(),
             director_max_tokens: String::new(),
             director_wake_secs: String::new(),
+            harness: String::new(),
+            harness_command: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -1532,6 +1652,7 @@ mod tests {
                 character: "nim".to_string(),
             }],
             (false, String::new(), String::new()),
+            None,
         );
         assert!(!view.director_enabled);
         assert!(!view.ambient_wakes);
@@ -1588,6 +1709,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             (false, String::new(), String::new()),
+            None,
         );
         assert!(
             !view.consent[0].granted,
@@ -1612,6 +1734,7 @@ mod tests {
             vec!["Trump".to_string(), "Cat".to_string()],
             remaining,
             (false, String::new(), String::new()),
+            None,
         );
         assert_eq!(view.instance_lines(), ["Trump (Trump)"]);
         assert!(
@@ -1755,6 +1878,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             (set, fingerprint, error),
+            None,
         );
         assert_ne!(view.api_key_placeholder(), "Not set");
         assert!(view.clear_key_enabled());
@@ -1786,6 +1910,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             (api_key_set, fingerprint, String::new()),
+            None,
         )
     }
 
@@ -2110,6 +2235,7 @@ mod tests {
                     Vec::new(),
                     Vec::new(),
                     (false, String::new(), String::new()),
+                    None,
                 );
 
                 assert_eq!(
@@ -2129,6 +2255,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             (false, String::new(), String::new()),
+            None,
         )
     }
 
@@ -2623,6 +2750,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             (false, String::new(), String::new()),
+            None,
         );
         let expected = parse_hotkey("Ctrl-Alt-Super-B")
             .expect("stored spec parses")
@@ -2647,5 +2775,166 @@ mod tests {
             .expect("letter")
             .display(ModifierWords::Mac);
         assert_eq!(printed, "H");
+    }
+
+    /// The row is a picker over one string, and the string is the grammar
+    /// `AI_BUDDY_HARNESS` already takes — so a hand-edit of the file and an
+    /// export mean the same thing.
+    #[test]
+    fn the_completer_source_maps_a_title_to_what_launch_reads() {
+        let cases = [
+            (form::HARNESS_OFF, "", None),
+            ("hermes", "hermes", Some("hermes")),
+            ("claude", "claude", Some("claude")),
+            (form::HARNESS_CUSTOM, "custom", Some("opencode acp")),
+        ];
+        for (title, stored, source) in cases {
+            let mut settings = Settings {
+                harness_command: "opencode acp".to_string(),
+                ..Settings::default()
+            };
+            let mut patch = SettingsPatch::default();
+            assert!(patch.set_text(TextField::Harness, title));
+            settings.apply(patch);
+
+            assert_eq!(settings.harness, stored, "{title} is stored as {stored:?}");
+            assert_eq!(
+                settings.harness_source().as_deref(),
+                source,
+                "{title} names the Harness to launch"
+            );
+        }
+    }
+
+    /// Custom with nothing typed is Off, not a spawn of nothing: `launch`
+    /// would index `argv[0]` on an empty command line.
+    #[test]
+    fn a_custom_source_with_no_command_line_is_off() {
+        let settings = Settings {
+            harness: form::HARNESS_CUSTOM_VALUE.to_string(),
+            harness_command: "   ".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(settings.harness_source(), None);
+        assert!(crate::harness::launch(settings.harness_source().as_deref()).is_none());
+    }
+
+    /// What the user picked is what the next launch spawns — the whole of the
+    /// row, and the half `AI_BUDDY_HARNESS` alone could not survive (#436).
+    #[test]
+    fn the_completer_source_round_trips_through_the_file() {
+        crate::model::tests::with_harness(None, || {
+            let path = temp_path();
+            let _ = fs::remove_file(&path);
+
+            let mut settings = Settings::default();
+            let mut patch = SettingsPatch::default();
+            patch.set_text(TextField::Harness, form::HARNESS_CUSTOM);
+            patch.set_text(TextField::HarnessCommand, "  grok agent stdio  ");
+            settings.apply(patch);
+            settings.save(&path).expect("save");
+
+            let read = Settings::load(&path);
+            assert_eq!(read.harness, form::HARNESS_CUSTOM_VALUE);
+            assert_eq!(read.harness_command, "grok agent stdio");
+            let launch = crate::harness::from_settings(read.harness_source().as_deref())
+                .expect("the saved row names a Harness");
+            assert_eq!(launch.argv, ["grok", "agent", "stdio"]);
+
+            // The typed command line outlives a swing through a preset, so
+            // coming back to Custom does not ask for it again.
+            let mut patch = SettingsPatch::default();
+            patch.set_text(TextField::Harness, "hermes");
+            let mut read = read;
+            read.apply(patch);
+            assert_eq!(read.harness_source().as_deref(), Some("hermes"));
+            assert_eq!(read.harness_command, "grok agent stdio");
+
+            let _ = fs::remove_file(&path);
+        });
+    }
+
+    /// #272's rule on the source row: the variable wins at launch, so the
+    /// window prints the variable's Harness and the frozen row takes no edit.
+    #[test]
+    fn an_exported_harness_is_what_the_window_shows_and_what_launches() {
+        let saved = Settings {
+            harness: "hermes".to_string(),
+            harness_command: "grok agent stdio".to_string(),
+            ..Settings::default()
+        };
+        crate::model::tests::with_harness(Some("opencode acp"), || {
+            let view = endpoint_view(&saved);
+            assert_eq!(view.harness, form::HARNESS_CUSTOM);
+            assert_eq!(
+                view.development_texts
+                    .get(form::HARNESS_COMMAND_ID)
+                    .map(String::as_str),
+                Some("opencode acp"),
+                "the command line in force is the variable's, not the file's"
+            );
+            let launch = crate::harness::from_settings(saved.harness_source().as_deref())
+                .expect("the variable names a Harness");
+            assert_eq!(launch.argv, ["opencode", "acp"]);
+            assert!(
+                form::describe().frozen(form::HARNESS_ID),
+                "a row the variable owns takes no edit"
+            );
+        });
+        crate::model::tests::with_harness(None, || {
+            let view = endpoint_view(&saved);
+            assert_eq!(view.harness, "hermes");
+            assert_eq!(
+                view.development_texts
+                    .get(form::HARNESS_COMMAND_ID)
+                    .map(String::as_str),
+                Some("grok agent stdio")
+            );
+            let launch = crate::harness::from_settings(saved.harness_source().as_deref())
+                .expect("the file names a Harness");
+            assert_eq!(launch.argv, ["hermes", "acp"]);
+        });
+    }
+
+    /// ADR-0010's three states, and rule 6 in the third: the login command is
+    /// named for the user's own terminal and nothing here runs it.
+    #[test]
+    fn the_source_row_reads_the_three_attachment_states() {
+        assert!(harness_state(None).contains("Not attached"));
+
+        let attached = crate::harness::HarnessInspect {
+            name: "hermes".to_string(),
+            session_id: Some("sess-7".to_string()),
+            ..Default::default()
+        };
+        let line = harness_state(Some(&attached));
+        assert!(line.contains("hermes attached"), "got {line:?}");
+        assert!(line.contains("sess-7"), "got {line:?}");
+
+        let unauthenticated = crate::harness::HarnessInspect {
+            name: "claude".to_string(),
+            login: Some("claude /login".to_string()),
+            ..Default::default()
+        };
+        let line = harness_state(Some(&unauthenticated));
+        assert!(line.contains("not authenticated"), "got {line:?}");
+        assert!(line.contains("claude /login"), "got {line:?}");
+        assert!(
+            !line.to_lowercase().contains("api key") && !line.to_lowercase().contains("password"),
+            "ADR-0010: no credential is ever asked for, got {line:?}"
+        );
+    }
+
+    /// Changing the source is a restart, not a Retarget: `harness::attach`
+    /// holds one Session for the app's lifetime (ADR-0008), so a Retarget has
+    /// nothing new to point at — and cannot strand or drop the Session it is
+    /// still handing to `completer_from` (#436).
+    #[test]
+    fn the_completer_source_does_not_retarget_a_running_director() {
+        let settings = Settings::default();
+        let mut patch = SettingsPatch::default();
+        patch.set_text(TextField::Harness, "hermes");
+        patch.set_text(TextField::HarnessCommand, "opencode acp");
+        assert!(!completer_retargets(&settings, &patch));
     }
 }
