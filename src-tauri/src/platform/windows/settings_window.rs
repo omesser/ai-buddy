@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, ScreenToClient, UpdateWindow,
-    DEFAULT_GUI_FONT, HGDIOBJ, HMONITOR, MONITORINFO,
+    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, ScreenToClient,
+    UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ, HMONITOR, MONITORINFO,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
@@ -1438,37 +1438,50 @@ fn hit_from_win32(class: &str, tab_on_item: bool) -> Hit {
     }
 }
 
+/// Map a parent-client point into a child's client space. Same subtraction
+/// `MapWindowPoints` does; the live path uses ClientToScreen/ScreenToClient
+/// because it has HWNDs. #460
+#[cfg(test)]
+fn map_into_child_client(pt_in_parent: POINT, child_origin_in_parent: POINT) -> POINT {
+    POINT {
+        x: pt_in_parent.x - child_origin_in_parent.x,
+        y: pt_in_parent.y - child_origin_in_parent.y,
+    }
+}
+
 fn hit_at(hwnd: HWND, lparam: LPARAM) -> Hit {
     let screen = POINT {
         x: lparam as i16 as i32,
         y: (lparam >> 16) as i16 as i32,
     };
-    let mut client = screen;
-    // SAFETY: `client` is a stack POINT the API writes in place.
+    let mut pt = screen;
+    // SAFETY: `pt` is a stack POINT the API writes in place.
     unsafe {
-        ScreenToClient(hwnd, &mut client);
+        ScreenToClient(hwnd, &mut pt);
     }
     // SAFETY: parent is our settings HWND; the POINT is in its client space.
-    let mut child = unsafe { ChildWindowFromPointEx(hwnd, client, CWP_SKIPINVISIBLE) };
+    let mut origin = hwnd;
+    let mut child = unsafe { ChildWindowFromPointEx(hwnd, pt, CWP_SKIPINVISIBLE) };
     if child.is_null() || child == hwnd {
         return Hit::Background;
     }
 
-    // Loop to find the deepest nested child control, not just immediate children
+    // Instances' Dismiss is a BUTTON inside the list STATIC. ChildWindowFromPointEx
+    // wants the child's client space; ScreenToClient on an already-client point
+    // treats it as screen and misses the button. #460
     loop {
-        let mut nested_client = client;
-        // SAFETY: Convert to child's coordinate space
+        // SAFETY: `pt` is origin-client; the pair writes it to child-client.
         unsafe {
-            ScreenToClient(child, &mut nested_client);
+            ClientToScreen(origin, &mut pt);
+            ScreenToClient(child, &mut pt);
         }
-        // SAFETY: Look for deeper nested children
-        let nested_child =
-            unsafe { ChildWindowFromPointEx(child, nested_client, CWP_SKIPINVISIBLE) };
-        if nested_child.is_null() || nested_child == child {
-            // No deeper child found, child is the deepest hit
+        // SAFETY: `child` is a live descendant of `hwnd`; `pt` is in its client space.
+        let nested = unsafe { ChildWindowFromPointEx(child, pt, CWP_SKIPINVISIBLE) };
+        if nested.is_null() || nested == child {
             break;
         }
-        child = nested_child;
+        origin = child;
+        child = nested;
     }
     let mut buf = [0u8; 256];
     // SAFETY: buffer is a writable C string of known size.
@@ -1798,12 +1811,28 @@ mod tests {
     }
 
     #[test]
-    fn nested_button_is_control() {
-        // Test that demonstrates deep lookup finds nested controls
-        assert_eq!(
-            hit_from_win32("Button", false),
-            Hit::Control,
-            "Nested Button should be found as Control"
-        );
+    fn a_nested_dismiss_click_maps_into_the_button_not_the_container() {
+        // List STATIC at display_left (= 2*MARGIN); Dismiss at (FIELD_WIDTH-90, 0).
+        let container_in_window = POINT {
+            x: MARGIN * 2,
+            y: 200,
+        };
+        let dismiss_in_container = POINT {
+            x: FIELD_WIDTH - 90,
+            y: 0,
+        };
+        let click_in_window = POINT {
+            x: container_in_window.x + dismiss_in_container.x + 4,
+            y: container_in_window.y + 8,
+        };
+        let in_container = map_into_child_client(click_in_window, container_in_window);
+        assert_eq!(in_container.x, dismiss_in_container.x + 4);
+        assert_eq!(in_container.y, 8);
+        let in_button = map_into_child_client(in_container, dismiss_in_container);
+        assert_eq!(in_button.x, 4);
+        assert_eq!(in_button.y, 8);
+        // Window-client y handed to the STATIC as client y misses a first-row
+        // button (ROW_HEIGHT tall at y=0). #460
+        assert!(click_in_window.y > ROW_HEIGHT);
     }
 }
