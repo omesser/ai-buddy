@@ -70,9 +70,18 @@ repos:
         entry: scripts/hooks/psscriptanalyzer.sh
         language: system
         files: \.ps1$
-        # Severity Error: only fail on actual errors, not style warnings.
-        # Keeps PSUseBOMForUnicodeEncodedFile active (default in PSScriptAnalyzer)
-        # to catch encoding issues like the #392 em-dash footgun.
+        # Error only, which admits neither encoding (Warning) nor a syntax
+        # fault (ParseError). #493.
+
+      # Separate from the analyzer because it cannot hold this policy: its
+      # non-ASCII rule prescribes adding a BOM, and a BOM is itself three
+      # non-ASCII bytes. #392, #418.
+      - id: powershell-ascii-only
+        name: PowerShell scripts are ASCII-only
+        language: pygrep
+        entry: '[^\x00-\x7F]'
+        # Case-insensitive: Windows does not distinguish `.PS1`.
+        files: (?i)\.ps1$
 
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
