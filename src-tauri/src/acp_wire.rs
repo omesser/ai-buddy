@@ -99,6 +99,23 @@ pub enum Event {
     },
 }
 
+/// The stdio MCP server handed to `session/new` and `session/load`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct McpLaunch {
+    pub path: PathBuf,
+    pub args: Vec<String>,
+}
+
+impl McpLaunch {
+    pub fn line(&self) -> String {
+        if self.args.is_empty() {
+            self.path.display().to_string()
+        } else {
+            format!("{} {}", self.path.display(), self.args.join(" "))
+        }
+    }
+}
+
 pub type OnEvent = Box<dyn Fn(Event) + Send + Sync>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -127,7 +144,7 @@ enum Msg {
     Open {
         load: Option<String>,
         cwd: PathBuf,
-        mcp: Option<PathBuf>,
+        mcp: Option<McpLaunch>,
         reply: sync_mpsc::Sender<Result<String, OpenError>>,
     },
     Prompt {
@@ -213,7 +230,7 @@ impl Wire {
         &self,
         load: Option<String>,
         cwd: &Path,
-        mcp: Option<PathBuf>,
+        mcp: Option<McpLaunch>,
         timeout: Duration,
     ) -> Result<String, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
@@ -447,11 +464,15 @@ async fn open(
     cx: &ConnectionTo<Agent>,
     load: Option<String>,
     cwd: &Path,
-    mcp: Option<PathBuf>,
+    mcp: Option<McpLaunch>,
 ) -> Result<SessionId, OpenError> {
     let servers = || -> Vec<McpServer> {
         mcp.iter()
-            .map(|path| McpServer::Stdio(McpServerStdio::new("ai-buddy", path.clone())))
+            .map(|launch| {
+                McpServer::Stdio(
+                    McpServerStdio::new("ai-buddy", launch.path.clone()).args(launch.args.clone()),
+                )
+            })
             .collect()
     };
     if let Some(id) = load {
