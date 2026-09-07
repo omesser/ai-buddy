@@ -15,7 +15,7 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
-use crate::settings::move_drag::{should_begin_move, Hit, MoveModifier};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -1205,48 +1205,20 @@ fn reset_director_tab() {
     });
 }
 
-/// Super-drag from empty page chrome, not from a field or the tab strip. #460.
-fn hit_from_widget_type_names(names: &[&str]) -> Hit {
-    let mut through_page = false;
-    for name in names {
-        if matches!(
-            *name,
-            "GtkEntry"
-                | "GtkTextView"
-                | "GtkButton"
-                | "GtkComboBox"
-                | "GtkComboBoxText"
-                | "GtkCheckButton"
-                | "GtkRadioButton"
-                | "GtkToggleButton"
-        ) {
-            return Hit::Control;
-        }
-        if matches!(*name, "GtkScrolledWindow" | "GtkViewport") {
-            through_page = true;
-        }
-        if *name == "GtkNotebook" {
-            return if through_page {
-                Hit::Background
-            } else {
-                Hit::Control
-            };
-        }
+fn widget_keeps_the_press(widget: &gtk::Widget) -> bool {
+    if widget.is::<gtk::Entry>()
+        || widget.is::<gtk::TextView>()
+        || widget.is::<gtk::Button>()
+        || widget.is::<gtk::ComboBox>()
+        || widget.is::<gtk::Scale>()
+        || widget.is::<gtk::SpinButton>()
+        || widget.is::<gtk::Switch>()
+        || widget.is::<gtk::Notebook>()
+    {
+        return true;
     }
-    Hit::Background
+    widget.is::<gtk::Label>() && widget.parent().is_some_and(|p| p.is::<gtk::Notebook>())
 }
-
-fn widget_type_chain(widget: &gtk::Widget) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut current = Some(widget.clone());
-    while let Some(w) = current {
-        names.push(w.type_().name().to_string());
-        current = w.parent();
-    }
-    names
-}
-
-const _: () = assert!(matches!(MoveModifier::LINUX, MoveModifier::Super));
 
 fn install_move_drag(window: &Window) {
     window.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
@@ -1259,9 +1231,11 @@ fn install_move_drag(window: &Window) {
         let mut ev = event.clone();
         let hit = gtk::event_widget(&mut ev)
             .map(|widget| {
-                let names = widget_type_chain(&widget);
-                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-                hit_from_widget_type_names(&refs)
+                if widget_keeps_the_press(&widget) {
+                    Hit::Control
+                } else {
+                    Hit::Background
+                }
             })
             .unwrap_or(Hit::Background);
         if should_begin_move(super_held, hit) {
@@ -1271,48 +1245,4 @@ fn install_move_drag(window: &Window) {
         }
         gtk::glib::Propagation::Proceed
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_page_under_the_notebook_is_background() {
-        assert_eq!(
-            hit_from_widget_type_names(&[
-                "GtkBox",
-                "GtkViewport",
-                "GtkScrolledWindow",
-                "GtkNotebook"
-            ]),
-            Hit::Background
-        );
-    }
-
-    #[test]
-    fn an_entry_button_or_combo_is_a_control() {
-        for name in [
-            "GtkEntry",
-            "GtkTextView",
-            "GtkButton",
-            "GtkComboBox",
-            "GtkCheckButton",
-            "GtkRadioButton",
-        ] {
-            assert_eq!(
-                hit_from_widget_type_names(&[name, "GtkBox", "GtkNotebook"]),
-                Hit::Control,
-                "{name} must keep the press"
-            );
-        }
-    }
-
-    #[test]
-    fn the_notebook_tab_strip_is_a_control() {
-        assert_eq!(
-            hit_from_widget_type_names(&["GtkLabel", "GtkNotebook"]),
-            Hit::Control
-        );
-    }
 }

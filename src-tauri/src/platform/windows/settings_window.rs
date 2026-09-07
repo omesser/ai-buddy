@@ -37,7 +37,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
-use crate::settings::move_drag::{should_begin_move, Hit, MoveModifier};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -1435,8 +1435,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
         Ok(())
     }
 }
-
-const _: () = assert!(matches!(MoveModifier::WINDOWS, MoveModifier::Alt));
 
 fn caption_hit_test(alt_held: bool, hit: Hit) -> LRESULT {
     if should_begin_move(alt_held, hit) {

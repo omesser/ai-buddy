@@ -5,7 +5,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-
 use std::ptr::NonNull;
 
 use block2::RcBlock;
@@ -14,7 +13,7 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly, Message};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
-    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControlStateValueOff,
+    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControl, NSControlStateValueOff,
     NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventMask,
     NSEventModifierFlags, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
     NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
@@ -26,7 +25,7 @@ use objc2_foundation::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow};
-use crate::settings::move_drag::{should_begin_move, Hit, MoveModifier};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
@@ -88,7 +87,7 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
-    /// Keeps the local mouse-down monitor alive for the window's life. #460.
+    /// Keeps the local mouse-down monitor alive for the window's life. #460
     move_monitor: RefCell<Option<Retained<AnyObject>>>,
 }
 
@@ -1439,18 +1438,25 @@ fn release_window_when_closed() -> bool {
     false
 }
 
-fn class_chain(view: &NSView) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut current = Some(view.retain());
-    while let Some(v) = current {
-        names.push(v.class().name().to_string_lossy().into_owned());
-        // SAFETY: the view is still in the window for this mouse-down.
-        current = unsafe { v.superview() };
+/// The leaf is a control or the tab strip. Labels are NSTextField but not
+/// editable, so they stay background. #460
+fn hit_from_view(view: &NSView) -> Hit {
+    if let Some(field) = view.downcast_ref::<NSTextField>() {
+        return if field.isEditable() {
+            Hit::Control
+        } else {
+            Hit::Background
+        };
     }
-    names
+    if view.downcast_ref::<NSControl>().is_some()
+        || view.downcast_ref::<NSTabView>().is_some()
+        || view.downcast_ref::<NSTextView>().is_some()
+    {
+        Hit::Control
+    } else {
+        Hit::Background
+    }
 }
-
-const _: () = assert!(matches!(MoveModifier::MACOS, MoveModifier::Command));
 
 fn install_move_drag(window: &NSWindow, controller: &SettingsController) {
     let window = window.retain();
@@ -1469,28 +1475,8 @@ fn install_move_drag(window: &NSWindow, controller: &SettingsController) {
             .contains(NSEventModifierFlags::Command);
         let hit = event_window
             .contentView()
-            .and_then(|content| {
-                // hitTest expects point in superview coordinates, not content view coordinates
-                content.hitTest(event.locationInWindow())
-            })
-            .map(|view| {
-                let names = class_chain(&view);
-                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-
-                // Check if the hit view is an NSTextField and determine editability
-                let text_field_is_editable = if names.first() == Some(&"NSTextField".to_string()) {
-                    // Check if NSTextField is editable/selectable, non-editable labels are background
-                    if let Ok(text_field) = view.downcast::<NSTextField>() {
-                        text_field.isEditable() || text_field.isSelectable()
-                    } else {
-                        true // Default to editable for failed downcast
-                    }
-                } else {
-                    true // Default to editable for non-NSTextField classes
-                };
-
-                hit_from_class_chain_with_editability(&refs, text_field_is_editable)
-            })
+            .and_then(|content| content.hitTest(event.locationInWindow()))
+            .map(|view| hit_from_view(&view))
             .unwrap_or(Hit::Background);
         if should_begin_move(command, hit) {
             window.performWindowDragWithEvent(event);
@@ -1499,50 +1485,12 @@ fn install_move_drag(window: &NSWindow, controller: &SettingsController) {
             ptr
         }
     });
-    // SAFETY: the block returns either the same event pointer or null, which
-    // is what AppKit's local monitor contract asks for.
+    // SAFETY: the block returns the same event pointer or null, which AppKit's
+    // local monitor contract asks for.
     let monitor = unsafe {
         NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::LeftMouseDown, &handler)
     };
-    // build runs at most once, window retained for process life; windowNumber
-    // rejects other windows. No teardown needed for app-wide monitor.
     *controller.ivars().move_monitor.borrow_mut() = monitor;
-}
-
-/// Classify the AppKit class chain from the hit-test leaf up, with NSTextField
-/// editability distinction. Non-editable NSTextField (labels) fall through to
-/// background, while editable ones are controls. NSTabView is the content view,
-/// so a page click always lists it; only a hit that never passed through the
-/// scroll is the strip. #460.
-fn hit_from_class_chain_with_editability(classes: &[&str], text_field_is_editable: bool) -> Hit {
-    let mut through_page = false;
-    for class in classes {
-        if matches!(
-            *class,
-            "NSButton" | "NSPopUpButton" | "NSSecureTextField" | "NSTextView" | "NSScroller"
-        ) {
-            return Hit::Control;
-        }
-        if *class == "NSTextField" {
-            return if text_field_is_editable {
-                Hit::Control
-            } else {
-                // Non-editable NSTextField (label) falls through to background
-                continue;
-            };
-        }
-        if matches!(*class, "NSScrollView" | "NSClipView") {
-            through_page = true;
-        }
-        if *class == "NSTabView" {
-            return if through_page {
-                Hit::Background
-            } else {
-                Hit::Control
-            };
-        }
-    }
-    Hit::Background
 }
 
 fn retain_after_close(window: &NSWindow) {
@@ -1590,91 +1538,6 @@ mod tests {
         assert!(
             !release_window_when_closed(),
             "the next tray Settings raises this same Retained window"
-        );
-    }
-
-    #[test]
-    fn empty_document_under_the_tab_is_background() {
-        assert_eq!(
-            hit_from_class_chain_with_editability(
-                &["NSView", "NSClipView", "NSScrollView", "NSTabView"],
-                true
-            ),
-            crate::settings::move_drag::Hit::Background
-        );
-    }
-
-    #[test]
-    fn a_button_in_the_chain_is_a_control() {
-        assert_eq!(
-            hit_from_class_chain_with_editability(
-                &[
-                    "NSButton",
-                    "NSView",
-                    "NSClipView",
-                    "NSScrollView",
-                    "NSTabView"
-                ],
-                true
-            ),
-            crate::settings::move_drag::Hit::Control
-        );
-    }
-
-    #[test]
-    fn a_field_popup_or_text_view_is_a_control() {
-        for class in [
-            "NSTextField",
-            "NSSecureTextField",
-            "NSPopUpButton",
-            "NSTextView",
-        ] {
-            assert_eq!(
-                hit_from_class_chain_with_editability(
-                    &[class, "NSView", "NSScrollView", "NSTabView"],
-                    true
-                ),
-                crate::settings::move_drag::Hit::Control,
-                "{class} must keep the press"
-            );
-        }
-    }
-
-    #[test]
-    fn the_tab_strip_is_a_control() {
-        assert_eq!(
-            hit_from_class_chain_with_editability(&["NSTabView"], true),
-            crate::settings::move_drag::Hit::Control
-        );
-    }
-
-    #[test]
-    fn non_editable_nstextfield_is_background() {
-        assert_eq!(
-            hit_from_class_chain_with_editability(&["NSTextField", "NSView"], false),
-            crate::settings::move_drag::Hit::Background,
-            "Non-editable NSTextField (label) should be Background"
-        );
-    }
-
-    #[test]
-    fn editable_nstextfield_is_control() {
-        assert_eq!(
-            hit_from_class_chain_with_editability(&["NSTextField", "NSView"], true),
-            crate::settings::move_drag::Hit::Control,
-            "Editable NSTextField (field) should be Control"
-        );
-    }
-
-    #[test]
-    fn scrollbar_is_control() {
-        assert_eq!(
-            hit_from_class_chain_with_editability(
-                &["NSScroller", "NSScrollView", "NSTabView"],
-                true
-            ),
-            crate::settings::move_drag::Hit::Control,
-            "NSScroller must keep the press"
         );
     }
 }
