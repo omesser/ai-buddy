@@ -1134,13 +1134,27 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += field_width + 8;
                                         control_id += 1;
                                     }
-                                    form::CompositeControl::Popup { id } => {
+                                    form::CompositeControl::Popup {
+                                        id,
+                                        options,
+                                        frozen,
+                                    } => {
                                         let combo_width = 100;
+                                        // Disabled at creation for the same
+                                        // reason `FormRow::Popup` is: an
+                                        // exported variable owns the pick, and
+                                        // `frozen` cannot change while the
+                                        // window lives (#272).
+                                        let mut style =
+                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST;
+                                        if *frozen {
+                                            style |= WS_DISABLED;
+                                        }
                                         let hwnd = CreateWindowExA(
                                             0,
                                             c"COMBOBOX".as_ptr() as *const u8,
                                             ptr::null(),
-                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+                                            style,
                                             x,
                                             y,
                                             combo_width,
@@ -1151,9 +1165,13 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             ptr::null_mut(),
                                         );
                                         SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                        // The choices are drawn from here; the
+                                        // pick still writes nothing, for the
+                                        // same reason no popup here does until
+                                        // #461 maps a control back to its row.
                                         window.controls.borrow_mut().insert(
                                             id.clone(),
-                                            Control::ComboBox(hwnd, tab_index, Vec::new()),
+                                            Control::ComboBox(hwnd, tab_index, options.clone()),
                                         );
                                         x += combo_width + 8;
                                         control_id += 1;

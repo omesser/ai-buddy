@@ -134,6 +134,12 @@ pub enum CompositeControl {
     },
     Popup {
         id: String,
+        /// The choices, for the same reason as `FormRow::Popup::options`:
+        /// empty leaves them to the renderer, which is how `new_instance`'s
+        /// Character popup gets the installed packages.
+        options: Vec<String>,
+        /// Disabled, for the same reason as `FormRow::TextField::frozen`.
+        frozen: bool,
     },
     Button {
         id: String,
@@ -203,6 +209,11 @@ impl FormDescription {
                             id: control_id,
                             frozen,
                             ..
+                        }
+                        | CompositeControl::Popup {
+                            id: control_id,
+                            frozen,
+                            ..
                         } if control_id == id => Some(*frozen),
                         _ => None,
                     })
@@ -256,6 +267,7 @@ impl FormDescription {
 pub const DIRECTOR_ID: &str = "director";
 pub const AMBIENT_ID: &str = "ambient";
 pub const DIRECTOR_BASE_URL_ID: &str = "director_base_url";
+pub const DIRECTOR_BASE_URL_PICK_ID: &str = "director_base_url_pick";
 pub const DIRECTOR_MODEL_ID: &str = "director_model";
 pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
 pub const CLEAR_KEY_ID: &str = "clear_key";
@@ -303,6 +315,81 @@ pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0017's order. Grok, Copilot and Gemini reach
 /// the same Completer through Custom until a turn has been smoked.
 pub const HARNESS_PRESETS: [&str; 3] = ["claude", "hermes", "opencode"];
+
+/// The endpoints the Base URL picker names, as (group, name, base URL).
+///
+/// Every port here was read off the project's own current documentation
+/// rather than recalled (#465): Ollama's `docs.ollama.com` OpenAI-compatibility
+/// page, LM Studio's `lmstudio.ai/docs/app/api/endpoints/openai`, oMLX's
+/// README at `github.com/jundot/omlx`, llama.cpp's `tools/server/README.md`,
+/// `github.com/openai/openai-python`, `docs.anthropic.com/en/api/openai-sdk`,
+/// and `docs.x.ai`. Each is the host alone because `model::completions_url`
+/// adds `/v1` and the path, and each doc spells its base URL with the `/v1`
+/// this column drops.
+///
+/// Two local servers `docs/DEVELOPMENT.md` lists are deliberately absent: vLLM
+/// answers on oMLX's 8000 and `mlx_lm.server` on llama.cpp's 8080, so a row for
+/// either would offer a second name for a URL already on the list. The field
+/// below takes both.
+const ENDPOINTS: &[(&str, &str, &str)] = &[
+    ("Local", "Ollama", "http://localhost:11434"),
+    ("Local", "LM Studio", "http://localhost:1234"),
+    ("Local", "oMLX", "http://localhost:8000"),
+    ("Local", "llama.cpp", "http://localhost:8080"),
+    ("Hosted", "OpenAI", "https://api.openai.com"),
+    ("Hosted", "Anthropic", "https://api.anthropic.com"),
+    ("Hosted", "xAI", "https://api.x.ai"),
+];
+
+/// The title the picker rests on for an endpoint it does not name. Picking it
+/// writes nothing: the field beside it is what a custom endpoint is.
+pub const ENDPOINT_CUSTOM: &str = "Custom";
+
+fn endpoint_title_of(group: &str, name: &str, url: &str) -> String {
+    format!("{group} — {name} ({url})")
+}
+
+/// The Base URL picker's choices, Custom first.
+///
+/// The group rides in each title rather than in a header row above it. A
+/// header is an item that picks nothing, and GTK draws these choices as a
+/// radio group, where an inert radio is a click that silently does nothing.
+pub fn endpoint_options() -> Vec<String> {
+    let mut options = vec![ENDPOINT_CUSTOM.to_string()];
+    options.extend(
+        ENDPOINTS
+            .iter()
+            .map(|(group, name, url)| endpoint_title_of(group, name, url)),
+    );
+    options
+}
+
+/// The base URL a picked title means, or `None` for Custom and for a title off
+/// the list — neither of which is a value to write over what the field holds.
+// AppKit and GTK spend a pick; Win32 draws the choices and commits none of
+// them yet, so the binary's dead-code lint sees no caller there.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+pub fn endpoint_choice(title: &str) -> Option<&'static str> {
+    ENDPOINTS
+        .iter()
+        .find(|(group, name, url)| endpoint_title_of(group, name, url) == title)
+        .map(|(_, _, url)| *url)
+}
+
+/// The title to rest on for the base URL in force. The inverse of
+/// `endpoint_choice`, and Custom for the endpoints this list does not name —
+/// which is most of what the field can hold.
+// Win32 selects from `SettingsView::popup_value`, which answers for no
+// composite control; the same dead-code note as `endpoint_choice`.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+pub fn endpoint_title(base_url: &str) -> String {
+    let base_url = base_url.trim().trim_end_matches('/');
+    ENDPOINTS
+        .iter()
+        .find(|(_, _, url)| *url == base_url)
+        .map(|(group, name, url)| endpoint_title_of(group, name, url))
+        .unwrap_or_else(|| ENDPOINT_CUSTOM.to_string())
+}
 
 /// The Completer-source popup's choices, in the order it draws them.
 pub fn harness_options() -> Vec<String> {
@@ -493,6 +580,30 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: wake_frozen,
                     batched: false,
                 },
+                // A shortcut above the field, not a replacement for it: almost
+                // every endpoint typed here is one of a dozen well-known
+                // strings, and a typo in one of those fails silently several
+                // layers down (#465). Anything off the list stays typeable.
+                //
+                // It writes to the field rather than to the file, which is why
+                // it is a composite control and carries no `writes` of its
+                // own: the four Director rows only mean anything together, and
+                // a pick that saved on its own would point the Completer at a
+                // host and model that were never meant to go together (#279).
+                FormRow::Composite {
+                    id: "base_url_pick".to_string(),
+                    help: Some(match base_url_frozen {
+                        true => "Off, for the same reason the Base URL below is.".to_string(),
+                        false => "Fills in the Base URL below. Any other \
+                                  OpenAI-compatible endpoint can be typed there."
+                            .to_string(),
+                    }),
+                    controls: vec![CompositeControl::Popup {
+                        id: DIRECTOR_BASE_URL_PICK_ID.to_string(),
+                        options: endpoint_options(),
+                        frozen: base_url_frozen,
+                    }],
+                },
                 FormRow::TextField {
                     id: DIRECTOR_BASE_URL_ID.to_string(),
                     label: Some(base_url_label),
@@ -664,6 +775,8 @@ fn character_sections() -> Vec<FormSection> {
                         },
                         CompositeControl::Popup {
                             id: NEW_CHARACTER_ID.to_string(),
+                            options: Vec::new(),
+                            frozen: false,
                         },
                         CompositeControl::Button {
                             id: SPAWN_ID.to_string(),
@@ -1171,7 +1284,7 @@ mod tests {
             .find(|s| s.heading == "Director")
             .expect("Director section");
 
-        assert_eq!(director.rows.len(), 8);
+        assert_eq!(director.rows.len(), 9);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -1186,24 +1299,30 @@ mod tests {
             director.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_WAKE_SECS_ID
         ));
+        // The picker stands above the field it fills, so the shortcut is read
+        // before the typing starts (#465).
         assert!(matches!(
             director.rows[3],
-            FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
+            FormRow::Composite { ref id, .. } if id == "base_url_pick"
         ));
         assert!(matches!(
             director.rows[4],
-            FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
         ));
         assert!(matches!(
             director.rows[5],
-            FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
+            FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
         ));
         assert!(matches!(
             director.rows[6],
-            FormRow::Composite { ref id, .. } if id == "api_key_actions"
+            FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
         ));
         assert!(matches!(
             director.rows[7],
+            FormRow::Composite { ref id, .. } if id == "api_key_actions"
+        ));
+        assert!(matches!(
+            director.rows[8],
             FormRow::Composite { ref id, .. } if id == "director_actions"
         ));
     }
@@ -1656,6 +1775,106 @@ mod tests {
                 _ => panic!("a limit is a text field"),
             }
         }
+    }
+
+    /// The Base URL picker's help line, choices and frozen flag.
+    fn base_url_picker(description: &FormDescription) -> (String, Vec<String>, bool) {
+        description
+            .sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::Composite { controls, help, .. } => {
+                    controls.iter().find_map(|control| match control {
+                        CompositeControl::Popup {
+                            id,
+                            options,
+                            frozen,
+                        } if id == DIRECTOR_BASE_URL_PICK_ID => {
+                            Some((help.clone().unwrap_or_default(), options.clone(), *frozen))
+                        }
+                        _ => None,
+                    })
+                }
+                _ => None,
+            })
+            .expect("the Base URL picker exists")
+    }
+
+    /// The local runtimes are the point of the list: someone running one has a
+    /// Completer sitting there already, and should never have to look its port
+    /// up. The ports are `ENDPOINTS`' — each read off its project's own docs.
+    #[test]
+    fn the_base_url_picker_names_the_local_runtimes_and_their_ports() {
+        let (_, options, _) = base_url_picker(&describe());
+
+        assert_eq!(
+            options.first().map(String::as_str),
+            Some(ENDPOINT_CUSTOM),
+            "Custom rests first, so the picker opens on what the field holds"
+        );
+        for (name, url) in [
+            ("Ollama", "http://localhost:11434"),
+            ("LM Studio", "http://localhost:1234"),
+            ("oMLX", "http://localhost:8000"),
+            ("llama.cpp", "http://localhost:8080"),
+        ] {
+            assert!(
+                options.iter().any(|o| o.contains(name) && o.contains(url)),
+                "{name} on {url} must be one pick away, not in {options:?}"
+            );
+        }
+    }
+
+    /// Every title the picker offers is one `endpoint_choice` can spend, and
+    /// the value it names comes back as the title that was picked. Custom is
+    /// the one that writes nothing, because the field is what Custom means.
+    #[test]
+    fn every_endpoint_title_comes_back_as_the_base_url_it_names() {
+        for title in endpoint_options() {
+            match endpoint_choice(&title) {
+                Some(url) => assert_eq!(endpoint_title(url), title),
+                None => assert_eq!(title, ENDPOINT_CUSTOM, "only Custom picks nothing"),
+            }
+        }
+        assert_eq!(endpoint_title("https://example.invalid"), ENDPOINT_CUSTOM);
+    }
+
+    /// A picker that looks live while a variable owns the value invites a
+    /// click that does nothing, which is worse than the frozen field this
+    /// shortcut sits above (#465).
+    #[test]
+    fn an_exported_base_url_freezes_the_picker_and_says_so() {
+        crate::model::tests::with_env(None, Some("http://localhost:11434"), None, || {
+            let description = describe();
+            let (help, _, frozen) = base_url_picker(&description);
+
+            assert!(frozen, "the variable owns the pick as well as the field");
+            assert!(description.frozen(DIRECTOR_BASE_URL_PICK_ID));
+            assert!(
+                help.contains("Off"),
+                "the help must say the picker is off, not {help:?}"
+            );
+            let (label, _) = described_row(&description, DIRECTOR_BASE_URL_ID);
+            assert!(
+                label.contains(model::BASE_URL),
+                "the field above still names the variable, not {label:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn the_base_url_picker_is_the_users_when_no_variable_is_exported() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe();
+            let (help, _, frozen) = base_url_picker(&description);
+
+            assert!(!frozen);
+            assert!(!description.frozen(DIRECTOR_BASE_URL_PICK_ID));
+            assert!(
+                help.contains("typed"),
+                "the help must keep saying a custom endpoint is typeable, not {help:?}"
+            );
+        });
     }
 
     fn source_section(description: &FormDescription) -> &FormSection {
