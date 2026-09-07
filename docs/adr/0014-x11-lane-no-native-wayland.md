@@ -1,5 +1,7 @@
 # One Linux build takes the X11 lane wherever an X server answers; there is no native Wayland lane
 
+**Status:** Superseded by [ADR-0020](./0020-x11-lane-no-native-wayland.md) (X11-only lane) and [ADR-0021](./0021-accept-gtk3-pin-until-tauri-moves.md) (GTK3 acceptance)
+
 One non-macOS arm ships, behind `cfg(all(unix, not(target_os = "macos")))`, and
 it never splits on session type. `platform::x11_answers` decides both capability
 gates and `platform::prefer_x11_backend` points GDK at its X11 backend, so the

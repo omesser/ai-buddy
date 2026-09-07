@@ -1,5 +1,7 @@
 # The ACP client is the official SDK on one thread, and three Harnesses have a launch row
 
+**Status:** Superseded by [ADR-0022](./0022-acp-client-over-official-sdk-and-named-harnesses.md)
+
 ai-buddy is an Agent Client Protocol client built on `agent-client-protocol`
 2.x, the SDK Zed ships and the protocol's own repository maintains. It lives
 in `src-tauri/src/acp_wire.rs` and nowhere else: one thread per spawned
