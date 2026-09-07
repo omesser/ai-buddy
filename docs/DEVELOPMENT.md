@@ -13,8 +13,12 @@ cargo run -p ai-buddy
 
 ## Local Data Management
 
-ai-buddy writes two files to the data directory (`~/Library/Application Support/ai-buddy` on macOS, `~/.local/share/ai-buddy` on Linux):
+ai-buddy writes two files to the data directory:
+- macOS: `~/Library/Application Support/ai-buddy`
+- Linux: `~/.local/share/ai-buddy`
+- Windows: `%APPDATA%\ai-buddy` (e.g. `C:\Users\<user>\AppData\Roaming\ai-buddy`)
 
+Files:
 - **`memory.md`**: Everything the buddies know about you, shared across all Character Instances. Human-editable Markdown with no automatic size limit.
 - **`action-log.jsonl`**: One JSON line per Harness action (prompts, tool calls, usage). Append-only, automatically rotated.
 
@@ -37,7 +41,9 @@ The Action Log uses the [`file-rotate`](https://crates.io/crates/file-rotate) cr
 
 **K=10 rationale:** Light retention (weeks of regular use, days of heavy use) without micro-hygiene that drops recent history too quickly. ~10k typical events per file at 2 MB means months of context before the oldest file is dropped.
 
-To inspect the log: `tail -f ~/Library/Application\ Support/ai-buddy/action-log.jsonl`
+**To inspect the log:**
+- macOS/Linux: `tail -f ~/Library/Application\ Support/ai-buddy/action-log.jsonl` (macOS) or `tail -f ~/.local/share/ai-buddy/action-log.jsonl` (Linux)
+- Windows (PowerShell): `Get-Content -Wait -Tail 50 $env:APPDATA\ai-buddy\action-log.jsonl`
 
 ### Memory Growth Policy
 
