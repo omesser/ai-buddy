@@ -1,17 +1,24 @@
 <!doctype html>
 <!--
-  The bubble proposal for omesser/ai-buddy#441: the overlay's speech bubble and
-  thinking indicator drawn as a piece of the chat surface, carried out onto the
-  desktop — without taking the part of that surface that only works inside a
-  window.
+  The bubble design for omesser/ai-buddy#441, shipped by #456: the overlay's
+  speech bubble and thinking indicator drawn as a piece of the chat surface,
+  carried out onto the desktop — without taking the part of that surface that
+  only works inside a window.
 
-  The <style> block marked "spec" is what src/main.css ports if this is
-  approved. Everything else on this page is the harness that makes it
-  judgeable. Nothing here is loaded by the app.
+  The <style> block marked "spec" is what src/main.css draws, ported verbatim
+  by #456. A Dated page under ADR-0011: hand-written and frozen at its date, so
+  src/main.css is the thing that runs and this is the ground the design was
+  judged on. Everything else here is the harness that makes it judgeable.
+  Nothing here is loaded by the app.
+
+  The design #456 retired is still drawn beside it, tagged `retired`, because
+  the comparison is the argument: a light box with a #333 ring, a round thought
+  silhouette trailing discs, and a flip below the head. That is src/main.css
+  and src/bubble.js as they stood until 2026-09-07.
 
   Self-contained on purpose: no font link, no image file, no stylesheet beside
   it. BMO's idle frame is inlined, the same frame docs/design/cues.html uses.
-  The system font stack is not a compromise here — it is the proposal, because
+  The system font stack is not a compromise here — it is the design, because
   --chat-sans is `system-ui, -apple-system, sans-serif` and the app's CSP
   blocks the Google Fonts link this project's review pages have used before.
 -->
@@ -139,23 +146,24 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     /* placeBubble() leaves exactly this gap over the sprite's head. The Shell
        positions both absolutely from a shared-point-space rect; the page uses
-       a flex column, because the arithmetic is bubble.js's and is not what is
-       being proposed here. */
+       a flex column, because the arithmetic is bubble.js's and is not what
+       this page settles. */
     gap: 10px;
     min-height: 340px; padding: 26px 16px;
   }
   /* The ceiling case. The top edge of the desk is the top edge of the display:
-     the sprite's head is inside CEILING_CLEARANCE, so there is no room for a
-     bubble above it and placeBubble's clamp takes over. */
+     the sprite's head is close enough to it that a full bubble does not fit
+     above, and placeBubble's clamp takes over. */
   .stage.ceil { display: block; padding: 0; min-height: 440px; }
-  /* Head 96px below the display edge — inside CEILING_CLEARANCE's 128, and a
-     realistic "dragged near the top" rather than a worst case chosen to make
-     the point. The proposed bubble's own top is computed in render() from its
-     measured height, exactly as placeBubble would: headY - height - 10,
-     clamped at the edge. Hardcoding it would be drawing the conclusion. */
+  /* Head 96px below the display edge — inside the 128px clearance the retired
+     flip triggered on, and a realistic "dragged near the top" rather than a
+     worst case chosen to make the point. The current bubble's own top is
+     computed in render() from its measured height, exactly as placeBubble
+     does: headY - height - 10, clamped at the edge. Hardcoding it would be
+     drawing the conclusion. */
   .stage.ceil .sprite { position: absolute; left: 50%; margin-left: -63px; top: 96px; }
   .stage.ceil .bub { position: absolute; left: 50%; transform: translateX(-50%); }
-  .stage.ceil .b-now { top: 234px; }  /* 96 + 128 + 10: flipped under the art */
+  .stage.ceil .b-now { top: 234px; }  /* 96 + 128 + 10: where the retired flip put it, under the art */
   /* The display edge the clamp stops at. */
   .stage.ceil::before {
     content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 2;
@@ -172,11 +180,12 @@
   .sprite { width: 126px; height: 128px; image-rendering: auto; -webkit-user-drag: none; }
 
   /* ================================================================
-     spec — what src/main.css takes if this is approved
+     spec — what src/main.css draws, ported verbatim by #456
      ================================================================
-     Two bubbles are drawn. `.b-now` is src/main.css:19-140 as it ships today,
-     quoted so the comparison is against the real thing and not a memory of
-     it. `.b-new` is the proposal.
+     Two bubbles are drawn. `.b-new` is the shipped one, the block src/main.css
+     took as `.bubble`. `.b-now` is the design it replaced — src/main.css:19-140
+     up to #456, quoted so the comparison is against the real thing and not a
+     memory of it.
 
      The rule, in one line: a token from src/chat-ui.css may cross into the
      overlay when its value means the same thing on any ground, and may not
@@ -194,7 +203,7 @@
   .bub .bc { white-space: pre-wrap; }
   /* The 6-line cap is bubble.js's `MAX_LINES`, applied there by measuring and
      appending an ellipsis. Clamped here instead, so the cap lands at each
-     proposal's own type size rather than at one precomputed wrap. */
+     bubble's own type size rather than at one precomputed wrap. */
   .bub .bc.cap {
     display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical;
     overflow: hidden;
@@ -213,9 +222,9 @@
     30% { opacity: 1; transform: translateY(-3px); }
   }
 
-  /* ---- shipped today (src/main.css:19-140, verbatim) ----
+  /* ---- retired 2026-09-07 (src/main.css:19-140 up to #456, verbatim) ----
      Including the flip and the round thought silhouette, because both are
-     what the proposal retires and the comparison is the argument. */
+     what #456 deleted and the comparison is the argument. */
   .b-now {
     padding: 12px 16px;
     background: white;
@@ -255,7 +264,7 @@
   .b-now[data-mode="thinking"].flipped::after  { bottom: auto; top: -18px; }
   .b-now .dots span { background: #333; }
 
-  /* ---- proposed ----
+  /* ---- shipped ----
      A piece of the chat surface's panel, carried out onto the desktop and
      holding the Character's line as the log draws it. `.chat-ui-minimal` is
      unconditionally dark, so the bubble is dark: not the ramp inverted, the
@@ -339,13 +348,14 @@
 <div class="page">
 
   <header>
-    <p class="class">Dated proposal · <a href="https://github.com/omesser/ai-buddy/issues/441">#441</a> · 2026-09-07 · hand-written and frozen, not a description of shipped behavior</p>
+    <p class="class">Dated design · <a href="https://github.com/omesser/ai-buddy/issues/441">#441</a>, shipped by <a href="https://github.com/omesser/ai-buddy/pull/456">#456</a> · 2026-09-07 · hand-written and frozen at this date; src/main.css is what runs</p>
     <h1>Buddy Bubble</h1>
     <p class="lede">The overlay's bubble drawn as a piece of the chat surface's
       panel, carried out onto a desktop the chat surface never has to survive.
-      One bubble for both states, always above the head. Left is what ships
-      today (<code>src/main.css:19-140</code>); right is the proposal. Same
-      content, same moment, three grounds.</p>
+      One bubble for both states, always above the head. Right is what
+      <code>src/main.css</code> draws; left is the design #456 retired on
+      2026-09-07, kept because the comparison is the argument. Same content,
+      same moment, three grounds.</p>
   </header>
 
   <div class="bar">
@@ -371,8 +381,10 @@
 
   <h2>One bubble, dark, always above the head</h2>
 
-  <p>Three things changed from the first draft of this page, and each one has a
-    consequence worth stating rather than absorbing.</p>
+  <p>Three things separate this from the first draft of this page, and each one
+    has a consequence worth stating rather than absorbing. All three are in
+    <code>src/main.css</code> as of #456, and the argument for them is
+    ADR-0013's overlay amendment.</p>
 
   <p><b>The bubble is dark, because the chat surface is.</b>
     <code>.chat-ui-minimal</code> is unconditionally dark —
@@ -414,16 +426,16 @@
     of a display there is no room above the head.</p>
 
   <p><b>Clamp and overlap, with the bubble in front.</b>
-    <code>placeBubble</code> already clamps <code>y</code> into the display
-    bounds, and <code>.bubble</code> already carries <code>z-index: 1</code> over
-    an unindexed sprite — so this is what the code does once the flip branch is
-    gone, not a new mechanism. The bubble sits against the display edge and the
-    art passes behind it. The tail still points down at the head, so it is never
+    <code>placeBubble</code> clamps <code>y</code> into the display bounds, and
+    the bubble is drawn in front of its own sprite — <code>main.js</code> puts
+    it on the higher of each Instance's two levels — so this is what the code
+    does with the flip branch gone, not a new mechanism. The bubble sits against
+    the display edge and the art passes behind it. The tail still points down at the head, so it is never
     unclear who is speaking, and the bubble is transient where the sprite is
     constant: a line you cannot read is a worse failure than art briefly
     covered. The <b>At the ceiling</b> control puts the head 96px below the
-    display edge — inside <code>CEILING_CLEARANCE</code>'s 128 — and the red
-    dashes are that edge. Left, for comparison, is today's flip.</p>
+    display edge — inside the 128px clearance the flip used to trigger on — and
+    the red dashes are that edge. Left, for comparison, is the retired flip.</p>
 
   <p>The bubble's position there is computed on the page from its measured
     height, not hardcoded, so the overlap you see is the overlap the arithmetic
@@ -432,24 +444,26 @@
     never clamps at all. The <b>6-line cap</b> — the tallest bubble the Shell
     will ever draw — clamps to the edge and covers the sprite almost entirely.
     That is the real worst case of dropping the flip, it is on the page rather
-    than in a footnote, and it is the part of this proposal most worth
-    rejecting if the answer is that the art must stay visible.</p>
+    than in a footnote, and it was the part most worth rejecting if the answer
+    had been that the art must stay visible. It shipped anyway, with that cost
+    on the page.</p>
 
-  <p><code>CEILING_CLEARANCE</code> in <code>src/bubble.js</code> exists only to
-    trigger that flip, and with no flip it is <b>dead</b>, not repurposed. The
-    follow-up deletes the constant, the <code>ceilingClearance</code> parameter
-    and the <code>spriteHeadY &lt; ceilingClearance</code> branch from
-    <code>placeBubble</code>; the clamp two lines below does the rest unchanged.
-    Repurposing it as a minimum-gap knob was considered and dropped — nothing
-    asks for one, and a constant kept alive for a use nobody has is how a
-    threshold outlives its reason.</p>
+  <p><code>CEILING_CLEARANCE</code> in <code>src/bubble.js</code> existed only
+    to trigger that flip, so with no flip it was <b>dead</b>, not repurposed:
+    #456 deleted the constant, the <code>ceilingClearance</code> parameter and
+    the <code>spriteHeadY &lt; ceilingClearance</code> branch from
+    <code>placeBubble</code>, and the clamp two lines below does the rest
+    unchanged. Repurposing it as a minimum-gap knob was considered and dropped
+    — nothing asks for one, and a constant kept alive for a use nobody has is
+    how a threshold outlives its reason.</p>
 
   <h2>What travels, and what does not</h2>
 
   <p>ADR-0013 put everything the overlay draws outside the chat UI, and the
     reason it gave is sound: the bubble is the Character's expression over
-    arbitrary wallpaper, not chrome inside a window. That reason does not reach
-    every token in <code>src/chat-ui.css</code>. It reaches the ones whose value
+    arbitrary wallpaper, not chrome inside a window. #441 narrowed that bullet,
+    because the reason does not reach every token in
+    <code>src/chat-ui.css</code>. It reaches the ones whose value
     is an alpha over <code>--chat-panel</code>, because those are not colours —
     they are instructions for sitting on a panel the overlay does not have. A
     radius, a padding step, a type size and an opaque hex mean the same thing on
@@ -463,9 +477,9 @@
       <tr><td class="tok">--chat-sans</td><td class="tok">system-ui, …</td><td class="yes">travels</td>
         <td>Already what the bubble uses. Now it is the same decision rather than the same accident.</td></tr>
       <tr><td class="tok">body font-size</td><td class="tok">13.5px</td><td class="yes">travels</td>
-        <td>A line the Character says gets the measure it would have had in the log. Down from 14px.</td></tr>
+        <td>A line the Character says gets the measure it would have had in the log. Down from the 14px #119 shipped.</td></tr>
       <tr><td class="tok">.row.them .said</td><td class="tok">line-height 1.55</td><td class="yes">travels</td>
-        <td>The Character's own turn. The bubble's 1.4 is tighter than anything in the chat, and the six-line cap is where that shows.</td></tr>
+        <td>The Character's own turn. #119's 1.4 was tighter than anything in the chat, and the six-line cap is where that showed.</td></tr>
       <tr><td class="tok">--chat-panel</td><td class="tok">#14171e</td><td class="yes">travels</td>
         <td>The bubble's fill. The chat is dark, so the bubble is dark — not the ramp inverted.</td></tr>
       <tr><td class="tok">--chat-ink</td><td class="tok">#e8ebf2</td><td class="yes">travels</td>
@@ -491,15 +505,16 @@
     </tbody>
   </table>
 
-  <h2>What #119 decided, and what this reverses</h2>
+  <h2>History — what #119 decided, and what #456 reversed</h2>
 
   <p>The speech bubble and the thinking indicator were drawn apart on purpose.
-    <code>src/main.css:75-117</code> gives the thinking state a round silhouette
-    and a trail of shrinking discs, and its comment says why: the idiom is what
+    <code>src/main.css:75-117</code>, up to #456, gave that state a round silhouette
+    and a trail of shrinking discs, and its comment said why: the idiom is what
     tells a reader at a glance which of the two they are looking at, before the
-    dots inside have moved at all. <b>This proposal reverses that.</b> One
-    bubble, one shape, one fill, one border; the ellipsis alone carries the
-    difference.</p>
+    dots inside have moved at all. <b>#456 reversed that on 2026-09-07</b>, and
+    those rules are gone from the stylesheet. One bubble, one shape, one fill,
+    one border; the ellipsis alone carries the difference. The rationale stays
+    on the page because it is why the current bubble looks the way it does.</p>
 
   <p>What is given up is the glance. What is bought is that the Character has
     one bubble rather than two objects that happen to appear in the same place,
@@ -510,7 +525,7 @@
     same job. Judge it by switching <b>State</b> above and asking whether the
     two read as different enough.</p>
 
-  <p><b>Open, not decided:</b> quotation marks around the spoken line, as a
+  <p><b>Still open:</b> quotation marks around the spoken line, as a
     second way to separate the two states without a second silhouette. Parked
     deliberately — it is a typographic change with its own wrap and measure
     consequences, and it should be judged on its own rather than smuggled in
@@ -535,13 +550,13 @@
     something other than modern minimal the default, and that is a line in
     ADR-0013's amendment rather than a second decision.</p>
 
-  <h2>What is not proposed</h2>
+  <h2>What #456 did not change</h2>
 
   <p>Cues (<a href="cues.html">cues.html</a>, <a
     href="https://github.com/omesser/ai-buddy/issues/277">#277</a>) are white on
     ink and already tuned for arbitrary wallpaper; they are untouched. The
     six-line cap, the durations and the grace and min-hold timers in
-    <code>src/bubble.js</code> are unchanged — the only edit there is deleting
+    <code>src/bubble.js</code> are unchanged — the only edit there was deleting
     the dead ceiling branch. Nothing here is per-Character or per-Instance; <a
     href="https://github.com/omesser/ai-buddy/issues/119">#119</a> closed that
     and it stays closed.</p>
@@ -591,8 +606,8 @@
     <section class="ground">
       <p class="cap"><b>${name}</b> — ${why}</p>
       <div class="desk" data-wall="${id}">
-        <div class="stage"><span class="tag">shipped</span>${bubble("b-now")}<img class="sprite" alt="BMO" src="${SPRITE}"></div>
-        <div class="stage"><span class="tag">proposed</span>${bubble("b-new")}<img class="sprite" alt="BMO" src="${SPRITE}"></div>
+        <div class="stage"><span class="tag">retired</span>${bubble("b-now")}<img class="sprite" alt="BMO" src="${SPRITE}"></div>
+        <div class="stage"><span class="tag">current</span>${bubble("b-new")}<img class="sprite" alt="BMO" src="${SPRITE}"></div>
       </div>
     </section>`).join("");
 
@@ -608,7 +623,7 @@
       stage.classList.toggle("ceil", ceiling);
       const bub = stage.querySelector(".bub");
       bub.dataset.mode = state.mode;
-      // Only the shipped bubble flips. That is the difference the ceiling
+      // Only the retired bubble flips. That is the difference the ceiling
       // control exists to show.
       bub.classList.toggle("flipped", ceiling && bub.classList.contains("b-now"));
       const bc = bub.querySelector(".bc");
@@ -616,7 +631,7 @@
       bc.classList.toggle("cap", state.sample === "cap");
 
       // placeBubble's arithmetic, run for real rather than hardcoded, so the
-      // overlap on screen is the overlap the Shell would produce: sit 10px
+      // overlap on screen is the overlap the Shell produces: sit 10px
       // over the head, and clamp at the display edge when there is no room.
       // A short line near the ceiling still fits above the head and does not
       // clamp at all — which is the honest answer, not a dodge.
