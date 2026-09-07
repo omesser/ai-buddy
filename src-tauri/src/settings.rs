@@ -340,10 +340,14 @@ impl SettingsView {
     /// the same guard does not answer the question differently.
     ///
     /// GTK needs none of it: a click on the active radio of a group emits no
-    /// `toggled`. Win32 draws no source popup yet.
-    // Only AppKit asks, and the binary's dead-code lint sees no caller
-    // elsewhere — the same reason `form::bool_write` carries this.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    /// `toggled`. Win32 reads it to draw rather than to guard — it fills a
+    /// popup from the row's `options` and selects the value in force from here
+    /// (#468) — and commits no pick at all until #461 maps a control back to
+    /// its row.
+    // The Linux lane is the one that asks for none of it, and the binary's
+    // dead-code lint sees no caller there — the same reason `form::bool_write`
+    // carries this.
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub fn popup_value(&self, id: &str) -> Option<&str> {
         match id {
             form::CHARACTER_ID => Some(&self.character),

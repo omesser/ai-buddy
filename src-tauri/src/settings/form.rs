@@ -574,17 +574,15 @@ fn director_sections() -> Vec<FormSection> {
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
 ///
-/// ponytail: AppKit and GTK draw all three rows. Win32 fills a `Popup` from
-/// the Character list by id rather than from `options`, and fills no
-/// `InspectBlock` it does not name, so there the picker and the state line
-/// come up empty until it grows the two arms GTK grew in #467. Its
-/// `TextField` arm is no better: the text-change handler commits the
-/// excluded-applications field alone and it never honours `frozen`, so the
-/// command line row is drawn editable and drops what is typed — as the wake
-/// interval and both Completer limits already do there. One generic commit
-/// handler fixes all four at once and belongs with #197, not written blind
-/// here: Win32 does not compile on the machine this landed from. The file
-/// field is the setting either way, so a hand-edit works everywhere today.
+/// ponytail: all three renderers draw these rows — AppKit from the start, GTK
+/// since #467, Win32 since #468. What Win32 still cannot do is commit one: no
+/// control in that window maps back to the row it belongs to, because its
+/// handlers look a row up by the numeric child id, so nothing typed or picked
+/// there is written — the wake interval and both Completer limits included.
+/// One generic commit handler plus that id map fixes them together and is
+/// #461, not written blind here: Win32 does not compile on the machine this
+/// landed from. The file field is the setting either way, so a hand-edit
+/// works everywhere today.
 fn completer_source_section() -> FormSection {
     let (source_label, frozen) = harness_env_row("Harness");
     FormSection {
