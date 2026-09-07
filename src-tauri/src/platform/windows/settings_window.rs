@@ -1134,11 +1134,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += field_width + 8;
                                         control_id += 1;
                                     }
-                                    form::CompositeControl::Popup {
-                                        id,
-                                        options,
-                                        frozen,
-                                    } => {
+                                    // The choices stay unread until #461; see
+                                    // the note on the insert below.
+                                    form::CompositeControl::Popup { id, frozen, .. } => {
                                         let combo_width = 100;
                                         // Disabled at creation for the same
                                         // reason `FormRow::Popup` is: an
