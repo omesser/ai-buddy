@@ -76,9 +76,17 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
     let (name, argv): (&str, Vec<&str>) = match value {
         "" => return None,
+        // `@latest` is load-bearing: npx serves whatever it cached the first
+        // time, and the adapter bundles the Claude Code it was built against,
+        // so a cache from months ago answers every turn `API Error: 400 ...
+        // does not support this model` for a model newer than that CLI —
+        // which `claude update` cannot fix, because it updates a different
+        // install. One registry round-trip per spawn buys a Harness that
+        // matches the configured model (#514). Pinning a version drifts the
+        // same way in slower motion.
         "claude" => (
             value,
-            vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+            vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"],
         ),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
@@ -1445,7 +1453,7 @@ mod tests {
         assert_eq!(claude.name, "claude");
         assert_eq!(
             claude.argv,
-            ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+            ["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"]
         );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
