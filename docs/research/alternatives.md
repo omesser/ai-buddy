@@ -48,9 +48,9 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Harness integrations (MCP attach) | ~ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| MCP server (buddy-side tools) | ~ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| AI chat integration | ~ (#17, #119) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
+| Harness integrations (MCP attach) | ✅ (ACP, claude/hermes/opencode) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| MCP server (buddy-side tools) | ✅ (stdio, --mcp-stdio) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| AI chat integration | ~ (#17 chat surface open) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
 | BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
 
 ### Memory & privacy
@@ -85,7 +85,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
 |---|---|---|---|---|---|
-| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) | Harness not shipped; Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
+| ai-buddy | personality-driven desktop mascot fans; attach own agent | personality-driven idle AI behavior + physics + Harness | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion) + Harness attach (ACP, claude/hermes/opencode) + MCP server | Chat surface specced (#17 open); Windows NSIS ships with native settings (full Director/Completer support #392/#421/#487/#492); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
 | Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
 | VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
 | Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
@@ -152,8 +152,9 @@ package format (undocumented until v2), and import adapters for petdex / Pets
 Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
 Desktop Mate has no ballistic physics, no agent integrations, no BYO character
 creation after mod removal. ai-buddy's Spatial Layer includes ballistic physics
-and Perch riding/dropping under a gate, and its planned agent integrations (MCP
-+ Harness attach) target capabilities Desktop Mate does not attempt.
+and Perch riding/dropping under a gate, and its shipped agent integrations
+(Harness attach via ACP #433/#497, MCP server #117/#497) target capabilities
+Desktop Mate does not attempt.
 
 ### VPet-Simulator
 
@@ -190,9 +191,9 @@ reviews), while ai-buddy's Character Package format is internal and undocumented
 until v2. VPet has no window awareness or Perches, no ballistic physics, and no
 agent integrations or MCP layer. ai-buddy ships Director + authored
 personality-driven idle speech (VPet has no personality file or non-deterministic
-speech; its behavior is Workshop-defined animations). Harness is specced (~), not
-shipped. User need: care-sim + Workshop-open vs ai-buddy's personality-driven
-idle life + physics.
+speech; its behavior is Workshop-defined animations). Harness attach + MCP
+server shipped (#433/#497), chat surface specced (#17 open). User need: care-sim
++ Workshop-open vs ai-buddy's personality-driven idle life + physics.
 
 ### Shimeji-ee ecosystem
 
@@ -232,9 +233,10 @@ Character Packages once (authoring-time, not live bridge). Shimeji-ee has
 Fall/gravity (sprite kinematics) but not ai-buddy's ballistic Perch model; no
 window awareness beyond edges; no agent integrations or AI capabilities.
 ai-buddy adds ballistic physics (gravity arcs, throw, Perches under acceleration
-gate), window app name tracking, planned MCP + Harness attach, Memory, and BYO
-model. Shimeji-ee's XML graph behavior system versus ai-buddy's Director +
-declarative Behaviors is a design difference in how liveliness is authored.
+gate), window app name tracking, Harness attach via ACP + MCP server (shipped
+#433/#497), Memory, and BYO model. Shimeji-ee's XML graph behavior system versus
+ai-buddy's Director + declarative Behaviors is a design difference in how
+liveliness is authored.
 
 ### Desktop Pet
 
@@ -277,8 +279,8 @@ windows, not a chat window). Desktop Pet is beta with limited character selectio
 internal package format, and import adapters for petdex / Pets Codex
 and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
 awareness. Desktop Pet's AI is an OpenAI chat window; ai-buddy's Director drives
-idle speech from personality. Agent integrations (Harness/MCP) are specced (~)
-for ai-buddy, not shipped.
+idle speech from personality. Harness attach via ACP + MCP server shipped
+(#433/#497); chat surface specced (#17 open).
 
 ### OpenPets
 
@@ -326,14 +328,15 @@ steal #32, invisible pet / tray-only #108/#141).
 **Differences.** OpenPets is the closest shipped agent-pet alternative to
 ai-buddy on architecture: overlay pet + plugin/agent extensibility + MCP +
 local-first + BYO model. OpenPets ships MCP (`openpets_status`, `openpets_react`,
-`openpets_say`) and plugin SDK v3 today; ai-buddy's Harness + MCP is specced.
-OpenPets has mature catalog (openpets.dev) and 9 official plugins; ai-buddy has
-eight Character Packages and no plugin system. ai-buddy adds ballistic physics (gravity
-arcs, throw, Perches with acceleration gate) and window awareness; OpenPets has
-gravity overlay but no Perch riding or window app name tracking. OpenPets plugin
-runtime is sandboxed Electron BrowserWindows with permissions; ai-buddy's
-Harness model is external (user attaches their own MCP-compatible agent). Both
-MIT licensed, local-first, no accounts.
+`openpets_say`) and plugin SDK v3 today; ai-buddy's Harness attach via ACP +
+MCP server shipped (#433/#497). OpenPets has mature catalog (openpets.dev) and 9
+official plugins; ai-buddy has eight Character Packages and no plugin system.
+ai-buddy adds ballistic physics (gravity arcs, throw, Perches with acceleration
+gate) and window awareness; OpenPets has gravity overlay but no Perch riding or
+window app name tracking. OpenPets plugin runtime is sandboxed Electron
+BrowserWindows with permissions; ai-buddy's Harness model is external (user
+attaches their own MCP-compatible agent). Both MIT licensed, local-first, no
+accounts.
 
 ### MateEngine
 
@@ -388,8 +391,8 @@ removed); ai-buddy has import adapters for petdex + Shimeji-ee (authoring-time,
 not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
 no hide rules, no capture exclusion, no MCP, no agent Harness. ai-buddy's Spatial
 Layer ships ballistic Perch riding + acceleration gate + hide rules + capture
-exclusion; ai-buddy's Functional Layer (MCP + Harness attach) is specced (~), not
-shipped. User need: MateEngine is *my VRM* after Desktop Mate's mod
+exclusion; ai-buddy's Functional Layer (Harness attach via ACP + MCP server)
+shipped (#433/#497). User need: MateEngine is *my VRM* after Desktop Mate's mod
 removal; ai-buddy is authored personality + idle speech + physics.
 
 ## Physics note (kind matters)
@@ -412,12 +415,12 @@ sources).
 The mascot has an authored personality file (`personality.txt`) and a Director
 that picks Behaviors and spoken lines non-deterministically. The Character talks
 in-character while living on your windows — not Clippy (no claiming machine
-abilities, no promising actions), not a chat app (no chat window, no
-back-and-forth; #17 Summon is specced). Director proposes a Behavior name and
-optional spoken line; Static weights when no Completer is configured, HTTP
-Completer stand-in with API key/local server, Harness will replace the stand-in
-(ADR-0008, specced). Each Instance has its own Director and seed — two of the
-same Character don't move or speak in lockstep.
+abilities, no promising actions), not a chat app (no chat window yet, #17 open
+but Harness conversation infrastructure shipped). Director proposes a Behavior
+name and optional spoken line; Static weights when no Completer is configured,
+HTTP Completer stand-in with API key/local server, or **Harness via ACP**
+(ADR-0008, shipped #433). Each Instance has its own Director and seed — two of
+the same Character don't move or speak in lockstep.
 
 1. **Personality-driven AI behavior (shipped).** Authored `personality.txt` (who
    they are, fixations, sample lines; loader never interprets it) drives Director
@@ -428,21 +431,25 @@ same Character don't move or speak in lockstep.
    `character_prompt`, not in the file. Unparsable reply becomes speech; failed
    wake falls back to Static. Engine keeps the sprite alive while the model
    thinks. Static weights when no Completer configured; HTTP Completer stand-in
-   with API key/local server; Harness will be another Completer that feeds the
-   same Director loop (ADR-0008, specced). No other desktop pet ships authored
-   personality + Director-driven non-deterministic idle speech.
+   with API key/local server; **Harness attach shipped (claude/hermes/opencode
+   via ACP, #433/#497) feeds the same Director loop** (ADR-0008). No other
+   desktop pet ships authored personality + Director-driven non-deterministic
+   idle speech.
 
 2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
    Perch acceleration gate). Capture exclusion (no screen share). Fullscreen
    fade + hotkey hide. Window app name tracking. Local idle life without model.
 
-3. **Agent integrations (specced, not shipped).** MCP + BYO Harness attach.
-   README/ADR-0008: HTTP Completer is a stand-in; Harness *will* replace it; no
-   chat surface yet (#17). OpenPets *already ships* overlay pet + MCP
-   (`openpets_status` / `openpets_react` / `openpets_say`) + plugin SDK. Closest
-   *shipped* agent-pet is OpenPets; ai-buddy's shipped differentiators are
-   personality-driven Director speech + Spatial (capture exclusion, fullscreen
-   fade, hotkey hide, Perch acceleration-gate).
+3. **Agent integrations (shipped Harness/MCP, chat surface specced).** MCP +
+   Harness attach (claude/hermes/opencode via ACP, #433/#497) shipped 2026-09-07.
+   MCP server (stdio, --mcp-stdio, #117/#497) shipped. HTTP Completer remains as
+   stand-in when no Harness attached. Chat surface specced but not built (#17
+   open). OpenPets *already ships* overlay pet + MCP (`openpets_status` /
+   `openpets_react` / `openpets_say`) + plugin SDK + chat. Closest *shipped*
+   agent-pet is still OpenPets on ecosystem maturity; ai-buddy's shipped
+   differentiators are personality-driven Director speech + Spatial (capture
+   exclusion, fullscreen fade, hotkey hide, Perch acceleration-gate) + Harness
+   ACP attach + MCP server.
 
 **What other projects have that ai-buddy doesn't (yet):**
 
@@ -455,10 +462,11 @@ same Character don't move or speak in lockstep.
    Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
    authoring-time import, not a live gallery or first-party store.
 
-2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
-   evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,130 stars,
-   verifiable). MateEngine has built-in AI (QWEN 2.5 1.5b LLM), not BYO agent
-   attach. ai-buddy's MCP + Harness is specced, not built.
+2. **Chat surface and agent ecosystem maturity.** Desktop Pet has OpenAI chat
+   (vendor-only evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins
+   + chat UI (1,130 stars, verifiable). MateEngine has built-in AI (QWEN 2.5
+   1.5b LLM), not BYO agent attach. ai-buddy's Harness ACP attach + MCP server
+   shipped (#433/#497); chat surface specced, not built (#17 open).
 
 3. **Distribution reach.** Desktop Mate, VPet, and MateEngine are on Steam;
    OpenPets has signed Windows builds and catalog. ai-buddy is GitHub releases
@@ -468,10 +476,9 @@ same Character don't move or speak in lockstep.
 
 - **✅** = present in running app / cited source (Steam page, GitHub README,
   review/issue citation, vendor homepage).
-- **~** = documented not shipped (ai-buddy MCP/Harness per ADR-0008; MateEngine
-  macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
-  not ballistic Perch riding).
-- **❌** = not found in cited sources as of 2026-09-04.
+- **~** = documented not shipped (ai-buddy chat surface #17 open) OR partial
+  (Shimeji-ee/OpenPets physics kind: gravity but not ballistic Perch riding).
+- **❌** = not found in cited sources as of 2026-09-07.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
   has Steam 974 reviews 97% + GitHub 3,532 stars.
@@ -479,7 +486,7 @@ same Character don't move or speak in lockstep.
 ## Sources
 
 Capabilities marked ✅, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
-DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 4, 2026.
+DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 7, 2026.
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,278; VPet-Simulator [App ID
