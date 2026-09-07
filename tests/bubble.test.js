@@ -9,7 +9,6 @@ import {
   placeBubble,
   createBubbleMachine,
   forOverlay,
-  CEILING_CLEARANCE,
   THINKING_GRACE_MS,
   THINKING_MIN_HOLD_MS,
 } from "../src/bubble.js";
@@ -56,24 +55,42 @@ test("bubble placement stays above sprite by default", () => {
   const bubbleSize = { width: 200, height: 100 };
   const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
 
-  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
 
   assert.ok(pos.y < spriteRect.y, "bubble is above sprite");
   assert.ok(pos.x >= displayBounds.x, "bubble is within display left");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble is within display right");
-  assert.equal(pos.flipped, false, "not flipped when above");
   assert.equal(pos.tailOffset, 0, "tail centered when bubble not clamped");
 });
 
-test("bubble flips below sprite when near ceiling", () => {
+// What replaced the flip (ADR-0013, amended by #441): the bubble always sits
+// above the head, so near the ceiling it clamps to the display edge and
+// overlaps the sprite rather than moving below it. main.js draws it in front.
+test("bubble clamps to display top and overlaps sprite near the ceiling", () => {
   const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
   const bubbleSize = { width: 200, height: 100 };
   const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
 
-  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
 
-  assert.ok(pos.y > spriteRect.y + spriteRect.height, "bubble flips below when near ceiling");
-  assert.equal(pos.flipped, true, "flipped flag is true");
+  assert.equal(pos.y, displayBounds.y, "clamped to the top of the display");
+  assert.ok(pos.y < spriteRect.y + spriteRect.height, "overlaps the sprite rather than flipping below it");
+  assert.ok(
+    pos.y + bubbleSize.height > spriteRect.y,
+    "the overlap is real: the bubble reaches past the head",
+  );
+});
+
+// The clamp is the only thing that moves the bubble off the head: with room
+// above, the same sprite height gets the untouched 10px gap.
+test("bubble keeps its 10px gap over the head when there is room", () => {
+  const spriteRect = { x: 100, y: 400, width: 64, height: 64 };
+  const bubbleSize = { width: 200, height: 100 };
+  const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
+
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
+
+  assert.equal(pos.y + bubbleSize.height, spriteRect.y - 10, "10px of clear air under the tail");
 });
 
 test("bubble slides horizontally at display edges", () => {
@@ -81,11 +98,10 @@ test("bubble slides horizontally at display edges", () => {
   const bubbleSize = { width: 200, height: 100 };
   const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
 
-  const pos = placeBubble(spriteNearLeftEdge, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  const pos = placeBubble(spriteNearLeftEdge, bubbleSize, displayBounds);
 
   assert.ok(pos.x >= displayBounds.x, "bubble clamped to left edge");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble within right bound");
-  assert.equal(typeof pos.flipped, "boolean", "flipped flag is present");
   const spriteCenterX = spriteNearLeftEdge.x + spriteNearLeftEdge.width / 2;
   const bubbleCenterX = pos.x + bubbleSize.width / 2;
   assert.equal(pos.tailOffset, spriteCenterX - bubbleCenterX, "tail offset points to sprite");
@@ -96,11 +112,10 @@ test("bubble stays whole across display seam", () => {
   const bubbleSize = { width: 200, height: 100 };
   const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
 
-  const pos = placeBubble(spriteAtSeam, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  const pos = placeBubble(spriteAtSeam, bubbleSize, displayBounds);
 
   assert.ok(pos.x >= displayBounds.x, "bubble not past left edge");
   assert.ok(pos.x + bubbleSize.width <= displayBounds.x + displayBounds.width, "bubble not past right edge");
-  assert.equal(typeof pos.flipped, "boolean", "flipped flag is present");
 });
 
 // --- The bubble machine: what shows and hides, driven by fake timers. ---
