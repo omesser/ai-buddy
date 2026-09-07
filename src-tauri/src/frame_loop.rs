@@ -17,7 +17,7 @@ use tauri::{Emitter, Manager};
 
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, menu, model,
+    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, menu, model,
     note_happened, open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
     push_chat_opening, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
     ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
@@ -918,6 +918,10 @@ pub(crate) fn run_frame_loop(
                     .map(|(_, context)| director::reacting_to(&context.happened));
 
                 if let Some((wake, context)) = arrived {
+                    // Here rather than beside the reply in the worker: this is
+                    // where core's parse result first reaches something that
+                    // may do I/O, and a superseded reply never gets this far.
+                    harness::note_parsed(&live.id, &wake);
                     if model::tracing() {
                         match &wake {
                             Wake::Proposed(parsed) if !parsed.behavior.is_empty() => eprintln!(

@@ -19,9 +19,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::director::{Completer, WakeRequest};
+use ai_buddy_core::director::{Completer, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::acp_wire::{Event, Handshake, OpenError, TurnError, Wire};
 use crate::action_log;
@@ -470,6 +470,35 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
     }
 }
 
+/// The Action Log line for what one reply parsed to.
+///
+/// Written by the Shell where it takes the wake out of `Slots`, because
+/// `crates/core` parses and does no I/O — and only with a Harness attached,
+/// since the Action Log is that path's (#435).
+pub fn note_parsed(instance: &str, wake: &Wake) {
+    if let Some(session) = attached() {
+        action_log::append(&session.dir, "parsed", parsed_fields(instance, wake));
+    }
+}
+
+/// The three answers the Shell has to "what did the reply parse to".
+///
+/// A reply that named no declared Behavior arrives as speech, which is what an
+/// unparsable one becomes (#243) — so `speech` is the parse miss, and there is
+/// no fourth case hiding behind it. `failed` says only that no reply was
+/// usable: a stopped or refused turn, or a timeout, is already a `turn` or
+/// `timeout` event written where the failure was seen.
+fn parsed_fields(instance: &str, wake: &Wake) -> Value {
+    let (result, behavior) = match wake {
+        Wake::Proposed(proposal) if !proposal.behavior.is_empty() => {
+            ("proposal", Some(proposal.behavior.as_str()))
+        }
+        Wake::Proposed(_) => ("speech", None),
+        Wake::Failed => ("failed", None),
+    };
+    json!({"instance": instance, "result": result, "behavior": behavior})
+}
+
 /// The Action Log's word for a wake nobody asked for, and for one they did.
 fn wake_kind(reactive: bool) -> &'static str {
     if reactive {
@@ -580,7 +609,7 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
+    use ai_buddy_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
 
@@ -905,6 +934,38 @@ mod tests {
         assert_eq!(prompts[0]["chars"], json!(2));
         assert_eq!(prompts[1]["wake"], json!("ambient"));
         assert_eq!(prompts[1]["session_id"], json!("fresh-id"));
+    }
+
+    /// #435: without this the log said a prompt went out and never what came
+    /// of it, so "did we take what the Harness proposed" needed the trace flag.
+    #[test]
+    fn the_parsed_event_says_what_the_reply_became() {
+        let named = parsed_fields(
+            "buddy-1",
+            &Wake::Proposed(BehaviorProposal {
+                behavior: "prowl".to_string(),
+                dialogue: Some("mine now".to_string()),
+            }),
+        );
+        assert_eq!(named["instance"], json!("buddy-1"));
+        assert_eq!(named["result"], json!("proposal"));
+        assert_eq!(named["behavior"], json!("prowl"));
+
+        // An empty name is the Engine's "talk and speak": the reply named no
+        // declared Behavior, which is the parse miss.
+        let talked = parsed_fields(
+            "buddy-1",
+            &Wake::Proposed(BehaviorProposal {
+                behavior: String::new(),
+                dialogue: Some("hello?".to_string()),
+            }),
+        );
+        assert_eq!(talked["result"], json!("speech"));
+        assert_eq!(talked["behavior"], json!(null));
+
+        let refused = parsed_fields("buddy-1", &Wake::Failed);
+        assert_eq!(refused["result"], json!("failed"));
+        assert_eq!(refused["behavior"], json!(null));
     }
 
     #[test]
