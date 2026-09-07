@@ -13,6 +13,13 @@
 #
 # Usage: scripts/verify-overlay.sh [--keep]
 #   --keep   leave the app running afterwards, with tracing on
+#
+# For unattended runs: export AI_BUDDY_DIRECTOR_API_KEY to avoid Keychain
+# prompts. See docs/DEVELOPMENT.md for Director configuration.
+#
+# For screenshottable overlays: export AI_BUDDY_CAPTURABLE=1 to make the sprite
+# visible in screenshots (by design, the overlay excludes itself from screen
+# capture without this flag).
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -41,6 +48,21 @@ await() { # $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
     perl -e 'select(undef,undef,undef,0.25)'
   done
   return 1
+}
+
+# Diagnoses why frames were not traced when the app started and opened overlays.
+diagnose_no_frames() { # $1=log file
+  local log="$1"
+  echo "  (the sprite never perched - the checks below will say so)"
+
+  if grep -q '^overlay:' "$log" 2> /dev/null; then
+    echo "  Likely cause: app is blocked on a Keychain dialog (Director API key prompt)."
+    echo "  For unattended runs, export AI_BUDDY_DIRECTOR_API_KEY before launching."
+
+    if pgrep -q SecurityAgent 2> /dev/null; then
+      echo "  (SecurityAgent process is running, confirming a security prompt is active)"
+    fi
+  fi
 }
 
 echo "Building..."
@@ -157,7 +179,7 @@ done
 # Land on the prop, then wait for a step it takes *after* landing, so the check
 # never races the app's startup.
 await "$OUT/app.log" '^frame: [0-9]+ Perched' 60 ||
-  echo "  (the sprite never perched - the checks below will say so)"
+  diagnose_no_frames "$OUT/app.log"
 
 # It has done its job by now: the sprite has fallen past it, and it is drawn
 # above the overlay, so leaving it up would put it over the screenshot below.
