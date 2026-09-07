@@ -557,18 +557,17 @@ fn director_sections() -> Vec<FormSection> {
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
 ///
-/// ponytail: AppKit draws all three rows. GTK and Win32 fill a `Popup` from
-/// the Character list by id rather than from `options`, and neither fills an
-/// `InspectBlock` it does not name, so on those two the picker and the state
-/// line come up empty until each grows one arm. GTK's `TextField` arm is
-/// generic, so the command line row works there as it stands. Win32's is not:
-/// its text-change handler commits the excluded-applications field alone and
-/// it never honours `frozen`, so this row is drawn editable and drops what is
-/// typed — as the wake interval and both Completer limits already do there.
-/// One generic commit handler fixes all four at once and belongs with #197,
-/// not written blind here: neither renderer compiles on the machine this
-/// landed from. The file field is the setting either way, so a hand-edit
-/// works everywhere today.
+/// ponytail: AppKit and GTK draw all three rows. Win32 fills a `Popup` from
+/// the Character list by id rather than from `options`, and fills no
+/// `InspectBlock` it does not name, so there the picker and the state line
+/// come up empty until it grows the two arms GTK grew in #467. Its
+/// `TextField` arm is no better: the text-change handler commits the
+/// excluded-applications field alone and it never honours `frozen`, so the
+/// command line row is drawn editable and drops what is typed — as the wake
+/// interval and both Completer limits already do there. One generic commit
+/// handler fixes all four at once and belongs with #197, not written blind
+/// here: Win32 does not compile on the machine this landed from. The file
+/// field is the setting either way, so a hand-edit works everywhere today.
 fn completer_source_section() -> FormSection {
     let (source_label, frozen) = harness_env_row("Harness");
     FormSection {
@@ -1688,6 +1687,23 @@ mod tests {
                 Some(TextField::HarnessCommand),
             );
         });
+    }
+
+    /// A picker commits the title it drew, and then has to find that title
+    /// again to draw the pick. AppKit calls `selectItemWithTitle` and GTK
+    /// selects the radio whose label matches, so an option that stored as
+    /// something the file spells another way would leave the picker with
+    /// nothing selected (#467).
+    #[test]
+    fn every_source_title_comes_back_as_the_title_that_was_picked() {
+        for title in harness_options() {
+            let stored = harness_choice(&title);
+            assert_eq!(
+                harness_rows(&stored, "opencode acp").0,
+                title,
+                "{title} stored as {stored:?} draws as another choice"
+            );
+        }
     }
 
     /// #272's rule, for the one variable that owns two rows: `AI_BUDDY_HARNESS`
