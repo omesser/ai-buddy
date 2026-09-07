@@ -1,33 +1,32 @@
-//! The attached Harness as the Completer: an ACP client over stdio.
+//! The attached Harness as the Completer.
 //!
 //! The sibling of `model.rs`. Where that file posts a Character Prompt to a
 //! chat-completions host, this one spawns the Harness in ACP mode and makes
 //! every wake one `session/prompt` in one session (ADR-0008, ADR-0010). The
-//! frame loop never sees any of it: `complete` runs on a `Slots` worker.
-//!
-//! Hand-rolled newline JSON-RPC over `std::process::Child`. ADR-0017 says why
-//! neither `acp-cli` nor the protocol crates are here: both bring an async
-//! runtime, and the surface we speak is eight messages.
+//! protocol itself lives in `acp_wire.rs`; this file owns the policy around
+//! it: which Harness, when to spawn and respawn, what a failure means, where
+//! the session id is kept, and what reaches the Action Log and the Chat
+//! surface. The frame loop never sees any of it: `complete` runs on a `Slots`
+//! worker.
 //!
 //! Authentication is the Harness's own. Nothing here sets a provider key,
 //! reads a credential, or calls `authenticate`; `auth_required` becomes a
 //! command the user runs in their own terminal (ADR-0010's eight rules).
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::director::Completer;
-use serde::Serialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
+use crate::acp_wire::{Event, Handshake, OpenError, TurnError, Wire};
 use crate::action_log;
+
+pub use crate::acp_wire::PermissionAsk;
 
 /// `pub(crate)` like `model::API_KEY`: the settings window names the variable
 /// that owns a row.
@@ -47,14 +46,6 @@ const AUTH_RETRY: Duration = Duration::from_secs(60);
 /// cap, so a missing binary costs one attempt every five minutes, not a loop.
 const BACKOFF_FIRST: Duration = Duration::from_secs(5);
 const BACKOFF_CAP: Duration = Duration::from_secs(5 * 60);
-
-/// After `session/cancel`, how long to wait for the `cancelled` reply before
-/// giving the turn lock back regardless.
-const CANCEL_GRACE: Duration = Duration::from_secs(2);
-
-/// JSON-RPC codes ACP gives a meaning.
-const AUTH_REQUIRED: i64 = -32000;
-const METHOD_NOT_FOUND: i64 = -32601;
 
 /// Which Harness, and the command line that starts it in ACP mode.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,34 +90,13 @@ impl Launch {
     /// 5: no provider key, no `CLAUDE_CONFIG_DIR`, no `--bare`. A test pins it.
     fn command(&self, cwd: &Path) -> Command {
         let mut command = Command::new(&self.argv[0]);
-        command
-            .args(&self.argv[1..])
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+        command.args(&self.argv[1..]).current_dir(cwd);
         command
     }
 
     fn line(&self) -> String {
         self.argv.join(" ")
     }
-}
-
-/// A forwarded `session/request_permission`, as the Chat surface draws it.
-#[derive(Clone, Debug, Serialize)]
-pub struct PermissionAsk {
-    pub request: Value,
-    pub title: String,
-    pub kind: Option<String>,
-    pub options: Vec<PermissionOption>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct PermissionOption {
-    pub id: String,
-    pub name: String,
-    pub kind: Option<String>,
 }
 
 /// What Settings and the Chat surface can say about the attachment.
@@ -141,6 +111,14 @@ pub struct HarnessInspect {
     /// Whether `initialize` offered HTTP MCP. #166 branches on it.
     pub mcp_http: bool,
     pub alive: bool,
+}
+
+/// What `harness-session.json` holds: a pointer at the Harness's own session.
+#[derive(Deserialize, Serialize)]
+struct SavedSession {
+    session_id: String,
+    harness: String,
+    agent: Option<String>,
 }
 
 type Forward = Box<dyn Fn(PermissionAsk) + Send + Sync>;
@@ -159,15 +137,14 @@ pub struct Session {
     /// two wakes cannot open two sessions.
     state: Mutex<State>,
     /// Separate from `state` so `shutdown` never waits on an attach in flight.
-    link: Mutex<Option<Arc<Link>>>,
+    wire: Mutex<Option<Arc<Wire>>>,
     inspect: Mutex<HarnessInspect>,
 }
 
 #[derive(Default)]
 struct State {
     session_id: Option<String>,
-    load_session: bool,
-    auth_methods: Vec<Value>,
+    handshake: Handshake,
     login: Option<String>,
     auth_tried: Option<Instant>,
     spawn_failures: u32,
@@ -190,7 +167,7 @@ impl Session {
             auth_retry: AUTH_RETRY,
             turn: Mutex::new(()),
             state: Mutex::new(State::default()),
-            link: Mutex::new(None),
+            wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
         }
     }
@@ -241,68 +218,50 @@ impl Session {
         let Ok(_turn) = self.turn.try_lock() else {
             return Err("harness busy".to_string());
         };
-        let (link, session_id) = self.attach()?;
-        link.begin_turn();
+        let (wire, session_id) = self.attach()?;
         action_log::append(
             &self.dir,
             "prompt",
             json!({"session_id": session_id, "chars": prompt.len()}),
         );
-        let receiver = link
-            .request(
-                "session/prompt",
-                json!({
-                    "sessionId": session_id,
-                    "prompt": [{"type": "text", "text": prompt}],
-                }),
-            )
-            .map_err(|_| self.lost(&link))?;
-        let reply = match receiver.recv_timeout(self.timeout) {
-            Ok(reply) => reply,
-            Err(RecvTimeoutError::Disconnected) => return Err(self.lost(&link)),
-            Err(RecvTimeoutError::Timeout) => {
-                link.notify("session/cancel", json!({"sessionId": session_id}));
-                link.cancel_asks();
-                let _ = receiver.recv_timeout(CANCEL_GRACE);
-                action_log::append(&self.dir, "timeout", json!({"session_id": session_id}));
-                return Err(format!(
-                    "harness turn exceeded {}s; cancelled",
-                    self.timeout.as_secs()
-                ));
-            }
-        };
-        let text = link.take_text();
-        match reply {
-            Ok(result) => {
-                let stop = turn_finished(&result);
-                action_log::append(
-                    &self.dir,
-                    "turn",
-                    json!({"stop": stop.as_ref().err(), "text": text}),
-                );
-                stop?;
+        match wire.prompt(prompt, self.timeout) {
+            Ok(text) => {
+                action_log::append(&self.dir, "turn", json!({"text": text}));
                 if let Ok(mut state) = self.state.lock() {
                     state.spawn_failures = 0;
                 }
                 Ok(text)
             }
-            Err(error) => {
-                action_log::append(&self.dir, "turn", json!({"error": error}));
-                Err(format!("harness: {}", error_text(&error)))
+            Err(TurnError::Lost) => Err(self.lost(&wire)),
+            Err(TurnError::Timeout) => {
+                action_log::append(&self.dir, "timeout", json!({"session_id": session_id}));
+                Err(format!(
+                    "harness turn exceeded {}s; cancelled",
+                    self.timeout.as_secs()
+                ))
+            }
+            Err(TurnError::Stopped(reason)) => {
+                action_log::append(&self.dir, "turn", json!({"stop": reason}));
+                Err(format!("harness stopped: {reason}"))
+            }
+            Err(TurnError::Busy) => Err("harness busy".to_string()),
+            Err(TurnError::Failed(why)) => {
+                action_log::append(&self.dir, "turn", json!({"error": why}));
+                Err(format!("harness: {why}"))
             }
         }
     }
 
-    /// The link died under a turn. Say so, and let the next wake respawn.
-    fn lost(&self, link: &Link) -> String {
-        link.dead.store(true, Ordering::SeqCst);
+    /// The wire died under a turn. Say so, and let the next wake respawn.
+    fn lost(&self, wire: &Wire) -> String {
+        wire.shutdown();
         self.update_inspect(|inspect| inspect.alive = false);
         "harness exited".to_string()
     }
 
     /// The user's answer to a forwarded permission request. Never chosen here.
-    pub fn answer_permission(&self, request: &Value, option: &str) {
-        let Some(link) = self.current_link() else {
+    pub fn answer_permission(&self, request: &str, option: &str) {
+        let Some(wire) = self.current_wire() else {
             return;
         };
         action_log::append(
@@ -310,40 +269,30 @@ impl Session {
             "permission_answer",
             json!({"request": request, "option": option}),
         );
-        link.answer_ask(request, option);
+        wire.answer(request, option);
     }
 
-    /// On exit: cancel what is in flight, close stdin, give the Harness two
-    /// seconds to leave, then kill it.
+    /// On exit: cancel what is in flight, answer open asks `cancelled`, and
+    /// kill the child.
     pub fn shutdown(&self) {
-        let Some(link) = self.link.lock().ok().and_then(|mut slot| slot.take()) else {
-            return;
-        };
-        if let Some(session_id) = self
-            .state
-            .try_lock()
-            .ok()
-            .and_then(|s| s.session_id.clone())
-        {
-            link.notify("session/cancel", json!({"sessionId": session_id}));
+        if let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) {
+            wire.shutdown();
         }
-        link.cancel_asks();
-        link.close();
     }
 
-    fn current_link(&self) -> Option<Arc<Link>> {
-        self.link
+    fn current_wire(&self) -> Option<Arc<Wire>> {
+        self.wire
             .lock()
             .ok()
             .and_then(|slot| slot.clone())
-            .filter(|link| !link.dead.load(Ordering::SeqCst))
+            .filter(|wire| wire.alive())
     }
 
     /// A live child and an open session, spawning and negotiating as needed.
-    fn attach(&self) -> Result<(Arc<Link>, String), String> {
+    fn attach(&self) -> Result<(Arc<Wire>, String), String> {
         let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
-        let link = match self.current_link() {
-            Some(link) => link,
+        let wire = match self.current_wire() {
+            Some(wire) => wire,
             None => {
                 state.session_id = None;
                 if let Some(until) = state.spawn_wait_until {
@@ -356,7 +305,7 @@ impl Session {
                     }
                 }
                 match self.spawn_and_initialize(&mut state) {
-                    Ok(link) => link,
+                    Ok(wire) => wire,
                     Err(why) => {
                         state.spawn_failures += 1;
                         state.spawn_wait_until =
@@ -367,124 +316,65 @@ impl Session {
             }
         };
         if let Some(id) = &state.session_id {
-            return Ok((link, id.clone()));
+            return Ok((wire, id.clone()));
         }
         if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
             if tried.elapsed() < self.auth_retry {
                 return Err(not_authenticated(command));
             }
         }
-        let id = self.open_session(&link, &mut state)?;
-        Ok((link, id))
+        let id = self.open_session(&wire, &mut state)?;
+        Ok((wire, id))
     }
 
-    fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Link>, String> {
+    fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Wire>, String> {
         std::fs::create_dir_all(&self.dir)
             .map_err(|why| format!("{}: {why}", self.dir.display()))?;
-        let child = self
-            .launch
-            .command(&self.dir)
-            .spawn()
-            .map_err(|why| format!("could not start `{}`: {why}", self.launch.line()))?;
-        let link = Link::start(child, Arc::clone(&self.forward), self.dir.clone());
-        let result = link
-            .request(
-                "initialize",
-                json!({
-                    "protocolVersion": 1,
-                    // No fs, no terminal: the Harness works on its own files,
-                    // not ours, and anything it asks anyway gets method-not-found.
-                    "clientCapabilities": {},
-                    "clientInfo": {"name": "ai-buddy", "version": env!("CARGO_PKG_VERSION")},
-                }),
-            )
-            .map_err(|_| "harness exited before initialize".to_string())?
-            .recv_timeout(self.attach_timeout())
-            .map_err(|_| {
-                link.close();
-                format!("`{}` did not answer initialize", self.launch.line())
-            })?
-            .map_err(|error| {
-                link.close();
-                format!("initialize: {}", error_text(&error))
-            })?;
-        state.load_session = result
-            .pointer("/agentCapabilities/loadSession")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        state.auth_methods = result
-            .get("authMethods")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let agent = result
-            .pointer("/agentInfo/name")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let mcp_http = result
-            .pointer("/agentCapabilities/mcpCapabilities/http")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        self.update_inspect(|inspect| {
-            inspect.agent = agent;
-            inspect.mcp_http = mcp_http;
-            inspect.alive = true;
-        });
+        let dir = self.dir.clone();
+        let forward = Arc::clone(&self.forward);
+        let wire = Wire::spawn(
+            self.launch.command(&self.dir),
+            self.attach_timeout(),
+            Box::new(move |event| note_event(&dir, &forward, event)),
+        )
+        .map_err(|why| format!("`{}` {why}", self.launch.line()))?;
+        state.handshake = wire.handshake().clone();
         // A fresh process is a fresh chance to sign in: the gate belonged to
         // the one that died.
         state.login = None;
         state.auth_tried = None;
-        if let Ok(mut slot) = self.link.lock() {
-            *slot = Some(Arc::clone(&link));
+        self.update_inspect(|inspect| {
+            inspect.agent = state.handshake.agent.clone();
+            inspect.mcp_http = state.handshake.mcp_http;
+            inspect.alive = true;
+        });
+        let wire = Arc::new(wire);
+        if let Ok(mut slot) = self.wire.lock() {
+            *slot = Some(Arc::clone(&wire));
         }
-        Ok(link)
+        Ok(wire)
     }
 
     /// `session/load` when the Harness can and the file names this Harness,
     /// else `session/new`. Either way the file ends up naming what is open.
-    fn open_session(&self, link: &Arc<Link>, state: &mut State) -> Result<String, String> {
-        let (servers, mcp_note) = mcp_servers();
-        let cwd = self.dir.to_string_lossy().to_string();
-        let saved = self.saved_session();
-        let mut id = None;
-        if state.load_session {
-            if let Some(saved) = saved {
-                let loaded = link
-                    .request(
-                        "session/load",
-                        json!({"sessionId": saved, "cwd": cwd, "mcpServers": servers}),
-                    )
-                    .ok()
-                    .and_then(|rx| rx.recv_timeout(self.attach_timeout()).ok());
-                if matches!(loaded, Some(Ok(_))) {
-                    id = Some(saved);
-                }
+    fn open_session(&self, wire: &Arc<Wire>, state: &mut State) -> Result<String, String> {
+        let saved = state
+            .handshake
+            .load_session
+            .then(|| self.saved_session())
+            .flatten();
+        let mcp = mcp_server();
+        let id = match wire.open(saved, &self.dir, mcp.clone(), self.attach_timeout()) {
+            Ok(id) => id,
+            Err(OpenError::Lost) => return Err(self.lost(wire)),
+            Err(OpenError::AuthRequired) => {
+                let command = login_command(&self.launch.name, &state.handshake);
+                state.login = Some(command.clone());
+                state.auth_tried = Some(Instant::now());
+                self.update_inspect(|inspect| inspect.login = Some(command.clone()));
+                return Err(not_authenticated(&command));
             }
-        }
-        let id = match id {
-            Some(id) => id,
-            None => {
-                let reply = link
-                    .request("session/new", json!({"cwd": cwd, "mcpServers": servers}))
-                    .map_err(|_| self.lost(link))?
-                    .recv_timeout(self.attach_timeout())
-                    .map_err(|_| self.lost(link))?;
-                match reply {
-                    Ok(result) => result
-                        .get("sessionId")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                        .ok_or_else(|| "session/new returned no sessionId".to_string())?,
-                    Err(error) if error_code(&error) == Some(AUTH_REQUIRED) => {
-                        let command = login_command(&self.launch.name, &state.auth_methods);
-                        state.login = Some(command.clone());
-                        state.auth_tried = Some(Instant::now());
-                        self.update_inspect(|inspect| inspect.login = Some(command.clone()));
-                        return Err(not_authenticated(&command));
-                    }
-                    Err(error) => return Err(format!("session/new: {}", error_text(&error))),
-                }
-            }
+            Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
         state.session_id = Some(id.clone());
         state.login = None;
@@ -496,23 +386,26 @@ impl Session {
         action_log::append(
             &self.dir,
             "attach",
-            json!({"harness": self.launch.name, "session_id": id, "mcp": mcp_note}),
+            json!({"harness": self.launch.name, "session_id": id, "mcp": mcp}),
         );
         Ok(id)
     }
 
     fn saved_session(&self) -> Option<String> {
         let text = std::fs::read_to_string(self.dir.join(SESSION_FILE)).ok()?;
-        let saved: Value = serde_json::from_str(&text).ok()?;
-        (saved.get("harness")?.as_str()? == self.launch.name)
-            .then(|| saved.get("session_id")?.as_str().map(str::to_string))
-            .flatten()
+        let saved: SavedSession = serde_json::from_str(&text).ok()?;
+        (saved.harness == self.launch.name).then_some(saved.session_id)
     }
 
     fn save_session(&self, id: &str) {
-        let agent = self.inspect().agent;
-        let record = json!({"session_id": id, "harness": self.launch.name, "agent": agent});
-        let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{record}\n"));
+        let record = SavedSession {
+            session_id: id.to_string(),
+            harness: self.launch.name.clone(),
+            agent: self.inspect().agent,
+        };
+        if let Ok(text) = serde_json::to_string(&record) {
+            let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
+        }
     }
 }
 
@@ -532,13 +425,32 @@ impl Completer for Session {
     }
 }
 
-/// Where "the turn finished" is read. ACP v2 moves this to an idle
-/// `state_update`; keep it here and nowhere else.
-fn turn_finished(result: &Value) -> Result<(), String> {
-    match result.get("stopReason").and_then(Value::as_str) {
-        Some("end_turn") => Ok(()),
-        Some(other) => Err(format!("harness stopped: {other}")),
-        None => Err("harness reply named no stopReason".to_string()),
+/// What the session stream said, into the Action Log — and, for a permission
+/// request, on to the Chat surface. Runs on the wire thread.
+fn note_event(dir: &Path, forward: &Forward, event: Event) {
+    match event {
+        Event::ToolCall {
+            id,
+            title,
+            kind,
+            status,
+        } => action_log::append(
+            dir,
+            "tool_call",
+            json!({"id": id, "title": title, "kind": kind, "status": status}),
+        ),
+        Event::Plan { entries } => action_log::append(dir, "plan", json!({"entries": entries})),
+        Event::Usage { used, size } => {
+            action_log::append(dir, "usage_update", json!({"used": used, "size": size}))
+        }
+        Event::Permission(ask) => {
+            action_log::append(
+                dir,
+                "permission_request",
+                json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
+            );
+            forward(ask);
+        }
     }
 }
 
@@ -554,19 +466,19 @@ fn backoff(failures: u32) -> Duration {
 
 /// The command that logs the user in, in the Harness's own words where it
 /// has any. Claude Code's adapter reports the method but not the command.
-fn login_command(name: &str, methods: &[Value]) -> String {
+fn login_command(name: &str, handshake: &Handshake) -> String {
     if name == "claude" {
         return "claude /login".to_string();
     }
-    methods
+    handshake
+        .auth_methods
         .first()
-        .and_then(|method| {
+        .map(|method| {
             method
-                .get("description")
-                .or_else(|| method.get("name"))
-                .and_then(Value::as_str)
+                .description
+                .clone()
+                .unwrap_or_else(|| method.name.clone())
         })
-        .map(str::to_string)
         .unwrap_or_else(|| format!("{name} (run it once in a terminal and sign in)"))
 }
 
@@ -574,313 +486,18 @@ fn login_command(name: &str, methods: &[Value]) -> String {
 ///
 /// Beside the app, or wherever `AI_BUDDY_MCP_BIN` points. No loopback HTTP
 /// server exists yet (#166), so a missing binary means no tools this session.
-fn mcp_servers() -> (Vec<Value>, String) {
-    let candidate = std::env::var_os(MCP_BIN).map(PathBuf::from).or_else(|| {
-        let beside = std::env::current_exe().ok()?.parent()?.join("ai-buddy-mcp");
-        Some(if cfg!(windows) {
-            beside.with_extension("exe")
-        } else {
-            beside
+fn mcp_server() -> Option<PathBuf> {
+    std::env::var_os(MCP_BIN)
+        .map(PathBuf::from)
+        .or_else(|| {
+            let beside = std::env::current_exe().ok()?.parent()?.join("ai-buddy-mcp");
+            Some(if cfg!(windows) {
+                beside.with_extension("exe")
+            } else {
+                beside
+            })
         })
-    });
-    match candidate.filter(|path| path.is_file()) {
-        Some(path) => {
-            let path = path.to_string_lossy().to_string();
-            (
-                vec![json!({"name": "ai-buddy", "command": path, "args": [], "env": []})],
-                path,
-            )
-        }
-        None => (Vec::new(), "none".to_string()),
-    }
-}
-
-fn error_code(error: &Value) -> Option<i64> {
-    error.get("code").and_then(Value::as_i64)
-}
-
-fn error_text(error: &Value) -> String {
-    match error.get("message").and_then(Value::as_str) {
-        Some(message) => message.to_string(),
-        None => error.to_string(),
-    }
-}
-
-type Reply = Result<Value, Value>;
-
-/// One spawned child and the reader thread on its stdout.
-struct Link {
-    child: Mutex<Child>,
-    stdin: Mutex<Option<ChildStdin>>,
-    next_id: AtomicU64,
-    pending: Mutex<HashMap<u64, Sender<Reply>>>,
-    /// The in-flight turn's `agent_message_chunk`s, in order.
-    text: Mutex<String>,
-    /// Permission requests forwarded and not yet answered, by request id.
-    asks: Mutex<Vec<Value>>,
-    dead: AtomicBool,
-}
-
-impl Link {
-    fn start(mut child: Child, forward: Arc<Forward>, dir: PathBuf) -> Arc<Self> {
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
-        let link = Arc::new(Self {
-            child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
-            next_id: AtomicU64::new(1),
-            pending: Mutex::new(HashMap::new()),
-            text: Mutex::new(String::new()),
-            asks: Mutex::new(Vec::new()),
-            dead: AtomicBool::new(false),
-        });
-        if let Some(stdout) = stdout {
-            let reader = Arc::clone(&link);
-            thread::spawn(move || {
-                for line in BufReader::new(stdout).lines() {
-                    let Ok(line) = line else { break };
-                    match serde_json::from_str::<Value>(&line) {
-                        Ok(message) if message.is_object() => {
-                            reader.dispatch(message, &forward, &dir)
-                        }
-                        _ => {
-                            if crate::model::tracing() {
-                                eprintln!("harness: skipped non-JSON line: {line}");
-                            }
-                        }
-                    }
-                }
-                reader.dead.store(true, Ordering::SeqCst);
-                // Dropping the senders wakes every waiter with Disconnected.
-                if let Ok(mut pending) = reader.pending.lock() {
-                    pending.clear();
-                }
-            });
-        }
-        link
-    }
-
-    fn dispatch(&self, message: Value, forward: &Forward, dir: &Path) {
-        match message.get("method").and_then(Value::as_str) {
-            Some("session/update") => self.update(message.pointer("/params/update"), dir),
-            Some("session/request_permission") => {
-                let Some(id) = message.get("id").cloned() else {
-                    return;
-                };
-                let params = message.get("params").cloned().unwrap_or(Value::Null);
-                let ask = PermissionAsk {
-                    request: id.clone(),
-                    title: params
-                        .pointer("/toolCall/title")
-                        .and_then(Value::as_str)
-                        .unwrap_or("(untitled)")
-                        .to_string(),
-                    kind: params
-                        .pointer("/toolCall/kind")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    options: params
-                        .get("options")
-                        .and_then(Value::as_array)
-                        .map(|options| {
-                            options
-                                .iter()
-                                .filter_map(|option| {
-                                    Some(PermissionOption {
-                                        id: option.get("optionId")?.as_str()?.to_string(),
-                                        name: option
-                                            .get("name")
-                                            .and_then(Value::as_str)
-                                            .unwrap_or("")
-                                            .to_string(),
-                                        kind: option
-                                            .get("kind")
-                                            .and_then(Value::as_str)
-                                            .map(str::to_string),
-                                    })
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                };
-                action_log::append(
-                    dir,
-                    "permission_request",
-                    json!({"request": id, "title": ask.title, "kind": ask.kind}),
-                );
-                if let Ok(mut asks) = self.asks.lock() {
-                    asks.push(id);
-                }
-                forward(ask);
-            }
-            // fs/*, terminal/*, and anything else we declared no capability
-            // for. A notification we do not know is simply dropped.
-            Some(method) => {
-                if let Some(id) = message.get("id").cloned() {
-                    self.write(json!({
-                        "jsonrpc": "2.0",
-                        "id": id,
-                        "error": {"code": METHOD_NOT_FOUND, "message": format!("{method} not supported")},
-                    }));
-                }
-            }
-            None => {
-                let Some(id) = message.get("id").and_then(Value::as_u64) else {
-                    return;
-                };
-                let reply = match (message.get("result"), message.get("error")) {
-                    (Some(result), _) => Ok(result.clone()),
-                    (None, Some(error)) => Err(error.clone()),
-                    (None, None) => return,
-                };
-                // An id nobody is waiting on is a reply to a superseded or
-                // timed-out request: dropped.
-                if let Some(sender) = self.pending.lock().ok().and_then(|mut p| p.remove(&id)) {
-                    let _ = sender.send(reply);
-                }
-            }
-        }
-    }
-
-    fn update(&self, update: Option<&Value>, dir: &Path) {
-        let Some(update) = update else { return };
-        let kind = update
-            .get("sessionUpdate")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        match kind {
-            "agent_message_chunk" => {
-                if let Some(text) = update.pointer("/content/text").and_then(Value::as_str) {
-                    if let Ok(mut buffer) = self.text.lock() {
-                        buffer.push_str(text);
-                    }
-                }
-            }
-            "tool_call" | "tool_call_update" => action_log::append(
-                dir,
-                kind,
-                json!({
-                    "id": update.get("toolCallId"),
-                    "title": update.get("title"),
-                    "kind": update.get("kind"),
-                    "status": update.get("status"),
-                }),
-            ),
-            "plan" => action_log::append(dir, kind, json!({"entries": update.get("entries")})),
-            "usage_update" => action_log::append(
-                dir,
-                kind,
-                json!({"used": update.get("used"), "size": update.get("size"), "cost": update.get("cost")}),
-            ),
-            _ => {}
-        }
-    }
-
-    fn begin_turn(&self) {
-        if let Ok(mut text) = self.text.lock() {
-            text.clear();
-        }
-    }
-
-    fn take_text(&self) -> String {
-        self.text
-            .lock()
-            .map(|mut text| std::mem::take(&mut *text))
-            .unwrap_or_default()
-    }
-
-    /// Send a request; the receiver yields the reply, or disconnects when the
-    /// child is gone. `Err` means the write itself failed.
-    fn request(&self, method: &str, params: Value) -> Result<Receiver<Reply>, ()> {
-        if self.dead.load(Ordering::SeqCst) {
-            return Err(());
-        }
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let (tx, rx) = mpsc::channel();
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.insert(id, tx);
-        }
-        self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
-            .then_some(rx)
-            .ok_or(())
-    }
-
-    fn notify(&self, method: &str, params: Value) {
-        self.write(json!({"jsonrpc": "2.0", "method": method, "params": params}));
-    }
-
-    fn write(&self, message: Value) -> bool {
-        let Ok(mut stdin) = self.stdin.lock() else {
-            return false;
-        };
-        let Some(pipe) = stdin.as_mut() else {
-            return false;
-        };
-        let written = writeln!(pipe, "{message}").and_then(|()| pipe.flush());
-        if written.is_err() {
-            self.dead.store(true, Ordering::SeqCst);
-        }
-        written.is_ok()
-    }
-
-    fn answer_ask(&self, request: &Value, option: &str) {
-        let Ok(mut asks) = self.asks.lock() else {
-            return;
-        };
-        let Some(at) = asks.iter().position(|id| id == request) else {
-            return;
-        };
-        asks.remove(at);
-        self.write(json!({
-            "jsonrpc": "2.0",
-            "id": request,
-            "result": {"outcome": {"outcome": "selected", "optionId": option}},
-        }));
-    }
-
-    /// The protocol-mandated reply for a question nobody will answer now:
-    /// the turn is cancelled or the app is leaving. Not an answer.
-    fn cancel_asks(&self) {
-        let Ok(mut asks) = self.asks.lock() else {
-            return;
-        };
-        for id in asks.drain(..) {
-            self.write(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {"outcome": {"outcome": "cancelled"}},
-            }));
-        }
-    }
-
-    /// Close stdin, wait `CANCEL_GRACE`, kill.
-    fn close(&self) {
-        self.dead.store(true, Ordering::SeqCst);
-        if let Ok(mut stdin) = self.stdin.lock() {
-            stdin.take();
-        }
-        let Ok(mut child) = self.child.lock() else {
-            return;
-        };
-        let until = Instant::now() + CANCEL_GRACE;
-        while Instant::now() < until {
-            if matches!(child.try_wait(), Ok(Some(_)) | Err(_)) {
-                return;
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-}
-
-impl Drop for Link {
-    fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
+        .filter(|path| path.is_file())
 }
 
 static ATTACHED: OnceLock<Option<Arc<Session>>> = OnceLock::new();
@@ -914,18 +531,17 @@ pub fn startup_lines() -> Vec<String> {
     let Some(session) = attached() else {
         return Vec::new();
     };
-    let (_, mcp) = mcp_servers();
     vec![
         format!(
             "harness: {} via `{}`",
             session.launch.name,
             session.launch.line()
         ),
-        match mcp.as_str() {
-            "none" => {
+        match mcp_server() {
+            None => {
                 "harness: no ai-buddy-mcp binary found; the session gets no MCP servers".to_string()
             }
-            path => format!("harness: MCP server {path}"),
+            Some(path) => format!("harness: MCP server {}", path.display()),
         },
     ]
 }
@@ -939,6 +555,9 @@ pub fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+    use std::io::{BufRead, Write};
+    use std::sync::mpsc::{self, Receiver};
 
     /// The fake ACP agent: this test binary re-executed with `script=<name>`
     /// among its filters, speaking newline JSON-RPC on stdio. Returns at once
@@ -997,7 +616,7 @@ mod tests {
         println!();
         record(count, "spawn");
         let spawns = recorded(count, "spawn");
-        let session = "fresh-id";
+        let mut session = "fresh-id".to_string();
         let mut pending_prompt: Option<Value> = None;
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
@@ -1009,7 +628,7 @@ mod tests {
             match message.get("method").and_then(Value::as_str) {
                 Some("initialize") => say(json!({"jsonrpc": "2.0", "id": id, "result": {
                     "protocolVersion": 1,
-                    "agentInfo": {"name": "fake-agent"},
+                    "agentInfo": {"name": "fake-agent", "version": "0"},
                     "agentCapabilities": {"loadSession": script == "load", "mcpCapabilities": {"http": true}},
                     "authMethods": [{"id": "fake", "name": "Fake login", "description": "fake --login"}],
                 }})),
@@ -1017,7 +636,7 @@ mod tests {
                     record(count, "new");
                     if script == "auth" && recorded(count, "new") == 1 {
                         say(
-                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": AUTH_REQUIRED, "message": "auth required"}}),
+                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "auth required"}}),
                         );
                     } else {
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
@@ -1037,6 +656,11 @@ mod tests {
                 }
                 Some("session/prompt") => {
                     record(count, "prompt");
+                    // The SDK routes updates by session id, so a loaded
+                    // session's chunks must carry the loaded id.
+                    if let Some(id) = message.pointer("/params/sessionId").and_then(Value::as_str) {
+                        session = id.to_string();
+                    }
                     let prompts = recorded(count, "prompt");
                     match script {
                         "refusal" => stop(&id, "refusal"),
@@ -1044,7 +668,7 @@ mod tests {
                             pending_prompt = Some(id);
                             say(
                                 json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
-                                    "sessionId": session,
+                                    "sessionId": &session,
                                     "toolCall": {"toolCallId": "t1", "title": "rm -rf /", "kind": "execute"},
                                     "options": [
                                         {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
@@ -1056,11 +680,11 @@ mod tests {
                         "slow" if prompts == 1 => pending_prompt = Some(id),
                         "exit" if spawns == 1 => std::process::exit(3),
                         _ => {
-                            chunk(session, "Hell");
+                            chunk(&session, "Hell");
                             if script == "garbage" {
                                 println!("this is not json");
                             }
-                            chunk(session, "o");
+                            chunk(&session, "o");
                             stop(&id, "end_turn");
                         }
                     }
@@ -1085,7 +709,7 @@ mod tests {
                             .pointer("/result/outcome/optionId")
                             .and_then(Value::as_str)
                             .unwrap_or("");
-                        chunk(session, &format!("ok:{option}"));
+                        chunk(&session, &format!("ok:{option}"));
                         if let Some(id) = pending_prompt.take() {
                             stop(&id, "end_turn");
                         }
@@ -1186,6 +810,7 @@ mod tests {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(Path::new("/tmp"));
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");
+            assert_eq!(command.get_current_dir(), Some(Path::new("/tmp")));
             assert!(
                 !launch.argv.iter().any(|arg| arg == "--bare"),
                 "{name} passes --bare"
@@ -1201,11 +826,12 @@ mod tests {
     fn happy_path_concatenates_chunks_and_records_the_session() {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
-        let saved: Value =
+        let saved: SavedSession =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
-        assert_eq!(saved["session_id"], "fresh-id");
-        assert_eq!(saved["harness"], "fake");
+        assert_eq!(saved.session_id, "fresh-id");
+        assert_eq!(saved.harness, "fake");
+        assert_eq!(saved.agent.as_deref(), Some("fake-agent"));
         let inspect = session.inspect();
         assert!(inspect.mcp_http);
         assert_eq!(inspect.agent.as_deref(), Some("fake-agent"));
@@ -1381,30 +1007,25 @@ mod tests {
     }
 
     #[test]
-    fn turn_finished_reads_only_end_turn_as_done() {
-        assert!(turn_finished(&json!({"stopReason": "end_turn"})).is_ok());
-        for reason in ["refusal", "max_tokens", "max_turn_requests", "cancelled"] {
-            assert!(turn_finished(&json!({"stopReason": reason})).is_err());
-        }
-        assert!(turn_finished(&json!({})).is_err());
-    }
-
-    #[test]
     fn login_command_prefers_the_known_fix_then_the_method_then_a_hint() {
-        assert_eq!(login_command("claude", &[]), "claude /login");
+        let hint = |description: Option<&str>| Handshake {
+            auth_methods: vec![crate::acp_wire::AuthHint {
+                name: "Hermes".into(),
+                description: description.map(str::to_string),
+            }],
+            ..Default::default()
+        };
         assert_eq!(
-            login_command(
-                "hermes",
-                &[json!({"name": "Hermes", "description": "hermes login"})]
-            ),
+            login_command("claude", &Handshake::default()),
+            "claude /login"
+        );
+        assert_eq!(
+            login_command("hermes", &hint(Some("hermes login"))),
             "hermes login"
         );
+        assert_eq!(login_command("hermes", &hint(None)), "Hermes");
         assert_eq!(
-            login_command("hermes", &[json!({"name": "Hermes"})]),
-            "Hermes"
-        );
-        assert_eq!(
-            login_command("x", &[]),
+            login_command("x", &Handshake::default()),
             "x (run it once in a terminal and sign in)"
         );
     }

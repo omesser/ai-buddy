@@ -24,6 +24,7 @@
 // The ceiling is that dead code added inside them goes unwarned there; narrow
 // it to `mod form` and the view types when a Windows-only item first lands.
 #[cfg_attr(not(unix), allow(dead_code))]
+mod acp_wire;
 mod action_log;
 mod consent;
 mod dev_flags;
@@ -816,7 +817,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
 /// The user's pick on a forwarded permission request. The only path by which
 /// a `session/request_permission` is ever answered.
 #[tauri::command]
-fn permission_answer(request: serde_json::Value, option: String) {
+fn permission_answer(request: String, option: String) {
     if let Some(session) = harness::attached() {
         session.answer_permission(&request, &option);
     }
