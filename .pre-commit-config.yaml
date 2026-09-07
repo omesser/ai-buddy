@@ -66,10 +66,13 @@ repos:
     rev: v2.0.0
     hooks:
       - id: psscriptanalyzer-check
-        # Default excludes PSUseBOMForUnicodeEncodedFile; we keep it to catch
-        # encoding issues like the em-dash footgun in #392. Removed -Fix to
-        # keep the hook as check/lint only without unexpected file rewrites.
-        args: []
+        # Severity Error: only fail on actual errors, not style warnings.
+        # Default excludes PSUseBOMForUnicodeEncodedFile; override to keep it
+        # active for catching encoding issues like the #392 em-dash footgun.
+        # Removed -Fix to keep the hook as check/lint only.
+        args:
+          - '-Severity'
+          - 'Error'
 
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
