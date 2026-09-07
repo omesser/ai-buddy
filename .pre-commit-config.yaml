@@ -66,11 +66,10 @@ repos:
     hooks:
       - id: psscriptanalyzer-check
         name: PSScriptAnalyzer (Windows only)
-        # Thin OS gate (mirrors swiftc-typecheck): skip on non-Windows, run on Windows.
-        # Delegates to ophiosdev/pre-commit-psscriptanalyzer when on Windows by
-        # installing the hook repo and calling its wrapper. No pwsh forced onto
-        # Linux/macOS dev machines. CI enforces via windows job.
-        entry: bash -c 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) echo "skipped - PSScriptAnalyzer runs on Windows"; exit 0 ;; esac; pwsh_path="${PRE_COMMIT_PWSH_PATH:-pwsh}"; if ! command -v "$pwsh_path" > /dev/null 2>&1; then echo "[ERR] $pwsh_path (PowerShell) not found"; exit 1; fi; pwsh_module_installed=$(pwsh -NoProfile -Command "Get-Module -ListAvailable PSScriptAnalyzer | Select-Object -First 1" 2>/dev/null); if [ -z "$pwsh_module_installed" ]; then pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser" > /dev/null 2>&1; fi; for f in "$@"; do pwsh -NoProfile -Command "\$results = Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error; if (\$results) { \$results | Format-Table -AutoSize; exit 1 }"; if [ $? -ne 0 ]; then exit 1; fi; done' --
+        # Thin OS gate (mirrors swiftc-typecheck): skip on Linux/Darwin, run on Windows.
+        # Invokes PSScriptAnalyzer (Microsoft's canonical PowerShell linter) at Error severity.
+        # No pwsh forced onto Linux/macOS dev machines. CI enforces via windows job.
+        entry: scripts/hooks/psscriptanalyzer-windows.sh
         language: system
         files: \.ps1$
         # Severity Error: only fail on actual errors, not style warnings.
