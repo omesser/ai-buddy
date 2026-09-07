@@ -253,8 +253,15 @@ impl Session {
     }
 
     /// The wire died under a turn. Say so, and let the next wake respawn.
+    ///
+    /// The slot is emptied here rather than left for `alive()` to notice:
+    /// that flag flips only once the wire's thread has dropped its receiver,
+    /// and a wake arriving before then would reuse a dead wire.
     fn lost(&self, wire: &Wire) -> String {
         wire.shutdown();
+        if let Ok(mut slot) = self.wire.lock() {
+            *slot = None;
+        }
         self.update_inspect(|inspect| inspect.alive = false);
         "harness exited".to_string()
     }
