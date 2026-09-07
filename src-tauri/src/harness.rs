@@ -184,6 +184,9 @@ pub struct Session {
 #[derive(Default)]
 struct State {
     session_id: Option<String>,
+    /// Whether `session_id` came from `session/load` and has not served a
+    /// turn yet — the one condition #448's reopen answers to.
+    loaded: bool,
     handshake: Handshake,
     login: Option<String>,
     auth_tried: Option<Instant>,
@@ -291,34 +294,25 @@ impl Session {
         let Ok(_turn) = self.turn.try_lock() else {
             return Err(self.refused(request, "harness busy"));
         };
-        let (wire, session_id) = match self.attach() {
-            Ok(attached) => attached,
-            Err(why) => return Err(self.refused(request, &why)),
-        };
-        // The Instance and the wake kind come through the seam rather than
-        // from anything here: one session serves every buddy (ADR-0008), so
-        // the session id alone cannot say whose wake this is (#435).
-        action_log::append(
-            &self.dir,
-            "prompt",
-            json!({
-                "session_id": session_id,
-                "instance": request.instance,
-                "wake": wake_kind(request.reactive),
-                "chars": request.prompt.len(),
-            }),
-        );
-        let outcome = wire.prompt(&request.prompt, self.timeout);
-        // Before the outcome is dressed for the caller: a child that dies under
-        // every turn is respawned on every wake unless the death pays the same
-        // backoff a failed spawn does, and a child that is answering must not
-        // carry a death from hours ago (#437).
-        if let Ok(mut state) = self.state.lock() {
-            match &outcome {
-                Err(TurnError::Lost) => self.lost(&wire, &mut state),
-                _ => state.answered(),
+        let (session_id, outcome) = self.attempt(request)?;
+        // #448: a `session/load` answered with a success the Harness could not
+        // honour leaves an id nothing can be prompted on, and the only place it
+        // says so is the turn. So the first turn on a loaded session is the
+        // evidence the load was not: throw the id away, open a fresh session,
+        // and ask once more. `reopen_loaded` clears the flag it reads, so the
+        // second answer is the caller's however it turns out — a Harness that
+        // refuses everything cannot ping-pong here.
+        //
+        // A loss is not one of these: the child is gone rather than the
+        // session, and `lost` has already charged the respawn. Nor is a
+        // timeout, which says nothing about the id and would spend the
+        // Completer's budget twice.
+        let (session_id, outcome) = match &outcome {
+            Err(TurnError::Stopped(_) | TurnError::Failed(_)) if self.reopen_loaded() => {
+                self.attempt(request)?
             }
-        }
+            _ => (session_id, outcome),
+        };
         match outcome {
             Ok(text) => {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
@@ -342,6 +336,71 @@ impl Session {
                 Err(format!("harness: {why}"))
             }
         }
+    }
+
+    /// One `session/prompt` on the session `attach` hands over: the id it went
+    /// to, and what came back.
+    ///
+    /// Split out of `turn` for #448's one retry, which has to pay the same
+    /// bookkeeping the first attempt did rather than have the caller remember
+    /// to. `Err` is a wake that never reached the wire, already refused.
+    fn attempt(
+        &self,
+        request: &WakeRequest,
+    ) -> Result<(String, Result<String, TurnError>), String> {
+        let (wire, session_id) = self.attach().map_err(|why| self.refused(request, &why))?;
+        // The Instance and the wake kind come through the seam rather than
+        // from anything here: one session serves every buddy (ADR-0008), so
+        // the session id alone cannot say whose wake this is (#435).
+        action_log::append(
+            &self.dir,
+            "prompt",
+            json!({
+                "session_id": session_id,
+                "instance": request.instance,
+                "wake": wake_kind(request.reactive),
+                "chars": request.prompt.len(),
+            }),
+        );
+        let outcome = wire.prompt(&request.prompt, self.timeout);
+        // Before the outcome is dressed for the caller: a child that dies under
+        // every turn is respawned on every wake unless the death pays the same
+        // backoff a failed spawn does, and a child that is answering must not
+        // carry a death from hours ago (#437).
+        if let Ok(mut state) = self.state.lock() {
+            match &outcome {
+                Err(TurnError::Lost) => self.lost(&wire, &mut state),
+                _ => state.answered(),
+            }
+            // A finished turn is the proof `session/load` was not, so any
+            // later failure on this session is the Harness's own answer (#448).
+            if outcome.is_ok() {
+                state.loaded = false;
+            }
+        }
+        Ok((session_id, outcome))
+    }
+
+    /// Drop a session that came from `session/load`, so the next `attach`
+    /// opens a fresh one. Whether there was one to drop (#448).
+    ///
+    /// Only a loaded id earns it: a `session/new` the Harness refuses is the
+    /// Harness answering, not a stale pointer, and reopening that would loop.
+    /// The session file goes first, which is both how the reopen is kept from
+    /// loading the same id straight back and how a restart is kept from
+    /// resurrecting it.
+    fn reopen_loaded(&self) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if !state.loaded {
+            return false;
+        }
+        state.loaded = false;
+        state.session_id = None;
+        let _ = std::fs::remove_file(self.dir.join(SESSION_FILE));
+        self.update_inspect(|inspect| inspect.session_id = None);
+        true
     }
 
     /// A wake that never reached `session/prompt`: the Harness was busy with
@@ -506,7 +565,7 @@ impl Session {
             .then(|| self.saved_session())
             .flatten();
         let mcp = mcp_server();
-        let id = match wire.open(saved, &self.dir, mcp.clone(), self.attach_timeout()) {
+        let id = match wire.open(saved.clone(), &self.dir, mcp.clone(), self.attach_timeout()) {
             Ok(id) => id,
             Err(OpenError::Lost) => {
                 self.lost(wire, state);
@@ -522,6 +581,10 @@ impl Session {
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
         state.session_id = Some(id.clone());
+        // `Wire::open` hands back the id it was asked to load and falls through
+        // to `session/new` on a refusal, so the ids matching is exactly "the
+        // load was answered" — which is all #448's reopen may act on.
+        state.loaded = saved.as_deref() == Some(id.as_str());
         state.login = None;
         self.update_inspect(|inspect| {
             inspect.login = None;
@@ -1008,7 +1071,7 @@ mod tests {
                 Some("initialize") => say(json!({"jsonrpc": "2.0", "id": id, "result": {
                     "protocolVersion": 1,
                     "agentInfo": {"name": "fake-agent", "version": "0"},
-                    "agentCapabilities": {"loadSession": script == "load", "mcpCapabilities": {"http": true}},
+                    "agentCapabilities": {"loadSession": script.starts_with("load"), "mcpCapabilities": {"http": true}},
                     "authMethods": [{"id": "fake", "name": "Fake login", "description": "fake --login"}],
                 }})),
                 Some("session/new") => {
@@ -1021,6 +1084,11 @@ mod tests {
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "auth required"}}),
                         );
                     } else {
+                        // A new session is a new id. Without the reset the fake
+                        // would hand back whichever id the last prompt named,
+                        // and #448's reopen could not be told apart from the
+                        // dead session it replaced.
+                        session = "fresh-id".to_string();
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
                     }
                 }
@@ -1046,6 +1114,11 @@ mod tests {
                     let prompts = recorded(count, "prompt");
                     match script {
                         "refusal" => stop(&id, "refusal"),
+                        // #448: the session the load claimed to restore is
+                        // not there, so the first prompt refuses and the one
+                        // after the reopen is served.
+                        "load-dead" if prompts == 1 => stop(&id, "refusal"),
+                        "load-refusal" => stop(&id, "refusal"),
                         "permission" => {
                             pending_prompt = Some(id);
                             say(
@@ -1333,12 +1406,16 @@ mod tests {
 
     #[test]
     fn a_refusal_is_an_err() {
-        let (_fx, session) = Fixture::new("refusal");
+        let (fx, session) = Fixture::new("refusal");
         let reply = session.complete(&asking("hi"));
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("refusal")),
             "{reply:?}"
         );
+        // #448: only a loaded id is reopened. This session came from
+        // `session/new`, so the refusal is the Harness's answer to the prompt.
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(fx.count("prompt"), 1);
         session.shutdown();
     }
 
@@ -1529,6 +1606,49 @@ mod tests {
         .unwrap();
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 0);
+        session.shutdown();
+    }
+
+    /// #448: `hermes` answers a `session/load` it cannot honour with an empty
+    /// success result, so the id is dead and only a turn says so. One reopen,
+    /// and the retry lands on a session the Harness actually has.
+    #[test]
+    fn a_load_that_did_not_restore_reopens_once_and_the_retry_lands() {
+        let (fx, session) = Fixture::new("load-dead");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"session_id":"saved-ok","harness":"fake"}"#,
+        )
+        .unwrap();
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("new"), 1, "the dead id was kept");
+        assert_eq!(fx.count("prompt"), 2);
+        assert_eq!(fx.count("spawn"), 1, "a reopen is not a respawn");
+        assert_eq!(session.inspect().session_id.as_deref(), Some("fresh-id"));
+        // And the next launch cannot read the dead id back out of the file.
+        let saved = std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap();
+        assert!(saved.contains("fresh-id"), "{saved}");
+        session.shutdown();
+    }
+
+    /// The other half of #448: the reopen is one attempt, not a ladder. A
+    /// Harness that refuses the fresh session too has answered.
+    #[test]
+    fn a_reopened_session_that_refuses_again_is_a_refusal() {
+        let (fx, session) = Fixture::new("load-refusal");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"session_id":"saved-ok","harness":"fake"}"#,
+        )
+        .unwrap();
+        let reply = session.complete(&asking("hi"));
+        assert!(
+            reply.as_ref().is_err_and(|why| why.contains("refusal")),
+            "{reply:?}"
+        );
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(fx.count("prompt"), 2, "the reopen was tried more than once");
         session.shutdown();
     }
 
