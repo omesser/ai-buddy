@@ -37,10 +37,11 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
         }
     };
 
-    let (conn, _screen) =
-        RustConnection::connect(None).map_err(|e| format!("Failed to connect to X11: {e}"))?;
+    let Some(conn) = super::connection::connection() else {
+        return Err("Failed to get X11 connection".to_string());
+    };
 
-    set_ewmh_states(&conn, x_window)?;
+    set_ewmh_states(conn, x_window)?;
     Ok(())
 }
 
