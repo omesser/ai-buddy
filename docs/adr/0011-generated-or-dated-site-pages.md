@@ -84,12 +84,11 @@ generator enumerates and copies named files, never a source directory wholesale.
 
 ## Consequences
 
-`cues.html` is Described today: `docs/design/index.html` calls it "The spec the
-Shell implements" and `src/cue.js:4` calls itself a port of it, with nothing
-checking that the two agree. Two ways out, neither owned — relabel it as the
-#277 proposal, or have the workflow copy `src/cue.js` and `src/main.css` beside
-it so the page loads the real thing. The second is honest by construction, if
-that stylesheet can load there without fighting the layout.
+The relabel exit is taken: `cues.html` is the #277 Dated proposal (`noindex`, a
+visible class line, index `.cls`). It no longer claims to be the spec the Shell
+implements. `src/cue.js` still ports that frozen page, so the two can still
+drift — the copy-the-Shell exit stays open if a later change needs the live
+keyframes instead of the proposal.
 
 The gallery needs a script under `scripts/` and the allowlist change above; this
 decision builds neither. #289 has stated the wrong Character count twice, which
