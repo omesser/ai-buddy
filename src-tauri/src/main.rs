@@ -30,6 +30,7 @@ mod consent;
 mod dev_flags;
 mod frame_loop;
 mod harness;
+mod mcp_http;
 mod menu;
 mod model;
 mod package;
@@ -1603,6 +1604,9 @@ struct FrameExtras {
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     ops: mpsc::Receiver<SettingsOp>,
     chat: mpsc::Receiver<ChatMsg>,
+    /// `tools/call`s from the loopback MCP server, which are dispatched on the
+    /// frame-loop thread because that is where the `Roster` is (ADR-0018).
+    mcp: mpsc::Receiver<mcp_http::Call>,
 }
 
 fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
@@ -2236,6 +2240,11 @@ fn main() {
             // made a Harness launch prompt for one it would never send (#290).
             app.manage(PendingAsks(Mutex::new(Pending::default())));
             app.manage(Mutex::new(session_log::Log::new()));
+            // Before `attach`, because `open_session` reads the endpoint to
+            // decide what to put in `session/new`'s `mcpServers` and the
+            // preflight thread can reach that within a tick of this line.
+            let (mcp_tx, mcp_rx) = mpsc::channel();
+            mcp_http::serve(mcp_tx);
             let forward_to = app.handle().clone();
             quit_harness_on_interrupt();
             harness::attach(
@@ -2423,6 +2432,7 @@ fn main() {
                     instances: instance_rows,
                     ops: ops_rx,
                     chat: chat_rx,
+                    mcp: mcp_rx,
                 },
             );
             Ok(())

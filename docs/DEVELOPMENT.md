@@ -204,7 +204,7 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | Completer timeout. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap. Default 80 remote, 512 local. |
 | `AI_BUDDY_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `hermes`, `opencode`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the Director tab's Completer source row saved. Unset falls through to that row, which keeps the same four values. ADR-0017, #436. |
-| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Handed to the Harness session as its one MCP server. When unset and no `ai-buddy-mcp` sidecar sits beside the app, the app binary itself is the stdio server (`--mcp-stdio`). |
+| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. First of three stdio routes: this, else an `ai-buddy-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three dispatch through stubs, so a `speak` over them moves nothing (#501, #502). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server instead, and that is the only path whose `speak` reaches a buddy on screen (ADR-0018). |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → Director's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
 ### Settings and Keyring
@@ -310,13 +310,13 @@ probe-harness
   harness      hermes
   command      hermes acp
   dir          /Users/you/Library/Application Support/ai-buddy/probe
-  mcp          /path/ai-buddy --mcp-stdio
   timeout      turn 20s, attach 20s
 
 attach
   agent        hermes-agent
   loadSession  true
   mcp http     false
+  mcp          /path/ai-buddy --mcp-stdio
   authMethods  custom runtime credentials, Configure Hermes provider
   session      33f5d650-5476-40c6-876b-cb04f14bfc27
 
@@ -326,6 +326,13 @@ turn
   reply        Wave | Hello from the probe.
   proposal     Wave | Hello from the probe.
 ```
+
+`mcp` sits under the handshake because it is what the session was actually
+handed, and `mcp http` above it is why: `hermes` advertises none, so it gets the
+stubbed stdio server. A Harness that advertises HTTP MCP prints a
+`http://127.0.0.1:…/mcp` URL there instead — never the bearer token that
+reaches it — but only when a running app bound that listener, which a probe
+does not (ADR-0018).
 
 The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. The README's [Harness Support](../README.md#harness-support) table says which Harnesses this has been run against. Update that section when probe-harness results or `launch()` names/commands change.
 

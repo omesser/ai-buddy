@@ -102,11 +102,13 @@ advertises `sessionCapabilities` (`fork`, `list`, `resume`) and
 `promptCapabilities.image`. Nothing here reads any of them yet, which is why
 they are prose and not a printed field.
 
-What no probe run has verified is the MCP row, step 5 of #434: every run found
-no `ai-buddy-mcp` binary beside the app and had `AI_BUDDY_MCP_BIN` unset, so
-each session got no MCP servers and the `speak` tool was never called by a
-Harness. The stdio server is built and tested on its own; that it is reachable
-*through* a Harness session is still untested.
+The MCP row was for a long time the one no probe run had verified — step 5 of
+#434 — because every run found no `ai-buddy-mcp` binary beside the app and had
+`AI_BUDDY_MCP_BIN` unset, so each session got no MCP servers at all. Neither
+half of that is still true. #497 made the app binary its own stdio server, so
+there is always one to hand over; ADR-0018 added the loopback HTTP one the
+capability above selects. The probe prints the server the session was actually
+handed, under the handshake that decided it.
 
 The one thing a real turn contradicted is the fallback above: `session/load`
 refusing is not always an error. `hermes` answers a session it cannot restore
@@ -165,7 +167,13 @@ length, not which Instance woke or whether the wake was reactive: the
 reply parsed as a proposal is not logged anywhere — `crates/core` parses it
 and does no I/O, and the shell's near-miss line is a trace, not a record.
 
-There is no loopback HTTP MCP server yet (#166). The session gets the
-`ai-buddy-mcp` binary over stdio when it can be found beside the app or at
-`AI_BUDDY_MCP_BIN`, and nothing otherwise; `mcpCapabilities.http` is recorded
-so #166 can branch on it.
+The MCP row is what `mcpCapabilities.http` was recorded for, and ADR-0018
+now branches on it: the app serves MCP itself on loopback HTTP, and
+`session/new` hands that URL and its bearer token to a Harness that
+advertised the capability. `claude` does, so its session reaches the real
+Instances and a `speak` from it lands in the bubble. `hermes` does not, so its
+session gets the stdio server instead — `AI_BUDDY_MCP_BIN`, else a sidecar,
+else the app binary as `--mcp-stdio` (#497) — and that server has no roster,
+which is why a `speak` there still returns success and moves nothing (#501,
+#502). The `verified` column above says a turn was smoked, never that the
+tools work through it.
