@@ -14,7 +14,8 @@ The scope is the chat surface and nothing else — not "the webview", which toda
 means the overlays: one per display, all built by `build_overlay` from
 `WebviewUrl::default()`, all loading `src/index.html`, which draws sprites and
 speech bubbles and no chat. The chat surface is a second webview window
-(ADR-0010), with its own document and stylesheet, that #17 has yet to build.
+(ADR-0010), with its own document and stylesheet, that #17 had yet to build
+when this was written.
 
 ## The seam is one class and one token file
 
@@ -23,15 +24,22 @@ the root element of the chat window's own document, which #17 creates. No
 registry, no `chat_ui` key in `settings.rs`, no Character Manifest key, no
 stylesheet loaded at runtime. Those are the switcher's.
 
-Because the surface does not exist yet, the tokens ship with it rather than
-being extracted from anything. Nothing is lifted out of `src/main.css` or
-`src/bubble.js`: those are the overlay's, and a seam born clean in a new window
-beats one retrofitted into the stylesheet that draws Characters.
+The surface did not exist when this was written, so the tokens ship with it
+rather than being extracted from anything. Nothing is lifted out of
+`src/main.css` or `src/bubble.js`: those are the overlay's, and a seam born
+clean in a new window beats one retrofitted into the stylesheet that draws
+Characters.
+
+It shipped that way. #362 opened the chat surface on 2026-09-05:
+`src/chat.html` carries `class="chat-ui-minimal"` on its root element and loads
+`src/chat-ui.css`, and nothing the switcher owns came with it — no registry, no
+`chat_ui` key in `settings.rs`, no stylesheet loaded at runtime.
 
 A seam with one implementation and no test is speculative generality. This one
-has three, and not hypothetically: `docs/design/chat-mockups.html` on #339's
-branch runs modern minimal, terminal log and pane of glass off one window and
-one rendering engine, at 53, 62 and 52 CSS rules each, switched by
+has three, and not hypothetically: `docs/design/chat-mockups.html` — then on
+#339's branch, a Dated page in the tree since — runs modern minimal, terminal
+log and pane of glass off one window and one rendering engine, at 53, 62 and 52
+CSS rules each, switched by
 
 ```js
 desk.classList.remove("v-min", "v-term", "v-glass");
@@ -46,10 +54,13 @@ The check is a grep, not a second design in the product: no hex colour,
 `font-family` or `border-radius` literal in the chat surface's own stylesheet
 outside a `.chat-ui-*` block. A design that cannot recolour the surface is a
 surface that stopped reading tokens, and that is the only way this seam breaks.
+`tests/chat-ui-tokens.test.js` is that grep, and it widened to `rgb()` and
+`rgba()` because most of modern minimal's palette is white tints.
 
 ## Surfaces
 
-The chat surface (#17) is in. It is unbuilt, so it is born in the chat UI.
+The chat surface (#17) is in. It was unbuilt when this was written, so it is
+born in the chat UI rather than converted to one — and #362 built it that way.
 
 - **Everything the overlay draws** — out. The sprite is a Character's art,
   integer-scaled (ADR-0006), with no chrome to style. The speech bubble and
@@ -162,17 +173,29 @@ failure than art briefly covered. The cost is real and is on the page — the
 tallest legal bubble, six lines, clamps to the display edge and covers most of
 the sprite.
 
-`CEILING_CLEARANCE` in `src/bubble.js` exists only to trigger the flip, so it
-becomes **dead**, not repurposed: the follow-up deletes the constant, the
+`CEILING_CLEARANCE` in `src/bubble.js` existed only to trigger the flip, so it
+became **dead**, not repurposed: the follow-up deletes the constant, the
 `ceilingClearance` parameter and the `spriteHeadY < ceilingClearance` branch,
 and the clamp below them does the rest unchanged. Keeping it alive as a
 minimum-gap knob was considered and dropped, because nothing asks for one.
 
+That follow-up is done. #456 deleted the constant, the parameter and the
+branch on 2026-09-06, and `placeBubble`'s clamp carries the near-the-ceiling
+case alone — `tests/bubble.test.js` asserts the clamp, the overlap and the
+untouched 10px gap where there is room.
+
 Nothing else in the bullet moves. The sprite still has no chrome to style, and
 Cues stay as #277 tuned them.
 
-Values are not settled here. `docs/design/bubble.html` is the Dated page they
-are judged on, and `src/main.css` changes only after it is approved.
+Values were not settled here. `docs/design/bubble.html` is the Dated page they
+are judged on, and `src/main.css` changed only after it was approved.
+
+They are settled now. #456 ported the approved design into `src/main.css` on
+2026-09-06 — `--bubble-panel: #14171e`, `--bubble-ink: #e8ebf2`,
+`--bubble-accent: #5cc9b5`, the 12px radius, the 2px ring, the 13.5px
+system-font body, each commented with the `chat-ui.css` token it copies — and
+#462 re-dated the page to that design on 2026-09-07. The page stays the ground
+the design was judged on; `src/main.css` is what runs.
 
 ## The switcher does not reach the bubble
 
@@ -199,6 +222,9 @@ branch is not a review surface, so v2's switcher would have one design and two
 memories. #339 merges as a Dated page carrying its issue number and approval
 date — the class ADR-0011 defined for exactly this — and that page is what
 carries the other two designs to v2.
+
+It merged. `docs/design/chat-mockups.html` is in the tree, Dated #339 ·
+2026-09-05, so the branch is no longer where the two unshipped designs live.
 
 ## The switcher is an application setting
 
@@ -228,19 +254,30 @@ look like two on one screen to distinguish buddies that are already distinct.
 
 ## Consequences
 
-`src/chat-ui.css` does not exist, and neither does the surface it dresses.
-Both arrive with #17's chat window; the grep above is what keeps the literals
-out afterwards. The overlay is untouched: `src/main.css` and `src/bubble.js`
-keep the colours and fonts they shipped with. Amended by #441 — `src/main.css`
-takes the type, shape and opaque hues by hand once `docs/design/bubble.html` is
-approved, and `src/bubble.js` loses `CEILING_CLEARANCE` and the flip branch it
-gates. Its wrap cap, durations and timers are untouched.
+`src/chat-ui.css` did not exist when this was written, and neither did the
+surface it dresses. Both arrive with #17's chat window; the grep above is what
+keeps the literals out afterwards. The overlay is untouched: `src/main.css` and
+`src/bubble.js` keep the colours and fonts they shipped with. Amended by #441 —
+`src/main.css` takes the type, shape and opaque hues by hand once
+`docs/design/bubble.html` is approved, and `src/bubble.js` loses
+`CEILING_CLEARANCE` and the flip branch it gates. Its wrap cap, durations and
+timers are untouched.
+
+All of that has landed, and the switcher has not. #362 opened the Chat surface
+with `src/chat-ui.css` and `class="chat-ui-minimal"` (2026-09-05), and
+`tests/chat-ui-tokens.test.js` keeps the literals out. #456 carried the type,
+shape and opaque hues into `src/main.css` by hand and deleted
+`CEILING_CLEARANCE`, its parameter and the flip branch (2026-09-06); the wrap
+cap, durations and timers are unchanged. #462 re-dated
+`docs/design/bubble.html` to that design (2026-09-07). What is still open is
+v2's own half: `settings.rs` has no `chat_ui` key, there is no registry, and no
+stylesheet is loaded at runtime.
 
 CONTEXT.md gains **Chat UI** beside **Chat surface**, so the design has a word
 of its own that is not read as another name for the window.
 
-v2's switcher depends on #339 merging. If it does not, this decision loses the
-two designs it promises to offer.
+v2's switcher depends on #339 merging. It merged as a Dated page on 2026-09-05,
+so the two designs this decision promises to offer are on the shelf.
 
 Reversing this means shipping the chat surface with its colours written inline,
 and revisiting modularity once a second design is wanted.

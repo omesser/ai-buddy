@@ -284,9 +284,10 @@ A named, swappable visual design for the Chat surface — palette, type scale an
 shape — defined in `src/chat-ui.css` and applied by a class on the root element
 of the Chat surface's own document. Not the surface itself: the surface is the
 window, and a Chat UI is one of the designs it can be drawn in. Reaches nothing
-the overlay draws — not a Character's art, not the Speech bubble — and is not
-the light or dark theme the operating system supplies. v1 ships one and no
-switcher. #355, #348, ADR-0013.
+the overlay draws by itself — a Character's art never, and the Speech bubble
+only as literals `src/main.css` copies from the default design by hand (#441,
+#456) — and is not the light or dark theme the operating system supplies. v1
+ships one and no switcher. #355, #348, ADR-0013.
 _Avoid_: Look, theme, skin, style, variant, design
 
 ### The published site
