@@ -37,5 +37,19 @@ in the frame loop.
 Completer. Chat (#17) is another turn in the same conversation, not a
 different prompt to a different endpoint.
 
+An attached handle stays the configured Completer once it exists, alive or
+not. #469 asked the other way round: a Harness whose child never spawned, or
+died mid-session, leaves `model::completer_from` handing the Director a handle
+that answers nothing, so a key typed into the HTTP rows #452 keeps live is not
+read until the next launch. Treating a dead handle as unconfigured would
+recover faster and put the HTTP Completer behind one session's failure, which
+is the second mind this decision refuses — and it would do it unasked, at the
+moment the user is least able to tell which mind replied. So the failure still
+goes to Static, and Settings says the wait rather than hiding it: the source
+row's line names static weights as what is answering, and the three HTTP rows
+say they are read at the next launch. Live recovery, if it is ever wanted,
+belongs in re-opening the attachment (#469's third option), not in swapping
+the mind out from under it.
+
 Reversing this means living with split-brain, or rewriting how #15–#17
 talk to a model.

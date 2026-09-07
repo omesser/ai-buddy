@@ -403,13 +403,27 @@ fn harness_env_row(label: &str) -> (String, bool) {
 /// asks: a Harness this machine has not got leaves a handle that never
 /// answers, and freezing these three on that would leave no reachable
 /// Completer at all (#452).
-fn http_row(label: &str, var: &str, driving: bool) -> (String, bool) {
-    match driving {
-        true => (
+///
+/// That leaves a third state, and #469 is what it costs: the handle stays the
+/// configured Completer whether or not its child is up, so an edit here is
+/// read at the next launch and not before. Live, because it is the way back;
+/// labelled, because a row that takes a key and changes nothing is worse than
+/// a frozen one. Handing the Director to the HTTP Completer the moment a
+/// session dies is the second mind ADR-0008 refuses.
+fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String, bool) {
+    if driving {
+        return (
             format!("{label} (not in use: a Harness is the Completer)"),
             true,
+        );
+    }
+    let (label, frozen) = env_row(label, var);
+    match configured {
+        true => (
+            format!("{label} (read at the next launch: a Harness is still the Completer)"),
+            frozen,
         ),
-        false => env_row(label, var),
+        false => (label, frozen),
     }
 }
 
@@ -437,9 +451,12 @@ fn flag_row(
 
 fn director_sections() -> Vec<FormSection> {
     let driving = crate::harness::driving();
-    let (base_url_label, base_url_frozen) = http_row("Base URL", model::BASE_URL, driving);
-    let (model_label, model_frozen) = http_row("Model", model::MODEL, driving);
-    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, driving);
+    // Configured, not driving: the handle still shadows these three (#469).
+    let configured = crate::harness::attached().is_some();
+    let (base_url_label, base_url_frozen) =
+        http_row("Base URL", model::BASE_URL, driving, configured);
+    let (model_label, model_frozen) = http_row("Model", model::MODEL, driving, configured);
+    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, driving, configured);
     let (director_label, director_frozen) = switch_row("Director on", model::ENABLED);
     let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
 
@@ -1755,7 +1772,7 @@ mod tests {
             ("API key", crate::model::API_KEY),
         ];
         for (label, var) in ROWS {
-            let (label, frozen) = http_row(label, var, true);
+            let (label, frozen) = http_row(label, var, true, true);
             assert!(frozen, "a driving Harness discards an edit here");
             assert!(
                 label.contains("not in use"),
@@ -1764,12 +1781,35 @@ mod tests {
         }
         crate::model::tests::with_env(None, None, None, || {
             for (label, var) in ROWS {
-                let (label, frozen) = http_row(label, var, false);
+                let (label, frozen) = http_row(label, var, false, false);
                 assert!(
                     !frozen,
                     "with nothing driving, {label:?} is the only Completer left"
                 );
                 assert!(!label.contains("not in use"));
+                assert!(!label.contains("next launch"));
+            }
+        });
+    }
+
+    /// #469: the rows a dead Harness leaves live take an edit the Director
+    /// will not read until the next launch, because the handle stays the
+    /// configured Completer (ADR-0008). Editable so there is a way back, and
+    /// labelled so the wait is on screen rather than discovered.
+    #[test]
+    fn a_dead_harness_leaves_the_http_rows_editable_and_says_they_wait() {
+        crate::model::tests::with_env(None, None, None, || {
+            for (label, var) in [
+                ("Base URL", crate::model::BASE_URL),
+                ("Model", crate::model::MODEL),
+                ("API key", crate::model::API_KEY),
+            ] {
+                let (label, frozen) = http_row(label, var, false, true);
+                assert!(!frozen, "the way back has to stay typeable, got {label:?}");
+                assert!(
+                    label.contains("next launch"),
+                    "the row has to say the edit waits, not {label:?}"
+                );
             }
         });
     }
