@@ -53,7 +53,7 @@ use ai_buddy_core::character::{Character, Primitive};
 use ai_buddy_core::director::{Happened, ModelDirector, Pace, Seeded, StaticDirector};
 use ai_buddy_core::engine::{Cue, Point, State, Verb};
 use ai_buddy_core::input::Pointer;
-use ai_buddy_core::memory::{self, MemoryManifest};
+use ai_buddy_core::memory;
 use ai_buddy_core::overlay::SpriteRect;
 use ai_buddy_core::roster::{self, InstanceId, InstanceSpec, Roster};
 use ai_buddy_core::snapshot::starting_position;
@@ -1728,7 +1728,7 @@ fn spawn_instances(
     settings: &model::DirectorSettings,
     known_names: impl IntoIterator<Item = String>,
 ) -> (Roster, Vec<InstanceState>) {
-    let mut roster = Roster::new(MemoryManifest::new(memory::shared_path()));
+    let mut roster = Roster::new();
     roster.set_known_names(known_names);
     let mut lives = Vec::with_capacity(loaded.len());
 
@@ -2367,7 +2367,6 @@ mod tests {
         Character, CursorReaction, PackageBytes, CHARACTER_MANIFEST_FILE, DEFAULT_MODEL_BASE,
         DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
     };
-    use ai_buddy_core::memory::MemoryManifest;
 
     fn stub_character(name: &str) -> Character {
         Character {
@@ -2443,8 +2442,7 @@ mod tests {
     /// Character, or stuffing `character.name` into both fields.
     #[test]
     fn chat_who_after_switch_uses_the_roster_name_and_character() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-who-rename.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let first = stub_character("bmo");
         let second = stub_character("nim");
         let id = roster.spawn(&first, "bmo".to_string(), Point { x: 10.0, y: 20.0 });
@@ -2463,8 +2461,7 @@ mod tests {
     /// new Character. Copying only `character.name` into both fields would fail.
     #[test]
     fn chat_who_after_switch_keeps_a_chosen_name() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-who-pip.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let first = stub_character("bmo");
         let second = stub_character("nim");
         let id = roster.spawn(&first, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
@@ -2480,8 +2477,7 @@ mod tests {
     /// still matches the pre-toggle inspect. #473.
     #[test]
     fn chat_opening_from_inspect_carries_configured_and_enabled() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-opening-mode.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let character = stub_character("nim");
         let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
         let instance = roster.get(&id).expect("still there");

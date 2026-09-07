@@ -25,7 +25,8 @@ use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
 mod prompt;
-pub use prompt::{character_prompt, follow_up, happened_word};
+pub use prompt::happened_word;
+pub(crate) use prompt::{character_prompt, follow_up};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
 ///
@@ -124,12 +125,6 @@ pub struct Context {
     /// What the feet are on: a window (owner name), the floor above the
     /// Dock, or a screen edge. Not a title — that needs Screen Recording.
     pub standing: String,
-}
-
-/// Whatever decides what the buddy does next.
-pub trait Director {
-    /// A Behavior to play, or nothing when this moment suits none.
-    fn propose(&mut self, context: &Context) -> Option<BehaviorProposal>;
 }
 
 /// One wake on its way to a Completer: the Character Prompt, and who is
@@ -452,6 +447,9 @@ pub struct ParseError;
 
 /// Parse a reply as a Behavior name on the first line and optional dialogue
 /// after. Anything else is `ParseError`.
+///
+/// Public for `harness probe`, which reports whether a live session obeys the
+/// one-line format. The rest of the model path is crate-private.
 pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
     let mut lines = reply.lines().map(str::trim).filter(|line| !line.is_empty());
     let first = lines.next().ok_or(ParseError)?;
@@ -499,9 +497,7 @@ impl StaticDirector {
             seeded: Seeded(seed),
         }
     }
-}
 
-impl Director for StaticDirector {
     /// Pick among the Behaviors this moment permits, by weight.
     ///
     /// Three filters and a draw. A Behavior of no weight is one the author took
@@ -513,7 +509,7 @@ impl Director for StaticDirector {
     /// with two Behaviors and three of them remembered would otherwise go still
     /// for ever. Repeating is worse than pausing only while there is something
     /// else to do.
-    fn propose(&mut self, context: &Context) -> Option<BehaviorProposal> {
+    pub fn propose(&mut self, context: &Context) -> Option<BehaviorProposal> {
         let suits = |(name, behavior): (&String, &Behavior)| {
             let triggered = match &behavior.trigger {
                 None => true,
