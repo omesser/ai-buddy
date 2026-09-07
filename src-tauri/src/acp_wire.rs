@@ -14,6 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self as sync_mpsc, RecvTimeoutError};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -134,6 +135,11 @@ enum Msg {
 pub struct Wire {
     tx: mpsc::UnboundedSender<Msg>,
     handshake: Handshake,
+    /// Nothing is ever sent on this. The thread owns the sender, so the
+    /// receiver disconnects at the moment the thread ends — which is how
+    /// `wait_for_exit` knows the child has been reaped. Behind a `Mutex`
+    /// because a `Receiver` is `Send` and not `Sync`, and a `Wire` is shared.
+    done: Mutex<sync_mpsc::Receiver<()>>,
 }
 
 impl Wire {
@@ -142,9 +148,10 @@ impl Wire {
     pub fn spawn(command: Command, timeout: Duration, on_event: OnEvent) -> Result<Self, String> {
         let (tx, rx) = mpsc::unbounded_channel();
         let (ready_tx, ready_rx) = sync_mpsc::channel();
+        let (done_tx, done) = sync_mpsc::channel();
         thread::Builder::new()
             .name("acp-wire".into())
-            .spawn(move || run(command, rx, ready_tx, on_event))
+            .spawn(move || run(command, rx, ready_tx, done_tx, on_event))
             .map_err(|why| format!("could not start the wire thread: {why}"))?;
         let handshake = match ready_rx.recv_timeout(timeout) {
             Ok(Ok(handshake)) => handshake,
@@ -157,7 +164,28 @@ impl Wire {
                 return Err("exited before initialize".to_string())
             }
         };
-        Ok(Self { tx, handshake })
+        Ok(Self {
+            tx,
+            handshake,
+            done: Mutex::new(done),
+        })
+    }
+
+    /// Wait, bounded, for the thread to end — and so for the child to have
+    /// been killed and reaped, which is the last thing it does. False is the
+    /// timeout passing with the thread still there.
+    ///
+    /// `shutdown` only posts the message, so a caller that must not outlive
+    /// its child needs this after it. The app does not: `main.rs` answers the
+    /// run event and the process ends, taking the thread with it. A probe a
+    /// script waits on does.
+    pub fn wait_for_exit(&self, timeout: Duration) -> bool {
+        self.done.lock().is_ok_and(|done| {
+            matches!(
+                done.recv_timeout(timeout),
+                Err(RecvTimeoutError::Disconnected)
+            )
+        })
     }
 
     pub fn handshake(&self) -> &Handshake {
@@ -237,6 +265,9 @@ fn run(
     command: Command,
     rx: mpsc::UnboundedReceiver<Msg>,
     ready: sync_mpsc::Sender<Result<Handshake, String>>,
+    // Held, never sent on, and dropped when this function returns: that drop
+    // is what `wait_for_exit` waits for.
+    _done: sync_mpsc::Sender<()>,
     on_event: OnEvent,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread().build() {

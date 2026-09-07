@@ -261,6 +261,13 @@ AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
 ```
 
 ```
+probe-harness
+  harness      hermes
+  command      hermes acp
+  dir          /Users/you/Library/Application Support/ai-buddy/probe
+  mcp          none
+  timeout      turn 20s, attach 20s
+
 attach
   agent        hermes-agent
   loadSession  true
@@ -269,12 +276,15 @@ attach
   session      33f5d650-5476-40c6-876b-cb04f14bfc27
 
 turn
+  prompt       Reply with exactly this one line and nothing else: Wave | Hello from the probe.
   stop         end_turn
   reply        Wave | Hello from the probe.
   proposal     Wave | Hello from the probe.
 ```
 
-Exit 2 is nothing configured, 1 is a turn that did not finish, 0 is `end_turn`. ADR-0017's table says which Harnesses this has been run against.
+The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. ADR-0017's table says which Harnesses this has been run against.
+
+The `probe` folder keeps the session file and the Action Log out of a real install's. Memory is not isolated: the MCP server resolves `memory.md` from the data folder, so a `remember` during a probe writes the real one.
 
 ### Provider Details
 

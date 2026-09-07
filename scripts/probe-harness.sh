@@ -10,8 +10,9 @@
 #
 # Usage: AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
 #   Reads AI_BUDDY_HARNESS and AI_BUDDY_MCP_BIN from the environment, the same
-#   two `cargo run` reads. Exit 2 is nothing configured, 1 is a turn that did
-#   not finish, 0 is end_turn.
+#   two `cargo run` reads. The exit code splits on the two phases it prints:
+#   2 is never having asked (nothing configured, no binary, not signed in),
+#   1 is asked and not answered, 0 is end_turn.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

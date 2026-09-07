@@ -81,16 +81,27 @@ proposal. A row moves in this table when that command exits zero, and the
 handshake it printed is what the next paragraph records.
 
 What the two installed Harnesses advertise in `initialize` differs enough to
-matter. `hermes` 0.18.2 offers `loadSession` and two `authMethods` — `custom
-runtime credentials` and `Configure Hermes provider`, the second a `terminal`
-method — and no `mcpCapabilities.http`, so #166 has to keep the stdio path for
-it. Claude Code's adapter offers `loadSession` and `mcpCapabilities.http` and,
-signed in, an empty `authMethods`: the list is what is *available*, not what is
-outstanding, so it is no test of whether a login is needed. Only `session/new`
-answering `-32000` is that, which is why the gate hangs off the error and not
-the handshake. `hermes` also advertises `sessionCapabilities` (`fork`, `list`,
-`resume`) and `promptCapabilities.image`, neither of which anything here reads
-yet.
+matter. `hermes` offers `loadSession` and two `authMethods` — `custom runtime
+credentials` and `Configure Hermes provider` — and no `mcpCapabilities.http`,
+so #166 has to keep the stdio path for it. Claude Code's adapter offers
+`loadSession` and `mcpCapabilities.http` and, signed in, an empty
+`authMethods`: the list is what is *available*, not what is outstanding, so it
+is no test of whether a login is needed. Only `session/new` answering `-32000`
+is that, which is why the gate hangs off the error and not the handshake.
+
+Four facts beside those the probe does not print, recorded here from the raw
+`initialize` result read by hand off `hermes acp` rather than from the
+handshake the probe reports: it is
+`hermes-agent` 0.18.2, its second auth method is a `terminal` one, and it
+advertises `sessionCapabilities` (`fork`, `list`, `resume`) and
+`promptCapabilities.image`. Nothing here reads any of them yet, which is why
+they are prose and not a printed field.
+
+What no probe run has verified is the MCP row, step 5 of #434: every run found
+no `ai-buddy-mcp` binary beside the app and had `AI_BUDDY_MCP_BIN` unset, so
+each session got no MCP servers and the `speak` tool was never called by a
+Harness. The stdio server is built and tested on its own; that it is reachable
+*through* a Harness session is still untested.
 
 The one thing a real turn contradicted is the fallback above: `session/load`
 refusing is not always an error. `hermes` answers a session it cannot restore
