@@ -250,6 +250,15 @@ impl Wire {
         }
     }
 
+    /// Cancel the turn in flight, for a caller that is about to send a newer
+    /// prompt. No-op on an idle wire: `serve` drops the message.
+    ///
+    /// Unlike `prompt`'s own timeout cancel, this one waits for nothing — the
+    /// turn's own caller is the one holding its reply channel.
+    pub fn cancel(&self) {
+        let _ = self.tx.send(Msg::Cancel);
+    }
+
     /// The user's pick on a forwarded permission request.
     pub fn answer(&self, request: &str, option: &str) {
         let _ = self.tx.send(Msg::Answer {
