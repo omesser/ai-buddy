@@ -683,6 +683,12 @@ pub(crate) fn run_frame_loop(
                 }
             }
 
+            // Asked for here, posted after this tick's frames are emitted.
+            // The Menu cue is a one-tick pulse, and `popup_menu_at` runs on
+            // the same main thread the webview needs to see that emit — asking
+            // for the menu first lets it starve the pulse. #507.
+            let mut pending_menus = Vec::new();
+
             for (index, live) in lives.iter_mut().enumerate() {
                 // Only the Instance the press belongs to is told the cursor is
                 // over it. The rest are still updated: a pointer that stopped
@@ -750,41 +756,9 @@ pub(crate) fn run_frame_loop(
                             );
 
                             // The description is owned Strings and bools, which
-                            // is what lets it cross to the main thread. The menu
-                            // itself is built over there: its native objects are
-                            // reference-counted without a lock and cannot be
-                            // sent, so there is no version of this that builds
-                            // the menu here and hands it over.
-                            // Kept on this side before the description crosses:
-                            // the click comes back as an id, and the id means
-                            // what the menu on screen said it meant.
-                            let description_actions = description.actions.clone();
-                            let handle = app.clone();
-                            let signals = menu_sender.clone();
-                            let posted = app.run_on_main_thread(move || {
-                                if let Err(why) = menu::show(&handle, &description, &label, at) {
-                                    eprintln!("menu: {why}");
-                                }
-                                // Sent whether or not the menu drew, and after
-                                // it has closed if the platform's popup is
-                                // modal. Either way it is what ends the hold,
-                                // because a menu dismissed without a choice
-                                // reports nothing anywhere else.
-                                let _ = signals.send(MenuSignal::Closed);
-                            });
-
-                            match posted {
-                                Ok(()) => {
-                                    live.menu_hold = Some(MenuHold {
-                                        actions: description_actions,
-                                        elapsed: Duration::ZERO,
-                                    })
-                                }
-                                // Never held on a menu that was never asked for.
-                                Err(why) => {
-                                    eprintln!("menu: could not reach the main thread: {why}")
-                                }
-                            }
+                            // is what lets it cross to the main thread. Posted
+                            // after emit, not here: see `pending_menus`.
+                            pending_menus.push((live.id.clone(), description, label, at));
                         }
                         None => eprintln!("menu: the cursor is on no known display"),
                     }
@@ -1755,6 +1729,37 @@ pub(crate) fn run_frame_loop(
                         if window.set_ignore_cursor_events(ignore).is_ok() {
                             ignoring[index] = Some(ignore);
                         }
+                    }
+                }
+            }
+
+            for (id, description, label, at) in pending_menus {
+                let description_actions = description.actions.clone();
+                let handle = app.clone();
+                let signals = menu_sender.clone();
+                let posted = app.run_on_main_thread(move || {
+                    if let Err(why) = menu::show(&handle, &description, &label, at) {
+                        eprintln!("menu: {why}");
+                    }
+                    // Sent whether or not the menu drew, and after it has
+                    // closed if the platform's popup is modal. Either way it
+                    // is what ends the hold, because a menu dismissed without
+                    // a choice reports nothing anywhere else.
+                    let _ = signals.send(MenuSignal::Closed);
+                });
+
+                match posted {
+                    Ok(()) => {
+                        if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
+                            live.menu_hold = Some(MenuHold {
+                                actions: description_actions,
+                                elapsed: Duration::ZERO,
+                            });
+                        }
+                    }
+                    // Never held on a menu that was never asked for.
+                    Err(why) => {
+                        eprintln!("menu: could not reach the main thread: {why}")
                     }
                 }
             }
