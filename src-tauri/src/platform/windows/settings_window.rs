@@ -1134,8 +1134,18 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += field_width + 8;
                                         control_id += 1;
                                     }
-                                    // The choices stay unread until #461; see
-                                    // the note on the insert below.
+                                    // Skipped entirely until #461 maps a
+                                    // control back to its row. This port
+                                    // commits no composite pick, and a combo
+                                    // box that lists endpoints and then
+                                    // ignores the click is the failure #465
+                                    // set out to remove. An empty options vec
+                                    // is not the way to say that either: the
+                                    // refresh above reads empty as "fill from
+                                    // `view.installed`", which would offer
+                                    // Character packages as endpoints.
+                                    form::CompositeControl::Popup { id, .. }
+                                        if id == form::DIRECTOR_BASE_URL_PICK_ID => {}
                                     form::CompositeControl::Popup { id, frozen, .. } => {
                                         let combo_width = 100;
                                         // Disabled at creation for the same
@@ -1163,12 +1173,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             ptr::null_mut(),
                                         );
                                         SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                        // Left empty until #461 maps a control
-                                        // back to its row. Drawing the choices
-                                        // before the pick can commit would give
-                                        // Windows a live-looking picker that
-                                        // does nothing — the failure #465 set
-                                        // out to remove, not to add. #461.
                                         window.controls.borrow_mut().insert(
                                             id.clone(),
                                             Control::ComboBox(hwnd, tab_index, Vec::new()),

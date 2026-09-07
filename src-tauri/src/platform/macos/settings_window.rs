@@ -1015,13 +1015,21 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         _ => popup_plain(mtm),
                                     };
                                     pop.setEnabled(!frozen);
+                                    // Wide enough for the longest resting
+                                    // title. The URL is the half a narrow
+                                    // popup clips, and the resting title is
+                                    // how the row says what is in force.
+                                    let pop_width = match id.as_str() {
+                                        form::DIRECTOR_BASE_URL_PICK_ID => 360.0,
+                                        _ => 180.0,
+                                    };
                                     pop.setFrame(NSRect::new(
                                         NSPoint::new(x, cursor.y),
-                                        NSSize::new(180.0, 24.0),
+                                        NSSize::new(pop_width, 24.0),
                                     ));
                                     stretch_x(&pop);
                                     document.addSubview(&pop);
-                                    x += 188.0;
+                                    x += pop_width + 8.0;
 
                                     match id.as_str() {
                                         form::NEW_CHARACTER_ID => new_character_popup = Some(pop),

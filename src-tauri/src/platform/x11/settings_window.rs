@@ -499,6 +499,12 @@ impl SettingsWindow {
                                     let controls = self.controls.clone();
                                     let refreshing = self.refreshing.clone();
                                     radio.connect_toggled(move |radio| {
+                                        // The refreshing guard must stay above
+                                        // the `controls` borrow below: `refresh`
+                                        // calls `set_active` while holding
+                                        // `controls.borrow_mut()`, so reaching
+                                        // the borrow during a redraw is a
+                                        // `BorrowMutError` panic, not a no-op.
                                         if refreshing.get() || !radio.is_active() {
                                             return;
                                         }
