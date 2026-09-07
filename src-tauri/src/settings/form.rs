@@ -340,15 +340,17 @@ const ENDPOINTS: &[(&str, &str, &str)] = &[
 /// writes nothing: the field beside it is what a custom endpoint is.
 pub const ENDPOINT_CUSTOM: &str = "Custom";
 
-fn endpoint_title_of(group: &str, name: &str, url: &str) -> String {
-    format!("{group} — {name} ({url})")
+fn endpoint_title_of(_group: &str, name: &str, url: &str) -> String {
+    format!("{name} ({url})")
 }
 
 /// The Base URL picker's choices, Custom first.
 ///
-/// The group rides in each title rather than in a header row above it. A
-/// header is an item that picks nothing, and GTK draws these choices as a
-/// radio group, where an inert radio is a click that silently does nothing.
+/// No header rows: a header is an item that picks nothing, and GTK draws these
+/// choices as a radio group, where an inert radio is a click that silently
+/// does nothing. The group is carried by the order instead — the local servers
+/// first, the hosted ones after — because `localhost` in the URL beside the
+/// name already says which is which.
 pub fn endpoint_options() -> Vec<String> {
     let mut options = vec![ENDPOINT_CUSTOM.to_string()];
     options.extend(
