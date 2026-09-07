@@ -61,15 +61,13 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
-    # PowerShell linting (Windows only)
+    # PowerShell linting
   - repo: local
     hooks:
       - id: psscriptanalyzer-check
-        name: PSScriptAnalyzer (Windows only)
-        # Thin OS gate (mirrors swiftc-typecheck): skip on Linux/Darwin, run on Windows.
-        # Invokes PSScriptAnalyzer (Microsoft's canonical PowerShell linter) at Error severity.
-        # No pwsh forced onto Linux/macOS dev machines. CI enforces via windows job.
-        entry: scripts/hooks/psscriptanalyzer-windows.sh
+        name: PSScriptAnalyzer
+        # Runs when pwsh is available; skips cleanly otherwise.
+        entry: scripts/hooks/psscriptanalyzer.sh
         language: system
         files: \.ps1$
         # Severity Error: only fail on actual errors, not style warnings.
