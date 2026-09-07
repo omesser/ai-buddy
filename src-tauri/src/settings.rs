@@ -167,9 +167,12 @@ where
 /// spawns (#272). Its grammar carries a custom command line in the value
 /// itself, so the file's `harness_command` has nothing to add there.
 fn harness_in_force(settings: &Settings) -> (String, String) {
-    match model::env_override(crate::harness::VAR) {
-        Some(exported) => form::harness_rows(&exported, ""),
-        None => form::harness_rows(&settings.harness, &settings.harness_command),
+    // `std::env::var` rather than `model::env_override`: exported-and-empty is
+    // Off here, not a fall-through, and the window has to print what
+    // `harness::from_settings` will act on (#452).
+    match std::env::var(crate::harness::VAR) {
+        Ok(exported) => form::harness_rows(&exported, ""),
+        Err(_) => form::harness_rows(&settings.harness, &settings.harness_command),
     }
 }
 
@@ -179,20 +182,59 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 /// its own, and the fix is one command in the user's own terminal. Named here
 /// and never run — ai-buddy holds no credential for the Harness and asks for
 /// none (ADR-0010 rules 1 and 6).
-fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
-    let Some(attached) = harness else {
-        return "Not attached. The HTTP Completer above is the Director's mind.".to_string();
+fn harness_state(harness: Option<&crate::harness::HarnessInspect>, wanted: Option<&str>) -> String {
+    let mut line = match harness {
+        None => "Not attached. The HTTP Completer above is the Director's mind.".to_string(),
+        Some(attached) => match &attached.login {
+            Some(login) => format!(
+                "{} attached but not authenticated. Run `{login}` in a terminal — \
+                 ai-buddy never asks for it.",
+                attached.name
+            ),
+            // Configured and not answering is its own state, and the one that
+            // must not read as attached: a Harness this machine has not got
+            // leaves the handle in place while the Director runs on Static,
+            // and the HTTP rows above are live because of it (#452).
+            None if !attached.alive => format!(
+                "{} is set but not running, so the HTTP Completer above is the \
+                 Director's mind until it answers.",
+                attached.name
+            ),
+            None => match &attached.session_id {
+                Some(id) => format!("{} attached, session {id}.", attached.name),
+                None => format!("{} attached; no session opened yet.", attached.name),
+            },
+        },
     };
-    if let Some(login) = &attached.login {
-        return format!(
-            "{} attached but not authenticated. Run `{login}` in a terminal — \
-             ai-buddy never asks for it.",
-            attached.name
-        );
+    if let Some(pending) = pending_source(harness, wanted) {
+        line.push(' ');
+        line.push_str(&pending);
     }
-    match &attached.session_id {
-        Some(id) => format!("{} attached, session {id}.", attached.name),
-        None => format!("{} attached; no session opened yet.", attached.name),
+    line
+}
+
+/// What the source row will do on the next launch, when that is not what is
+/// attached now.
+///
+/// Said in the interface rather than left to the user to infer: one Session
+/// lives for the app's lifetime (ADR-0008), so a pick — Off included — leaves
+/// the line above naming the old Harness and, while it answers, the HTTP rows
+/// frozen with nothing explaining either (#452).
+fn pending_source(
+    harness: Option<&crate::harness::HarnessInspect>,
+    wanted: Option<&str>,
+) -> Option<String> {
+    match (harness, wanted) {
+        (None, None) => None,
+        (None, Some(line)) => Some(format!("The row asks for `{line}` on the next launch.")),
+        (Some(attached), None) => Some(match attached.alive {
+            true => "The row says Off, which takes effect on the next launch — the HTTP \
+                     rows above stay out of use until then."
+                .to_string(),
+            false => "The row says Off, which takes effect on the next launch.".to_string(),
+        }),
+        (Some(attached), Some(line)) => (line != attached.command)
+            .then(|| format!("The row asks for `{line}` on the next launch.")),
     }
 }
 
@@ -232,7 +274,10 @@ impl SettingsView {
             api_key_fingerprint,
             api_key_error,
             harness: harness_in_force(settings).0,
-            harness_state: harness_state(harness.as_ref()),
+            harness_state: harness_state(
+                harness.as_ref(),
+                crate::harness::wanted_command(settings.harness_source().as_deref()).as_deref(),
+            ),
             development_switches: development_switches(settings),
             development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
@@ -274,6 +319,28 @@ impl SettingsView {
             format!("Set — {}", self.api_key_fingerprint)
         } else {
             "Not set".into()
+        }
+    }
+
+    /// What the popup with this id shows right now, or `None` for one whose
+    /// value the form does not hold.
+    ///
+    /// A renderer asks before it commits a pick: AppKit sends the action for a
+    /// click on the item already selected, and on the source popup that write
+    /// is lossy — it restates a Custom command line as the bare word `custom`
+    /// (#452). Here rather than in the window, so a second renderer that needs
+    /// the same guard does not answer the question differently.
+    ///
+    /// GTK needs none of it: a click on the active radio of a group emits no
+    /// `toggled`. Win32 draws no source popup yet.
+    // Only AppKit asks, and the binary's dead-code lint sees no caller
+    // elsewhere — the same reason `form::bool_write` carries this.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn popup_value(&self, id: &str) -> Option<&str> {
+        match id {
+            form::CHARACTER_ID => Some(&self.character),
+            form::HARNESS_ID => Some(&self.harness),
+            _ => None,
         }
     }
 
@@ -864,7 +931,10 @@ impl fmt::Debug for SettingsPatch {
             .field("director_max_tokens", &self.director_max_tokens)
             .field("director_wake_secs", &self.director_wake_secs)
             .field("harness", &self.harness)
-            .field("harness_command", &self.harness_command)
+            .field(
+                "harness_command",
+                &self.harness_command.as_deref().map(command_line_debug),
+            )
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
@@ -877,6 +947,21 @@ impl fmt::Debug for SettingsPatch {
             .field("use_accessibility", &self.use_accessibility)
             .field("use_screen_recording", &self.use_screen_recording)
             .finish()
+    }
+}
+
+/// A custom command line as a log may carry it: the program, and how many
+/// arguments followed.
+///
+/// The key beside it is fingerprinted; this one is not, because ADR-0010's
+/// seventh rule forbids logging *or fingerprinting* a Harness credential, and
+/// a flag on a command line is somewhere a token can sit. The program name is
+/// a binary, so it is the one word that cannot be one.
+fn command_line_debug(line: &str) -> String {
+    let mut words = line.split_whitespace();
+    match words.next() {
+        None => String::new(),
+        Some(program) => format!("{program} +{} arg(s)", words.count()),
     }
 }
 
@@ -935,6 +1020,16 @@ impl Settings {
             self.director_wake_secs = value;
         }
         if let Some(value) = patch.harness {
+            // A command line the source field carries — hand-edited there, or
+            // read there under the variable's own grammar — is drawn in the
+            // command-line row, which writes the *other* field. Move it before
+            // the pick lands, so choosing the Custom entry already on screen
+            // is not a silent Off (#452).
+            if let Some(line) = form::harness_command_line(&self.harness) {
+                if self.harness_command.trim().is_empty() {
+                    self.harness_command = line.to_string();
+                }
+            }
             self.harness = value;
         }
         if let Some(value) = patch.harness_command {
@@ -2900,23 +2995,34 @@ mod tests {
     /// named for the user's own terminal and nothing here runs it.
     #[test]
     fn the_source_row_reads_the_three_attachment_states() {
-        assert!(harness_state(None).contains("Not attached"));
+        assert!(harness_state(None, None).contains("Not attached"));
 
         let attached = crate::harness::HarnessInspect {
             name: "hermes".to_string(),
+            command: "hermes acp".to_string(),
             session_id: Some("sess-7".to_string()),
+            alive: true,
             ..Default::default()
         };
-        let line = harness_state(Some(&attached));
+        let line = harness_state(Some(&attached), Some("hermes acp"));
         assert!(line.contains("hermes attached"), "got {line:?}");
         assert!(line.contains("sess-7"), "got {line:?}");
+        assert!(
+            !line.contains("next launch"),
+            "nothing is pending, got {line:?}"
+        );
 
         let unauthenticated = crate::harness::HarnessInspect {
             name: "claude".to_string(),
+            command: "npx -y @agentclientprotocol/claude-agent-acp".to_string(),
             login: Some("claude /login".to_string()),
+            alive: true,
             ..Default::default()
         };
-        let line = harness_state(Some(&unauthenticated));
+        let line = harness_state(
+            Some(&unauthenticated),
+            Some("npx -y @agentclientprotocol/claude-agent-acp"),
+        );
         assert!(line.contains("not authenticated"), "got {line:?}");
         assert!(line.contains("claude /login"), "got {line:?}");
         assert!(
@@ -2936,5 +3042,148 @@ mod tests {
         patch.set_text(TextField::Harness, "hermes");
         patch.set_text(TextField::HarnessCommand, "opencode acp");
         assert!(!completer_retargets(&settings, &patch));
+    }
+
+    /// The bug that mattered most: a source row naming a Harness this machine
+    /// has not got leaves the handle in place, and freezing the HTTP rows on
+    /// that presence would leave no reachable Completer at all (#452).
+    #[test]
+    fn a_harness_that_never_started_leaves_the_http_rows_live() {
+        let configured = crate::harness::HarnessInspect {
+            name: "claude".to_string(),
+            command: "npx -y @agentclientprotocol/claude-agent-acp".to_string(),
+            alive: false,
+            ..Default::default()
+        };
+        let line = harness_state(Some(&configured), Some(&configured.command));
+        assert!(
+            line.contains("not running"),
+            "a handle that never answered must not read as attached, got {line:?}"
+        );
+        assert!(
+            line.contains("HTTP Completer above"),
+            "the line has to name what is answering instead, got {line:?}"
+        );
+    }
+
+    /// #452: one Session lives for the app's lifetime, so a pick has to say
+    /// what it will do rather than leave the line above looking like a refusal.
+    #[test]
+    fn a_pending_source_says_it_takes_the_next_launch() {
+        let attached = crate::harness::HarnessInspect {
+            name: "hermes".to_string(),
+            command: "hermes acp".to_string(),
+            alive: true,
+            session_id: Some("sess-1".to_string()),
+            ..Default::default()
+        };
+        let off = harness_state(Some(&attached), None);
+        assert!(off.contains("says Off"), "got {off:?}");
+        assert!(off.contains("next launch"), "got {off:?}");
+        assert!(
+            off.contains("HTTP"),
+            "picking Off has to explain the frozen rows above, got {off:?}"
+        );
+
+        let swapped = harness_state(Some(&attached), Some("opencode acp"));
+        assert!(swapped.contains("opencode acp"), "got {swapped:?}");
+        assert!(swapped.contains("next launch"), "got {swapped:?}");
+
+        let waiting = harness_state(None, Some("hermes acp"));
+        assert!(waiting.contains("hermes acp"), "got {waiting:?}");
+    }
+
+    /// `AI_BUDDY_HARNESS=` has been the kill switch since #433. Going through
+    /// `env_override` dropped it, and the saved row spawned instead (#452).
+    #[test]
+    fn an_exported_empty_harness_is_off_whatever_the_row_saved() {
+        let saved = Settings {
+            harness: "hermes".to_string(),
+            ..Settings::default()
+        };
+        crate::model::tests::with_harness(Some(""), || {
+            assert!(
+                crate::harness::from_settings(saved.harness_source().as_deref()).is_none(),
+                "an exported blank is Off, not a fall-through"
+            );
+            let view = endpoint_view(&saved);
+            assert_eq!(view.harness, form::HARNESS_OFF);
+            assert!(
+                form::describe().frozen(form::HARNESS_ID),
+                "the variable owns the row it is silencing"
+            );
+        });
+        crate::model::tests::with_harness(None, || {
+            assert_eq!(
+                crate::harness::from_settings(saved.harness_source().as_deref())
+                    .map(|launch| launch.name),
+                Some("hermes".to_string()),
+                "unexported still falls through to the row"
+            );
+        });
+    }
+
+    /// A command line sitting in the source field is drawn in the row that
+    /// writes the *other* field, so picking the Custom entry already on screen
+    /// used to leave the command empty and the source Off (#452).
+    #[test]
+    fn picking_the_custom_entry_already_shown_keeps_the_command_line() {
+        crate::model::tests::with_harness(None, || {
+            // What a hand-edit of the file, or an older export, leaves behind.
+            let mut settings = Settings {
+                harness: "grok agent stdio".to_string(),
+                ..Settings::default()
+            };
+            let view = endpoint_view(&settings);
+            assert_eq!(view.harness, form::HARNESS_CUSTOM);
+            assert_eq!(
+                view.development_texts
+                    .get(form::HARNESS_COMMAND_ID)
+                    .map(String::as_str),
+                Some("grok agent stdio")
+            );
+
+            let mut patch = SettingsPatch::default();
+            patch.set_text(TextField::Harness, form::HARNESS_CUSTOM);
+            settings.apply(patch);
+
+            assert_eq!(settings.harness_command, "grok agent stdio");
+            assert_eq!(
+                settings.harness_source().as_deref(),
+                Some("grok agent stdio"),
+                "the pick must not be a silent Off"
+            );
+
+            // And a renderer asks before it commits at all, so the click on
+            // the entry already selected writes nothing.
+            assert_eq!(
+                view.popup_value(form::HARNESS_ID),
+                Some(form::HARNESS_CUSTOM)
+            );
+            assert_eq!(view.popup_value(form::CHARACTER_ID), Some(""));
+            assert_eq!(view.popup_value("nothing_like_it"), None);
+        });
+    }
+
+    /// ADR-0010 rule 7: a flag on a custom command line is somewhere a token
+    /// can sit, and the key beside it is already fingerprinted (#452).
+    #[test]
+    fn a_custom_command_line_is_not_logged_verbatim() {
+        let mut patch = SettingsPatch::default();
+        patch.set_text(
+            TextField::HarnessCommand,
+            "my-agent acp --token sk-live-abcdef",
+        );
+        let printed = format!("{patch:?}");
+        assert!(
+            !printed.contains("sk-live-abcdef"),
+            "a token on the command line reached the log: {printed}"
+        );
+        assert!(
+            printed.contains("my-agent"),
+            "the program name is still worth reading: {printed}"
+        );
+        assert_eq!(command_line_debug("my-agent acp"), "my-agent +1 arg(s)");
+        assert_eq!(command_line_debug("   "), "");
     }
 }

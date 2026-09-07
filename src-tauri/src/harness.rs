@@ -85,11 +85,24 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
 /// The exported variable, else the Completer source row Settings saved.
 ///
 /// The variable outranks the file the way it does on every other Director row
-/// (#272, #436). Through `model::env_override`, so a `$VAR` that expanded to
-/// nothing falls through to the row rather than reading as Off.
+/// (#272, #436). Exported-and-empty is not the same as unexported here, which
+/// is where this parts company with `model::env_override`: `AI_BUDDY_HARNESS=`
+/// has been the kill switch since #433, and falling through to the row would
+/// spawn the very Harness the export was clearing (#452).
 pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
-    let exported = crate::model::env_override(VAR);
-    launch(exported.as_deref().or(saved))
+    match std::env::var(VAR) {
+        Ok(exported) => launch(Some(&exported)),
+        Err(_) => launch(saved),
+    }
+}
+
+/// The command line the source in force would spawn, or `None` for Off.
+///
+/// For a window that has to say whether what is attached is what the row now
+/// asks for. Compared against `HarnessInspect::command`, which is the same
+/// join.
+pub fn wanted_command(saved: Option<&str>) -> Option<String> {
+    from_settings(saved).map(|launch| launch.line())
 }
 
 impl Launch {
@@ -541,6 +554,21 @@ pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
 
 pub fn attached() -> Option<Arc<Session>> {
     ATTACHED.get().cloned().flatten()
+}
+
+/// Whether an attached Harness is actually answering, not merely configured.
+///
+/// `attach` holds the handle for the app's lifetime whether or not the child
+/// ever spawned, so a source row naming a Harness this machine has not got
+/// leaves a `Some` that never answers a wake — and `ModelDirector` has already
+/// fallen back to Static. Settings asks this rather than `attached`, because
+/// freezing the HTTP rows on a Harness that never started leaves no reachable
+/// Completer at all and no way back but a hand-edit of the file (#452).
+///
+/// A wire lost mid-session reads the same way: `lost` clears the flag, and the
+/// next wake respawns.
+pub fn driving() -> bool {
+    attached().is_some_and(|session| session.inspect().alive)
 }
 
 /// What `startup_lines` says about the attachment, if there is one.

@@ -328,6 +328,19 @@ pub fn harness_rows(value: &str, command: &str) -> (String, String) {
     }
 }
 
+/// The command line a source value carries in the value itself, if it does.
+///
+/// The catch-all of `harness_rows`: `AI_BUDDY_HARNESS` spells a custom Harness
+/// as its command line, and a hand-edit of the file may too. `Settings::apply`
+/// moves it to the row that owns it (#452).
+pub fn harness_command_line(value: &str) -> Option<&str> {
+    match value.trim() {
+        "" | HARNESS_CUSTOM_VALUE => None,
+        preset if HARNESS_PRESETS.contains(&preset) => None,
+        line => Some(line),
+    }
+}
+
 /// What a popup title means in the file. The inverse of `harness_rows`.
 pub fn harness_choice(title: &str) -> String {
     match title {
@@ -362,16 +375,36 @@ fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
     }
 }
 
+/// The Completer source rows' ownership question.
+///
+/// Exported at all owns them, empty included, because
+/// `harness::from_settings` reads an empty value as Off rather than falling
+/// through to the file — so a row left editable there would take an edit the
+/// launch discards (#452). `env_row`'s emptiness rule belongs to the endpoint
+/// rows and does not carry over.
+fn harness_env_row(label: &str) -> (String, bool) {
+    owned_row(
+        label,
+        crate::harness::VAR,
+        std::env::var_os(crate::harness::VAR).is_some(),
+    )
+}
+
 /// One of the three HTTP rows, which answer to an attachment as well as to a
 /// variable.
 ///
-/// An attached Harness *is* the Completer (ADR-0008), so these three drive
+/// A Harness that *answers* is the Completer (ADR-0008), so these three drive
 /// nothing while one is up, and #272's rule applies for the same reason it
 /// applies to an exported variable: an edit the Director would discard is not
 /// an edit to offer. The source row below is never frozen by an attachment,
 /// so Off stays one pick and one launch away.
-fn http_row(label: &str, var: &str, attached: bool) -> (String, bool) {
-    match attached {
+///
+/// Driving rather than merely configured, which is what `harness::driving`
+/// asks: a Harness this machine has not got leaves a handle that never
+/// answers, and freezing these three on that would leave no reachable
+/// Completer at all (#452).
+fn http_row(label: &str, var: &str, driving: bool) -> (String, bool) {
+    match driving {
         true => (
             format!("{label} (not in use: a Harness is the Completer)"),
             true,
@@ -403,10 +436,10 @@ fn flag_row(
 }
 
 fn director_sections() -> Vec<FormSection> {
-    let attached = crate::harness::attached().is_some();
-    let (base_url_label, base_url_frozen) = http_row("Base URL", model::BASE_URL, attached);
-    let (model_label, model_frozen) = http_row("Model", model::MODEL, attached);
-    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, attached);
+    let driving = crate::harness::driving();
+    let (base_url_label, base_url_frozen) = http_row("Base URL", model::BASE_URL, driving);
+    let (model_label, model_frozen) = http_row("Model", model::MODEL, driving);
+    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, driving);
     let (director_label, director_frozen) = switch_row("Director on", model::ENABLED);
     let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
 
@@ -524,22 +557,27 @@ fn director_sections() -> Vec<FormSection> {
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
 ///
-/// ponytail: AppKit draws all three rows; GTK and Win32 fill a `Popup` from
+/// ponytail: AppKit draws all three rows. GTK and Win32 fill a `Popup` from
 /// the Character list by id rather than from `options`, and neither fills an
 /// `InspectBlock` it does not name, so on those two the picker and the state
-/// line come up empty until each grows one arm. The command line row needs
-/// nothing on GTK, whose `TextField` arm is already generic. Deferred rather
-/// than written blind: neither renderer compiles on the machine this landed
-/// from. The file field is the setting either way, so a hand-edit works
-/// everywhere today.
+/// line come up empty until each grows one arm. GTK's `TextField` arm is
+/// generic, so the command line row works there as it stands. Win32's is not:
+/// its text-change handler commits the excluded-applications field alone and
+/// it never honours `frozen`, so this row is drawn editable and drops what is
+/// typed — as the wake interval and both Completer limits already do there.
+/// One generic commit handler fixes all four at once and belongs with #197,
+/// not written blind here: neither renderer compiles on the machine this
+/// landed from. The file field is the setting either way, so a hand-edit
+/// works everywhere today.
 fn completer_source_section() -> FormSection {
-    let (source_label, frozen) = env_row("Harness", crate::harness::VAR);
+    let (source_label, frozen) = harness_env_row("Harness");
     FormSection {
         heading: "Completer source".to_string(),
         comment: Some(
             "Director off runs on static weights. Director on with no Harness is the \
-             HTTP Completer above. Director on with a Harness makes that Harness the \
-             mind for every buddy, and the HTTP rows stop driving it."
+             HTTP Completer above. Director on with a Harness that answers makes \
+             that Harness the mind for every Instance, and the HTTP rows stop \
+             driving it."
                 .to_string(),
         ),
         rows: vec![
@@ -548,7 +586,9 @@ fn completer_source_section() -> FormSection {
                 label: Some(source_label),
                 writes: TextField::Harness,
                 help: Some(
-                    "Off leaves the HTTP Completer. A Harness takes over on the next launch."
+                    "Off leaves the HTTP Completer. Any change here — Off included — \
+                     takes effect on the next launch; the line below says what is \
+                     attached now."
                         .to_string(),
                 ),
                 options: harness_options(),
@@ -1699,22 +1739,38 @@ mod tests {
         });
     }
 
-    /// An attached Harness is the Completer (ADR-0008), so the three HTTP rows
-    /// drive nothing and say so. Asserted through the labels rather than a
-    /// live attachment: `harness::attached` is a process global one test may
-    /// not set for the whole binary.
+    /// A Harness that answers is the Completer (ADR-0008), so the three HTTP
+    /// rows drive nothing and say so — and a Harness that never started is
+    /// not one, because freezing them on it would leave no reachable
+    /// Completer at all (#452).
+    ///
+    /// Asserted through `http_row` rather than a live attachment:
+    /// `harness::driving` reads a process global one test may not set for the
+    /// whole binary.
     #[test]
-    fn an_attached_harness_takes_the_http_rows_out_of_use() {
-        for (label, frozen) in [
-            http_row("Base URL", crate::model::BASE_URL, true),
-            http_row("Model", crate::model::MODEL, true),
-            http_row("API key", crate::model::API_KEY, true),
-        ] {
-            assert!(frozen, "an attached Harness discards an edit here");
+    fn only_a_harness_that_answers_takes_the_http_rows_out_of_use() {
+        const ROWS: [(&str, &str); 3] = [
+            ("Base URL", crate::model::BASE_URL),
+            ("Model", crate::model::MODEL),
+            ("API key", crate::model::API_KEY),
+        ];
+        for (label, var) in ROWS {
+            let (label, frozen) = http_row(label, var, true);
+            assert!(frozen, "a driving Harness discards an edit here");
             assert!(
                 label.contains("not in use"),
                 "the row has to say why it is dead, not {label:?}"
             );
         }
+        crate::model::tests::with_env(None, None, None, || {
+            for (label, var) in ROWS {
+                let (label, frozen) = http_row(label, var, false);
+                assert!(
+                    !frozen,
+                    "with nothing driving, {label:?} is the only Completer left"
+                );
+                assert!(!label.contains("not in use"));
+            }
+        });
     }
 }
