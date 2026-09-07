@@ -707,15 +707,9 @@ mod tests {
         }
     }
 
-    fn test_roster_with_grounded_instance(
-        name: &str,
-        memory_path: &std::path::Path,
-    ) -> (crate::roster::Roster, String) {
+    fn test_roster_with_grounded_instance(name: &str) -> (crate::roster::Roster, String) {
         use crate::engine::Point;
-        use crate::memory::MemoryManifest;
-
-        let memory = MemoryManifest::new(memory_path.to_path_buf());
-        let mut roster = crate::roster::Roster::new(memory);
+        let mut roster = crate::roster::Roster::new();
         let character = test_character(name);
         let id = roster.spawn(&character, name.to_string(), Point { x: 100.0, y: 100.0 });
 
@@ -754,8 +748,7 @@ mod tests {
 
         let temp = TempDir::new("reuse-handle");
         let source = fake_source(vec![]);
-        let (roster, instance_id) =
-            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+        let (roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
         let shared = Rc::new(RefCell::new(roster));
         let roster_info = shared
@@ -802,8 +795,7 @@ mod tests {
     fn speak_with_one_instance_enqueues_dialogue_and_plays_talk() {
         let temp = TempDir::new("speak-expression");
         let source = fake_source(vec![]);
-        let (mut roster, instance_id) =
-            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+        let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
         let roster_info = roster
             .list()
@@ -841,8 +833,7 @@ mod tests {
     fn play_behavior_with_one_instance_delivers_the_proposal_to_the_engine() {
         let temp = TempDir::new("behavior-expression");
         let source = fake_source(vec![]);
-        let (mut roster, instance_id) =
-            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+        let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
         let roster_info = roster
             .list()
@@ -951,8 +942,7 @@ mod tests {
     fn an_undeclared_behavior_is_still_enqueued_and_the_engine_refuses() {
         let temp = TempDir::new("undeclared-behavior");
         let source = fake_source(vec![]);
-        let (mut roster, instance_id) =
-            test_roster_with_grounded_instance("TestBuddy", &temp.join("expression.md"));
+        let (mut roster, instance_id) = test_roster_with_grounded_instance("TestBuddy");
 
         let roster_info = roster
             .list()

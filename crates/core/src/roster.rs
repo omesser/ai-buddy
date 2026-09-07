@@ -5,9 +5,7 @@
 
 use crate::character::Character;
 use crate::engine::{BehaviorProposal, Engine, Frame, Point, WorldSnapshot};
-use crate::memory::MemoryManifest;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 /// A stable identifier for one Character Instance.
 ///
@@ -165,9 +163,9 @@ where
 }
 
 /// The roster of Character Instances.
+#[derive(Default)]
 pub struct Roster {
     instances: BTreeMap<InstanceId, Instance>,
-    memory: Arc<MemoryManifest>,
     /// Display names of installed Characters. A leftover default is a name
     /// that squashes to one of these and not to the Instance's current
     /// Character; without the catalog that leftover looks chosen. #375.
@@ -175,12 +173,8 @@ pub struct Roster {
 }
 
 impl Roster {
-    pub fn new(memory: MemoryManifest) -> Self {
-        Self {
-            instances: BTreeMap::new(),
-            memory: Arc::new(memory),
-            known_names: Vec::new(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Install the catalog `adopted_name` needs to see a leftover default.
@@ -255,11 +249,6 @@ impl Roster {
         self.instances.get(id)
     }
 
-    /// The shared Memory.
-    pub fn memory(&self) -> &Arc<MemoryManifest> {
-        &self.memory
-    }
-
     /// Switch one Instance's Character. False when the id is unknown.
     ///
     /// A lone Instance that never got a name of its own takes the new
@@ -320,7 +309,6 @@ mod tests {
         DEFAULT_MODEL_POWER, DEFAULT_WEIGHT,
     };
     use crate::engine::{Point, Rect, Verb};
-    use crate::memory::MemoryManifest;
     use std::collections::BTreeMap;
 
     /// A minimal test Character with the Required Animation Set.
@@ -399,8 +387,7 @@ mod tests {
 
     #[test]
     fn spawning_an_instance_records_the_given_name_and_a_stable_id() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-spawn.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let character = test_character("Blip");
 
         let id = roster.spawn(
@@ -419,8 +406,7 @@ mod tests {
 
     #[test]
     fn two_instances_of_the_same_character_play_different_behaviors_independently() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-independent.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let character = test_character("Blip");
 
         let id_a = roster.spawn(
@@ -491,8 +477,7 @@ mod tests {
 
     #[test]
     fn two_instances_are_independently_positionable() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-position.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let character = test_character("Blip");
 
         let id_a = roster.spawn(
@@ -533,8 +518,7 @@ mod tests {
 
     #[test]
     fn listing_returns_both_instances_and_dismissing_one_leaves_the_other() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-dismiss.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let character = test_character("Blip");
 
         let id_a = roster.spawn(
@@ -573,60 +557,6 @@ mod tests {
             0,
             "an empty list after dismissing both"
         );
-    }
-
-    #[test]
-    fn memory_is_shared_remember_via_one_instance_recall_from_the_roster() {
-        let temp_dir = std::env::temp_dir();
-        let memory_path = temp_dir.join(format!("test-shared-{}.md", std::process::id()));
-        let _ = std::fs::remove_file(&memory_path);
-
-        let memory = MemoryManifest::new(&memory_path);
-        let roster = Roster::new(memory);
-
-        roster
-            .memory()
-            .remember("Facts", "Oded's cat is called Simba")
-            .expect("remembering writes");
-
-        let recalled = roster.memory().recall().expect("recall reads");
-        assert!(
-            recalled.contains("Simba"),
-            "the fact is visible through the roster's Memory"
-        );
-
-        let _ = std::fs::remove_file(&memory_path);
-    }
-
-    #[test]
-    fn dismissing_an_instance_does_not_delete_memory() {
-        let temp_dir = std::env::temp_dir();
-        let memory_path = temp_dir.join(format!("test-dismiss-memory-{}.md", std::process::id()));
-        let _ = std::fs::remove_file(&memory_path);
-
-        let memory = MemoryManifest::new(&memory_path);
-        let mut roster = Roster::new(memory);
-        let character = test_character("Blip");
-
-        roster
-            .memory()
-            .remember("Facts", "Oded lives in Tel Aviv")
-            .expect("remembering writes");
-
-        let id = roster.spawn(
-            &character,
-            "Buddy".to_string(),
-            Point { x: 100.0, y: 100.0 },
-        );
-        roster.dismiss(&id);
-
-        let recalled = roster.memory().recall().expect("recall still works");
-        assert!(
-            recalled.contains("Tel Aviv"),
-            "Memory survives dismissing the Instance"
-        );
-
-        let _ = std::fs::remove_file(&memory_path);
     }
 
     /// The launch configuration is the only way to name Instances until #18's
@@ -729,8 +659,7 @@ mod tests {
     /// and the name stay, or settings would lose the buddy it just renamed.
     #[test]
     fn retargeting_keeps_the_instance_and_changes_the_character() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-retarget.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let first = test_character("bmo");
         let second = test_character("nim");
         let id = roster.spawn(&first, "Beemo".to_string(), Point { x: 10.0, y: 20.0 });
@@ -748,10 +677,9 @@ mod tests {
     /// when settings carry only the package.
     #[test]
     fn switching_renames_an_instance_that_still_wears_its_characters_name() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-follow.md"));
         let wolf = test_character("Timber Wolf");
 
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let id = roster.spawn(
             &test_character("BMO"),
             "BMO".to_string(),
@@ -764,8 +692,7 @@ mod tests {
             "the display name follows the Character"
         );
 
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-follow-id.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let id = roster.spawn(
             &test_character("BMO"),
             "bmo".to_string(),
@@ -782,8 +709,7 @@ mod tests {
     /// A name the user typed is the one thing the rule has to protect.
     #[test]
     fn switching_leaves_a_name_the_user_chose() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-keep-name.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let id = roster.spawn(
             &test_character("BMO"),
             "Pip".to_string(),
@@ -798,8 +724,7 @@ mod tests {
     /// one on a switch could hand it a name another already answers to.
     #[test]
     fn switching_renames_nothing_when_more_than_one_instance_runs() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-two-no-rename.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let bmo = test_character("BMO");
         let first = roster.spawn(&bmo, "BMO".to_string(), Point { x: 10.0, y: 20.0 });
         let second = roster.spawn(&bmo, "BMO".to_string(), Point { x: 40.0, y: 20.0 });
@@ -855,8 +780,7 @@ mod tests {
     /// leftover has to die here or every restart reprints `Timber Wolf as bmo`.
     #[test]
     fn spawning_a_lone_instance_drops_another_characters_default_name() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-spawn-foreign.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         roster.set_known_names(["BMO", "Timber Wolf"]);
         let id = roster.spawn(
             &test_character("Timber Wolf"),
@@ -871,8 +795,7 @@ mod tests {
     /// persist has mixed them.
     #[test]
     fn switching_renames_a_default_that_belongs_to_a_different_character() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-switch-foreign.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         roster.set_known_names(["BMO", "Timber Wolf", "Cat"]);
         let id = roster.spawn(
             &test_character("Timber Wolf"),
@@ -888,8 +811,7 @@ mod tests {
 
     #[test]
     fn renaming_changes_only_the_name() {
-        let memory = MemoryManifest::new(std::env::temp_dir().join("test-rename.md"));
-        let mut roster = Roster::new(memory);
+        let mut roster = Roster::new();
         let character = test_character("bmo");
         let id = roster.spawn(&character, "old".to_string(), Point { x: 0.0, y: 0.0 });
 
