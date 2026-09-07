@@ -312,7 +312,7 @@ pub fn config() -> DirectorConfig {
 /// Unset and empty used to be silent Static. The empty case is almost always
 /// a `$VAR` that expanded to nothing, which is a mistake, not a choice.
 pub fn startup_lines(config: &DirectorConfig) -> Vec<String> {
-    let mut lines = crate::harness::startup_lines();
+    let mut lines = crate::harness::startup_lines(config.enabled);
     if config.key_invalid {
         lines.push(format!(
             "director: warning: {API_KEY} is set but not a usable key; using StaticDirector"
