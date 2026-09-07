@@ -834,7 +834,7 @@ mod windows_job {
                 return Ok(child);
             }
 
-            if let Err(_) = resume_primary_thread(pid) {
+            if resume_primary_thread(pid).is_err() {
                 eprintln!("harness: ResumeThread failed for pid {pid}, process may be hung");
             }
 
@@ -874,7 +874,10 @@ mod windows_job {
 
     fn find_primary_thread(pid: u32) -> Result<u32, String> {
         use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
+            THREADENTRY32,
+        };
 
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
