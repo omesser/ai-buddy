@@ -47,6 +47,9 @@ serde_json = "1"
 # nothing more. tokio was already in the tree through Tauri. The frame loop
 # never sees a future (ADR-0004).
 agent-client-protocol = "2.1"
+# Log rotation for the Action Log: K=10 retention (10 rotated + 1 current),
+# 2 MB per file, ~22 MB ceiling. BytesSurpassed keeps JSONL lines whole.
+file-rotate = "0.8"
 tokio = {version = "1", features = ["rt", "sync", "macros"]}
 # How the SDK reads a child's pipes. Spawned by us rather than by the SDK's
 # `AcpAgent`, which has no working-directory knob, and ADR-0010 puts the
