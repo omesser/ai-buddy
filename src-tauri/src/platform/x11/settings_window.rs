@@ -502,7 +502,7 @@ impl SettingsWindow {
                                         if refreshing.get() || !radio.is_active() {
                                             return;
                                         }
-                                        let Some(url) = form::endpoint_choice(&title) else {
+                                        let Some(url) = form::endpoint_url(&title) else {
                                             return;
                                         };
                                         if let Some(Control::Entry(entry)) =

@@ -1165,13 +1165,15 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             ptr::null_mut(),
                                         );
                                         SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                        // The choices are drawn from here; the
-                                        // pick still writes nothing, for the
-                                        // same reason no popup here does until
-                                        // #461 maps a control back to its row.
+                                        // Left empty until #461 maps a control
+                                        // back to its row. Drawing the choices
+                                        // before the pick can commit would give
+                                        // Windows a live-looking picker that
+                                        // does nothing — the failure #465 set
+                                        // out to remove, not to add. #461.
                                         window.controls.borrow_mut().insert(
                                             id.clone(),
-                                            Control::ComboBox(hwnd, tab_index, options.clone()),
+                                            Control::ComboBox(hwnd, tab_index, Vec::new()),
                                         );
                                         x += combo_width + 8;
                                         control_id += 1;

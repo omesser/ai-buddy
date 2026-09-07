@@ -237,7 +237,7 @@ define_class!(
             };
             // Custom, and any title off the list, name no endpoint to write:
             // the field is what a custom endpoint is.
-            let Some(url) = form::endpoint_choice(&title.to_string()) else {
+            let Some(url) = form::endpoint_url(&title.to_string()) else {
                 return;
             };
             let Some(field) = self.ivars().base_url.borrow().clone() else {
@@ -1001,18 +1001,18 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         new_name_field = Some(field);
                                     }
                                 }
-                                CompositeControl::Popup {
-                                    id,
-                                    options,
-                                    frozen,
-                                } => {
-                                    // A composite popup that carries its own
-                                    // choices acts on them; one that does not
-                                    // is read by the button beside it, which
-                                    // is what `new_instance` does.
-                                    let pop = match options.is_empty() {
-                                        true => popup_plain(mtm),
-                                        false => popup(&controller, sel!(endpointPicked:), mtm),
+                                // The choices come from the form at refresh,
+                                // not from here, so `options` goes unread.
+                                CompositeControl::Popup { id, frozen, .. } => {
+                                    // Only the Base URL shortcut acts on its
+                                    // own pick. Every other composite popup is
+                                    // read by the button beside it on press,
+                                    // which is what `new_instance` does.
+                                    let pop = match id.as_str() {
+                                        form::DIRECTOR_BASE_URL_PICK_ID => {
+                                            popup(&controller, sel!(endpointPicked:), mtm)
+                                        }
+                                        _ => popup_plain(mtm),
                                     };
                                     pop.setEnabled(!frozen);
                                     pop.setFrame(NSRect::new(

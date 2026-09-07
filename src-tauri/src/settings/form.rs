@@ -318,14 +318,9 @@ pub const HARNESS_PRESETS: [&str; 3] = ["claude", "hermes", "opencode"];
 
 /// The endpoints the Base URL picker names, as (group, name, base URL).
 ///
-/// Every port here was read off the project's own current documentation
-/// rather than recalled (#465): Ollama's `docs.ollama.com` OpenAI-compatibility
-/// page, LM Studio's `lmstudio.ai/docs/app/api/endpoints/openai`, oMLX's
-/// README at `github.com/jundot/omlx`, llama.cpp's `tools/server/README.md`,
-/// `github.com/openai/openai-python`, `docs.anthropic.com/en/api/openai-sdk`,
-/// and `docs.x.ai`. Each is the host alone because `model::completions_url`
-/// adds `/v1` and the path, and each doc spells its base URL with the `/v1`
-/// this column drops.
+/// Every port was read off that project's own current documentation rather
+/// than recalled (#465). Each entry is the host alone because
+/// `model::completions_url` adds `/v1` and the path.
 ///
 /// Two local servers `docs/DEVELOPMENT.md` lists are deliberately absent: vLLM
 /// answers on oMLX's 8000 and `mlx_lm.server` on llama.cpp's 8080, so a row for
@@ -369,7 +364,7 @@ pub fn endpoint_options() -> Vec<String> {
 // AppKit and GTK spend a pick; Win32 draws the choices and commits none of
 // them yet, so the binary's dead-code lint sees no caller there.
 #[cfg_attr(target_os = "windows", allow(dead_code))]
-pub fn endpoint_choice(title: &str) -> Option<&'static str> {
+pub fn endpoint_url(title: &str) -> Option<&'static str> {
     ENDPOINTS
         .iter()
         .find(|(group, name, url)| endpoint_title_of(group, name, url) == title)
@@ -377,10 +372,10 @@ pub fn endpoint_choice(title: &str) -> Option<&'static str> {
 }
 
 /// The title to rest on for the base URL in force. The inverse of
-/// `endpoint_choice`, and Custom for the endpoints this list does not name —
+/// `endpoint_url`, and Custom for the endpoints this list does not name —
 /// which is most of what the field can hold.
 // Win32 selects from `SettingsView::popup_value`, which answers for no
-// composite control; the same dead-code note as `endpoint_choice`.
+// composite control; the same dead-code note as `endpoint_url`.
 #[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn endpoint_title(base_url: &str) -> String {
     let base_url = base_url.trim().trim_end_matches('/');
@@ -1825,13 +1820,13 @@ mod tests {
         }
     }
 
-    /// Every title the picker offers is one `endpoint_choice` can spend, and
+    /// Every title the picker offers is one `endpoint_url` can spend, and
     /// the value it names comes back as the title that was picked. Custom is
     /// the one that writes nothing, because the field is what Custom means.
     #[test]
     fn every_endpoint_title_comes_back_as_the_base_url_it_names() {
         for title in endpoint_options() {
-            match endpoint_choice(&title) {
+            match endpoint_url(&title) {
                 Some(url) => assert_eq!(endpoint_title(url), title),
                 None => assert_eq!(title, ENDPOINT_CUSTOM, "only Custom picks nothing"),
             }
