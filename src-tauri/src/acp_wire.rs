@@ -777,7 +777,7 @@ mod windows_job {
 
         let job = unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job == 0 || job == INVALID_HANDLE_VALUE {
+            if job.is_null() || job == INVALID_HANDLE_VALUE {
                 return spawn_fallback_no_job(command, "CreateJobObjectW failed");
             }
 
@@ -820,7 +820,7 @@ mod windows_job {
 
         unsafe {
             let process = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
-            if process == 0 || process == INVALID_HANDLE_VALUE {
+            if process.is_null() || process == INVALID_HANDLE_VALUE {
                 CloseHandle(job);
                 return Ok(child);
             }
@@ -857,7 +857,7 @@ mod windows_job {
         unsafe {
             let tid = find_primary_thread(pid)?;
             let thread = OpenThread(THREAD_SUSPEND_RESUME, 0, tid);
-            if thread == 0 || thread == INVALID_HANDLE_VALUE {
+            if thread.is_null() || thread == INVALID_HANDLE_VALUE {
                 return Err("OpenThread failed".to_string());
             }
 
@@ -874,10 +874,7 @@ mod windows_job {
 
     fn find_primary_thread(pid: u32) -> Result<u32, String> {
         use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
-            THREADENTRY32,
-        };
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32};
 
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -885,22 +882,22 @@ mod windows_job {
                 return Err("CreateToolhelp32Snapshot failed".to_string());
             }
 
-            let mut te: THREADENTRY32 = std::mem::zeroed();
-            te.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+            let mut entry: THREADENTRY32 = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
 
-            if Thread32First(snapshot, &mut te) == 0 {
+            if Thread32First(snapshot, &mut entry) == 0 {
                 CloseHandle(snapshot);
                 return Err("Thread32First failed".to_string());
             }
 
             loop {
-                if te.th32OwnerProcessID == pid {
-                    let tid = te.th32ThreadID;
+                if entry.th32OwnerProcessID == pid {
+                    let tid = entry.th32ThreadID;
                     CloseHandle(snapshot);
                     return Ok(tid);
                 }
 
-                if Thread32Next(snapshot, &mut te) == 0 {
+                if Thread32Next(snapshot, &mut entry) == 0 {
                     break;
                 }
             }
