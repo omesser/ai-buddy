@@ -348,32 +348,6 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_speak_returns_speak_result() {
-        let temp = TempDir::new("speak");
-        let source = fake_source(vec![]);
-        let mut context = test_context(&temp, &source, &[]);
-
-        let args = json!({"message": "Hello, world"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
-
-        assert_eq!(result["success"], true);
-        assert_eq!(result["message"], "Hello, world");
-    }
-
-    #[test]
-    fn dispatch_play_behavior_returns_play_behavior_result() {
-        let temp = TempDir::new("play");
-        let source = fake_source(vec![]);
-        let mut context = test_context(&temp, &source, &[]);
-
-        let args = json!({"behavior": "wave"});
-        let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
-
-        assert_eq!(result["success"], true);
-        assert_eq!(result["behavior"], "wave");
-    }
-
-    #[test]
     fn dispatch_list_windows_returns_list_windows_result() {
         let temp = TempDir::new("list-windows");
         let source = fake_source(vec![window("Terminal", 10.0, 20.0, 800.0, 600.0)]);
@@ -887,6 +861,10 @@ mod tests {
 
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "Hello");
+        assert_eq!(
+            result["reason"],
+            "Several Character Instances are running; name one with instance_id"
+        );
     }
 
     #[test]
@@ -904,19 +882,37 @@ mod tests {
 
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "Hello");
+        assert_eq!(
+            result["reason"],
+            "No Character Instance has id unknown-instance"
+        );
     }
 
+    /// Break: an Expression that reaches no Instance reports success again, or
+    /// stops saying why. It used to report plain success, which is how every
+    /// stdio verification before #491 passed against nothing at all. #502.
     #[test]
-    fn empty_roster_without_a_handle_keeps_the_stub_success_shape() {
+    fn an_empty_roster_fails_and_says_no_instance_is_running() {
         let temp = TempDir::new("empty-roster");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"message": "Hello, world"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+        let spoke = dispatch("speak", args, &mut context).expect("dispatch succeeds");
 
-        assert_eq!(result["success"], true);
-        assert_eq!(result["message"], "Hello, world");
+        assert_eq!(spoke["success"], false);
+        assert_eq!(spoke["message"], "Hello, world");
+        assert_eq!(
+            spoke["reason"],
+            "No Character Instance is running, so nothing changed on screen"
+        );
+
+        let args = json!({"behavior": "wave"});
+        let played = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(played["success"], false);
+        assert_eq!(played["behavior"], "wave");
+        assert_eq!(played["reason"], spoke["reason"]);
     }
 
     /// Break: empty message / empty behavior start reporting success, or become DispatchError.
@@ -930,12 +926,76 @@ mod tests {
         let speak_result = dispatch("speak", speak_args, &mut context).expect("dispatch succeeds");
         assert_eq!(speak_result["success"], false);
         assert_eq!(speak_result["message"], "");
+        assert_eq!(speak_result["reason"], "The message is empty");
 
         let behavior_args = json!({"behavior": ""});
         let behavior_result =
             dispatch("play_behavior", behavior_args, &mut context).expect("dispatch succeeds");
         assert_eq!(behavior_result["success"], false);
         assert_eq!(behavior_result["behavior"], "");
+        assert_eq!(behavior_result["reason"], "The behavior name is empty");
+    }
+
+    /// Break: a context with no handle reports success again. The stdio path
+    /// runs this way, so a roster it learns to populate must not be enough on
+    /// its own to make the answer say the Expression landed. #502.
+    #[test]
+    fn a_roster_without_a_handle_fails_and_says_there_is_no_connection() {
+        let temp = TempDir::new("no-handle");
+        let source = fake_source(vec![]);
+        let infos = [InstanceInfo {
+            id: "instance-1".to_string(),
+            name: "Buddy".to_string(),
+        }];
+        // `test_context` carries `expression: None`, which is the shipped
+        // stdio shape.
+        let mut context = test_context(&temp, &source, &infos);
+
+        let spoke = dispatch("speak", json!({"message": "Hello"}), &mut context)
+            .expect("dispatch succeeds");
+        assert_eq!(spoke["success"], false);
+        assert_eq!(
+            spoke["reason"],
+            "No live connection to the running app, so nothing changed on screen"
+        );
+
+        let played = dispatch("play_behavior", json!({"behavior": "wave"}), &mut context)
+            .expect("dispatch succeeds");
+        assert_eq!(played["success"], false);
+        assert_eq!(played["reason"], spoke["reason"]);
+    }
+
+    /// Break: a stale roster entry reports success again. The roster a caller
+    /// resolves against is a snapshot, so the Instance it names can retire
+    /// before the enqueue — the same nothing-happened the empty roster is. #502.
+    #[test]
+    fn a_retired_instance_fails_and_says_it_is_no_longer_running() {
+        let temp = TempDir::new("retired-instance");
+        let source = fake_source(vec![]);
+
+        // The snapshot still names an Instance the live Roster no longer holds.
+        let roster_info = [InstanceInfo {
+            id: "retired-instance".to_string(),
+            name: "Gone".to_string(),
+        }];
+        let mut live = crate::roster::Roster::new();
+
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut live),
+        };
+
+        let result = dispatch("speak", json!({"message": "Hello"}), &mut context)
+            .expect("dispatch succeeds");
+
+        assert_eq!(result["success"], false);
+        assert_eq!(
+            result["reason"],
+            "Character Instance retired-instance is no longer running, so nothing changed on screen"
+        );
     }
 
     #[test]
