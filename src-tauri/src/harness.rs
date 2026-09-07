@@ -1537,7 +1537,18 @@ mod tests {
         crate::acp_wire::kill_harness_tree(child.id());
         let _ = child.kill();
         let _ = child.wait();
-        let lingering: Vec<_> = members.into_iter().filter(|&pid| alive(pid)).collect();
+        let until = Instant::now() + Duration::from_millis(500);
+        let lingering = loop {
+            let still: Vec<_> = members
+                .iter()
+                .copied()
+                .filter(|&pid| still_running(pid))
+                .collect();
+            if still.is_empty() || Instant::now() >= until {
+                break still;
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
         assert!(
             lingering.is_empty(),
             "grandchildren survived a direct kill: {lingering:?}"
@@ -1553,6 +1564,28 @@ mod tests {
     #[cfg(unix)]
     fn alive(pid: u32) -> bool {
         unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    /// `kill(pid, 0)` is true for a zombie. SIGKILL'd grandchildren show up
+    /// that way until init reaps them; they are not still running.
+    #[cfg(unix)]
+    fn still_running(pid: u32) -> bool {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .ok();
+        let Some(output) = output else {
+            return false;
+        };
+        if !output.status.success() {
+            return false;
+        }
+        matches!(
+            String::from_utf8_lossy(&output.stdout)
+                .chars()
+                .find(|c| !c.is_whitespace()),
+            Some(c) if c != 'Z'
+        )
     }
 
     #[cfg(unix)]
