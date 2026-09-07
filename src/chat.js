@@ -310,13 +310,8 @@ promptConfirm.addEventListener("click", () => {
       savedPrompt = promptText.value.trim();
       promptText.value = savedPrompt;
       promptSaid.textContent = "Saved.";
-      // The rows above belong to a session the Completer no longer holds, and
-      // any caret among them is waiting on an answer that was just dropped.
-      for (const turn of waiting.splice(0)) {
-        turn.you.remove();
-        turn.them.remove();
-      }
-      note("New conversation from here. The next line is the first of it.");
+      // The log is cleared by `chat-session`: saving reopens the session, and
+      // that event is the one place a replacement is drawn (#476, ADR-0012).
     })
     .catch((why) => {
       promptSaid.textContent = String(why);

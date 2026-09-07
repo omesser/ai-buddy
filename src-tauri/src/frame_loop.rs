@@ -592,10 +592,14 @@ pub(crate) fn run_frame_loop(
                             );
                         }
 
-                        // The held turns are the session that is gone, and a
-                        // window opening later would otherwise replay a
-                        // conversation the Completer no longer holds (#476).
-                        session_log::forget(&app, &written.instance);
+                        // Same session replacement a Character switch uses:
+                        // the held turns go, the open surface is told, and
+                        // the Action Log keeps the boundary (#476, ADR-0012).
+                        session_log::new_session(
+                            &app,
+                            &written.instance,
+                            "the Instance Prompt changed",
+                        );
                         // A prompt layer changing is exactly what a user needs
                         // to find later. `chars` rather than the body, as the
                         // `prompt` event already does (#435).
