@@ -552,6 +552,18 @@ fn set_window_text(hwnd: HWND, text: &str) {
     }
 }
 
+/// Build an Edit control's style flags from frozen and password flags.
+fn edit_style(frozen: bool, password: bool) -> u32 {
+    let mut style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER;
+    if frozen {
+        style |= ES_READONLY as u32;
+    }
+    if password {
+        style |= ES_PASSWORD as u32;
+    }
+    style
+}
+
 pub fn show(session: SettingsSession) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{BringWindowToTop, SetForegroundWindow};
 
@@ -848,16 +860,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
-                            let style = if *frozen {
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_READONLY as u32
-                            } else {
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER
-                            };
                             let hwnd = CreateWindowExA(
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
-                                style,
+                                edit_style(*frozen, false),
                                 display_left,
                                 y,
                                 FIELD_WIDTH,
@@ -907,21 +914,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
-                            let style = if *frozen {
-                                WS_CHILD
-                                    | WS_VISIBLE
-                                    | WS_TABSTOP
-                                    | WS_BORDER
-                                    | ES_PASSWORD as u32
-                                    | ES_READONLY as u32
-                            } else {
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_PASSWORD as u32
-                            };
                             let hwnd = CreateWindowExA(
                                 WS_EX_CLIENTEDGE,
                                 c"EDIT".as_ptr() as *const u8,
                                 ptr::null(),
-                                style,
+                                edit_style(*frozen, true),
                                 display_left,
                                 y,
                                 FIELD_WIDTH,
@@ -1472,28 +1469,32 @@ mod tests {
         );
     }
 
-    /// Frozen rows need ES_READONLY so they cannot be edited.
+    /// edit_style builds the correct flags for frozen and password controls.
     #[test]
-    fn readonly_style_for_frozen_text_field() {
-        let description = form::describe();
+    fn edit_style_sets_readonly_and_password_flags() {
+        let editable_plain = edit_style(false, false);
+        let frozen_plain = edit_style(true, false);
+        let frozen_password = edit_style(true, true);
 
-        // Wake interval is not frozen by default
-        assert!(
-            !description.frozen(form::DIRECTOR_WAKE_SECS_ID),
-            "wake interval is editable when no env variable owns it"
+        assert_eq!(
+            editable_plain & ES_READONLY as u32,
+            0,
+            "editable field must not have ES_READONLY"
         );
-
-        // A frozen field needs ES_READONLY
-        let frozen_style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_READONLY as u32;
-        let editable_style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER;
-
         assert_ne!(
-            frozen_style, editable_style,
-            "frozen style must include ES_READONLY"
+            frozen_plain & ES_READONLY as u32,
+            0,
+            "frozen field must have ES_READONLY"
         );
-        assert!(
-            frozen_style & ES_READONLY as u32 != 0,
-            "frozen style must have ES_READONLY bit set"
+        assert_ne!(
+            frozen_password & ES_READONLY as u32,
+            0,
+            "frozen password field must have ES_READONLY"
+        );
+        assert_ne!(
+            frozen_password & ES_PASSWORD as u32,
+            0,
+            "password field must have ES_PASSWORD"
         );
     }
 
