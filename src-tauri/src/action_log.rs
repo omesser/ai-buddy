@@ -23,8 +23,9 @@
 //! the buddy after the fact and must never block a Director turn. Rate-limited
 //! error reporting (max once per 60s) warns operators without log storms.
 //!
-//! **Single-writer assumption**: file-rotate and this module assume no other
-//! process writes to these log files.
+//! **Thread-safety**: Harness appends from multiple threads (wire events, turn/complete,
+//! spawn_preflight). One long-lived `FileRotate` per data-dir is cached behind a `Mutex`;
+//! all writes go through that locked handle to avoid races during rotation.
 //!
 //! ## Crate choice
 //!
@@ -33,9 +34,10 @@
 //! before writing; using serde_json's Display impl directly (`writeln!("{}", value)`)
 //! can trigger buffering issues that cause splits even with BytesSurpassed.
 
+use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use file_rotate::compression::Compression;
@@ -61,11 +63,26 @@ const ERROR_REPORT_INTERVAL_SECS: u64 = 60;
 /// Rate-limited error state: last error timestamp and consecutive failure count.
 static ERROR_STATE: Mutex<Option<(u64, u64)>> = Mutex::new(None);
 
+/// Type alias for the cached FileRotate handle.
+type RotatorHandle = Arc<Mutex<FileRotate<AppendCount>>>;
+
+/// Cached FileRotate instances, one per data directory.
+///
+/// FileRotate is designed to be long-lived and reused. We cache one instance
+/// per directory path and all writes go through it. This avoids races when
+/// multiple threads call append concurrently: concurrent FileRotate::new +
+/// rotate would race the rename cascade.
+static ROTATORS: OnceLock<Mutex<HashMap<PathBuf, RotatorHandle>>> = OnceLock::new();
+
 /// Write one event. `fields` is an object; `event` and `ts` are added to it.
 ///
 /// A write that fails is dropped: the log explains the buddy after the fact
 /// and must never be the reason a turn does not happen. Rotation is handled
 /// automatically by file-rotate when the size limit is surpassed.
+///
+/// Thread-safe: Harness appends from multiple threads (wire events, turn/complete,
+/// spawn_preflight). All writes go through one long-lived FileRotate per data-dir
+/// to avoid races during rotation.
 ///
 /// ponytail: seconds since the epoch, as `memory.rs` does, so no date crate.
 pub fn append(dir: &Path, event: &str, mut fields: Value) {
@@ -88,17 +105,32 @@ pub fn append(dir: &Path, event: &str, mut fields: Value) {
         }
     };
 
-    // Create FileRotate for this write. File-rotate manages rotation state
-    // internally and is safe to recreate per-write.
-    let mut rotator = FileRotate::new(
-        &log_path,
-        AppendCount::new(RETENTION_COUNT),
-        ContentLimit::BytesSurpassed(MAX_SIZE_BYTES),
-        Compression::None,
-        None, // Let file-rotate manage file opening
-    );
+    // Get or create the cached FileRotate instance for this directory
+    let rotators = ROTATORS.get_or_init(|| Mutex::new(HashMap::new()));
+    let rotator_arc = {
+        let mut rotators_map = rotators.lock().unwrap();
+        rotators_map
+            .entry(dir.to_path_buf())
+            .or_insert_with(|| {
+                // BytesSurpassed rotates after a write that pushes past the limit,
+                // keeping JSONL lines whole. Bytes(n) can split mid-write.
+                // FileRotate::new creates parent directories if needed; since the
+                // data-dir always exists when append is called, this won't fail.
+                let rotator = FileRotate::new(
+                    &log_path,
+                    AppendCount::new(RETENTION_COUNT),
+                    ContentLimit::BytesSurpassed(MAX_SIZE_BYTES),
+                    Compression::None,
+                    None, // Let file-rotate manage file opening
+                );
+                Arc::new(Mutex::new(rotator))
+            })
+            .clone()
+    };
+    // rotators_map lock is dropped here, allowing other threads to access the map
 
-    // Write the pre-formatted line
+    // Write through the cached rotator (lock held only for write+flush)
+    let mut rotator = rotator_arc.lock().unwrap();
     if let Err(e) = writeln!(rotator, "{}", line) {
         report_error(&format!("action_log: failed to write event: {e}"));
         return;
@@ -322,12 +354,14 @@ mod tests {
         }
 
         // BytesSurpassed rotates after a write that pushes past the limit,
-        // so each file can be slightly over MAX_SIZE_BYTES. Allow 2× per file.
-        let bound = ((RETENTION_COUNT + 1) as u64) * (MAX_SIZE_BYTES as u64) * 2;
+        // so each file can be at most MAX_SIZE_BYTES + one max line.
+        // One max line is ~200 chars data + JSON overhead ≈ 250 bytes.
+        // Headroom: (K+1) * MAX_SIZE + (K+1) * 250 bytes
+        let headroom_per_file = 250;
+        let bound = ((RETENTION_COUNT + 1) as u64) * ((MAX_SIZE_BYTES as u64) + headroom_per_file);
         assert!(
             total_size <= bound,
-            "total disk footprint {total_size} bytes is within ~{}×MAX_SIZE_BYTES bound ({bound} bytes)",
-            RETENTION_COUNT + 1
+            "total disk footprint {total_size} bytes is within ~(K+1)*MAX_SIZE+headroom bound ({bound} bytes)"
         );
     }
 }
