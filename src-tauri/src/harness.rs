@@ -463,7 +463,11 @@ pub fn run_probe() -> i32 {
     };
     let session = Session::new(
         launch,
-        ai_buddy_core::memory::data_dir(),
+        // The probe's own folder under the app's. An attach saves a session id
+        // and appends to an Action Log, and a probe is still the way to reach a
+        // Harness that resumes badly (#448) — so it keeps both, and a run
+        // cannot leave a real install resuming what the probe just used.
+        ai_buddy_core::memory::data_dir().join("probe"),
         // Named, never answered: only a click on the Chat surface may answer a
         // permission request (ADR-0017), and the probe has no surface. The ask
         // then times out with the turn, which is itself the report.
