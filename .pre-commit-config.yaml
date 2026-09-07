@@ -61,6 +61,23 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
+    # PowerShell linting
+  - repo: local
+    hooks:
+      - id: check-powershell-ascii
+        name: PowerShell ASCII-only
+        entry: scripts/hooks/check-powershell-ascii.sh
+        language: system
+        files: \.ps1$
+        description: Reject non-ASCII bytes in PowerShell scripts to prevent encoding issues
+
+      - id: check-powershell-parse
+        name: PowerShell parse check
+        entry: scripts/hooks/check-powershell-parse.sh
+        language: system
+        files: \.ps1$
+        description: Validate PowerShell syntax using Parser::ParseFile (requires pwsh)
+
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
     hooks:
