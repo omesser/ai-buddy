@@ -98,7 +98,7 @@ pub const REQUIRED_ANIMATIONS: [&str; 9] = [
 /// The prompt is untrusted text that goes into every Character Prompt the
 /// Director sends, so an unbounded one spends a user's tokens and buries the
 /// sensing context under prose. Generous enough for a paragraph of personality.
-pub const PERSONALITY_LIMIT: usize = 2000;
+pub(crate) const PERSONALITY_LIMIT: usize = 2000;
 
 /// How large a Character Manifest may be, in bytes.
 ///
@@ -107,13 +107,13 @@ pub const PERSONALITY_LIMIT: usize = 2000;
 /// when it is malformed, so a manifest of junk lines that compresses to
 /// kilobytes in the archive spends gigabytes being rejected. Generous for a
 /// file that is one short line per Animation and Behavior.
-pub const MANIFEST_LIMIT: usize = 1024 * 1024;
+pub(crate) const MANIFEST_LIMIT: usize = 1024 * 1024;
 
 /// Frames per second an Animation plays at when it does not say.
 ///
 /// Eight is the cadence the Engine already runs every Animation at, so a
 /// package that declares no fps looks exactly as it did before fps existed.
-pub const DEFAULT_FPS: u32 = 8;
+pub(crate) const DEFAULT_FPS: u32 = 8;
 
 /// How likely a Behavior, or a member of a variant ring, is to be picked when
 /// it does not say.
@@ -126,13 +126,13 @@ pub const DEFAULT_FPS: u32 = 8;
 /// default of one the default is also the floor, and making a single member
 /// rarer than its siblings means raising every other member to say it. At ten,
 /// `weight = 5` is half as often and nothing else in the ring moves.
-pub const DEFAULT_WEIGHT: u32 = 10;
+pub(crate) const DEFAULT_WEIGHT: u32 = 10;
 
 /// The scale the renderer uses when a Character does not say.
 ///
 /// Four is what the shipped pixel-art Characters have always been drawn at;
 /// a package written before `scale` existed renders exactly as it did.
-pub const DEFAULT_SCALE: u32 = 4;
+pub(crate) const DEFAULT_SCALE: u32 = 4;
 
 /// How proactive model-call waits grow when no one addresses the buddy.
 ///
@@ -146,7 +146,7 @@ pub const DEFAULT_MODEL_POWER: u32 = 1;
 ///
 /// ADR-0006 constrains display scaling to small integer factors; art wanting
 /// to be bigger on screen should be authored bigger instead.
-pub const MAX_SCALE: u32 = 4;
+pub(crate) const MAX_SCALE: u32 = 4;
 
 /// The largest either side of a frame may be, in pixels.
 ///
@@ -155,7 +155,7 @@ pub const MAX_SCALE: u32 = 4;
 /// to allocate forty gigabytes for one sprite. A desktop mascot is a couple of
 /// hundred pixels tall, so 1024 is generous even for art drawn at twice the
 /// size of a Retina display.
-pub const MAX_FRAME_SIDE: u32 = 1024;
+pub(crate) const MAX_FRAME_SIDE: u32 = 1024;
 
 /// The most frames an Animation may declare.
 ///
@@ -163,7 +163,7 @@ pub const MAX_FRAME_SIDE: u32 = 1024;
 /// bytes of manifest and buys a whole copy of the art in the renderer, so a
 /// manifest that fits the package budget can still name one frame often enough
 /// to ask for terabytes. A hand-drawn Animation is a handful of frames.
-pub const MAX_FRAMES: usize = 256;
+pub(crate) const MAX_FRAMES: usize = 256;
 
 /// The most pixels all of a Character's distinct frames may add up to.
 ///
@@ -173,12 +173,13 @@ pub const MAX_FRAMES: usize = 256;
 /// is loaded, so four thousand full-size frames are twenty-five megabytes of
 /// package and four gigabytes of mask. This is 256 frames at the largest size a
 /// frame may be.
-pub const MAX_CHARACTER_PIXELS: u64 = 256 * (MAX_FRAME_SIDE as u64) * (MAX_FRAME_SIDE as u64);
+pub(crate) const MAX_CHARACTER_PIXELS: u64 =
+    256 * (MAX_FRAME_SIDE as u64) * (MAX_FRAME_SIDE as u64);
 
 /// The fastest an Animation may declare. Past display refresh the extra frames
 /// are never seen, and a four-figure fps is either a mistake or an attempt to
 /// make the renderer thrash.
-pub const MAX_FPS: u32 = 60;
+pub(crate) const MAX_FPS: u32 = 60;
 
 /// Alpha at or above this counts as drawn, when a frame's mask is built.
 ///
