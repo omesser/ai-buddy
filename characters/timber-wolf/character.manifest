@@ -82,10 +82,10 @@ fps = 4
 
 # Garrison point-scan: a body-yaw vigil (turn L, front-stand hold, turn R, loop).
 # Animation key stays `sleep` (required by the engine), but content is this
-# 196-frame patrol: 93 turn_l + 10 stand + 93 turn_r. Distinct from idle
-# variant `scan` (TAC laser). Bookends/stand are path front_stand (p-0028),
-# not pack idle — junctions pixel-identical; near-front densified (plant fills +
-# p-0027↔p-0028 inbetweens) so approach/departure into stand eases.
+# 220-frame patrol: 105 turn_l + 10 stand + 105 turn_r. Distinct from idle
+# variant `scan` (TAC laser). Bookends/stand are path front_stand (p-0028).
+# Classic plant (p-0028..p-0024) densified with SDF ibs; turn_r near-front uses
+# foot-first hybrid so stepping foot moves before torso yaw.
 [animations.sleep]
 frames = [
   "frames/garrison-turn_l-000.png",
@@ -181,6 +181,18 @@ frames = [
   "frames/garrison-turn_l-090.png",
   "frames/garrison-turn_l-091.png",
   "frames/garrison-turn_l-092.png",
+  "frames/garrison-turn_l-093.png",
+  "frames/garrison-turn_l-094.png",
+  "frames/garrison-turn_l-095.png",
+  "frames/garrison-turn_l-096.png",
+  "frames/garrison-turn_l-097.png",
+  "frames/garrison-turn_l-098.png",
+  "frames/garrison-turn_l-099.png",
+  "frames/garrison-turn_l-100.png",
+  "frames/garrison-turn_l-101.png",
+  "frames/garrison-turn_l-102.png",
+  "frames/garrison-turn_l-103.png",
+  "frames/garrison-turn_l-104.png",
   "frames/garrison-stand-000.png",
   "frames/garrison-stand-001.png",
   "frames/garrison-stand-002.png",
@@ -284,6 +296,18 @@ frames = [
   "frames/garrison-turn_r-090.png",
   "frames/garrison-turn_r-091.png",
   "frames/garrison-turn_r-092.png",
+  "frames/garrison-turn_r-093.png",
+  "frames/garrison-turn_r-094.png",
+  "frames/garrison-turn_r-095.png",
+  "frames/garrison-turn_r-096.png",
+  "frames/garrison-turn_r-097.png",
+  "frames/garrison-turn_r-098.png",
+  "frames/garrison-turn_r-099.png",
+  "frames/garrison-turn_r-100.png",
+  "frames/garrison-turn_r-101.png",
+  "frames/garrison-turn_r-102.png",
+  "frames/garrison-turn_r-103.png",
+  "frames/garrison-turn_r-104.png",
 ]
 fps = 8
 
