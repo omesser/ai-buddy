@@ -1785,6 +1785,12 @@ fn main() {
         std::process::exit(model::run_probe());
     }
 
+    // The same, one hop further out: the Harness attached and one turn run.
+    // scripts/probe-harness.sh is the face of this.
+    if std::env::args().any(|arg| arg == "--probe-harness") {
+        std::process::exit(harness::run_probe());
+    }
+
     // Before the builder, because the builder is where GTK initializes and GDK
     // reads GDK_BACKEND once, when it opens the display. A no-op off Linux.
     platform::prefer_x11_backend();

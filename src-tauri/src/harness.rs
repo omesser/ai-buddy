@@ -433,6 +433,126 @@ impl Completer for Session {
     }
 }
 
+/// The one prompt the probe sends.
+///
+/// Shaped like the last line of a Character Prompt — a Behavior name, a bar,
+/// then dialogue — because whether a real Harness's reply comes back in that
+/// shape is the fact the probe exists to report. Asked for explicitly rather
+/// than left to the Harness's own idea of a good answer, so a reply that does
+/// not parse is the Harness's doing and not the prompt's.
+const PROBE_PROMPT: &str =
+    "Reply with exactly this one line and nothing else: Wave | Hello from the probe.";
+
+/// Attach the configured Harness and run one turn, with no overlay.
+///
+/// `scripts/probe-harness.sh` is the face of this and `model::run_probe` is
+/// the sibling it is shaped after: same env as `cargo run`, no window, an
+/// exit code a script can read. 2 is nothing configured, 1 is a turn that did
+/// not finish, 0 is `end_turn`.
+///
+/// No credential is read, printed or set. A Harness that is not signed in
+/// comes back as the command the user runs in their own terminal, which is
+/// ADR-0010's rule and the whole of what the probe does about it.
+pub fn run_probe() -> i32 {
+    // No settings file on this path, and `dev_flags::seed` is where the
+    // exported timeout is read (#273).
+    crate::dev_flags::seed(&crate::settings::Settings::default());
+    let Some(launch) = from_env() else {
+        eprintln!("probe-harness: {VAR} is unset, so there is no Harness to attach");
+        return 2;
+    };
+    let session = Session::new(
+        launch,
+        ai_buddy_core::memory::data_dir(),
+        // Named, never answered: only a click on the Chat surface may answer a
+        // permission request (ADR-0017), and the probe has no surface. The ask
+        // then times out with the turn, which is itself the report.
+        Box::new(|ask| println!("  permission   {} [{}]", ask.title, ask.request)),
+    );
+    let code = probe(&session);
+    session.shutdown();
+    code
+}
+
+/// `run_probe` minus the environment, so the fake agent can run the whole of
+/// it in a test.
+fn probe(session: &Session) -> i32 {
+    println!("probe-harness");
+    println!("  harness      {}", session.launch.name);
+    println!("  command      {}", session.launch.line());
+    println!("  dir          {}", session.dir.display());
+    println!(
+        "  mcp          {}",
+        mcp_server().map_or_else(|| "none".to_string(), |path| path.display().to_string())
+    );
+    println!(
+        "  timeout      turn {}s, attach {}s",
+        session.timeout.as_secs(),
+        session.attach_timeout().as_secs()
+    );
+    println!();
+
+    println!("attach");
+    let session_id = match session.attach() {
+        Ok((_, id)) => id,
+        Err(why) => {
+            println!("  {why}");
+            return 1;
+        }
+    };
+    let handshake = session
+        .state
+        .lock()
+        .map(|state| state.handshake.clone())
+        .unwrap_or_default();
+    let methods: Vec<&str> = handshake
+        .auth_methods
+        .iter()
+        .map(|method| method.name.as_str())
+        .collect();
+    println!(
+        "  agent        {}",
+        handshake.agent.as_deref().unwrap_or("unnamed")
+    );
+    println!("  loadSession  {}", handshake.load_session);
+    println!("  mcp http     {}", handshake.mcp_http);
+    println!(
+        "  authMethods  {}",
+        if methods.is_empty() {
+            "none".to_string()
+        } else {
+            methods.join(", ")
+        }
+    );
+    println!("  session      {session_id}");
+    println!();
+
+    println!("turn");
+    println!("  prompt       {PROBE_PROMPT}");
+    match session.turn(PROBE_PROMPT) {
+        Ok(text) => {
+            println!("  stop         end_turn");
+            println!("  reply        {text}");
+            // Reported, not part of the verdict: whether a model obeys a
+            // one-line format is the Director's problem, and a turn that
+            // reached `end_turn` proved the wire either way.
+            match ai_buddy_core::director::parse_proposal(&text) {
+                Ok(proposal) => println!(
+                    "  proposal     {} | {}",
+                    proposal.behavior,
+                    proposal.dialogue.as_deref().unwrap_or("(no dialogue)")
+                ),
+                Err(_) => println!("  proposal     no, the first line is not a Behavior name"),
+            }
+            0
+        }
+        Err(why) => {
+            println!("  {why}");
+            1
+        }
+    }
+}
+
 /// What the session stream said, into the Action Log — and, for a permission
 /// request, on to the Chat surface. Runs on the wire thread.
 fn note_event(dir: &Path, forward: &Forward, event: Event) {
@@ -1011,6 +1131,19 @@ mod tests {
         thread::sleep(Duration::from_millis(300));
         assert_eq!(session.complete("again"), Err("harness busy".to_string()));
         let _ = worker.join();
+        session.shutdown();
+    }
+
+    /// The probe's verdict is the turn's: `end_turn` is 0 and a stop reason
+    /// that is not one is non-zero, whatever the reply text turns out to be.
+    #[test]
+    fn the_probe_exits_zero_on_a_turn_and_non_zero_on_a_refusal() {
+        let (_fx, session) = Fixture::new("happy");
+        assert_eq!(probe(&session), 0);
+        session.shutdown();
+
+        let (_fx, session) = Fixture::new("refusal");
+        assert_eq!(probe(&session), 1);
         session.shutdown();
     }
 
