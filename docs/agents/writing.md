@@ -103,8 +103,12 @@ End every issue comment, pull request description, review and inline reply an
 agent writes with one line of its own:
 
 ```
-_— Cursor agent, on @omesser's behalf._
+_— Cursor agent (<AgentName>), on [@omesser](https://github.com/omesser)'s behalf._
 ```
+
+`<AgentName>` is this agent's profile name (Architect, Coder, …). This applies
+to every issue, PR body, review, comment, and gist on any GitHub repository when
+writing through Oded's account.
 
 When an agent writes through an owner's account, the author name never says
 who wrote a comment. A reader following a back-and-forth needs that: which line
