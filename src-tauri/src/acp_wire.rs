@@ -761,7 +761,7 @@ mod windows_job {
     /// Job Objects by child PID. Wrapped in SafeHandle for Send safety.
     static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);
 
-    /// CreateJobObjectA binding - windows-sys 0.59 doesn't export this directly.
+    // CreateJobObjectA binding - windows-sys 0.59 doesn't export this directly.
     extern "system" {
         fn CreateJobObjectA(lpJobAttributes: *const std::ffi::c_void, lpName: *const u8) -> HANDLE;
     }
