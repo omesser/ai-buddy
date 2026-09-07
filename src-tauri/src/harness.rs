@@ -15,7 +15,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -47,6 +48,12 @@ const AUTH_RETRY: Duration = Duration::from_secs(60);
 /// minutes, not a loop.
 const BACKOFF_FIRST: Duration = Duration::from_secs(5);
 const BACKOFF_CAP: Duration = Duration::from_secs(5 * 60);
+
+/// How long a superseding wake waits for the cancelled turn to hand the lock
+/// back, and how often it looks. Generous for a Harness that answers
+/// `session/cancel` at all, since the loser only has a log line left to write.
+const HANDOVER: Duration = Duration::from_secs(3);
+const HANDOVER_POLL: Duration = Duration::from_millis(20);
 
 /// What every caller is told when the child is gone.
 const LOST: &str = "harness exited";
@@ -170,9 +177,14 @@ pub struct Session {
     timeout: Duration,
     auth_retry: Duration,
     backoff_first: Duration,
-    /// One prompt in flight. `try_lock` failing is "harness busy", never a
-    /// queue (ADR-0008, ADR-0016).
+    /// One prompt in flight. A newer wake cancels the turn holding this and
+    /// takes it; only the wake that may not do that is told "harness busy",
+    /// and nothing is ever queued (ADR-0008, ADR-0016).
     turn: Mutex<()>,
+    /// Whether the turn holding `turn` answers something the user did. Beside
+    /// the lock rather than inside it because it is read exactly when the lock
+    /// cannot be taken, which is the moment the ordering rule is decided.
+    serving_reactive: AtomicBool,
     /// Bookkeeping, and the blocking `initialize`/`session/*` hop under it, so
     /// two wakes cannot open two sessions.
     state: Mutex<State>,
@@ -220,6 +232,7 @@ impl Session {
             auth_retry: AUTH_RETRY,
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
+            serving_reactive: AtomicBool::new(false),
             state: Mutex::new(State::default()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
@@ -289,11 +302,53 @@ impl Session {
         });
     }
 
+    /// Take the turn lock from the wake in flight by cancelling it, or `None`
+    /// for the one wake that may not.
+    ///
+    /// ADR-0016's newest-wins reaches the Harness here. The rule was
+    /// implemented in the HTTP Completer alone, so every Poke arriving under a
+    /// turn — five seconds wide, and a proactive tick is often in one — was
+    /// refused and the buddy never reacted (#472). The protocol half already
+    /// existed: `session/cancel` and the `cancelled` stop reason are how a
+    /// timeout is handled. This is only the trigger, and it stays one session
+    /// (ADR-0008): a cancel and a resend on the same conversation.
+    ///
+    /// A proactive wake never displaces a reactive one — that a Poke gives way
+    /// to the next ambient tick would be worse than today. It is refused
+    /// instead, which costs nothing: Static weights are the Director whenever
+    /// a session call does not land.
+    ///
+    /// The wait is bounded because the cancel is advisory: a Harness that
+    /// ignores it costs one refused wake rather than a worker parked on the
+    /// lock until the turn times out.
+    fn supersede(&self, request: &WakeRequest) -> Option<MutexGuard<'_, ()>> {
+        if !request.reactive && self.serving_reactive.load(Ordering::SeqCst) {
+            return None;
+        }
+        self.current_wire()?.cancel();
+        let until = Instant::now() + HANDOVER;
+        loop {
+            if let Ok(turn) = self.turn.try_lock() {
+                return Some(turn);
+            }
+            if Instant::now() >= until {
+                return None;
+            }
+            thread::sleep(HANDOVER_POLL);
+        }
+    }
+
     /// One turn. The whole of `Completer::complete`, minus the trace.
     fn turn(&self, request: &WakeRequest) -> Result<String, String> {
-        let Ok(_turn) = self.turn.try_lock() else {
-            return Err(self.refused(request, "harness busy"));
+        let _turn = match self.turn.try_lock() {
+            Ok(turn) => turn,
+            Err(_) => match self.supersede(request) {
+                Some(turn) => turn,
+                None => return Err(self.refused(request, "harness busy")),
+            },
         };
+        self.serving_reactive
+            .store(request.reactive, Ordering::SeqCst);
         let (session_id, outcome) = self.attempt(request)?;
         // #448: a `session/load` answered with a success the Harness could not
         // honour leaves an id nothing can be prompted on, and the only place it
@@ -1275,6 +1330,15 @@ mod tests {
         }
     }
 
+    /// The same wake, arriving on the Director's own backoff rather than
+    /// because the user did something. ADR-0008 names the two kinds.
+    fn ambient(prompt: &str) -> WakeRequest {
+        WakeRequest {
+            reactive: false,
+            ..asking(prompt)
+        }
+    }
+
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
@@ -1670,31 +1734,71 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// ADR-0016's newest-wins, at the Harness seam: the Poke that arrives
+    /// under a turn takes it rather than being refused (#472).
     #[test]
-    fn a_second_turn_while_one_is_in_flight_is_busy() {
+    fn a_newer_wake_cancels_the_turn_in_flight_and_takes_it() {
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        // The first prompt is on the wire, so the turn lock is held and the
+        // wake below is the one that has to displace it.
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
+        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
+        assert_eq!(
+            fx.count("cancel"),
+            1,
+            "the displaced turn was not cancelled"
+        );
+        assert_eq!(fx.count("prompt"), 2, "the second prompt never went out");
+        // A withdrawal, not a failure: cancelled by name in the log, no
+        // `refused` line, and no respawn backoff charged (#437).
+        let displaced = worker.join().unwrap().unwrap_err();
+        assert!(displaced.contains("cancelled"), "{displaced}");
+        assert!(
+            fx.events("refused").is_empty(),
+            "{:?}",
+            fx.events("refused")
+        );
+        assert_eq!(session.state.lock().unwrap().spawn_failures, 0);
+        let turns = fx.events("turn");
+        assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
+        session.shutdown();
+    }
+
+    /// The one wake that waits instead: an ambient tick cancelling the Poke it
+    /// arrived behind would be worse than the refusal (#472).
+    #[test]
+    fn a_proactive_wake_never_cancels_a_reactive_turn() {
         let (fx, session) = Fixture::new("slow");
         let session = Arc::new(session.with_timeout(Duration::from_secs(3)));
         let worker = {
             let session = Arc::clone(&session);
             thread::spawn(move || session.complete(&asking("hi")))
         };
-        thread::sleep(Duration::from_millis(300));
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
         assert_eq!(
-            session.complete(&asking("again")),
+            session.complete(&ambient("again")),
             Err("harness busy".to_string())
         );
+        // Read before the reactive turn's own timeout cancel, which is the
+        // only other thing that would put a `cancel` on this wire.
+        assert_eq!(fx.count("cancel"), 0, "the Poke was cancelled for a tick");
         let _ = worker.join();
         session.shutdown();
 
-        // #435: the busy wake sent no prompt, so without a line of its own the
-        // `parsed` line the Shell writes for it would read against the prompt
-        // the wake before it logged.
+        // #435: the refused wake sent no prompt, so without a line of its own
+        // the `parsed` line the Shell writes for it would read against the
+        // prompt the wake before it logged.
         let refused = fx.events("refused");
         assert_eq!(refused.len(), 1, "{refused:?}");
         assert_eq!(refused[0]["instance"], json!("buddy-1"));
-        assert_eq!(refused[0]["wake"], json!("reactive"));
+        assert_eq!(refused[0]["wake"], json!("proactive"));
         assert_eq!(refused[0]["why"], json!("harness busy"));
-        assert_eq!(fx.events("prompt").len(), 1, "the busy wake sent none");
+        assert_eq!(fx.events("prompt").len(), 1, "the refused wake sent none");
     }
 
     /// The probe's two exit codes are its two phases: 1 is a turn that did
