@@ -8,8 +8,8 @@ Reads every Character Manifest, copies the frames the manifests name into
 `<out>/characters/`, and writes `<out>/characters.html` — the page shell in
 docs/design/characters.html with its data block substituted. A Generated page
 under ADR-0011: the manifests are the source of the frame count, fps, loop,
-render_mode, scale and attribution the page shows, so a page that disagrees
-with a package cannot be deployed.
+render_mode, scale, weight, variant rings and attribution the page shows, so a
+page that disagrees with a package cannot be deployed.
 
 Pure standard library. tomllib reads the manifests and the frames are copied
 byte for byte, so nothing here needs Pillow or a TOML dependency installed.
@@ -71,9 +71,11 @@ def from_rust(source):
 
     Retyping the nine names here would make the page's idea of completeness a
     second declaration that nothing keeps in step with the loader's. Same for
-    the two defaults: a package that declares no fps plays at eight because
-    that constant says so, and a gallery hardcoding eight would keep claiming
-    it after someone changed it.
+    the defaults: a package that declares no fps plays at eight because that
+    constant says so, and a gallery hardcoding eight would keep claiming it
+    after someone changed it. Weight is the same move — a ring member with no
+    `weight` takes DEFAULT_WEIGHT, and typing 10 here would drift from the
+    loader the first time that constant moved.
     """
     block = re.search(r"REQUIRED_ANIMATIONS:\s*\[&str;\s*(\d+)\]\s*=\s*\[(.*?)\];", source, re.S)
     if not block:
@@ -88,7 +90,11 @@ def from_rust(source):
             raise Malformed(f"{RUST.name} declares no {name}")
         return int(found.group(1))
 
-    return required, {"fps": constant("DEFAULT_FPS"), "scale": constant("DEFAULT_SCALE")}
+    return required, {
+        "fps": constant("DEFAULT_FPS"),
+        "scale": constant("DEFAULT_SCALE"),
+        "weight": constant("DEFAULT_WEIGHT"),
+    }
 
 
 # --------------------------------------------------------------------------
@@ -169,6 +175,28 @@ def frame(package, declared, art_root):
     return {"src": f"characters/{package.name}/{declared}", "w": width, "h": height}
 
 
+def emit(package, name, animation, defaults, art_root, extra=None):
+    """One Animation as the page plays it: frames on disk, fps/loop/weight as
+    the loader would fill them. `extra` is for a Variant's `variant_of` — the
+    field that says this tile is a ring member, not a Required Animation slot.
+    """
+    frames = animation.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise Malformed(f"{package.name}: {name!r} declares no frames")
+    tile = {
+        "name": name,
+        "fps": animation.get("fps", defaults["fps"]),
+        # The Engine holds the last frame of a `once` Animation forever;
+        # the page does the same and offers a replay.
+        "loop": animation.get("loop") != "once",
+        "frames": [frame(package, path, art_root) for path in frames],
+        "weight": animation.get("weight", defaults["weight"]),
+    }
+    if extra:
+        tile.update(extra)
+    return tile
+
+
 def character(package, required, defaults, art_root):
     manifest = package / "character.manifest"
     try:
@@ -187,17 +215,38 @@ def character(package, required, defaults, art_root):
         if animation is None:
             strip.append({"name": name, "missing": True})
             continue
-        frames = animation.get("frames")
-        if not isinstance(frames, list) or not frames:
-            raise Malformed(f"{package.name}: {name!r} declares no frames")
-        strip.append({
-            "name": name,
-            "fps": animation.get("fps", defaults["fps"]),
-            # The Engine holds the last frame of a `once` Animation forever;
-            # the page does the same and offers a replay.
-            "loop": animation.get("loop") != "once",
-            "frames": [frame(package, path, art_root) for path in frames],
-        })
+        strip.append(emit(package, name, animation, defaults, art_root))
+
+    # Nested on the base, never spliced into the required strip: a Variant is
+    # not a tenth Required Animation, and sing is not a climb.
+    by_base = {}
+    for name, animation in animations.items():
+        if name in required:
+            continue
+        base = animation.get("variant_of")
+        if not base:
+            continue
+        by_base.setdefault(base, []).append(
+            emit(package, name, animation, defaults, art_root, {"variant_of": base})
+        )
+
+    for slot in strip:
+        members = by_base.get(slot["name"])
+        if members:
+            slot["variants"] = members
+
+    # Optional Animations the Engine already falls back (climb→walk, grab→fall,
+    # #364). Absent means absent — a dashed "missing" tile would recast them
+    # as required.
+    for name in ("climb", "grab"):
+        animation = animations.get(name)
+        if animation is None or animation.get("variant_of"):
+            continue
+        extra = emit(package, name, animation, defaults, art_root)
+        members = by_base.get(name)
+        if members:
+            extra["variants"] = members
+        strip.append(extra)
 
     return {
         "dir": package.name,
@@ -246,13 +295,14 @@ def gallery(characters_root, rust_source, out):
 
 
 def self_check():
-    """Prove the three behaviors the page's honesty rests on.
+    """Prove the behaviors the page's honesty rests on.
 
     A generator that silently emits a broken page is the failure mode worth
-    designing out, and the two halves of that are inseparable: malformed input
-    has to stop the build, and a package that is merely incomplete has to
-    reach the page as incomplete. Asserting both here costs less than a test
-    harness this repository does not otherwise have for Python.
+    designing out: malformed input has to stop the build, a merely incomplete
+    package has to reach the page as incomplete, a Variant must not steal a
+    Required Animation slot, and undeclared climb/grab must not become
+    "missing". Asserting that here costs less than a test harness this
+    repository does not otherwise have for Python.
     """
     art = (CHARACTERS / "nim" / "frames" / "idle-0.png").read_bytes()
     required, defaults = from_rust(RUST.read_text(encoding="utf-8"))
@@ -315,8 +365,104 @@ def self_check():
         assert len(data["characters"][0]["animations"]) == len(required), "the strip lost a slot"
         assert data["characters"][0]["source"] is None, "a package declaring no source got one"
 
+        complete = [f"{n}-0.png" for n in required]
+        # DEFAULT_WEIGHT is the ring's undeclared share, same constant the
+        # loader uses; a gallery that typed 10 would keep claiming it after
+        # the Engine moved.
+        rust_text = RUST.read_text(encoding="utf-8")
+        expected_weight = int(re.search(
+            r"pub const DEFAULT_WEIGHT:\s*u32\s*=\s*(\d+);", rust_text).group(1))
+        assert defaults.get("weight") == expected_weight, (
+            "DEFAULT_WEIGHT never reached the gallery defaults")
+
+        ring = scratch / "ring"
+        package(
+            ring / "ringed",
+            f'name = "Ringed"\n{body}\n'
+            '[animations.idle-blink]\n'
+            'frames = ["frames/idle-0.png"]\n'
+            'variant_of = "idle"\n',
+            frames=complete,
+        )
+        data, _ = gallery(ring, rust_text, out)
+        ch = data["characters"][0]
+        names = [a["name"] for a in ch["animations"]]
+        assert names[:len(required)] == required, "a variant reordered the Required Animation strip"
+        assert len(ch["animations"]) == len(required), "a variant stole a Required Animation slot"
+        assert "idle-blink" not in names, "a variant of idle became its own strip"
+        idle = next(a for a in ch["animations"] if a["name"] == "idle")
+        members = idle.get("variants") or []
+        blink = next((m for m in members if m["name"] == "idle-blink"), None)
+        assert blink, "idle variants never reached the page data"
+        assert blink.get("variant_of") == "idle"
+        assert blink.get("frames")
+        assert "fps" in blink
+        assert "loop" in blink
+        assert blink.get("weight") == expected_weight, (
+            "an undeclared variant weight is not DEFAULT_WEIGHT")
+        assert "climb" not in names and "grab" not in names, (
+            "undeclared climb/grab appeared as missing tiles")
+
+        weighed = scratch / "weighed"
+        weighed_idle = "\n".join(
+            f'[animations.{name}]\nframes = ["frames/{name}-0.png"]'
+            + ("\nweight = 20" if name == "idle" else "")
+            for name in required
+        )
+        package(
+            weighed / "weighed",
+            f'name = "Weighed"\n{weighed_idle}\n'
+            "[animations.idle-blink]\n"
+            'frames = ["frames/idle-0.png"]\n'
+            'variant_of = "idle"\n'
+            "weight = 5\n",
+            frames=complete,
+        )
+        data, _ = gallery(weighed, rust_text, out)
+        idle = next(a for a in data["characters"][0]["animations"] if a["name"] == "idle")
+        blink = next(m for m in idle["variants"] if m["name"] == "idle-blink")
+        assert idle.get("weight") == 20, "the base member dropped its declared weight"
+        assert blink.get("weight") == 5, "a variant dropped its declared weight"
+
+        climber = scratch / "climber"
+        package(
+            climber / "climber",
+            f'name = "Climber"\n{body}\n'
+            '[animations.climb]\nframes = ["frames/idle-0.png"]\n',
+            frames=complete,
+        )
+        data, _ = gallery(climber, rust_text, out)
+        names = [a["name"] for a in data["characters"][0]["animations"]]
+        assert names[:len(required)] == required, "climb replaced a Required Animation slot"
+        assert names[len(required):] == ["climb"], "declared climb did not follow the required strip"
+        climb = data["characters"][0]["animations"][len(required)]
+        assert not climb.get("missing"), "declared climb reached the page as missing"
+
+        grabber = scratch / "grabber"
+        package(
+            grabber / "grabber",
+            f'name = "Grabber"\n{body}\n'
+            '[animations.grab]\nframes = ["frames/idle-0.png"]\n',
+            frames=complete,
+        )
+        data, _ = gallery(grabber, rust_text, out)
+        names = [a["name"] for a in data["characters"][0]["animations"]]
+        assert names[len(required):] == ["grab"], "declared grab did not follow the required strip"
+
+        looks = scratch / "looks"
+        package(
+            looks / "shiny",
+            f'name = "Shiny"\nrender_mode = "smooth"\nscale = 2\n{body}\n',
+            frames=complete,
+        )
+        data, _ = gallery(looks, rust_text, out)
+        shiny = data["characters"][0]
+        assert shiny["smooth"] is True, "render_mode = smooth did not reach the page"
+        assert shiny["scale"] == 2, "declared scale did not reach the page"
+
     print(f"self-check: {len(required)} Required Animations, "
-          f"defaults fps={defaults['fps']} scale={defaults['scale']}, 8 checks passed")
+          f"defaults fps={defaults['fps']} scale={defaults['scale']} "
+          f"weight={defaults.get('weight')}, checks passed")
 
 
 def main():
