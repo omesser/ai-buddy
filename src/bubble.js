@@ -1,7 +1,5 @@
 // The bubble's arithmetic and decisions. main.js owns the DOM that draws them.
 
-export const CEILING_CLEARANCE = 128;
-
 const MIN_DURATION_MS = 2000;
 const MAX_DURATION_MS = 8000;
 const BASE_DURATION_MS = 900;
@@ -165,27 +163,22 @@ export function createBubbleMachine(io) {
   };
 }
 
-export function placeBubble(spriteRect, bubbleSize, displayBounds, ceilingClearance) {
-  const spriteHeadY = spriteRect.y;
-  const spriteBottomY = spriteRect.y + spriteRect.height;
+// The bubble always sits above the head (ADR-0013, amended by #441). Near the
+// top of a display the clamp below is the whole answer: the bubble stops at the
+// display edge and overlaps the sprite, drawn in front of it by main.js. A line
+// that cannot be read is a worse failure than art briefly covered.
+export function placeBubble(spriteRect, bubbleSize, displayBounds) {
   const spriteCenterX = spriteRect.x + spriteRect.width / 2;
 
   let x = spriteCenterX - bubbleSize.width / 2;
-  let y = spriteHeadY - bubbleSize.height - 10;
-  let flipped = false;
+  let y = spriteRect.y - bubbleSize.height - 10;
 
-  if (spriteHeadY < ceilingClearance) {
-    y = spriteBottomY + 10;
-    flipped = true;
-  }
-
-  const unclamped = x;
   x = Math.max(displayBounds.x, Math.min(x, displayBounds.x + displayBounds.width - bubbleSize.width));
   y = Math.max(displayBounds.y, Math.min(y, displayBounds.y + displayBounds.height - bubbleSize.height));
 
   const tailOffset = spriteCenterX - (x + bubbleSize.width / 2);
 
-  return { x, y, flipped, tailOffset };
+  return { x, y, tailOffset };
 }
 
 // A placement as this overlay may act on it: the shell names one bubble owner

@@ -16,22 +16,53 @@ body {
   user-select: none;
 }
 
+/* The bubble is a piece of the chat surface's panel, carried out onto the
+   desktop (ADR-0013, amended by #441; ported from docs/design/bubble.html).
+   The overlay loads no chat-ui.css and takes no `.chat-ui-*` class — importing
+   it would drag the alpha-over-panel tokens into the one document that has no
+   panel — so the values below are inherited from the default chat UI by hand,
+   each naming the chat token it came from. */
 .bubble {
+  --bubble-panel: #14171e; /* chat-ui.css --chat-panel */
+  --bubble-ink: #e8ebf2; /* chat-ui.css --chat-ink */
+  --bubble-accent: #5cc9b5; /* chat-ui.css --chat-accent */
+
   position: absolute;
   max-width: 260px;
-  padding: 12px 16px;
-  background: white;
-  border: 2px solid #333;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 14px;
-  line-height: 1.4;
-  color: #333;
+
+  /* The Character's line in the chat log is `.row.them .said`: bare ink at
+     line-height 1.55, with no fill, radius or padding to copy — there is no
+     panel out here to be bare on. So the box is the panel's own, inset at
+     `.composer input`'s step, which is what that stylesheet already uses for a
+     bordered box holding one piece of text. Deliberately not `.row.you .said`:
+     its --chat-radius-tail corner is the gesture for *you said this*, so it
+     does not travel and the corner stays uniform. */
+  padding: 10px 13px;
+  border-radius: 12px; /* chat-ui.css --chat-radius */
+  background: var(--bubble-panel);
+  color: var(--bubble-ink);
+
+  /* The edge, and the whole answer to "a dark bubble on a dark wallpaper is a
+     hole". Fill and ring fail on opposite grounds: over a blown-out ground the
+     ring disappears and the dark fill carries the shape; over a near-black one
+     the fill vanishes and the ring carries it. No single ground hides both,
+     which a single-value edge cannot promise. The shadow closes the mid-tone
+     case, where neither is at full strength. */
+  border: 2px solid var(--bubble-ink);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+
+  font-family: system-ui, -apple-system, sans-serif; /* chat-ui.css --chat-sans */
+  font-size: 13.5px; /* chat-ui.css body */
+  line-height: 1.55; /* .row.them .said */
+
   pointer-events: none;
   opacity: 0;
   transition: opacity 300ms ease;
   word-wrap: break-word;
+  /* Over the sprite, which is what the ceiling case needs now that the flip is
+     gone. main.js writes a z-index per Instance every tick and puts the bubble
+     on the higher of that Instance's two levels; this is the fallback for a
+     bubble drawn before the first tick has stacked it. */
   z-index: 1;
 }
 
@@ -42,7 +73,13 @@ body {
 /* One element, two modes: the Character is either saying something or waiting
    to say something. Only the child the mode names is drawn, so the two can
    never be on screen together — which as two elements anchored to the same
-   head they were, for as long as their fades overlapped. */
+   head they were, for as long as their fades overlapped.
+
+   One bubble, not two objects that happen to appear in the same place: box,
+   fill, edge and tail are the same in both modes and the ellipsis alone carries
+   the difference. That reverses #119's round thought silhouette and its trail
+   of shrinking discs, and gives up the glance they bought — the argument is in
+   ADR-0013's "One bubble for both states". */
 .bubble:not([data-mode="speech"]) .bubble-content,
 .bubble:not([data-mode="thinking"]) .thinking-dots {
   display: none;
@@ -52,71 +89,33 @@ body {
   white-space: pre-wrap;
 }
 
-.bubble[data-mode="speech"]::after {
+/* The tail is the same sandwich as the box: a ring triangle with a fill
+   triangle over it. A lone --bubble-panel spike would vanish on exactly the
+   grounds the ring exists for. 10px tall, which is the gap placeBubble leaves
+   over the sprite's head, and drawn in both modes because both modes are the
+   same bubble. */
+.bubble::before,
+.bubble::after {
   content: "";
   position: absolute;
-  bottom: -10px;
   left: 50%;
-  transform: translateX(calc(-50% + var(--tail-offset, 0px)));
   width: 0;
   height: 0;
+  transform: translateX(calc(-50% + var(--tail-offset, 0px)));
   border-left: 10px solid transparent;
   border-right: 10px solid transparent;
-  border-top: 10px solid #333;
 }
 
-.bubble[data-mode="speech"].flipped::after {
-  bottom: auto;
-  top: -10px;
-  border-top: none;
-  border-bottom: 10px solid #333;
-}
-
-/* A thought bubble rather than a speech bubble: a round silhouette, and a
-   trail of shrinking dots where speech has a pointed tail. The idiom is what
-   tells a reader at a glance which of the two they are looking at, and it does
-   the telling before the dots inside have moved at all. */
-.bubble[data-mode="thinking"] {
-  padding: 9px 13px;
-  border-radius: 999px;
-}
-
-.bubble[data-mode="thinking"]::before,
-.bubble[data-mode="thinking"]::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  box-sizing: border-box;
-  background: white;
-  border: 2px solid #333;
-  border-radius: 50%;
-}
-
-/* placeBubble leaves a 10px gap over the sprite's head, which the speech tail
-   fills exactly. The trail needs more, so the far dot sits a few pixels into
-   the top of the art — where a thought trail belongs anyway. */
-.bubble[data-mode="thinking"]::before {
-  width: 9px;
-  height: 9px;
+.bubble::before {
   bottom: -10px;
-  transform: translateX(calc(-50% + var(--tail-offset, 0px) - 5px));
+  border-top: 10px solid var(--bubble-ink);
 }
 
-.bubble[data-mode="thinking"]::after {
-  width: 6px;
-  height: 6px;
-  bottom: -18px;
-  transform: translateX(calc(-50% + var(--tail-offset, 0px) + 3px));
-}
-
-.bubble[data-mode="thinking"].flipped::before {
-  bottom: auto;
-  top: -10px;
-}
-
-.bubble[data-mode="thinking"].flipped::after {
-  bottom: auto;
-  top: -18px;
+.bubble::after {
+  bottom: -7px;
+  border-left-width: 8px;
+  border-right-width: 8px;
+  border-top: 8px solid var(--bubble-panel);
 }
 
 .thinking-dots {
@@ -128,7 +127,11 @@ body {
 .thinking-dots span {
   width: 6px;
   height: 6px;
-  background: #333;
+  /* The chat surface's own `.caret` is --chat-accent blinking in the log while
+     it waits. This ellipsis is that caret, so the two surfaces say *waiting*
+     the same way — and three small saturated marks on an opaque ground read on
+     any wallpaper. */
+  background: var(--bubble-accent);
   border-radius: 50%;
   animation: thinking-bounce 1.2s infinite ease-in-out both;
 }
