@@ -559,6 +559,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to: None,
                             you: false,
                             at: None,
+                            error: None,
                         },
                     );
                     continue;
@@ -584,6 +585,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to: None,
                             you: false,
                             at: None,
+                            error: None,
                         },
                     );
                     continue;
@@ -605,6 +607,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to: None,
                             you: false,
                             at: None,
+                            error: None,
                         },
                     );
                     continue;
@@ -1034,6 +1037,11 @@ pub(crate) fn run_frame_loop(
                     live.chat_turn = false;
                 }
                 let unasked = responded && !answering_chat && frame.dialogue.is_some();
+                // A turn that came back an error is not a Director with
+                // nothing to propose, and the Chat surface said it was (#514).
+                // Read here because `note_parsed` above has already logged the
+                // same words, and only a failed wake has any.
+                let error = (applied && !responded).then(harness::last_error).flatten();
                 if answering_chat || unasked {
                     let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
                     session_log::remember_them(
@@ -1052,6 +1060,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to,
                             you: false,
                             at: None,
+                            error,
                         },
                     );
                 }
@@ -1127,6 +1136,7 @@ pub(crate) fn run_frame_loop(
                                         reacting_to: None,
                                         you: false,
                                         at: None,
+                                        error: None,
                                     },
                                 );
                             }
