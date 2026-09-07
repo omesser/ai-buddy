@@ -655,6 +655,7 @@ mod tests {
                     fps: 8,
                     looping: true,
                     variants: Vec::new(),
+                    left_strip: None,
                     weight: DEFAULT_WEIGHT,
                 },
             );

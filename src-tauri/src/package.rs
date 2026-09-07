@@ -997,7 +997,7 @@ mod tests {
 
             for animation in character::REQUIRED_ANIMATIONS {
                 assert!(
-                    character.draw(animation, 0, 0).is_some(),
+                    character.draw(animation, 0, 0, 1.0).is_some(),
                     "{name} draws its {animation:?} animation"
                 );
             }

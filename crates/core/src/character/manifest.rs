@@ -31,6 +31,9 @@ pub(super) struct DeclaredAnimation {
     pub(super) fps: u32,
     pub(super) looping: bool,
     pub(super) variant_of: Option<String>,
+    /// The Animation this one is the left-facing strip of, when the package
+    /// draws its leftward travel rather than letting the renderer mirror it.
+    pub(super) left_of: Option<String>,
     /// This Animation's share of its variant ring, against its fellow
     /// members'. `DEFAULT_WEIGHT` when undeclared, exactly as on a Behavior.
     pub(super) weight: u32,
@@ -337,6 +340,7 @@ fn parse_animation(
     let mut fps = DEFAULT_FPS;
     let mut looping = true;
     let mut variant_of = None;
+    let mut left_of = None;
     let mut weight = DEFAULT_WEIGHT;
 
     for (key, item) in table.iter() {
@@ -347,6 +351,14 @@ fn parse_animation(
                 _ => errors.push(format!(
                     "variant_of for animation {name:?} is {}, and must name \
                      an animation, as variant_of = \"idle\"",
+                    wrote(manifest, item.span()).unwrap_or("?")
+                )),
+            },
+            "left_of" => match item.as_str() {
+                Some(base) if !base.is_empty() => left_of = Some(base.to_string()),
+                _ => errors.push(format!(
+                    "left_of for animation {name:?} is {}, and must name \
+                     an animation, as left_of = \"walk\"",
                     wrote(manifest, item.span()).unwrap_or("?")
                 )),
             },
@@ -380,7 +392,7 @@ fn parse_animation(
             },
             other => errors.push(format!(
                 "animation {name:?} declares unknown {other:?}; \
-                 an Animation declares frames, fps, loop, variant_of and weight"
+                 an Animation declares frames, fps, loop, variant_of, left_of and weight"
             )),
         }
     }
@@ -400,6 +412,7 @@ fn parse_animation(
         fps,
         looping,
         variant_of,
+        left_of,
         weight,
     })
 }
@@ -888,7 +901,7 @@ mod tests {
                  frame files, as frames = [\"idle-0.png\"]"
                     .to_string(),
                 "animation \"wave\" declares unknown \"mirrored\"; an Animation declares \
-                 frames, fps, loop, variant_of and weight"
+                 frames, fps, loop, variant_of, left_of and weight"
                     .to_string(),
                 "play for behavior \"chase\" is \"walk\", and must be a list of Primitives, \
                  as play = [\"react\", \"talk\"]"
