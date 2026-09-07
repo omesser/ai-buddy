@@ -1066,6 +1066,12 @@ struct ChatReply {
     /// emit so the surface stamps wall-clock now; replay fills this from
     /// `Turn.at` so a line said before Chat opened keeps that moment.
     at: Option<u64>,
+    /// What the Harness answered the turn with, when it answered with an
+    /// error. `said` is `None` beside it, because static weights took the
+    /// turn — but "no answer came back" is the wrong report when one did and
+    /// it named a version this CLI will not serve (#514). Not replayed: the
+    /// session log keeps the line said, and there was none.
+    error: Option<String>,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
@@ -1145,6 +1151,7 @@ fn chat_ready(
                     busy: false,
                     reacting_to: turn.reacting_to,
                     you: turn.you,
+                    error: None,
                     at: Some(
                         turn.at
                             .duration_since(UNIX_EPOCH)

@@ -194,6 +194,11 @@ pub struct HarnessInspect {
     /// Whether `initialize` offered HTTP MCP. #166 branches on it.
     pub mcp_http: bool,
     pub alive: bool,
+    /// What the last turn came back with, when it came back with an error, and
+    /// `None` once a turn answers. A Harness that refuses every prompt is
+    /// attached, alive and authenticated, so nothing else here tells it apart
+    /// from one that is proposing nothing (#514).
+    pub last_error: Option<String>,
 }
 
 /// What `harness-session.json` holds: a pointer at the Harness's own session.
@@ -425,7 +430,7 @@ impl Session {
             }
             _ => (session_id, outcome),
         };
-        match outcome {
+        let answer = match outcome {
             Ok(text) => {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
                 Ok(text)
@@ -447,7 +452,11 @@ impl Session {
                 action_log::append(&self.dir, "turn", json!({"error": why}));
                 Err(format!("harness: {why}"))
             }
-        }
+        };
+        // Kept for the readers on the other side of the Completer, which is
+        // where `Result<String, String>` narrows to "no proposal" (#514).
+        self.update_inspect(|inspect| inspect.last_error = answer.as_ref().err().cloned());
+        answer
     }
 
     /// One `session/prompt` on the session `attach` hands over: the id it went
@@ -935,13 +944,20 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
 /// `crates/core` parses and does no I/O. A Harness session writes beside
 /// that session; an HTTP wake writes to the same data dir Memory uses (#435).
 pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) {
-    let dir = attached()
+    let session = attached();
+    let dir = session
+        .as_ref()
         .map(|session| session.dir.clone())
         .unwrap_or_else(ai_buddy_core::memory::data_dir);
+    // Taken here rather than passed in: the caller has the wake and not the
+    // words, and this already holds the session that has them.
+    let error = matches!(wake, Wake::Failed)
+        .then(|| session.and_then(|session| session.inspect().last_error))
+        .flatten();
     action_log::append(
         &dir,
         "parsed",
-        parsed_fields(instance, wake, reactive, near_miss),
+        parsed_fields(instance, wake, reactive, near_miss, error.as_deref()),
     );
 }
 
@@ -956,15 +972,26 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
 /// own — `refused`, `timeout`, or a `turn` carrying the stop reason — written
 /// where the failure was seen.
 ///
+/// `error` is the fifth, and the one a reader cannot join to anything: the
+/// Harness answered, and its answer was an error. #514 read as `failed` for a
+/// day of wakes, so the line carries the words as well as the verdict.
+///
 /// The wake kind rides along so a reader can join this to the `prompt` or
 /// `refused` line for the same wake.
-fn parsed_fields(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) -> Value {
+fn parsed_fields(
+    instance: &str,
+    wake: &Wake,
+    reactive: bool,
+    near_miss: Option<&str>,
+    error: Option<&str>,
+) -> Value {
     let (result, behavior) = match (near_miss, wake) {
         (Some(named), _) => ("near_miss", Some(named)),
         (None, Wake::Proposed(proposal)) if !proposal.behavior.is_empty() => {
             ("proposal", Some(proposal.behavior.as_str()))
         }
         (None, Wake::Proposed(_)) => ("speech", None),
+        (None, Wake::Failed) if error.is_some() => ("error", None),
         (None, Wake::Failed) => ("failed", None),
     };
     json!({
@@ -972,6 +999,7 @@ fn parsed_fields(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<
         "wake": wake_kind(reactive),
         "result": result,
         "behavior": behavior,
+        "error": error,
     })
 }
 
@@ -1105,6 +1133,16 @@ pub fn detach() {
 /// next wake respawns.
 pub fn driving() -> bool {
     attached().is_some_and(|session| session.inspect().alive)
+}
+
+/// The error the attached Harness answered the last turn with, if it did.
+///
+/// The Completer seam hands core a bare `Err`, and core has one word for every
+/// way a wake can produce no proposal. So a version refusal, a signed-out CLI
+/// and an unparsable reply all reach the Shell as `Wake::Failed` — and the day
+/// #514 describes is what that costs. Read only where the wake failed.
+pub fn last_error() -> Option<String> {
+    attached().and_then(|session| session.inspect().last_error)
 }
 
 /// What `startup_lines` says about the attachment, if there is one.
@@ -1702,6 +1740,7 @@ mod tests {
             }),
             true,
             None,
+            None,
         );
         assert_eq!(named["instance"], json!("buddy-1"));
         assert_eq!(named["wake"], json!("reactive"));
@@ -1710,20 +1749,36 @@ mod tests {
 
         // An empty name is the Engine's "talk and speak": the model chose to
         // talk rather than name a Behavior.
-        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None);
+        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None, None);
         assert_eq!(talked["wake"], json!("proactive"));
         assert_eq!(talked["result"], json!("speech"));
         assert_eq!(talked["behavior"], json!(null));
 
         // #243: the same shape as speech on the wire, and a different thing —
         // the name it named is what makes it readable as a miss.
-        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"));
+        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"), None);
         assert_eq!(missed["result"], json!("near_miss"));
         assert_eq!(missed["behavior"], json!("prowll"));
 
-        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None);
+        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None, None);
         assert_eq!(failed["result"], json!("failed"));
         assert_eq!(failed["behavior"], json!(null));
+
+        // #514: the Harness answered, and what it answered was an error. That
+        // is not the same outcome as a reply nothing could be parsed out of,
+        // and reading it as one is what hid a version refusal for a whole day.
+        let errored = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            Some("harness: API Error: 400 does not support this model"),
+        );
+        assert_eq!(errored["result"], json!("error"));
+        assert_eq!(
+            errored["error"],
+            json!("harness: API Error: 400 does not support this model")
+        );
     }
 
     #[test]
@@ -1738,6 +1793,17 @@ mod tests {
         // `session/new`, so the refusal is the Harness's answer to the prompt.
         assert_eq!(fx.count("new"), 1);
         assert_eq!(fx.count("prompt"), 1);
+        // #514: the words the turn came back with outlive it, because every
+        // reader downstream — the `parsed` line, the Chat surface — otherwise
+        // has only "no proposal" to say about a Harness that is answering.
+        assert!(
+            session
+                .inspect()
+                .last_error
+                .is_some_and(|why| why.contains("refusal")),
+            "{:?}",
+            session.inspect().last_error
+        );
         session.shutdown();
     }
 

@@ -332,6 +332,14 @@ async function start() {
       settled(turn.them);
       if (payload.said) {
         arrived(turn.them, payload.said);
+      } else if (payload.error) {
+        // The Harness answered, and the answer was an error — a model the
+        // installed CLI will not serve, a signed-out agent. Static weights
+        // took the turn either way, so the row looks like the one below; the
+        // error is the only part the user can act on, and #514 is a day of
+        // wakes spent because it was never said (ADR-0008).
+        turn.them.remove();
+        note(`The Harness reported an error: ${payload.error}`);
       } else {
         // A turn that produced no line: the call failed and static weights
         // took over, which are silent by contract, or Do Not Disturb refused
