@@ -204,9 +204,9 @@ impl Wire {
     /// timeout passing with the thread still there.
     ///
     /// `shutdown` only posts the message, so a caller that must not outlive
-    /// its child needs this after it. The app does not: `main.rs` answers the
-    /// run event and the process ends, taking the thread with it. A probe a
-    /// script waits on does.
+    /// its child needs this after it. `Session::shutdown` always does: the
+    /// child is in its own process group, so ending the process does not take
+    /// it with us. The probe waits too.
     pub fn wait_for_exit(&self, timeout: Duration) -> bool {
         self.done.lock().is_ok_and(|done| {
             matches!(
@@ -390,10 +390,32 @@ fn run(
             }));
         }
         // The Harness may have been started through `npx`, which does not
-        // reliably die on stdin EOF; kill it rather than orphan it.
+        // reliably die on stdin EOF; kill the process group rather than
+        // orphan grandchildren. Direct kill is the fallback.
+        kill_harness_tree(child.id());
         let _ = child.kill();
         let _ = child.status().await;
     });
+}
+
+/// SIGKILL the Harness's process group. `npx` grandchildren share that
+/// group; a direct `Child::kill` leaves them running.
+pub(crate) fn kill_harness_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        let pid = pid as libc::pid_t;
+        let pgid = unsafe { libc::getpgid(pid) };
+        if pgid > 0 {
+            // SIGKILL, not SIGTERM: Claude's ACP adapter dumps
+            // `Query closed before response received` on a polite
+            // signal, which is the dump this isolation exists to avoid.
+            let _ = unsafe { libc::killpg(pgid, libc::SIGKILL) };
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+    }
 }
 
 /// What the Harness sent, on its way to `serve`.

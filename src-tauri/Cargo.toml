@@ -56,11 +56,20 @@ tokio = {version = "1", features = ["rt", "sync", "macros"]}
 # `AcpAgent`, which has no working-directory knob, and ADR-0010 puts the
 # Harness in the data folder.
 async-process = "2"
+# Ctrl+C from `cargo run` must shut the Harness down on a dedicated thread:
+# a signal handler itself cannot take the mutex `shutdown` needs. Isolation
+# (own process group) waits until this catch is installed, so a failed
+# handler leaves the child in the app group where the signal still reaps it.
+ctrlc = "3"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
 keyring = {version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"]}
 # PNG decoding for the tray icon.
 image = {version = "0.25", default-features = false, features = ["png"]}
+
+[target.'cfg(unix)'.dependencies]
+# Process-group teardown for an `npx` Harness: `getpgid` / `killpg`.
+libc = "0.2"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 # X11 for Linux: window list, pointer state, EWMH properties, idle time.

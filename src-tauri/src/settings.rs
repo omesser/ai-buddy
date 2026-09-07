@@ -224,23 +224,17 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>, wanted: Optio
 /// What the source row will do on the next launch, when that is not what is
 /// attached now.
 ///
-/// Said in the interface rather than left to the user to infer: one Session
-/// lives for the app's lifetime (ADR-0008), so a pick — Off included — leaves
-/// the line above naming the old Harness and, while it answers, the HTTP rows
-/// frozen with nothing explaining either (#452).
+/// Off is not pending: choosing it drops the handle in this process, so the
+/// line above is re-read as not attached rather than promised for later.
+/// Switching to a Harness still waits for the next launch — one Session lives
+/// for the app's lifetime (ADR-0008, #436).
 fn pending_source(
     harness: Option<&crate::harness::HarnessInspect>,
     wanted: Option<&str>,
 ) -> Option<String> {
     match (harness, wanted) {
-        (None, None) => None,
+        (None, None) | (Some(_), None) => None,
         (None, Some(line)) => Some(format!("The row asks for `{line}` on the next launch.")),
-        (Some(attached), None) => Some(match attached.alive {
-            true => "The row says Off, which takes effect on the next launch — the HTTP \
-                     rows above stay out of use until then."
-                .to_string(),
-            false => "The row says Off, which takes effect on the next launch.".to_string(),
-        }),
         (Some(attached), Some(line)) => (line != attached.command)
             .then(|| format!("The row asks for `{line}` on the next launch.")),
     }
@@ -431,8 +425,8 @@ pub fn director_settings(
 }
 
 /// The test seam for `director_settings`. `harness::attach` holds its Session
-/// in a process-wide `OnceLock` for the app's lifetime, so a test that
-/// attached one would decide the answer for every other test in the binary.
+/// in a process-wide slot for the app's lifetime, so a test that attached
+/// one would decide the answer for every other test in the binary.
 fn resolve_director(
     settings: &Settings,
     secrets: &dyn SecretStore,
@@ -501,26 +495,35 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
-        // The Completer source rows are deliberately absent: `harness::attach`
-        // holds one Session for the app's lifetime (ADR-0008), so there is
-        // nothing for a Retarget to point at until the next launch — which is
-        // what the row's help says. Retarget keeps handing `completer_from`
-        // the Session already up, so it can neither strand nor drop it (#436).
+        // Switching to a different Harness is still a next launch (#436).
+        // Off retargets now (#500).
         //
-        // The wake interval reaches a running Director the same way, for its
-        // own reason: the rebuild is where `model::config_from` reads it, and
-        // the frame loop re-paces every Instance from what it rebuilt (#262).
+        // The wake interval reaches a running Director the same way: the rebuild
+        // is where `model::config_from` reads it (#262).
         || patch
             .director_wake_secs
             .as_ref()
             .is_some_and(|secs| secs != &settings.director_wake_secs)
+        || harness_turns_off(settings, patch)
+}
+
+/// Picking Off while a Harness is what the process would spawn.
+fn harness_turns_off(settings: &Settings, patch: &SettingsPatch) -> bool {
+    if !harness_source_changed(settings, patch) {
+        return false;
+    }
+    let mut next = settings.clone();
+    next.apply(patch.clone());
+    crate::harness::from_settings(next.harness_source().as_deref()).is_none()
+        && crate::harness::from_settings(settings.harness_source().as_deref()).is_some()
 }
 
 /// Whether an already-open Chat surface must hear a new opening.
 ///
-/// Director on/off never retargets, and Completer source is a next-launch
-/// restart (ADR-0008, #436). Both still change what `chat_opening` would say,
-/// and the window only asked once. #473.
+/// Director on/off never retargets. Switching to a Harness is a next-launch
+/// restart (ADR-0008, #436); Off retargets onto the HTTP Completer. All three
+/// still change what `chat_opening` would say, and the window only asked once.
+/// #473.
 fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
     patch
         .director_enabled
@@ -747,6 +750,7 @@ impl SettingsSession {
         let prompt_sr = patch.use_screen_recording == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
+        let drop_harness = harness_turns_off(&settings, &patch);
         let reload_chat = chat_surface_reloads(&settings, &patch);
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and reply cap.
@@ -766,12 +770,34 @@ impl SettingsSession {
         if let Some(name) = switching {
             let _ = self.ops.send(SettingsOp::SwitchAll { character: name });
         }
+        // Before Retarget: `director_settings` skips the keychain while a
+        // handle exists, and `completer_from` prefers that handle.
+        if drop_harness {
+            crate::harness::detach();
+        }
         if retarget {
             match retarget_payload(&snapshot, self.secrets.as_ref()) {
                 Ok(op) => {
                     let _ = self.ops.send(op);
                 }
-                Err(why) => eprintln!("director: secret store: {why}"),
+                Err(why) => {
+                    eprintln!("director: secret store: {why}");
+                    if drop_harness {
+                        let director = model::resolve(
+                            &snapshot.director_base_url,
+                            &snapshot.director_model,
+                            None,
+                        );
+                        let mut cfg = model::config_from(&director);
+                        cfg.apply_switch(snapshot.director_enabled);
+                        let _ = self.ops.send(SettingsOp::Retarget {
+                            settings: director,
+                            enabled: cfg.enabled,
+                            ambient_allowed: snapshot.ambient_wakes,
+                            configured: cfg.configured,
+                        });
+                    }
+                }
             }
         }
         if reload_chat {
@@ -3200,10 +3226,10 @@ mod tests {
         );
     }
 
-    /// Changing the source is a restart, not a Retarget: `harness::attach`
-    /// holds one Session for the app's lifetime (ADR-0008), so a Retarget has
-    /// nothing new to point at — and cannot strand or drop the Session it is
-    /// still handing to `completer_from` (#436).
+    /// Switching to a different Harness is a restart, not a Retarget:
+    /// `harness::attach` holds one Session for the app's lifetime (ADR-0008),
+    /// so a Retarget has nothing new to point at — and cannot strand or drop
+    /// the Session it is still handing to `completer_from` (#436).
     #[test]
     fn the_completer_source_does_not_retarget_a_running_director() {
         let settings = Settings::default();
@@ -3211,6 +3237,42 @@ mod tests {
         patch.set_text(TextField::Harness, "hermes");
         patch.set_text(TextField::HarnessCommand, "opencode acp");
         assert!(!completer_retargets(&settings, &patch));
+    }
+
+    /// Production change that would fail this: picking Off leaves `attached()`
+    /// in place, so `completer_from` keeps handing the Director a Harness that
+    /// no longer matches the row, and the HTTP Completer the user just chose
+    /// never sees a wake. Off is the user naming that Completer, not a dead
+    /// session falling through (ADR-0008, #500).
+    #[test]
+    fn turning_the_harness_off_retargets_to_the_http_completer() {
+        crate::model::tests::with_harness(None, || {
+            let settings = Settings {
+                harness: "claude".into(),
+                ..Settings::default()
+            };
+            let mut patch = SettingsPatch::default();
+            patch.set_text(TextField::Harness, form::HARNESS_OFF);
+            assert!(
+                completer_retargets(&settings, &patch),
+                "Off has to reach the running Director"
+            );
+        });
+    }
+
+    /// `AI_BUDDY_HARNESS` owns the row. Clearing the file cannot drop a
+    /// Harness the export is still spawning.
+    #[test]
+    fn an_exported_harness_does_not_retarget_when_the_row_says_off() {
+        crate::model::tests::with_harness(Some("claude"), || {
+            let settings = Settings {
+                harness: "claude".into(),
+                ..Settings::default()
+            };
+            let mut patch = SettingsPatch::default();
+            patch.set_text(TextField::Harness, form::HARNESS_OFF);
+            assert!(!completer_retargets(&settings, &patch));
+        });
     }
 
     /// Production change that would fail this: a Director-off patch that does
@@ -3264,8 +3326,8 @@ mod tests {
         assert!(!chat_surface_reloads(&Settings::default(), &patch));
     }
 
-    /// Completer source is not a Retarget; Chat still has to hear a new
-    /// opening, from inspect as it stands until the next launch. #473, ADR-0008.
+    /// Completer source still reloads Chat even when Off also Retargets,
+    /// so the surface hears `configured` after the handle is dropped. #473.
     #[test]
     fn a_harness_source_patch_tells_an_open_chat_surface_the_inspect_mode() {
         let settings = Settings {
@@ -3327,6 +3389,8 @@ mod tests {
 
     /// #452: one Session lives for the app's lifetime, so a pick has to say
     /// what it will do rather than leave the line above looking like a refusal.
+    /// Off is not in this set: that drop is live, and promising a relaunch
+    /// would hide the HTTP Completer the user just chose.
     #[test]
     fn a_pending_source_says_it_takes_the_next_launch() {
         let attached = crate::harness::HarnessInspect {
@@ -3336,13 +3400,6 @@ mod tests {
             session_id: Some("sess-1".to_string()),
             ..Default::default()
         };
-        let off = harness_state(Some(&attached), None);
-        assert!(off.contains("says Off"), "got {off:?}");
-        assert!(off.contains("next launch"), "got {off:?}");
-        assert!(
-            off.contains("HTTP"),
-            "picking Off has to explain the frozen rows above, got {off:?}"
-        );
 
         let swapped = harness_state(Some(&attached), Some("opencode acp"));
         assert!(swapped.contains("opencode acp"), "got {swapped:?}");
@@ -3350,6 +3407,25 @@ mod tests {
 
         let waiting = harness_state(None, Some("hermes acp"));
         assert!(waiting.contains("hermes acp"), "got {waiting:?}");
+    }
+
+    /// Production change that would fail this: Off still described as a
+    /// next-launch pick, so the terminal stays quiet and the HTTP Completer
+    /// the row just chose never looks like it is in force.
+    #[test]
+    fn picking_off_does_not_promise_a_relaunch() {
+        let attached = crate::harness::HarnessInspect {
+            name: "hermes".to_string(),
+            command: "hermes acp".to_string(),
+            alive: true,
+            session_id: Some("sess-1".to_string()),
+            ..Default::default()
+        };
+        let off = harness_state(Some(&attached), None);
+        assert!(
+            !off.to_lowercase().contains("next launch"),
+            "Off is live, got {off:?}"
+        );
     }
 
     /// `AI_BUDDY_HARNESS=` has been the kill switch since #433. Going through

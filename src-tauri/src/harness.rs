@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -119,14 +119,58 @@ pub fn wanted_command(saved: Option<&str>) -> Option<String> {
 impl Launch {
     /// The child, inheriting our environment untouched. ADR-0010 rules 4 and
     /// 5: no provider key, no `CLAUDE_CONFIG_DIR`, no `--bare`. A test pins it.
+    ///
+    /// Own process group once `own_interrupt` has taken Ctrl+C, so a SIGINT
+    /// aimed at `cargo run` does not dump inside Claude's ACP adapter.
     fn command(&self, cwd: &Path) -> Command {
         let mut command = Command::new(&self.argv[0]);
         command.args(&self.argv[1..]).current_dir(cwd);
+        isolate_from_interrupt(&mut command);
         command
     }
 
     fn line(&self) -> String {
         self.argv.join(" ")
+    }
+}
+
+/// Tests isolate without installing a `ctrlc` handler. Production stays
+/// false until `own_interrupt` — a failed handler must not orphan a tree
+/// Ctrl+C can no longer reach.
+static INTERRUPT_OWNED: AtomicBool = AtomicBool::new(cfg!(test));
+static INTERRUPT_QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// Isolation is on: Ctrl+C is ours, so the child may leave this process group.
+pub fn own_interrupt() {
+    INTERRUPT_OWNED.store(true, Ordering::SeqCst);
+}
+
+/// True on the second Ctrl+C, which should `exit` rather than nest `shutdown`.
+pub fn interrupt_already_quitting() -> bool {
+    INTERRUPT_QUITTING.swap(true, Ordering::SeqCst)
+}
+
+fn isolate_from_interrupt(command: &mut Command) {
+    apply_isolation(command, INTERRUPT_OWNED.load(Ordering::SeqCst));
+}
+
+fn apply_isolation(command: &mut Command, isolate: bool) {
+    if !isolate {
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NEW_PROCESS_GROUP is not a Unix process-group twin.
+        // Grandchildren still need a Job Object if they linger; this PR
+        // has not smoked Ctrl+C on Windows.
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
 }
 
@@ -191,6 +235,10 @@ pub struct Session {
     /// Separate from `state` so `shutdown` never waits on an attach in flight.
     wire: Mutex<Option<Arc<Wire>>>,
     inspect: Mutex<HarnessInspect>,
+    /// Off drops the handle while `spawn_preflight` may still be opening a
+    /// wire. `shutdown` clears this first so a spawn that lands afterwards
+    /// kills the child instead of storing it.
+    wanted: AtomicBool,
 }
 
 #[derive(Default)]
@@ -236,6 +284,7 @@ impl Session {
             state: Mutex::new(State::default()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
+            wanted: AtomicBool::new(true),
         }
     }
 
@@ -510,30 +559,22 @@ impl Session {
         wire.answer(request, option);
     }
 
-    /// On exit: cancel what is in flight, answer open asks `cancelled`, and
-    /// kill the child.
-    pub fn shutdown(&self) {
-        if let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) {
-            wire.shutdown();
-        }
-    }
-
-    /// `shutdown`, then a bounded wait for the child to actually be reaped.
+    /// Cancel in-flight work, kill the child, and wait until it is reaped.
     ///
-    /// The probe's exit path only. `shutdown` alone is right for the app,
-    /// whose run event ends the process and takes the wire thread with it; a
-    /// probe returns to a script, and `acp_wire` says an `npx` child does not
-    /// reliably die on stdin EOF.
-    fn shutdown_and_reap(&self) {
+    /// The child is in its own process group, so ending this process does not
+    /// take it with us; the wait is what does. `npx` does not reliably die on
+    /// stdin EOF (`acp_wire`), which is why this kills rather than hanging up.
+    pub fn shutdown(&self) {
+        self.wanted.store(false, Ordering::SeqCst);
         let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
             return;
         };
         wire.shutdown();
-        if !wire.wait_for_exit(PROBE_REAP) {
+        if !wire.wait_for_exit(REAP) {
             eprintln!(
-                "probe-harness: `{}` was still running {}s after shutdown",
+                "harness: `{}` was still running {}s after shutdown",
                 self.launch.line(),
-                PROBE_REAP.as_secs()
+                REAP.as_secs()
             );
         }
     }
@@ -548,6 +589,9 @@ impl Session {
 
     /// A live child and an open session, spawning and negotiating as needed.
     fn attach(&self) -> Result<(Arc<Wire>, String), String> {
+        if !self.wanted.load(Ordering::SeqCst) {
+            return Err("harness detached".to_string());
+        }
         let mut state = self.state.lock().map_err(|_| "harness state poisoned")?;
         let wire = match self.current_wire() {
             Some(wire) => wire,
@@ -605,8 +649,16 @@ impl Session {
             inspect.alive = true;
         });
         let wire = Arc::new(wire);
+        if !self.wanted.load(Ordering::SeqCst) {
+            wire.shutdown();
+            return Err("harness detached".to_string());
+        }
         if let Ok(mut slot) = self.wire.lock() {
             *slot = Some(Arc::clone(&wire));
+        }
+        if !self.wanted.load(Ordering::SeqCst) {
+            self.shutdown();
+            return Err("harness detached".to_string());
         }
         Ok(wire)
     }
@@ -698,8 +750,8 @@ impl Completer for Session {
 const PROBE_PROMPT: &str =
     "Reply with exactly this one line and nothing else: Wave | Hello from the probe.";
 
-/// How long the probe waits for the Harness to be reaped before saying so.
-const PROBE_REAP: Duration = Duration::from_secs(5);
+/// How long shutdown waits for the child to be reaped before saying so.
+const REAP: Duration = Duration::from_secs(2);
 
 /// Attach the configured Harness and run one turn, with no overlay.
 ///
@@ -743,7 +795,7 @@ pub fn run_probe() -> i32 {
         }),
     );
     let code = probe(&session);
-    session.shutdown_and_reap();
+    session.shutdown();
     code
 }
 
@@ -984,38 +1036,57 @@ fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
     })
 }
 
-static ATTACHED: OnceLock<Option<Arc<Session>>> = OnceLock::new();
+static ATTACHED: Mutex<Option<Arc<Session>>> = Mutex::new(None);
+static ATTACH_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Read the source once — the variable, else `saved` from Settings — and hold
-/// the Session for the app's lifetime.
+/// the Session until Off or process exit.
 ///
 /// A process global rather than a field threaded through `DirectorSettings`:
 /// the session is one per app (ADR-0008), and a Retarget from Settings
-/// rebuilds `DirectorSettings` from scratch, which would drop a field. That
-/// is also why a changed source row takes effect on the next launch and says
-/// so: nothing here can be re-initialised under a running turn, and Retarget
-/// keeps handing `completer_from` the Session that is already up (#436).
+/// rebuilds `DirectorSettings` from scratch, which would drop a field. Switching
+/// to a different Harness still waits for the next launch (#436). Off is
+/// `detach` (#500).
 pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
-    ATTACHED
-        .get_or_init(|| {
-            from_settings(saved.as_deref()).map(|launch| {
-                Arc::new(Session::new(
-                    launch,
-                    ai_buddy_core::memory::data_dir(),
-                    forward,
-                ))
-            })
-        })
-        .clone()
+    let mut slot = ATTACHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if ATTACH_STARTED.swap(true, Ordering::SeqCst) {
+        return slot.clone();
+    }
+    *slot = from_settings(saved.as_deref()).map(|launch| {
+        Arc::new(Session::new(
+            launch,
+            ai_buddy_core::memory::data_dir(),
+            forward,
+        ))
+    });
+    slot.clone()
 }
 
 pub fn attached() -> Option<Arc<Session>> {
-    ATTACHED.get().cloned().flatten()
+    ATTACHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// Drop the attached handle so the HTTP Completer is the mind. #500.
+pub fn detach() {
+    let Some(session) = ATTACHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+    else {
+        return;
+    };
+    session.shutdown();
+    eprintln!("harness: detached; HTTP Completer is the Director's mind");
 }
 
 /// Whether an attached Harness is actually answering, not merely configured.
 ///
-/// `attach` holds the handle for the app's lifetime whether or not the child
+/// `attach` holds the handle until Off or process exit whether or not the child
 /// ever spawned, so a source row naming a Harness this machine has not got
 /// leaves a `Some` that never answers a wake — and `ModelDirector` has already
 /// fallen back to Static. Settings asks this rather than `attached`, because
@@ -1403,6 +1474,152 @@ mod tests {
         }
     }
 
+    /// Production change that would fail this: the child stays in the app's
+    /// process group, so Ctrl+C SIGINTs Claude's adapter and it dumps
+    /// `Query closed before response received` on the way down.
+    #[cfg(unix)]
+    #[test]
+    fn the_harness_child_is_not_in_the_app_process_group() {
+        let launch = Launch {
+            name: "sleep".into(),
+            argv: vec!["/bin/sleep".into(), "8".into()],
+        };
+        let mut command = launch.command(Path::new("/tmp"));
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+        let mut child = command.spawn().expect("sleep");
+        let child_pgid = pgid_of(child.id()).expect("child pgid");
+        let app_pgid = pgid_of(std::process::id()).expect("app pgid");
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_ne!(
+            child_pgid, app_pgid,
+            "Ctrl+C in the terminal would SIGINT the Harness"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unowned_interrupt_leaves_the_child_in_the_app_group() {
+        let mut command = std::process::Command::new("/bin/sleep");
+        command.arg("8");
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+        apply_isolation(&mut command, false);
+        let mut child = command.spawn().expect("sleep");
+        let child_pgid = pgid_of(child.id()).expect("child pgid");
+        let app_pgid = pgid_of(std::process::id()).expect("app pgid");
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(
+            child_pgid, app_pgid,
+            "a failed ctrlc handler must not orphan a tree Ctrl+C can no longer reap"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutdown_kills_the_harness_process_group() {
+        let launch = Launch {
+            name: "shell".into(),
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                r#"trap "" HUP; sleep 30 & wait"#.into(),
+            ],
+        };
+        let mut command = launch.command(Path::new("/tmp"));
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+        let mut child = command.spawn().expect("sh");
+        let pgid = pgid_of(child.id()).expect("child pgid");
+        let members = wait_for_group_members(pgid, 2);
+        crate::acp_wire::kill_harness_tree(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        let until = Instant::now() + Duration::from_millis(500);
+        let lingering = loop {
+            let still: Vec<_> = members
+                .iter()
+                .copied()
+                .filter(|&pid| still_running(pid))
+                .collect();
+            if still.is_empty() || Instant::now() >= until {
+                break still;
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        assert!(
+            lingering.is_empty(),
+            "grandchildren survived a direct kill: {lingering:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn pgid_of(pid: u32) -> Option<i32> {
+        let n = unsafe { libc::getpgid(pid as libc::pid_t) };
+        (n >= 0).then_some(n)
+    }
+
+    #[cfg(unix)]
+    fn alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    /// `kill(pid, 0)` is true for a zombie. SIGKILL'd grandchildren show up
+    /// that way until init reaps them; they are not still running.
+    #[cfg(unix)]
+    fn still_running(pid: u32) -> bool {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .ok();
+        let Some(output) = output else {
+            return false;
+        };
+        if !output.status.success() {
+            return false;
+        }
+        matches!(
+            String::from_utf8_lossy(&output.stdout)
+                .chars()
+                .find(|c| !c.is_whitespace()),
+            Some(c) if c != 'Z'
+        )
+    }
+
+    #[cfg(unix)]
+    fn live_pids_in_group(pgid: i32) -> Vec<u32> {
+        let output = std::process::Command::new("ps")
+            .args(["-axo", "pid=,pgid="])
+            .output()
+            .expect("ps");
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let mut cols = line.split_whitespace();
+                let pid: u32 = cols.next()?.parse().ok()?;
+                let group: i32 = cols.next()?.parse().ok()?;
+                (group == pgid && alive(pid)).then_some(pid)
+            })
+            .collect()
+    }
+
+    #[cfg(unix)]
+    fn wait_for_group_members(pgid: i32, n: usize) -> Vec<u32> {
+        let until = Instant::now() + Duration::from_secs(2);
+        loop {
+            let pids = live_pids_in_group(pgid);
+            if pids.len() >= n {
+                return pids;
+            }
+            if Instant::now() >= until {
+                panic!("group {pgid} never grew to {n}: {pids:?}");
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     #[test]
     fn happy_path_concatenates_chunks_and_records_the_session() {
         let (fx, session) = Fixture::new("happy");
@@ -1420,6 +1637,19 @@ mod tests {
             .unwrap()
             .contains("\"event\":\"turn\""));
         session.shutdown();
+    }
+
+    /// Off may race `spawn_preflight`. A spawn that lands after `shutdown`
+    /// must not store a live child the HTTP Completer then cannot see.
+    #[test]
+    fn shutdown_refuses_a_later_turn() {
+        let (_fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        session.shutdown();
+        assert_eq!(
+            session.complete(&asking("again")),
+            Err("harness detached".to_string())
+        );
     }
 
     /// #435: one session serves every buddy, so `session_id` cannot answer
@@ -1850,15 +2080,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// `shutdown` only posts the message; the kill is the last thing the wire
-    /// thread does. A zero-length wait can only succeed if `shutdown_and_reap`
-    /// already waited for it.
+    /// `shutdown` kills and waits; a zero-length wait can only succeed if
+    /// that wait already finished.
     #[test]
     fn the_probe_waits_for_the_child_to_be_reaped() {
         let (_fx, session) = Fixture::new("happy");
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         let wire = session.current_wire().expect("attached");
-        session.shutdown_and_reap();
+        session.shutdown();
         assert!(
             wire.wait_for_exit(Duration::ZERO),
             "the wire thread outlived the reap"

@@ -1444,6 +1444,26 @@ fn quit_now() -> ! {
     std::process::exit(0);
 }
 
+/// Ctrl+C is not `RunEvent::Exit`. The Harness child is in its own process
+/// group so that signal does not dump inside Node; this is what then kills it.
+/// Isolation waits until the handler is installed: a failed catch would
+/// otherwise leave a tree Ctrl+C can no longer reap.
+fn quit_harness_on_interrupt() {
+    match ctrlc::set_handler(|| {
+        if crate::harness::interrupt_already_quitting() {
+            std::process::exit(0);
+        }
+        eprintln!("quit");
+        crate::harness::shutdown();
+        std::process::exit(0);
+    }) {
+        Ok(()) => crate::harness::own_interrupt(),
+        Err(why) => eprintln!(
+            "harness: could not catch interrupt: {why}; child stays in this process group"
+        ),
+    }
+}
+
 /// One Instance's wake clock: where the config says to start, grown at the
 /// Character's own rate.
 ///
@@ -2196,6 +2216,7 @@ fn main() {
             app.manage(PendingAsks(Mutex::new(Pending::default())));
             app.manage(Mutex::new(session_log::Log::new()));
             let forward_to = app.handle().clone();
+            quit_harness_on_interrupt();
             harness::attach(
                 settings.harness_source(),
                 Box::new(move |permission| match permission {
