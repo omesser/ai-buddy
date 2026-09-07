@@ -115,15 +115,6 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
     }
 }
 
-/// The command line the source in force would spawn, or `None` for Off.
-///
-/// For a window that has to say whether what is attached is what the row now
-/// asks for. Compared against `HarnessInspect::command`, which is the same
-/// join.
-pub fn wanted_command(saved: Option<&str>) -> Option<String> {
-    from_settings(saved).map(|launch| launch.line())
-}
-
 impl Launch {
     /// The child, inheriting our environment untouched. ADR-0010 rules 4 and
     /// 5: no provider key, no `CLAUDE_CONFIG_DIR`, no `--bare`. A test pins it.
@@ -278,7 +269,7 @@ impl State {
 }
 
 impl Session {
-    pub fn new(launch: Launch, dir: PathBuf, forward: Forward) -> Self {
+    pub fn new(launch: Launch, dir: PathBuf, forward: Arc<Forward>) -> Self {
         let inspect = HarnessInspect {
             name: launch.name.clone(),
             command: launch.line(),
@@ -287,7 +278,7 @@ impl Session {
         Self {
             launch,
             dir,
-            forward: Arc::new(forward),
+            forward,
             timeout: crate::dev_flags::director_timeout_secs()
                 .map_or(crate::model::TIMEOUT, Duration::from_secs),
             auth_retry: AUTH_RETRY,
@@ -805,11 +796,11 @@ pub fn run_probe() -> i32 {
         // then times out with the turn, which is itself the report. A
         // settlement earns no line, because the only one a probe can reach is
         // that timeout.
-        Box::new(|permission| {
+        Arc::new(Box::new(|permission| {
             if let Permission::Ask(ask) = permission {
                 println!("  permission   {} [{}]", ask.title, ask.request);
             }
-        }),
+        }) as Forward),
     );
     let code = probe(&session);
     session.shutdown();
@@ -1072,52 +1063,127 @@ fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
     })
 }
 
-static ATTACHED: Mutex<Option<Arc<Session>>> = Mutex::new(None);
-static ATTACH_STARTED: AtomicBool = AtomicBool::new(false);
+/// The one attachment, and what it needs to be opened again.
+///
+/// `forward` outlives the Session it was handed to: it belongs to the Shell's
+/// window handle, not to any one child, and `retarget` has no other way to get
+/// one (#500).
+struct Attachment {
+    session: Option<Arc<Session>>,
+    forward: Option<Arc<Forward>>,
+}
 
-/// Read the source once — the variable, else `saved` from Settings — and hold
-/// the Session until Off or process exit.
+static ATTACHED: Mutex<Attachment> = Mutex::new(Attachment {
+    session: None,
+    forward: None,
+});
+
+fn attachment() -> MutexGuard<'static, Attachment> {
+    ATTACHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Read the source — the variable, else `saved` from Settings — and hold the
+/// Session until the row moves it or the process exits.
 ///
 /// A process global rather than a field threaded through `DirectorSettings`:
 /// the session is one per app (ADR-0008), and a Retarget from Settings
-/// rebuilds `DirectorSettings` from scratch, which would drop a field. Switching
-/// to a different Harness still waits for the next launch (#436). Off is
-/// `detach` (#500).
+/// rebuilds `DirectorSettings` from scratch, which would drop a field. The row
+/// reaches it through `retarget` (#500).
 pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
-    let mut slot = ATTACHED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if ATTACH_STARTED.swap(true, Ordering::SeqCst) {
-        return slot.clone();
+    let mut slot = attachment();
+    if slot.forward.is_some() {
+        return slot.session.clone();
     }
-    *slot = from_settings(saved.as_deref()).map(|launch| {
+    let forward = Arc::new(forward);
+    slot.forward = Some(Arc::clone(&forward));
+    slot.session = open(from_settings(saved.as_deref()), forward);
+    slot.session.clone()
+}
+
+fn open(launch: Option<Launch>, forward: Arc<Forward>) -> Option<Arc<Session>> {
+    launch.map(|launch| {
         Arc::new(Session::new(
             launch,
             ai_buddy_core::memory::data_dir(),
             forward,
         ))
-    });
-    slot.clone()
+    })
+}
+
+/// What a Completer source row now in force asks of the attachment.
+///
+/// Whether the child is alive is deliberately not an input, and that is the
+/// decision #500 turns on: a Harness that is set and not answering is still
+/// the Completer (ADR-0008), and `Session::attach` respawns it on its own
+/// backoff. So `Drop` — the one arm that leaves the HTTP Completer in charge —
+/// is only ever reached by a row that names no Harness, which is the user
+/// picking Off and not a session failing.
+#[derive(Debug, PartialEq, Eq)]
+enum Reattach {
+    /// The row still names what is attached. A dead one included: a fresh
+    /// Session for the same command line would throw away the backoff the old
+    /// one earned and respawn on every Apply.
+    Stand,
+    Drop,
+    Open(Launch),
+}
+
+fn reattach(attached: Option<&Launch>, wanted: Option<Launch>) -> Reattach {
+    match wanted {
+        None if attached.is_none() => Reattach::Stand,
+        None => Reattach::Drop,
+        Some(launch) if attached == Some(&launch) => Reattach::Stand,
+        Some(launch) => Reattach::Open(launch),
+    }
+}
+
+/// Re-open the attachment for the Completer source now in force. #500.
+///
+/// The handle `attach` took at startup used to be the app's for its lifetime,
+/// so a row naming a different Harness — or a custom command line with a typo
+/// in it — waited for a relaunch (#436), and after #510 made Off a live drop
+/// there was no way back to a Harness at all. This is the whole of what moves
+/// it. A wire that dies is not: that is the Session's own business, and the
+/// respawn `charge_loss` paces needs nothing from here.
+///
+/// `spawning` is the Director's switch, as it is for `startup_lines`: opening
+/// a session no wake will ever reach spends a child process for nothing.
+pub fn retarget(saved: Option<&str>, spawning: bool) {
+    let wanted = from_settings(saved);
+    let mut slot = attachment();
+    // The probe and the tests never call `attach`, so there is no forward to
+    // rebuild a Session with and nothing of theirs to move.
+    let Some(forward) = slot.forward.clone() else {
+        return;
+    };
+    let attached = slot.session.as_ref().map(|session| session.launch.clone());
+    let opened = match reattach(attached.as_ref(), wanted) {
+        Reattach::Stand => return,
+        Reattach::Drop => None,
+        Reattach::Open(launch) => open(Some(launch), forward),
+    };
+    // Swapped under the one lock `attached` reads: a gap here is a wake landing
+    // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
+    let old = std::mem::replace(&mut slot.session, opened.clone());
+    drop(slot);
+    if let Some(old) = old {
+        old.shutdown();
+    }
+    match &opened {
+        None => eprintln!("harness: detached; HTTP Completer is the Director's mind"),
+        Some(session) => {
+            eprintln!("harness: {} is the Completer now", session.launch.line());
+            if spawning {
+                session.spawn_preflight();
+            }
+        }
+    }
 }
 
 pub fn attached() -> Option<Arc<Session>> {
-    ATTACHED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
-}
-
-/// Drop the attached handle so the HTTP Completer is the mind. #500.
-pub fn detach() {
-    let Some(session) = ATTACHED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .take()
-    else {
-        return;
-    };
-    session.shutdown();
-    eprintln!("harness: detached; HTTP Completer is the Director's mind");
+    attachment().session.clone()
 }
 
 /// Whether an attached Harness is actually answering, not merely configured.
@@ -1402,9 +1468,9 @@ mod tests {
             let session = Session::new(
                 launch,
                 dir.clone(),
-                Box::new(move |permission| {
+                Arc::new(Box::new(move |permission| {
                     let _ = tx.send(permission);
-                }),
+                }) as Forward),
             )
             .with_timeout(Duration::from_secs(10));
             (
@@ -1458,6 +1524,11 @@ mod tests {
         }
     }
 
+    /// A Session for a test that never reaches a permission request.
+    fn silent() -> Arc<Forward> {
+        Arc::new(Box::new(|_| {}) as Forward)
+    }
+
     /// One reactive wake for `buddy-1`, which is every turn a test sends.
     fn asking(prompt: &str) -> WakeRequest {
         WakeRequest {
@@ -1498,6 +1569,41 @@ mod tests {
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
         assert_eq!(custom.name, "my-agent");
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
+    }
+
+    /// #500's whole policy, at the seam that decides it. Asserted through
+    /// `reattach` rather than a live retarget: the attachment is a process
+    /// global one test may not set for the whole binary.
+    ///
+    /// The two `Stand` cases are the ADR-0008 half. A Harness that is set is
+    /// the Completer whether or not its child answers, so nothing here can
+    /// reach `Drop` from a death — only from a row that names no Harness.
+    #[test]
+    fn only_the_source_row_moves_the_attachment_and_only_off_drops_it() {
+        let hermes = launch(Some("hermes")).unwrap();
+        let opencode = launch(Some("opencode")).unwrap();
+
+        assert_eq!(reattach(None, None), Reattach::Stand);
+        assert_eq!(
+            reattach(Some(&hermes), Some(hermes.clone())),
+            Reattach::Stand,
+            "a dead child is the Session's own retry, not a reason to rebuild it"
+        );
+        // The preset and the command line it joins to are one Harness, so
+        // re-picking the same one another way keeps the session it has.
+        assert_eq!(
+            reattach(Some(&hermes), launch(Some("hermes acp"))),
+            Reattach::Stand
+        );
+        assert_eq!(
+            reattach(Some(&hermes), Some(opencode.clone())),
+            Reattach::Open(opencode.clone())
+        );
+        assert_eq!(
+            reattach(None, Some(opencode.clone())),
+            Reattach::Open(opencode)
+        );
+        assert_eq!(reattach(Some(&hermes), None), Reattach::Drop);
     }
 
     /// ADR-0010 rules 4 and 5, as code: the child gets our environment as
@@ -2047,7 +2153,7 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        let session = Session::new(launch, dir.clone(), Box::new(|_| {}));
+        let session = Session::new(launch, dir.clone(), silent());
         let first = session.complete(&asking("hi")).unwrap_err();
         assert!(first.contains("could not start"), "{first}");
         let second = session.complete(&asking("hi")).unwrap_err();
@@ -2147,10 +2253,7 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        assert_eq!(
-            probe(&Session::new(launch, dir.clone(), Box::new(|_| {}))),
-            2
-        );
+        assert_eq!(probe(&Session::new(launch, dir.clone(), silent())), 2);
         let _ = std::fs::remove_dir_all(dir);
     }
 
