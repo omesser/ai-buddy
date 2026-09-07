@@ -66,10 +66,10 @@ repos:
     hooks:
       - id: psscriptanalyzer-check
         name: PSScriptAnalyzer (Windows only)
-        # Wraps ophiosdev/pre-commit-psscriptanalyzer to skip on non-Windows.
-        # PSScriptAnalyzer and pwsh are Windows-native; forcing them onto
-        # Linux/macOS dev machines is heavy-handed. CI enforces via windows job.
-        entry: bash -c 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) ;; *) echo "skipped - PSScriptAnalyzer runs on Windows"; exit 0 ;; esac; pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop; Invoke-ScriptAnalyzer -Path \"$@\" -Severity Error -EnableExit"' --
+        # Wraps PSScriptAnalyzer to skip on non-Windows. PSScriptAnalyzer and pwsh
+        # are Windows-native; forcing them onto Linux/macOS dev machines is heavy-handed.
+        # CI enforces via windows job.
+        entry: bash -c 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) ;; *) echo "skipped - PSScriptAnalyzer runs on Windows"; exit 0 ;; esac; pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction SilentlyContinue; foreach (\$f in \$args) { \$results = Invoke-ScriptAnalyzer -Path \$f -Severity Error; if (\$results) { \$results | Format-Table -AutoSize; exit 1 } }" -- "$@"' --
         language: system
         files: \.ps1$
         # Severity Error: only fail on actual errors, not style warnings.
