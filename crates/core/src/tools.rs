@@ -25,7 +25,7 @@ use crate::memory::MemoryManifest;
 pub struct SpeakResult {
     pub success: bool,
     pub message: String,
-    /// Why nothing reached a Character Instance, when `success` is false.
+    /// Why the Expression did not land, when `success` is false.
     ///
     /// The bool alone cannot tell a Harness "I said it" from "there was nobody
     /// to say it to", and a stdio Harness runs against an empty roster every
@@ -39,7 +39,7 @@ pub struct SpeakResult {
 pub struct PlayBehaviorResult {
     pub success: bool,
     pub behavior: String,
-    /// Why nothing reached a Character Instance; see [`SpeakResult::reason`].
+    /// Why the Expression did not land; see [`SpeakResult::reason`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -170,11 +170,8 @@ mod helpers {
                     "No Character Instance is running, so nothing changed on screen".to_string(),
                 );
             }
-            TargetResolution::UnknownInstance => {
-                return Err(format!(
-                    "No Character Instance has id {}",
-                    instance_id.unwrap_or_default()
-                ));
+            TargetResolution::UnknownInstance(id) => {
+                return Err(format!("No Character Instance has id {id}"));
             }
             TargetResolution::AmbiguousTarget => {
                 return Err(
@@ -184,9 +181,15 @@ mod helpers {
             }
         };
 
+        // The roster is a snapshot, so an Instance can retire between the
+        // resolution above and this enqueue. Saying so is the same honesty the
+        // empty roster now gets: the proposal reached nobody either way. #502.
         if let Some(handle) = expression {
-            let _enqueue_result = handle.enqueue(&target_id, proposal);
-            // Regardless of enqueue result, we report success
+            if !handle.enqueue(&target_id, proposal) {
+                return Err(format!(
+                    "Character Instance {target_id} is no longer running, so nothing changed on screen"
+                ));
+            }
         }
 
         Ok(())
@@ -198,8 +201,8 @@ mod helpers {
         Resolved(String),
         /// No instances in roster
         NoInstances,
-        /// Unknown instance_id provided
-        UnknownInstance,
+        /// The caller named an id no Instance in the roster carries.
+        UnknownInstance(String),
         /// Multiple instances but no specific id provided
         AmbiguousTarget,
     }
@@ -214,7 +217,7 @@ mod helpers {
                 if roster.iter().any(|info| info.id == id) {
                     TargetResolution::Resolved(id.to_string())
                 } else {
-                    TargetResolution::UnknownInstance
+                    TargetResolution::UnknownInstance(id.to_string())
                 }
             }
             None => {

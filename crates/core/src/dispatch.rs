@@ -898,6 +898,10 @@ mod tests {
 
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "Hello");
+        assert_eq!(
+            result["reason"],
+            "Several Character Instances are running; name one with instance_id"
+        );
     }
 
     #[test]
@@ -915,6 +919,10 @@ mod tests {
 
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "Hello");
+        assert_eq!(
+            result["reason"],
+            "No Character Instance has id unknown-instance"
+        );
     }
 
     /// Break: an Expression that reaches no Instance reports success again, or
@@ -955,12 +963,47 @@ mod tests {
         let speak_result = dispatch("speak", speak_args, &mut context).expect("dispatch succeeds");
         assert_eq!(speak_result["success"], false);
         assert_eq!(speak_result["message"], "");
+        assert_eq!(speak_result["reason"], "The message is empty");
 
         let behavior_args = json!({"behavior": ""});
         let behavior_result =
             dispatch("play_behavior", behavior_args, &mut context).expect("dispatch succeeds");
         assert_eq!(behavior_result["success"], false);
         assert_eq!(behavior_result["behavior"], "");
+        assert_eq!(behavior_result["reason"], "The behavior name is empty");
+    }
+
+    /// Break: a stale roster entry reports success again. The roster a caller
+    /// resolves against is a snapshot, so the Instance it names can retire
+    /// before the enqueue — the same nothing-happened the empty roster is. #502.
+    #[test]
+    fn a_retired_instance_fails_and_says_it_is_no_longer_running() {
+        let temp = TempDir::new("retired-instance");
+        let source = fake_source(vec![]);
+
+        // The snapshot still names an Instance the live Roster no longer holds.
+        let roster_info = [InstanceInfo {
+            id: "retired-instance".to_string(),
+            name: "Gone".to_string(),
+        }];
+        let mut live = crate::roster::Roster::new();
+
+        let mut context = DispatchContext {
+            window_source: &source,
+            memory_path: temp.join("memory.md"),
+            denylist: DenyList::default(),
+            roster: &roster_info,
+            expression: Some(&mut live),
+        };
+
+        let result = dispatch("speak", json!({"message": "Hello"}), &mut context)
+            .expect("dispatch succeeds");
+
+        assert_eq!(result["success"], false);
+        assert_eq!(
+            result["reason"],
+            "Character Instance retired-instance is no longer running, so nothing changed on screen"
+        );
     }
 
     #[test]
