@@ -13,6 +13,7 @@
 //! reads a credential, or calls `authenticate`; `auth_required` becomes a
 //! command the user runs in their own terminal (ADR-0010's eight rules).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -57,6 +58,12 @@ const HANDOVER_POLL: Duration = Duration::from_millis(20);
 
 /// What every caller is told when the child is gone.
 const LOST: &str = "harness exited";
+
+/// How long a withdrawal waits for the `parsed` line that belongs to it. The
+/// Shell writes that line frames after the turn ended, so this only has to
+/// outlast one frame; it is generous because the cost of being wrong is one
+/// mislabelled wake, not a leak (the map is one entry per Instance).
+const WITHDRAWAL_GRACE: Duration = Duration::from_secs(30);
 
 /// The stop reason a cancelled turn comes back with. A turn the Completer gave
 /// up waiting on is `TurnError::Timeout` instead, so this reason on a turn is
@@ -247,10 +254,15 @@ pub struct Session {
     /// the lock rather than inside it because it is read exactly when the lock
     /// cannot be taken, which is the moment the ordering rule is decided.
     serving_reactive: AtomicBool,
-    /// The turn a superseding wake has taken the session from, while the log
-    /// lines for it are still to be written. One slot, because one prompt is
-    /// in flight at a time.
-    withdrawn: Mutex<Option<Withdrawal>>,
+    /// The Instance a cancel has just gone out for, until the turn it cancels
+    /// names itself. One slot, because one prompt is in flight at a time.
+    withdrawing: Mutex<Option<String>>,
+    /// Withdrawn turn to the Instance whose wake took the session, from the
+    /// turn that lost it until the `parsed` line for that wake. Keyed by loser
+    /// rather than kept in the slot above, because a later cancel would erase
+    /// a withdrawal whose `parsed` line has not been written yet — leaving a
+    /// `turn` line that says withdrawn beside a `parsed` line that says failed.
+    withdrawn: Mutex<HashMap<String, (String, Instant)>>,
     /// Bookkeeping, and the blocking `initialize`/`session/*` hop under it, so
     /// two wakes cannot open two sessions.
     state: Mutex<State>,
@@ -261,21 +273,6 @@ pub struct Session {
     /// wire. `shutdown` clears this first so a spawn that lands afterwards
     /// kills the child instead of storing it.
     wanted: AtomicBool,
-}
-
-/// A turn given up so a newer wake could be answered (#499).
-///
-/// The winner writes it before its cancel goes out, because the loser holds the
-/// turn lock until it has written its own log line, so anything the winner set
-/// afterwards would be too late to be read. The loser then claims it twice:
-/// once for its `turn` line, and once for the `parsed` line the Shell writes
-/// for the wake, which is the line that would otherwise read as a wake that
-/// broke rather than one that was withdrawn.
-struct Withdrawal {
-    /// The Instance whose wake the session was taken for.
-    winner: String,
-    /// The Instance that lost its turn, once that turn has seen the cancel.
-    loser: Option<String>,
 }
 
 #[derive(Default)]
@@ -318,7 +315,8 @@ impl Session {
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
-            withdrawn: Mutex::new(None),
+            withdrawing: Mutex::new(None),
+            withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
@@ -433,25 +431,27 @@ impl Session {
 
     /// Say that the turn in flight is being taken for `winner`'s wake, or that
     /// no turn was taken after all.
+    ///
+    /// Written before the cancel goes out, because the loser holds the turn
+    /// lock until it has written its own log line: anything set after the
+    /// handover would be too late for the turn that has to read it.
     fn note_withdrawal(&self, winner: Option<String>) {
-        if let Ok(mut slot) = self.withdrawn.lock() {
-            *slot = winner.map(|winner| Withdrawal {
-                winner,
-                loser: None,
-            });
+        if let Ok(mut slot) = self.withdrawing.lock() {
+            *slot = winner;
         }
     }
 
     /// The Instance a turn of `loser`'s was withdrawn for, named by the turn
-    /// itself so the `parsed` line for that wake can find it.
+    /// itself and kept for the `parsed` line the Shell writes for that wake.
     fn claim_withdrawn_turn(&self, loser: &str, reason: &str) -> Option<String> {
         if reason != CANCELLED {
             return None;
         }
-        let mut slot = self.withdrawn.lock().ok()?;
-        let withdrawal = slot.as_mut()?;
-        withdrawal.loser = Some(loser.to_string());
-        Some(withdrawal.winner.clone())
+        let winner = self.withdrawing.lock().ok()?.take()?;
+        if let Ok(mut withdrawn) = self.withdrawn.lock() {
+            withdrawn.insert(loser.to_string(), (winner.clone(), Instant::now()));
+        }
+        Some(winner)
     }
 
     /// The same withdrawal, taken by the wake that lost the session.
@@ -459,12 +459,13 @@ impl Session {
     /// Taken rather than read, for the reason the `turn` line is written once:
     /// one wake leaves one line, so a withdrawal cannot colour the next wake
     /// this Instance takes (#435).
+    ///
+    /// The grace bounds the one entry no `parsed` line ever comes for: the
+    /// Shell drops a reply the Instance has already moved past (ADR-0016), and
+    /// the next failed wake for that Instance is a different wake.
     fn claim_withdrawn_wake(&self, instance: &str) -> Option<String> {
-        let mut slot = self.withdrawn.lock().ok()?;
-        if slot.as_ref()?.loser.as_deref() != Some(instance) {
-            return None;
-        }
-        slot.take().map(|withdrawal| withdrawal.winner)
+        let (winner, at) = self.withdrawn.lock().ok()?.remove(instance)?;
+        (at.elapsed() < WITHDRAWAL_GRACE).then_some(winner)
     }
 
     /// One turn. The whole of `Completer::complete`, minus the trace.
@@ -2271,6 +2272,45 @@ mod tests {
         // own however that one ends.
         assert_eq!(session.claim_withdrawn_wake("buddy-1"), None);
         session.shutdown();
+    }
+
+    /// The withdrawal a later supersede must not erase (#499). The `parsed`
+    /// line for the wake that lost the session is written on the Shell side,
+    /// frames after the turn ended, and one session serves every Instance — so
+    /// by then a third wake may already have taken the session from a fourth.
+    #[test]
+    fn a_later_supersede_does_not_erase_an_unclaimed_withdrawal() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+        };
+        let session = Session::new(launch, dir.clone(), Box::new(|_| {}));
+
+        // buddy-2 takes the session from buddy-1, whose turn names itself.
+        session.note_withdrawal(Some("buddy-2".to_string()));
+        assert_eq!(
+            session
+                .claim_withdrawn_turn("buddy-1", CANCELLED)
+                .as_deref(),
+            Some("buddy-2")
+        );
+
+        // Then buddy-3 takes it from someone else, and the handover it does
+        // not win clears the pending slot — neither of which is buddy-1's.
+        session.note_withdrawal(Some("buddy-3".to_string()));
+        session.note_withdrawal(None);
+
+        let withdrawn = session.claim_withdrawn_wake("buddy-1");
+        assert_eq!(withdrawn.as_deref(), Some("buddy-2"));
+        let parsed = parsed_fields("buddy-1", &Wake::Failed, true, None, withdrawn.as_deref());
+        assert_eq!(parsed["result"], json!("withdrawn"), "{parsed}");
+        assert_eq!(
+            session.claim_withdrawn_wake("buddy-1"),
+            None,
+            "claimed twice"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// The one wake that waits instead: an ambient tick cancelling the Poke it
