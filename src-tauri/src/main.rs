@@ -1946,17 +1946,20 @@ fn main() {
             };
             // Before `config_from`, which asks whether a Harness is attached.
             let forward_to = app.handle().clone();
-            harness::attach(Box::new(move |ask| {
-                eprintln!(
-                    "harness: permission asked for `{}`; answer it in the Chat window",
-                    ask.title
-                );
-                for label in forward_to.webview_windows().into_keys() {
-                    if label.starts_with("chat-") {
-                        let _ = forward_to.emit_to(label, CHAT_PERMISSION_EVENT, ask.clone());
+            harness::attach(
+                settings.harness_source(),
+                Box::new(move |ask| {
+                    eprintln!(
+                        "harness: permission asked for `{}`; answer it in the Chat window",
+                        ask.title
+                    );
+                    for label in forward_to.webview_windows().into_keys() {
+                        if label.starts_with("chat-") {
+                            let _ = forward_to.emit_to(label, CHAT_PERMISSION_EVENT, ask.clone());
+                        }
                     }
-                }
-            }));
+                }),
+            );
             let mut config = model::config_from(&director);
             config.apply_switch(settings.director_enabled);
             config.ambient_allowed = settings.ambient_wakes;

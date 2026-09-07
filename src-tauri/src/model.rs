@@ -1636,13 +1636,20 @@ pub(crate) mod tests {
         model: Option<&str>,
         body: impl FnOnce(),
     ) {
-        with_vars(key, base, model, None, body)
+        with_vars(key, base, model, None, None, body)
     }
 
     /// Run `body` with `AI_BUDDY_DIRECTOR` exported as `value` and the other
     /// three cleared, so the developer's shell cannot decide the result.
     pub(crate) fn with_env_switch(value: &str, body: impl FnOnce()) {
-        with_vars(None, None, None, Some(value), body)
+        with_vars(None, None, None, Some(value), None, body)
+    }
+
+    /// The same for `AI_BUDDY_HARNESS`, which owns the Completer source rows
+    /// (#436). Under this lock rather than one of its own: the settings tests
+    /// read that row through the same `env_override` as the endpoint rows.
+    pub(crate) fn with_harness(value: Option<&str>, body: impl FnOnce()) {
+        with_vars(None, None, None, None, value, body)
     }
 
     fn with_vars(
@@ -1650,6 +1657,7 @@ pub(crate) mod tests {
         base: Option<&str>,
         model: Option<&str>,
         enabled: Option<&str>,
+        harness: Option<&str>,
         body: impl FnOnce(),
     ) {
         // Concurrent setenv/getenv is undefined behaviour. These vars are
@@ -1679,7 +1687,7 @@ pub(crate) mod tests {
             }
         }
 
-        // The four the caller sets, and every Development variable: a shell
+        // The five the caller sets, and every Development variable: a shell
         // that exported one of those would otherwise freeze a row or seed a
         // switch in a test that never mentions it (#273).
         //
@@ -1692,6 +1700,7 @@ pub(crate) mod tests {
             (BASE_URL, base),
             (MODEL, model),
             (ENABLED, enabled),
+            (crate::harness::VAR, harness),
         ];
         wanted.extend(
             crate::dev_flags::test_vars()
@@ -1824,7 +1833,7 @@ pub(crate) mod tests {
     /// one vocabulary: an exported on lifts a file that says off.
     #[test]
     fn an_exported_switch_decides_either_way() {
-        with_vars(None, None, None, Some("on"), || {
+        with_vars(None, None, None, Some("on"), None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
             let mut config = config_from(&settings);
             config.apply_switch(false);
@@ -1835,7 +1844,7 @@ pub(crate) mod tests {
     /// On is still a request, not a Completer: the endpoint has to exist.
     #[test]
     fn an_exported_on_cannot_conjure_a_completer() {
-        with_vars(None, None, None, Some("on"), || {
+        with_vars(None, None, None, Some("on"), None, || {
             let settings = resolve("https://api.openai.com", "gpt-4o-mini", None);
             let mut config = config_from(&settings);
             assert!(!config.configured, "a remote host with no key");
@@ -1847,7 +1856,7 @@ pub(crate) mod tests {
     /// A word no switch knows leaves the decision where it was.
     #[test]
     fn an_unreadable_switch_value_leaves_the_file_deciding() {
-        with_vars(None, None, None, Some("banana"), || {
+        with_vars(None, None, None, Some("banana"), None, || {
             let settings = resolve("http://localhost:11434", "gemma4", None);
             let mut config = config_from(&settings);
             config.apply_switch(true);
