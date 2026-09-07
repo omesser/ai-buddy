@@ -170,6 +170,7 @@ impl SettingsWindow {
                                 .last_payload
                                 .clone()
                                 .unwrap_or_else(|| "Nothing sent yet.".to_string()),
+                            form::HARNESS_STATE_ID => view.harness_state.clone(),
                             _ => String::new(),
                         };
                         set_window_text(*hwnd, &text);
@@ -553,11 +554,15 @@ fn set_window_text(hwnd: HWND, text: &str) {
 /// Decides whether a label id should have its text updated from the view.
 ///
 /// Returns `true` when the label displays dynamic state (memory path, hotkey,
-/// last payload). Returns `false` when the label holds static text set at
-/// build_ui time: field labels (`*_label`), placeholders (`*_placeholder`),
-/// and help hints (`*_help`, `composite_help_*`).
+/// last payload, harness state). Returns `false` when the label holds static
+/// text set at build_ui time: field labels (`*_label`), placeholders
+/// (`*_placeholder`), and help hints (`*_help`, `composite_help_*`).
 fn should_update_label_text(id: &str) -> bool {
-    if id == form::MEMORY_PATH_ID || id == form::HOTKEY_ID || id == form::PAYLOAD_ID {
+    if id == form::MEMORY_PATH_ID
+        || id == form::HOTKEY_ID
+        || id == form::PAYLOAD_ID
+        || id == form::HARNESS_STATE_ID
+    {
         return true;
     }
     if id.ends_with("_label") || id.ends_with("_placeholder") {
@@ -1597,6 +1602,10 @@ mod tests {
         assert!(
             should_update_label_text(form::PAYLOAD_ID),
             "PAYLOAD must be updated dynamically"
+        );
+        assert!(
+            should_update_label_text(form::HARNESS_STATE_ID),
+            "HARNESS_STATE must be updated dynamically"
         );
 
         assert!(
