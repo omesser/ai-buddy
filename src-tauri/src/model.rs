@@ -16,7 +16,7 @@ use std::thread;
 use std::time::Duration;
 
 use ai_buddy_core::director::{
-    Completer, Context, Happened, ModelDirector, Pace, Wake, WAKE_EVERY,
+    self, Completer, Context, ModelDirector, Pace, Wake, WakeRequest, WAKE_EVERY,
 };
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
@@ -247,10 +247,10 @@ pub enum AnyCompleter {
 }
 
 impl Completer for AnyCompleter {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
         match self {
-            AnyCompleter::Http(endpoint) => endpoint.complete(prompt),
-            AnyCompleter::Harness(session) => session.complete(prompt),
+            AnyCompleter::Http(endpoint) => endpoint.complete(request),
+            AnyCompleter::Harness(session) => session.complete(request),
         }
     }
 }
@@ -831,7 +831,10 @@ impl Endpoint {
 }
 
 impl Completer for Endpoint {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
+    /// The Instance and the wake kind go unread here: they are the Action
+    /// Log's, and the Action Log belongs to the Harness path (#435).
+    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+        let prompt = &request.prompt;
         if tracing() {
             eprintln!("director: sending POST {} model={}", self.url, self.model);
             trace_block("prompt", prompt);
@@ -1521,7 +1524,7 @@ impl Slots {
         let slot = self.slots.entry(id.clone()).or_default();
         slot.supersede();
         slot.waiting = true;
-        slot.reactive = context.happened != Happened::Ambient;
+        slot.reactive = director::reactive(&context.happened);
         let epoch = slot.epoch;
         let tx = slot.tx.clone();
         let abandoned = Arc::clone(&slot.abandoned);
@@ -1616,6 +1619,7 @@ pub fn retarget_model(
         Arc::new(ModelDirector::new(
             completer_from(settings).expect("configured means a Completer exists"),
             behaviors,
+            id.clone(),
         ))
     });
 }
@@ -1623,6 +1627,7 @@ pub fn retarget_model(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use ai_buddy_core::director::Happened;
 
     /// Run `body` with the three Director vars set as given and the switch
     /// cleared, then all four restored.
@@ -2675,6 +2680,7 @@ pub(crate) mod tests {
                         saw: Arc::clone(&saw),
                     },
                     ["stroll"],
+                    id.clone(),
                 )),
                 wake_context(),
             );
@@ -2811,7 +2817,7 @@ pub(crate) mod tests {
     }
 
     impl Completer for Watchful {
-        fn complete(&self, _: &str) -> Result<String, String> {
+        fn complete(&self, _: &WakeRequest) -> Result<String, String> {
             for _ in 0..400 {
                 if abandoned() {
                     self.saw.store(true, Ordering::SeqCst);
@@ -2841,7 +2847,7 @@ pub(crate) mod tests {
     }
 
     impl Completer for Answers {
-        fn complete(&self, _: &str) -> Result<String, String> {
+        fn complete(&self, _: &WakeRequest) -> Result<String, String> {
             thread::sleep(self.delay);
             Ok(self.behavior.to_string())
         }
@@ -2854,6 +2860,7 @@ pub(crate) mod tests {
                 delay: Duration::from_millis(delay_ms),
             },
             ["stroll", "nap"],
+            "buddy",
         ))
     }
 
@@ -2959,6 +2966,7 @@ pub(crate) mod tests {
                     saw: Arc::clone(&saw),
                 },
                 ["stroll"],
+                id.clone(),
             )),
             wake_context(),
         );
@@ -3020,7 +3028,7 @@ pub(crate) mod tests {
         let cat = ai_buddy_core::character::load(&files).expect("and loads");
         let behaviors: Vec<String> = cat.behaviors.keys().cloned().collect();
 
-        let director = ModelDirector::new(endpoint, behaviors.clone());
+        let director = ModelDirector::new(endpoint, behaviors.clone(), "buddy");
 
         // Vary the wake so the prompts differ: the reactive verbs plus ambient.
         let occasions = [
