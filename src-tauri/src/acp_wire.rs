@@ -90,6 +90,11 @@ pub enum Event {
     /// the ask, so every one of them has to hear this.
     PermissionSettled {
         request: String,
+        /// The option that won, and `None` when nothing was picked. Carried so
+        /// the surfaces that did not take the click draw the decision that was
+        /// actually made: two of them can draw one request, and every answer
+        /// after the first is dropped here.
+        option: Option<String>,
     },
 }
 
@@ -491,9 +496,14 @@ async fn turn(
                     if let Some(at) = asks.iter().position(|(id, _)| *id == request) {
                         let (_, responder) = asks.remove(at);
                         let _ = responder.respond(RequestPermissionResponse::new(
-                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option)),
+                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                                option.clone(),
+                            )),
                         ));
-                        on_event(Event::PermissionSettled { request });
+                        on_event(Event::PermissionSettled {
+                            request,
+                            option: Some(option),
+                        });
                     }
                 }
                 Some(Msg::Prompt { reply, .. }) => {
@@ -577,7 +587,10 @@ fn cancel_asks(asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>, o
         let _ = responder.respond(RequestPermissionResponse::new(
             RequestPermissionOutcome::Cancelled,
         ));
-        on_event(Event::PermissionSettled { request });
+        on_event(Event::PermissionSettled {
+            request,
+            option: None,
+        });
     }
 }
 

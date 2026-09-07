@@ -141,8 +141,35 @@ const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
 /// An ask reaches a webview as an event, and an event reaches only the windows
 /// that were open when it went out — including none at all. Held here so
 /// `chat_ready` can hand them to a surface that opens afterwards, which is the
-/// surface a permission request now opens for itself.
-struct PendingAsks(Mutex<Vec<harness::PermissionAsk>>);
+/// surface a permission request now opens for itself. ADR-0010 holds nothing
+/// else for a later surface and names this as its exception: a question with a
+/// deadline that only this surface can answer.
+///
+/// One lock over both fields and over the emits that read them: a settlement
+/// landing between a replay's read and its emit would draw a live row nothing
+/// is ever going to retire.
+#[derive(Default)]
+struct Pending {
+    asks: Vec<harness::PermissionAsk>,
+    /// Whether a surface has already been asked for. Opening posts to the main
+    /// thread, so a second ask arriving before that lands would queue a second
+    /// focus grab. Cleared when the last ask settles, which is when a surface
+    /// would have to be found again.
+    opened: bool,
+}
+
+struct PendingAsks(Mutex<Pending>);
+
+/// What retires one row in every open Chat surface.
+#[derive(Clone, Serialize)]
+struct Settled {
+    request: String,
+    /// The option that won, `None` when nothing was picked. Every window draws
+    /// this rather than its own click: two can draw one request, and the wire
+    /// drops every answer after the first, so the loser would otherwise show
+    /// its user a decision that never happened.
+    option: Option<String>,
+}
 
 /// Director config and the last Character Prompt, for the frame loop.
 struct DirectorRun {
@@ -750,57 +777,114 @@ fn close_chat(app: &tauri::AppHandle, id: &InstanceId) {
     }
 }
 
-/// One payload to every open Chat surface, and how many there were.
-fn emit_to_chats(app: &tauri::AppHandle, event: &str, payload: &impl Serialize) -> usize {
-    let mut drawn = 0;
+/// Draw one forwarded permission request on every Chat surface, and make sure
+/// one of them is a surface the user can actually see.
+///
+/// A window rather than a Speech line, because the options are the only answer
+/// there will ever be (ADR-0010 forbids ai-buddy choosing one) and ADR-0013
+/// leaves exactly one surface that can draw them: a bubble line could only
+/// point at a window that is not open, and the turn would still die by timeout
+/// while the user looked for it. Visible and unminimized, not merely open — a
+/// minimized window is a request nobody sees, which is the case this exists to
+/// fix.
+fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
+    let Some(state) = app.try_state::<PendingAsks>() else {
+        return;
+    };
+    let Ok(mut pending) = state.0.lock() else {
+        return;
+    };
+    pending.asks.push(ask.clone());
+
+    let mut on_screen = false;
+    let mut shut = None;
+    for (label, window) in app.webview_windows() {
+        if !label.starts_with("chat-") {
+            continue;
+        }
+        let _ = app.emit_to(&label, CHAT_PERMISSION_EVENT, &ask);
+        if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(true) {
+            on_screen = true;
+        } else {
+            shut = Some(label);
+        }
+    }
+    if on_screen {
+        eprintln!(
+            "harness: permission asked for `{}`; answer it in the Chat window",
+            ask.title
+        );
+        return;
+    }
+    eprintln!(
+        "harness: permission asked for `{}`; no Chat surface is on screen",
+        ask.title
+    );
+    // Do Not Disturb wins even over a question with a deadline: it is a promise
+    // that the app takes no attention until it is switched off, and opening
+    // this window activates ai-buddy over whatever the user is doing. The turn
+    // then times out, which is what happened before any of this — and never an
+    // answer of ours either way (ADR-0010).
+    if do_not_disturb(app) {
+        return;
+    }
+    if !std::mem::replace(&mut pending.opened, true) {
+        show_chat_for_ask(app, shut);
+    }
+}
+
+/// Retire one request in every open Chat surface, under the same lock a replay
+/// reads.
+fn settle_ask(app: &tauri::AppHandle, settled: Settled) {
+    let Some(state) = app.try_state::<PendingAsks>() else {
+        return;
+    };
+    let Ok(mut pending) = state.0.lock() else {
+        return;
+    };
+    pending.asks.retain(|ask| ask.request != settled.request);
+    pending.opened &= !pending.asks.is_empty();
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
-            drawn += 1;
-            let _ = app.emit_to(label, event, payload);
-        }
-    }
-    drawn
-}
-
-fn remember_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
-    if let Some(pending) = app.try_state::<PendingAsks>() {
-        if let Ok(mut asks) = pending.0.lock() {
-            asks.push(ask);
+            let _ = app.emit_to(label, CHAT_PERMISSION_SETTLED_EVENT, &settled);
         }
     }
 }
 
-fn forget_ask(app: &tauri::AppHandle, request: &str) {
-    if let Some(pending) = app.try_state::<PendingAsks>() {
-        if let Ok(mut asks) = pending.0.lock() {
-            asks.retain(|ask| ask.request != request);
-        }
-    }
+/// The app-wide Do Not Disturb switch, which is what the tray toggle writes.
+fn do_not_disturb(app: &tauri::AppHandle) -> bool {
+    app.try_state::<SettingsState>()
+        .and_then(|state| state.settings.lock().ok().map(|read| read.do_not_disturb))
+        .unwrap_or(false)
 }
 
-/// Open a Chat surface for a permission request that has nowhere to be drawn.
-///
-/// The window rather than a Speech line, because the options are the only
-/// answer there will ever be (ADR-0010 forbids ai-buddy choosing one) and
-/// ADR-0013 leaves exactly one surface that can draw them: a bubble line could
-/// only point at a window that is not open, and the turn would still die by
-/// timeout while the user looked for it.
+/// Put a Chat surface in front of the user for a request that has nowhere to be
+/// drawn: the one it was already sent to and cannot be seen, else the roster's
+/// first Instance. `open_chat` unminimizes and raises whichever it is.
 ///
 /// One session serves every Instance (ADR-0008), so any surface can answer it;
 /// the roster's first is the one the Shell can name without threading the
 /// asking Instance down the wire and back.
-fn open_chat_for_ask(app: &tauri::AppHandle) {
-    let first = app.try_state::<SettingsState>().and_then(|state| {
-        state
-            .instances
-            .lock()
-            .ok()
-            .and_then(|rows| rows.first().cloned())
-    });
-    match first {
-        Some(row) => open_chat(app, &row.id, row.name),
-        None => eprintln!("harness: no Instance to ask on; the request will time out"),
-    }
+fn show_chat_for_ask(app: &tauri::AppHandle, shut: Option<String>) {
+    let rows = app
+        .try_state::<SettingsState>()
+        .and_then(|state| state.instances.lock().ok().map(|rows| rows.clone()))
+        .unwrap_or_default();
+    let id = shut
+        .as_deref()
+        .and_then(|label| label.strip_prefix("chat-"))
+        .map(str::to_string)
+        .or_else(|| rows.first().map(|row| row.id.clone()));
+    let Some(id) = id else {
+        eprintln!("harness: no Instance to ask on; the request will time out");
+        return;
+    };
+    let title = rows
+        .iter()
+        .find(|row| row.id == id)
+        .map(|row| row.name.clone())
+        .unwrap_or_else(|| id.clone());
+    open_chat(app, &id, title);
 }
 
 /// Record what just happened to an Instance, unless a typed line is still
@@ -1020,13 +1104,10 @@ fn chat_ready(
     chat: tauri::State<'_, ChatChannel>,
     pending: tauri::State<'_, PendingAsks>,
 ) {
-    let asks = pending
-        .0
-        .lock()
-        .map(|asks| asks.clone())
-        .unwrap_or_default();
-    for ask in asks {
-        let _ = app.emit_to(chat_label(&instance), CHAT_PERMISSION_EVENT, ask);
+    if let Ok(pending) = pending.0.lock() {
+        for ask in &pending.asks {
+            let _ = app.emit_to(chat_label(&instance), CHAT_PERMISSION_EVENT, ask);
+        }
     }
     let _ = chat.0.send(ChatMsg::Listening(instance));
 }
@@ -2028,28 +2109,12 @@ fn main() {
                 }
             };
             // Before `config_from`, which asks whether a Harness is attached.
-            app.manage(PendingAsks(Mutex::new(Vec::new())));
+            app.manage(PendingAsks(Mutex::new(Pending::default())));
             let forward_to = app.handle().clone();
             harness::attach(Box::new(move |permission| match permission {
-                harness::Permission::Ask(ask) => {
-                    remember_ask(&forward_to, ask.clone());
-                    let drawn = emit_to_chats(&forward_to, CHAT_PERMISSION_EVENT, &ask);
-                    eprintln!(
-                        "harness: permission asked for `{}`; {}",
-                        ask.title,
-                        if drawn == 0 {
-                            "opening the Chat surface for it"
-                        } else {
-                            "answer it in the Chat window"
-                        }
-                    );
-                    if drawn == 0 {
-                        open_chat_for_ask(&forward_to);
-                    }
-                }
-                harness::Permission::Settled(request) => {
-                    forget_ask(&forward_to, &request);
-                    emit_to_chats(&forward_to, CHAT_PERMISSION_SETTLED_EVENT, &request);
+                harness::Permission::Ask(ask) => forward_ask(&forward_to, ask),
+                harness::Permission::Settled { request, option } => {
+                    settle_ask(&forward_to, Settled { request, option })
                 }
             }));
             let mut config = model::config_from(&director);
