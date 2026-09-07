@@ -18,6 +18,11 @@ pub const FILE: &str = "action-log.jsonl";
 /// A write that fails is dropped: the log explains the buddy after the fact
 /// and must never be the reason a turn does not happen.
 ///
+/// One `write_all` of one whole line, not `writeln!`: the wire thread and the
+/// frame loop both append here, and `Display` on a `Value` is many small
+/// writes that would interleave into a line no reader can parse. One append
+/// write of a short buffer is not torn.
+///
 /// ponytail: seconds since the epoch, as `memory.rs` does, so no date crate.
 pub fn append(dir: &Path, event: &str, mut fields: Value) {
     let ts = SystemTime::now()
@@ -34,5 +39,5 @@ pub fn append(dir: &Path, event: &str, mut fields: Value) {
     else {
         return;
     };
-    let _ = writeln!(file, "{fields}");
+    let _ = file.write_all(format!("{fields}\n").as_bytes());
 }
