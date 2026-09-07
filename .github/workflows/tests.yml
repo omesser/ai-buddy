@@ -173,20 +173,6 @@ jobs:
         if: runner.os == 'macOS' && steps.changes.outputs.code == 'true'
         run: brew install shellcheck
 
-      - name: Install PowerShell
-        # Required for PSScriptAnalyzer pre-commit hook to lint .ps1 files.
-        # Linux: Microsoft's official install script. macOS: brew cask.
-        if: steps.changes.outputs.code == 'true'
-        run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            curl -fsSL https://aka.ms/install-powershell.sh | sudo bash -s
-          elif [ "$RUNNER_OS" = macOS ]; then
-            brew install --cask powershell
-          fi
-          pwsh --version
-        env:
-          RUNNER_OS: ${{ runner.os }}
-
       - name: Install the Linux system packages
         # Only Linux needs the Tauri libraries: macOS has WebKit in the system
         # already. Without them the shell crate cannot link, which is why the
@@ -239,8 +225,11 @@ jobs:
         # themselves and exit cleanly elsewhere, printing why — pre-commit has
         # no platform key, and naming them here would hide that from anyone
         # running the hooks locally.
+        #
+        # psscriptanalyzer-check always skipped on checks: Windows-only, enforced
+        # by the windows job.
         env:
-          SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy-core,cargo-clippy-mcp-server,cargo-clippy-shell,shfmt,shellcheck' || '' }}
+          SKIP: ${{ steps.changes.outputs.code == 'false' && 'cargo-fmt,cargo-clippy-core,cargo-clippy-mcp-server,cargo-clippy-shell,shfmt,shellcheck,psscriptanalyzer-check' || 'psscriptanalyzer-check' }}
         run: |
           pip install pre-commit
           pre-commit run --all-files --show-diff-on-failure
@@ -326,6 +315,8 @@ jobs:
             crates/core/Cargo.toml
             Cargo.toml
             Cargo.lock
+            scripts/**/*.ps1
+            .pre-commit-config.yaml
             .github/workflows/tests.yml
 
       - name: Decide whether this run should test
@@ -367,3 +358,15 @@ jobs:
         run: |
           cargo test --workspace --all-targets
           cargo test --workspace --doc
+
+      - name: Set up Python for pre-commit
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Run PSScriptAnalyzer
+        # Windows-only PowerShell linting. windows-latest has pwsh pre-installed.
+        # Checks encoding (PSUseBOMForUnicodeEncodedFile) and syntax at Error severity.
+        run: |
+          pip install pre-commit
+          pre-commit run psscriptanalyzer-check --all-files --show-diff-on-failure

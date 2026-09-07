@@ -61,18 +61,20 @@ repos:
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
       - id: shellcheck
 
-    # PowerShell linting
-  - repo: https://github.com/ophiosdev/pre-commit-psscriptanalyzer.git
-    rev: v2.0.0
+    # PowerShell linting (Windows only)
+  - repo: local
     hooks:
       - id: psscriptanalyzer-check
+        name: PSScriptAnalyzer (Windows only)
+        # Wraps ophiosdev/pre-commit-psscriptanalyzer to skip on non-Windows.
+        # PSScriptAnalyzer and pwsh are Windows-native; forcing them onto
+        # Linux/macOS dev machines is heavy-handed. CI enforces via windows job.
+        entry: bash -c 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) ;; *) echo "skipped - PSScriptAnalyzer runs on Windows"; exit 0 ;; esac; pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop; Invoke-ScriptAnalyzer -Path \"$@\" -Severity Error -EnableExit"' --
+        language: system
+        files: \.ps1$
         # Severity Error: only fail on actual errors, not style warnings.
-        # Default excludes PSUseBOMForUnicodeEncodedFile; override to keep it
-        # active for catching encoding issues like the #392 em-dash footgun.
-        # Removed -Fix to keep the hook as check/lint only.
-        args:
-          - '-Severity'
-          - 'Error'
+        # Keeps PSUseBOMForUnicodeEncodedFile active (default in PSScriptAnalyzer)
+        # to catch encoding issues like the #392 em-dash footgun.
 
     # Swift (macOS only; skipped on Linux CI)
   - repo: local
