@@ -29,6 +29,13 @@ const composer = document.getElementById("composer");
 const line = document.getElementById("line");
 const send = document.getElementById("send");
 
+const promptTab = document.getElementById("prompt");
+const promptText = document.getElementById("prompt-text");
+const promptSaid = document.getElementById("prompt-said");
+const promptSave = document.getElementById("prompt-save");
+const promptConfirm = document.getElementById("prompt-confirm");
+const promptCancel = document.getElementById("prompt-cancel");
+
 // The status bar's cells, by the name `statusCells` gives each.
 const cells = Object.fromEntries(
   ["behavior", "primitive", "animation", "state", "facing", "director", "happened"].map(
@@ -235,6 +242,87 @@ function attached(opening) {
 }
 
 
+// Which tab is showing. The conversation and the prompt behind it are the two
+// things this window holds, and they do not fit one above the other at 420
+// points (ADR-0012).
+function showTab(name) {
+  const prompt = name === "prompt";
+  log.hidden = prompt;
+  composer.hidden = prompt;
+  promptTab.hidden = !prompt;
+  for (const [id, on] of [
+    ["tab-chat", !prompt],
+    ["tab-prompt", prompt],
+  ]) {
+    const tab = document.getElementById(id);
+    tab.classList.toggle("on", on);
+    tab.setAttribute("aria-pressed", String(on));
+  }
+  if (prompt) {
+    promptText.focus();
+  }
+}
+
+document.getElementById("tab-chat").addEventListener("click", () => showTab("chat"));
+document.getElementById("tab-prompt").addEventListener("click", () => showTab("prompt"));
+
+// The Instance Prompt as the Shell last told us it stands. An opening pushed
+// while the user is mid-sentence must not take the sentence: only text that
+// still matches what was saved is replaced.
+let savedPrompt = "";
+
+// Whether the Save button is asking for confirmation rather than offering to
+// save. Saving throws the session away, so the second click is the one that
+// does it — and never a keystroke, which would wipe the conversation
+// mid-sentence (ADR-0012).
+function askingToSave(asking) {
+  promptSave.hidden = asking;
+  promptConfirm.hidden = !asking;
+  promptCancel.hidden = !asking;
+}
+
+function showPrompt(opening) {
+  document.getElementById("personality").textContent =
+    opening.personality || "This Character ships no personality.";
+  // Said before it is hit as well as in the refusal after: the Shell owns the
+  // number, so the tab reads it rather than restating it.
+  document.getElementById("prompt-limit").textContent = opening.prompt_limit;
+  if (promptText.value === savedPrompt) {
+    promptText.value = opening.instance_prompt;
+  }
+  savedPrompt = opening.instance_prompt;
+}
+
+promptSave.addEventListener("click", () => {
+  promptSaid.textContent = "";
+  askingToSave(true);
+});
+
+promptCancel.addEventListener("click", () => askingToSave(false));
+
+promptConfirm.addEventListener("click", () => {
+  askingToSave(false);
+  // Refused by the Shell rather than cut here: the bound is one number, in one
+  // place, and the words that did not fit are still in the box to be cut by
+  // the person who wrote them.
+  invoke("chat_prompt", { instance, text: promptText.value })
+    .then(() => {
+      savedPrompt = promptText.value.trim();
+      promptText.value = savedPrompt;
+      promptSaid.textContent = "Saved.";
+      // The rows above belong to a session the Completer no longer holds, and
+      // any caret among them is waiting on an answer that was just dropped.
+      for (const turn of waiting.splice(0)) {
+        turn.you.remove();
+        turn.them.remove();
+      }
+      note("New conversation from here. The next line is the first of it.");
+    })
+    .catch((why) => {
+      promptSaid.textContent = String(why);
+    });
+});
+
 function showWho(opening) {
   them = opening.name;
   document.getElementById("name").textContent = opening.name;
@@ -423,6 +511,7 @@ async function start() {
     ({ payload }) => {
       showWho(payload);
       attached(payload);
+      showPrompt(payload);
     },
     { target: chat.label },
   );
@@ -437,6 +526,7 @@ async function start() {
   const opening = await invoke("chat_opening", { instance });
   showWho(opening);
   attached(opening);
+  showPrompt(opening);
   line.focus();
 }
 

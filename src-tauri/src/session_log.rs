@@ -74,6 +74,15 @@ impl Log {
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
     }
+
+    /// Drop one Instance's turns, leaving every other buddy's alone.
+    ///
+    /// Saving an Instance Prompt reopens that Instance's session and no other,
+    /// so the whole log going with it would take a conversation the Completer
+    /// still holds (ADR-0012).
+    pub fn forget(&mut self, instance: &str) {
+        self.turns.remove(instance);
+    }
 }
 
 fn with_log(app: &tauri::AppHandle, f: impl FnOnce(&mut Log)) {
@@ -137,6 +146,10 @@ pub fn new_session(app: &tauri::AppHandle, instance: &str, why: &str) {
         serde_json::json!({ "instance": instance, "why": why }),
     );
     let _ = app.emit_to(crate::chat_label(instance), crate::CHAT_SESSION_EVENT, why);
+}
+
+pub fn forget(app: &tauri::AppHandle, instance: &str) {
+    with_log(app, |log| log.forget(instance));
 }
 
 #[cfg(test)]
@@ -222,6 +235,22 @@ mod tests {
         assert_eq!(turns[1].said.as_deref(), Some("what are you standing on?"));
         assert!(!turns[2].you);
         assert_eq!(turns[2].said.as_deref(), Some("the desktop floor"));
+    }
+
+    /// Production change that would fail this: forgetting every Instance's
+    /// turns when one Instance's session is reopened. Saving an Instance
+    /// Prompt reopens that Instance's session and no other (ADR-0012), and the
+    /// buddy beside it is still mid-conversation.
+    #[test]
+    fn forgetting_one_instance_leaves_the_others_conversation() {
+        let mut log = Log::new();
+        log.remember_you("saved", "before the edit", UNIX_EPOCH);
+        log.remember_you("other", "still talking", UNIX_EPOCH);
+
+        log.forget("saved");
+
+        assert!(log.replay("saved").is_empty());
+        assert_eq!(log.replay("other").len(), 1);
     }
 
     /// Production change that would fail this: keeping turns after Retarget

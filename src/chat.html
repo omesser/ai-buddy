@@ -15,6 +15,15 @@
         <span class="name" id="name"></span>
         <span class="of" id="character"></span>
       </span>
+
+      <!-- Two tabs, because the window holds two things: the conversation, and
+           the two authored layers of the prompt behind it (ADR-0012). The
+           assembled Character Prompt is not one of them — settings already
+           shows that, and one inspect surface is enough. -->
+      <nav class="tabs">
+        <button type="button" class="tab on" id="tab-chat" aria-pressed="true">Chat</button>
+        <button type="button" class="tab" id="tab-prompt" aria-pressed="false">Prompt</button>
+      </nav>
     </header>
 
     <!-- Announced rather than silent: an answer lands while the caret is still
@@ -61,6 +70,46 @@
         </div>
       </div>
     </div>
+
+    <!-- The two authored layers, the author's above the user's, in the order
+         the Character Prompt assembles them. Copy lives here with the rest of
+         the window's words rather than in chat.js. -->
+    <section class="prompt" id="prompt" hidden>
+      <h2>Personality</h2>
+      <p class="hint">
+        What <span class="i-character"></span>'s package says it is. It belongs to the Character, so
+        it is shown here and edited nowhere.
+      </p>
+      <div class="frozen" id="personality"></div>
+
+      <h2>Your own layer</h2>
+      <p class="hint">
+        Written for <span class="i-name"></span> alone, and kept if you switch Characters. It follows
+        the personality above and is bound by the same rule: it shapes how
+        <span class="i-name"></span> comes across, never what it can do. Up to
+        <span id="prompt-limit"></span> characters.
+      </p>
+      <textarea
+        id="prompt-text"
+        rows="7"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Empty. Write who this one is."
+      ></textarea>
+
+      <p class="warn">
+        <b>Saving starts a new conversation.</b> The Character Prompt is the opening turn, so a new
+        one means a new session: anything still being answered is dropped, and the chat so far is
+        gone from the model's side. What is worth keeping lives in Memory.
+      </p>
+
+      <div class="prompt-actions">
+        <button type="button" id="prompt-save">Save</button>
+        <button type="button" id="prompt-confirm" hidden>Save and start over</button>
+        <button type="button" id="prompt-cancel" hidden>Cancel</button>
+        <span class="prompt-said" id="prompt-said" aria-live="polite"></span>
+      </div>
+    </section>
 
     <form class="composer" id="composer">
       <input id="line" autocomplete="off" placeholder="Say something" />

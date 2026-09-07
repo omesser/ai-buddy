@@ -128,6 +128,148 @@ body {
   color: var(--chat-ink-3);
 }
 
+/* The two tabs, at the far end of the title row: the window's furniture, not
+   part of either thing they switch between. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.tab {
+  padding: 3px 9px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-badge);
+  background: transparent;
+  color: var(--chat-ink-3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tab.on {
+  border-color: var(--chat-accent);
+  background: var(--chat-accent-soft);
+  color: var(--chat-accent);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* The Prompt tab: the two authored layers, the author's frozen above the
+   user's own. Scrolls in the log's place, because at 420 points a personality
+   and a paragraph do not both fit. */
+.prompt {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 16px 18px 18px;
+  border-top: 1px solid var(--chat-rule);
+}
+
+.prompt h2 {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.prompt .hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--chat-ink-2);
+}
+
+/* Read-only and drawn as read-only: the Character's, shown for reference and
+   editable nowhere. Wrapped like a turn, since it is prose someone wrote. */
+.frozen {
+  padding: 9px 12px;
+  border: 1px solid var(--chat-rule);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill-dim);
+  color: var(--chat-ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt textarea {
+  padding: 10px 12px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill);
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.prompt textarea::placeholder {
+  color: var(--chat-ink-4);
+}
+
+.prompt textarea:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* The cost of saving, said before it is paid and not dressed as an error:
+   nothing has gone wrong, and the user is about to spend the conversation. */
+.prompt .warn {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--chat-ink-2);
+}
+
+.prompt .warn b {
+  color: var(--chat-ink);
+}
+
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.prompt-actions button {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-accent);
+  color: var(--chat-accent-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#prompt-cancel {
+  border: 1px solid var(--chat-line);
+  background: transparent;
+  color: var(--chat-ink-2);
+  font-weight: 400;
+}
+
+.prompt-actions button:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* What the Shell said about the save — "Saved.", or the refusal with the limit
+   and the length in it. */
+.prompt-said {
+  font-size: 12px;
+  color: var(--chat-ink-2);
+}
+
 .log {
   flex: 1 1 auto;
   overflow-y: auto;

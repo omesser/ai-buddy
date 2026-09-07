@@ -324,6 +324,10 @@ struct SettingsState {
     path: PathBuf,
     memory_path: PathBuf,
     installed: Vec<String>,
+    /// Each installed Character's Personality Prompt, by Character name. Read
+    /// once at launch, because a package changes only between runs, and shared
+    /// so the Prompt tab asking for it costs no copy of every prompt installed.
+    personalities: Arc<BTreeMap<String, String>>,
     instances: Arc<Mutex<Vec<InstanceRow>>>,
     inspect: Arc<Mutex<model::DirectorInspect>>,
     ops: mpsc::Sender<SettingsOp>,
@@ -603,21 +607,43 @@ fn persist_settings(settings: &Settings, path: &std::path::Path) {
     }
 }
 
+/// Write the roster to settings: which Character each Instance runs, what it is
+/// called, the id it is running under, and the Instance Prompt written against
+/// that id.
+///
+/// The id is persisted because the prompt hangs off it. Without it the next
+/// launch mints a fresh uuid and the user's own words are keyed to an Instance
+/// that no longer exists (ADR-0012).
 fn remember_instances(roster: &Roster, settings: &Arc<Mutex<Settings>>, path: &std::path::Path) {
     if let Ok(mut settings) = settings.lock() {
-        settings.instances = roster
-            .list()
-            .into_iter()
-            .map(|(id, name)| InstanceSpec {
-                character: roster
-                    .get(&id)
+        settings.instances = roster_specs(roster);
+        persist_settings(&settings, path);
+    }
+}
+
+/// The roster as settings stores it.
+///
+/// One mapping for both the startup persist and every later one, because the id
+/// is what the Instance Prompt hangs off: a path that dropped it would mint a
+/// fresh uuid on the next launch and lose the user's own words (ADR-0012).
+fn roster_specs(roster: &Roster) -> Vec<InstanceSpec> {
+    roster
+        .list()
+        .into_iter()
+        .map(|(id, name)| {
+            let instance = roster.get(&id);
+            InstanceSpec {
+                character: instance
                     .map(|instance| instance.character_name().to_string())
                     .unwrap_or_default(),
                 name,
-            })
-            .collect();
-        persist_settings(&settings, path);
-    }
+                prompt: instance
+                    .map(|instance| instance.prompt().to_string())
+                    .unwrap_or_default(),
+                id: Some(id),
+            }
+        })
+        .collect()
 }
 
 /// The overlay heard the primary button. The frame loop polls a session
@@ -928,9 +954,22 @@ struct ChatOpening {
     /// A Harness is attached but not signed in: the command that fixes it,
     /// for the user's own terminal. The third state ADR-0010 names.
     login: Option<String>,
+    /// The Character's own Personality Prompt, frozen: the Prompt tab shows it
+    /// for reference above the layer the user may write (ADR-0012). Empty when
+    /// the package shipped none.
+    personality: String,
+    /// This Instance's own layer, as it stands. Empty by default.
+    instance_prompt: String,
+    /// What the tab may not exceed, so the box can say so before the save
+    /// surface has to.
+    prompt_limit: usize,
 }
 
-fn chat_opening_from(instance: &roster::Instance, inspect: &model::DirectorInspect) -> ChatOpening {
+fn chat_opening_from(
+    instance: &roster::Instance,
+    inspect: &model::DirectorInspect,
+    personality: &str,
+) -> ChatOpening {
     ChatOpening {
         name: instance.name.clone(),
         character: instance.character_name().to_string(),
@@ -940,7 +979,25 @@ fn chat_opening_from(instance: &roster::Instance, inspect: &model::DirectorInspe
             .harness
             .as_ref()
             .and_then(|attached| attached.login.clone()),
+        personality: personality.to_string(),
+        instance_prompt: instance.prompt().to_string(),
+        prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
+}
+
+/// The Personality Prompt of the Character `instance` is running.
+///
+/// Read off the loaded packages rather than held on the Instance: it is the
+/// author's layer and changes only when the Character does, and the Prompt tab
+/// shows it frozen (ADR-0012).
+fn personality_of(
+    characters: &BTreeMap<String, Arc<Character>>,
+    instance: &roster::Instance,
+) -> String {
+    characters
+        .get(instance.character_name())
+        .map(|character| character.personality.clone())
+        .unwrap_or_default()
 }
 
 /// The Chat surface asking who it belongs to, and whether anything can answer.
@@ -951,14 +1008,14 @@ fn chat_opening_from(instance: &roster::Instance, inspect: &model::DirectorInspe
 /// about whether a session Director is attached.
 #[tauri::command]
 fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> ChatOpening {
-    let (name, character) = state
+    let (name, character, instance_prompt) = state
         .instances
         .lock()
         .ok()
         .and_then(|rows| {
             rows.iter()
                 .find(|row| row.id == instance)
-                .map(|row| (row.name.clone(), row.character.clone()))
+                .map(|row| (row.name.clone(), row.character.clone(), row.prompt.clone()))
         })
         .unwrap_or_default();
     // Re-read on every opening: a login the user ran mid-session moves the
@@ -968,6 +1025,11 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
     }
     let inspect = state.inspect.lock().ok();
     ChatOpening {
+        personality: state
+            .personalities
+            .get(&character)
+            .cloned()
+            .unwrap_or_default(),
         name,
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
@@ -976,7 +1038,30 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .as_ref()
             .and_then(|read| read.harness.as_ref())
             .and_then(|attached| attached.login.clone()),
+        instance_prompt,
+        prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
+}
+
+/// A new Instance Prompt for one Instance, from its own Chat surface.
+///
+/// Refused here rather than cut, so the words the user can still see in the box
+/// are the words that were not saved. Everything else — persisting the text,
+/// reopening the session, the Action Log line — happens on the frame-loop
+/// thread, where the roster and the Director slots live (ADR-0012).
+#[tauri::command]
+fn chat_prompt(
+    instance: String,
+    text: String,
+    chat: tauri::State<'_, ChatChannel>,
+) -> Result<(), String> {
+    let prompt = roster::instance_prompt(&text)?;
+    chat.0
+        .send(ChatMsg::Wrote(ChatLine {
+            instance,
+            text: prompt,
+        }))
+        .map_err(|_| "ai-buddy is not listening.".to_string())
 }
 
 /// The user's pick on a forwarded permission request. The only path by which
@@ -998,11 +1083,12 @@ fn push_chat_opening(
     roster: &Roster,
     id: &InstanceId,
     inspect: &model::DirectorInspect,
+    characters: &BTreeMap<String, Arc<Character>>,
 ) {
     let Some(instance) = roster.get(id) else {
         return;
     };
-    let opening = chat_opening_from(instance, inspect);
+    let opening = chat_opening_from(instance, inspect, &personality_of(characters, instance));
     let label = chat_label(id);
     let title = opening.name.clone();
     let handle = app.clone();
@@ -1018,10 +1104,15 @@ fn push_chat_opening(
     }
 }
 
-fn push_chat_openings(app: &tauri::AppHandle, roster: &Roster, inspect: &model::DirectorInspect) {
+fn push_chat_openings(
+    app: &tauri::AppHandle,
+    roster: &Roster,
+    inspect: &model::DirectorInspect,
+    characters: &BTreeMap<String, Arc<Character>>,
+) {
     let ids: Vec<_> = roster.list().into_iter().map(|(id, _)| id).collect();
     for id in ids {
-        push_chat_opening(app, roster, &id, inspect);
+        push_chat_opening(app, roster, &id, inspect, characters);
     }
 }
 
@@ -1033,6 +1124,10 @@ struct ChatLine {
 /// What one Chat surface has to say to the frame loop.
 enum ChatMsg {
     Said(ChatLine),
+    /// A new Instance Prompt, already inside the bound. Saving it reopens that
+    /// Instance's Director session, which is the frame loop's to do: it holds
+    /// the roster and the Director slots (ADR-0012).
+    Wrote(ChatLine),
     /// The surface is listening and has drawn nothing yet: the bar is pushed on
     /// change, so a window opened between two would sit at dashes. Sent after
     /// the listener is registered, or it is an answer nobody hears.
@@ -1359,7 +1454,7 @@ fn apply_menu_action(
                     app,
                 );
                 if let Ok(inspect) = inspect.lock() {
-                    push_chat_opening(app, roster, instance_id, &inspect);
+                    push_chat_opening(app, roster, instance_id, &inspect, characters);
                 }
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
@@ -1395,7 +1490,7 @@ fn apply_menu_action(
                 config.apply_switch(settings.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
-                    push_chat_openings(app, roster, &inspect);
+                    push_chat_openings(app, roster, &inspect, characters);
                 }
                 persist_settings(&settings, settings_path);
                 eprintln!(
@@ -1611,14 +1706,18 @@ fn publish_instances(roster: &Roster, dest: &Arc<Mutex<Vec<InstanceRow>>>) {
             .list()
             .into_iter()
             .map(|(id, name)| {
-                let character = roster
-                    .get(&id)
-                    .map(|instance| instance.character_name().to_string())
-                    .unwrap_or_default();
+                let instance = roster.get(&id);
                 InstanceRow {
                     id,
                     name,
-                    character,
+                    character: instance
+                        .map(|instance| instance.character_name().to_string())
+                        .unwrap_or_default(),
+                    // The Chat surface asks for this through `chat_opening`,
+                    // which sees the roster only through these rows.
+                    prompt: instance
+                        .map(|instance| instance.prompt().to_string())
+                        .unwrap_or_default(),
                 }
             })
             .collect();
@@ -1728,10 +1827,7 @@ fn load_instances(
         let character = Arc::new(load_named(app, wanted)?);
         let name = character.name.clone();
         return Ok(vec![(
-            InstanceSpec {
-                character: character.name.clone(),
-                name,
-            },
+            InstanceSpec::fresh(character.name.clone(), name),
             character,
         )]);
     }
@@ -1761,6 +1857,10 @@ fn load_instances(
             InstanceSpec {
                 character: spec.character.clone(),
                 name,
+                // Carried rather than dropped: these two are how the Instance
+                // that ran last time is the Instance that runs now (ADR-0012).
+                id: spec.id.clone(),
+                prompt: spec.prompt.clone(),
             },
             character,
         ));
@@ -1824,7 +1924,13 @@ fn spawn_instances(
     let positions = starting_positions(start, &widths);
 
     for (index, (spec, character)) in loaded.iter().enumerate() {
-        let id = roster.spawn(character, spec.name.clone(), positions[index]);
+        let id = roster.restore(
+            character,
+            spec.name.clone(),
+            positions[index],
+            spec.id.clone(),
+            spec.prompt.clone(),
+        );
 
         lives.push(InstanceState {
             id: id.clone(),
@@ -2086,6 +2192,7 @@ fn main() {
             overlay_secondary,
             chat_opening,
             chat_send,
+            chat_prompt,
             chat_ready,
             permission_answer
         ])
@@ -2293,17 +2400,7 @@ fn main() {
             // after spawn had already adopted. The roster is the name that
             // will show. #375.
             if !settings.instances.is_empty() {
-                settings.instances = roster
-                    .list()
-                    .into_iter()
-                    .map(|(id, name)| InstanceSpec {
-                        character: roster
-                            .get(&id)
-                            .map(|instance| instance.character_name().to_string())
-                            .unwrap_or_default(),
-                        name,
-                    })
-                    .collect();
+                settings.instances = roster_specs(&roster);
             }
             persist_settings(&settings, &settings_file);
 
@@ -2330,6 +2427,12 @@ fn main() {
                 path: settings_file.clone(),
                 memory_path: memory::shared_path(),
                 installed,
+                personalities: Arc::new(
+                    character_cache
+                        .iter()
+                        .map(|(name, character)| (name.clone(), character.personality.clone()))
+                        .collect(),
+                ),
                 instances: Arc::clone(&instance_rows),
                 inspect: Arc::clone(&inspect),
                 ops: ops_tx,
@@ -2470,13 +2573,7 @@ mod tests {
     fn follow_lone_default_renames_a_foreign_package_id() {
         let wolf = Arc::new(stub_character("Timber Wolf"));
         let bmo = Arc::new(stub_character("BMO"));
-        let mut loaded = vec![(
-            InstanceSpec {
-                character: "Timber Wolf".to_string(),
-                name: "bmo".to_string(),
-            },
-            Arc::clone(&wolf),
-        )];
+        let mut loaded = vec![(InstanceSpec::fresh("Timber Wolf", "bmo"), Arc::clone(&wolf))];
         let mut known = BTreeMap::new();
         known.insert("BMO".to_string(), bmo);
         known.insert("Timber Wolf".to_string(), Arc::clone(&wolf));
@@ -2489,13 +2586,7 @@ mod tests {
     #[test]
     fn follow_lone_default_keeps_a_chosen_name() {
         let wolf = Arc::new(stub_character("Timber Wolf"));
-        let mut loaded = vec![(
-            InstanceSpec {
-                character: "Timber Wolf".to_string(),
-                name: "Pip".to_string(),
-            },
-            Arc::clone(&wolf),
-        )];
+        let mut loaded = vec![(InstanceSpec::fresh("Timber Wolf", "Pip"), Arc::clone(&wolf))];
         let mut known = BTreeMap::new();
         known.insert("BMO".to_string(), Arc::new(stub_character("BMO")));
         known.insert("Timber Wolf".to_string(), wolf);
@@ -2527,7 +2618,7 @@ mod tests {
         assert!(roster.retarget(&id, &second));
         let instance = roster.get(&id).expect("still there");
 
-        let opening = chat_opening_from(instance, &stub_inspect());
+        let opening = chat_opening_from(instance, &stub_inspect(), "");
         assert_eq!(opening.name, "nim", "the payload name is the Instance's");
         assert_eq!(
             opening.character, "nim",
@@ -2546,7 +2637,7 @@ mod tests {
         assert!(roster.retarget(&id, &second));
         let instance = roster.get(&id).expect("still there");
 
-        let opening = chat_opening_from(instance, &stub_inspect());
+        let opening = chat_opening_from(instance, &stub_inspect(), "");
         assert_eq!(opening.name, "Pip");
         assert_eq!(opening.character, "nim");
     }
@@ -2568,12 +2659,46 @@ mod tests {
             harness: None,
         };
 
-        let opening = chat_opening_from(instance, &inspect);
+        let opening = chat_opening_from(instance, &inspect, "");
         assert_eq!(opening.name, "Pip");
         assert_eq!(opening.character, "nim");
         assert!(opening.configured);
         assert!(!opening.enabled);
         assert_eq!(opening.login, None);
+    }
+
+    /// ADR-0012: the Prompt tab draws the two authored layers, so the opening
+    /// has to carry both — the Character's frozen and this Instance's own,
+    /// empty by default — and the bound the box has to stay inside.
+    ///
+    /// Production change that would fail this: sending the assembled Character
+    /// Prompt instead, or the Character's personality in place of the user's.
+    #[test]
+    fn chat_opening_carries_both_authored_layers_and_the_bound() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+
+        let fresh = chat_opening_from(
+            roster.get(&id).expect("spawned"),
+            &stub_inspect(),
+            "Nim is patient.",
+        );
+        assert_eq!(fresh.personality, "Nim is patient.");
+        assert_eq!(fresh.instance_prompt, "", "empty by default");
+        assert_eq!(fresh.prompt_limit, roster::INSTANCE_PROMPT_LIMIT);
+
+        assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
+        let written = chat_opening_from(
+            roster.get(&id).expect("spawned"),
+            &stub_inspect(),
+            "Nim is patient.",
+        );
+        assert_eq!(written.instance_prompt, "Answer in haiku.");
+        assert_eq!(
+            written.personality, "Nim is patient.",
+            "the author's layer stays the package's, frozen"
+        );
     }
 
     /// #17: losing a line that is waiting in `happened` would answer a question
@@ -2729,10 +2854,7 @@ mod tests {
         std::env::remove_var(INSTANCES_VAR);
 
         let remembered = Settings {
-            instances: vec![InstanceSpec {
-                character: "nim".to_string(),
-                name: "Nim".to_string(),
-            }],
+            instances: vec![InstanceSpec::fresh("nim", "Nim")],
             ..Settings::default()
         };
         assert_eq!(

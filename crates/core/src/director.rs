@@ -120,6 +120,11 @@ pub struct Context {
     /// The active Character's Personality Prompt. Empty when the package
     /// shipped none.
     pub personality: String,
+    /// This Instance's own layer, which the user wrote. Empty when they wrote
+    /// none, which is the default. Beside `personality` rather than folded
+    /// into it: two authored layers with two authors, and the empty case has
+    /// to assemble the payload it always did (ADR-0012).
+    pub instance_prompt: String,
     pub state: State,
     pub happened: Happened,
     /// What the feet are on: a window (owner name), the floor above the
@@ -688,6 +693,7 @@ mod tests {
             activity,
             recent: recent.iter().map(|name| name.to_string()).collect(),
             personality: "a shy robot.".to_string(),
+            instance_prompt: String::new(),
             state: State::Grounded,
             happened: Happened::Poke,
             standing: String::new(),
@@ -1420,6 +1426,7 @@ mod tests {
             },
             recent: vec!["stroll".to_string(), "nap".to_string()],
             personality: "Blip is cheerful.".to_string(),
+            instance_prompt: String::new(),
             state: State::Grounded,
             happened: Happened::Poke,
             standing: "the display floor, above the Dock".to_string(),
@@ -1458,6 +1465,45 @@ mod tests {
         assert!(
             payload.contains("standing on: the display floor, above the Dock"),
             "standing: {payload}"
+        );
+    }
+
+    /// ADR-0012: the layer is additive and empty by default, so an Instance
+    /// nobody wrote for assembles exactly the Character Prompt it did before
+    /// the layer existed — no blank line where the user typed nothing.
+    #[test]
+    fn an_empty_instance_prompt_assembles_the_payload_it_always_did() {
+        let moment = context(working(), &["nap"]);
+
+        let payload = character_prompt(&moment, ["wave"]);
+
+        assert!(
+            payload.starts_with("a shy robot.\n\nYou may propose one of these behaviors: wave"),
+            "the roster follows the personality directly: {payload}"
+        );
+    }
+
+    /// ADR-0012: the user's layer is a second voice layer after the author's,
+    /// and still ahead of the roster and the universal voice rules, so those
+    /// rules come last and govern it by position as well as by wording.
+    #[test]
+    fn an_instance_prompt_sits_between_the_personality_and_the_roster() {
+        let moment = Context {
+            instance_prompt: "Answer in haiku.".to_string(),
+            ..context(working(), &["nap"])
+        };
+
+        let payload = character_prompt(&moment, ["wave"]);
+
+        let personality = payload.find("a shy robot.").expect("the author's layer");
+        let instance = payload.find("Answer in haiku.").expect("the user's layer");
+        let roster = payload.find("You may propose").expect("the roster");
+        let rules = payload
+            .find("always in character")
+            .expect("the voice rules");
+        assert!(
+            personality < instance && instance < roster && roster < rules,
+            "personality, then the user's layer, then the roster, then the rules: {payload}"
         );
     }
 
