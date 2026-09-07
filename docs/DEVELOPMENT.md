@@ -142,7 +142,7 @@ Set environment variables for live debugging (all off by default):
 |---|---|
 | `AI_BUDDY_TRACE_HITTEST` | Click-through decisions |
 | `AI_BUDDY_TRACE_FRAMES` | Engine frames (state, position, animation) per tick |
-| `AI_BUDDY_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played |
+| `AI_BUDDY_TRACE_DIRECTOR` | Session wakes: prompt, reply, Behavior played, Behavior refused |
 | `AI_BUDDY_TRACE_ENGINE` | Behavior/Primitive/Animation/State changes |
 | `AI_BUDDY_CAPTURABLE` | Allow screen captures (default: excluded) — the sprite appears in screenshots when set |
 

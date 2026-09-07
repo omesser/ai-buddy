@@ -117,3 +117,10 @@ play = ["react", "talk"]
 then = "doze"
 weight = 20
 when = "idle under 30s"
+
+# Rare on purpose. The awake band is deliberate: a jump is refused while the
+# sprite is asleep, so a later trigger would never run.
+[behaviors.jump]
+play = ["jump"]
+weight = 2
+when = "idle under 30s"

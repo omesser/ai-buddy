@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn an_unknown_primitive_is_rejected_by_name() {
         let manifest = format!(
-            "{}[behaviors.greet]\nplay = [\"talk\", \"jump\"]\n",
+            "{}[behaviors.greet]\nplay = [\"talk\", \"pounce\"]\n",
             declaring(&REQUIRED_ANIMATIONS)
         );
         let errors = errors(load_manifest(&manifest));
@@ -698,8 +698,8 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                "behavior \"greet\" declares \"jump\", which is not a Primitive; \
-                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase"
+                "behavior \"greet\" declares \"pounce\", which is not a Primitive; \
+                 the Primitives are idle, walk, land, sit, sleep, react, talk, hold, chase, jump"
                     .to_string()
             ],
             "the author is told the offending word and what they may write instead"
@@ -910,13 +910,13 @@ mod tests {
                  as then = \"settle\""
                     .to_string(),
                 "behavior \"pounce\" declares 7, which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase, jump"
                     .to_string(),
                 "when for behavior \"pounce\" is 6, which is not a condition; a condition \
                  reads \"idle over 2m\", \"idle under 30s\" or \"app Safari\""
                     .to_string(),
                 "behavior \"фыр\" declares [], which is not a Primitive; the Primitives \
-                 are idle, walk, land, sit, sleep, react, talk, hold, chase"
+                 are idle, walk, land, sit, sleep, react, talk, hold, chase, jump"
                     .to_string(),
             ],
             "each nonsense declaration is rejected by name, saying what is wrong"

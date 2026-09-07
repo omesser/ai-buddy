@@ -152,3 +152,10 @@ play = ["talk"]
 then = "patrol"
 weight = 40
 when = "idle under 10s"
+
+# Zero until BMO has dedicated jump art: the fall it falls back on does not
+# stand in for one. Still declared, so a Director can still ask for it. #490.
+[behaviors.jump]
+play = ["jump"]
+weight = 0
+when = "idle over 10s"
