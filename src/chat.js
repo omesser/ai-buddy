@@ -5,8 +5,8 @@
 // request with its options as buttons — plus the Shell's own note about a turn
 // that produced nothing. ADR-0010's tool-call one-liner waits on the Action Log
 // getting a reader. It holds no authoritative state, like the overlay: the log
-// is what has been said in this window, and the Shell owns the session behind
-// it.
+// is this session, including lines said before this window existed, and the
+// Shell owns the session behind it.
 
 import { stampWhen } from "./chat-stamp.js";
 import { statusCells } from "./chat-status.js";
@@ -296,6 +296,10 @@ async function start() {
   await listen(
     "chat",
     ({ payload }) => {
+      if (payload.you) {
+        said("You", payload.said ?? "", "you");
+        return;
+      }
       if (payload.busy) {
         const refused = waiting.pop();
         if (refused) {

@@ -36,6 +36,7 @@ mod package;
 mod platform;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod secrets;
+mod session_log;
 #[cfg_attr(not(unix), allow(dead_code))] // see the note on `consent`
 mod settings;
 mod tray;
@@ -143,9 +144,10 @@ const CHAT_PERMISSION_SETTLED_EVENT: &str = "chat-permission-settled";
 /// An ask reaches a webview as an event, and an event reaches only the windows
 /// that were open when it went out — including none at all. Held here so
 /// `chat_ready` can hand them to a surface that opens afterwards, which is the
-/// surface a permission request now opens for itself. ADR-0010 holds nothing
-/// else for a later surface and names this as its exception: a question with a
-/// deadline that only this surface can answer.
+/// surface a permission request now opens for itself. Permission asks remain
+/// the exception that *opens* a surface; Speech of the current session is also
+/// held (`session_log`) so a surface that opens later can read the same
+/// conversation (ADR-0010's log widening).
 ///
 /// One lock over both fields and over the emits that read them: a settlement
 /// landing between a replay's read and its emit would draw a live row nothing
@@ -1056,6 +1058,10 @@ struct ChatReply {
     /// A label rather than a bare flag because a double-click is a prompt: the
     /// user asked, they just did not type.
     reacting_to: Option<String>,
+    /// A replayed line the user typed. The live send path draws that row in
+    /// the webview itself, so a true here on that path would duplicate it.
+    #[serde(default)]
+    you: bool,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
@@ -1125,6 +1131,18 @@ fn chat_ready(
     pending: tauri::State<'_, PendingAsks>,
 ) {
     if let Ok(pending) = pending.0.lock() {
+        for turn in session_log::replay(&app, &instance) {
+            let _ = app.emit_to(
+                chat_label(&instance),
+                CHAT_EVENT,
+                ChatReply {
+                    said: turn.said,
+                    busy: false,
+                    reacting_to: turn.reacting_to,
+                    you: turn.you,
+                },
+            );
+        }
         for ask in &pending.asks {
             let _ = app.emit_to(chat_label(&instance), CHAT_PERMISSION_EVENT, ask);
         }
@@ -2165,6 +2183,7 @@ fn main() {
             // whether a Harness is attached. Resolving the key first is what
             // made a Harness launch prompt for one it would never send (#290).
             app.manage(PendingAsks(Mutex::new(Pending::default())));
+            app.manage(Mutex::new(session_log::Log::new()));
             let forward_to = app.handle().clone();
             harness::attach(
                 settings.harness_source(),
