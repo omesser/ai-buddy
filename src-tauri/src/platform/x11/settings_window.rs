@@ -345,36 +345,21 @@ impl SettingsWindow {
                     pack(container, &label_widget, ROW_GAP);
                 }
 
-                if id == form::HOTKEY_ID || id == form::PAYLOAD_ID {
-                    let label = gtk::Label::new(None);
-                    label.set_halign(Align::Start);
-                    label.set_xalign(0.0);
-                    label.set_selectable(true);
-                    label.set_line_wrap(true);
+                // One value widget for every inspect row, named or not. The
+                // two rows this arm was written for both had a heading, and
+                // the attached-state line deliberately has none — the
+                // sentence is the whole row — so drawing the value only for
+                // the ids it recognised left that row blank (#467).
+                let value = gtk::Label::new(None);
+                value.set_halign(Align::Start);
+                value.set_xalign(0.0);
+                value.set_selectable(true);
+                value.set_line_wrap(true);
 
-                    pack(container, &label, ROW_GAP);
-                    self.controls
-                        .borrow_mut()
-                        .insert(id.clone(), Control::Label(label));
-                } else {
-                    let scrolled = gtk::ScrolledWindow::new(
-                        None::<&gtk::Adjustment>,
-                        None::<&gtk::Adjustment>,
-                    );
-                    scrolled.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
-                    scrolled.set_size_request(-1, 88);
-
-                    let text_view = gtk::TextView::new();
-                    text_view.set_editable(false);
-                    text_view.set_wrap_mode(gtk::WrapMode::Word);
-                    text_view.set_monospace(true);
-
-                    scrolled.add(&text_view);
-                    pack(container, &scrolled, ROW_GAP);
-                    self.controls
-                        .borrow_mut()
-                        .insert(id.clone(), Control::TextView(text_view));
-                }
+                pack(container, &value, ROW_GAP);
+                self.controls
+                    .borrow_mut()
+                    .insert(id.clone(), Control::Label(value));
 
                 if let Some(help_text) = help {
                     help_line(container, help_text);
@@ -693,13 +678,76 @@ impl SettingsWindow {
                     help_line(container, help_text);
                 }
             }
-            FormRow::Popup { id, help, .. } => {
+            FormRow::Popup {
+                id,
+                label,
+                writes,
+                help,
+                options,
+                frozen,
+            } => {
+                if let Some(label_text) = label {
+                    let label_widget = gtk::Label::new(Some(label_text));
+                    label_widget.set_halign(Align::Start);
+                    pack(container, &label_widget, ROW_GAP);
+                }
+
                 let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
 
+                // A row that carries its own choices is filled here, once: the
+                // list is the form's and cannot change while the window is
+                // open. Empty options leave the group to `draw`, which is how
+                // the Character picker gets the installed packages — a list
+                // only the live view can see. Filling from the one and not the
+                // other is what left the source picker empty (#467).
+                let mut group: Option<gtk::RadioButton> = None;
+                for option in options {
+                    let radio = if let Some(ref first) = group {
+                        gtk::RadioButton::from_widget(first)
+                    } else {
+                        gtk::RadioButton::with_label(option)
+                    };
+                    if group.is_none() {
+                        group = Some(radio.clone());
+                    } else {
+                        radio.set_label(option);
+                    }
+                    radio.set_sensitive(!frozen);
+
+                    // Frozen like the field arms above, so `draw`'s
+                    // `set_active` has nothing to fire into: an exported
+                    // variable's value is drawn and takes no edit (#272).
+                    if !frozen {
+                        let writes = *writes;
+                        let title = option.clone();
+                        let session = Arc::clone(&self.session);
+                        let refreshing = self.refreshing.clone();
+                        radio.connect_toggled(move |radio| {
+                            if refreshing.get() || !radio.is_active() {
+                                return;
+                            }
+                            if let Ok(guard) = session.lock() {
+                                if let Some(sess) = guard.as_ref() {
+                                    let mut patch = SettingsPatch::default();
+                                    if !patch.set_text(writes, &title) {
+                                        return;
+                                    }
+                                    if let Err(e) = sess.apply(patch) {
+                                        eprintln!("settings: {e}");
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    radio_box.pack_start(&radio, false, false, 0);
+                }
+
                 pack(container, &radio_box, ROW_GAP);
-                self.controls
-                    .borrow_mut()
-                    .insert(id.clone(), Control::CharacterPicker(radio_box, Vec::new()));
+                self.controls.borrow_mut().insert(
+                    id.clone(),
+                    Control::CharacterPicker(radio_box, options.clone()),
+                );
 
                 if let Some(help_text) = help {
                     help_line(container, help_text);
@@ -829,6 +877,9 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::HOTKEY_ID) {
             label.set_text(&view.hide_hotkey);
         }
+        if let Some(Control::Label(label)) = controls.get(form::HARNESS_STATE_ID) {
+            label.set_text(&view.harness_state);
+        }
         // The rows the view carries by id: every Development switch and limit.
         // Bound here rather than one named lookup each, so a row added to
         // `form.rs` is drawn from the value in force with no edit to this file.
@@ -956,6 +1007,21 @@ impl SettingsWindow {
 
                 radio_box.show_all();
                 *cached_installed = view.installed.clone();
+            }
+        }
+        // The source picker's choices came with its row, so a redraw only
+        // moves the selection. Setting the active radio writes nothing back:
+        // `refreshing` is up, and GTK emits no `toggled` for a radio that was
+        // already the active one.
+        if let Some(Control::CharacterPicker(radio_box, _)) = controls.get(form::HARNESS_ID) {
+            for child in radio_box.children() {
+                if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
+                    if let Some(label) = radio.label() {
+                        if label == view.harness {
+                            radio.set_active(true);
+                        }
+                    }
+                }
             }
         }
         if let Some(Control::List(list_box, dismiss_label)) = controls.get(form::INSTANCES_ID) {
