@@ -367,13 +367,14 @@ async function start() {
     { target: chat.label },
   );
 
-  // Name and Character only. The command is one-shot at start() for
-  // whether anything can answer; a Character switch has to reach a
-  // window that is already listening. #375.
+  // Full opening, not only name and Character: a Director or Completer-source
+  // change has to re-run `attached()` on a window that is already listening.
+  // #375, #473.
   await listen(
     "chat-opening",
     ({ payload }) => {
       showWho(payload);
+      attached(payload);
     },
     { target: chat.label },
   );

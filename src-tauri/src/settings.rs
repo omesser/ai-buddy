@@ -372,6 +372,10 @@ pub enum SettingsOp {
         ambient_allowed: bool,
         configured: bool,
     },
+    /// Director switch or Completer source changed: already-open Chat
+    /// surfaces must re-run `attached()` from a full opening. Not a second
+    /// session (ADR-0008). #473.
+    ReloadChat,
 }
 
 /// Whether what a secure field holds is a key somebody typed.
@@ -480,6 +484,28 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_wake_secs
             .as_ref()
             .is_some_and(|secs| secs != &settings.director_wake_secs)
+}
+
+/// Whether an already-open Chat surface must hear a new opening.
+///
+/// Director on/off never retargets, and Completer source is a next-launch
+/// restart (ADR-0008, #436). Both still change what `chat_opening` would say,
+/// and the window only asked once. #473.
+fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
+    patch
+        .director_enabled
+        .is_some_and(|on| on != settings.director_enabled)
+        || harness_source_changed(settings, patch)
+}
+
+fn harness_source_changed(settings: &Settings, patch: &SettingsPatch) -> bool {
+    // Presence of the row is not a change: both windows commit on blur.
+    if patch.harness.is_none() && patch.harness_command.is_none() {
+        return false;
+    }
+    let mut next = settings.clone();
+    next.apply(patch.clone());
+    next.harness_source() != settings.harness_source()
 }
 
 /// Which of the Director tab's fields hold an edit.
@@ -691,6 +717,7 @@ impl SettingsSession {
         let prompt_sr = patch.use_screen_recording == Some(true);
         let mut settings = self.settings.lock().map_err(|error| error.to_string())?;
         let retarget = completer_retargets(&settings, &patch);
+        let reload_chat = chat_surface_reloads(&settings, &patch);
         // Seeded before `retarget_payload`, which rebuilds the Endpoint from
         // the live timeout and reply cap.
         apply_and_seed(&mut settings, patch);
@@ -716,6 +743,9 @@ impl SettingsSession {
                 }
                 Err(why) => eprintln!("director: secret store: {why}"),
             }
+        }
+        if reload_chat {
+            let _ = self.ops.send(SettingsOp::ReloadChat);
         }
         if let Some(spec) = rebind {
             (self.on_rebind)(&self.app, &spec);
@@ -3042,6 +3072,73 @@ mod tests {
         patch.set_text(TextField::Harness, "hermes");
         patch.set_text(TextField::HarnessCommand, "opencode acp");
         assert!(!completer_retargets(&settings, &patch));
+    }
+
+    /// Production change that would fail this: a Director-off patch that does
+    /// not tell an already-open Chat surface. Payload is `chat_opening_from`
+    /// with inspect after `apply_switch`. #473.
+    #[test]
+    fn a_director_off_patch_tells_an_open_chat_surface_it_is_disabled() {
+        let settings = Settings::default();
+        assert!(settings.director_enabled);
+        let patch = SettingsPatch {
+            director_enabled: Some(false),
+            ..SettingsPatch::default()
+        };
+        assert!(
+            chat_surface_reloads(&settings, &patch),
+            "an already-open surface must hear the new opening"
+        );
+    }
+
+    /// Production change that would fail this: Director on again that does
+    /// not tell an already-open Chat surface. #473.
+    #[test]
+    fn a_director_on_patch_readies_the_composer_when_configured() {
+        let settings = Settings {
+            director_enabled: false,
+            ..Settings::default()
+        };
+        let patch = SettingsPatch {
+            director_enabled: Some(true),
+            ..SettingsPatch::default()
+        };
+        assert!(chat_surface_reloads(&settings, &patch));
+    }
+
+    #[test]
+    fn an_unchanged_director_switch_does_not_reload_chat() {
+        let settings = Settings::default();
+        let patch = SettingsPatch {
+            director_enabled: Some(true),
+            ..SettingsPatch::default()
+        };
+        assert!(!chat_surface_reloads(&settings, &patch));
+    }
+
+    #[test]
+    fn a_sound_patch_does_not_reload_chat() {
+        let patch = SettingsPatch {
+            sound: Some(false),
+            ..SettingsPatch::default()
+        };
+        assert!(!chat_surface_reloads(&Settings::default(), &patch));
+    }
+
+    /// Completer source is not a Retarget; Chat still has to hear a new
+    /// opening, from inspect as it stands until the next launch. #473, ADR-0008.
+    #[test]
+    fn a_harness_source_patch_tells_an_open_chat_surface_the_inspect_mode() {
+        let settings = Settings {
+            harness: "hermes".into(),
+            ..Settings::default()
+        };
+        let mut patch = SettingsPatch::default();
+        patch.set_text(TextField::Harness, form::HARNESS_OFF);
+        assert!(
+            chat_surface_reloads(&settings, &patch),
+            "an already-open surface must hear the opening"
+        );
     }
 
     /// The bug that mattered most: a source row naming a Harness this machine

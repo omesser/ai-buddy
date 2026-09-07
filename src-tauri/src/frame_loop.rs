@@ -19,10 +19,10 @@ use super::settings::SettingsOp;
 use super::{
     apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, menu, model,
     note_happened, open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
-    push_chat_opening, remember_instances, spawn_live, switch_instance, tray, ChatMsg, ChatReply,
-    ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState, MenuChannel,
-    MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT,
-    CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    push_chat_opening, push_chat_openings, remember_instances, spawn_live, switch_instance, tray,
+    ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState,
+    MenuChannel, MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle,
+    CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// One overlay's last applied shape: the mask, then x, y, width and height.
@@ -430,6 +430,7 @@ pub(crate) fn run_frame_loop(
             }
 
             let mut settings_ops = false;
+            let mut reload_chat = false;
             while let Ok(op) = ops.try_recv() {
                 settings_ops = true;
                 match op {
@@ -463,7 +464,9 @@ pub(crate) fn run_frame_loop(
                                     &config,
                                     &director,
                                 );
-                                push_chat_opening(&app, &roster, &id);
+                                if let Ok(inspect) = inspect.lock() {
+                                    push_chat_opening(&app, &roster, &id, &inspect);
+                                }
                             }
                         } else {
                             eprintln!("settings: no Character named {character}");
@@ -512,6 +515,7 @@ pub(crate) fn run_frame_loop(
                             );
                         }
                     }
+                    SettingsOp::ReloadChat => reload_chat = true,
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }
@@ -654,6 +658,13 @@ pub(crate) fn run_frame_loop(
                     if let Some(instance) = roster.get_mut(&id) {
                         instance.set_do_not_disturb(dnd);
                     }
+                }
+            }
+
+            if reload_chat {
+                if let Ok(mut inspect) = inspect.lock() {
+                    inspect.harness = harness::attached().map(|session| session.inspect());
+                    push_chat_openings(&app, &roster, &inspect);
                 }
             }
 
