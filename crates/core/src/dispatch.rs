@@ -347,11 +347,21 @@ mod tests {
         }
     }
 
+    /// The lone Instance stands in for the shipped roster: without one, these
+    /// two exercise the empty-roster failure instead of the routing they name.
+    fn one_instance() -> [InstanceInfo; 1] {
+        [InstanceInfo {
+            id: "instance-1".to_string(),
+            name: "Buddy".to_string(),
+        }]
+    }
+
     #[test]
     fn dispatch_speak_returns_speak_result() {
         let temp = TempDir::new("speak");
         let source = fake_source(vec![]);
-        let mut context = test_context(&temp, &source, &[]);
+        let infos = one_instance();
+        let mut context = test_context(&temp, &source, &infos);
 
         let args = json!({"message": "Hello, world"});
         let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
@@ -364,7 +374,8 @@ mod tests {
     fn dispatch_play_behavior_returns_play_behavior_result() {
         let temp = TempDir::new("play");
         let source = fake_source(vec![]);
-        let mut context = test_context(&temp, &source, &[]);
+        let infos = one_instance();
+        let mut context = test_context(&temp, &source, &infos);
 
         let args = json!({"behavior": "wave"});
         let result = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
@@ -906,17 +917,31 @@ mod tests {
         assert_eq!(result["message"], "Hello");
     }
 
+    /// Break: an Expression that reaches no Instance reports success again, or
+    /// stops saying why. It used to report plain success, which is how every
+    /// stdio verification before #491 passed against nothing at all. #502.
     #[test]
-    fn empty_roster_without_a_handle_keeps_the_stub_success_shape() {
+    fn an_empty_roster_fails_and_says_no_instance_is_running() {
         let temp = TempDir::new("empty-roster");
         let source = fake_source(vec![]);
         let mut context = test_context(&temp, &source, &[]);
 
         let args = json!({"message": "Hello, world"});
-        let result = dispatch("speak", args, &mut context).expect("dispatch succeeds");
+        let spoke = dispatch("speak", args, &mut context).expect("dispatch succeeds");
 
-        assert_eq!(result["success"], true);
-        assert_eq!(result["message"], "Hello, world");
+        assert_eq!(spoke["success"], false);
+        assert_eq!(spoke["message"], "Hello, world");
+        assert_eq!(
+            spoke["reason"],
+            "No Character Instance is running, so nothing changed on screen"
+        );
+
+        let args = json!({"behavior": "wave"});
+        let played = dispatch("play_behavior", args, &mut context).expect("dispatch succeeds");
+
+        assert_eq!(played["success"], false);
+        assert_eq!(played["behavior"], "wave");
+        assert_eq!(played["reason"], spoke["reason"]);
     }
 
     /// Break: empty message / empty behavior start reporting success, or become DispatchError.

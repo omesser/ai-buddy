@@ -25,6 +25,13 @@ use crate::memory::MemoryManifest;
 pub struct SpeakResult {
     pub success: bool,
     pub message: String,
+    /// Why nothing reached a Character Instance, when `success` is false.
+    ///
+    /// The bool alone cannot tell a Harness "I said it" from "there was nobody
+    /// to say it to", and a stdio Harness runs against an empty roster every
+    /// time. Absent on success, so a satisfied call keeps its old shape. #502.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Tool result for the `play_behavior` tool.
@@ -32,6 +39,9 @@ pub struct SpeakResult {
 pub struct PlayBehaviorResult {
     pub success: bool,
     pub behavior: String,
+    /// Why nothing reached a Character Instance; see [`SpeakResult::reason`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Live handle for enqueueing Expression proposals onto Character Instances.
@@ -143,29 +153,34 @@ mod helpers {
             .collect()
     }
 
-    /// Result from resolving expression target and attempting enqueue.
-    pub enum ExpressionResult {
-        /// Successfully enqueued (or stub success for no instances)
-        Success,
-        /// Failed due to unknown instance or ambiguous target
-        Failed,
-    }
-
     /// Resolve the target Instance and enqueue, for `speak` and `play_behavior`.
+    ///
+    /// The `Err` is the whole answer a Harness gets about why the Expression
+    /// landed nowhere, so it names the reason rather than a code.
     pub fn enqueue_expression(
         instance_id: Option<&str>,
         roster: &[InstanceInfo],
         expression: Option<&mut dyn ExpressionHandle>,
         proposal: BehaviorProposal,
-    ) -> ExpressionResult {
+    ) -> Result<(), String> {
         let target_id = match resolve_target_instance(instance_id, roster) {
             TargetResolution::Resolved(id) => id,
             TargetResolution::NoInstances => {
-                // Empty roster is success (stub behavior for harness compatibility)
-                return ExpressionResult::Success;
+                return Err(
+                    "No Character Instance is running, so nothing changed on screen".to_string(),
+                );
             }
-            TargetResolution::UnknownInstance | TargetResolution::AmbiguousTarget => {
-                return ExpressionResult::Failed;
+            TargetResolution::UnknownInstance => {
+                return Err(format!(
+                    "No Character Instance has id {}",
+                    instance_id.unwrap_or_default()
+                ));
+            }
+            TargetResolution::AmbiguousTarget => {
+                return Err(
+                    "Several Character Instances are running; name one with instance_id"
+                        .to_string(),
+                );
             }
         };
 
@@ -174,14 +189,14 @@ mod helpers {
             // Regardless of enqueue result, we report success
         }
 
-        ExpressionResult::Success
+        Ok(())
     }
 
     /// Target resolution result for Expression tools.
     enum TargetResolution {
         /// Resolved to a specific instance id
         Resolved(String),
-        /// No instances in roster (stub success case)
+        /// No instances in roster
         NoInstances,
         /// Unknown instance_id provided
         UnknownInstance,
@@ -225,6 +240,7 @@ pub(crate) fn speak(
         return SpeakResult {
             success: false,
             message: message.to_string(),
+            reason: Some("The message is empty".to_string()),
         };
     }
 
@@ -233,14 +249,12 @@ pub(crate) fn speak(
         dialogue: Some(message.to_string()),
     };
 
-    let success = match helpers::enqueue_expression(instance_id, roster, expression, proposal) {
-        helpers::ExpressionResult::Success => true,
-        helpers::ExpressionResult::Failed => false,
-    };
+    let reason = helpers::enqueue_expression(instance_id, roster, expression, proposal).err();
 
     SpeakResult {
-        success,
+        success: reason.is_none(),
         message: message.to_string(),
+        reason,
     }
 }
 
@@ -255,6 +269,7 @@ pub(crate) fn play_behavior(
         return PlayBehaviorResult {
             success: false,
             behavior: behavior.to_string(),
+            reason: Some("The behavior name is empty".to_string()),
         };
     }
 
@@ -263,14 +278,12 @@ pub(crate) fn play_behavior(
         dialogue: None,
     };
 
-    let success = match helpers::enqueue_expression(instance_id, roster, expression, proposal) {
-        helpers::ExpressionResult::Success => true,
-        helpers::ExpressionResult::Failed => false,
-    };
+    let reason = helpers::enqueue_expression(instance_id, roster, expression, proposal).err();
 
     PlayBehaviorResult {
-        success,
+        success: reason.is_none(),
         behavior: behavior.to_string(),
+        reason,
     }
 }
 
