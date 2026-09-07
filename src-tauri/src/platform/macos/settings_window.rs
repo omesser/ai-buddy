@@ -196,8 +196,23 @@ define_class!(
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
+            let title = title.to_string();
+            // AppKit sends the action for a click on the item already
+            // selected. Writing that back is a save and a redraw for nothing,
+            // and on the source popup it is lossy (#452).
+            let unchanged = self
+                .ivars()
+                .session
+                .borrow()
+                .as_ref()
+                .map(|session| session.view())
+                .and_then(|view| view.popup_value(id).map(|shown| shown == title))
+                .unwrap_or(false);
+            if unchanged {
+                return;
+            }
             let mut patch = SettingsPatch::default();
-            if !patch.set_text(writes, &title.to_string()) {
+            if !patch.set_text(writes, &title) {
                 return;
             }
             self.apply(patch);
