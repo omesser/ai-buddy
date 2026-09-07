@@ -1,5 +1,7 @@
 # One chat UI ships in v1 and the switcher waits for v2
 
+**Status:** Superseded by [ADR-0019](./0019-one-chat-ui-in-v1-switcher-in-v2.md)
+
 A **Chat UI** is a named, swappable visual design for the chat surface:
 palette, type scale, and shape. v1 ships one — modern minimal, from #339 — and
 the seam that makes it swappable, but no way for a user to swap it. v2 adds the

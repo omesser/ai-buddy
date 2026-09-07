@@ -1,5 +1,7 @@
 # The Harness runs headless and ai-buddy draws the chat surface
 
+**Status:** Superseded by [ADR-0018](./0018-headless-harness-our-chat-surface.md)
+
 The attached Harness is spawned as a subprocess in ACP mode, where it renders
 nothing. The chat surface #17 opens is ours: a Tauri webview window ai-buddy
 builds. We never launch, embed, or wrap the Harness's own TUI, even though
