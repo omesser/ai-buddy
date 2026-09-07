@@ -14,7 +14,6 @@ import {
   forOverlay,
   wrapText,
   placeBubble,
-  CEILING_CLEARANCE,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
@@ -159,10 +158,9 @@ function createView(id) {
 
 function positionBubble(view, spriteRect, displayBounds) {
   const bubbleSize = { width: view.bubble.offsetWidth, height: view.bubble.offsetHeight };
-  const pos = placeBubble(spriteRect, bubbleSize, displayBounds, CEILING_CLEARANCE);
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
   view.bubble.style.left = `${pos.x}px`;
   view.bubble.style.top = `${pos.y}px`;
-  view.bubble.classList.toggle("flipped", pos.flipped);
   view.bubble.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
 }
 
@@ -287,12 +285,15 @@ async function start() {
         // under the cursor. Written here rather than left to append order,
         // which is what makes the two sides agree instead of coincide.
         //
-        // A sprite sits in front of its own bubble at every level, so speech
-        // near the top of a display is never painted over the Character
-        // speaking it.
-        view.bubble.style.zIndex = `${index * 2}`;
-        view.sprite.style.zIndex = `${index * 2 + 1}`;
-        view.cueLayer.style.zIndex = `${index * 2 + 1}`;
+        // A bubble sits in front of its own sprite at every level, which is
+        // what the retired flip's replacement needs (ADR-0013, amended by
+        // #441): near the top of a display the bubble clamps onto the head,
+        // and the line has to stay readable. The sprite and its cue layer
+        // share the lower level, so a cue is still drawn over the art it
+        // marks by append order (#277).
+        view.bubble.style.zIndex = `${index * 2 + 1}`;
+        view.sprite.style.zIndex = `${index * 2}`;
+        view.cueLayer.style.zIndex = `${index * 2}`;
 
         // One overlay owns each Instance's bubble (#178, `bubble_owner`).
         // Speech hides on its reading timer, not on the next frame, so the
