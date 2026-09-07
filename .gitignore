@@ -33,6 +33,7 @@ tmp/
 .env
 .env.*
 !.env.example
+.envrc
 
 # What the Pages workflow assembles, and what
 # scripts/make-character-gallery.py writes when it is run with no --out. A
