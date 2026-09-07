@@ -152,7 +152,7 @@ Which Harness you attach changes what ai-buddy can do with it. Each row's standi
 
 | Harness | Command | Standing |
 |---|---|---|
-| `claude` | `npx -y @agentclientprotocol/claude-agent-acp` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
 | `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once a failed first turn reopens the session it had only said it loaded (#448). |
 | `opencode` | `opencode acp` | First-party. **Unverified**: not installed on the machine either #433 or #434 was written on. #457 smokes it. |
 | anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. Grok Build (`grok agent stdio`), GitHub Copilot CLI (`copilot --acp --stdio`) and Gemini CLI (`gemini --acp`) reach ai-buddy this way today and earn a named row once a turn is smoked (#457). |
