@@ -1170,7 +1170,7 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 /// The MCP server to hand this session, in the transport the Harness takes.
 ///
 /// The app's own loopback server first, because its tools dispatch against the
-/// live `Roster` and are the only ones that reach a buddy on screen (ADR-0018,
+/// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023,
 /// #470). A Harness that advertises no `mcpCapabilities.http` — `hermes` is one
 /// (ADR-0017) — gets `mcp_launch`'s stdio server instead, whose dispatch
 /// context is stubbed: a `speak` there returns success and moves nothing (#501,
@@ -2657,7 +2657,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// ADR-0018's branch: the loopback server for a Harness that advertised
+    /// ADR-0023's branch: the loopback server for a Harness that advertised
     /// HTTP MCP, and never for one that did not — sending a URL to `hermes`,
     /// which advertises none, is sending it somewhere it will not be read.
     #[test]

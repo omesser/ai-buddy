@@ -43,6 +43,11 @@ A permission request is forwarded to every open Chat surface and answered only
 by a click there. A turn that times out sends `cancelled`, which is a
 withdrawal, not an answer.
 
+The client hands the session its own tool endpoint, and which endpoint that is
+belongs to [ADR-0023](./0023-app-dispatches-its-own-tools.md): a Harness that
+can use the app's own server reaches the live Instances, and one that cannot is
+answered by a stub.
+
 Protocol-compatible harnesses not yet named (Grok Build, GitHub Copilot CLI,
 Gemini CLI) are reachable through the custom command and earn a named row once
 verified. Their always-approve or auto-approve flags are never passed by

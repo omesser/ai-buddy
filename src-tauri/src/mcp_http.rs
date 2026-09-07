@@ -1,6 +1,6 @@
 //! The MCP server the app serves itself, on loopback HTTP.
 //!
-//! The one tool surface that reaches a buddy on screen (ADR-0018).
+//! The one tool surface that reaches a buddy on screen (ADR-0023).
 //! `crates/mcp-server` runs in a separate process with a stubbed
 //! `DispatchContext` — however it is reached, sidecar or `--mcp-stdio` — so a
 //! `speak` there returns success and moves nothing. The tools have to be

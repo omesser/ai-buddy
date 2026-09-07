@@ -1,6 +1,6 @@
 //! The stdio fallback: ai-buddy's tool dispatch, out of process and stubbed.
 //!
-//! **This is not the path that reaches the buddy on screen.** ADR-0018 makes
+//! **This is not the path that reaches the buddy on screen.** ADR-0023 makes
 //! the running app serve MCP itself on loopback HTTP, because tools have to be
 //! dispatched where the `Roster` is — the Instance list a target resolves
 //! against, and the `ExpressionHandle` a resolved one is enqueued on.

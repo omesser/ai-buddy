@@ -37,7 +37,7 @@ const CANCEL_GRACE: Duration = Duration::from_secs(2);
 /// The MCP server `session/new` is told about, in whichever transport the
 /// Harness said it takes.
 ///
-/// The app's own loopback server is the shipped path (ADR-0018) and the stdio
+/// The app's own loopback server is the shipped path (ADR-0023) and the stdio
 /// binary is the fallback for a Harness that advertises no
 /// `mcpCapabilities.http`. `harness.rs` chooses; this file only spells it.
 #[derive(Clone)]
@@ -785,7 +785,7 @@ mod tests {
     }
 
     /// The shape `session/new` actually puts on the wire. The token rides in a
-    /// header and nowhere else (ADR-0018): not in the URL, which a Harness may
+    /// header and nowhere else (ADR-0023): not in the URL, which a Harness may
     /// keep in a session file, and not in an argv, which is in a process list.
     #[test]
     fn an_http_choice_carries_the_token_in_a_header_and_not_in_the_url() {

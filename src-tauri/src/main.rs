@@ -1605,7 +1605,7 @@ struct FrameExtras {
     ops: mpsc::Receiver<SettingsOp>,
     chat: mpsc::Receiver<ChatMsg>,
     /// `tools/call`s from the loopback MCP server, which are dispatched on the
-    /// frame-loop thread because that is where the `Roster` is (ADR-0018).
+    /// frame-loop thread because that is where the `Roster` is (ADR-0023).
     mcp: mpsc::Receiver<mcp_http::Call>,
 }
 
