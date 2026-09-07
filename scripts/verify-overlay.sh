@@ -11,14 +11,51 @@
 # underneath, and whether typing elsewhere survives a click on the sprite. Those
 # need a human. See the checklist in README.md.
 #
-# Usage: scripts/verify-overlay.sh [--keep]
-#   --keep   leave the app running afterwards, with tracing on
+# Unattended runs: export AI_BUDDY_DIRECTOR_API_KEY (any value) first. A build
+# at a new path is a stranger to the saved Director key, so the launch stops on
+# a modal Keychain prompt and every check below reads as a dead frame loop
+# (#420). Export AI_BUDDY_CAPTURABLE=1 too if the screenshots should show the
+# sprite; the overlay refuses screen capture by default.
+#
+# Usage: scripts/verify-overlay.sh [--keep | --self-test]
+#   --keep       leave the app running afterwards, with tracing on
+#   --self-test  check the no-frames diagnosis against a fabricated log
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
+
+# The Python blocks below assume at least one frame, so this stands in front of
+# them. An app that opened its overlays and then drew nothing is almost always
+# sitting on the Keychain prompt (#420); saying so beats reporting the symptom.
+traced_frames() { # $1=app log
+  grep -q '^frame: ' "$1" 2> /dev/null && return 0
+  echo "  FAIL  the app traced no frames"
+  grep -q '^overlay:' "$1" 2> /dev/null && {
+    echo "        it opened its overlays and then stopped - almost always the modal Keychain"
+    echo "        prompt for the Director key; export AI_BUDDY_DIRECTOR_API_KEY to skip it (#420)"
+    pgrep -x SecurityAgent > /dev/null && echo "        (a SecurityAgent process is up now - that is what draws the prompt)"
+  }
+  return 1
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  LOG=$(mktemp)
+  echo 'overlay: overlay-0 covers 1x1 at (0,0)' > "$LOG"
+  grep -q Keychain <<< "$(traced_frames "$LOG")" || {
+    echo "FAIL: no Keychain diagnosis for a log with overlays and no frames"
+    exit 1
+  }
+  echo 'frame: 1 Falling pos(0,0)' >> "$LOG"
+  traced_frames "$LOG" > /dev/null || {
+    echo "FAIL: a log with frames was diagnosed"
+    exit 1
+  }
+  echo "self-test passed"
+  exit 0
+fi
 
 # An orphaned overlay is always-on-top and has no window controls, so an
 # interrupted run would otherwise leave something on screen that is awkward to
@@ -183,7 +220,7 @@ perl -e 'select(undef,undef,undef,2.5)' # long enough to notice, fall and settle
 
 echo ""
 echo "Frame loop:"
-python3 - "$OUT" "$CLOSED_MS" << 'PY'
+traced_frames "$OUT/app.log" && python3 - "$OUT" "$CLOSED_MS" << 'PY'
 import json, re, sys
 
 out, closed_ms = sys.argv[1], int(sys.argv[2])
@@ -213,9 +250,8 @@ def check(ok, label, detail=""):
 def first(predicate, of=frames):
     return next((f for f in of if predicate(f)), None)
 
-if not frames or not steps:
-    print("  FAIL  the app traced no frames" if not frames
-          else "  FAIL  the prop window reported nothing")
+if not steps:
+    print("  FAIL  the prop window reported nothing")
     sys.exit(1)
 
 descent = [f for f in frames if f[1] == "Falling"][:10]
@@ -539,7 +575,7 @@ done
 perl -e 'select(undef,undef,undef,2.5)' # long enough to be left behind, fall and settle
 kill "$FLING_PID" 2> /dev/null
 
-python3 - "$OUT" << 'GRIP'
+traced_frames "$OUT/grip.log" && python3 - "$OUT" << 'GRIP'
 import json, re, sys
 
 out = sys.argv[1]
@@ -568,9 +604,8 @@ def check(ok, label, detail=""):
 def first(predicate):
     return next((f for f in frames if predicate(f)), None)
 
-if not frames or len(moves) < 2:
-    print("  FAIL  the app traced no frames" if not frames
-          else "  FAIL  the prop window never flung itself")
+if len(moves) < 2:
+    print("  FAIL  the prop window never flung itself")
     sys.exit(1)
 
 # The frame before the fling rather than any landing at all. Everything below is

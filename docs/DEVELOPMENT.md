@@ -56,7 +56,7 @@ scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
 ```
 
-Each checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
+Each checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop. On macOS, export `AI_BUDDY_DIRECTOR_API_KEY` first so the launch never reaches the Keychain prompt described under [Settings and Keyring](#settings-and-keyring), and `AI_BUDDY_CAPTURABLE=1` if the screenshots should show the sprite — the overlay is excluded from screen capture by default (#420).
 
 ### Manual Verification Checklist
 
@@ -164,7 +164,7 @@ Settings → Director persists base URL, model, and the first wake interval, and
 
 **Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.
 
-**macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. From the repository root:
+**macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. An unattended `scripts/verify-overlay.sh` run cannot answer that prompt; export `AI_BUDDY_DIRECTOR_API_KEY` before it, or it reports a dead frame loop (#420). From the repository root:
 
 ```sh
 cargo build -p ai-buddy && scripts/dev-sign.sh && ./target/debug/ai-buddy
