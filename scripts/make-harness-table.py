@@ -7,10 +7,12 @@ place a Harness is really named. What a probe run proved about each one comes
 from `docs/harnesses.toml`, because no code can know a date. This script joins
 the two and rewrites the block between the markers in README.md.
 
-Nothing here is hand-maintained, on purpose. ADR-0011 forbids the Described
-page: prose claiming to describe shipped behaviour with no link a build can
-check. A support matrix is the worst case of it — confidently wrong about
-whether your Harness works — so the two inputs must agree row for row and the
+Nothing here is hand-maintained, on purpose. ADR-0011 names the failure it is
+avoiding on the published site — the Described page, prose claiming to describe
+shipped behaviour with no link a build can check — and scopes itself there,
+leaving the README as the front door. The hazard carries even though the rule
+does not: a support matrix is the worst case of it, confidently wrong about
+whether your Harness works. So the two inputs must agree row for row and the
 script fails rather than emit a lie.
 
 Pure standard library, like the other generators here.
@@ -63,14 +65,36 @@ def launch_rows():
     if "custom =>" not in body:
         fail("launch() no longer has an escape-hatch arm; the manifest claims one")
 
-    rows = [
-        (name, " ".join(re.findall(r'"([^"]*)"', argv)))
-        for name, argv in re.findall(
-            r'"([^"]+)"\s*=>\s*\(\s*value,\s*vec!\[([^\]]*)\]', body
-        )
-    ]
+    parsed = re.findall(r'"([^"]+)"\s*=>\s*\(\s*value,\s*vec!\[([^\]]*)\]', body)
+    rows = [(name, " ".join(re.findall(r'"([^"]*)"', argv))) for name, argv in parsed]
     if not rows:
         fail("launch() parsed but named no Harness; the arm syntax must have moved")
+
+    # Every named arm must be one this shape could read. Without this the
+    # generator's failure mode is silence: an arm written any other way — a
+    # const argv, a helper call — drops that Harness from the table and still
+    # exits 0, which is the hand-editing #458 exists to prevent (#457 is the
+    # pull request that will add one).
+    named = [name for name in re.findall(r'^\s*"([^"]+)"\s*=>', body, re.M)]
+    missed = [name for name in named if name not in {row[0] for row in rows}]
+    if missed:
+        fail(
+            f"launch() names {', '.join(missed)} in an arm this script cannot read. "
+            "Match the existing `\"name\" => (value, vec![…])` shape, or teach "
+            f"{pathlib.Path(__file__).name} the new one."
+        )
+
+    # The command is joined from string literals only, so an argv built from a
+    # const would silently render as a shorter command line — drift a human
+    # would then bake into the README by re-running this.
+    for name, argv in parsed:
+        remainder = re.sub(r'"[^"]*"', "", argv)
+        if remainder.strip(" ,\t\r\n"):
+            fail(
+                f"{name}'s argv in launch() is not all string literals, so the "
+                "command line here would be wrong rather than merely missing."
+            )
+
     return rows
 
 
