@@ -1535,9 +1535,9 @@ impl Engine {
     /// only thing that starts a walk — a cursor reaction or a chase does too,
     /// and every one of them comes through this gate.
     ///
-    /// A Jump asks what a walk asks — what are the feet on — so it is gated
-    /// with the other motion and inherits the cooldown too. Grounded and
-    /// Perched allow it; Climbing, Falling, Dragged and Asleep refuse.
+    /// A Jump needs feet on a surface, like a walk, so it is gated with the
+    /// other motion and inherits the Poke cooldown. Grounded and Perched
+    /// allow it; Climbing, Falling, Dragged and Asleep refuse.
     ///
     /// Perched is the call worth recording. Running out of Perch is already a
     /// fall the Engine allows, so an edge the sprite may walk off is an edge it
