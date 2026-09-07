@@ -2,11 +2,12 @@
 // ai-buddy rather than by whatever answers (ADR-0010). Four kinds of line —
 // the user's turns, the answer as it arrives, a line the user drew out without
 // typing, labelled with what it was reacting to, and a forwarded permission
-// request with its options as buttons — plus the Shell's own note about a turn
-// that produced nothing. ADR-0010's tool-call one-liner waits on the Action Log
-// getting a reader. It holds no authoritative state, like the overlay: the log
-// is this session, including lines said before this window existed, and the
-// Shell owns the session behind it.
+// request with its options as buttons — plus the Shell's own notes, about a
+// turn that produced nothing and about the boundary where the session behind
+// this window was replaced. ADR-0010's tool-call one-liner waits on the Action
+// Log getting a reader. It holds no authoritative state, like the overlay: the
+// log is this session and only this session, including lines said before this
+// window existed, and the Shell owns the session behind it.
 
 import { stampWhen } from "./chat-stamp.js";
 import { statusCells } from "./chat-status.js";
@@ -289,6 +290,30 @@ function drop(turn) {
   turn.them.remove();
 }
 
+// The session behind this window was replaced, and the Shell says why (#476).
+//
+// The rows go with it. A transcript sitting above the composer is a claim that
+// what is about to answer has read it, and after a reset that claim is false —
+// the user writes a follow-up on three turns of context and is answered by
+// something holding none. The rest of what this window was holding is just as
+// stale: turns waiting on an answer that was abandoned with the session, and
+// permission asks the old Harness will never hear back about.
+//
+// A note in their place, because a log that empties itself with nothing said
+// reads as the app losing the conversation rather than as a new one starting.
+// The Action Log is where the removed turns survive.
+function newSession(why) {
+  log.replaceChildren();
+  waiting.length = 0;
+  asks.clear();
+  // A boundary is where a stamp should say the hour again rather than count
+  // minutes from a line that is no longer on screen.
+  previousAt = null;
+  // The note that carried it went with the rest, so it may be owed again.
+  loginSaid = null;
+  note(`New session — ${why}. Nothing said earlier is in it.`);
+}
+
 async function start() {
   // Addressed to this window's label. Not optional: a listener registered with
   // no target is an `Any` listener that hears every emit, so two Chat surfaces
@@ -375,6 +400,14 @@ async function start() {
       const ms = payload.wake_ms ?? null;
       wakeAt = ms === null ? null : performance.now() + ms;
       paint();
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-session",
+    ({ payload }) => {
+      newSession(payload);
     },
     { target: chat.label },
   );

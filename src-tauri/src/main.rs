@@ -103,7 +103,7 @@ fn overlay_label(index: usize) -> String {
 /// `overlay-{n}` past the display count, so a Chat surface sharing that prefix
 /// would be shut when a display is unplugged. `capabilities/chat.json` grants
 /// every `chat-*` the same permissions.
-fn chat_label(id: &InstanceId) -> String {
+fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
 
@@ -126,6 +126,14 @@ const CHAT_STATUS_EVENT: &str = "chat-status";
 /// without a webview reload. An event rather than a second command, because
 /// the window is already listening. #473.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
+
+/// The event telling one Chat surface that the session behind it was replaced,
+/// carrying why in the words the log prints.
+///
+/// The window drops the old session's rows on it. Rows kept beside a new
+/// session are a claim that what is about to answer has read them, and it has
+/// not; rows that vanish with nothing said read as the app losing them. #476.
+const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// The event carrying a forwarded `session/request_permission` to every open
 /// Chat surface. Every one, because the session is shared and the Shell does
@@ -1349,6 +1357,7 @@ fn apply_menu_action(
                     character,
                     config,
                     director,
+                    app,
                 );
                 if let Ok(inspect) = inspect.lock() {
                     push_chat_opening(app, roster, instance_id, &inspect);
@@ -1485,6 +1494,10 @@ pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pa
     )
 }
 
+// One over the clippy cap, for the same reason `apply_menu_action` is: the new
+// session belongs beside the `retarget_model` that opens it, and the Chat
+// surface it has to tell is reached through the app handle.
+#[allow(clippy::too_many_arguments)]
 fn switch_instance(
     roster: &mut Roster,
     lives: &mut [InstanceState],
@@ -1493,6 +1506,7 @@ fn switch_instance(
     character: Arc<Character>,
     config: &model::DirectorConfig,
     settings: &model::DirectorSettings,
+    app: &tauri::AppHandle,
 ) {
     roster.retarget(instance_id, &character);
     if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
@@ -1509,6 +1523,7 @@ fn switch_instance(
             settings,
             config.configured,
         );
+        session_log::new_session(app, instance_id, "the Character changed");
         live.recent.clear();
         live.happened = Happened::Ambient;
         live.addressed = true;
