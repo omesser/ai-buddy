@@ -2116,14 +2116,9 @@ fn main() {
             }
 
             let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new());
-            let director = match settings::director_settings(&settings, secrets.as_ref()) {
-                Ok(director) => director,
-                Err(why) => {
-                    eprintln!("director: secret store: {why}");
-                    model::resolve(&settings.director_base_url, &settings.director_model, None)
-                }
-            };
-            // Before `config_from`, which asks whether a Harness is attached.
+            // Before `director_settings` and `config_from`, both of which ask
+            // whether a Harness is attached. Resolving the key first is what
+            // made a Harness launch prompt for one it would never send (#290).
             app.manage(PendingAsks(Mutex::new(Pending::default())));
             let forward_to = app.handle().clone();
             harness::attach(
@@ -2135,6 +2130,13 @@ fn main() {
                     }
                 }),
             );
+            let director = match settings::director_settings(&settings, secrets.as_ref()) {
+                Ok(director) => director,
+                Err(why) => {
+                    eprintln!("director: secret store: {why}");
+                    model::resolve(&settings.director_base_url, &settings.director_model, None)
+                }
+            };
             let mut config = model::config_from(&director);
             config.apply_switch(settings.director_enabled);
             config.ambient_allowed = settings.ambient_wakes;
