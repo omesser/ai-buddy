@@ -1,10 +1,10 @@
 // The Chat surface: one window per Summoned Character Instance, drawn by
-// ai-buddy rather than by whatever answers (ADR-0010). Four kinds of line —
+// ai-buddy rather than by whatever answers (ADR-0018). Four kinds of line —
 // the user's turns, the answer as it arrives, a line the user drew out without
 // typing, labelled with what it was reacting to, and a forwarded permission
 // request with its options as buttons — plus the Shell's own notes, about a
 // turn that produced nothing and about the boundary where the session behind
-// this window was replaced. ADR-0010's tool-call one-liner waits on the Action
+// this window was replaced. ADR-0018's tool-call one-liner waits on the Action
 // Log getting a reader. It holds no authoritative state, like the overlay: the
 // log is this session and only this session, including lines said before this
 // window existed, and the Shell owns the session behind it.
@@ -160,7 +160,7 @@ function retire(request, option) {
 // A permission request the Harness asked, drawn as the options it offered.
 // Nothing is chosen here or in the Shell: a click is the only answer, and
 // a turn that times out first is cancelled by the Shell, not decided
-// (ADR-0010). The buttons stay disabled after the click, and the row reads as
+// (ADR-0018). The buttons stay disabled after the click, and the row reads as
 // what was decided once the Shell says which option took it.
 //
 // Ignored the second time a request arrives: the Shell hands an unsettled
@@ -226,7 +226,7 @@ function attached(opening) {
 
   // The third state: attached, and the Harness has nobody signed in. Said
   // once per command, in the log, because the fix is a command for the user's
-  // own terminal and never a prompt of ours (ADR-0010).
+  // own terminal and never a prompt of ours (ADR-0018).
   if (opening.login && opening.login !== loginSaid) {
     loginSaid = opening.login;
     note(`${opening.name} is attached but not signed in. Run \`${opening.login}\` in a terminal.`);
@@ -303,7 +303,10 @@ function drop(turn) {
 // reads as the app losing the conversation rather than as a new one starting.
 // The Action Log is where the removed turns survive.
 function newSession(why) {
-  log.replaceChildren();
+  // Keeping `empty` is not tidiness: the empty-state panel is a child of the
+  // log, and `attached()` reaches into it by id on every opening. Sweeping it
+  // out with the rows leaves that lookup dereferencing null.
+  log.replaceChildren(empty);
   waiting.length = 0;
   asks.clear();
   // A boundary is where a stamp should say the hour again rather than count
@@ -336,7 +339,7 @@ async function start() {
       if (payload.reacting_to) {
         // A line the user did not type, which reaches the log as well as the
         // Speech bubble so the conversation has one place to be read
-        // (ADR-0010). The label names what drew it out — a Summon, a Poke, or
+        // (ADR-0018). The label names what drew it out — a Summon, a Poke, or
         // nobody at all — because the log's grammar is a question with its
         // answer under it: an unlabelled line here reads as the answer to
         // whatever is above it, and a line labelled as unasked-for reads as a

@@ -128,11 +128,8 @@ const CHAT_STATUS_EVENT: &str = "chat-status";
 const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// The event telling one Chat surface that the session behind it was replaced,
-/// carrying why in the words the log prints.
-///
-/// The window drops the old session's rows on it. Rows kept beside a new
-/// session are a claim that what is about to answer has read them, and it has
-/// not; rows that vanish with nothing said read as the app losing them. #476.
+/// carrying why in the words the log prints. `chat.js` says what the window
+/// does with it, and why. #476.
 const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// The event carrying a forwarded `session/request_permission` to every open
