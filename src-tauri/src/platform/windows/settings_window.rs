@@ -24,15 +24,16 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    ChildWindowFromPointEx, CreateWindowExA, DestroyWindow, GetClassNameA, GetClientRect,
-    GetDlgItem, GetWindow, GetWindowLongPtrA, GetWindowTextA, GetWindowTextLengthA, MessageBoxA,
-    SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow,
-    BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT,
-    EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN,
-    GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK,
-    MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_NCHITTEST, WM_NOTIFY,
-    WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE,
-    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
+    GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowTextA,
+    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
+    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
+    CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD,
+    ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES,
+    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLORSTATIC, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER,
+    WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -53,6 +54,8 @@ const INSPECT_BLOCK_HEIGHT: i32 = 100;
 
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
+/// STATIC swallows BN_CLICKED; Dismiss is a child of this host. #460
+const INSTANCES_LIST_CLASS: &std::ffi::CStr = c"AiBuddySettingsList";
 const TCN_SELCHANGE_CODE: u32 = 0xFFFFFDDA_u32.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
 const SS_LEFT: u32 = 0x0;
@@ -709,6 +712,26 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             }
         }
 
+        let list_wc = WNDCLASSA {
+            style: 0,
+            lpfnWndProc: Some(list_host_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: hinstance,
+            hIcon: ptr::null_mut(),
+            hCursor: ptr::null_mut(),
+            hbrBackground: (5 + 1) as _,
+            lpszMenuName: ptr::null(),
+            lpszClassName: INSTANCES_LIST_CLASS.as_ptr() as *const u8,
+        };
+        let list_result = windows_sys::Win32::UI::WindowsAndMessaging::RegisterClassA(&list_wc);
+        if list_result == 0 {
+            let error = windows_sys::Win32::Foundation::GetLastError();
+            if error != 1410 {
+                return Err(format!("Failed to register list host class: {}", error));
+            }
+        }
+
         let (x, y) = get_secondary_monitor_position().unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
 
         let hwnd = CreateWindowExA(
@@ -1060,7 +1083,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::List { id, help, .. } => {
                             let container_hwnd = CreateWindowExA(
                                 0,
-                                c"STATIC".as_ptr() as *const u8,
+                                INSTANCES_LIST_CLASS.as_ptr() as *const u8,
                                 ptr::null(),
                                 WS_CHILD | WS_VISIBLE,
                                 display_left,
@@ -1466,7 +1489,7 @@ fn hit_at(hwnd: HWND, lparam: LPARAM) -> Hit {
         return Hit::Background;
     }
 
-    // Instances' Dismiss is a BUTTON inside the list STATIC. ChildWindowFromPointEx
+    // Instances' Dismiss is a BUTTON inside the list host. ChildWindowFromPointEx
     // wants the child's client space; ScreenToClient on an already-client point
     // treats it as screen and misses the button. #460
     loop {
@@ -1509,6 +1532,23 @@ fn hit_at(hwnd: HWND, lparam: LPARAM) -> Hit {
         false
     };
     hit_from_win32(class, tab_on_item)
+}
+
+unsafe extern "system" fn list_host_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    // SAFETY: hwnd is the list host we registered; its parent is Settings.
+    unsafe {
+        if msg == WM_COMMAND || msg == WM_CTLCOLORSTATIC {
+            // Parent is the Settings HWND that created this host.
+            SendMessageA(GetParent(hwnd), msg, wparam, lparam)
+        } else {
+            DefWindowProcA(hwnd, msg, wparam, lparam)
+        }
+    }
 }
 
 unsafe extern "system" fn window_proc(
@@ -1812,7 +1852,7 @@ mod tests {
 
     #[test]
     fn a_nested_dismiss_click_maps_into_the_button_not_the_container() {
-        // List STATIC at display_left (= 2*MARGIN); Dismiss at (FIELD_WIDTH-90, 0).
+        // List host at display_left (= 2*MARGIN); Dismiss at (FIELD_WIDTH-90, 0).
         let container_in_window = POINT {
             x: MARGIN * 2,
             y: 200,
@@ -1831,8 +1871,17 @@ mod tests {
         let in_button = map_into_child_client(in_container, dismiss_in_container);
         assert_eq!(in_button.x, 4);
         assert_eq!(in_button.y, 8);
-        // Window-client y handed to the STATIC as client y misses a first-row
+        // Window-client y handed to the list host as client y misses a first-row
         // button (ROW_HEIGHT tall at y=0). #460
         assert!(click_in_window.y > ROW_HEIGHT);
+    }
+
+    #[test]
+    fn a_list_host_is_background_and_not_static() {
+        assert_ne!(INSTANCES_LIST_CLASS.to_bytes(), b"STATIC");
+        assert_eq!(
+            hit_from_win32(INSTANCES_LIST_CLASS.to_str().unwrap(), false),
+            Hit::Background
+        );
     }
 }
