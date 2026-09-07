@@ -4,7 +4,7 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 ///
 /// Later wakes send `follow_up` only. The Completer holds the conversation
 /// so the Personality Prompt is not paid for again.
-pub fn character_prompt(
+pub(crate) fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> String {
@@ -64,7 +64,7 @@ pub fn happened_word(happened: &Happened) -> &'static str {
 }
 
 /// A later turn in the same session. No Personality Prompt, no roster.
-pub fn follow_up(context: &Context) -> String {
+pub(crate) fn follow_up(context: &Context) -> String {
     let recent = if context.recent.is_empty() {
         "(none)".to_string()
     } else {

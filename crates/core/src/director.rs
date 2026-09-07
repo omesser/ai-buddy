@@ -25,7 +25,8 @@ use crate::roster::InstanceId;
 use crate::sensing::Activity;
 
 mod prompt;
-pub use prompt::{character_prompt, follow_up, happened_word};
+pub use prompt::happened_word;
+pub(crate) use prompt::{character_prompt, follow_up};
 
 /// How long the Static Director goes unwoken when nothing notable happens.
 ///
@@ -446,6 +447,9 @@ pub struct ParseError;
 
 /// Parse a reply as a Behavior name on the first line and optional dialogue
 /// after. Anything else is `ParseError`.
+///
+/// Public for `harness probe`, which reports whether a live session obeys the
+/// one-line format. The rest of the model path is crate-private.
 pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
     let mut lines = reply.lines().map(str::trim).filter(|line| !line.is_empty());
     let first = lines.next().ok_or(ParseError)?;
