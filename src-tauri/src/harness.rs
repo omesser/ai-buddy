@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::director::Completer;
+use ai_buddy_core::director::{Completer, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -268,17 +268,25 @@ impl Session {
     }
 
     /// One turn. The whole of `Completer::complete`, minus the trace.
-    fn turn(&self, prompt: &str) -> Result<String, String> {
+    fn turn(&self, request: &WakeRequest) -> Result<String, String> {
         let Ok(_turn) = self.turn.try_lock() else {
             return Err("harness busy".to_string());
         };
         let (wire, session_id) = self.attach()?;
+        // The Instance and the wake kind come through the seam rather than
+        // from anything here: one session serves every buddy (ADR-0008), so
+        // the session id alone cannot say whose wake this is (#435).
         action_log::append(
             &self.dir,
             "prompt",
-            json!({"session_id": session_id, "chars": prompt.len()}),
+            json!({
+                "session_id": session_id,
+                "instance": request.instance,
+                "wake": wake_kind(request.reactive),
+                "chars": request.prompt.len(),
+            }),
         );
-        let outcome = wire.prompt(prompt, self.timeout);
+        let outcome = wire.prompt(&request.prompt, self.timeout);
         // Before the outcome is dressed for the caller: a child that dies under
         // every turn is respawned on every wake unless the death pays the same
         // backoff a failed spawn does, and a child that is answering must not
@@ -505,11 +513,11 @@ impl Session {
 }
 
 impl Completer for Session {
-    fn complete(&self, prompt: &str) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
         if crate::model::tracing() {
             eprintln!("harness: prompt to {}", self.launch.name);
         }
-        let reply = self.turn(prompt);
+        let reply = self.turn(request);
         if crate::model::tracing() {
             match &reply {
                 Ok(text) => eprintln!("harness: reply {text}"),
@@ -563,8 +571,14 @@ pub fn run_probe() -> i32 {
         ai_buddy_core::memory::data_dir().join("probe"),
         // Named, never answered: only a click on the Chat surface may answer a
         // permission request (ADR-0017), and the probe has no surface. The ask
-        // then times out with the turn, which is itself the report.
-        Box::new(|ask| println!("  permission   {} [{}]", ask.title, ask.request)),
+        // then times out with the turn, which is itself the report. A
+        // settlement earns no line, because the only one a probe can reach is
+        // that timeout.
+        Box::new(|permission| {
+            if let Permission::Ask(ask) = permission {
+                println!("  permission   {} [{}]", ask.title, ask.request);
+            }
+        }),
     );
     let code = probe(&session);
     session.shutdown_and_reap();
@@ -630,7 +644,14 @@ fn probe(session: &Session) -> i32 {
 
     println!("turn");
     println!("  prompt       {PROBE_PROMPT}");
-    match session.turn(PROBE_PROMPT) {
+    match session.turn(&WakeRequest {
+        prompt: PROBE_PROMPT.to_string(),
+        // Reactive, because a probe is someone asking on purpose. The Instance
+        // is named for the probe so the line it leaves in the Action Log cannot
+        // be read as a buddy's own wake (#435).
+        instance: "probe".to_string(),
+        reactive: true,
+    }) {
         Ok(text) => {
             println!("  stop         end_turn");
             println!("  reply        {text}");
@@ -683,6 +704,15 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
         Event::PermissionSettled { request, option } => {
             forward(Permission::Settled { request, option })
         }
+    }
+}
+
+/// The Action Log's word for a wake nobody asked for, and for one they did.
+fn wake_kind(reactive: bool) -> &'static str {
+    if reactive {
+        "reactive"
+    } else {
+        "ambient"
     }
 }
 
@@ -1034,6 +1064,15 @@ mod tests {
             recorded(Some(&self.count), what)
         }
 
+        /// Every Action Log line of one kind, oldest first.
+        fn events(&self, event: &str) -> Vec<Value> {
+            let text = std::fs::read_to_string(self.dir.join(action_log::FILE)).unwrap_or_default();
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter(|line| line["event"] == json!(event))
+                .collect()
+        }
+
         fn wait_for(&self, what: &str, n: usize) -> bool {
             let until = Instant::now() + Duration::from_secs(5);
             while Instant::now() < until {
@@ -1043,6 +1082,15 @@ mod tests {
                 thread::sleep(Duration::from_millis(20));
             }
             false
+        }
+    }
+
+    /// One reactive wake for `buddy-1`, which is every turn a test sends.
+    fn asking(prompt: &str) -> WakeRequest {
+        WakeRequest {
+            prompt: prompt.to_string(),
+            instance: "buddy-1".to_string(),
+            reactive: true,
         }
     }
 
@@ -1093,7 +1141,7 @@ mod tests {
     #[test]
     fn happy_path_concatenates_chunks_and_records_the_session() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         let saved: SavedSession =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
@@ -1109,10 +1157,33 @@ mod tests {
         session.shutdown();
     }
 
+    /// #435: one session serves every buddy, so `session_id` cannot answer
+    /// "which Instance woke, and did the user ask for it". Both come through
+    /// the `WakeRequest` or not at all.
+    #[test]
+    fn the_prompt_event_names_the_instance_and_the_wake_kind() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        let ambient = WakeRequest {
+            reactive: false,
+            ..asking("nobody asked")
+        };
+        assert_eq!(session.complete(&ambient), Ok("Hello".to_string()));
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 2, "{prompts:?}");
+        assert_eq!(prompts[0]["instance"], json!("buddy-1"));
+        assert_eq!(prompts[0]["wake"], json!("reactive"));
+        assert_eq!(prompts[0]["chars"], json!(2));
+        assert_eq!(prompts[1]["wake"], json!("ambient"));
+        assert_eq!(prompts[1]["session_id"], json!("fresh-id"));
+    }
+
     #[test]
     fn a_refusal_is_an_err() {
         let (_fx, session) = Fixture::new("refusal");
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("refusal")),
             "{reply:?}"
@@ -1123,7 +1194,7 @@ mod tests {
     #[test]
     fn garbage_between_messages_is_skipped() {
         let (_fx, session) = Fixture::new("garbage");
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         session.shutdown();
     }
 
@@ -1133,7 +1204,7 @@ mod tests {
         let session = Arc::new(session);
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete("hi"))
+            thread::spawn(move || session.complete(&asking("hi")))
         };
         let ask = fx.ask();
         assert_eq!(ask.title, "rm -rf /");
@@ -1152,7 +1223,7 @@ mod tests {
     fn a_timeout_before_the_answer_sends_the_cancelled_outcome() {
         let (fx, session) = Fixture::new("permission");
         let session = session.with_timeout(Duration::from_millis(700));
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert!(reply.is_err(), "{reply:?}");
         let ask = fx.ask();
         assert!(fx.wait_for("cancel", 1));
@@ -1167,13 +1238,13 @@ mod tests {
     fn a_slow_turn_is_cancelled_and_the_next_one_works() {
         let (fx, session) = Fixture::new("slow");
         let session = session.with_timeout(Duration::from_millis(500));
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert!(
             reply.as_ref().is_err_and(|why| why.contains("cancelled")),
             "{reply:?}"
         );
         assert!(fx.wait_for("cancel", 1));
-        assert_eq!(session.complete("again"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
         assert_eq!(fx.count("spawn"), 1, "cancel is not a respawn");
         session.shutdown();
     }
@@ -1184,9 +1255,12 @@ mod tests {
         // The wait a death buys is the next test's subject; this one is about
         // the respawn that has to happen once the wait is over.
         let session = session.with_backoff(Duration::ZERO);
-        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err("harness exited".to_string())
+        );
         assert!(!session.inspect().alive);
-        assert_eq!(session.complete("again"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
         assert_eq!(fx.count("spawn"), 2);
         assert!(session.inspect().alive);
         session.shutdown();
@@ -1198,8 +1272,8 @@ mod tests {
     #[test]
     fn a_death_under_a_turn_buys_the_same_wait_a_failed_spawn_does() {
         let (fx, session) = Fixture::new("die");
-        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
-        let next = session.complete("again").unwrap_err();
+        assert_eq!(session.complete(&asking("hi")), Err("harness exited".to_string()));
+        let next = session.complete(&asking("again")).unwrap_err();
         assert!(next.contains("retrying in"), "{next}");
         assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
         session.shutdown();
@@ -1212,9 +1286,9 @@ mod tests {
     #[test]
     fn a_death_before_the_session_opens_buys_the_same_wait() {
         let (fx, session) = Fixture::new("die-opening");
-        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Err("harness exited".to_string()));
         assert_eq!(fx.count("new"), 1);
-        let next = session.complete("again").unwrap_err();
+        let next = session.complete(&asking("again")).unwrap_err();
         assert!(next.contains("retrying in"), "{next}");
         assert_eq!(fx.count("spawn"), 1, "the dying child was spawned again");
         session.shutdown();
@@ -1227,8 +1301,8 @@ mod tests {
     fn a_turn_the_child_answered_clears_an_earlier_death() {
         let (_fx, session) = Fixture::new("exit");
         let session = session.with_backoff(Duration::ZERO);
-        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
-        assert_eq!(session.complete("again"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Err("harness exited".to_string()));
+        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
         let state = session.state.lock().unwrap();
         assert_eq!(state.spawn_failures, 0, "the death is still counted");
         assert!(
@@ -1242,18 +1316,18 @@ mod tests {
     #[test]
     fn auth_required_names_the_login_and_the_retry_gate_holds() {
         let (fx, session) = Fixture::new("auth");
-        let reply = session.complete("hi");
+        let reply = session.complete(&asking("hi"));
         assert_eq!(reply, Err(not_authenticated("fake --login")));
         assert_eq!(session.inspect().login.as_deref(), Some("fake --login"));
         // Inside the gate: fails fast, no second session/new on the wire.
-        assert!(session.complete("hi").is_err());
+        assert!(session.complete(&asking("hi")).is_err());
         assert_eq!(fx.count("new"), 1);
         session.shutdown();
 
         let (fx, session) = Fixture::new("auth");
         let session = session.with_auth_retry(Duration::ZERO);
-        assert!(session.complete("hi").is_err());
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert!(session.complete(&asking("hi")).is_err());
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
         session.shutdown();
@@ -1267,7 +1341,7 @@ mod tests {
             r#"{"session_id":"saved-ok","harness":"fake"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 0);
         assert_eq!(session.inspect().session_id.as_deref(), Some("saved-ok"));
@@ -1279,7 +1353,7 @@ mod tests {
             r#"{"session_id":"stale","harness":"fake"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 1);
         let saved = std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap();
@@ -1293,7 +1367,7 @@ mod tests {
             r#"{"session_id":"saved-ok","harness":"other"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         assert_eq!(fx.count("load"), 0);
         session.shutdown();
     }
@@ -1306,9 +1380,9 @@ mod tests {
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
         let session = Session::new(launch, dir.clone(), Box::new(|_| {}));
-        let first = session.complete("hi").unwrap_err();
+        let first = session.complete(&asking("hi")).unwrap_err();
         assert!(first.contains("could not start"), "{first}");
-        let second = session.complete("hi").unwrap_err();
+        let second = session.complete(&asking("hi")).unwrap_err();
         assert!(second.contains("retrying in"), "{second}");
         assert_eq!(session.backoff(1), BACKOFF_FIRST);
         assert_eq!(session.backoff(2), Duration::from_secs(10));
@@ -1322,10 +1396,13 @@ mod tests {
         let session = Arc::new(session.with_timeout(Duration::from_secs(3)));
         let worker = {
             let session = Arc::clone(&session);
-            thread::spawn(move || session.complete("hi"))
+            thread::spawn(move || session.complete(&asking("hi")))
         };
         thread::sleep(Duration::from_millis(300));
-        assert_eq!(session.complete("again"), Err("harness busy".to_string()));
+        assert_eq!(
+            session.complete(&asking("again")),
+            Err("harness busy".to_string())
+        );
         let _ = worker.join();
         session.shutdown();
     }
@@ -1365,7 +1442,7 @@ mod tests {
     #[test]
     fn the_probe_waits_for_the_child_to_be_reaped() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
         let wire = session.current_wire().expect("attached");
         session.shutdown_and_reap();
         assert!(
