@@ -20,9 +20,10 @@ timeout → `session/cancel` semantics the HTTP Completer has. The frame loop
 never sees a future (ADR-0004).
 
 `AI_BUDDY_HARNESS` picks the Harness: `claude`, `hermes`, `opencode`, or a
-command line of the user's own. Unset falls through to the Director tab's
-Completer source row, which keeps the same four values; neither set leaves the
-HTTP Completer in `model.rs` exactly as it was. The Harness is the Completer for every Instance, so
+command line of the user's own. Exported and empty is Off. Unexported falls
+through to the Director tab's Completer source row, which keeps the same four
+values. With the variable unexported and the row Off, the HTTP Completer in
+`model.rs` stays exactly as it was. The Harness is the Completer for every Instance, so
 ADR-0008's one session holds across buddies as well as across wakes.
 
 One session per app lifetime, and across restarts when the Harness allows
@@ -113,7 +114,8 @@ Harness setting joins it. Superseded by #436, which gives the Director tab a
 Completer source row over the same four values and freezes it while the
 variable is exported, the way every other Director row answers to one. The
 variable still decides at launch, and the row says so: `harness::attach` holds
-one Session for the app's lifetime, so a changed row is the next launch's.
+one Session for the app's lifetime, so a changed row takes effect on the next
+launch.
 
 The Action Log's `prompt` event carries the session id and the prompt's
 length, not which Instance woke or whether the wake was reactive: the
