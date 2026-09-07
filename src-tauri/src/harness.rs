@@ -230,10 +230,25 @@ impl Session {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
                 if let Ok(mut state) = self.state.lock() {
                     state.spawn_failures = 0;
+                    state.spawn_wait_until = None;
                 }
                 Ok(text)
             }
-            Err(TurnError::Lost) => Err(self.lost(&wire)),
+            Err(TurnError::Lost) => {
+                let why = self.lost(&wire);
+                // A Harness that dies under every turn costs the same respawn
+                // as one that never starts, so it pays the same backoff — else
+                // every wake spawns a child that is about to die again, paced
+                // only by the Director. The first death is left free: a crash
+                // or a binary replaced under us is recovered from on the next
+                // wake, and it is the repeat that is a pattern.
+                if let Ok(mut state) = self.state.lock() {
+                    state.spawn_failures += 1;
+                    state.spawn_wait_until = (state.spawn_failures > 1)
+                        .then(|| Instant::now() + backoff(state.spawn_failures - 1));
+                }
+                Err(why)
+            }
             Err(TurnError::Timeout) => {
                 action_log::append(&self.dir, "timeout", json!({"session_id": session_id}));
                 Err(format!(
@@ -551,6 +566,12 @@ pub fn startup_lines() -> Vec<String> {
             }
             Some(path) => format!("harness: MCP server {}", path.display()),
         },
+        // Startup cannot report a spawn that has not happened: `attach` runs on
+        // the preflight thread and lands after these lines. Said here so the
+        // `harness:` line that follows reads as this attachment's outcome
+        // rather than as unrelated noise a moment later.
+        "harness: attaching now; the next `harness:` line on this stream is how it went"
+            .to_string(),
     ]
 }
 
@@ -687,6 +708,7 @@ mod tests {
                         }
                         "slow" if prompts == 1 => pending_prompt = Some(id),
                         "exit" if spawns == 1 => std::process::exit(3),
+                        "die" => std::process::exit(3),
                         _ => {
                             chunk(&session, "Hell");
                             if script == "garbage" {
@@ -920,6 +942,22 @@ mod tests {
         assert_eq!(session.complete("again"), Ok("Hello".to_string()));
         assert_eq!(fx.count("spawn"), 2);
         assert!(session.inspect().alive);
+        session.shutdown();
+    }
+
+    /// #437: the count `a_missing_binary_backs_off_instead_of_respawning`
+    /// exercises is shared with mid-turn deaths, so a Harness that dies under
+    /// every prompt is not respawned on every wake. The first death stays free
+    /// — that is the test above.
+    #[test]
+    fn repeated_mid_turn_deaths_back_off_instead_of_respawning_every_wake() {
+        let (fx, session) = Fixture::new("die");
+        assert_eq!(session.complete("hi"), Err("harness exited".to_string()));
+        assert_eq!(session.complete("again"), Err("harness exited".to_string()));
+        assert_eq!(fx.count("spawn"), 2, "the first death is recovered from");
+        let third = session.complete("third").unwrap_err();
+        assert!(third.contains("retrying in"), "{third}");
+        assert_eq!(fx.count("spawn"), 2, "the third wake spawned another child");
         session.shutdown();
     }
 
