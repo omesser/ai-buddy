@@ -562,11 +562,15 @@ pub fn attached() -> Option<Arc<Session>> {
 }
 
 /// What `startup_lines` says about the attachment, if there is one.
-pub fn startup_lines() -> Vec<String> {
+///
+/// `spawning` is whether one is actually coming: the Director's own switch
+/// gates `spawn_preflight`, and a line promising a spawn that the switch has
+/// already refused is worse than no line.
+pub fn startup_lines(spawning: bool) -> Vec<String> {
     let Some(session) = attached() else {
         return Vec::new();
     };
-    vec![
+    let mut lines = vec![
         format!(
             "harness: {} via `{}`",
             session.launch.name,
@@ -578,13 +582,18 @@ pub fn startup_lines() -> Vec<String> {
             }
             Some(path) => format!("harness: MCP server {}", path.display()),
         },
-        // Startup cannot report a spawn that has not happened: `attach` runs on
-        // the preflight thread and lands after these lines. Said here so the
-        // `harness:` line that follows reads as this attachment's outcome
-        // rather than as unrelated noise a moment later.
-        "harness: attaching now; the next `harness:` line on this stream is how it went"
-            .to_string(),
-    ]
+    ];
+    // Startup cannot report a spawn that has not happened: `attach` runs on the
+    // preflight thread and lands after these lines. Said here so the `harness:`
+    // line that follows reads as this attachment's outcome rather than as
+    // unrelated noise a moment later.
+    if spawning {
+        lines.push(
+            "harness: attaching now; the next `harness:` line on this stream is how it went"
+                .to_string(),
+        );
+    }
+    lines
 }
 
 pub fn shutdown() {
