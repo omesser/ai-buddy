@@ -412,11 +412,29 @@ pub fn write_director_key(store: &dyn SecretStore, patch: &SettingsPatch) -> Res
 
 /// Env, then the file, then the store. A store read error is `Err`, not Unset:
 /// treating it as no key would drop a remote Completer to Static on Retarget.
+///
+/// The store is read only when this process could use what it says, because
+/// the read is a Keychain dialog on macOS (#283) and one nobody can act on is
+/// the whole of #290. Two answers are already elsewhere: an exported key
+/// outranks the store, and an attached Harness is the Completer for every
+/// Instance (ADR-0008), so the HTTP settings are never consulted. Call after
+/// `harness::attach`, or a Harness launch reads a key it will never send.
 pub fn director_settings(
     settings: &Settings,
     secrets: &dyn SecretStore,
 ) -> Result<DirectorSettings, String> {
-    let stored = if model::env_owns_key() {
+    resolve_director(settings, secrets, crate::harness::attached().is_some())
+}
+
+/// The test seam for `director_settings`. `harness::attach` holds its Session
+/// in a process-wide `OnceLock` for the app's lifetime, so a test that
+/// attached one would decide the answer for every other test in the binary.
+fn resolve_director(
+    settings: &Settings,
+    secrets: &dyn SecretStore,
+    harness_attached: bool,
+) -> Result<DirectorSettings, String> {
+    let stored = if model::env_owns_key() || harness_attached {
         None
     } else {
         secrets.get(DIRECTOR_API_KEY)?
@@ -1411,7 +1429,7 @@ pub fn key_code_name(key: char) -> Option<String> {
 mod tests {
     use super::*;
     use crate::secrets::{MemoryStore, SecretStore, DIRECTOR_API_KEY};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -1961,6 +1979,115 @@ mod tests {
                 !model::config_from(&unset).configured,
                 "precondition: unset remote is Static"
             );
+        });
+    }
+
+    /// A store that counts its reads. Each one is a Keychain dialog on macOS,
+    /// so the count is the assertion in #290.
+    struct CountingStore {
+        inner: MemoryStore,
+        reads: AtomicUsize,
+    }
+
+    impl CountingStore {
+        fn with_key(key: &str) -> Self {
+            let inner = MemoryStore::new();
+            inner.set(DIRECTOR_API_KEY, key).unwrap();
+            Self {
+                inner,
+                reads: AtomicUsize::new(0),
+            }
+        }
+
+        fn reads(&self) -> usize {
+            self.reads.load(Ordering::SeqCst)
+        }
+    }
+
+    impl SecretStore for CountingStore {
+        fn get(&self, account: &str) -> Result<Option<String>, String> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.inner.get(account)
+        }
+        fn set(&self, account: &str, value: &str) -> Result<(), String> {
+            self.inner.set(account, value)
+        }
+        fn delete(&self, account: &str) -> Result<(), String> {
+            self.inner.delete(account)
+        }
+    }
+
+    /// The bug: a Harness launch prompted for a key it can never send. The
+    /// Harness is the Completer for every Instance (ADR-0008), so the HTTP
+    /// settings are not consulted and the dialog buys the user nothing.
+    #[test]
+    fn a_harness_launch_never_reads_the_store() {
+        let store = CountingStore::with_key("sk-saved-key");
+        let settings = endpoint_settings();
+        model::tests::with_env(None, None, None, || {
+            let director = resolve_director(&settings, &store, true).expect("resolve");
+            assert_eq!(store.reads(), 0, "an attached Harness needs no stored key");
+            assert!(director.api_key.is_empty());
+        });
+    }
+
+    /// The other half: with the HTTP Completer in force the key is read at
+    /// startup, where the user is starting the app, and `configured` is a
+    /// settled fact — so Toggle Director has something to turn on.
+    #[test]
+    fn an_http_launch_reads_once_and_toggle_director_still_works() {
+        let store = CountingStore::with_key("sk-saved-key");
+        let settings = Settings {
+            director_enabled: false,
+            ..endpoint_settings()
+        };
+        model::tests::with_env(None, None, None, || {
+            let director = resolve_director(&settings, &store, false).expect("resolve");
+            assert_eq!(store.reads(), 1, "the HTTP Completer needs the key now");
+            assert_eq!(director.api_key, "sk-saved-key");
+
+            let mut config = model::config_from(&director);
+            config.apply_switch(settings.director_enabled);
+            assert!(config.configured);
+            assert!(!config.enabled, "precondition: the switch is off");
+            config.apply_switch(true);
+            assert!(config.enabled, "Toggle Director turns the model on");
+            assert_eq!(store.reads(), 1, "and asks the store nothing further");
+        });
+    }
+
+    /// A wake is not a moment a user can answer a dialog in: it lands while
+    /// they are working in another window, with the wake worker blocked
+    /// behind it. Everything a wake touches is built from the startup read.
+    #[test]
+    fn no_wake_ever_reads_the_store() {
+        let store = CountingStore::with_key("sk-saved-key");
+        let settings = endpoint_settings();
+        model::tests::with_env(None, None, None, || {
+            let director = resolve_director(&settings, &store, false).expect("resolve");
+            let config = model::config_from(&director);
+            assert_eq!(store.reads(), 1, "precondition: startup read the key");
+
+            // What the frame loop does to put a Completer in front of a wake,
+            // and what the wake itself sends.
+            let id = "buddy".to_string();
+            let mut slots = model::tests::slots_awaiting_a_wake(&id);
+            let mut completer = None;
+            model::retarget_model(
+                &mut slots,
+                &id,
+                &mut completer,
+                ["stroll"],
+                &director,
+                config.configured,
+            );
+            let endpoint = model::endpoint_from(&director).expect("a keyed remote is a Completer");
+            assert_eq!(
+                endpoint.key_fingerprint(),
+                model::key_fingerprint("sk-saved-key")
+            );
+
+            assert_eq!(store.reads(), 1, "no wake may reach the secret store");
         });
     }
 
