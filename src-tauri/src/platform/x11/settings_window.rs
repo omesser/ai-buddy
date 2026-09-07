@@ -15,6 +15,7 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -91,6 +92,7 @@ impl SettingsWindow {
         });
 
         this.build_ui();
+        install_move_drag(&this.window);
         this
     }
 
@@ -1200,5 +1202,47 @@ fn reset_director_tab() {
         if let Some(window) = cell.borrow().as_ref() {
             window.draw(true);
         }
+    });
+}
+
+fn widget_keeps_the_press(widget: &gtk::Widget) -> bool {
+    if widget.is::<gtk::Entry>()
+        || widget.is::<gtk::TextView>()
+        || widget.is::<gtk::Button>()
+        || widget.is::<gtk::ComboBox>()
+        || widget.is::<gtk::Scale>()
+        || widget.is::<gtk::SpinButton>()
+        || widget.is::<gtk::Switch>()
+        || widget.is::<gtk::Notebook>()
+    {
+        return true;
+    }
+    widget.is::<gtk::Label>() && widget.parent().is_some_and(|p| p.is::<gtk::Notebook>())
+}
+
+fn install_move_drag(window: &Window) {
+    window.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+    let win = window.clone();
+    window.connect_button_press_event(move |_, event| {
+        if event.button() != 1 {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let super_held = event.state().contains(gtk::gdk::ModifierType::MOD4_MASK);
+        let mut ev = event.clone();
+        let hit = gtk::event_widget(&mut ev)
+            .map(|widget| {
+                if widget_keeps_the_press(&widget) {
+                    Hit::Control
+                } else {
+                    Hit::Background
+                }
+            })
+            .unwrap_or(Hit::Background);
+        if should_begin_move(super_held, hit) {
+            let (x, y) = event.root();
+            win.begin_move_drag(event.button() as i32, x as i32, y as i32, event.time());
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
     });
 }

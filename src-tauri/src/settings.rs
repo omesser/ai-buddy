@@ -6,6 +6,7 @@
 //! defaults, so an older file keeps working when a field is added.
 
 pub mod form;
+pub mod move_drag;
 
 use std::collections::HashMap;
 use std::fmt;

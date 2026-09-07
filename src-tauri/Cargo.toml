@@ -139,8 +139,12 @@ objc2-app-kit = {version = "0.3", features = [
   "NSAlert",
   "NSImage",
   "NSStatusItem",
-  "NSStatusBarButton"
+  "NSStatusBarButton",
+  "NSEvent",
+  "block2"
 ]}
+# Local monitor for Command-drag on the Settings background. #460.
+block2 = {version = "0.6", default-features = false, features = ["alloc"]}
 # The window list and the display list. Both crates are already compiled as
 # dependencies of objc2-app-kit; naming them here declares what we call
 # directly rather than pulling anything new in. The alternative is hand-written

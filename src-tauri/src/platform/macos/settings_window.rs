@@ -5,15 +5,18 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::ptr::NonNull;
 
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly, Message};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSApplication, NSAutoresizingMaskOptions,
-    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControlStateValueOff,
-    NSControlStateValueOn, NSControlTextEditingDelegate, NSFont, NSPopUpButton, NSScrollView,
-    NSSecureTextField, NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
+    NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControl, NSControlStateValueOff,
+    NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventMask,
+    NSEventModifierFlags, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
+    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
     NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
     NSWindowLevel, NSWindowStyleMask,
 };
@@ -22,6 +25,7 @@ use objc2_foundation::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
@@ -83,6 +87,8 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
+    /// Keeps the local mouse-down monitor alive for the window's life. #460
+    move_monitor: RefCell<Option<Retained<AnyObject>>>,
 }
 
 define_class!(
@@ -1102,6 +1108,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     window.setMinSize(NSSize::new(WINDOW_WIDTH, 400.0));
     retain_after_close(&window);
     window.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
+    install_move_drag(&window, &controller);
 
     *controller.ivars().window.borrow_mut() = Some(window.clone());
     *controller.ivars().tab_view.borrow_mut() = Some(tab_view);
@@ -1429,6 +1436,61 @@ fn pin_right(view: &NSView) {
 /// Retained and raise it on the next tray click.
 fn release_window_when_closed() -> bool {
     false
+}
+
+/// The leaf is a control or the tab strip. Labels are NSTextField but not
+/// editable, so they stay background. #460
+fn hit_from_view(view: &NSView) -> Hit {
+    if let Some(field) = view.downcast_ref::<NSTextField>() {
+        return if field.isEditable() {
+            Hit::Control
+        } else {
+            Hit::Background
+        };
+    }
+    if view.downcast_ref::<NSControl>().is_some()
+        || view.downcast_ref::<NSTabView>().is_some()
+        || view.downcast_ref::<NSTextView>().is_some()
+    {
+        Hit::Control
+    } else {
+        Hit::Background
+    }
+}
+
+fn install_move_drag(window: &NSWindow, controller: &SettingsController) {
+    let window = window.retain();
+    let mtm = controller.mtm();
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        let ptr = event.as_ptr();
+        let event = unsafe { event.as_ref() };
+        let Some(event_window) = event.window(mtm) else {
+            return ptr;
+        };
+        if event_window.windowNumber() != window.windowNumber() {
+            return ptr;
+        }
+        let command = event
+            .modifierFlags()
+            .contains(NSEventModifierFlags::Command);
+        let hit = event_window
+            .contentView()
+            .and_then(|content| content.hitTest(event.locationInWindow()))
+            .map(|view| hit_from_view(&view))
+            .unwrap_or(Hit::Background);
+        if should_begin_move(command, hit) {
+            window.performWindowDragWithEvent(event);
+            std::ptr::null_mut()
+        } else {
+            ptr
+        }
+    });
+    // SAFETY: the block returns the same event pointer or null, which AppKit's
+    // local monitor contract asks for.
+    let monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::LeftMouseDown, &handler)
+    };
+    *controller.ivars().move_monitor.borrow_mut() = monitor;
 }
 
 fn retain_after_close(window: &NSWindow) {

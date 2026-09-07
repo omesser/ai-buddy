@@ -215,6 +215,8 @@ Settings → Director persists base URL, model, and the first wake interval, and
 
 **Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.
 
+The title-bar grip is small, so the window also moves with a modifier-drag on its background: Command-drag on macOS, Super-drag on Linux, Alt-drag on Windows. The drag starts from empty chrome, not from a field, button, popup, or the tab strip. Nothing in the window names the gesture; this paragraph is how you find it.
+
 **macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. From the repository root:
 
 ```sh
