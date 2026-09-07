@@ -41,6 +41,17 @@ tauri-plugin-global-shortcut = "2"
 # does not wait. ureq instead of reqwest: no tokio.
 ureq = {version = "3", features = ["json"]}
 serde_json = "1"
+# The official ACP SDK: the attached Harness is spoken to over it (ADR-0017).
+# Its futures need an executor, and that executor lives on one thread in
+# `acp_wire.rs`: a current-thread tokio runtime, `rt` + `sync` + `macros` and
+# nothing more. tokio was already in the tree through Tauri. The frame loop
+# never sees a future (ADR-0004).
+agent-client-protocol = "2.1"
+tokio = {version = "1", features = ["rt", "sync", "macros"]}
+# How the SDK reads a child's pipes. Spawned by us rather than by the SDK's
+# `AcpAgent`, which has no working-directory knob, and ADR-0010 puts the
+# Harness in the data folder.
+async-process = "2"
 # The OS secret store is how the Director key survives `cargo run` without
 # landing in `settings.json`.
 keyring = {version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"]}

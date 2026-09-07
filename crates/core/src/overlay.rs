@@ -240,8 +240,12 @@ impl AlphaMask {
             ));
         }
 
+        // `as_chunks` rather than `chunks_exact`: the 1.88 floor makes it
+        // available and clippy asks for it. Same pixels, no remainder either way.
         let opaque = buf[..info.buffer_size()]
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|px| px[3] >= threshold)
             .collect();
 
