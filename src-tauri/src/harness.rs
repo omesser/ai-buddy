@@ -288,6 +288,26 @@ impl Session {
         }
     }
 
+    /// `shutdown`, then a bounded wait for the child to actually be reaped.
+    ///
+    /// The probe's exit path only. `shutdown` alone is right for the app,
+    /// whose run event ends the process and takes the wire thread with it; a
+    /// probe returns to a script, and `acp_wire` says an `npx` child does not
+    /// reliably die on stdin EOF.
+    fn shutdown_and_reap(&self) {
+        let Some(wire) = self.wire.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        wire.shutdown();
+        if !wire.wait_for_exit(PROBE_REAP) {
+            eprintln!(
+                "probe-harness: `{}` was still running {}s after shutdown",
+                self.launch.line(),
+                PROBE_REAP.as_secs()
+            );
+        }
+    }
+
     fn current_wire(&self) -> Option<Arc<Wire>> {
         self.wire
             .lock()
@@ -430,6 +450,140 @@ impl Completer for Session {
             }
         }
         reply
+    }
+}
+
+/// The one prompt the probe sends.
+///
+/// Shaped like the last line of a Character Prompt — a Behavior name, a bar,
+/// then dialogue — because whether a real Harness's reply comes back in that
+/// shape is the fact the probe exists to report. Asked for explicitly rather
+/// than left to the Harness's own idea of a good answer, so a reply that does
+/// not parse is the Harness's doing and not the prompt's.
+const PROBE_PROMPT: &str =
+    "Reply with exactly this one line and nothing else: Wave | Hello from the probe.";
+
+/// How long the probe waits for the Harness to be reaped before saying so.
+const PROBE_REAP: Duration = Duration::from_secs(5);
+
+/// Attach the configured Harness and run one turn, with no overlay.
+///
+/// `scripts/probe-harness.sh` is the face of this and `model::run_probe` is
+/// the sibling it is shaped after: same env as `cargo run`, no window, an
+/// exit code a script can read. The code splits on the two phases the probe
+/// prints: 2 is never having asked — nothing configured, no binary, not
+/// signed in — 1 is asked and not answered, and 0 is `end_turn`.
+///
+/// No credential is read, printed or set. A Harness that is not signed in
+/// comes back as the command the user runs in their own terminal, which is
+/// ADR-0010's rule and the whole of what the probe does about it.
+pub fn run_probe() -> i32 {
+    // No settings file on this path, and `dev_flags::seed` is where the
+    // exported timeout is read (#273).
+    crate::dev_flags::seed(&crate::settings::Settings::default());
+    let Some(launch) = from_env() else {
+        eprintln!("probe-harness: {VAR} is unset, so there is no Harness to attach");
+        return 2;
+    };
+    let session = Session::new(
+        launch,
+        // The probe's own folder under the app's, which keeps the session file
+        // and the Action Log out of a real install's — a probe is still the way
+        // to reach a Harness that resumes badly (#448), so it wants both of its
+        // own. Memory is not isolated by this and cannot be: the MCP server
+        // resolves it from the data folder, not from the session's cwd, so a
+        // `remember` during a probe writes the real `memory.md`.
+        ai_buddy_core::memory::data_dir().join("probe"),
+        // Named, never answered: only a click on the Chat surface may answer a
+        // permission request (ADR-0017), and the probe has no surface. The ask
+        // then times out with the turn, which is itself the report.
+        Box::new(|ask| println!("  permission   {} [{}]", ask.title, ask.request)),
+    );
+    let code = probe(&session);
+    session.shutdown_and_reap();
+    code
+}
+
+/// `run_probe` minus the environment, so the fake agent can run the whole of
+/// it in a test.
+fn probe(session: &Session) -> i32 {
+    println!("probe-harness");
+    println!("  harness      {}", session.launch.name);
+    println!("  command      {}", session.launch.line());
+    println!("  dir          {}", session.dir.display());
+    println!(
+        "  mcp          {}",
+        mcp_server().map_or_else(|| "none".to_string(), |path| path.display().to_string())
+    );
+    println!(
+        "  timeout      turn {}s, attach {}s",
+        session.timeout.as_secs(),
+        session.attach_timeout().as_secs()
+    );
+    println!();
+
+    println!("attach");
+    let session_id = match session.attach() {
+        Ok((_, id)) => id,
+        // Nothing was asked, so this is configuration and not a turn: a
+        // missing binary, a Harness that wants a login, a `session/new` the
+        // Harness refused. The message says which; the code says only that
+        // the prompt below never went out.
+        Err(why) => {
+            println!("  {why}");
+            return 2;
+        }
+    };
+    let handshake = session
+        .state
+        .lock()
+        .map(|state| state.handshake.clone())
+        .unwrap_or_default();
+    let methods: Vec<&str> = handshake
+        .auth_methods
+        .iter()
+        .map(|method| method.name.as_str())
+        .collect();
+    println!(
+        "  agent        {}",
+        handshake.agent.as_deref().unwrap_or("unnamed")
+    );
+    println!("  loadSession  {}", handshake.load_session);
+    println!("  mcp http     {}", handshake.mcp_http);
+    println!(
+        "  authMethods  {}",
+        if methods.is_empty() {
+            "none".to_string()
+        } else {
+            methods.join(", ")
+        }
+    );
+    println!("  session      {session_id}");
+    println!();
+
+    println!("turn");
+    println!("  prompt       {PROBE_PROMPT}");
+    match session.turn(PROBE_PROMPT) {
+        Ok(text) => {
+            println!("  stop         end_turn");
+            println!("  reply        {text}");
+            // Reported, not part of the verdict: whether a model obeys a
+            // one-line format is the Director's problem, and a turn that
+            // reached `end_turn` proved the wire either way.
+            match ai_buddy_core::director::parse_proposal(&text) {
+                Ok(proposal) => println!(
+                    "  proposal     {} | {}",
+                    proposal.behavior,
+                    proposal.dialogue.as_deref().unwrap_or("(no dialogue)")
+                ),
+                Err(_) => println!("  proposal     no, the first line is not a Behavior name"),
+            }
+            0
+        }
+        Err(why) => {
+            println!("  {why}");
+            1
+        }
     }
 }
 
@@ -1012,6 +1166,50 @@ mod tests {
         assert_eq!(session.complete("again"), Err("harness busy".to_string()));
         let _ = worker.join();
         session.shutdown();
+    }
+
+    /// The probe's two exit codes are its two phases: 1 is a turn that did
+    /// not finish, whatever the reply text turns out to be, and 2 is never
+    /// having asked.
+    #[test]
+    fn the_probe_exits_zero_on_a_turn_one_on_a_refusal_and_two_on_no_attach() {
+        let (_fx, session) = Fixture::new("happy");
+        assert_eq!(probe(&session), 0);
+        session.shutdown();
+
+        let (_fx, session) = Fixture::new("refusal");
+        assert_eq!(probe(&session), 1);
+        session.shutdown();
+
+        let (_fx, session) = Fixture::new("auth");
+        assert_eq!(probe(&session), 2);
+        session.shutdown();
+
+        let dir = std::env::temp_dir().join(format!("ai-buddy-probe-{}", uuid::Uuid::new_v4()));
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+        };
+        assert_eq!(
+            probe(&Session::new(launch, dir.clone(), Box::new(|_| {}))),
+            2
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `shutdown` only posts the message; the kill is the last thing the wire
+    /// thread does. A zero-length wait can only succeed if `shutdown_and_reap`
+    /// already waited for it.
+    #[test]
+    fn the_probe_waits_for_the_child_to_be_reaped() {
+        let (_fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete("hi"), Ok("Hello".to_string()));
+        let wire = session.current_wire().expect("attached");
+        session.shutdown_and_reap();
+        assert!(
+            wire.wait_for_exit(Duration::ZERO),
+            "the wire thread outlived the reap"
+        );
     }
 
     #[test]

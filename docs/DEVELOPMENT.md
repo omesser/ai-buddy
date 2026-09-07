@@ -254,6 +254,38 @@ director: http://localhost:11434 model "llama3.2" is not served; it has gemma4:l
 
 Neither line stops anything: a wake that fails already falls back to Static per turn. The line exists so a buddy that went quiet is not a mystery.
 
+`scripts/probe-harness.sh` is the same question one hop out, for an attached Harness: it spawns it, prints what `initialize` advertised, runs one fixed prompt, and says whether the reply parsed as a Behavior proposal. No overlay, and it prints no credential — a Harness that is not signed in comes back as the command to run in your own terminal.
+
+```sh
+AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh
+```
+
+```
+probe-harness
+  harness      hermes
+  command      hermes acp
+  dir          /Users/you/Library/Application Support/ai-buddy/probe
+  mcp          none
+  timeout      turn 20s, attach 20s
+
+attach
+  agent        hermes-agent
+  loadSession  true
+  mcp http     false
+  authMethods  custom runtime credentials, Configure Hermes provider
+  session      33f5d650-5476-40c6-876b-cb04f14bfc27
+
+turn
+  prompt       Reply with exactly this one line and nothing else: Wave | Hello from the probe.
+  stop         end_turn
+  reply        Wave | Hello from the probe.
+  proposal     Wave | Hello from the probe.
+```
+
+The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. ADR-0017's table says which Harnesses this has been run against.
+
+The `probe` folder keeps the session file and the Action Log out of a real install's. Memory is not isolated: the MCP server resolves `memory.md` from the data folder, so a `remember` during a probe writes the real one.
+
 ### Provider Details
 
 **Cursor API:** `CURSOR_API_KEY` is for the Cloud Agents API and SDKs, not a Completer. `https://api.cursor.com` has no `/v1/chat/completions`; a POST there is a 404 and Static takes over.
