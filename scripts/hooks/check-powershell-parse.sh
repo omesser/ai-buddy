@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Skip if pwsh is not available
-if ! command -v pwsh >/dev/null 2>&1; then
+if ! command -v pwsh > /dev/null 2>&1; then
   echo "SKIP: pwsh not available, skipping PowerShell parse check"
   exit 0
 fi

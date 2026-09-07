@@ -16,7 +16,7 @@ for file in "$@"; do
   fi
 
   # Check for non-ASCII bytes (any byte > 127)
-  if LC_ALL=C grep -n '[^ -~	]' "$file" >/dev/null 2>&1; then
+  if LC_ALL=C grep -n '[^ -~	]' "$file" > /dev/null 2>&1; then
     echo "ERROR: $file contains non-ASCII characters"
     echo "PowerShell scripts must be ASCII-only to avoid encoding issues on Windows PowerShell 5.1"
     echo "Non-ASCII lines:"

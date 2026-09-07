@@ -69,6 +69,7 @@ repos:
         entry: scripts/hooks/check-powershell-ascii.sh
         language: system
         files: \.ps1$
+        exclude: ^test-fixtures/powershell/
         description: Reject non-ASCII bytes in PowerShell scripts to prevent encoding issues
 
       - id: check-powershell-parse
@@ -76,6 +77,7 @@ repos:
         entry: scripts/hooks/check-powershell-parse.sh
         language: system
         files: \.ps1$
+        exclude: ^test-fixtures/powershell/
         description: Validate PowerShell syntax using Parser::ParseFile (requires pwsh)
 
     # Swift (macOS only; skipped on Linux CI)
