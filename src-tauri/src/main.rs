@@ -118,10 +118,12 @@ const CHAT_EVENT: &str = "chat";
 /// different, whether or not anyone has typed.
 const CHAT_STATUS_EVENT: &str = "chat-status";
 
-/// The event carrying who an already-open Chat surface belongs to, after a
-/// Character switch. Name and Character only — whether anything can answer
-/// stays on the `chat_opening` command. An event rather than a second
-/// command, because the window is already listening. #375.
+/// The event carrying a full opening to an already-open Chat surface.
+///
+/// Name and Character after a switch (#375), and configured/enabled/login
+/// after a Director or Completer-source change, so `attached()` can re-run
+/// without a webview reload. An event rather than a second command, because
+/// the window is already listening. #473.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// The event carrying a forwarded `session/request_permission` to every open
@@ -905,7 +907,7 @@ fn note_happened(happened: &mut Happened, what: Happened) {
 }
 
 /// What a Chat surface needs to draw itself before anything is typed.
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct ChatOpening {
     name: String,
     character: String,
@@ -919,18 +921,16 @@ struct ChatOpening {
     login: Option<String>,
 }
 
-/// Name and Character an already-open Chat surface should paint. Read off the
-/// Roster after a switch so this path cannot disagree with `retarget`. #375.
-#[derive(Clone, Serialize)]
-struct ChatWho {
-    name: String,
-    character: String,
-}
-
-fn chat_who_from(instance: &roster::Instance) -> ChatWho {
-    ChatWho {
+fn chat_opening_from(instance: &roster::Instance, inspect: &model::DirectorInspect) -> ChatOpening {
+    ChatOpening {
         name: instance.name.clone(),
         character: instance.character_name().to_string(),
+        configured: inspect.configured,
+        enabled: inspect.enabled,
+        login: inspect
+            .harness
+            .as_ref()
+            .and_then(|attached| attached.login.clone()),
     }
 }
 
@@ -979,19 +979,25 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
-/// Push name and Character to an already-open Chat surface, without creating
-/// one. Always after switch: a chosen Instance name stays, but the Character
-/// line still has to move. Does not carry configured/enabled — those stay on
-/// the `chat_opening` command, which reads `DirectorInspect`. #375.
-fn push_chat_opening(app: &tauri::AppHandle, roster: &Roster, id: &InstanceId) {
+/// Push a full opening to an already-open Chat surface, without creating one.
+/// Always after switch: a chosen Instance name stays, but the Character line
+/// still has to move. Configured/enabled/login too: the window asked once at
+/// start, and a Director or Completer-source change has to re-run `attached()`.
+/// #375, #473.
+fn push_chat_opening(
+    app: &tauri::AppHandle,
+    roster: &Roster,
+    id: &InstanceId,
+    inspect: &model::DirectorInspect,
+) {
     let Some(instance) = roster.get(id) else {
         return;
     };
-    let who = chat_who_from(instance);
+    let opening = chat_opening_from(instance, inspect);
     let label = chat_label(id);
-    let title = who.name.clone();
+    let title = opening.name.clone();
     let handle = app.clone();
-    let _ = app.emit_to(label.clone(), CHAT_OPENING_EVENT, who);
+    let _ = app.emit_to(label.clone(), CHAT_OPENING_EVENT, opening);
     if let Err(why) = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(&label) {
             if let Err(why) = window.set_title(&title) {
@@ -1000,6 +1006,13 @@ fn push_chat_opening(app: &tauri::AppHandle, roster: &Roster, id: &InstanceId) {
         }
     }) {
         eprintln!("chat: could not reach the main thread: {why}");
+    }
+}
+
+fn push_chat_openings(app: &tauri::AppHandle, roster: &Roster, inspect: &model::DirectorInspect) {
+    let ids: Vec<_> = roster.list().into_iter().map(|(id, _)| id).collect();
+    for id in ids {
+        push_chat_opening(app, roster, &id, inspect);
     }
 }
 
@@ -1301,7 +1314,9 @@ fn apply_menu_action(
                     config,
                     director,
                 );
-                push_chat_opening(app, roster, instance_id);
+                if let Ok(inspect) = inspect.lock() {
+                    push_chat_opening(app, roster, instance_id, &inspect);
+                }
                 if let Ok(mut settings) = settings.lock() {
                     settings.character = name.clone();
                     persist_settings(&settings, settings_path);
@@ -1336,6 +1351,7 @@ fn apply_menu_action(
                 config.apply_switch(settings.director_enabled);
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.enabled = config.enabled;
+                    push_chat_openings(app, roster, &inspect);
                 }
                 persist_settings(&settings, settings_path);
                 eprintln!(
@@ -2400,6 +2416,17 @@ mod tests {
         assert_eq!(loaded[0].0.name, "Pip");
     }
 
+    fn stub_inspect() -> model::DirectorInspect {
+        model::DirectorInspect {
+            enabled: true,
+            configured: true,
+            ambient_wakes: true,
+            wake_secs: 60,
+            last_payload: None,
+            harness: None,
+        }
+    }
+
     /// Production change that would fail this: emitting the pre-switch name or
     /// Character, or stuffing `character.name` into both fields.
     #[test]
@@ -2412,10 +2439,10 @@ mod tests {
         assert!(roster.retarget(&id, &second));
         let instance = roster.get(&id).expect("still there");
 
-        let who = chat_who_from(instance);
-        assert_eq!(who.name, "nim", "the payload name is the Instance's");
+        let opening = chat_opening_from(instance, &stub_inspect());
+        assert_eq!(opening.name, "nim", "the payload name is the Instance's");
         assert_eq!(
-            who.character, "nim",
+            opening.character, "nim",
             "the payload Character is the Instance's"
         );
     }
@@ -2432,9 +2459,35 @@ mod tests {
         assert!(roster.retarget(&id, &second));
         let instance = roster.get(&id).expect("still there");
 
-        let who = chat_who_from(instance);
-        assert_eq!(who.name, "Pip");
-        assert_eq!(who.character, "nim");
+        let opening = chat_opening_from(instance, &stub_inspect());
+        assert_eq!(opening.name, "Pip");
+        assert_eq!(opening.character, "nim");
+    }
+
+    /// Production change that would fail this: an opening whose enabled bit
+    /// still matches the pre-toggle inspect. #473.
+    #[test]
+    fn chat_opening_from_inspect_carries_configured_and_enabled() {
+        let memory = MemoryManifest::new(std::env::temp_dir().join("test-chat-opening-mode.md"));
+        let mut roster = Roster::new(memory);
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let inspect = model::DirectorInspect {
+            enabled: false,
+            configured: true,
+            ambient_wakes: true,
+            wake_secs: 60,
+            last_payload: None,
+            harness: None,
+        };
+
+        let opening = chat_opening_from(instance, &inspect);
+        assert_eq!(opening.name, "Pip");
+        assert_eq!(opening.character, "nim");
+        assert!(opening.configured);
+        assert!(!opening.enabled);
+        assert_eq!(opening.login, None);
     }
 
     /// #17: losing a line that is waiting in `happened` would answer a question
