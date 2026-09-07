@@ -1449,9 +1449,26 @@ fn hit_at(hwnd: HWND, lparam: LPARAM) -> Hit {
         ScreenToClient(hwnd, &mut client);
     }
     // SAFETY: parent is our settings HWND; the POINT is in its client space.
-    let child = unsafe { ChildWindowFromPointEx(hwnd, client, CWP_SKIPINVISIBLE) };
+    let mut child = unsafe { ChildWindowFromPointEx(hwnd, client, CWP_SKIPINVISIBLE) };
     if child.is_null() || child == hwnd {
         return Hit::Background;
+    }
+
+    // Loop to find the deepest nested child control, not just immediate children
+    loop {
+        let mut nested_client = client;
+        // SAFETY: Convert to child's coordinate space
+        unsafe {
+            ScreenToClient(child, &mut nested_client);
+        }
+        // SAFETY: Look for deeper nested children
+        let nested_child =
+            unsafe { ChildWindowFromPointEx(child, nested_client, CWP_SKIPINVISIBLE) };
+        if nested_child.is_null() || nested_child == child {
+            // No deeper child found, child is the deepest hit
+            break;
+        }
+        child = nested_child;
     }
     let mut buf = [0u8; 256];
     // SAFETY: buffer is a writable C string of known size.
@@ -1497,7 +1514,7 @@ unsafe extern "system" fn window_proc(
             if def != HTCLIENT as LRESULT {
                 return def;
             }
-            let alt = GetAsyncKeyState(VK_MENU) < 0;
+            let alt = GetAsyncKeyState(VK_MENU as i32) < 0;
             caption_hit_test(alt, hit_at(hwnd, lparam))
         }
         WM_COMMAND => {
@@ -1778,5 +1795,15 @@ mod tests {
     #[test]
     fn a_static_label_is_background() {
         assert_eq!(hit_from_win32("Static", false), Hit::Background);
+    }
+
+    #[test]
+    fn nested_button_is_control() {
+        // Test that demonstrates deep lookup finds nested controls
+        assert_eq!(
+            hit_from_win32("Button", false),
+            Hit::Control,
+            "Nested Button should be found as Control"
+        );
     }
 }

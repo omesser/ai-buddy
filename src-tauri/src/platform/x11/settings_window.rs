@@ -1217,6 +1217,7 @@ fn hit_from_widget_type_names(names: &[&str]) -> Hit {
                 | "GtkComboBox"
                 | "GtkComboBoxText"
                 | "GtkCheckButton"
+                | "GtkRadioButton"
                 | "GtkToggleButton"
         ) {
             return Hit::Control;
@@ -1297,6 +1298,7 @@ mod tests {
             "GtkButton",
             "GtkComboBox",
             "GtkCheckButton",
+            "GtkRadioButton",
         ] {
             assert_eq!(
                 hit_from_widget_type_names(&[name, "GtkBox", "GtkNotebook"]),
