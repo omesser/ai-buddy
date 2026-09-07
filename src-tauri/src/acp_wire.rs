@@ -11,6 +11,7 @@
 //! caller blocks on `recv_timeout` while the protocol runs here. The frame
 //! loop never sees any of it (ADR-0004): every caller is a `Slots` worker.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self as sync_mpsc, RecvTimeoutError};
@@ -327,6 +328,12 @@ fn run(
                 return;
             }
         };
+        #[cfg(windows)]
+        {
+            if !windows_job::assign_to_job(child.id()) {
+                eprintln!("harness: Job Object assignment failed; grandchildren may linger");
+            }
+        }
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             let _ = ready.send(Err("no pipes to the child".to_string()));
             return;
@@ -400,6 +407,8 @@ fn run(
 
 /// SIGKILL the Harness's process group. `npx` grandchildren share that
 /// group; a direct `Child::kill` leaves them running.
+///
+/// On Windows, terminates the Job Object so grandchildren die too.
 pub(crate) fn kill_harness_tree(pid: u32) {
     #[cfg(unix)]
     {
@@ -412,7 +421,11 @@ pub(crate) fn kill_harness_tree(pid: u32) {
             let _ = unsafe { libc::killpg(pgid, libc::SIGKILL) };
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        windows_job::terminate_job(pid);
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = pid;
     }
@@ -724,5 +737,100 @@ mod tests {
         let hint = auth_hint(&method);
         assert_eq!(hint.name, "Sign in");
         assert_eq!(hint.description.as_deref(), Some("run x login"));
+    }
+}
+
+#[cfg(windows)]
+mod windows_job {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+        TerminateJobObject, JobObjectExtendedLimitInformation,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    };
+    use windows_sys::Win32::System::Threading::OpenProcess;
+    use windows_sys::Win32::System::Threading::PROCESS_SET_QUOTA;
+
+    /// Job Objects by child PID. Stored so kill_harness_tree can terminate
+    /// the job and its descendants die with it. Cleared on termination.
+    static JOBS: Mutex<Option<HashMap<u32, HANDLE>>> = Mutex::new(None);
+
+    /// Create a Job Object with kill-on-close, assign the child to it, and
+    /// store it for later termination. Returns true if the job was created
+    /// and assigned successfully.
+    pub(super) fn assign_to_job(pid: u32) -> bool {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job == 0 {
+                eprintln!("harness: CreateJobObjectW failed for pid {pid}");
+                return false;
+            }
+
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = 
+                windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+            let ok = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+
+            if ok == 0 {
+                eprintln!("harness: SetInformationJobObject failed for pid {pid}");
+                CloseHandle(job);
+                return false;
+            }
+
+            let process = OpenProcess(PROCESS_SET_QUOTA, 0, pid);
+            if process == 0 {
+                eprintln!("harness: OpenProcess failed for pid {pid}");
+                CloseHandle(job);
+                return false;
+            }
+
+            let assigned = AssignProcessToJobObject(job, process);
+            CloseHandle(process);
+
+            if assigned == 0 {
+                eprintln!("harness: AssignProcessToJobObject failed for pid {pid}");
+                CloseHandle(job);
+                return false;
+            }
+
+            if let Ok(mut slot) = JOBS.lock() {
+                let map = slot.get_or_insert_with(HashMap::new);
+                map.insert(pid, job);
+            }
+
+            true
+        }
+    }
+
+    /// Terminate the Job Object for this PID so descendants die. The handle
+    /// is closed whether termination succeeds or not, and removed from the map.
+    pub(super) fn terminate_job(pid: u32) {
+        let job = {
+            let mut slot = match JOBS.lock() {
+                Ok(slot) => slot,
+                Err(_) => return,
+            };
+            let Some(map) = slot.as_mut() else {
+                return;
+            };
+            map.remove(&pid)
+        };
+
+        let Some(job) = job else {
+            return;
+        };
+
+        unsafe {
+            let _ = TerminateJobObject(job, 1);
+            CloseHandle(job);
+        }
     }
 }

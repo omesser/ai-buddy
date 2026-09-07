@@ -88,12 +88,15 @@ gtk = "0.18"
 # ShellExecuteW opens a file with the default application as a wide-string
 # parameter. The previous `cmd /C start` arm re-parsed `&` and `%` (#255).
 # Native Win32 settings window: controls, tabs, fonts.
+# Job Object for Harness process tree teardown: grandchildren die with us.
 windows-sys = {version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_System_JobObjects",
   "Win32_System_LibraryLoader",
   "Win32_System_Power",
   "Win32_System_SystemInformation",
+  "Win32_System_Threading",
   "Win32_UI_Controls",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
