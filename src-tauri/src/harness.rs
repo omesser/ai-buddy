@@ -58,6 +58,11 @@ const HANDOVER_POLL: Duration = Duration::from_millis(20);
 /// What every caller is told when the child is gone.
 const LOST: &str = "harness exited";
 
+/// The stop reason a cancelled turn comes back with. A turn the Completer gave
+/// up waiting on is `TurnError::Timeout` instead, so this reason on a turn is
+/// always a cancel someone else asked for.
+const CANCELLED: &str = "cancelled";
+
 /// Which Harness, and the command line that starts it in ACP mode.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Launch {
@@ -242,6 +247,10 @@ pub struct Session {
     /// the lock rather than inside it because it is read exactly when the lock
     /// cannot be taken, which is the moment the ordering rule is decided.
     serving_reactive: AtomicBool,
+    /// The turn a superseding wake has taken the session from, while the log
+    /// lines for it are still to be written. One slot, because one prompt is
+    /// in flight at a time.
+    withdrawn: Mutex<Option<Withdrawal>>,
     /// Bookkeeping, and the blocking `initialize`/`session/*` hop under it, so
     /// two wakes cannot open two sessions.
     state: Mutex<State>,
@@ -252,6 +261,21 @@ pub struct Session {
     /// wire. `shutdown` clears this first so a spawn that lands afterwards
     /// kills the child instead of storing it.
     wanted: AtomicBool,
+}
+
+/// A turn given up so a newer wake could be answered (#499).
+///
+/// The winner writes it before its cancel goes out, because the loser holds the
+/// turn lock until it has written its own log line, so anything the winner set
+/// afterwards would be too late to be read. The loser then claims it twice:
+/// once for its `turn` line, and once for the `parsed` line the Shell writes
+/// for the wake, which is the line that would otherwise read as a wake that
+/// broke rather than one that was withdrawn.
+struct Withdrawal {
+    /// The Instance whose wake the session was taken for.
+    winner: String,
+    /// The Instance that lost its turn, once that turn has seen the cancel.
+    loser: Option<String>,
 }
 
 #[derive(Default)]
@@ -294,6 +318,7 @@ impl Session {
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
+            withdrawn: Mutex::new(None),
             state: Mutex::new(State::default()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
@@ -387,17 +412,59 @@ impl Session {
         if !request.reactive && self.serving_reactive.load(Ordering::SeqCst) {
             return None;
         }
-        self.current_wire()?.cancel();
+        let wire = self.current_wire()?;
+        self.note_withdrawal(Some(request.instance.clone()));
+        wire.cancel();
         let until = Instant::now() + HANDOVER;
         loop {
             if let Ok(turn) = self.turn.try_lock() {
                 return Some(turn);
             }
             if Instant::now() >= until {
+                // A Harness that ignored the cancel keeps its turn, so no turn
+                // was withdrawn for this wake and the next cancelled one must
+                // not be read as though it were.
+                self.note_withdrawal(None);
                 return None;
             }
             thread::sleep(HANDOVER_POLL);
         }
+    }
+
+    /// Say that the turn in flight is being taken for `winner`'s wake, or that
+    /// no turn was taken after all.
+    fn note_withdrawal(&self, winner: Option<String>) {
+        if let Ok(mut slot) = self.withdrawn.lock() {
+            *slot = winner.map(|winner| Withdrawal {
+                winner,
+                loser: None,
+            });
+        }
+    }
+
+    /// The Instance a turn of `loser`'s was withdrawn for, named by the turn
+    /// itself so the `parsed` line for that wake can find it.
+    fn claim_withdrawn_turn(&self, loser: &str, reason: &str) -> Option<String> {
+        if reason != CANCELLED {
+            return None;
+        }
+        let mut slot = self.withdrawn.lock().ok()?;
+        let withdrawal = slot.as_mut()?;
+        withdrawal.loser = Some(loser.to_string());
+        Some(withdrawal.winner.clone())
+    }
+
+    /// The same withdrawal, taken by the wake that lost the session.
+    ///
+    /// Taken rather than read, for the reason the `turn` line is written once:
+    /// one wake leaves one line, so a withdrawal cannot colour the next wake
+    /// this Instance takes (#435).
+    fn claim_withdrawn_wake(&self, instance: &str) -> Option<String> {
+        let mut slot = self.withdrawn.lock().ok()?;
+        if slot.as_ref()?.loser.as_deref() != Some(instance) {
+            return None;
+        }
+        slot.take().map(|withdrawal| withdrawal.winner)
     }
 
     /// One turn. The whole of `Completer::complete`, minus the trace.
@@ -430,6 +497,7 @@ impl Session {
             }
             _ => (session_id, outcome),
         };
+        let mut withdrawn = false;
         let answer = match outcome {
             Ok(text) => {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
@@ -444,7 +512,19 @@ impl Session {
                 ))
             }
             Err(TurnError::Stopped(reason)) => {
-                action_log::append(&self.dir, "turn", json!({"stop": reason}));
+                // One session serves every Instance (ADR-0008), so a cancel
+                // sent for another buddy's wake reaches this turn without
+                // anything having superseded this Instance's own slot. The
+                // outcome is a wake with nothing to show either way; the log
+                // line is what has to say the turn was given up rather than
+                // broken (#499).
+                let withdrawn_for = self.claim_withdrawn_turn(&request.instance, &reason);
+                withdrawn = withdrawn_for.is_some();
+                action_log::append(
+                    &self.dir,
+                    "turn",
+                    json!({"stop": reason, "withdrawn_for": withdrawn_for}),
+                );
                 Err(format!("harness stopped: {reason}"))
             }
             Err(TurnError::Busy) => Err("harness busy".to_string()),
@@ -455,7 +535,16 @@ impl Session {
         };
         // Kept for the readers on the other side of the Completer, which is
         // where `Result<String, String>` narrows to "no proposal" (#514).
-        self.update_inspect(|inspect| inspect.last_error = answer.as_ref().err().cloned());
+        //
+        // A withdrawal is not among them. The turn came back `cancelled`
+        // because we cancelled it, so naming that to the Chat surface would
+        // report the buddy that won the session as a fault the Harness
+        // reported (#499).
+        self.update_inspect(|inspect| {
+            inspect.last_error = (!withdrawn)
+                .then(|| answer.as_ref().err().cloned())
+                .flatten();
+        });
         answer
     }
 
@@ -949,19 +1038,32 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
         .as_ref()
         .map(|session| session.dir.clone())
         .unwrap_or_else(ai_buddy_core::memory::data_dir);
-    // Taken here rather than passed in: the caller has the wake and not the
-    // words, and this already holds the session that has them.
+    // Both asked here rather than carried through `crates/core`: the caller has
+    // the wake and not the words, whose wake took the session is a property of
+    // the one Harness session, and this already holds the session that knows
+    // each (#514, #499).
+    let withdrawn_for = match (&session, wake) {
+        (Some(session), Wake::Failed) => session.claim_withdrawn_wake(instance),
+        _ => None,
+    };
     let error = matches!(wake, Wake::Failed)
         .then(|| session.and_then(|session| session.inspect().last_error))
         .flatten();
     action_log::append(
         &dir,
         "parsed",
-        parsed_fields(instance, wake, reactive, near_miss, error.as_deref()),
+        parsed_fields(
+            instance,
+            wake,
+            reactive,
+            near_miss,
+            error.as_deref(),
+            withdrawn_for.as_deref(),
+        ),
     );
 }
 
-/// The four answers the Shell has to "what did the reply parse to".
+/// The six answers the Shell has to "what did the reply parse to".
 ///
 /// A Near Miss is its own outcome and not `speech`, though it arrives as
 /// speech: a Character that declares `prowl` and a model that answers `prowll`
@@ -976,6 +1078,16 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
 /// Harness answered, and its answer was an error. #514 read as `failed` for a
 /// day of wakes, so the line carries the words as well as the verdict.
 ///
+/// `withdrawn` is the sixth and the one failure that is not one: the turn was
+/// cancelled so another Instance's wake could be answered, which the Instance
+/// named in `withdrawn_for` won. The buddy falls back to static weights either
+/// way, and a reader can now tell that from a turn that broke (#499).
+///
+/// It outranks `error` because our own cancel reaches this function as one. The
+/// turn came back `harness stopped: cancelled`, which is a Harness reporting
+/// what we asked it to do, so a line reading `error` there would name the buddy
+/// that won the session as a fault.
+///
 /// The wake kind rides along so a reader can join this to the `prompt` or
 /// `refused` line for the same wake.
 fn parsed_fields(
@@ -984,6 +1096,7 @@ fn parsed_fields(
     reactive: bool,
     near_miss: Option<&str>,
     error: Option<&str>,
+    withdrawn_for: Option<&str>,
 ) -> Value {
     let (result, behavior) = match (near_miss, wake) {
         (Some(named), _) => ("near_miss", Some(named)),
@@ -991,6 +1104,7 @@ fn parsed_fields(
             ("proposal", Some(proposal.behavior.as_str()))
         }
         (None, Wake::Proposed(_)) => ("speech", None),
+        (None, Wake::Failed) if withdrawn_for.is_some() => ("withdrawn", None),
         (None, Wake::Failed) if error.is_some() => ("error", None),
         (None, Wake::Failed) => ("failed", None),
     };
@@ -999,7 +1113,10 @@ fn parsed_fields(
         "wake": wake_kind(reactive),
         "result": result,
         "behavior": behavior,
-        "error": error,
+        // The cancel we sent is not words the Harness chose, so a withdrawal
+        // carries none. `withdrawn_for` is the whole account of that line.
+        "error": withdrawn_for.is_none().then_some(error).flatten(),
+        "withdrawn_for": withdrawn_for,
     })
 }
 
@@ -1741,6 +1858,7 @@ mod tests {
             true,
             None,
             None,
+            None,
         );
         assert_eq!(named["instance"], json!("buddy-1"));
         assert_eq!(named["wake"], json!("reactive"));
@@ -1749,20 +1867,21 @@ mod tests {
 
         // An empty name is the Engine's "talk and speak": the model chose to
         // talk rather than name a Behavior.
-        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None, None);
+        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None, None, None);
         assert_eq!(talked["wake"], json!("proactive"));
         assert_eq!(talked["result"], json!("speech"));
         assert_eq!(talked["behavior"], json!(null));
 
         // #243: the same shape as speech on the wire, and a different thing —
         // the name it named is what makes it readable as a miss.
-        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"), None);
+        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"), None, None);
         assert_eq!(missed["result"], json!("near_miss"));
         assert_eq!(missed["behavior"], json!("prowll"));
 
-        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None, None);
+        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None, None, None);
         assert_eq!(failed["result"], json!("failed"));
         assert_eq!(failed["behavior"], json!(null));
+        assert_eq!(failed["withdrawn_for"], json!(null));
 
         // #514: the Harness answered, and what it answered was an error. That
         // is not the same outcome as a reply nothing could be parsed out of,
@@ -1773,12 +1892,28 @@ mod tests {
             true,
             None,
             Some("harness: API Error: 400 does not support this model"),
+            None,
         );
         assert_eq!(errored["result"], json!("error"));
         assert_eq!(
             errored["error"],
             json!("harness: API Error: 400 does not support this model")
         );
+
+        // #499 beside #514: our own cancel reaches this as an error, and the
+        // withdrawal is what the line has to say. Both PRs added a fifth
+        // result; this is the pair that would have collided.
+        let withdrawn = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            Some("harness stopped: cancelled"),
+            Some("buddy-2"),
+        );
+        assert_eq!(withdrawn["result"], json!("withdrawn"));
+        assert_eq!(withdrawn["withdrawn_for"], json!("buddy-2"));
+        assert_eq!(withdrawn["error"], json!(null));
     }
 
     #[test]
@@ -2090,6 +2225,51 @@ mod tests {
         assert_eq!(session.state.lock().unwrap().spawn_failures, 0);
         let turns = fx.events("turn");
         assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
+        session.shutdown();
+    }
+
+    /// #499: one session serves every Instance (ADR-0008), so buddy B's wake
+    /// takes buddy A's turn without A's own slot ever having been superseded.
+    /// Nothing raised A's abandon flag, so A took a wake that read as broken.
+    #[test]
+    fn a_turn_taken_for_another_instance_is_recorded_as_withdrawn() {
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
+        let poke = WakeRequest {
+            instance: "buddy-2".to_string(),
+            ..asking("again")
+        };
+        assert_eq!(session.complete(&poke), Ok("Hello".to_string()));
+        assert!(worker.join().unwrap().is_err(), "the turn was not taken");
+
+        // The loser's own line, written while it still held the lock, so it
+        // comes before the winner's.
+        let turns = fx.events("turn");
+        assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
+        assert_eq!(turns[0]["withdrawn_for"], json!("buddy-2"), "{turns:?}");
+
+        // And what `note_parsed` writes for the wake that lost the session.
+        // Called here rather than through the Shell's entry point, which reads
+        // the process-global attached session.
+        let withdrawn = session.claim_withdrawn_wake("buddy-1");
+        let parsed = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            None,
+            withdrawn.as_deref(),
+        );
+        assert_eq!(parsed["result"], json!("withdrawn"), "{parsed}");
+        assert_eq!(parsed["withdrawn_for"], json!("buddy-2"), "{parsed}");
+        // One wake, one withdrawal: the next wake this Instance takes is its
+        // own however that one ends.
+        assert_eq!(session.claim_withdrawn_wake("buddy-1"), None);
         session.shutdown();
     }
 
