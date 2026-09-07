@@ -4,8 +4,8 @@
 //! Harness is attached, the Director is off, or a session call fails
 //! (DESIGN.md decision 5, ADR-0008). `ModelDirector` sends a Character
 //! Prompt through a `Completer` and parses the reply. The Completer is the
-//! attached Harness once #16 lands; until then it is an HTTP stand-in. This
-//! crate does not do I/O.
+//! attached Harness, or the HTTP stand-in when none is. This crate does not
+//! do I/O.
 //!
 //! The Shell decides when to call either one. Do not wait on the model in
 //! the frame loop. Apply a finished proposal on the next tick, or drop it.
@@ -133,8 +133,8 @@ pub trait Director {
 
 /// Completes a Character Prompt.
 ///
-/// The attached Harness, once #16 lands. Until then, an HTTP stand-in in the
-/// shell. Tests put a double here.
+/// The attached Harness, or the HTTP stand-in in the shell when none is
+/// attached. Tests put a double here.
 pub trait Completer {
     fn complete(&self, prompt: &str) -> Result<String, String>;
 }

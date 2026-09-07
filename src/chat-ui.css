@@ -195,6 +195,36 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* A forwarded permission request: the Harness's options, as buttons. Drawn
+   from the Instance's side like an answer, because it is the Instance asking. */
+.row.ask .options {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.row.ask button {
+  padding: 2px 10px;
+  border: 1px solid var(--chat-accent);
+  border-radius: var(--chat-radius-control);
+  background: transparent;
+  color: var(--chat-accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.row.ask button:disabled {
+  border-color: var(--chat-fill-soft);
+  color: var(--chat-ink-4);
+  cursor: default;
+}
+
+.row.ask button.chosen {
+  background: var(--chat-accent);
+  color: var(--chat-accent-ink);
+}
+
 .empty,
 .empty > div {
   display: grid;

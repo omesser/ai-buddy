@@ -207,7 +207,9 @@ fn frame_alpha(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
     let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
     let frame = reader.next_frame(&mut buf).expect("frame decodes");
     let alpha = buf[..frame.buffer_size()]
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|pixel| pixel[3])
         .collect();
 
@@ -406,7 +408,9 @@ fn frame_rgba(bytes: &[u8]) -> (usize, usize, Vec<[u8; 4]>) {
     let mut buf = vec![0; reader.output_buffer_size().expect("frame fits in memory")];
     let frame = reader.next_frame(&mut buf).expect("frame decodes");
     let pixels = buf[..frame.buffer_size()]
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|p| [p[0], p[1], p[2], p[3]])
         .collect();
     (width, height, pixels)

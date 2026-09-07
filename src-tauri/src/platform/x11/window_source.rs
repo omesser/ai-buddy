@@ -118,8 +118,10 @@ fn window_list_stacking(conn: &RustConnection, root: Window) -> Option<Vec<Windo
     Some(
         reply
             .value
-            .chunks_exact(4)
-            .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| u32::from_ne_bytes(*chunk))
             .collect(),
     )
 }
@@ -143,8 +145,10 @@ fn window_list(conn: &RustConnection, root: Window) -> Option<Vec<Window>> {
     Some(
         reply
             .value
-            .chunks_exact(4)
-            .map(|chunk| u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| u32::from_ne_bytes(*chunk))
             .collect(),
     )
 }
@@ -211,9 +215,12 @@ fn is_above(conn: &RustConnection, window: Window) -> bool {
     };
 
     reply.format == 32
-        && reply.value.chunks_exact(4).any(|chunk| {
-            u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) == atoms.net_wm_state_above
-        })
+        && reply
+            .value
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|chunk| u32::from_ne_bytes(*chunk) == atoms.net_wm_state_above)
 }
 
 /// Skip docks, desktops, and menus: `_NET_WM_WINDOW_TYPE_NORMAL` only.
@@ -247,10 +254,12 @@ fn is_normal_window(conn: &RustConnection, window: Window) -> bool {
         return false;
     }
 
-    reply.value.chunks_exact(4).any(|chunk| {
-        u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
-            == atoms.net_wm_window_type_normal
-    })
+    reply
+        .value
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|chunk| u32::from_ne_bytes(*chunk) == atoms.net_wm_window_type_normal)
 }
 
 /// Include decorations: Perch is the outer top edge, and XGetWindowAttributes
@@ -390,10 +399,12 @@ fn is_dock_window(conn: &RustConnection, window: Window) -> bool {
         return false;
     }
 
-    reply.value.chunks_exact(4).any(|chunk| {
-        u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
-            == atoms.net_wm_window_type_dock
-    })
+    reply
+        .value
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|chunk| u32::from_ne_bytes(*chunk) == atoms.net_wm_window_type_dock)
 }
 
 /// Read _NET_WM_STRUT_PARTIAL property as 12 u32 values.
@@ -410,8 +421,8 @@ fn read_strut_partial(conn: &RustConnection, window: Window) -> Option<[u32; 12]
     }
 
     let mut result = [0u32; 12];
-    for (i, chunk) in reply.value.chunks_exact(4).enumerate() {
-        result[i] = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    for (i, chunk) in reply.value.as_chunks::<4>().0.iter().enumerate() {
+        result[i] = u32::from_ne_bytes(*chunk);
     }
 
     Some(result)

@@ -1,7 +1,8 @@
-//! Completer stand-in, env config, and the in-flight session call.
+//! The HTTP Completer, env config, and the in-flight session call.
 //!
-//! ponytail: HTTP chat-completions until #16 attaches a Harness. The
-//! `Completer` trait is the seam; this file is the disposable impl. ADR-0008.
+//! One of two Completers. `harness.rs` is the attached Harness over ACP; this
+//! file is the chat-completions stand-in that stays for everyone who attaches
+//! nothing. `AnyCompleter` picks between them once, at construction. ADR-0008.
 //!
 //! The Completer runs on a worker thread. The frame loop only polls `Slots`.
 //! #18 binds these settings. Until then they come from the env.
@@ -86,6 +87,9 @@ pub struct DirectorInspect {
     pub ambient_wakes: bool,
     pub wake_secs: u64,
     pub last_payload: Option<String>,
+    /// The attached Harness, when `AI_BUDDY_HARNESS` named one. Its `login`
+    /// is the third Chat state ADR-0010 names: attached, not authenticated.
+    pub harness: Option<crate::harness::HarnessInspect>,
 }
 
 /// Director on/off and the first ambient session wait. Read from the env.
@@ -125,6 +129,7 @@ impl DirectorConfig {
             ambient_wakes: self.ambient_allowed,
             wake_secs: self.ambient_first.as_secs(),
             last_payload: None,
+            harness: crate::harness::attached().map(|session| session.inspect()),
         }
     }
 }
@@ -216,7 +221,9 @@ pub(crate) fn env_or_file(var: &str, file: &str) -> String {
 
 /// Build Director on/off from already-resolved settings.
 pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
-    let configured = !settings.api_key.is_empty() || is_local(&settings.base_url);
+    let configured = crate::harness::attached().is_some()
+        || !settings.api_key.is_empty()
+        || is_local(&settings.base_url);
     let env_says = env_switch(ENABLED);
     DirectorConfig {
         enabled: env_says.unwrap_or(true) && configured,
@@ -226,6 +233,34 @@ pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
         wake_every: WAKE_EVERY,
         ambient_first: ambient_first(),
         ambient_allowed: true,
+    }
+}
+
+/// Whichever Completer this process has: the attached Harness for every
+/// Instance (ADR-0008: one session), else an HTTP `Endpoint` per Instance.
+///
+/// An enum rather than `Box<dyn Completer>` so `Endpoint`'s inherent methods
+/// (`url`, `origin`, the probe) keep their type.
+pub enum AnyCompleter {
+    Http(Endpoint),
+    Harness(Arc<crate::harness::Session>),
+}
+
+impl Completer for AnyCompleter {
+    fn complete(&self, prompt: &str) -> Result<String, String> {
+        match self {
+            AnyCompleter::Http(endpoint) => endpoint.complete(prompt),
+            AnyCompleter::Harness(session) => session.complete(prompt),
+        }
+    }
+}
+
+/// The Completer `configured` promises. Harness first: with one attached the
+/// HTTP settings are not consulted at all.
+pub fn completer_from(settings: &DirectorSettings) -> Option<AnyCompleter> {
+    match crate::harness::attached() {
+        Some(session) => Some(AnyCompleter::Harness(session)),
+        None => endpoint_from(settings).map(AnyCompleter::Http),
     }
 }
 
@@ -277,7 +312,7 @@ pub fn config() -> DirectorConfig {
 /// Unset and empty used to be silent Static. The empty case is almost always
 /// a `$VAR` that expanded to nothing, which is a mistake, not a choice.
 pub fn startup_lines(config: &DirectorConfig) -> Vec<String> {
-    let mut lines = Vec::new();
+    let mut lines = crate::harness::startup_lines();
     if config.key_invalid {
         lines.push(format!(
             "director: warning: {API_KEY} is set but not a usable key; using StaticDirector"
@@ -970,6 +1005,10 @@ fn preflight_verdict(models: Result<(u16, String), String>, model: &str) -> Resu
 /// Spawned rather than awaited. ADR-0004 keeps the model off the frame loop,
 /// and a stopped server would otherwise hold up startup for the timeout.
 pub fn spawn_preflight(settings: &DirectorSettings) {
+    if let Some(session) = crate::harness::attached() {
+        session.spawn_preflight();
+        return;
+    }
     let Some(endpoint) = endpoint_from(settings) else {
         return;
     };
@@ -1567,7 +1606,7 @@ impl Slots {
 pub fn retarget_model(
     slots: &mut Slots,
     id: &InstanceId,
-    model: &mut Option<Arc<ModelDirector<Endpoint>>>,
+    model: &mut Option<Arc<ModelDirector<AnyCompleter>>>,
     behaviors: impl IntoIterator<Item = impl Into<String>>,
     settings: &DirectorSettings,
     configured: bool,
@@ -1575,7 +1614,7 @@ pub fn retarget_model(
     slots.abandon(id);
     *model = configured.then(|| {
         Arc::new(ModelDirector::new(
-            endpoint_from(settings).expect("configured means a Completer exists"),
+            completer_from(settings).expect("configured means a Completer exists"),
             behaviors,
         ))
     });

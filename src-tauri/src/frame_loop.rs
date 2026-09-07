@@ -1692,7 +1692,7 @@ pub(crate) fn run_frame_loop(
             }
 
             ticks = ticks.wrapping_add(1);
-            if tracing && (flipped || ticks % 120 == 0) {
+            if tracing && (flipped || ticks.is_multiple_of(120)) {
                 eprintln!(
                     "hit-test: cursor({:.0},{:.0}) scale {:.1} -> point({},{}) \
                      on overlay {} {} click-through {}{}",
