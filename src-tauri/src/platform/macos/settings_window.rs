@@ -78,6 +78,8 @@ struct Ivars {
     payload: RefCell<Option<Retained<NSTextField>>>,
     memory_path: RefCell<Option<Retained<NSTextField>>>,
     character: RefCell<Option<Retained<NSPopUpButton>>>,
+    harness: RefCell<Option<Retained<NSPopUpButton>>>,
+    harness_state: RefCell<Option<Retained<NSTextField>>>,
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
@@ -175,15 +177,23 @@ define_class!(
             self.apply(patch);
         }
 
-        #[unsafe(method(characterPicked:))]
-        fn character_picked(&self, sender: Option<&AnyObject>) {
+        /// Every writing popup, by the tag the pick carries. Reached the same
+        /// way `endpointEnded:` reaches a field, so a second popup needs no
+        /// selector of its own (#436).
+        #[unsafe(method(popupPicked:))]
+        fn popup_picked(&self, sender: Option<&AnyObject>) {
             let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
                 return;
             };
-            let Some(title) = popup.titleOfSelectedItem() else {
+            let tag = popup.tag();
+            let tag_to_id = self.ivars().tag_to_id.borrow();
+            let Some(id) = tag_to_id.get(&tag) else {
                 return;
             };
-            let Some(writes) = form::describe().text_write(form::CHARACTER_ID) else {
+            let Some(writes) = form::describe().text_write(id) else {
+                return;
+            };
+            let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
             let mut patch = SettingsPatch::default();
@@ -534,7 +544,16 @@ impl SettingsController {
                 field.setStringValue(&NSString::from_str(text));
             }
         }
+        if let Some(field) = self.ivars().harness_state.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.harness_state));
+        }
         fill_popup(&self.ivars().character, &view.installed, &view.character);
+        // Static choices, so they come from the form rather than the view.
+        fill_popup(
+            &self.ivars().harness,
+            &form::harness_options(),
+            &view.harness,
+        );
         fill_popup(
             &self.ivars().new_character,
             &view.installed,
@@ -649,6 +668,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut payload_field = None;
     let mut memory_path_field = None;
     let mut character_popup = None;
+    let mut harness_popup = None;
+    let mut harness_state_field = None;
     let mut new_character_popup = None;
     let mut new_name_field = None;
     let mut instances_view = None;
@@ -837,6 +858,11 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 cursor.place(&field, 22.0);
                                 hotkey_field = Some(field);
                             }
+                            form::HARNESS_STATE_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 44.0);
+                                harness_state_field = Some(field);
+                            }
                             _ => {}
                         }
 
@@ -844,12 +870,35 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                     }
-                    FormRow::Popup { id, help, .. } => {
-                        let pop = popup(&controller, sel!(characterPicked:), mtm);
+                    FormRow::Popup {
+                        id,
+                        label,
+                        help,
+                        frozen,
+                        writes: _,
+                        options: _,
+                    } => {
+                        if let Some(label_text) = label {
+                            let lbl =
+                                NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
+                            cursor.place(&lbl, 18.0);
+                        }
+                        let pop = popup(&controller, sel!(popupPicked:), mtm);
+                        let tag = next_tag;
+                        next_tag += 1;
+                        pop.setTag(tag);
+                        controller
+                            .ivars()
+                            .tag_to_id
+                            .borrow_mut()
+                            .insert(tag, id.clone());
+                        pop.setEnabled(!frozen);
                         cursor.place(&pop, 24.0);
 
-                        if id == form::CHARACTER_ID {
-                            character_popup = Some(pop);
+                        match id.as_str() {
+                            form::CHARACTER_ID => character_popup = Some(pop),
+                            form::HARNESS_ID => harness_popup = Some(pop),
+                            _ => {}
                         }
 
                         if let Some(help_text) = help {
@@ -1009,6 +1058,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().payload.borrow_mut() = payload_field;
     *controller.ivars().memory_path.borrow_mut() = memory_path_field;
     *controller.ivars().character.borrow_mut() = character_popup;
+    *controller.ivars().harness.borrow_mut() = harness_popup;
+    *controller.ivars().harness_state.borrow_mut() = harness_state_field;
     *controller.ivars().new_character.borrow_mut() = new_character_popup;
     *controller.ivars().new_name.borrow_mut() = new_name_field;
     *controller.ivars().instances.borrow_mut() = instances_view;
