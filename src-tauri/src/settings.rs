@@ -2422,6 +2422,92 @@ mod tests {
         });
     }
 
+    /// #530: the fields a window is built with are empty, and a redraw that
+    /// respects staging reads them back before anything has filled them. Every
+    /// row differs from live state, so the whole tab reads as staged: the
+    /// redraw skips filling it and Apply is armed over a patch of empty
+    /// strings that wipes the saved endpoint.
+    ///
+    /// This is the reason construction draws with the reset instead of through
+    /// `refresh`, and the reason it is not fixed here: a blank field has to
+    /// stay a value the user can apply, or clearing a Base URL back to the
+    /// default becomes inexpressible.
+    #[test]
+    fn empty_fields_read_back_as_an_edit_that_wipes_the_endpoint() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            // The fields as a freshly built window holds them, a line before
+            // its first redraw.
+            let unfilled = DirectorDraft {
+                base_url: String::new(),
+                model: String::new(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert_eq!(
+                unfilled.staged(&view),
+                Staged {
+                    base_url: true,
+                    model: true,
+                    key: false,
+                },
+                "empty text differs from live state, so a redraw that leaves \
+                 staged rows alone leaves both of these showing placeholders"
+            );
+            let patch = unfilled
+                .patch(&view)
+                .expect("and arms Apply, over the wipe");
+            assert_eq!(patch.director_base_url.as_deref(), Some(""));
+            assert_eq!(patch.director_model.as_deref(), Some(""));
+        });
+    }
+
+    /// #530: so a window built this instant draws with the reset, and #279:
+    /// reopening one that is already up does not.
+    ///
+    /// Read out of the source rather than exercised, because none of the three
+    /// windows can be constructed in a test — each wants its platform's main
+    /// thread, and two of the three do not compile on a Mac at all. What is
+    /// left worth pinning is the call itself: this turns red on a revert to
+    /// `refresh` on any platform, which is the whole of the bug.
+    #[test]
+    fn every_settings_window_is_built_with_the_director_reset() {
+        let platform = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/platform");
+        for (file, built, reopened) in [
+            (
+                "macos/settings_window.rs",
+                "controller.draw(true);",
+                "existing.refresh();",
+            ),
+            (
+                "windows/settings_window.rs",
+                "window.set_session(session, true);",
+                "existing.set_session(session, false);",
+            ),
+            (
+                "x11/settings_window.rs",
+                "window.set_session(session, true);",
+                "existing.set_session(session, false);",
+            ),
+        ] {
+            let source = fs::read_to_string(platform.join(file))
+                .unwrap_or_else(|why| panic!("{file} is readable: {why}"));
+            assert!(
+                source.contains(built),
+                "{file}: a window built this instant has to draw with the \
+                 Director reset, or it stages its own empty fields (#530). \
+                 Expected `{built}`"
+            );
+            assert!(
+                source.contains(reopened),
+                "{file}: reopening a window that is already up has to keep \
+                 what the user left staged (#279). Expected `{reopened}`"
+            );
+        }
+    }
+
     #[test]
     fn tabbing_out_of_an_unchanged_endpoint_does_not_retarget() {
         let settings = endpoint_settings();
