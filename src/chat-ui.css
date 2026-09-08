@@ -446,39 +446,59 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* Unified Harness landing: same structure for not-configured, off, and needs-auth. */
+.empty .landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 380px;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+.empty .landing h2 {
+  margin: 0 0 8px 0;
+}
+
+.empty .landing p {
+  max-width: 36ch;
+}
+
 .empty .command {
   font-family: var(--chat-mono);
   font-size: 12.5px;
   background: var(--chat-fill);
   color: var(--chat-accent);
-  padding: 10px 12px;
+  padding: 10px 14px;
   border-radius: var(--chat-radius-control);
   border: 1px solid var(--chat-line);
-  margin: 4px 0;
+  margin: 8px 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.empty .harness-name {
-  font-weight: 700;
-}
-
-.empty .connect-hint {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--chat-line);
-}
-
-.empty .connect-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.empty .hint {
+  font-size: 12px;
+  color: var(--chat-ink-3);
   margin-top: 12px;
+}
+
+.empty .landing-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  margin-top: 20px;
 }
 
 .empty .connect-btn {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 12px;
   background: var(--chat-fill);
   border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-control);
@@ -488,6 +508,7 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  text-align: center;
 }
 
 .empty .connect-btn:hover {
@@ -510,8 +531,42 @@ body {
 }
 
 .empty .connect-label {
-  flex: 1;
-  text-align: left;
+  font-size: 12px;
+}
+
+.empty .settings-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: transparent;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chat-ink-2);
+  transition: all 0.15s ease;
+  margin-top: 12px;
+}
+
+.empty .settings-btn:hover {
+  background: var(--chat-fill);
+  color: var(--chat-ink);
+}
+
+.empty .settings-btn:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* HTTP Completer mode empty states: no Harness buttons. */
+.empty #empty-http,
+.empty #empty-http-off {
+  padding: 0 18px;
 }
 
 /* One line, clipped rather than wrapped: this sits between the log and the

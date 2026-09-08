@@ -1157,6 +1157,8 @@ fn permission_answer(request: String, option: String) {
 fn harness_login(harness: String) -> Result<(), String> {
     let command = match harness.as_str() {
         "claude" => vec!["claude", "/login"],
+        "codex" => vec!["codex", "login"],
+        "grok" => vec!["grok", "login"],
         "hermes" => vec!["hermes", "login"],
         "opencode" => vec!["opencode", "login"],
         _ => return Err(format!("unknown Harness: {harness}")),

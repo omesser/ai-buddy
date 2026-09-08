@@ -222,14 +222,6 @@ function asked(ask) {
   return add(row);
 }
 
-// Login commands for the three named Harnesses. Shown when the user clicks a
-// connect button, since Settings owns which one is actually attached.
-const LOGIN_COMMANDS = {
-  claude: "claude /login",
-  hermes: "hermes login",
-  opencode: "opencode login",
-};
-
 // Whether anything can answer, and what to say when nothing can.
 //
 // SPEC gives this window the job of explaining how to connect something
@@ -239,29 +231,67 @@ const LOGIN_COMMANDS = {
 // and ready hides the empty state. The composer is disabled rather than
 // hidden, so the window reads as waiting rather than as broken.
 function attached(opening) {
-  // Fourth state: configured, enabled, but needs authentication (-32000).
-  const needsAuth = opening.configured && opening.enabled && opening.login;
   const ready = opening.configured && opening.enabled && !opening.login;
+  const needsAuth = opening.configured && opening.enabled && opening.login;
+  const isHttpMode = opening.configured && !opening.harness_name;
   
   empty.hidden = ready;
   line.disabled = !ready;
   send.disabled = !ready;
   line.placeholder = ready ? `Ask ${opening.name}…` : "Nothing can answer yet";
 
-  // Which of the four states: none configured, switched off, needs auth, or ready.
-  document.getElementById("empty-none").hidden = opening.configured;
-  document.getElementById("empty-off").hidden = !opening.configured || opening.enabled;
-  document.getElementById("empty-auth").hidden = !needsAuth;
+  // Three modes: Harness landing (default), HTTP mode (no buttons), or ready.
+  const landing = document.getElementById("landing");
+  const httpEmpty = document.getElementById("empty-http");
+  const httpOff = document.getElementById("empty-http-off");
 
-  // Fourth state: fill in the Harness name and login command. The command is
-  // for the user's own terminal; ai-buddy never collects a credential (ADR-0010).
-  if (needsAuth) {
-    for (const node of document.querySelectorAll("#empty-auth .harness-name")) {
-      node.textContent = opening.harness_name || opening.name;
+  // Hide all empty state divs first
+  landing.hidden = true;
+  httpEmpty.hidden = true;
+  httpOff.hidden = true;
+
+  if (ready) {
+    // Connected and ready: nothing to show
+    return true;
+  }
+
+  if (isHttpMode) {
+    // HTTP Completer mode: show HTTP-specific empty states, no Harness buttons
+    if (opening.enabled) {
+      httpEmpty.hidden = false;
+    } else {
+      httpOff.hidden = false;
     }
-    const cmd = document.getElementById("login-command");
-    if (cmd) {
-      cmd.textContent = opening.login;
+  } else {
+    // Harness mode or no Completer: show unified landing with buttons
+    landing.hidden = false;
+    
+    const title = document.getElementById("landing-title");
+    const lede = document.getElementById("landing-lede");
+    const command = document.getElementById("landing-command");
+    const hint = document.getElementById("landing-hint");
+
+    if (needsAuth) {
+      // Needs login variant
+      const harnessName = opening.harness_name || "The Harness";
+      title.textContent = `${harnessName} needs login`;
+      lede.textContent = `Sign in to use ${harnessName}, or you can switch to a different Harness:`;
+      command.textContent = opening.login;
+      command.hidden = false;
+      hint.textContent = "Or run this in your terminal:";
+      hint.hidden = false;
+    } else if (!opening.configured) {
+      // Not configured
+      title.textContent = "Connect a Harness to get started";
+      lede.textContent = "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.";
+      command.hidden = true;
+      hint.hidden = true;
+    } else {
+      // Switched off
+      title.textContent = "Chat is switched off";
+      lede.textContent = "Turn AI back on in Settings, or connect a Harness below.";
+      command.hidden = true;
+      hint.hidden = true;
     }
   }
   
@@ -277,12 +307,22 @@ for (const btn of document.querySelectorAll(".connect-btn")) {
     
     invoke("harness_login", { harness })
       .then(() => {
-        note(`Starting ${label} login. Sign in through the ${label} window, then set AI_BUDDY_HARNESS=${harness} at launch.`);
+        note(`Starting ${label} login. Sign in through the ${label} window.`);
       })
       .catch((why) => {
         console.error(`harness_login failed:`, why);
-        note(`Could not start ${label} login: ${why}. Run \`${LOGIN_COMMANDS[harness]}\` in a terminal.`);
+        note(`Could not start ${label} login: ${why}.`);
       });
+  });
+}
+
+// "More options in Settings" button: open Settings window.
+const settingsBtn = document.getElementById("settings-btn");
+if (settingsBtn) {
+  settingsBtn.addEventListener("click", () => {
+    invoke("show_settings").catch((err) => {
+      console.error("Failed to open Settings:", err);
+    });
   });
 }
 
