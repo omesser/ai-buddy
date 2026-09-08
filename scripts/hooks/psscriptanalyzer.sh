@@ -15,5 +15,5 @@ if ! pwsh -NoProfile -Command 'if (-not (Get-Module -ListAvailable PSScriptAnaly
 fi
 
 for f in "$@"; do
-  pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error -EnableExit"
+  pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path \"$f\" -Severity Error,ParseError -EnableExit"
 done

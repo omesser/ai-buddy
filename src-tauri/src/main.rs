@@ -46,6 +46,7 @@ use frame_loop::run_frame_loop;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -103,7 +104,7 @@ fn overlay_label(index: usize) -> String {
 /// `overlay-{n}` past the display count, so a Chat surface sharing that prefix
 /// would be shut when a display is unplugged. `capabilities/chat.json` grants
 /// every `chat-*` the same permissions.
-fn chat_label(id: &InstanceId) -> String {
+fn chat_label(id: &str) -> String {
     format!("chat-{id}")
 }
 
@@ -126,6 +127,11 @@ const CHAT_STATUS_EVENT: &str = "chat-status";
 /// without a webview reload. An event rather than a second command, because
 /// the window is already listening. #473.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
+
+/// The event telling one Chat surface that the session behind it was replaced,
+/// carrying why in the words the log prints. `chat.js` says what the window
+/// does with it, and why. #476.
+const CHAT_SESSION_EVENT: &str = "chat-session";
 
 /// The event carrying a forwarded `session/request_permission` to every open
 /// Chat surface. Every one, because the session is shared and the Shell does
@@ -309,6 +315,7 @@ enum MenuSignal {
 struct MenuChannel {
     sender: mpsc::Sender<MenuSignal>,
     receiver: mpsc::Receiver<MenuSignal>,
+    quit_generation: Arc<AtomicU64>,
 }
 
 /// Settings plus the live roster the settings window reads.
@@ -1349,6 +1356,7 @@ fn apply_menu_action(
                     character,
                     config,
                     director,
+                    app,
                 );
                 if let Ok(inspect) = inspect.lock() {
                     push_chat_opening(app, roster, instance_id, &inspect);
@@ -1485,6 +1493,10 @@ pub(crate) fn paced(config: &model::DirectorConfig, character: &Character) -> Pa
     )
 }
 
+// One over the clippy cap, for the same reason `apply_menu_action` is: the new
+// session belongs beside the `retarget_model` that opens it, and the Chat
+// surface it has to tell is reached through the app handle.
+#[allow(clippy::too_many_arguments)]
 fn switch_instance(
     roster: &mut Roster,
     lives: &mut [InstanceState],
@@ -1493,6 +1505,7 @@ fn switch_instance(
     character: Arc<Character>,
     config: &model::DirectorConfig,
     settings: &model::DirectorSettings,
+    app: &tauri::AppHandle,
 ) {
     roster.retarget(instance_id, &character);
     if let Some(live) = lives.iter_mut().find(|live| live.id == *instance_id) {
@@ -1509,6 +1522,7 @@ fn switch_instance(
             settings,
             config.configured,
         );
+        session_log::new_session(app, instance_id, "the Character changed");
         live.recent.clear();
         live.happened = Happened::Ambient;
         live.addressed = true;
@@ -2352,7 +2366,7 @@ fn main() {
                 );
                 #[cfg(target_os = "macos")]
                 platform::seed_tray_position();
-                match tray::install(app.handle(), &description) {
+                match tray::install(app.handle(), &description, 0) {
                     Ok(icon) => Some(icon),
                     Err(why) => {
                         eprintln!("tray: {why}");
@@ -2375,9 +2389,14 @@ fn main() {
             // rows meant.
             let (menu_sender, menu_receiver) = mpsc::channel();
             let hook_sender = menu_sender.clone();
+            let quit_generation = Arc::new(AtomicU64::new(0));
+            let live_quit = Arc::clone(&quit_generation);
             app.handle().on_menu_event(move |_app, event| {
                 let id = event.id().0.clone();
-                if id == menu::QUIT_ID {
+                // Native Quit ids are per tray draw. A dismiss rebuilds the
+                // tray and muda can click the item it just dropped; that id
+                // is the previous draw's, so it must not call quit_now.
+                if menu::is_live_quit(&id, live_quit.load(Ordering::SeqCst)) {
                     quit_now();
                 }
                 let _ = hook_sender.send(MenuSignal::Chose(id));
@@ -2395,6 +2414,7 @@ fn main() {
                 MenuChannel {
                     sender: menu_sender,
                     receiver: menu_receiver,
+                    quit_generation,
                 },
                 FrameExtras {
                     settings,

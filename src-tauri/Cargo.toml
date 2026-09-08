@@ -89,10 +89,14 @@ gtk = "0.18"
 # parameter. The previous `cmd /C start` arm re-parsed `&` and `%` (#255).
 # Native Win32 settings window: controls, tabs, fonts.
 # Job Object for Harness process tree teardown: grandchildren die with us.
+# Extended startup info for create-time job association (#517).
 windows-sys = {version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Pipes",
   "Win32_System_JobObjects",
   "Win32_System_LibraryLoader",
   "Win32_System_Power",
