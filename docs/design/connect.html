@@ -1,0 +1,550 @@
+<!doctype html>
+<!--
+  The Harness connect flow for omesser/ai-buddy#459: a fourth Chat empty
+  state, branded connect buttons, and a Settings home for connection status.
+
+  A Dated page under ADR-0011: hand-written and frozen at its date for design
+  approval. Self-contained on purpose: no font link, no remote images, inline
+  SVG only. The system font stack is the design — the chat's CSP blocks Google
+  Fonts, and this is the same constraint.
+
+  Three named Harnesses ship: Claude Code (via Zed's adapter), Hermes, and
+  opencode. Each gets a button with its mark. Marks are trademarks; vendor
+  guidelines govern usage. Where a vendor's terms make that awkward, a
+  wordmark in our own type is the safe default.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Harness Connect Flow</title>
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #2C8C7C;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1F232D;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --paper-2: #1F232D;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
+  .class {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .02em;
+    color: var(--ink-3); margin: 0;
+  }
+  .class a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .class a:hover { text-decoration: underline; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  .lede { color: var(--ink-2); max-width: 66ch; margin: 0; }
+  .lede code, p code, li code { font-family: var(--mono); font-size: 0.92em; }
+  h2 {
+    font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); margin: 40px 0 12px;
+  }
+  p { max-width: 74ch; }
+
+  /* ---- controls ---- */
+  .bar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 12px 0 14px; margin-bottom: 18px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar .lbl { font-size: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper-2); gap: 2px; }
+  .seg button {
+    font: inherit; font-weight: 700; font-size: 13px;
+    border: 0; background: transparent; color: var(--ink-2);
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- chat window ---- */
+  .window {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 460px;
+    background: var(--paper);
+  }
+  .window-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .window-body {
+    padding: 32px 24px;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    text-align: center;
+  }
+  .window-body h3 {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+  }
+  .window-body p {
+    color: var(--ink-2);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 8px 0;
+  }
+  .window-body .command {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--paper-2);
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--accent);
+    margin: 4px 0 12px 0;
+  }
+
+  /* ---- connect buttons ---- */
+  .connect-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 300px;
+  }
+  .connect-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    transition: all 0.15s ease;
+  }
+  .connect-btn:hover {
+    background: var(--paper);
+    border-color: var(--accent);
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .connect-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .connect-btn-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .connect-btn-label {
+    flex: 1;
+    text-align: left;
+  }
+  .connect-btn-arrow {
+    color: var(--ink-3);
+    font-size: 18px;
+  }
+
+  /* ---- settings panel ---- */
+  .settings {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 520px;
+    background: var(--paper);
+  }
+  .settings-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .settings-row {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-label {
+    flex: 1;
+  }
+  .settings-label-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .settings-label-desc {
+    font-size: 13px;
+    color: var(--ink-2);
+    line-height: 1.4;
+  }
+  .settings-value {
+    text-align: right;
+    min-width: 140px;
+  }
+  .settings-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .settings-status-connected {
+    color: var(--accent);
+  }
+  .settings-status-disconnected {
+    color: var(--ink-2);
+  }
+  .settings-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .settings-connect {
+    padding: 6px 14px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .settings-connect:hover {
+    opacity: 0.9;
+  }
+
+  /* ---- demo sections ---- */
+  .demo-section {
+    margin: 32px 0;
+    padding: 24px;
+    background: var(--paper-2);
+    border-radius: 12px;
+  }
+  .demo-section h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+    color: var(--ink-2);
+  }
+
+  footer {
+    margin-top: 44px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <p class="class">Dated design · <a href="https://github.com/omesser/ai-buddy/issues/459">#459</a> · 2026-09-09 · hand-written and frozen at this date; awaiting approval</p>
+    <h1>Harness Connect Flow</h1>
+    <p class="lede">A fourth Chat empty state for a Harness needing login,
+      branded connect buttons, and a Settings home showing connection status.
+      Local assets and inline SVG only — the CSP blocks remote resources.
+      Three named Harnesses ship: Claude Code, Hermes, and opencode.</p>
+  </header>
+
+  <div class="bar">
+    <span class="lbl">State</span>
+    <div class="seg" id="state">
+      <button type="button" data-v="none" aria-pressed="false">Not configured</button>
+      <button type="button" data-v="off" aria-pressed="false">Switched off</button>
+      <button type="button" data-v="auth" aria-pressed="true">Needs login</button>
+      <button type="button" data-v="ready" aria-pressed="false">Connected</button>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <h3>Chat Window Empty States</h3>
+    
+    <div class="window" id="chat-window">
+      <div class="window-header">BMO · Chat</div>
+      <div class="window-body" id="chat-body">
+        <!-- Content injected by script -->
+      </div>
+    </div>
+  </div>
+
+  <h2>Fourth empty state: needs login</h2>
+
+  <p>When the attached Harness answers <code>session/new</code> with ACP
+    <code>-32000</code> (auth required), the Chat surface names the Harness and
+    shows the login command rather than sitting silent. This is the third state
+    ADR-0010 forbade answering — ai-buddy never collects a credential, and the
+    command is always for the user's own terminal.</p>
+
+  <p>The buttons are the same three from the connect flow below, offered here
+    once the user has picked a Harness in Settings but before that Harness has
+    been signed in. Clicking one runs the login command; the Shell polls for
+    auth every 60 seconds (configurable), so a mid-session login is picked up
+    without a restart.</p>
+
+  <div class="demo-section">
+    <h3>Settings Panel</h3>
+    
+    <div class="settings" id="settings-panel">
+      <div class="settings-header">Harness</div>
+      <div class="settings-row">
+        <div class="settings-label">
+          <div class="settings-label-title">Attached Harness</div>
+          <div class="settings-label-desc" id="settings-harness-desc">Which agent runtime answers</div>
+        </div>
+        <div class="settings-value" id="settings-harness-value">
+          None
+        </div>
+      </div>
+      <div class="settings-row" id="settings-status-row">
+        <div class="settings-label">
+          <div class="settings-label-title">Status</div>
+          <div class="settings-label-desc">Whether it is signed in</div>
+        </div>
+        <div class="settings-value" id="settings-status-value">
+          <span class="settings-status settings-status-disconnected">
+            <span class="settings-status-dot"></span>
+            Not connected
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Connect buttons</h2>
+
+  <p>Three named Harnesses ship: <b>Claude Code</b> (via Zed's adapter),
+    <b>Hermes</b>, and <b>opencode</b>. Each gets a button with its mark.
+    Marks are trademarks; where vendor guidelines make that awkward, a wordmark
+    in our own type is the safe default. All three here use wordmarks —
+    simple, legible, and safe.</p>
+
+  <p>Clicking a button runs the Harness's login command and polls for auth.
+    The buttons appear in the fourth empty state (above), and in Settings once
+    a Harness is picked but not yet signed in. They never collect a secret —
+    they start the Harness's own login, which writes to the Harness's own
+    credential store.</p>
+
+  <h2>Settings home</h2>
+
+  <p>Once Harness is the Completer source, Settings shows which Harness is
+    attached, whether it is connected, and the same connect action. The row
+    uses the shared <code>FormRow</code> pattern so AppKit, GTK, and Win32
+    render it consistently. The status dot is green when signed in, gray
+    otherwise.</p>
+
+  <h2>Out of scope</h2>
+
+  <p>Holding credentials (#371), auto-approve flags (ADR-0017), and which
+    Harnesses exist (#457, #458) are all out of scope. A connect button starts
+    the Harness's own login; it never collects, stores, or proxies a secret.</p>
+
+  <footer>
+    Frozen at its date. Built from <a href="https://github.com/omesser/ai-buddy">omesser/ai-buddy</a>.
+  </footer>
+</div>
+
+<script>
+  const state = { current: "auth" };
+
+  // Linkable state: connect.html#ready
+  if (location.hash.length > 1) {
+    const hash = location.hash.slice(1);
+    if (["none", "off", "auth", "ready"].includes(hash)) {
+      state.current = hash;
+    }
+  }
+
+  const STATES = {
+    none: {
+      title: "Nothing to answer with",
+      content: `
+        <p>ai-buddy ships no agent of its own. Point it at a Completer — a
+        chat-completions endpoint and a key — and BMO answers here, out of the
+        same session that proposes what it does on your desktop.</p>
+        <p><b>Or a Harness.</b> An agent runtime you already run — Claude
+        Code, Hermes, opencode — answers here instead when
+        <code>AI_BUDDY_HARNESS</code> names it at launch.</p>
+        <p class="where" style="margin-top: 16px; font-size: 13px; color: var(--ink-3);">
+          Settings, on the tray menu, takes the endpoint and the key.</p>
+      `,
+      buttons: false
+    },
+    off: {
+      title: "Answers are switched off",
+      content: `
+        <p>Settings, on the tray menu, turns the Director back on and BMO
+        answers here again. The buddy keeps walking and reacting either way.</p>
+      `,
+      buttons: false
+    },
+    auth: {
+      title: "Claude Code is attached but not signed in",
+      content: `
+        <p>Sign in to use Claude Code as the Harness. The command below runs
+        in your own terminal; ai-buddy holds no credential for it.</p>
+        <div class="command">claude /login</div>
+        <p style="font-size: 13px; color: var(--ink-3);">Or choose a different Harness:</p>
+      `,
+      buttons: true,
+      harness: "Claude Code"
+    },
+    ready: {
+      title: "Ready",
+      content: `
+        <p style="color: var(--accent); font-weight: 600;">Claude Code is connected and ready to answer.</p>
+        <p>Type below to start a conversation.</p>
+      `,
+      buttons: false,
+      harness: "Claude Code"
+    }
+  };
+
+  function connectButtons() {
+    return `
+      <div class="connect-buttons">
+        <button class="connect-btn">
+          <span class="connect-btn-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="10" cy="10" r="3"/>
+            </svg>
+          </span>
+          <span class="connect-btn-label">Claude Code</span>
+          <span class="connect-btn-arrow">→</span>
+        </button>
+        <button class="connect-btn">
+          <span class="connect-btn-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M10 2L3 6v6c0 4.5 3 8 7 8s7-3.5 7-8V6l-7-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="connect-btn-label">Hermes</span>
+          <span class="connect-btn-arrow">→</span>
+        </button>
+        <button class="connect-btn">
+          <span class="connect-btn-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <rect x="4" y="4" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M8 8h4M8 10h4M8 12h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="connect-btn-label">opencode</span>
+          <span class="connect-btn-arrow">→</span>
+        </button>
+      </div>
+    `;
+  }
+
+  function render() {
+    const s = STATES[state.current];
+    const body = document.getElementById("chat-body");
+    
+    body.innerHTML = `
+      <h3>${s.title}</h3>
+      ${s.content}
+      ${s.buttons ? connectButtons() : ""}
+    `;
+
+    // Update button states
+    for (const btn of document.querySelectorAll("#state button")) {
+      btn.setAttribute("aria-pressed", String(btn.dataset.v === state.current));
+    }
+
+    // Update settings panel
+    const harnessValue = document.getElementById("settings-harness-value");
+    const statusRow = document.getElementById("settings-status-row");
+    const statusValue = document.getElementById("settings-status-value");
+    
+    if (state.current === "none" || state.current === "off") {
+      harnessValue.textContent = "None";
+      statusRow.style.display = "none";
+    } else {
+      harnessValue.textContent = s.harness || "Claude Code";
+      statusRow.style.display = "flex";
+      
+      if (state.current === "ready") {
+        statusValue.innerHTML = `
+          <span class="settings-status settings-status-connected">
+            <span class="settings-status-dot"></span>
+            Connected
+          </span>
+        `;
+      } else {
+        statusValue.innerHTML = `
+          <span class="settings-status settings-status-disconnected">
+            <span class="settings-status-dot"></span>
+            Not signed in
+          </span>
+          <button class="settings-connect" style="margin-top: 8px;">Sign in</button>
+        `;
+      }
+    }
+  }
+
+  document.getElementById("state").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    state.current = btn.dataset.v;
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>
