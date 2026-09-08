@@ -576,7 +576,8 @@ fn set_window_text(hwnd: HWND, text: &str) {
 /// Returns `true` when the label displays dynamic state (memory path, hotkey,
 /// last payload, harness state). Returns `false` when the label holds static
 /// text set at build_ui time: field labels (`*_label`), placeholders
-/// (`*_placeholder`), and help hints (`*_help`, `composite_help_*`).
+/// (`*_placeholder`), help hints (`*_help`, `composite_help_*`), and section
+/// heading/comment labels (`section_heading_*`, `section_comment_*`).
 fn should_update_label_text(id: &str) -> bool {
     if id == form::MEMORY_PATH_ID
         || id == form::HOTKEY_ID
@@ -589,6 +590,9 @@ fn should_update_label_text(id: &str) -> bool {
         return false;
     }
     if id.ends_with("_help") || id.starts_with("composite_help_") {
+        return false;
+    }
+    if id.starts_with("section_heading_") || id.starts_with("section_comment_") {
         return false;
     }
     true
@@ -1853,6 +1857,22 @@ mod tests {
         assert!(
             !should_update_label_text("composite_help_45"),
             "all composite_help_* labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_heading_0_0"),
+            "section heading labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_heading_1_2"),
+            "all section_heading_* labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_comment_0_0"),
+            "section comment labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_comment_3_1"),
+            "all section_comment_* labels must be preserved"
         );
     }
 
