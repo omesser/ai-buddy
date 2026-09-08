@@ -446,6 +446,21 @@ body {
   color: var(--chat-ink-4);
 }
 
+.empty .command {
+  font-family: var(--chat-mono);
+  font-size: 12.5px;
+  background: var(--chat-fill);
+  color: var(--chat-accent);
+  padding: 10px 12px;
+  border-radius: var(--chat-radius-control);
+  border: 1px solid var(--chat-line);
+  margin: 4px 0;
+}
+
+.empty .harness-name {
+  font-weight: 700;
+}
+
 /* One line, clipped rather than wrapped: this sits between the log and the
    composer, and a thought that grew the strip would push the conversation up
    the window every time the Harness changed its mind. */

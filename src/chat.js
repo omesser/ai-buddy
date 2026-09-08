@@ -222,38 +222,41 @@ function asked(ask) {
   return add(row);
 }
 
-// The login command the log last named, so re-asking `chat_opening` on every
-// send does not repeat it.
-let loginSaid = null;
-
 // Whether anything can answer, and what to say when nothing can.
 //
 // SPEC gives this window the job of explaining how to connect something
-// rather than failing, and the two reasons nothing can answer need different
-// sentences: never configured is a thing to attach, switched off is a thing to
-// turn back on. Both are fixed in Settings, and neither stops the buddy
-// moving. The composer is disabled rather than hidden, so the window reads as
-// waiting rather than as broken.
+// rather than failing, and four reasons nothing can answer need different
+// messages: never configured is a thing to attach, switched off is a thing to
+// turn back on, not signed in names the Harness and shows the login command,
+// and ready hides the empty state. The composer is disabled rather than
+// hidden, so the window reads as waiting rather than as broken.
 function attached(opening) {
-  const ready = opening.configured && opening.enabled;
+  // Fourth state: configured, enabled, but needs authentication (-32000).
+  const needsAuth = opening.configured && opening.enabled && opening.login;
+  const ready = opening.configured && opening.enabled && !opening.login;
+  
   empty.hidden = ready;
   line.disabled = !ready;
   send.disabled = !ready;
   line.placeholder = ready ? `Ask ${opening.name}…` : "Nothing can answer yet";
 
-  // Which of the two states it is in, rather than which words to write: the
-  // copy is markup, and what to attach is not what to switch back on.
+  // Which of the four states: none configured, switched off, needs auth, or ready.
   document.getElementById("empty-none").hidden = opening.configured;
-  document.getElementById("empty-off").hidden = !opening.configured;
+  document.getElementById("empty-off").hidden = !opening.configured || opening.enabled;
+  document.getElementById("empty-auth").hidden = !needsAuth;
 
-  // The third state: attached, and the Harness has nobody signed in. Said
-  // once per command, in the log, because the fix is a command for the user's
-  // own terminal and never a prompt of ours (ADR-0018).
-  const login = opening.harness?.login;
-  if (login && login !== loginSaid) {
-    loginSaid = login;
-    note(`${opening.name} is attached but not signed in. Run \`${login}\` in a terminal.`);
+  // Fourth state: fill in the Harness name and login command. The command is
+  // for the user's own terminal; ai-buddy never collects a credential (ADR-0010).
+  if (needsAuth) {
+    for (const node of document.querySelectorAll("#empty-auth .harness-name")) {
+      node.textContent = opening.harness_name || opening.name;
+    }
+    const cmd = document.getElementById("login-command");
+    if (cmd) {
+      cmd.textContent = opening.login;
+    }
   }
+  
   return ready;
 }
 

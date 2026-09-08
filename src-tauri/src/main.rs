@@ -979,6 +979,12 @@ struct ChatOpening {
     /// The HTTP Completer in force: model and host, never a credential.
     model: String,
     host: String,
+    /// A Harness is attached but not signed in: the command that fixes it,
+    /// for the user's own terminal. The third state ADR-0010 names.
+    login: Option<String>,
+    /// Which Harness is attached, when one is. Used to name it in the fourth
+    /// empty state (needs authentication).
+    harness_name: Option<String>,
     /// The Character's own Personality Prompt, frozen: the Prompt tab shows it
     /// for reference above the layer the user may write (ADR-0012). Empty when
     /// the package shipped none.
@@ -1024,9 +1030,20 @@ fn chat_opening_from(
         character: instance.character_name().to_string(),
         configured: inspect.configured,
         enabled: inspect.enabled,
+<<<<<<< HEAD
         harness: chat_harness(inspect),
         model: inspect.model.clone(),
         host: inspect.host.clone(),
+=======
+        login: inspect
+            .harness
+            .as_ref()
+            .and_then(|attached| attached.login.clone()),
+        harness_name: inspect
+            .harness
+            .as_ref()
+            .map(|attached| attached.name.clone()),
+>>>>>>> f4deadd (feat(chat): Add fourth empty state for Harness needing authentication)
         personality: personality.to_string(),
         instance_prompt: instance.prompt().to_string(),
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
@@ -1091,6 +1108,14 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .as_ref()
             .map(|read| read.host.clone())
             .unwrap_or_default(),
+        login: inspect
+            .as_ref()
+            .and_then(|read| read.harness.as_ref())
+            .and_then(|attached| attached.login.clone()),
+        harness_name: inspect
+            .as_ref()
+            .and_then(|read| read.harness.as_ref())
+            .map(|attached| attached.name.clone()),
         instance_prompt,
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }

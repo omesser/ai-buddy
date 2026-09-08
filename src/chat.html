@@ -102,6 +102,20 @@
             walking and reacting either way.
           </p>
         </div>
+
+        <!-- Fourth state: attached but not signed in. The Harness answered
+             session/new with -32000 (auth required), so name the Harness and
+             show the login command. ADR-0010 forbids answering it here. -->
+        <div id="empty-auth" hidden>
+          <h2><span class="harness-name"></span> is attached but not signed in</h2>
+          <p>
+            Sign in to use <span class="harness-name"></span> as the Harness.
+            The command below runs in your own terminal; ai-buddy holds no
+            credential for it.
+          </p>
+          <p class="command" id="login-command"></p>
+          <p class="where">Or attach a different Harness in Settings.</p>
+        </div>
       </div>
     </div>
 
