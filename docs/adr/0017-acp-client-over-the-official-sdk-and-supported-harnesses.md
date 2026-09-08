@@ -75,6 +75,7 @@ seventeen-agent list inherited from a CLI.
 | Name | Command | Standing |
 |---|---|---|
 | `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. `@latest` because the adapter bundles its own Claude Code, and an npx cache serves a bundle too old for a current model (#514). **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
+| `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Official ACP adapter over OpenAI Codex CLI (JSON-RPC stdio → `codex app-server` subprocess). `@latest` follows the Claude pattern. **Unverified until smoked**: no probe run yet. Auth: ChatGPT login cache (`~/.codex/auth.json`), device code (beta), or API key (`CODEX_API_KEY` / `OPENAI_API_KEY`). Users run `codex login` in their own terminal (#457 bar). |
 | `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once the reopen above has replaced the session it only said it loaded (#448). |
 | `opencode` | `opencode acp` | First-party. **Unverified**: not installed on the machine either #433 or #434 was written on. |
 | anything else | as typed, split on whitespace | The escape hatch for every row below, and the next adapter. |

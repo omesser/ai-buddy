@@ -302,7 +302,7 @@ pub const HARNESS_CUSTOM: &str = "Custom";
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0017's order. Grok, Copilot and Gemini reach
 /// the same Completer through Custom until a turn has been smoked.
-pub const HARNESS_PRESETS: [&str; 3] = ["claude", "hermes", "opencode"];
+pub const HARNESS_PRESETS: [&str; 4] = ["claude", "codex", "hermes", "opencode"];
 
 /// The Completer-source popup's choices, in the order it draws them.
 pub fn harness_options() -> Vec<String> {
@@ -1716,7 +1716,10 @@ mod tests {
         crate::model::tests::with_harness(None, || {
             let description = describe();
             let (_, options, _) = popup_row(&description, HARNESS_ID);
-            assert_eq!(options, ["Off", "claude", "hermes", "opencode", "Custom"]);
+            assert_eq!(
+                options,
+                ["Off", "claude", "codex", "hermes", "opencode", "Custom"]
+            );
             assert_eq!(
                 description.text_write(HARNESS_ID),
                 Some(TextField::Harness),

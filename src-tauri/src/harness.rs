@@ -107,6 +107,10 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             value,
             vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"],
         ),
+        "codex" => (
+            value,
+            vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
+        ),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
         custom => {
@@ -1780,7 +1784,7 @@ mod tests {
     /// it is, with no key set, no config dir moved, and no `--bare`.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
-        for name in ["claude", "hermes", "opencode"] {
+        for name in ["claude", "codex", "hermes", "opencode"] {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(Path::new("/tmp"));
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");
