@@ -414,6 +414,20 @@ body {
   color: var(--chat-ink-4);
 }
 
+/* One line, clipped rather than wrapped: this sits between the log and the
+   composer, and a thought that grew the strip would push the conversation up
+   the window every time the Harness changed its mind. */
+.thought {
+  flex: 0 0 auto;
+  padding: 0 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--chat-ink-4);
+}
+
 .composer {
   flex: 0 0 auto;
   display: flex;

@@ -140,6 +140,12 @@ const CHAT_SESSION_EVENT: &str = "chat-session";
 /// the rest are dropped by `Link::answer_ask`. Never answered here (ADR-0010).
 const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 
+/// The event carrying the Harness's latest thought to every open Chat surface,
+/// for the strip above the composer. Transient: it is drawn where nothing is
+/// kept, and each one replaces the last. An empty line is the turn saying it
+/// has stopped thinking, which is what takes the strip away (ADR-0025).
+const CHAT_THOUGHT_EVENT: &str = "chat-thought";
+
 /// The event retiring one forwarded request in every open Chat surface, by
 /// request id. The ask went to all of them and one took the click; the rest
 /// would otherwise keep offering buttons on a question already answered,
@@ -873,6 +879,20 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     }
     if !std::mem::replace(&mut pending.opened, true) {
         show_chat_for_ask(app, shut);
+    }
+}
+
+/// Show the Harness's latest thought in every open Chat surface.
+///
+/// Every one, for the reason `forward_ask` gives: the session is shared and
+/// the wire does not say whose turn is on it, so the Shell cannot address the
+/// Instance that asked. Nothing is held for a surface that opens later —
+/// a thought is only worth reading while it is being thought.
+fn show_thought(app: &tauri::AppHandle, line: String) {
+    for label in app.webview_windows().into_keys() {
+        if label.starts_with("chat-") {
+            let _ = app.emit_to(label, CHAT_THOUGHT_EVENT, &line);
+        }
     }
 }
 
@@ -2359,11 +2379,12 @@ fn main() {
             quit_harness_on_interrupt();
             harness::attach(
                 settings.harness_source(),
-                Box::new(move |permission| match permission {
-                    harness::Permission::Ask(ask) => forward_ask(&forward_to, ask),
-                    harness::Permission::Settled { request, option } => {
+                Box::new(move |forwarded| match forwarded {
+                    harness::Forwarded::Ask(ask) => forward_ask(&forward_to, ask),
+                    harness::Forwarded::Settled { request, option } => {
                         settle_ask(&forward_to, Settled { request, option })
                     }
+                    harness::Forwarded::Thought(line) => show_thought(&forward_to, line),
                 }),
             );
             let director = match settings::director_settings(&settings, secrets.as_ref()) {

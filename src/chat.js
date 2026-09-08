@@ -7,7 +7,9 @@
 // this window was replaced. ADR-0018's tool-call one-liner waits on the Action
 // Log getting a reader. It holds no authoritative state, like the overlay: the
 // log is this session and only this session, including lines said before this
-// window existed, and the Shell owns the session behind it.
+// window existed, and the Shell owns the session behind it. The Harness's
+// thinking is the one thing drawn here that is not a line of the log, and
+// ADR-0025 says why it is a strip above the composer instead.
 
 import { stampWhen } from "./chat-stamp.js";
 import { statusCells } from "./chat-status.js";
@@ -24,6 +26,7 @@ const chat = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
+const thought = document.getElementById("thought");
 const empty = document.getElementById("empty");
 const composer = document.getElementById("composer");
 const line = document.getElementById("line");
@@ -129,6 +132,18 @@ function arrived(row, text) {
 
 function settled(row) {
   row.querySelector(".caret")?.remove();
+}
+
+// What the Harness is thinking, while the turn runs (ADR-0025). One line that
+// each thought replaces, and that the turn's own end takes away: it is not a
+// row, so it never joins the log, and nothing here is kept.
+//
+// The Shell sends the line to draw rather than the chunk it arrived in, and
+// sends an empty one when the turn ends, so this window never has to work out
+// whether a Harness is still thinking.
+function thinking(latest) {
+  thought.textContent = latest ?? "";
+  thought.hidden = !latest;
 }
 
 function note(text) {
@@ -389,6 +404,7 @@ function newSession(why) {
   // log, and `attached()` reaches into it by id on every opening. Sweeping it
   // out with the rows leaves that lookup dereferencing null.
   log.replaceChildren(empty);
+  thinking(null);
   waiting.length = 0;
   asks.clear();
   // A boundary is where a stamp should say the hour again rather than count
@@ -458,6 +474,14 @@ async function start() {
         turn.them.remove();
         note("No answer came back.");
       }
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-thought",
+    ({ payload }) => {
+      thinking(payload);
     },
     { target: chat.label },
   );

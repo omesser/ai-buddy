@@ -110,6 +110,12 @@
       </div>
     </section>
 
+    <!-- The Harness's thinking, while it is thinking it (ADR-0025). Outside
+         the log on purpose: the log's kinds of line are what was said, and a
+         thought was not. It is replaced by the next one and cleared when the
+         turn lands, so it is never scrolled back to. -->
+    <div class="thought" id="thought" hidden></div>
+
     <form class="composer" id="composer">
       <input id="line" autocomplete="off" placeholder="Say something" />
       <button type="submit" id="send">Send</button>

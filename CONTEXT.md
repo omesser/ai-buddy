@@ -271,6 +271,14 @@ Director turn is in flight (Poke, Summon, Throw). Appears after 250ms grace,
 held ≥600ms once shown. Proactive wakes stay invisible. #119.
 _Avoid_: Loading, spinner, progress
 
+**Thinking line**:
+The line of a Harness's streamed reasoning the Chat surface shows while a turn
+runs: one line above the composer, replaced by the next and cleared when the
+turn ends. Never a line of the log or of the Action Log. Not the Thinking
+ellipsis, which masks latency and says nothing about what a model is doing.
+#483, ADR-0025.
+_Avoid_: Reasoning pane, thoughts, chain of thought, transcript
+
 **Chat surface**:
 The window a Summon opens: where the user types to the attached Harness and
 reads the answers too long for a Speech bubble. Belongs to the Character

@@ -274,12 +274,13 @@ impl SessionKey {
     }
 }
 
-/// What the Chat surface is told about a forwarded permission request.
+/// What the session on the wire tells the Chat surface, live.
 ///
-/// `Settled` exists because the ask goes to every open surface and only one of
+/// `Settled` exists because an ask goes to every open surface and only one of
 /// them takes the click: without it the others keep offering live buttons on a
 /// question already answered, cancelled, or dead with its turn.
-pub enum Permission {
+#[derive(Debug)]
+pub enum Forwarded {
     Ask(PermissionAsk),
     /// A request that is no longer answerable, and the option that won it —
     /// `None` when nothing was picked and the turn simply ended.
@@ -287,9 +288,11 @@ pub enum Permission {
         request: String,
         option: Option<String>,
     },
+    /// The line of the Harness's thinking being written now. ADR-0025.
+    Thought(String),
 }
 
-type Forward = Box<dyn Fn(Permission) + Send + Sync>;
+type Forward = Box<dyn Fn(Forwarded) + Send + Sync>;
 
 /// The attached Harness: one child, one ACP connection, and one conversation
 /// per Character Instance identity (#558).
@@ -1022,8 +1025,8 @@ pub fn run_probe() -> i32 {
         // then times out with the turn, which is itself the report. A
         // settlement earns no line, because the only one a probe can reach is
         // that timeout.
-        Arc::new(Box::new(|permission| {
-            if let Permission::Ask(ask) = permission {
+        Arc::new(Box::new(|forwarded| {
+            if let Forwarded::Ask(ask) = forwarded {
                 println!("  permission   {} [{}]", ask.title, ask.request);
             }
         }) as Forward),
@@ -1154,11 +1157,16 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
                 "permission_request",
                 json!({"request": ask.request, "title": ask.title, "kind": ask.kind}),
             );
-            forward(Permission::Ask(ask));
+            forward(Forwarded::Ask(ask));
         }
         Event::PermissionSettled { request, option } => {
-            forward(Permission::Settled { request, option })
+            forward(Forwarded::Settled { request, option })
         }
+        // Forwarded and not logged. The Action Log points at the Harness's own
+        // session dump rather than copying it (CONTEXT.md), and a line per
+        // thought chunk is that copy — of the one part the Harness itself
+        // treats as disposable (ADR-0025).
+        Event::Thought(line) => forward(Forwarded::Thought(line)),
     }
 }
 
@@ -1739,7 +1747,7 @@ mod tests {
     struct Fixture {
         dir: PathBuf,
         count: PathBuf,
-        forwarded: Receiver<Permission>,
+        forwarded: Receiver<Forwarded>,
     }
 
     impl Fixture {
@@ -1770,8 +1778,8 @@ mod tests {
             let session = Session::new(
                 launch,
                 dir.clone(),
-                Arc::new(Box::new(move |permission| {
-                    let _ = tx.send(permission);
+                Arc::new(Box::new(move |forwarded| {
+                    let _ = tx.send(forwarded);
                 }) as Forward),
             )
             .with_timeout(Duration::from_secs(10));
@@ -1788,7 +1796,7 @@ mod tests {
         /// The next forwarded ask, or a panic naming what came instead.
         fn ask(&self) -> PermissionAsk {
             match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Permission::Ask(ask)) => ask,
+                Ok(Forwarded::Ask(ask)) => ask,
                 other => panic!("expected an ask, got {:?}", other.map(|_| "settled")),
             }
         }
@@ -1796,7 +1804,7 @@ mod tests {
         /// The next forwarded settlement: the request, and what won it.
         fn settled(&self) -> (String, Option<String>) {
             match self.forwarded.recv_timeout(Duration::from_secs(5)) {
-                Ok(Permission::Settled { request, option }) => (request, option),
+                Ok(Forwarded::Settled { request, option }) => (request, option),
                 other => panic!("expected a settlement, got {:?}", other.map(|_| "ask")),
             }
         }
@@ -1881,6 +1889,33 @@ mod tests {
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
         assert_eq!(custom.name, "my-agent");
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
+    }
+
+    /// A thought is forwarded to the Chat surface and written nowhere. The
+    /// Action Log points at the Harness's own session dump rather than copying
+    /// it (CONTEXT.md), and streamed reasoning is exactly the copy it refuses
+    /// (ADR-0025).
+    #[test]
+    fn a_thought_reaches_the_surface_and_not_the_action_log() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-thought-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, forwarded) = mpsc::channel();
+        let forward = Box::new(move |what| {
+            let _ = tx.send(what);
+        }) as Forward;
+
+        note_event(
+            &dir,
+            &forward,
+            Event::Thought("Reading the roster".to_string()),
+        );
+
+        assert!(matches!(
+            forwarded.try_recv(),
+            Ok(Forwarded::Thought(line)) if line == "Reading the roster"
+        ));
+        assert!(!dir.join(action_log::FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #500's whole policy, at the seam that decides it. Asserted through
