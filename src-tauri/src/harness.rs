@@ -84,6 +84,13 @@ pub struct Launch {
 /// command line of the user's own, which is how Grok Build, Copilot CLI and
 /// Gemini CLI attach until they are smoked; Pi and Codex are deferred
 /// (ADR-0017).
+///
+/// The README's Harness Support table is this table's user-facing half and is
+/// maintained by hand: a name or command changed here, or a new
+/// `scripts/probe-harness.sh` standing, has to be carried over there too.
+/// Named rows show the vendor's own Simple Icons mark, unrecoloured — and no
+/// mark at all when the vendor has none, which is why Grok Build sits there
+/// bare. The only near-match is `ngrok`, an unrelated product.
 pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
     let (name, argv): (&str, Vec<&str>) = match value {

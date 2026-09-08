@@ -144,9 +144,8 @@ See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env v
 
 ## Harness Support
 
-Which Harness you attach changes what ai-buddy can do with it. Each row's standing is what a `scripts/probe-harness.sh` run proved, on the day it ran — never a guess.
-
-Update this section when `launch()` names/commands or probe-harness standing change. Named rows carry the vendor's own [Simple Icons](https://simpleicons.org) mark, unrecoloured; a Harness with no mark there goes without one.
+Which Harness you attach changes what ai-buddy can do with it.
+We use `scripts/probe-harness.sh` to test and prove various behaviors.
 
 | Harness | Command | Standing |
 |---|---|---|
@@ -155,7 +154,7 @@ Update this section when `launch()` names/commands or probe-harness standing cha
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. **Unverified**: not installed on the machine either #433 or #434 was written on. #457 smokes it. |
 | anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. Grok Build (`grok agent stdio`), <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) and <img src="https://cdn.simpleicons.org/googlegemini" width="14" alt="" /> Gemini CLI (`gemini --acp`) reach ai-buddy this way today and earn a named row once a turn is smoked (#457). |
 
-What they advertise in `initialize` differs enough to change what ai-buddy can do with them:
+How they handle session differs, and changes what ai-buddy can do with them:
 
 | Harness | Fresh session | Resumed session | `loadSession` | MCP transport † | Auth methods ‡ |
 |---|---|---|---|---|---|
