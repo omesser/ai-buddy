@@ -74,15 +74,6 @@ impl Log {
     pub fn forget(&mut self, instance: &str) {
         self.turns.remove(instance);
     }
-
-    /// Drop one Instance's turns, leaving every other buddy's alone.
-    ///
-    /// Saving an Instance Prompt reopens that Instance's session and no other,
-    /// so the whole log going with it would take a conversation the Completer
-    /// still holds (ADR-0012).
-    pub fn forget(&mut self, instance: &str) {
-        self.turns.remove(instance);
-    }
 }
 
 fn with_log(app: &tauri::AppHandle, f: impl FnOnce(&mut Log)) {
@@ -146,10 +137,6 @@ pub fn new_session(app: &tauri::AppHandle, instance: &str, why: &str) {
         serde_json::json!({ "instance": instance, "why": why }),
     );
     let _ = app.emit_to(crate::chat_label(instance), crate::CHAT_SESSION_EVENT, why);
-}
-
-pub fn forget(app: &tauri::AppHandle, instance: &str) {
-    with_log(app, |log| log.forget(instance));
 }
 
 #[cfg(test)]
