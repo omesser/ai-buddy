@@ -54,9 +54,9 @@ export function statusCells(status, msLeft) {
 // The branches are `settings::harness_state`'s, in its order, so the two
 // windows cannot disagree — and the order is what makes it honest. A Harness
 // that is set and never came up is the state the user cannot otherwise see,
-// and it is named before the session that a live one would show. Nothing here
-// draws the login command or the endpoint's key: naming the command is the
-// log's job, once, and ADR-0010's seventh rule covers the rest.
+// and it is named before the session that a live one would show. The login
+// command for an attached-but-not-signed-in Harness is named once here and
+// never run; ADR-0010's seventh rule covers the endpoint's key.
 export function mindLine(opening) {
   if (!opening) {
     return "";
@@ -72,7 +72,7 @@ export function mindLine(opening) {
     return opening.model && opening.host ? `${opening.model} · ${opening.host}` : "";
   }
   if (harness.login) {
-    return `${harness.name} · not signed in`;
+    return `${harness.name} · not signed in — \`${harness.login}\``;
   }
   if (!harness.alive) {
     return `${harness.name} · not running`;

@@ -155,13 +155,13 @@ test("a Harness that never came up says so rather than claiming the turn", () =>
   assert.equal(mindLine(opening), "hermes · not running");
 });
 
-test("not signed in outranks the session, and the command stays out of the header", () => {
+test("not signed in outranks the session, and names the login command", () => {
   const opening = {
     ...http,
     harness: { name: "hermes", session: "655092d4", alive: true, login: "hermes login" },
   };
 
-  assert.equal(mindLine(opening), "hermes · not signed in");
+  assert.equal(mindLine(opening), "hermes · not signed in — `hermes login`");
 });
 
 test("attached before a session opens claims no session", () => {

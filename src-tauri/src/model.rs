@@ -453,6 +453,7 @@ fn url_of(base: &str) -> Option<Url> {
     Url::parse(base).ok().filter(Url::has_host)
 }
 
+/// Extract host and port from a base URL, or empty string if none.
 pub fn host_of(base: &str) -> String {
     let Some(url) = url_of(base) else {
         return String::new();
