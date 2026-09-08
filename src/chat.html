@@ -14,6 +14,41 @@
       <span class="who">
         <span class="name" id="name"></span>
         <span class="of" id="character"></span>
+        <!-- Which mind answers, as identity rather than telemetry (#474):
+             beside who you are talking to, not in the bar, which is for what
+             changes every tick and has no room for a model and a host. A
+             statement with nothing to press. -->
+        <span class="mind" id="mind" title="What answers here">
+          <!-- Decorative: the glyph cues that this line is the mind behind the
+               Instance rather than more of its name, and the text beside it
+               carries the fact. `aria-hidden` for that reason — a reader that
+               announced it would say the sentence twice. -->
+          <svg
+            class="mind-mark"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.15"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M6 1.55c-2.15 0-3.75 1.55-3.75 3.45 0 1.15.55 2.1 1.4 2.7v1.55c0 .4.32.72.72.72h3.26c.4 0 .72-.32.72-.72V7.7c.85-.6 1.4-1.55 1.4-2.7C9.75 3.1 8.15 1.55 6 1.55z"
+            />
+            <path
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.05"
+              stroke-linecap="round"
+              d="M4.55 4.35c.35-.55 1.05-.85 1.7-.55.45.2.75.6.75 1.1 0 .7-.55 1.15-1.15 1.45"
+            />
+          </svg>
+          <span class="mind-text" id="mind-text"></span>
+        </span>
       </span>
     </header>
 

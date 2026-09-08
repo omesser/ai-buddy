@@ -130,6 +130,38 @@ body {
   color: var(--chat-ink-3);
 }
 
+/* Unboxed, unlike the Character beside it: the Character names this window and
+   this only says what is behind it, so it takes the quietest weight the header
+   has and elides rather than pushing the name off the line. It is the hint the
+   tab row below was kept off the title line for. */
+.mind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--chat-mono);
+  font-size: 11px;
+  color: var(--chat-ink-3);
+}
+
+/* Its own flex item, so a long session id elides the text and never the mark:
+   the glyph is what says this line is a mind at all. */
+.mind-mark {
+  flex: 0 0 auto;
+  display: block;
+  width: 12px;
+  height: 12px;
+  opacity: 0.9;
+}
+
+.mind-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Under the name, not beside it: the title row has to stay a single line so a
    Director-mode or Harness hint can sit there later. Selected is filled rather
    than outlined, so the active pane is the colour, not a shared border with

@@ -8,7 +8,6 @@
 //! #18 binds these settings. Until then they come from the env.
 
 use std::collections::HashMap;
-use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -20,6 +19,7 @@ use ai_buddy_core::director::{
 };
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
+use url::{Host, Url};
 
 /// Completer timeout. After this, fall back to `StaticDirector`.
 ///
@@ -90,6 +90,12 @@ pub struct DirectorInspect {
     /// The attached Harness, when `AI_BUDDY_HARNESS` named one. Its `login`
     /// is the third Chat state ADR-0010 names: attached, not authenticated.
     pub harness: Option<crate::harness::HarnessInspect>,
+    /// The HTTP Completer in force: the model, and the host without its
+    /// scheme, path or userinfo. What the Chat header names when no Harness
+    /// does (#474). Never the key — ADR-0010's seventh rule covers drawing a
+    /// credential as firmly as logging one, and userinfo is one.
+    pub model: String,
+    pub host: String,
 }
 
 /// Director on/off and the first ambient session wait. Read from the env.
@@ -122,7 +128,10 @@ impl DirectorConfig {
         self.enabled = self.env_says.unwrap_or(saved_on) && self.configured;
     }
 
-    pub fn inspect(&self) -> DirectorInspect {
+    /// `settings` because the switch and the endpoint are read from different
+    /// places and the Chat header needs both: the config says whether anything
+    /// answers, the settings say what would.
+    pub fn inspect(&self, settings: &DirectorSettings) -> DirectorInspect {
         DirectorInspect {
             enabled: self.enabled,
             configured: self.configured,
@@ -130,6 +139,8 @@ impl DirectorConfig {
             wake_secs: self.ambient_first.as_secs(),
             last_payload: None,
             harness: crate::harness::attached().map(|session| session.inspect()),
+            model: settings.model.clone(),
+            host: host_of(&settings.base_url),
         }
     }
 }
@@ -426,6 +437,43 @@ fn ambient_first() -> Duration {
     crate::dev_flags::director_wake_secs().map_or(Pace::FIRST, Duration::from_secs)
 }
 
+/// The host and port a base URL points at, with the scheme, the path and any
+/// userinfo dropped. Empty when the value is not a URL with a host.
+///
+/// `Url` rather than splitting on `://`, `/` and `@` by hand: the two callers
+/// are a security check and a label, and in `10.0.0.1@172.16.evil.com` the
+/// digits belong to the credentials while the request goes to evil.com. A
+/// parser that already knows that is the one to ask. A password written into a
+/// URL is also a credential this must not hand back to a caller that draws it
+/// (#474), and `host_str` never carries one.
+///
+/// A base with no scheme has no host here and yields the empty string. That is
+/// the honest answer rather than a tolerated one: `completions_url` builds the
+/// request by concatenation, so a scheme-less base was never a URL ureq could
+/// post to, and inventing `http://` for a value we then send a key to is not a
+/// default to pick on the user's behalf.
+/// The one place a URL in this module is parsed, so the rule about a missing
+/// scheme is stated once rather than in each of the four questions asked below.
+///
+/// `has_host` is the filter that matters: `Url::parse` accepts `localhost:8000`
+/// by reading `localhost` as the scheme, which is not what anyone typing it
+/// meant. No host is the honest answer, and every caller here treats it as the
+/// cautious one.
+fn url_of(base: &str) -> Option<Url> {
+    Url::parse(base).ok().filter(Url::has_host)
+}
+
+pub fn host_of(base: &str) -> String {
+    let Some(url) = url_of(base) else {
+        return String::new();
+    };
+    let host = url.host_str().unwrap_or_default();
+    match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    }
+}
+
 /// Is this base URL served from this machine or this LAN?
 ///
 /// A local host (loopback, RFC1918, unique-local IPv6, or `.local`) makes
@@ -433,30 +481,30 @@ fn ambient_first() -> Duration {
 /// leave it unset when the server has no auth (Ollama, mlx_lm.server) or set
 /// it when the server requires one (oMLX, llama.cpp with `--api-key`, vLLM
 /// with `--api-key`). A remote host still requires a real key.
+///
+/// `Url::host` decides what the host *is* — a name, an IPv4 literal, or an
+/// IPv6 one — so nothing here strips brackets, cuts a port off the end, or
+/// hopefully re-parses the remainder as an address. That matters more than
+/// tidiness: `10.0.0.5.evil.com` is a remote name that merely opens with an
+/// address, and it is the parser, not this function, that refuses to read it
+/// as one. A value with no host is remote, which is the safe direction — a
+/// wrong answer here waives the key requirement.
 fn is_local(base: &str) -> bool {
-    let host = base.split("://").nth(1).unwrap_or(base);
-    let host = host.split('/').next().unwrap_or(host);
-    // Userinfo first: in `10.0.0.1@172.16.evil.com` the digits belong to the
-    // credentials, and the request goes to evil.com.
-    let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
-    let host = match host.strip_prefix('[') {
-        // An IPv6 literal is bracketed, so the colons inside are not a port.
-        Some(rest) => rest.split(']').next().unwrap_or(rest),
-        None => host.rsplit_once(':').map_or(host, |(host, _)| host),
+    let Some(url) = url_of(base) else {
+        return false;
     };
-    // A fully-qualified name ends in a dot, and DNS reads it as the same name.
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    if host == "localhost" || host.ends_with(".local") {
-        return true;
-    }
-    // Parse the whole host as an address rather than picking numbers out of
-    // it: `10.0.0.5.evil.com` is a remote name that merely opens with one.
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
+    match url.host() {
+        // A fully-qualified name ends in a dot, and DNS reads it as the same
+        // name. `Url` has already lowercased it.
+        Some(Host::Domain(name)) => {
+            let name = name.trim_end_matches('.');
+            name == "localhost" || name.ends_with(".local")
+        }
+        Some(Host::Ipv4(ip)) => ip.is_loopback() || ip.is_private(),
         // fc00::/7 is the IPv6 private range. `Ipv6Addr::is_unique_local` is
         // still unstable, and this repo builds on the pinned stable toolchain.
-        Ok(IpAddr::V6(ip)) => ip.is_loopback() || ip.octets()[0] & 0xfe == 0xfc,
-        Err(_) => false,
+        Some(Host::Ipv6(ip)) => ip.is_loopback() || ip.octets()[0] & 0xfe == 0xfc,
+        None => false,
     }
 }
 
@@ -542,16 +590,26 @@ fn completions_url(base: &str) -> String {
     }
 }
 
+/// Whether this URL is served by xAI, which decides the inference path below.
+///
+/// The host from the parser, not from splitting on `://` and `/`. Cutting at
+/// the first slash kept the host's port and its spelling, so `api.x.ai:443`
+/// and `API.X.AI` were not xAI and took the legacy chat-completions path;
+/// `host_str` has normalised both away by the time this compares anything.
+/// The suffix keeps a subdomain in and a lookalike out, which the old cut also
+/// managed — the port was the part it got wrong.
 fn host_is_xai(url: &str) -> bool {
-    url.split("://").nth(1).is_some_and(|rest| {
-        rest.split('/')
-            .next()
-            .is_some_and(|host| host == "api.x.ai" || host.ends_with(".api.x.ai"))
-    })
+    url_of(url)
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| host == "api.x.ai" || host.ends_with(".api.x.ai"))
 }
 
+/// Whether this URL already points at the Responses path.
+///
+/// The parsed path, not a substring of the whole URL: a query that merely
+/// mentions `/responses` is not the path being called.
 fn uses_responses(url: &str) -> bool {
-    url.contains("/responses")
+    url_of(url).is_some_and(|url| url.path().contains("/responses"))
 }
 
 #[derive(Clone)]
@@ -905,12 +963,15 @@ impl Completer for Endpoint {
     }
 }
 
+/// Scheme, host and port, with the path dropped — what `/v1/models` is hung
+/// off for the pre-flight probe, and what a trace line names the endpoint by.
+///
+/// `Url::origin` rather than cutting at the first `/` after the scheme, which
+/// kept userinfo and would print a password into a probe line. A value with no
+/// host is handed back as it came: the probe then fails on it and says so,
+/// which is more use than an empty string.
 fn origin(url: &str) -> String {
-    let Some((scheme, rest)) = url.split_once("://") else {
-        return url.to_string();
-    };
-    let host = rest.split('/').next().unwrap_or(rest);
-    format!("{scheme}://{host}")
+    url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
 }
 
 fn alternate_url(url: &str) -> Option<String> {
@@ -2511,6 +2572,111 @@ pub(crate) mod tests {
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 404").is_some());
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 401").is_none());
         assert!(fallback_url(url, "https://api.x.ai/v1/responses: status 400").is_none());
+    }
+
+    /// The suffix test is the half that matters for a lookalike name, and the
+    /// normalised host is the half the old string cut got wrong: it compared
+    /// the port and the spelling along with the name, so an endpoint written
+    /// with `:443` or in capitals was not xAI and took the legacy path.
+    ///
+    /// The lookalike cases pass either way and are pinned as regression
+    /// guards, not as repairs.
+    #[test]
+    fn only_xais_own_hosts_answer_to_its_inference_path() {
+        assert!(host_is_xai("https://api.x.ai/v1/responses"));
+        assert!(host_is_xai("https://mtls.api.x.ai"), "a real subdomain");
+        assert!(
+            host_is_xai("https://api.x.ai:443/v1"),
+            "an explicit port is not part of the name"
+        );
+        assert!(
+            host_is_xai("https://API.X.AI/v1"),
+            "nor is how the row was capitalised"
+        );
+        assert!(
+            !host_is_xai("https://evil-api.x.ai"),
+            "the dot is what makes it a subdomain"
+        );
+        assert!(
+            !host_is_xai("https://api.x.ai.evil.com"),
+            "a name that opens with theirs"
+        );
+        assert!(
+            !host_is_xai("https://evil.com/api.x.ai"),
+            "theirs in the path, not the host"
+        );
+        assert!(!host_is_xai("api.x.ai"), "no scheme, no host");
+    }
+
+    /// The probe hangs `/v1/models` off this and prints it. Production change
+    /// that would fail this: cutting at the first `/` after the scheme, which
+    /// keeps userinfo — and puts a password in a trace line.
+    #[test]
+    fn an_origin_keeps_the_port_and_drops_the_credentials() {
+        assert_eq!(
+            origin("http://localhost:11434/v1"),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            origin("https://api.openai.com/v1"),
+            "https://api.openai.com"
+        );
+        assert_eq!(
+            origin("https://user:sk-secret@api.x.ai/v1/responses"),
+            "https://api.x.ai"
+        );
+        assert_eq!(
+            origin("https://api.openai.com:443/v1"),
+            "https://api.openai.com",
+            "the default port is not part of the origin"
+        );
+        assert_eq!(
+            origin("localhost:11434"),
+            "localhost:11434",
+            "no host to serialize, so the value is handed back for the probe \
+             to fail on and name"
+        );
+    }
+
+    /// A query that mentions the path is not the path.
+    #[test]
+    fn the_responses_path_is_the_path_and_not_the_query() {
+        assert!(uses_responses("https://api.x.ai/v1/responses"));
+        assert!(!uses_responses("https://api.x.ai/v1/chat/completions"));
+        assert!(!uses_responses(
+            "https://api.x.ai/v1/chat/completions?from=/responses"
+        ));
+    }
+
+    /// What the Chat header is handed. The userinfo case is the same one
+    /// `is_local` turns on, and it is drawn as well as decided on, so a
+    /// password written into the row must not reach the window (#474).
+    #[test]
+    fn a_host_is_named_without_its_credentials_or_its_path() {
+        assert_eq!(host_of("https://api.openai.com/v1"), "api.openai.com");
+        assert_eq!(host_of("http://localhost:8000"), "localhost:8000");
+        assert_eq!(host_of("http://[fd00::1]:8080"), "[fd00::1]:8080");
+        assert_eq!(
+            host_of("https://user:sk-secret@api.openai.com/v1"),
+            "api.openai.com",
+            "neither half of the userinfo is drawn"
+        );
+        assert_eq!(
+            host_of("http://10.0.0.1@172.16.evil.com/"),
+            "172.16.evil.com",
+            "the digits are userinfo; the host is evil.com"
+        );
+    }
+
+    /// A base with no scheme is not a URL anything can be posted to —
+    /// `completions_url` concatenates onto it — so it names no host and is not
+    /// local. Remote is the safe half of that: it keeps the key required.
+    #[test]
+    fn a_base_with_no_scheme_names_no_host_and_is_not_local() {
+        assert_eq!(host_of("localhost:8000"), "");
+        assert_eq!(host_of(""), "");
+        assert!(!is_local("localhost:8000"));
+        assert!(!is_local("api.openai.com"));
     }
 
     #[test]

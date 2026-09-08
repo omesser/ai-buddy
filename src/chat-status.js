@@ -1,6 +1,7 @@
 // What the Chat surface's status bar draws, from one push and the clock
-// (ADR-0010). Its own module because chat.js reaches window.__TAURI__ as it
-// loads and cannot be imported outside a webview; this can, so it has a test.
+// (ADR-0010), and the header's line about which mind answers. Its own module
+// because chat.js reaches window.__TAURI__ as it loads and cannot be imported
+// outside a webview; this can, so it has a test.
 
 // What a cell says when there is nothing to say — the dash the Shell's
 // `engine:` trace writes. A blank cell reads as a bar that broke.
@@ -43,4 +44,45 @@ export function statusCells(status, msLeft) {
     director: status?.asking ? "thinking" : `wake ${untilWake(status ? msLeft : null)}`,
     happened: status?.happened ?? NONE,
   };
+}
+
+// Which mind answers this window, for the header beside who you are talking
+// to (#474). A statement and never a control: ADR-0010 leaves the bar for what
+// our own layers are doing right now, and this is neither that nor something
+// to press.
+//
+// The branches are `settings::harness_state`'s, in its order, so the two
+// windows cannot disagree — and the order is what makes it honest. A Harness
+// that is set and never came up is the state the user cannot otherwise see,
+// and it is named before the session that a live one would show. Nothing here
+// draws the login command or the endpoint's key: naming the command is the
+// log's job, once, and ADR-0010's seventh rule covers the rest.
+export function mindLine(opening) {
+  if (!opening) {
+    return "";
+  }
+  if (!opening.enabled) {
+    return "static weights";
+  }
+  const harness = opening.harness;
+  if (!harness) {
+    // Nothing rather than a bare separator: the Shell sends empty strings only
+    // when it could not read its own inspect, and ` · ` is punctuation
+    // pretending to be a fact.
+    return opening.model && opening.host ? `${opening.model} · ${opening.host}` : "";
+  }
+  if (harness.login) {
+    return `${harness.name} · not signed in`;
+  }
+  if (!harness.alive) {
+    return `${harness.name} · not running`;
+  }
+  if (!harness.session) {
+    return `${harness.name} · no session yet`;
+  }
+  // The head of the id, not the whole of it: what the session proves here is
+  // that a live one exists, and a full UUID pushes the Instance's own name off
+  // a 420-point header. Settings draws it in full, and the head of an id
+  // Settings shows in full cannot disagree with it.
+  return `${harness.name} · session ${harness.session.slice(0, 8)}`;
 }
