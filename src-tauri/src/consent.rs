@@ -118,6 +118,8 @@ mod windows {
 
     fn packaged() -> bool {
         // Packaged: not under target/debug or target/release build directories.
+        // An installed NSIS build lives in Program Files or AppData; a dev
+        // build is always under the Cargo target directory.
         std::env::current_exe().is_ok_and(|exe| {
             !exe.to_string_lossy().contains(r"\target\debug")
                 && !exe.to_string_lossy().contains(r"\target\release")
@@ -167,13 +169,24 @@ mod windows {
                 return None;
             }
 
-            let parent_name = find_process_name(pid)?;
-            if !parent_name.is_empty() {
-                return Some(parent_name);
+            if let Some(parent_name) = find_process_name(pid) {
+                if !is_toolchain(&parent_name) {
+                    return Some(parent_name);
+                }
             }
         }
 
         None
+    }
+
+    pub(super) fn is_toolchain(name: &str) -> bool {
+        // Skip Rust toolchain processes: a `cargo run` from Cursor is
+        // cargo → Cursor, so the first non-toolchain parent is what Privacy
+        // will list. Mirrors macOS bundled_ancestor_name skipping Helpers.
+        matches!(
+            name.to_lowercase().as_str(),
+            "cargo" | "rustc" | "rustup" | "rust-analyzer" | "rls"
+        )
     }
 
     fn find_process_name(pid: u32) -> Option<String> {
@@ -446,7 +459,7 @@ pub fn listed_under_hint(name: &str) -> String {
 #[cfg(target_os = "windows")]
 pub fn pane_intro(listed_as: &str) -> String {
     format!(
-        "On Windows, permissions are requested through Settings when needed. {}",
+        "These permissions are not required yet. When needed later, Windows will prompt. {}",
         listed_under_hint(listed_as)
     )
 }
@@ -675,5 +688,29 @@ mod tests {
             !intro.contains("TCC"),
             "Windows intro must not mention TCC, got {intro:?}"
         );
+    }
+
+    /// Windows toolchain processes are skipped when walking parents.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_toolchain_classification() {
+        use crate::consent::windows::is_toolchain;
+
+        // Toolchain: cargo, rustc, rustup, rust-analyzer, rls
+        assert!(is_toolchain("cargo"));
+        assert!(is_toolchain("rustc"));
+        assert!(is_toolchain("rustup"));
+        assert!(is_toolchain("rust-analyzer"));
+        assert!(is_toolchain("rls"));
+        assert!(is_toolchain("Cargo")); // case insensitive
+
+        // Not toolchain: IDEs, terminals, shells
+        assert!(!is_toolchain("Cursor"));
+        assert!(!is_toolchain("Code"));
+        assert!(!is_toolchain("WindowsTerminal"));
+        assert!(!is_toolchain("powershell"));
+        assert!(!is_toolchain("pwsh"));
+        assert!(!is_toolchain("cmd"));
+        assert!(!is_toolchain("ai-buddy"));
     }
 }
