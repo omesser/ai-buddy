@@ -19,11 +19,11 @@ use std::thread;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    AuthMethod, CancelNotification, ContentBlock, ErrorCode, Implementation, InitializeRequest,
-    LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionId, SessionNotification, SessionUpdate, StopReason,
-    TextContent,
+    AuthMethod, CancelNotification, ContentBlock, ErrorCode, HttpHeader, Implementation,
+    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
+    SessionUpdate, StopReason, TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -33,6 +33,36 @@ use tokio::sync::mpsc;
 /// After `session/cancel`, how long the turn lock waits for the `cancelled`
 /// reply before it is given back regardless.
 const CANCEL_GRACE: Duration = Duration::from_secs(2);
+
+/// The MCP server `session/new` is told about, in whichever transport the
+/// Harness said it takes.
+///
+/// The app's own loopback server is the shipped path (ADR-0023) and the stdio
+/// binary is the fallback for a Harness that advertises no
+/// `mcpCapabilities.http`. `harness.rs` chooses; this file only spells it.
+#[derive(Clone)]
+pub enum McpChoice {
+    /// The loopback server the app serves, and the `Authorization` value that
+    /// reaches it. The only one whose tools reach the buddy on screen.
+    Http { url: String, authorization: String },
+    /// A stdio server the Harness spawns: the sidecar, or the app binary
+    /// re-executed as `--mcp-stdio` (#497). Its tools dispatch through stubs.
+    Stdio(McpLaunch),
+}
+
+impl McpChoice {
+    /// What a log line, the Action Log or a probe may say about this choice.
+    ///
+    /// Never the token: it is the one credential this process owns for a
+    /// listener of its own, and ADR-0010's seventh rule reads the same way for
+    /// one we mint as for one we would have borrowed.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Http { url, .. } => url.clone(),
+            Self::Stdio(launch) => launch.line(),
+        }
+    }
+}
 
 /// What `initialize` told us, in the words the rest of the shell uses.
 #[derive(Clone, Debug, Default)]
@@ -144,7 +174,7 @@ enum Msg {
     Open {
         load: Option<String>,
         cwd: PathBuf,
-        mcp: Option<McpLaunch>,
+        mcp: Option<McpChoice>,
         reply: sync_mpsc::Sender<Result<String, OpenError>>,
     },
     Prompt {
@@ -230,7 +260,7 @@ impl Wire {
         &self,
         load: Option<String>,
         cwd: &Path,
-        mcp: Option<McpLaunch>,
+        mcp: Option<McpChoice>,
         timeout: Duration,
     ) -> Result<String, OpenError> {
         let (reply, rx) = sync_mpsc::channel();
@@ -497,6 +527,24 @@ async fn serve(
     }
 }
 
+/// One `McpChoice` in the protocol's own words.
+///
+/// The token rides in a header rather than in the URL or an argv, which is the
+/// one place it is neither written to a config file the Harness keeps nor
+/// visible in a process list.
+fn mcp_server(choice: &McpChoice) -> McpServer {
+    match choice {
+        McpChoice::Http { url, authorization } => {
+            McpServer::Http(McpServerHttp::new("ai-buddy", url.clone()).headers(vec![
+                HttpHeader::new("Authorization", authorization.clone()),
+            ]))
+        }
+        McpChoice::Stdio(launch) => McpServer::Stdio(
+            McpServerStdio::new("ai-buddy", launch.path.clone()).args(launch.args.clone()),
+        ),
+    }
+}
+
 /// `session/load` when asked and answered, else `session/new`. Raw requests
 /// rather than the SDK's session builders: those tear the connection down
 /// when the Harness refuses, and `auth_required` is a refusal we recover from.
@@ -504,17 +552,9 @@ async fn open(
     cx: &ConnectionTo<Agent>,
     load: Option<String>,
     cwd: &Path,
-    mcp: Option<McpLaunch>,
+    mcp: Option<McpChoice>,
 ) -> Result<SessionId, OpenError> {
-    let servers = || -> Vec<McpServer> {
-        mcp.iter()
-            .map(|launch| {
-                McpServer::Stdio(
-                    McpServerStdio::new("ai-buddy", launch.path.clone()).args(launch.args.clone()),
-                )
-            })
-            .collect()
-    };
+    let servers = || -> Vec<McpServer> { mcp.iter().map(mcp_server).collect() };
     if let Some(id) = load {
         let loaded = cx
             .send_request(LoadSessionRequest::new(id.clone(), cwd).mcp_servers(servers()))
@@ -742,6 +782,63 @@ mod tests {
         let hint = auth_hint(&method);
         assert_eq!(hint.name, "Sign in");
         assert_eq!(hint.description.as_deref(), Some("run x login"));
+    }
+
+    /// The shape `session/new` actually puts on the wire. The token rides in a
+    /// header and nowhere else (ADR-0023): not in the URL, which a Harness may
+    /// keep in a session file, and not in an argv, which is in a process list.
+    #[test]
+    fn an_http_choice_carries_the_token_in_a_header_and_not_in_the_url() {
+        let server = mcp_server(&McpChoice::Http {
+            url: "http://127.0.0.1:51234/mcp".to_string(),
+            authorization: "Bearer deadbeef".to_string(),
+        });
+        let wire = serde_json::to_value(&server).expect("serializes");
+        assert_eq!(wire["type"], serde_json::json!("http"));
+        assert_eq!(wire["name"], serde_json::json!("ai-buddy"));
+        assert_eq!(wire["url"], serde_json::json!("http://127.0.0.1:51234/mcp"));
+        assert_eq!(
+            wire["headers"][0]["name"],
+            serde_json::json!("Authorization")
+        );
+        assert_eq!(
+            wire["headers"][0]["value"],
+            serde_json::json!("Bearer deadbeef")
+        );
+        assert!(!wire["url"].as_str().unwrap().contains("deadbeef"));
+    }
+
+    /// The fallback keeps the shape it always had: every Agent must take stdio,
+    /// and the untagged variant is how the protocol spells it.
+    #[test]
+    fn a_stdio_choice_is_still_a_bare_command_and_carries_its_args() {
+        let sidecar = mcp_server(&McpChoice::Stdio(McpLaunch {
+            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            args: Vec::new(),
+        }));
+        let wire = serde_json::to_value(&sidecar).expect("serializes");
+        assert_eq!(wire["command"], serde_json::json!("/opt/ai-buddy-mcp"));
+        assert_eq!(wire["name"], serde_json::json!("ai-buddy"));
+        assert_eq!(wire["args"], serde_json::json!([]));
+
+        // #497's third route: the app binary re-executed as its own server.
+        let embedded = mcp_server(&McpChoice::Stdio(McpLaunch {
+            path: PathBuf::from("/opt/ai-buddy"),
+            args: vec!["--mcp-stdio".to_string()],
+        }));
+        let wire = serde_json::to_value(&embedded).expect("serializes");
+        assert_eq!(wire["command"], serde_json::json!("/opt/ai-buddy"));
+        assert_eq!(wire["args"], serde_json::json!(["--mcp-stdio"]));
+    }
+
+    #[test]
+    fn a_label_never_carries_the_token() {
+        let choice = McpChoice::Http {
+            url: "http://127.0.0.1:1/mcp".to_string(),
+            authorization: "Bearer secret".to_string(),
+        };
+        assert_eq!(choice.label(), "http://127.0.0.1:1/mcp");
+        assert!(!choice.label().contains("secret"));
     }
 }
 
