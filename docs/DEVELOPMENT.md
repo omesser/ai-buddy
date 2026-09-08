@@ -215,6 +215,8 @@ Settings → Director persists base URL, model, and the first wake interval, and
 
 **Linux:** The Director API key is stored via Secret Service (GNOME Keyring, KWallet) or kernel keyutils when Secret Service is absent. Building the shell requires `libdbus-1-dev` as a link dependency. No packaged secret store is required: keyutils is always available, and Secret Service is present when the desktop environment provides it.
 
+The title-bar grip is small, so the window also moves with a modifier-drag on its background: Command-drag on macOS, Super-drag on Linux, Alt-drag on Windows. The drag starts from empty chrome, not from a field, button, popup, or the tab strip. Nothing in the window names the gesture; this paragraph is how you find it.
+
 **macOS Keychain ACL:** On macOS a saved key is guarded by an access control list naming the build that wrote it, and an ad-hoc signature names it by a hash that every `cargo build` changes — so a rebuilt app is a stranger to its own key and the launch costs two dialogs. `scripts/dev-sign.sh` signs the build with a stable identity the list can name instead. From the repository root:
 
 ```sh
@@ -325,7 +327,7 @@ turn
   proposal     Wave | Hello from the probe.
 ```
 
-The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. ADR-0017's table says which Harnesses this has been run against.
+The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. The README's [Harness Support](../README.md#harness-support) table says which Harnesses this has been run against. Update that section when probe-harness results or `launch()` names/commands change.
 
 The `probe` folder keeps the session file and the Action Log out of a real install's. Memory is not isolated: the MCP server resolves `memory.md` from the data folder, so a `remember` during a probe writes the real one.
 
@@ -461,6 +463,10 @@ Single build with runtime lane selection. XWayland usually answers. Wayland-only
 ### Windows
 
 NSIS installer ships. Some cells stub/degraded (see platform table in main README). Shell binary is real; stubs are about overlay depth.
+
+#### Harness Process Termination
+
+On Windows, the ACP Harness child and its descendants (e.g. `npx` spawning Node) are assigned to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` at create time. The process is spawned suspended, assigned to the job, then resumed before any user code runs. When the app quits or the Harness is detached, terminating the job ensures grandchildren do not linger. The child is also in its own process group (`CREATE_NEW_PROCESS_GROUP`) so Ctrl+C into `cargo run` does not interrupt it.
 
 ## Further Reading
 

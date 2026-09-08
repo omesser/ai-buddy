@@ -15,6 +15,7 @@ use gtk::{
 };
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -91,6 +92,7 @@ impl SettingsWindow {
         });
 
         this.build_ui();
+        install_move_drag(&this.window);
         this
     }
 
@@ -836,9 +838,14 @@ impl SettingsWindow {
         self.window.present();
     }
 
-    fn set_session(&self, session: SettingsSession) {
+    /// `fresh` is a window built this instant: its fields are still empty, so
+    /// nothing on the Director tab is staged and the first draw has to fill
+    /// every row. Read back as staged instead, they leave the tab showing
+    /// placeholders and arm Apply over a patch of empty strings (#530). A
+    /// window that was already open keeps whatever the user left staged.
+    fn set_session(&self, session: SettingsSession, fresh: bool) {
         *self.session.lock().unwrap() = Some(session);
-        self.refresh();
+        self.draw(fresh);
     }
 
     /// Redraw from live state, leaving anything staged on the Director tab
@@ -1241,11 +1248,11 @@ fn show_internal(session: SettingsSession) {
     WINDOW.with(|cell| {
         let mut borrow = cell.borrow_mut();
         if let Some(existing) = borrow.as_ref() {
-            existing.set_session(session);
+            existing.set_session(session, false);
             existing.show();
         } else {
             let window = SettingsWindow::new();
-            window.set_session(session);
+            window.set_session(session, true);
             window.show();
             *borrow = Some(window);
         }
@@ -1269,5 +1276,47 @@ fn reset_director_tab() {
         if let Some(window) = cell.borrow().as_ref() {
             window.draw(true);
         }
+    });
+}
+
+fn widget_keeps_the_press(widget: &gtk::Widget) -> bool {
+    if widget.is::<gtk::Entry>()
+        || widget.is::<gtk::TextView>()
+        || widget.is::<gtk::Button>()
+        || widget.is::<gtk::ComboBox>()
+        || widget.is::<gtk::Scale>()
+        || widget.is::<gtk::SpinButton>()
+        || widget.is::<gtk::Switch>()
+        || widget.is::<gtk::Notebook>()
+    {
+        return true;
+    }
+    widget.is::<gtk::Label>() && widget.parent().is_some_and(|p| p.is::<gtk::Notebook>())
+}
+
+fn install_move_drag(window: &Window) {
+    window.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+    let win = window.clone();
+    window.connect_button_press_event(move |_, event| {
+        if event.button() != 1 {
+            return gtk::glib::Propagation::Proceed;
+        }
+        let super_held = event.state().contains(gtk::gdk::ModifierType::MOD4_MASK);
+        let mut ev = event.clone();
+        let hit = gtk::event_widget(&mut ev)
+            .map(|widget| {
+                if widget_keeps_the_press(&widget) {
+                    Hit::Control
+                } else {
+                    Hit::Background
+                }
+            })
+            .unwrap_or(Hit::Background);
+        if should_begin_move(super_held, hit) {
+            let (x, y) = event.root();
+            win.begin_move_drag(event.button() as i32, x as i32, y as i32, event.time());
+            return gtk::glib::Propagation::Stop;
+        }
+        gtk::glib::Propagation::Proceed
     });
 }

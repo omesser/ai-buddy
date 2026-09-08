@@ -54,7 +54,9 @@ the mind out from under it.
 Choosing Off in Settings is the user naming the HTTP Completer. That drop
 happens in this process: the handle is shut down and Retarget installs the
 HTTP Completer. It is not a dead session falling through unasked. Switching
-to a different Harness still waits for the next launch.
+to a different Harness does the same, in this process — the third option
+above, taken up in #500. Aliveness is still not an input: a dead child is
+retried, never traded for a second mind.
 
 Reversing this means living with split-brain, or rewriting how #15–#17
 talk to a model.

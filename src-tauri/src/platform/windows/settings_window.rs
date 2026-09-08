@@ -10,29 +10,34 @@ use std::ffi::CString;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ,
-    HMONITOR, MONITORINFO,
+    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, ScreenToClient,
+    UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ, HMONITOR, MONITORINFO,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
 use windows_sys::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
 use windows_sys::Win32::UI::Controls::{
-    TCIF_TEXT, TCITEMA, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_INSERTITEMA, WC_TABCONTROLA,
+    TCHITTESTINFO, TCHT_ONITEM, TCIF_TEXT, TCITEMA, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_HITTEST,
+    TCM_INSERTITEMA, WC_TABCONTROLA,
 };
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, DestroyWindow, GetClientRect, GetDlgItem, GetWindow, GetWindowLongPtrA,
-    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
-    SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
-    BS_AUTOCHECKBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE,
-    ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, IDYES,
+    ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
+    GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowTextA,
+    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
+    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
+    CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD,
+    ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES,
     MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
-    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE,
-    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_CTLCOLORSTATIC, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER,
+    WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
+use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -49,6 +54,8 @@ const INSPECT_BLOCK_HEIGHT: i32 = 100;
 
 const ID_TAB_CONTROL: i32 = 100;
 const ID_BASE: i32 = 2000;
+/// STATIC swallows BN_CLICKED; Dismiss is a child of this host. #460
+const INSTANCES_LIST_CLASS: &std::ffi::CStr = c"AiBuddySettingsList";
 const TCN_SELCHANGE_CODE: u32 = 0xFFFFFDDA_u32.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
 const SS_LEFT: u32 = 0x0;
@@ -93,9 +100,14 @@ impl SettingsWindow {
         })
     }
 
-    fn set_session(&self, session: SettingsSession) {
+    /// `fresh` is a window built this instant: its controls are still empty,
+    /// so nothing on the Director tab is staged and the first draw has to fill
+    /// every row. Read back as staged instead, they leave the tab showing
+    /// placeholders and arm Apply over a patch of empty strings (#530). A
+    /// window that was already open keeps whatever the user left staged.
+    fn set_session(&self, session: SettingsSession, fresh: bool) {
         *self.session.lock().unwrap() = Some(session);
-        self.refresh();
+        self.draw(fresh);
     }
 
     fn refresh(&self) {
@@ -600,7 +612,7 @@ pub fn show(session: SettingsSession) {
     WINDOW.with(|cell| {
         let mut borrow = cell.borrow_mut();
         if let Some(existing) = borrow.as_ref() {
-            existing.set_session(session);
+            existing.set_session(session, false);
             unsafe {
                 ShowWindow(existing.hwnd, SW_SHOW);
                 BringWindowToTop(existing.hwnd);
@@ -705,6 +717,26 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
             }
         }
 
+        let list_wc = WNDCLASSA {
+            style: 0,
+            lpfnWndProc: Some(list_host_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: hinstance,
+            hIcon: ptr::null_mut(),
+            hCursor: ptr::null_mut(),
+            hbrBackground: (5 + 1) as _,
+            lpszMenuName: ptr::null(),
+            lpszClassName: INSTANCES_LIST_CLASS.as_ptr() as *const u8,
+        };
+        let list_result = windows_sys::Win32::UI::WindowsAndMessaging::RegisterClassA(&list_wc);
+        if list_result == 0 {
+            let error = windows_sys::Win32::Foundation::GetLastError();
+            if error != 1410 {
+                return Err(format!("Failed to register list host class: {}", error));
+            }
+        }
+
         let (x, y) = get_secondary_monitor_position().unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
 
         let hwnd = CreateWindowExA(
@@ -732,7 +764,7 @@ fn create_window(session: SettingsSession) -> Result<Arc<SettingsWindow>, String
 
         build_ui(hwnd, &window)?;
 
-        window.set_session(session);
+        window.set_session(session, true);
 
         Ok(window)
     }
@@ -1056,7 +1088,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::List { id, help, .. } => {
                             let container_hwnd = CreateWindowExA(
                                 0,
-                                c"STATIC".as_ptr() as *const u8,
+                                INSTANCES_LIST_CLASS.as_ptr() as *const u8,
                                 ptr::null(),
                                 WS_CHILD | WS_VISIBLE,
                                 display_left,
@@ -1431,6 +1463,119 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
     }
 }
 
+fn caption_hit_test(alt_held: bool, hit: Hit) -> LRESULT {
+    if should_begin_move(alt_held, hit) {
+        HTCAPTION as LRESULT
+    } else {
+        HTCLIENT as LRESULT
+    }
+}
+
+/// `tab_on_item` is only meaningful for the tab control; ignored otherwise. #460.
+fn hit_from_win32(class: &str, tab_on_item: bool) -> Hit {
+    match class {
+        "Edit" | "Button" | "ComboBox" => Hit::Control,
+        "SysTabControl32" => {
+            if tab_on_item {
+                Hit::Control
+            } else {
+                Hit::Background
+            }
+        }
+        _ => Hit::Background,
+    }
+}
+
+/// Map a parent-client point into a child's client space. Same subtraction
+/// `MapWindowPoints` does; the live path uses ClientToScreen/ScreenToClient
+/// because it has HWNDs. #460
+#[cfg(test)]
+fn map_into_child_client(pt_in_parent: POINT, child_origin_in_parent: POINT) -> POINT {
+    POINT {
+        x: pt_in_parent.x - child_origin_in_parent.x,
+        y: pt_in_parent.y - child_origin_in_parent.y,
+    }
+}
+
+fn hit_at(hwnd: HWND, lparam: LPARAM) -> Hit {
+    let screen = POINT {
+        x: lparam as i16 as i32,
+        y: (lparam >> 16) as i16 as i32,
+    };
+    let mut pt = screen;
+    // SAFETY: `pt` is a stack POINT the API writes in place.
+    unsafe {
+        ScreenToClient(hwnd, &mut pt);
+    }
+    // SAFETY: parent is our settings HWND; the POINT is in its client space.
+    let mut origin = hwnd;
+    let mut child = unsafe { ChildWindowFromPointEx(hwnd, pt, CWP_SKIPINVISIBLE) };
+    if child.is_null() || child == hwnd {
+        return Hit::Background;
+    }
+
+    // Instances' Dismiss is a BUTTON inside the list host. ChildWindowFromPointEx
+    // wants the child's client space; ScreenToClient on an already-client point
+    // treats it as screen and misses the button. #460
+    loop {
+        // SAFETY: `pt` is origin-client; the pair writes it to child-client.
+        unsafe {
+            ClientToScreen(origin, &mut pt);
+            ScreenToClient(child, &mut pt);
+        }
+        // SAFETY: `child` is a live descendant of `hwnd`; `pt` is in its client space.
+        let nested = unsafe { ChildWindowFromPointEx(child, pt, CWP_SKIPINVISIBLE) };
+        if nested.is_null() || nested == child {
+            break;
+        }
+        origin = child;
+        child = nested;
+    }
+    let mut buf = [0u8; 256];
+    // SAFETY: buffer is a writable C string of known size.
+    let n = unsafe { GetClassNameA(child, buf.as_mut_ptr(), buf.len() as i32) };
+    if n <= 0 {
+        return Hit::Background;
+    }
+    let class = std::str::from_utf8(&buf[..n as usize]).unwrap_or("");
+    let tab_on_item = if class == "SysTabControl32" {
+        let mut tab_pt = screen;
+        // SAFETY: `child` is the tab control still owned by this window.
+        unsafe {
+            ScreenToClient(child, &mut tab_pt);
+        }
+        let mut info = TCHITTESTINFO {
+            pt: tab_pt,
+            flags: 0,
+        };
+        // SAFETY: `info` lives for the SendMessage; TCM_HITTEST only reads/writes it.
+        unsafe {
+            SendMessageA(child, TCM_HITTEST, 0, &mut info as *mut _ as LPARAM);
+        }
+        info.flags & TCHT_ONITEM != 0
+    } else {
+        false
+    };
+    hit_from_win32(class, tab_on_item)
+}
+
+unsafe extern "system" fn list_host_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    // SAFETY: hwnd is the list host we registered; its parent is Settings.
+    unsafe {
+        if msg == WM_COMMAND || msg == WM_CTLCOLORSTATIC {
+            // Parent is the Settings HWND that created this host.
+            SendMessageA(GetParent(hwnd), msg, wparam, lparam)
+        } else {
+            DefWindowProcA(hwnd, msg, wparam, lparam)
+        }
+    }
+}
+
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
@@ -1440,6 +1585,16 @@ unsafe extern "system" fn window_proc(
     use windows_sys::Win32::UI::WindowsAndMessaging::{WM_CREATE, WM_DESTROY};
     match msg {
         WM_CREATE => 0,
+        WM_NCHITTEST => {
+            let def = windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcA(
+                hwnd, msg, wparam, lparam,
+            );
+            if def != HTCLIENT as LRESULT {
+                return def;
+            }
+            let alt = GetAsyncKeyState(VK_MENU as i32) < 0;
+            caption_hit_test(alt, hit_at(hwnd, lparam))
+        }
         WM_COMMAND => {
             let window_ptr = GetWindowLongPtrA(hwnd, GWLP_USERDATA);
             if window_ptr != 0 {
@@ -1674,6 +1829,84 @@ mod tests {
         assert!(
             !should_update_label_text("composite_help_45"),
             "all composite_help_* labels must be preserved"
+        );
+    }
+
+    #[test]
+    fn alt_on_background_is_caption() {
+        assert_eq!(
+            caption_hit_test(true, Hit::Background),
+            HTCAPTION as LRESULT
+        );
+    }
+
+    #[test]
+    fn without_alt_stays_client() {
+        assert_eq!(
+            caption_hit_test(false, Hit::Background),
+            HTCLIENT as LRESULT
+        );
+    }
+
+    #[test]
+    fn alt_on_a_control_stays_client() {
+        assert_eq!(caption_hit_test(true, Hit::Control), HTCLIENT as LRESULT);
+    }
+
+    #[test]
+    fn edit_button_and_combo_are_controls() {
+        for class in ["Edit", "Button", "ComboBox"] {
+            assert_eq!(
+                hit_from_win32(class, false),
+                Hit::Control,
+                "{class} must keep the press"
+            );
+        }
+    }
+
+    #[test]
+    fn tab_item_is_a_control_empty_tab_body_is_background() {
+        assert_eq!(hit_from_win32("SysTabControl32", true), Hit::Control);
+        assert_eq!(hit_from_win32("SysTabControl32", false), Hit::Background);
+    }
+
+    #[test]
+    fn a_static_label_is_background() {
+        assert_eq!(hit_from_win32("Static", false), Hit::Background);
+    }
+
+    #[test]
+    fn a_nested_dismiss_click_maps_into_the_button_not_the_container() {
+        // List host at display_left (= 2*MARGIN); Dismiss at (FIELD_WIDTH-90, 0).
+        let container_in_window = POINT {
+            x: MARGIN * 2,
+            y: 200,
+        };
+        let dismiss_in_container = POINT {
+            x: FIELD_WIDTH - 90,
+            y: 0,
+        };
+        let click_in_window = POINT {
+            x: container_in_window.x + dismiss_in_container.x + 4,
+            y: container_in_window.y + 8,
+        };
+        let in_container = map_into_child_client(click_in_window, container_in_window);
+        assert_eq!(in_container.x, dismiss_in_container.x + 4);
+        assert_eq!(in_container.y, 8);
+        let in_button = map_into_child_client(in_container, dismiss_in_container);
+        assert_eq!(in_button.x, 4);
+        assert_eq!(in_button.y, 8);
+        // Window-client y handed to the list host as client y misses a first-row
+        // button (ROW_HEIGHT tall at y=0). #460
+        assert!(click_in_window.y > ROW_HEIGHT);
+    }
+
+    #[test]
+    fn a_list_host_is_background_and_not_static() {
+        assert_ne!(INSTANCES_LIST_CLASS.to_bytes(), b"STATIC");
+        assert_eq!(
+            hit_from_win32(INSTANCES_LIST_CLASS.to_str().unwrap(), false),
+            Hit::Background
         );
     }
 }

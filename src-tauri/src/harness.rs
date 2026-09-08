@@ -13,6 +13,7 @@
 //! reads a credential, or calls `authenticate`; `auth_required` becomes a
 //! command the user runs in their own terminal (ADR-0010's eight rules).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,6 +59,17 @@ const HANDOVER_POLL: Duration = Duration::from_millis(20);
 /// What every caller is told when the child is gone.
 const LOST: &str = "harness exited";
 
+/// How long a withdrawal waits for the `parsed` line that belongs to it. The
+/// Shell writes that line frames after the turn ended, so this only has to
+/// outlast one frame; it is generous because the cost of being wrong is one
+/// mislabelled wake, not a leak (the map is one entry per Instance).
+const WITHDRAWAL_GRACE: Duration = Duration::from_secs(30);
+
+/// The stop reason a cancelled turn comes back with. A turn the Completer gave
+/// up waiting on is `TurnError::Timeout` instead, so this reason on a turn is
+/// always a cancel someone else asked for.
+const CANCELLED: &str = "cancelled";
+
 /// Which Harness, and the command line that starts it in ACP mode.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Launch {
@@ -72,13 +84,28 @@ pub struct Launch {
 /// command line of the user's own, which is how Grok Build, Copilot CLI and
 /// Gemini CLI attach until they are smoked; Pi and Codex are deferred
 /// (ADR-0017).
+///
+/// The README's Harness Support table is this table's user-facing half and is
+/// maintained by hand: a name or command changed here, or a new
+/// `scripts/probe-harness.sh` standing, has to be carried over there too.
+/// Named rows show the vendor's own Simple Icons mark, unrecoloured — and no
+/// mark at all when the vendor has none, which is why Grok Build sits there
+/// bare. The only near-match is `ngrok`, an unrelated product.
 pub fn launch(value: Option<&str>) -> Option<Launch> {
     let value = value?.trim();
     let (name, argv): (&str, Vec<&str>) = match value {
         "" => return None,
+        // `@latest` is load-bearing: npx serves whatever it cached the first
+        // time, and the adapter bundles the Claude Code it was built against,
+        // so a cache from months ago answers every turn `API Error: 400 ...
+        // does not support this model` for a model newer than that CLI —
+        // which `claude update` cannot fix, because it updates a different
+        // install. One registry round-trip per spawn buys a Harness that
+        // matches the configured model (#514). Pinning a version drifts the
+        // same way in slower motion.
         "claude" => (
             value,
-            vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+            vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"],
         ),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
@@ -105,15 +132,6 @@ pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
         Ok(exported) => launch(Some(&exported)),
         Err(_) => launch(saved),
     }
-}
-
-/// The command line the source in force would spawn, or `None` for Off.
-///
-/// For a window that has to say whether what is attached is what the row now
-/// asks for. Compared against `HarnessInspect::command`, which is the same
-/// join.
-pub fn wanted_command(saved: Option<&str>) -> Option<String> {
-    from_settings(saved).map(|launch| launch.line())
 }
 
 impl Launch {
@@ -154,6 +172,12 @@ fn isolate_from_interrupt(command: &mut Command) {
     apply_isolation(command, INTERRUPT_OWNED.load(Ordering::SeqCst));
 }
 
+#[cfg(windows)]
+pub(crate) fn get_creation_flags() -> u32 {
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    CREATE_NEW_PROCESS_GROUP
+}
+
 fn apply_isolation(command: &mut Command, isolate: bool) {
     if !isolate {
         return;
@@ -166,9 +190,10 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // CREATE_NEW_PROCESS_GROUP is not a Unix process-group twin.
-        // Grandchildren still need a Job Object if they linger; this PR
-        // has not smoked Ctrl+C on Windows.
+        // Job Object is created and assigned at spawn time via CREATE_SUSPENDED
+        // in `acp_wire::windows_job::spawn_in_job` (#517), ensuring descendants
+        // die on shutdown (#515). Still in a new process group so Ctrl+C does
+        // not reach the child.
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
@@ -186,6 +211,11 @@ pub struct HarnessInspect {
     /// Whether `initialize` offered HTTP MCP. #166 branches on it.
     pub mcp_http: bool,
     pub alive: bool,
+    /// What the last turn came back with, when it came back with an error, and
+    /// `None` once a turn answers. A Harness that refuses every prompt is
+    /// attached, alive and authenticated, so nothing else here tells it apart
+    /// from one that is proposing nothing (#514).
+    pub last_error: Option<String>,
 }
 
 /// What `harness-session.json` holds: a pointer at the Harness's own session.
@@ -229,6 +259,15 @@ pub struct Session {
     /// the lock rather than inside it because it is read exactly when the lock
     /// cannot be taken, which is the moment the ordering rule is decided.
     serving_reactive: AtomicBool,
+    /// The Instance a cancel has just gone out for, until the turn it cancels
+    /// names itself. One slot, because one prompt is in flight at a time.
+    withdrawing: Mutex<Option<String>>,
+    /// Withdrawn turn to the Instance whose wake took the session, from the
+    /// turn that lost it until the `parsed` line for that wake. Keyed by loser
+    /// rather than kept in the slot above, because a later cancel would erase
+    /// a withdrawal whose `parsed` line has not been written yet — leaving a
+    /// `turn` line that says withdrawn beside a `parsed` line that says failed.
+    withdrawn: Mutex<HashMap<String, (String, Instant)>>,
     /// Bookkeeping, and the blocking `initialize`/`session/*` hop under it, so
     /// two wakes cannot open two sessions.
     state: Mutex<State>,
@@ -265,7 +304,7 @@ impl State {
 }
 
 impl Session {
-    pub fn new(launch: Launch, dir: PathBuf, forward: Forward) -> Self {
+    pub fn new(launch: Launch, dir: PathBuf, forward: Arc<Forward>) -> Self {
         let inspect = HarnessInspect {
             name: launch.name.clone(),
             command: launch.line(),
@@ -274,13 +313,15 @@ impl Session {
         Self {
             launch,
             dir,
-            forward: Arc::new(forward),
+            forward,
             timeout: crate::dev_flags::director_timeout_secs()
                 .map_or(crate::model::TIMEOUT, Duration::from_secs),
             auth_retry: AUTH_RETRY,
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
+            withdrawing: Mutex::new(None),
+            withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
             wire: Mutex::new(None),
             inspect: Mutex::new(inspect),
@@ -374,17 +415,62 @@ impl Session {
         if !request.reactive && self.serving_reactive.load(Ordering::SeqCst) {
             return None;
         }
-        self.current_wire()?.cancel();
+        let wire = self.current_wire()?;
+        self.note_withdrawal(Some(request.instance.clone()));
+        wire.cancel();
         let until = Instant::now() + HANDOVER;
         loop {
             if let Ok(turn) = self.turn.try_lock() {
                 return Some(turn);
             }
             if Instant::now() >= until {
+                // A Harness that ignored the cancel keeps its turn, so no turn
+                // was withdrawn for this wake and the next cancelled one must
+                // not be read as though it were.
+                self.note_withdrawal(None);
                 return None;
             }
             thread::sleep(HANDOVER_POLL);
         }
+    }
+
+    /// Say that the turn in flight is being taken for `winner`'s wake, or that
+    /// no turn was taken after all.
+    ///
+    /// Written before the cancel goes out, because the loser holds the turn
+    /// lock until it has written its own log line: anything set after the
+    /// handover would be too late for the turn that has to read it.
+    fn note_withdrawal(&self, winner: Option<String>) {
+        if let Ok(mut slot) = self.withdrawing.lock() {
+            *slot = winner;
+        }
+    }
+
+    /// The Instance a turn of `loser`'s was withdrawn for, named by the turn
+    /// itself and kept for the `parsed` line the Shell writes for that wake.
+    fn claim_withdrawn_turn(&self, loser: &str, reason: &str) -> Option<String> {
+        if reason != CANCELLED {
+            return None;
+        }
+        let winner = self.withdrawing.lock().ok()?.take()?;
+        if let Ok(mut withdrawn) = self.withdrawn.lock() {
+            withdrawn.insert(loser.to_string(), (winner.clone(), Instant::now()));
+        }
+        Some(winner)
+    }
+
+    /// The same withdrawal, taken by the wake that lost the session.
+    ///
+    /// Taken rather than read, for the reason the `turn` line is written once:
+    /// one wake leaves one line, so a withdrawal cannot colour the next wake
+    /// this Instance takes (#435).
+    ///
+    /// The grace bounds the one entry no `parsed` line ever comes for: the
+    /// Shell drops a reply the Instance has already moved past (ADR-0016), and
+    /// the next failed wake for that Instance is a different wake.
+    fn claim_withdrawn_wake(&self, instance: &str) -> Option<String> {
+        let (winner, at) = self.withdrawn.lock().ok()?.remove(instance)?;
+        (at.elapsed() < WITHDRAWAL_GRACE).then_some(winner)
     }
 
     /// One turn. The whole of `Completer::complete`, minus the trace.
@@ -417,7 +503,8 @@ impl Session {
             }
             _ => (session_id, outcome),
         };
-        match outcome {
+        let mut withdrawn = false;
+        let answer = match outcome {
             Ok(text) => {
                 action_log::append(&self.dir, "turn", json!({"text": text}));
                 Ok(text)
@@ -431,7 +518,19 @@ impl Session {
                 ))
             }
             Err(TurnError::Stopped(reason)) => {
-                action_log::append(&self.dir, "turn", json!({"stop": reason}));
+                // One session serves every Instance (ADR-0008), so a cancel
+                // sent for another buddy's wake reaches this turn without
+                // anything having superseded this Instance's own slot. The
+                // outcome is a wake with nothing to show either way; the log
+                // line is what has to say the turn was given up rather than
+                // broken (#499).
+                let withdrawn_for = self.claim_withdrawn_turn(&request.instance, &reason);
+                withdrawn = withdrawn_for.is_some();
+                action_log::append(
+                    &self.dir,
+                    "turn",
+                    json!({"stop": reason, "withdrawn_for": withdrawn_for}),
+                );
                 Err(format!("harness stopped: {reason}"))
             }
             Err(TurnError::Busy) => Err("harness busy".to_string()),
@@ -439,7 +538,20 @@ impl Session {
                 action_log::append(&self.dir, "turn", json!({"error": why}));
                 Err(format!("harness: {why}"))
             }
-        }
+        };
+        // Kept for the readers on the other side of the Completer, which is
+        // where `Result<String, String>` narrows to "no proposal" (#514).
+        //
+        // A withdrawal is not among them. The turn came back `cancelled`
+        // because we cancelled it, so naming that to the Chat surface would
+        // report the buddy that won the session as a fault the Harness
+        // reported (#499).
+        self.update_inspect(|inspect| {
+            inspect.last_error = (!withdrawn)
+                .then(|| answer.as_ref().err().cloned())
+                .flatten();
+        });
+        answer
     }
 
     /// One `session/prompt` on the session `attach` hands over: the id it went
@@ -788,11 +900,11 @@ pub fn run_probe() -> i32 {
         // then times out with the turn, which is itself the report. A
         // settlement earns no line, because the only one a probe can reach is
         // that timeout.
-        Box::new(|permission| {
+        Arc::new(Box::new(|permission| {
             if let Permission::Ask(ask) = permission {
                 println!("  permission   {} [{}]", ask.title, ask.request);
             }
-        }),
+        }) as Forward),
     );
     let code = probe(&session);
     session.shutdown();
@@ -927,17 +1039,37 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
 /// `crates/core` parses and does no I/O. A Harness session writes beside
 /// that session; an HTTP wake writes to the same data dir Memory uses (#435).
 pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) {
-    let dir = attached()
+    let session = attached();
+    let dir = session
+        .as_ref()
         .map(|session| session.dir.clone())
         .unwrap_or_else(ai_buddy_core::memory::data_dir);
+    // Both asked here rather than carried through `crates/core`: the caller has
+    // the wake and not the words, whose wake took the session is a property of
+    // the one Harness session, and this already holds the session that knows
+    // each (#514, #499).
+    let withdrawn_for = match (&session, wake) {
+        (Some(session), Wake::Failed) => session.claim_withdrawn_wake(instance),
+        _ => None,
+    };
+    let error = matches!(wake, Wake::Failed)
+        .then(|| session.and_then(|session| session.inspect().last_error))
+        .flatten();
     action_log::append(
         &dir,
         "parsed",
-        parsed_fields(instance, wake, reactive, near_miss),
+        parsed_fields(
+            instance,
+            wake,
+            reactive,
+            near_miss,
+            error.as_deref(),
+            withdrawn_for.as_deref(),
+        ),
     );
 }
 
-/// The four answers the Shell has to "what did the reply parse to".
+/// The six answers the Shell has to "what did the reply parse to".
 ///
 /// A Near Miss is its own outcome and not `speech`, though it arrives as
 /// speech: a Character that declares `prowl` and a model that answers `prowll`
@@ -948,15 +1080,38 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
 /// own — `refused`, `timeout`, or a `turn` carrying the stop reason — written
 /// where the failure was seen.
 ///
+/// `error` is the fifth, and the one a reader cannot join to anything: the
+/// Harness answered, and its answer was an error. #514 read as `failed` for a
+/// day of wakes, so the line carries the words as well as the verdict.
+///
+/// `withdrawn` is the sixth and the one failure that is not one: the turn was
+/// cancelled so another Instance's wake could be answered, which the Instance
+/// named in `withdrawn_for` won. The buddy falls back to static weights either
+/// way, and a reader can now tell that from a turn that broke (#499).
+///
+/// It outranks `error` because our own cancel reaches this function as one. The
+/// turn came back `harness stopped: cancelled`, which is a Harness reporting
+/// what we asked it to do, so a line reading `error` there would name the buddy
+/// that won the session as a fault.
+///
 /// The wake kind rides along so a reader can join this to the `prompt` or
 /// `refused` line for the same wake.
-fn parsed_fields(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<&str>) -> Value {
+fn parsed_fields(
+    instance: &str,
+    wake: &Wake,
+    reactive: bool,
+    near_miss: Option<&str>,
+    error: Option<&str>,
+    withdrawn_for: Option<&str>,
+) -> Value {
     let (result, behavior) = match (near_miss, wake) {
         (Some(named), _) => ("near_miss", Some(named)),
         (None, Wake::Proposed(proposal)) if !proposal.behavior.is_empty() => {
             ("proposal", Some(proposal.behavior.as_str()))
         }
         (None, Wake::Proposed(_)) => ("speech", None),
+        (None, Wake::Failed) if withdrawn_for.is_some() => ("withdrawn", None),
+        (None, Wake::Failed) if error.is_some() => ("error", None),
         (None, Wake::Failed) => ("failed", None),
     };
     json!({
@@ -964,6 +1119,10 @@ fn parsed_fields(instance: &str, wake: &Wake, reactive: bool, near_miss: Option<
         "wake": wake_kind(reactive),
         "result": result,
         "behavior": behavior,
+        // The cancel we sent is not words the Harness chose, so a withdrawal
+        // carries none. `withdrawn_for` is the whole account of that line.
+        "error": withdrawn_for.is_none().then_some(error).flatten(),
+        "withdrawn_for": withdrawn_for,
     })
 }
 
@@ -1036,52 +1195,127 @@ fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
     })
 }
 
-static ATTACHED: Mutex<Option<Arc<Session>>> = Mutex::new(None);
-static ATTACH_STARTED: AtomicBool = AtomicBool::new(false);
+/// The one attachment, and what it needs to be opened again.
+///
+/// `forward` outlives the Session it was handed to: it belongs to the Shell's
+/// window handle, not to any one child, and `retarget` has no other way to get
+/// one (#500).
+struct Attachment {
+    session: Option<Arc<Session>>,
+    forward: Option<Arc<Forward>>,
+}
 
-/// Read the source once — the variable, else `saved` from Settings — and hold
-/// the Session until Off or process exit.
+static ATTACHED: Mutex<Attachment> = Mutex::new(Attachment {
+    session: None,
+    forward: None,
+});
+
+fn attachment() -> MutexGuard<'static, Attachment> {
+    ATTACHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Read the source — the variable, else `saved` from Settings — and hold the
+/// Session until the row moves it or the process exits.
 ///
 /// A process global rather than a field threaded through `DirectorSettings`:
 /// the session is one per app (ADR-0008), and a Retarget from Settings
-/// rebuilds `DirectorSettings` from scratch, which would drop a field. Switching
-/// to a different Harness still waits for the next launch (#436). Off is
-/// `detach` (#500).
+/// rebuilds `DirectorSettings` from scratch, which would drop a field. The row
+/// reaches it through `retarget` (#500).
 pub fn attach(saved: Option<String>, forward: Forward) -> Option<Arc<Session>> {
-    let mut slot = ATTACHED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if ATTACH_STARTED.swap(true, Ordering::SeqCst) {
-        return slot.clone();
+    let mut slot = attachment();
+    if slot.forward.is_some() {
+        return slot.session.clone();
     }
-    *slot = from_settings(saved.as_deref()).map(|launch| {
+    let forward = Arc::new(forward);
+    slot.forward = Some(Arc::clone(&forward));
+    slot.session = open(from_settings(saved.as_deref()), forward);
+    slot.session.clone()
+}
+
+fn open(launch: Option<Launch>, forward: Arc<Forward>) -> Option<Arc<Session>> {
+    launch.map(|launch| {
         Arc::new(Session::new(
             launch,
             ai_buddy_core::memory::data_dir(),
             forward,
         ))
-    });
-    slot.clone()
+    })
+}
+
+/// What a Completer source row now in force asks of the attachment.
+///
+/// Whether the child is alive is deliberately not an input, and that is the
+/// decision #500 turns on: a Harness that is set and not answering is still
+/// the Completer (ADR-0008), and `Session::attach` respawns it on its own
+/// backoff. So `Drop` — the one arm that leaves the HTTP Completer in charge —
+/// is only ever reached by a row that names no Harness, which is the user
+/// picking Off and not a session failing.
+#[derive(Debug, PartialEq, Eq)]
+enum Reattach {
+    /// The row still names what is attached. A dead one included: a fresh
+    /// Session for the same command line would throw away the backoff the old
+    /// one earned and respawn on every Apply.
+    Stand,
+    Drop,
+    Open(Launch),
+}
+
+fn reattach(attached: Option<&Launch>, wanted: Option<Launch>) -> Reattach {
+    match wanted {
+        None if attached.is_none() => Reattach::Stand,
+        None => Reattach::Drop,
+        Some(launch) if attached == Some(&launch) => Reattach::Stand,
+        Some(launch) => Reattach::Open(launch),
+    }
+}
+
+/// Re-open the attachment for the Completer source now in force. #500.
+///
+/// The handle `attach` took at startup used to be the app's for its lifetime,
+/// so a row naming a different Harness — or a custom command line with a typo
+/// in it — waited for a relaunch (#436), and after #510 made Off a live drop
+/// there was no way back to a Harness at all. This is the whole of what moves
+/// it. A wire that dies is not: that is the Session's own business, and the
+/// respawn `charge_loss` paces needs nothing from here.
+///
+/// `spawning` is the Director's switch, as it is for `startup_lines`: opening
+/// a session no wake will ever reach spends a child process for nothing.
+pub fn retarget(saved: Option<&str>, spawning: bool) {
+    let wanted = from_settings(saved);
+    let mut slot = attachment();
+    // The probe and the tests never call `attach`, so there is no forward to
+    // rebuild a Session with and nothing of theirs to move.
+    let Some(forward) = slot.forward.clone() else {
+        return;
+    };
+    let attached = slot.session.as_ref().map(|session| session.launch.clone());
+    let opened = match reattach(attached.as_ref(), wanted) {
+        Reattach::Stand => return,
+        Reattach::Drop => None,
+        Reattach::Open(launch) => open(Some(launch), forward),
+    };
+    // Swapped under the one lock `attached` reads: a gap here is a wake landing
+    // on the HTTP Completer that nobody chose, which is what ADR-0008 refuses.
+    let old = std::mem::replace(&mut slot.session, opened.clone());
+    drop(slot);
+    if let Some(old) = old {
+        old.shutdown();
+    }
+    match &opened {
+        None => eprintln!("harness: detached; HTTP Completer is the Director's mind"),
+        Some(session) => {
+            eprintln!("harness: {} is the Completer now", session.launch.line());
+            if spawning {
+                session.spawn_preflight();
+            }
+        }
+    }
 }
 
 pub fn attached() -> Option<Arc<Session>> {
-    ATTACHED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
-}
-
-/// Drop the attached handle so the HTTP Completer is the mind. #500.
-pub fn detach() {
-    let Some(session) = ATTACHED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .take()
-    else {
-        return;
-    };
-    session.shutdown();
-    eprintln!("harness: detached; HTTP Completer is the Director's mind");
+    attachment().session.clone()
 }
 
 /// Whether an attached Harness is actually answering, not merely configured.
@@ -1097,6 +1331,16 @@ pub fn detach() {
 /// next wake respawns.
 pub fn driving() -> bool {
     attached().is_some_and(|session| session.inspect().alive)
+}
+
+/// The error the attached Harness answered the last turn with, if it did.
+///
+/// The Completer seam hands core a bare `Err`, and core has one word for every
+/// way a wake can produce no proposal. So a version refusal, a signed-out CLI
+/// and an unparsable reply all reach the Shell as `Wake::Failed` — and the day
+/// #514 describes is what that costs. Read only where the wake failed.
+pub fn last_error() -> Option<String> {
+    attached().and_then(|session| session.inspect().last_error)
 }
 
 /// What `startup_lines` says about the attachment, if there is one.
@@ -1356,9 +1600,9 @@ mod tests {
             let session = Session::new(
                 launch,
                 dir.clone(),
-                Box::new(move |permission| {
+                Arc::new(Box::new(move |permission| {
                     let _ = tx.send(permission);
-                }),
+                }) as Forward),
             )
             .with_timeout(Duration::from_secs(10));
             (
@@ -1412,6 +1656,11 @@ mod tests {
         }
     }
 
+    /// A Session for a test that never reaches a permission request.
+    fn silent() -> Arc<Forward> {
+        Arc::new(Box::new(|_| {}) as Forward)
+    }
+
     /// One reactive wake for `buddy-1`, which is every turn a test sends.
     fn asking(prompt: &str) -> WakeRequest {
         WakeRequest {
@@ -1445,13 +1694,48 @@ mod tests {
         assert_eq!(claude.name, "claude");
         assert_eq!(
             claude.argv,
-            ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+            ["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"]
         );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
         assert_eq!(custom.name, "my-agent");
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
+    }
+
+    /// #500's whole policy, at the seam that decides it. Asserted through
+    /// `reattach` rather than a live retarget: the attachment is a process
+    /// global one test may not set for the whole binary.
+    ///
+    /// The two `Stand` cases are the ADR-0008 half. A Harness that is set is
+    /// the Completer whether or not its child answers, so nothing here can
+    /// reach `Drop` from a death — only from a row that names no Harness.
+    #[test]
+    fn only_the_source_row_moves_the_attachment_and_only_off_drops_it() {
+        let hermes = launch(Some("hermes")).unwrap();
+        let opencode = launch(Some("opencode")).unwrap();
+
+        assert_eq!(reattach(None, None), Reattach::Stand);
+        assert_eq!(
+            reattach(Some(&hermes), Some(hermes.clone())),
+            Reattach::Stand,
+            "a dead child is the Session's own retry, not a reason to rebuild it"
+        );
+        // The preset and the command line it joins to are one Harness, so
+        // re-picking the same one another way keeps the session it has.
+        assert_eq!(
+            reattach(Some(&hermes), launch(Some("hermes acp"))),
+            Reattach::Stand
+        );
+        assert_eq!(
+            reattach(Some(&hermes), Some(opencode.clone())),
+            Reattach::Open(opencode.clone())
+        );
+        assert_eq!(
+            reattach(None, Some(opencode.clone())),
+            Reattach::Open(opencode)
+        );
+        assert_eq!(reattach(Some(&hermes), None), Reattach::Drop);
     }
 
     /// ADR-0010 rules 4 and 5, as code: the child gets our environment as
@@ -1694,6 +1978,8 @@ mod tests {
             }),
             true,
             None,
+            None,
+            None,
         );
         assert_eq!(named["instance"], json!("buddy-1"));
         assert_eq!(named["wake"], json!("reactive"));
@@ -1702,20 +1988,60 @@ mod tests {
 
         // An empty name is the Engine's "talk and speak": the model chose to
         // talk rather than name a Behavior.
-        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None);
+        let talked = parsed_fields("buddy-1", &spoke("hello?"), false, None, None, None);
         assert_eq!(talked["wake"], json!("proactive"));
         assert_eq!(talked["result"], json!("speech"));
         assert_eq!(talked["behavior"], json!(null));
 
         // #243: the same shape as speech on the wire, and a different thing —
         // the name it named is what makes it readable as a miss.
-        let missed = parsed_fields("buddy-1", &spoke("prowll"), true, Some("prowll"));
+        let missed = parsed_fields(
+            "buddy-1",
+            &spoke("prowll"),
+            true,
+            Some("prowll"),
+            None,
+            None,
+        );
         assert_eq!(missed["result"], json!("near_miss"));
         assert_eq!(missed["behavior"], json!("prowll"));
 
-        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None);
+        let failed = parsed_fields("buddy-1", &Wake::Failed, true, None, None, None);
         assert_eq!(failed["result"], json!("failed"));
         assert_eq!(failed["behavior"], json!(null));
+        assert_eq!(failed["withdrawn_for"], json!(null));
+
+        // #514: the Harness answered, and what it answered was an error. That
+        // is not the same outcome as a reply nothing could be parsed out of,
+        // and reading it as one is what hid a version refusal for a whole day.
+        let errored = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            Some("harness: API Error: 400 does not support this model"),
+            None,
+        );
+        assert_eq!(errored["result"], json!("error"));
+        assert_eq!(
+            errored["error"],
+            json!("harness: API Error: 400 does not support this model")
+        );
+
+        // #499 beside #514: our own cancel reaches this as an error, and the
+        // withdrawal is what the line has to say. Both PRs added a fifth
+        // result; this is the pair that would have collided.
+        let withdrawn = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            Some("harness stopped: cancelled"),
+            Some("buddy-2"),
+        );
+        assert_eq!(withdrawn["result"], json!("withdrawn"));
+        assert_eq!(withdrawn["withdrawn_for"], json!("buddy-2"));
+        assert_eq!(withdrawn["error"], json!(null));
     }
 
     #[test]
@@ -1730,6 +2056,17 @@ mod tests {
         // `session/new`, so the refusal is the Harness's answer to the prompt.
         assert_eq!(fx.count("new"), 1);
         assert_eq!(fx.count("prompt"), 1);
+        // #514: the words the turn came back with outlive it, because every
+        // reader downstream — the `parsed` line, the Chat surface — otherwise
+        // has only "no proposal" to say about a Harness that is answering.
+        assert!(
+            session
+                .inspect()
+                .last_error
+                .is_some_and(|why| why.contains("refusal")),
+            "{:?}",
+            session.inspect().last_error
+        );
         session.shutdown();
     }
 
@@ -1973,7 +2310,7 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        let session = Session::new(launch, dir.clone(), Box::new(|_| {}));
+        let session = Session::new(launch, dir.clone(), silent());
         let first = session.complete(&asking("hi")).unwrap_err();
         assert!(first.contains("could not start"), "{first}");
         let second = session.complete(&asking("hi")).unwrap_err();
@@ -2017,6 +2354,97 @@ mod tests {
         let turns = fx.events("turn");
         assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
         session.shutdown();
+    }
+
+    /// #499: one session serves every Instance (ADR-0008), so buddy B's wake
+    /// takes buddy A's turn without A's own slot ever having been superseded.
+    /// Nothing raised A's abandon flag, so A took a wake that read as broken.
+    #[test]
+    fn a_turn_taken_for_another_instance_is_recorded_as_withdrawn() {
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
+        let poke = WakeRequest {
+            instance: "buddy-2".to_string(),
+            ..asking("again")
+        };
+        assert_eq!(session.complete(&poke), Ok("Hello".to_string()));
+        assert!(worker.join().unwrap().is_err(), "the turn was not taken");
+
+        // The loser's own line, written while it still held the lock, so it
+        // comes before the winner's.
+        let turns = fx.events("turn");
+        assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
+        assert_eq!(turns[0]["withdrawn_for"], json!("buddy-2"), "{turns:?}");
+
+        // And what `note_parsed` writes for the wake that lost the session.
+        // Called here rather than through the Shell's entry point, which reads
+        // the process-global attached session.
+        let withdrawn = session.claim_withdrawn_wake("buddy-1");
+        let parsed = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            None,
+            withdrawn.as_deref(),
+        );
+        assert_eq!(parsed["result"], json!("withdrawn"), "{parsed}");
+        assert_eq!(parsed["withdrawn_for"], json!("buddy-2"), "{parsed}");
+        // One wake, one withdrawal: the next wake this Instance takes is its
+        // own however that one ends.
+        assert_eq!(session.claim_withdrawn_wake("buddy-1"), None);
+        session.shutdown();
+    }
+
+    /// The withdrawal a later supersede must not erase (#499). The `parsed`
+    /// line for the wake that lost the session is written on the Shell side,
+    /// frames after the turn ended, and one session serves every Instance — so
+    /// by then a third wake may already have taken the session from a fourth.
+    #[test]
+    fn a_later_supersede_does_not_erase_an_unclaimed_withdrawal() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let launch = Launch {
+            name: "nope".into(),
+            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+        };
+        let session = Session::new(launch, dir.clone(), silent());
+
+        // buddy-2 takes the session from buddy-1, whose turn names itself.
+        session.note_withdrawal(Some("buddy-2".to_string()));
+        assert_eq!(
+            session
+                .claim_withdrawn_turn("buddy-1", CANCELLED)
+                .as_deref(),
+            Some("buddy-2")
+        );
+
+        // Then buddy-3 takes it from someone else, and the handover it does
+        // not win clears the pending slot — neither of which is buddy-1's.
+        session.note_withdrawal(Some("buddy-3".to_string()));
+        session.note_withdrawal(None);
+
+        let withdrawn = session.claim_withdrawn_wake("buddy-1");
+        assert_eq!(withdrawn.as_deref(), Some("buddy-2"));
+        let parsed = parsed_fields(
+            "buddy-1",
+            &Wake::Failed,
+            true,
+            None,
+            None,
+            withdrawn.as_deref(),
+        );
+        assert_eq!(parsed["result"], json!("withdrawn"), "{parsed}");
+        assert_eq!(
+            session.claim_withdrawn_wake("buddy-1"),
+            None,
+            "claimed twice"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// The one wake that waits instead: an ambient tick cancelling the Poke it
@@ -2073,10 +2501,7 @@ mod tests {
             name: "nope".into(),
             argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
         };
-        assert_eq!(
-            probe(&Session::new(launch, dir.clone(), Box::new(|_| {}))),
-            2
-        );
+        assert_eq!(probe(&Session::new(launch, dir.clone(), silent())), 2);
         let _ = std::fs::remove_dir_all(dir);
     }
 

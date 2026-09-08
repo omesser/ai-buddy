@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -63,6 +64,7 @@ pub(crate) fn run_frame_loop(
     let MenuChannel {
         sender: menu_sender,
         receiver: menu_signals,
+        quit_generation,
     } = menu_channel;
     thread::spawn(move || {
         let mut assembler = SnapshotAssembler::new(source);
@@ -450,6 +452,7 @@ pub(crate) fn run_frame_loop(
                         roster.dismiss(&id);
                         lives.retain(|live| live.id != id);
                         slots.abandon(&id);
+                        session_log::forget(&app, &id);
                         close_chat(&app, &id);
                     }
                     SettingsOp::SwitchAll { character } => {
@@ -464,6 +467,7 @@ pub(crate) fn run_frame_loop(
                                     Arc::clone(&loaded),
                                     &config,
                                     &director,
+                                    &app,
                                 );
                                 if let Ok(inspect) = inspect.lock() {
                                     push_chat_opening(&app, &roster, &id, &inspect);
@@ -479,11 +483,14 @@ pub(crate) fn run_frame_loop(
                         ambient_allowed,
                         configured,
                     } => {
-                        session_log::clear(&app);
                         // What every live `Pace` was built from, and the only
                         // way to tell an edited wake interval from a Retarget
                         // that changed the host and left the interval alone.
                         let was_first = config.ambient_first;
+                        // Nothing could answer a moment ago, so the session
+                        // starting here is the first one rather than a
+                        // replacement. Read before `config` is rebuilt.
+                        let first_connection = !config.configured && configured;
                         director = settings;
                         config = model::config_from(&director);
                         config.enabled = enabled;
@@ -514,6 +521,15 @@ pub(crate) fn run_frame_loop(
                                 live.character.behaviors.keys().cloned(),
                                 &director,
                                 configured,
+                            );
+                            session_log::new_session(
+                                &app,
+                                &live.id,
+                                if first_connection {
+                                    "something can answer now"
+                                } else {
+                                    "settings changed what answers"
+                                },
                             );
                         }
                     }
@@ -559,6 +575,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to: None,
                             you: false,
                             at: None,
+                            error: None,
                         },
                     );
                     continue;
@@ -584,6 +601,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to: None,
                             you: false,
                             at: None,
+                            error: None,
                         },
                     );
                     continue;
@@ -605,6 +623,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to: None,
                             you: false,
                             at: None,
+                            error: None,
                         },
                     );
                     continue;
@@ -637,11 +656,20 @@ pub(crate) fn run_frame_loop(
                 if let Some(description) = menu::replace_if_changed(&mut last_menu, description) {
                     tray_actions = description.actions.clone();
                     let handle = app.clone();
+                    let generation = Arc::clone(&quit_generation);
                     let _ = app.run_on_main_thread(move || {
+                        // Bump on this thread, immediately before set_menu: the
+                        // teardown click muda fires while dropping the old
+                        // tray is then the previous generation, and a real
+                        // Quit on the still-showing menu cannot land in the
+                        // hop between the frame loop and the main thread.
+                        let next_quit = generation.fetch_add(1, Ordering::SeqCst) + 1;
                         if let Some(state) = handle.try_state::<TrayHandle>() {
                             if let Ok(guard) = state.0.lock() {
                                 if let Some(icon) = guard.as_ref() {
-                                    if let Err(why) = tray::refresh(icon, &handle, &description) {
+                                    if let Err(why) =
+                                        tray::refresh(icon, &handle, &description, next_quit)
+                                    {
                                         eprintln!("tray: {why}");
                                     }
                                 }
@@ -1034,6 +1062,11 @@ pub(crate) fn run_frame_loop(
                     live.chat_turn = false;
                 }
                 let unasked = responded && !answering_chat && frame.dialogue.is_some();
+                // A turn that came back an error is not a Director with
+                // nothing to propose, and the Chat surface said it was (#514).
+                // Read here because `note_parsed` above has already logged the
+                // same words, and only a failed wake has any.
+                let error = (applied && !responded).then(harness::last_error).flatten();
                 if answering_chat || unasked {
                     let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
                     session_log::remember_them(
@@ -1052,6 +1085,7 @@ pub(crate) fn run_frame_loop(
                             reacting_to,
                             you: false,
                             at: None,
+                            error,
                         },
                     );
                 }
@@ -1127,6 +1161,7 @@ pub(crate) fn run_frame_loop(
                                         reacting_to: None,
                                         you: false,
                                         at: None,
+                                        error: None,
                                     },
                                 );
                             }
@@ -1737,8 +1772,10 @@ pub(crate) fn run_frame_loop(
                 let description_actions = description.actions.clone();
                 let handle = app.clone();
                 let signals = menu_sender.clone();
+                let quit_generation = quit_generation.load(Ordering::SeqCst);
                 let posted = app.run_on_main_thread(move || {
-                    if let Err(why) = menu::show(&handle, &description, &label, at) {
+                    if let Err(why) = menu::show(&handle, &description, &label, at, quit_generation)
+                    {
                         eprintln!("menu: {why}");
                     }
                     // Sent whether or not the menu drew, and after it has

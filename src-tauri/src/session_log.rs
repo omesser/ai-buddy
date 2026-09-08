@@ -1,13 +1,13 @@
 //! Current-session Chat turns, held because `emit_to` only reaches windows that
 //! exist. Permission asks already wait on `PendingAsks`; Speech of this
-//! Completer session belongs in the same log (ADR-0010) even when Chat was
+//! Completer session belongs in the same log (ADR-0018) even when Chat was
 //! never opened.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[derive(Clone)]
 pub struct Turn {
@@ -40,7 +40,7 @@ impl Log {
             });
     }
 
-    /// Behavior-only wakes have no words; ADR-0010 holds nothing for those.
+    /// Behavior-only wakes have no words; ADR-0018 holds nothing for those.
     pub fn remember_them(
         &mut self,
         instance: &str,
@@ -66,8 +66,13 @@ impl Log {
         self.turns.get(instance).cloned().unwrap_or_default()
     }
 
-    pub fn clear(&mut self) {
-        self.turns.clear();
+    /// Drop what one Instance's replaced session said.
+    ///
+    /// One Instance, not all of them: a Character switch replaces the session
+    /// behind that buddy alone, and wiping the others would empty windows whose
+    /// session is still standing. #476.
+    pub fn forget(&mut self, instance: &str) {
+        self.turns.remove(instance);
     }
 }
 
@@ -106,8 +111,32 @@ pub fn replay(app: &tauri::AppHandle, instance: &str) -> Vec<Turn> {
         .unwrap_or_default()
 }
 
-pub fn clear(app: &tauri::AppHandle) {
-    with_log(app, Log::clear);
+/// A dismissed Instance's turns go with it.
+///
+/// No new session and nothing to tell: the window is closed in the same breath,
+/// and the id is never handed out again. Its own call because the blanket wipe
+/// that used to sweep these on the next Retarget is gone — one Instance's new
+/// session must not empty another's window.
+pub fn forget(app: &tauri::AppHandle, instance: &str) {
+    with_log(app, |log| log.forget(instance));
+}
+
+/// The Completer session behind `instance` was replaced, for the reason `why`.
+///
+/// Three things at once because they are one fact: the held turns go, an open
+/// surface is told, and the Action Log takes the boundary so what leaves the
+/// window is not lost. `chat.js` carries the argument for all three. #476.
+///
+/// Called beside `model::retarget_model`, which is where a session is actually
+/// replaced; the two sites that call one call the other.
+pub fn new_session(app: &tauri::AppHandle, instance: &str, why: &str) {
+    forget(app, instance);
+    crate::action_log::append(
+        &ai_buddy_core::memory::data_dir(),
+        "session",
+        serde_json::json!({ "instance": instance, "why": why }),
+    );
+    let _ = app.emit_to(crate::chat_label(instance), crate::CHAT_SESSION_EVENT, why);
 }
 
 #[cfg(test)]
@@ -116,7 +145,7 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     /// Production change that would fail this: dropping a spoken line because
-    /// no Chat surface was listening. ADR-0010 puts every Speech in that log.
+    /// no Chat surface was listening. ADR-0018 puts every Speech in that log.
     #[test]
     fn a_spoken_line_is_still_there_when_chat_opens_later() {
         let mut log = Log::new();
@@ -159,7 +188,7 @@ mod tests {
     }
 
     /// Production change that would fail this: holding a Behavior-only wake
-    /// that has no words (ADR-0010: nothing is held for that).
+    /// that has no words (ADR-0018: nothing is held for that).
     #[test]
     fn a_wake_with_no_speech_is_not_held() {
         let mut log = Log::new();
@@ -201,12 +230,27 @@ mod tests {
     fn retarget_forgets_the_old_session() {
         let mut log = Log::new();
         log.remember_you("buddy-1", "old session", UNIX_EPOCH);
-        log.clear();
+        log.forget("buddy-1");
         assert!(log.replay("buddy-1").is_empty());
     }
 
+    /// Production change that would fail this: emptying every buddy's log on a
+    /// Character switch, which replaces one Instance's session and leaves the
+    /// rest answering out of the conversation their windows still show. #476.
+    #[test]
+    fn a_switched_buddy_does_not_forget_the_others() {
+        let mut log = Log::new();
+        log.remember_you("switched", "before the switch", UNIX_EPOCH);
+        log.remember_you("untouched", "still this session", UNIX_EPOCH);
+
+        log.forget("switched");
+
+        assert!(log.replay("switched").is_empty());
+        assert_eq!(log.replay("untouched").len(), 1);
+    }
+
     /// Production change that would fail this: stamping a replayed line with
-    /// Chat-open time instead of the instant it was said (ADR-0010: one conversation).
+    /// Chat-open time instead of the instant it was said (ADR-0018: one conversation).
     #[test]
     fn replay_keeps_the_moment_the_line_was_said() {
         let mut log = Log::new();

@@ -70,8 +70,9 @@ repos:
         entry: scripts/hooks/psscriptanalyzer.sh
         language: system
         files: \.ps1$
-        # Error only, which admits neither encoding (Warning) nor a syntax
-        # fault (ParseError). #493.
+        # A syntax fault is graded ParseError, not Error, so `Error` alone
+        # passed a .ps1 that does not parse. #493. Encoding is a Warning and
+        # stays out — the hook below holds that policy.
 
       # Separate from the analyzer because it cannot hold this policy: its
       # non-ASCII rule prescribes adding a BOM, and a BOM is itself three
