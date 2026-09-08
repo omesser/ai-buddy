@@ -116,6 +116,11 @@ pub enum Event {
         size: u64,
     },
     Permission(PermissionAsk),
+    /// The line of the Harness's thinking being written right now, for the
+    /// Chat surface to show while the turn runs. Transient by decision
+    /// (ADR-0025): each one replaces the last, nothing keeps them, and no line
+    /// of the log or of the Action Log is made from one.
+    Thought(String),
     /// A forwarded ask that can no longer be answered: the user answered it,
     /// the turn ended, or it was cancelled. Every open Chat surface was given
     /// the ask, so every one of them has to hear this.
@@ -598,6 +603,10 @@ async fn turn(
     ));
     let mut finished = std::pin::pin!(sent.block_task());
     let mut said = String::new();
+    // Beside `said` and never inside it: the thought is kept only so a chunk
+    // that arrives mid-sentence can be shown as the sentence it belongs to.
+    // It dies with the turn, which is the whole of its lifetime.
+    let mut thought = String::new();
     let mut asks: Vec<(String, Responder<RequestPermissionResponse>)> = Vec::new();
     loop {
         // `biased`, updates first: the SDK dispatches a turn's chunks before
@@ -606,19 +615,21 @@ async fn turn(
         tokio::select! {
             biased;
             message = incoming.recv() => match message {
-                Some(Incoming::Update(update)) => note_update(update, &mut said, on_event),
+                Some(Incoming::Update(update)) => {
+                    note_update(update, &mut said, &mut thought, on_event)
+                }
                 Some(Incoming::Ask(request, responder)) => {
                     let ask = permission_ask(&request, &responder);
                     asks.push((ask.request.clone(), responder));
                     on_event(Event::Permission(ask));
                 }
                 None => {
-                    cancel_asks(&mut asks, on_event);
+                    end_turn(&mut asks, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             response = &mut finished => {
-                cancel_asks(&mut asks, on_event);
+                end_turn(&mut asks, &mut thought, on_event);
                 return match response {
                     Ok(response) => match response.stop_reason {
                         StopReason::EndTurn => Ok(said),
@@ -631,7 +642,7 @@ async fn turn(
             command = rx.recv() => match command {
                 Some(Msg::Cancel) | Some(Msg::Shutdown) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
-                    cancel_asks(&mut asks, on_event);
+                    end_turn(&mut asks, &mut thought, on_event);
                 }
                 Some(Msg::Answer { request, option }) => {
                     if let Some(at) = asks.iter().position(|(id, _)| *id == request) {
@@ -654,12 +665,12 @@ async fn turn(
                     let _ = reply.send(Err(OpenError::Failed("a turn is in flight".to_string())));
                 }
                 None => {
-                    cancel_asks(&mut asks, on_event);
+                    end_turn(&mut asks, &mut thought, on_event);
                     return Err(TurnError::Lost);
                 }
             },
             () = cx.incoming_closed() => {
-                cancel_asks(&mut asks, on_event);
+                end_turn(&mut asks, &mut thought, on_event);
                 return Err(TurnError::Lost);
             }
         }
@@ -691,7 +702,7 @@ fn permission_ask(
     }
 }
 
-fn note_update(update: SessionUpdate, said: &mut String, on_event: &OnEvent) {
+fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, on_event: &OnEvent) {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
             if let ContentBlock::Text(text) = chunk.content {
@@ -717,13 +728,46 @@ fn note_update(update: SessionUpdate, said: &mut String, on_event: &OnEvent) {
             used: usage.used,
             size: usage.size,
         }),
+        // Never into `said`. That is the Director's reply, whose first line has
+        // to parse as a Behavior name and whose rest the buddy says out loud;
+        // reasoning is neither, so it leaves by its own door (ADR-0025).
+        SessionUpdate::AgentThoughtChunk(chunk) => {
+            if let ContentBlock::Text(text) = chunk.content {
+                thought.push_str(&text.text);
+                if let Some(line) = thinking_line(thought) {
+                    on_event(Event::Thought(line.to_string()));
+                }
+            }
+        }
         _ => {}
     }
 }
 
-/// The protocol-mandated reply for a question nobody will answer now: the
-/// turn is over, cancelled, or the app is leaving. Not an answer.
-fn cancel_asks(asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>, on_event: &OnEvent) {
+/// The line of a streamed thought being written now: the tail of everything
+/// that has arrived, because a chunk lands mid-sentence and half a sentence on
+/// its own reads as nonsense. `None` while nothing but whitespace has come —
+/// an adapter streams signature-only thinking blocks whose text is empty, and
+/// a strip that opens on one says the Harness is thinking about nothing.
+fn thinking_line(thought: &str) -> Option<&str> {
+    thought
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+}
+
+/// Close out what this side was holding for a turn that is over, cancelled, or
+/// leaving with the app.
+///
+/// Every question nobody will answer now gets the protocol-mandated reply,
+/// which is not an answer. And the thinking goes dark: the Chat surface keeps
+/// no thought of its own, so the last line stays on screen until it is told
+/// the turn that produced it has ended (ADR-0025).
+fn end_turn(
+    asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>,
+    thought: &mut String,
+    on_event: &OnEvent,
+) {
     for (request, responder) in asks.drain(..) {
         let _ = responder.respond(RequestPermissionResponse::new(
             RequestPermissionOutcome::Cancelled,
@@ -732,6 +776,10 @@ fn cancel_asks(asks: &mut Vec<(String, Responder<RequestPermissionResponse>)>, o
             request,
             option: None,
         });
+    }
+    if !thought.is_empty() {
+        thought.clear();
+        on_event(Event::Thought(String::new()));
     }
 }
 
@@ -764,7 +812,48 @@ fn name_of<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{AuthMethodAgent, ToolKind};
+    use agent_client_protocol::schema::v1::{AuthMethodAgent, ContentChunk, ToolKind};
+    use std::sync::Arc;
+
+    /// One streamed thought fragment, as the wire delivers it.
+    fn thinking(text: &str) -> SessionUpdate {
+        SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
+            text,
+        ))))
+    }
+
+    /// An `OnEvent` and the events it collected.
+    fn collector() -> (Arc<Mutex<Vec<Event>>>, OnEvent) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let kept = Arc::clone(&seen);
+        (
+            seen,
+            Box::new(move |event| kept.lock().unwrap().push(event)),
+        )
+    }
+
+    /// What a run of updates left in the answer, and every event it raised.
+    fn drive(updates: Vec<SessionUpdate>) -> (String, Vec<Event>) {
+        let (seen, on_event) = collector();
+        let mut said = String::new();
+        let mut thought = String::new();
+        for update in updates {
+            note_update(update, &mut said, &mut thought, &on_event);
+        }
+        let events = seen.lock().unwrap().clone();
+        (said, events)
+    }
+
+    /// Every thought the run raised, in order.
+    fn thoughts(events: &[Event]) -> Vec<&str> {
+        events
+            .iter()
+            .map(|event| match event {
+                Event::Thought(line) => line.as_str(),
+                other => panic!("expected a thought, got {other:?}"),
+            })
+            .collect()
+    }
 
     /// The names the Action Log and the Chat surface see are the wire's own
     /// spellings, not Rust's.
@@ -839,6 +928,60 @@ mod tests {
         };
         assert_eq!(choice.label(), "http://127.0.0.1:1/mcp");
         assert!(!choice.label().contains("secret"));
+    }
+
+    /// A thought reaches the Shell and never the answer. `said` is the
+    /// Director's reply, whose first line has to parse as a Behavior name and
+    /// whose rest is spoken out loud; a thought is neither (ADR-0025).
+    #[test]
+    fn a_thought_is_an_event_and_never_part_of_the_answer() {
+        let (said, events) = drive(vec![
+            thinking("Reading the roster"),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new("wave"),
+            ))),
+        ]);
+        assert_eq!(said, "wave");
+        assert_eq!(thoughts(&events), ["Reading the roster"]);
+    }
+
+    /// Chunks arrive as fragments, so what the surface shows is the tail of
+    /// the thought so far: half a sentence on its own reads as nonsense, and
+    /// the line before a newline is finished with.
+    #[test]
+    fn a_thought_shows_the_line_being_written() {
+        let (_, events) = drive(vec![
+            thinking("Reading the"),
+            thinking(" roster.\n\nNow the manifest"),
+        ]);
+        assert_eq!(thoughts(&events), ["Reading the", "Now the manifest"]);
+    }
+
+    /// The strip lives exactly as long as the turn that fills it. Nothing on
+    /// the Chat surface knows when a Harness stopped thinking, so a turn that
+    /// ends without an answer to draw would otherwise leave its last thought
+    /// on screen for good.
+    #[test]
+    fn the_thinking_goes_dark_when_the_turn_ends() {
+        let (seen, on_event) = collector();
+        let mut thought = "Reading the roster".to_string();
+        end_turn(&mut Vec::new(), &mut thought, &on_event);
+        assert_eq!(thoughts(&seen.lock().unwrap()), [""]);
+
+        // A turn that thought nothing has nothing to take away, and a strip
+        // that was never shown should not be told to hide.
+        let (seen, on_event) = collector();
+        end_turn(&mut Vec::new(), &mut String::new(), &on_event);
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    /// Nothing to show is not a thought. Adapters stream signature-only
+    /// thinking blocks whose text is empty, and a blank strip that opens and
+    /// shuts is worse than one that never opened.
+    #[test]
+    fn a_thought_with_no_words_raises_nothing() {
+        let (_, events) = drive(vec![thinking("   \n")]);
+        assert!(events.is_empty(), "{events:?}");
     }
 }
 
