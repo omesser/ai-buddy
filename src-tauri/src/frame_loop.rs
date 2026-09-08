@@ -175,10 +175,9 @@ pub(crate) fn run_frame_loop(
         loop {
             // Scheduler-aware wait: either sleep 16ms (active) or block on input
             // events (idle). When idle, compute the next real deadline (Director
-            // ambient wake, activity sensing) and use that instead of polling.
-            // Cap at 1 second so Engine clocks (animation_ms, idle_ms) advance:
-            // SnapshotAssembler caps long elapsed, so multi-frame idle art and
-            // sleep-after need regular ticks. #183.
+            // ambient wake, activity sensing) without artificial caps. Active mode
+            // runs whenever the Engine needs regular ticks (motion, multi-frame
+            // animation, sleep-after accrual). #183.
             match (schedule_mode, &input_events) {
                 (scheduler::ScheduleMode::Idle, Some(events)) => {
                     // Compute next real work deadline: min of Director ambient
@@ -197,9 +196,7 @@ pub(crate) fn run_frame_loop(
                         .unwrap_or(Duration::from_secs(3600));
 
                     let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
-                    // Cap at 1s so animation_ms and idle_ms (sleep-after) advance
-                    // regularly despite SnapshotAssembler's elapsed cap.
-                    let deadline = next_director.min(next_sense).min(Duration::from_secs(1));
+                    let deadline = next_director.min(next_sense);
 
                     // Block on input events until deadline. Motion/button events
                     // wake immediately; timeout means real work is due.
@@ -1286,10 +1283,39 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // Check if this instance needs active timing (16ms) for next iteration.
-                // Idle means grounded/perched with no behavior, asleep, or will be hidden.
+                // Stay Active while:
+                // (a) moving/dragging/climbing/behavior playing (scheduler::mode)
+                // (b) idle/sleep animation is multi-frame and needs advances
+                // (c) idle_ms is accruing toward sleep (Grounded/Perched, not Asleep yet)
+                // #183 Architect review.
                 let behavior_playing = frame.playing_behavior.is_some();
-                if scheduler::mode(&frame, true, behavior_playing)
-                    == scheduler::ScheduleMode::Active
+                let needs_active_for_motion = scheduler::mode(&frame, true, behavior_playing)
+                    == scheduler::ScheduleMode::Active;
+
+                let needs_active_for_animation =
+                    if let Some(character) = characters.get(instance.character_name()) {
+                        character
+                            .animations
+                            .get(frame.animation)
+                            .is_some_and(|anim| {
+                                // Multi-frame: looping OR not at last frame yet
+                                anim.looping || {
+                                    let current_frame = anim.frame_at(frame.animation_ms);
+                                    current_frame + 1 < anim.frames.len()
+                                }
+                            })
+                    } else {
+                        false
+                    };
+
+                // idle_ms accrues when Grounded/Perched but not Asleep.
+                // Keep Active while accruing so sleep-after happens on time.
+                let needs_active_for_sleep_accrual =
+                    matches!(frame.state, State::Grounded | State::Perched);
+
+                if needs_active_for_motion
+                    || needs_active_for_animation
+                    || needs_active_for_sleep_accrual
                 {
                     any_needs_active = true;
                 }

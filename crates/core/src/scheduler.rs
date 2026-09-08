@@ -1,13 +1,20 @@
 //! Two-clock scheduler: active timer when animating, idle recv() when still.
 //!
 //! The frame loop runs at 16ms when the sprite needs it — Grab, Throw, fall,
-//! walk, any playing Animation — and blocks on `recv()` when it does not: still
-//! cursor, still sprite, asleep, hidden. The saving is bounded to the idle case,
-//! from 60 wakeups/s to zero, and the Director and activity sensing still wake.
+//! walk, any playing Animation, multi-frame idle/sleep art, or sleep-after
+//! accrual — and blocks on `recv()` when it does not: single-frame still art,
+//! already asleep, or hidden. The saving is bounded to the deep-idle case,
+//! from 60 wakeups/s to zero; Director and activity sensing still wake.
 //!
-//! This is pure logic tested in core. The `ScheduleMode` tells the loop which
-//! clock to use; the loop owns the channel, the timer, and the platform input
-//! source.
+//! Idle mode predicate: visible sprite with Grounded/Perched state runs Active
+//! until truly still (animation settled, sleep-after complete). Active ensures
+//! Engine clocks (animation_ms, idle_ms) advance at wall-clock rate; Idle waits
+//! for real work deadlines without artificial caps. See frame_loop for
+//! animation + sleep-after checks.
+//!
+//! This is pure state-based logic tested in core. The `ScheduleMode` tells the
+//! loop which clock to use; the loop owns the channel, timer, platform input
+//! source, and animation/sleep-accrual checks.
 
 use crate::engine::{Frame, State};
 
@@ -107,7 +114,8 @@ mod tests {
         assert_eq!(
             mode(&frame, true, false),
             ScheduleMode::Idle,
-            "still sprite, still cursor, no behavior — can block on recv()"
+            "state-based check: grounded with no behavior → Idle.
+             frame_loop adds animation + sleep-accrual checks to stay Active."
         );
     }
 
@@ -118,7 +126,8 @@ mod tests {
         assert_eq!(
             mode(&frame, true, false),
             ScheduleMode::Idle,
-            "standing on a perch with no behavior is still idle"
+            "state-based check: perched with no behavior → Idle.
+             frame_loop adds animation + sleep-accrual checks to stay Active."
         );
     }
 
