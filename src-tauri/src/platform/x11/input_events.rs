@@ -8,16 +8,14 @@
 use std::sync::mpsc;
 use std::thread;
 use x11rb::connection::Connection;
-use x11rb::protocol::xinput::{self, ConnectionExt as _, EventMask};
+use x11rb::protocol::xinput::{self, ConnectionExt as _};
 use x11rb::protocol::xproto;
-
-use crate::platform::ButtonsDown;
 
 /// An input event from XI2 that the frame loop cares about.
 #[derive(Clone, Copy, Debug)]
 pub enum InputEvent {
     /// Mouse button pressed or released.
-    Button(ButtonsDown),
+    Button,
     /// Mouse moved. The frame loop doesn't need the position (it polls the
     /// cursor separately), only that motion happened.
     Motion,
@@ -54,25 +52,24 @@ fn setup_xi2(
     display: &impl Connection,
     root: xproto::Window,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let version = display
-        .xinput_xi_query_version(2, 0)?
-        .reply()?;
+    let version = display.xinput_xi_query_version(2, 0)?.reply()?;
 
     if version.major_version < 2 {
         return Err("XI2 not available".into());
     }
 
-    let mask = EventMask::RAW_BUTTON_PRESS
-        | EventMask::RAW_BUTTON_RELEASE
-        | EventMask::RAW_MOTION;
-
-    let mask_bytes = u32::from(mask).to_ne_bytes();
+    // XI2 raw event mask: select RawButtonPress, RawButtonRelease, and RawMotion.
+    let mask = vec![
+        xinput::XIEventMask::RAW_BUTTON_PRESS,
+        xinput::XIEventMask::RAW_BUTTON_RELEASE,
+        xinput::XIEventMask::RAW_MOTION,
+    ];
 
     display.xinput_xi_select_events(
         root,
         &[xinput::EventMask {
             deviceid: xinput::Device::ALL.into(),
-            mask: mask_bytes.to_vec(),
+            mask,
         }],
     )?;
 
@@ -86,11 +83,7 @@ fn listen_loop(sender: mpsc::Sender<InputEvent>) {
         return;
     };
 
-    loop {
-        let Ok(event) = display.wait_for_event() else {
-            break;
-        };
-
+    while let Ok(event) = display.wait_for_event() {
         let Some(input_event) = classify_event(display, &event) else {
             continue;
         };
@@ -103,37 +96,16 @@ fn listen_loop(sender: mpsc::Sender<InputEvent>) {
 
 /// Classify an X11 event into an `InputEvent` if it is one the frame loop cares about.
 fn classify_event(
-    display: &impl Connection,
+    _display: &impl Connection,
     event: &x11rb::protocol::Event,
 ) -> Option<InputEvent> {
     use x11rb::protocol::Event;
 
     match event {
         Event::XinputRawButtonPress(_) | Event::XinputRawButtonRelease(_) => {
-            Some(InputEvent::Button(current_buttons(display)))
+            Some(InputEvent::Button)
         }
         Event::XinputRawMotion(_) => Some(InputEvent::Motion),
         _ => None,
-    }
-}
-
-/// Query the current button mask from XQueryPointer.
-///
-/// Same logic as `pointer::buttons_down`, but local to avoid a circular
-/// dependency. XI2 raw events tell us *something changed*, not what the new
-/// state is, so the frame loop still needs to query.
-fn current_buttons(display: &impl Connection) -> ButtonsDown {
-    let screen = &display.setup().roots[0];
-    let Ok(reply) = xproto::query_pointer(display, screen.root)
-        .ok()
-        .and_then(|cookie| cookie.reply().ok())
-    else {
-        return ButtonsDown::default();
-    };
-
-    let mask: u16 = reply.mask.into();
-    ButtonsDown {
-        primary: (mask & u16::from(xproto::ButtonMask::M1)) != 0,
-        secondary: (mask & u16::from(xproto::ButtonMask::M3)) != 0,
     }
 }
