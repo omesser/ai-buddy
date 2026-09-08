@@ -447,18 +447,8 @@ fn ambient_first() -> Duration {
 /// URL is also a credential this must not hand back to a caller that draws it
 /// (#474), and `host_str` never carries one.
 ///
-/// A base with no scheme has no host here and yields the empty string. That is
-/// the honest answer rather than a tolerated one: `completions_url` builds the
-/// request by concatenation, so a scheme-less base was never a URL ureq could
-/// post to, and inventing `http://` for a value we then send a key to is not a
-/// default to pick on the user's behalf.
-/// The one place a URL in this module is parsed, so the rule about a missing
-/// scheme is stated once rather than in each of the four questions asked below.
-///
-/// `has_host` is the filter that matters: `Url::parse` accepts `localhost:8000`
-/// by reading `localhost` as the scheme, which is not what anyone typing it
-/// meant. No host is the honest answer, and every caller here treats it as the
-/// cautious one.
+/// Parse a base URL and validate it has a host. Returns `None` if parsing fails
+/// or the URL has no host (including scheme-less inputs).
 fn url_of(base: &str) -> Option<Url> {
     Url::parse(base).ok().filter(Url::has_host)
 }
@@ -477,18 +467,7 @@ pub fn host_of(base: &str) -> String {
 /// Is this base URL served from this machine or this LAN?
 ///
 /// A local host (loopback, RFC1918, unique-local IPv6, or `.local`) makes
-/// `AI_BUDDY_DIRECTOR_API_KEY` optional rather than required: the user may
-/// leave it unset when the server has no auth (Ollama, mlx_lm.server) or set
-/// it when the server requires one (oMLX, llama.cpp with `--api-key`, vLLM
-/// with `--api-key`). A remote host still requires a real key.
-///
-/// `Url::host` decides what the host *is* — a name, an IPv4 literal, or an
-/// IPv6 one — so nothing here strips brackets, cuts a port off the end, or
-/// hopefully re-parses the remainder as an address. That matters more than
-/// tidiness: `10.0.0.5.evil.com` is a remote name that merely opens with an
-/// address, and it is the parser, not this function, that refuses to read it
-/// as one. A value with no host is remote, which is the safe direction — a
-/// wrong answer here waives the key requirement.
+/// `AI_BUDDY_DIRECTOR_API_KEY` optional. A remote host requires a real key.
 fn is_local(base: &str) -> bool {
     let Some(url) = url_of(base) else {
         return false;
@@ -591,13 +570,6 @@ fn completions_url(base: &str) -> String {
 }
 
 /// Whether this URL is served by xAI, which decides the inference path below.
-///
-/// The host from the parser, not from splitting on `://` and `/`. Cutting at
-/// the first slash kept the host's port and its spelling, so `api.x.ai:443`
-/// and `API.X.AI` were not xAI and took the legacy chat-completions path;
-/// `host_str` has normalised both away by the time this compares anything.
-/// The suffix keeps a subdomain in and a lookalike out, which the old cut also
-/// managed — the port was the part it got wrong.
 fn host_is_xai(url: &str) -> bool {
     url_of(url)
         .and_then(|url| url.host_str().map(str::to_string))
@@ -965,11 +937,6 @@ impl Completer for Endpoint {
 
 /// Scheme, host and port, with the path dropped — what `/v1/models` is hung
 /// off for the pre-flight probe, and what a trace line names the endpoint by.
-///
-/// `Url::origin` rather than cutting at the first `/` after the scheme, which
-/// kept userinfo and would print a password into a probe line. A value with no
-/// host is handed back as it came: the probe then fails on it and says so,
-/// which is more use than an empty string.
 fn origin(url: &str) -> String {
     url_of(url).map_or_else(|| url.to_string(), |url| url.origin().ascii_serialization())
 }
