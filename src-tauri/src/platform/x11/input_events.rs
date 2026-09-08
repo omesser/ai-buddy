@@ -25,8 +25,9 @@ pub enum InputEvent {
 /// returned channel. Returns `None` if XI2 cannot be set up.
 ///
 /// The thread blocks on the X11 connection's event stream and runs for the life
-/// of the process. It filters for button and motion events, derives `ButtonsDown`
-/// from the current button mask, and sends `InputEvent` to the channel.
+/// of the process. It filters for button and motion events and sends `InputEvent`
+/// to wake the frame loop from idle wait. The frame loop still polls cursor
+/// position and button state after waking via the existing Witness path.
 pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
     let display = super::connection::connection()?;
     let (sender, receiver) = mpsc::channel();

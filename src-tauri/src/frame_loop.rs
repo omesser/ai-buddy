@@ -176,7 +176,9 @@ pub(crate) fn run_frame_loop(
             // Scheduler-aware wait: either sleep 16ms (active) or block on input
             // events (idle). When idle, compute the next real deadline (Director
             // ambient wake, activity sensing) and use that instead of polling.
-            // #183.
+            // Cap at 1 second so Engine clocks (animation_ms, idle_ms) advance:
+            // SnapshotAssembler caps long elapsed, so multi-frame idle art and
+            // sleep-after need regular ticks. #183.
             match (schedule_mode, &input_events) {
                 (scheduler::ScheduleMode::Idle, Some(events)) => {
                     // Compute next real work deadline: min of Director ambient
@@ -195,7 +197,9 @@ pub(crate) fn run_frame_loop(
                         .unwrap_or(Duration::from_secs(3600));
 
                     let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
-                    let deadline = next_director.min(next_sense);
+                    // Cap at 1s so animation_ms and idle_ms (sleep-after) advance
+                    // regularly despite SnapshotAssembler's elapsed cap.
+                    let deadline = next_director.min(next_sense).min(Duration::from_secs(1));
 
                     // Block on input events until deadline. Motion/button events
                     // wake immediately; timeout means real work is due.
