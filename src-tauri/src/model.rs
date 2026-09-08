@@ -3457,6 +3457,14 @@ pub(crate) mod tests {
     /// `AI_BUDDY_BENCH_FRAMING` picks #244's phrasing — `today` (the default),
     /// `framed`, or `after` — and the run reports how much of its prose was a
     /// personality sample line quoted back.
+    ///
+    /// #244 was answered here and the wording left alone: over 1800 wakes of
+    /// `gemma-4-e2b-it-4bit` (three framings, three runs of 200 each) only 4
+    /// of 118 prose replies quoted a sample line, and the contract-break rate
+    /// wandered 0–20% *between runs of the same framing* — a wider spread
+    /// than any gap between the framings. Quoting is real and rare; #230's
+    /// two-in-four was a small sample. The breaks are invented names, so
+    /// #144's schema is still the thing that would fix them.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {
