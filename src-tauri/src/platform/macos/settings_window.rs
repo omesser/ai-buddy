@@ -54,6 +54,10 @@ struct Ivars {
     panes: RefCell<Vec<(Retained<NSScrollView>, f64)>>,
     director: RefCell<Option<Retained<NSButton>>>,
     base_url: RefCell<Option<Retained<NSTextField>>>,
+    /// The Base URL shortcut. Its own ivar because it is drawn from the form's
+    /// static list and selected from the live value, the same pair the Harness
+    /// popup needs (#465).
+    base_url_pick: RefCell<Option<Retained<NSPopUpButton>>>,
     model: RefCell<Option<Retained<NSTextField>>>,
     api_key: RefCell<Option<Retained<NSTextField>>>,
     clear_key: RefCell<Option<Retained<NSButton>>>,
@@ -222,6 +226,31 @@ define_class!(
                 return;
             }
             self.apply(patch);
+        }
+
+        /// The Base URL shortcut, which stages rather than saves.
+        ///
+        /// Not `popupPicked:`: this popup writes no field of its own, because
+        /// the four Director rows only apply together (#279). It fills in the
+        /// field, and Apply is what reaches the file.
+        #[unsafe(method(endpointPicked:))]
+        fn endpoint_picked(&self, sender: Option<&AnyObject>) {
+            let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
+                return;
+            };
+            let Some(title) = popup.titleOfSelectedItem() else {
+                return;
+            };
+            // Custom, and any title off the list, name no endpoint to write:
+            // the field is what a custom endpoint is.
+            let Some(url) = form::endpoint_url(&title.to_string()) else {
+                return;
+            };
+            let Some(field) = self.ivars().base_url.borrow().clone() else {
+                return;
+            };
+            field.setStringValue(&NSString::from_str(url));
+            self.update_director_buttons();
         }
 
         #[unsafe(method(handleAction:))]
@@ -569,6 +598,15 @@ impl SettingsController {
             field.setStringValue(&NSString::from_str(&view.harness_state));
         }
         fill_popup(&self.ivars().character, &view.installed, &view.character);
+        // Left alone while the field holds a staged edit, for the same reason
+        // the field itself is: the pick is what the field says (#279).
+        if !staged.base_url {
+            fill_popup(
+                &self.ivars().base_url_pick,
+                &form::endpoint_options(),
+                &form::endpoint_title(&view.director_base_url),
+            );
+        }
         // Static choices, so they come from the form rather than the view.
         fill_popup(
             &self.ivars().harness,
@@ -673,6 +711,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut director_button = None;
     let mut ambient_button = None;
     let mut base_url_field = None;
+    let mut base_url_pick_popup = None;
     let mut model_field = None;
     let mut api_key_field = None;
     let mut clear_key_button = None;
@@ -973,18 +1012,42 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         new_name_field = Some(field);
                                     }
                                 }
-                                CompositeControl::Popup { id } => {
-                                    let pop = popup_plain(mtm);
+                                // The choices come from the form at refresh,
+                                // not from here, so `options` goes unread.
+                                CompositeControl::Popup { id, frozen, .. } => {
+                                    // Only the Base URL shortcut acts on its
+                                    // own pick. Every other composite popup is
+                                    // read by the button beside it on press,
+                                    // which is what `new_instance` does.
+                                    let pop = match id.as_str() {
+                                        form::DIRECTOR_BASE_URL_PICK_ID => {
+                                            popup(&controller, sel!(endpointPicked:), mtm)
+                                        }
+                                        _ => popup_plain(mtm),
+                                    };
+                                    pop.setEnabled(!frozen);
+                                    // Wide enough for the longest resting
+                                    // title. The URL is the half a narrow
+                                    // popup clips, and the resting title is
+                                    // how the row says what is in force.
+                                    let pop_width = match id.as_str() {
+                                        form::DIRECTOR_BASE_URL_PICK_ID => 360.0,
+                                        _ => 180.0,
+                                    };
                                     pop.setFrame(NSRect::new(
                                         NSPoint::new(x, cursor.y),
-                                        NSSize::new(180.0, 24.0),
+                                        NSSize::new(pop_width, 24.0),
                                     ));
                                     stretch_x(&pop);
                                     document.addSubview(&pop);
-                                    x += 188.0;
+                                    x += pop_width + 8.0;
 
-                                    if id == form::NEW_CHARACTER_ID {
-                                        new_character_popup = Some(pop);
+                                    match id.as_str() {
+                                        form::NEW_CHARACTER_ID => new_character_popup = Some(pop),
+                                        form::DIRECTOR_BASE_URL_PICK_ID => {
+                                            base_url_pick_popup = Some(pop)
+                                        }
+                                        _ => {}
                                     }
                                 }
                                 CompositeControl::Button { id, label, frozen } => {
@@ -1068,6 +1131,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().director.borrow_mut() = director_button;
     *controller.ivars().ambient.borrow_mut() = ambient_button;
     *controller.ivars().base_url.borrow_mut() = base_url_field;
+    *controller.ivars().base_url_pick.borrow_mut() = base_url_pick_popup;
     *controller.ivars().model.borrow_mut() = model_field;
     *controller.ivars().api_key.borrow_mut() = api_key_field;
     *controller.ivars().clear_key.borrow_mut() = clear_key_button;

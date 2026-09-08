@@ -205,7 +205,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
         None => "Not attached. The HTTP Completer above is the Director's mind.".to_string(),
         Some(attached) => match &attached.login {
             Some(login) => format!(
-                "{} attached but not authenticated. Run `{login}` in a terminal — \
+                "{} attached but not authenticated. Run `{login}` in a terminal - \
                  ai-buddy never asks for it.",
                 attached.name
             ),
@@ -309,9 +309,9 @@ impl SettingsView {
             // the stored fingerprint would name a key nothing uses (#272).
             "Overridden by env".to_string()
         } else if !self.api_key_error.is_empty() {
-            format!("Unavailable — {}", self.api_key_error)
+            format!("Unavailable: {}", self.api_key_error)
         } else if self.api_key_set {
-            format!("Set — {}", self.api_key_fingerprint)
+            format!("Set: {}", self.api_key_fingerprint)
         } else {
             "Not set".into()
         }
@@ -1649,7 +1649,7 @@ mod tests {
             assert_eq!(view.director_model, "grok-4.6");
             assert!(view.api_key_set);
             assert_eq!(view.api_key_fingerprint, "len=12 last=key1");
-            assert_eq!(view.api_key_placeholder(), "Set — len=12 last=key1");
+            assert_eq!(view.api_key_placeholder(), "Set: len=12 last=key1");
             let dump = format!("{view:?}");
             assert!(!dump.contains("sk-"), "{dump}");
         });
@@ -1685,7 +1685,7 @@ mod tests {
                 None,
             );
             assert!(!view.api_key_set);
-            assert_eq!(view.api_key_placeholder(), "Unavailable — keychain locked");
+            assert_eq!(view.api_key_placeholder(), "Unavailable: keychain locked");
             assert!(
                 view.clear_key_enabled(),
                 "Clear stays offered so a key we could not read can still be wiped"

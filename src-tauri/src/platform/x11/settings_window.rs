@@ -455,14 +455,69 @@ impl SettingsWindow {
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Entry(entry));
                         }
-                        CompositeControl::Popup { id } => {
+                        CompositeControl::Popup {
+                            id,
+                            options,
+                            frozen,
+                        } => {
                             let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
                             radio_box.set_size_request(180, -1);
+
+                            // A composite popup carrying its own choices is
+                            // filled here, once, like `FormRow::Popup`'s. One
+                            // carrying none is left to `refresh`, which is how
+                            // `new_instance`'s Character picker gets the
+                            // installed packages.
+                            let mut group: Option<gtk::RadioButton> = None;
+                            for option in options {
+                                let radio = if let Some(ref first) = group {
+                                    gtk::RadioButton::from_widget(first)
+                                } else {
+                                    gtk::RadioButton::with_label(option)
+                                };
+                                if group.is_none() {
+                                    group = Some(radio.clone());
+                                } else {
+                                    radio.set_label(option);
+                                }
+                                radio.set_sensitive(!frozen);
+
+                                // Into the field rather than into the file: the
+                                // four Director rows only apply together, and
+                                // `bind_batched`'s `changed` is what lights
+                                // Apply up (#279).
+                                if !frozen {
+                                    let title = option.clone();
+                                    let controls = self.controls.clone();
+                                    let refreshing = self.refreshing.clone();
+                                    radio.connect_toggled(move |radio| {
+                                        // The refreshing guard must stay above
+                                        // the `controls` borrow below: `refresh`
+                                        // calls `set_active` while holding
+                                        // `controls.borrow_mut()`, so reaching
+                                        // the borrow during a redraw is a
+                                        // `BorrowMutError` panic, not a no-op.
+                                        if refreshing.get() || !radio.is_active() {
+                                            return;
+                                        }
+                                        let Some(url) = form::endpoint_url(&title) else {
+                                            return;
+                                        };
+                                        if let Some(Control::Entry(entry)) =
+                                            controls.borrow().get(form::DIRECTOR_BASE_URL_ID)
+                                        {
+                                            entry.set_text(url);
+                                        }
+                                    });
+                                }
+
+                                radio_box.pack_start(&radio, false, false, 0);
+                            }
 
                             hbox.pack_start(&radio_box, false, false, 0);
                             self.controls.borrow_mut().insert(
                                 id.clone(),
-                                Control::CharacterPicker(radio_box, Vec::new()),
+                                Control::CharacterPicker(radio_box, options.clone()),
                             );
                         }
                         CompositeControl::Button { id, label, frozen } => {
@@ -848,6 +903,20 @@ impl SettingsWindow {
         if !staged.base_url {
             if let Some(Control::Entry(entry)) = controls.get(form::DIRECTOR_BASE_URL_ID) {
                 entry.set_text(&view.director_base_url);
+            }
+            // The shortcut rests on whatever the field holds, so it moves with
+            // it — and only while nothing is staged, for the same reason.
+            if let Some(Control::CharacterPicker(radio_box, _)) =
+                controls.get(form::DIRECTOR_BASE_URL_PICK_ID)
+            {
+                let title = form::endpoint_title(&view.director_base_url);
+                for child in radio_box.children() {
+                    if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
+                        if radio.label().is_some_and(|label| label == title) {
+                            radio.set_active(true);
+                        }
+                    }
+                }
             }
         }
         if !staged.model {

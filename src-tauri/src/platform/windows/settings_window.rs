@@ -1243,13 +1243,35 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += field_width + 8;
                                         control_id += 1;
                                     }
-                                    form::CompositeControl::Popup { id } => {
+                                    // Skipped entirely until #461 maps a
+                                    // control back to its row. This port
+                                    // commits no composite pick, and a combo
+                                    // box that lists endpoints and then
+                                    // ignores the click is the failure #465
+                                    // set out to remove. An empty options vec
+                                    // is not the way to say that either: the
+                                    // refresh above reads empty as "fill from
+                                    // `view.installed`", which would offer
+                                    // Character packages as endpoints.
+                                    form::CompositeControl::Popup { id, .. }
+                                        if id == form::DIRECTOR_BASE_URL_PICK_ID => {}
+                                    form::CompositeControl::Popup { id, frozen, .. } => {
                                         let combo_width = 100;
+                                        // Disabled at creation for the same
+                                        // reason `FormRow::Popup` is: an
+                                        // exported variable owns the pick, and
+                                        // `frozen` cannot change while the
+                                        // window lives (#272).
+                                        let mut style =
+                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST;
+                                        if *frozen {
+                                            style |= WS_DISABLED;
+                                        }
                                         let hwnd = CreateWindowExA(
                                             0,
                                             c"COMBOBOX".as_ptr() as *const u8,
                                             ptr::null(),
-                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+                                            style,
                                             x,
                                             y,
                                             combo_width,
