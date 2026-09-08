@@ -28,6 +28,12 @@ pub enum InputEvent {
 /// of the process. It filters for button and motion events and sends `InputEvent`
 /// to wake the frame loop from idle wait. The frame loop still polls cursor
 /// position and button state after waking via the existing Witness path.
+///
+/// **Shared X11 connection:** This thread calls `wait_for_event()` on the shared
+/// `OnceLock` X11 connection that the frame thread also uses (cursor polling,
+/// window queries). Concurrent access is allowed by x11rb's `Sync` impl, but
+/// `wait_for_event` blocks until an event arrives. No known issue observed, but
+/// worth noting for diagnosis if event processing stalls.
 pub fn spawn_listener() -> Option<mpsc::Receiver<InputEvent>> {
     let display = super::connection::connection()?;
     let (sender, receiver) = mpsc::channel();
