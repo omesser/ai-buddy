@@ -160,7 +160,7 @@ pub(crate) fn run_frame_loop(
         // Spawn XI2 input event listener on X11. When available, the frame loop
         // blocks on this channel when idle instead of polling at 16ms. #183.
         #[cfg(all(unix, not(target_os = "macos")))]
-        let input_events = platform::x11::spawn_listener();
+        let input_events = platform::spawn_xi2_listener();
         #[cfg(any(target_os = "macos", not(unix)))]
         let input_events: Option<mpsc::Receiver<()>> = None;
 
@@ -174,11 +174,32 @@ pub(crate) fn run_frame_loop(
 
         loop {
             // Scheduler-aware wait: either sleep 16ms (active) or block on input
-            // events (idle). When idle on X11 with XI2 events, this eliminates the
-            // 60Hz busy-wake. #183.
+            // events (idle). When idle, compute the next real deadline (Director
+            // ambient wake, activity sensing) and use that instead of polling.
+            // #183.
             match (schedule_mode, &input_events) {
                 (scheduler::ScheduleMode::Idle, Some(events)) => {
-                    let _ = events.recv_timeout(ENGINE_TICK);
+                    // Compute next real work deadline: min of Director ambient
+                    // wakes and activity sensing interval.
+                    let next_director = lives
+                        .iter()
+                        .filter_map(|live| {
+                            let remaining = live.pace.wait().saturating_sub(live.since_wake);
+                            if remaining.is_zero() {
+                                None
+                            } else {
+                                Some(remaining)
+                            }
+                        })
+                        .min()
+                        .unwrap_or(Duration::from_secs(3600));
+
+                    let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                    let deadline = next_director.min(next_sense);
+
+                    // Block on input events until deadline. Motion/button events
+                    // wake immediately; timeout means real work is due.
+                    let _ = events.recv_timeout(deadline);
                 }
                 _ => {
                     thread::sleep(ENGINE_TICK);
@@ -1054,6 +1075,11 @@ pub(crate) fn run_frame_loop(
             // others cost nothing extra, the read being shared.
             let mut riding = false;
 
+            // Track whether any instance needs active timing for the next iteration.
+            // Idle means all visible instances are grounded/perched with no behavior
+            // playing, asleep, or hidden. #183.
+            let mut any_needs_active = false;
+
             // Whether the cursor is over any Instance's art. Click-through is a
             // property of the overlay, which every Instance shares, so one
             // sprite under the cursor is enough to make the overlay take the
@@ -1253,6 +1279,15 @@ pub(crate) fn run_frame_loop(
                 if live.last_state != Some(frame.state) {
                     live.last_state = Some(frame.state);
                     live.since_state = Duration::ZERO;
+                }
+
+                // Check if this instance needs active timing (16ms) for next iteration.
+                // Idle means grounded/perched with no behavior, asleep, or will be hidden.
+                let behavior_playing = frame.playing_behavior.is_some();
+                if scheduler::mode(&frame, true, behavior_playing)
+                    == scheduler::ScheduleMode::Active
+                {
+                    any_needs_active = true;
                 }
 
                 // After the tick so a Throw is already Falling, not still Dragged.
@@ -1760,47 +1795,14 @@ pub(crate) fn run_frame_loop(
                     },
                 );
 
-                // Determine schedule mode for next iteration: idle if all visible
-                // sprites are grounded/perched with no behavior playing, active
-                // otherwise. Hidden sprites always idle. #183.
+                // Set schedule mode for next iteration based on visibility and what
+                // any_needs_active captured during frame processing. Hidden sprites
+                // always idle. #183.
                 if index == 0 {
-                    let visible = presence.visible;
-                    let any_active = placed.iter().any(|instance| {
-                        let behavior_playing = lives
-                            .get(instance.index)
-                            .and_then(|live| roster.get(&live.id))
-                            .and_then(|inst| inst.playing_behavior().map(|b| !b.is_empty()))
-                            .unwrap_or(false);
-                        let frame_state = instance.sprite.state;
-                        scheduler::mode(
-                            &ai_buddy_core::engine::Frame {
-                                position: ai_buddy_core::engine::Point {
-                                    x: instance.sprite.position.x,
-                                    y: instance.sprite.position.y,
-                                },
-                                velocity: ai_buddy_core::engine::Point { x: 0.0, y: 0.0 },
-                                state: frame_state,
-                                animation: "",
-                                animation_ms: 0,
-                                variant_draw: 0,
-                                dialogue: None,
-                                behavior: None,
-                                playing_behavior: None,
-                                playing_primitive: None,
-                                riding: false,
-                                facing: 1.0,
-                                addressed: false,
-                                cue: None,
-                                refused: None,
-                            },
-                            visible,
-                            behavior_playing,
-                        ) == scheduler::ScheduleMode::Active
-                    });
-                    schedule_mode = if any_active {
-                        scheduler::ScheduleMode::Active
-                    } else {
+                    schedule_mode = if !presence.visible || !any_needs_active {
                         scheduler::ScheduleMode::Idle
+                    } else {
+                        scheduler::ScheduleMode::Active
                     };
                 }
 
