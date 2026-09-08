@@ -107,6 +107,121 @@ impl Probe for Macos {
     }
 }
 
+#[cfg(target_os = "windows")]
+mod windows {
+    pub fn process_list_name() -> String {
+        if packaged() {
+            return "ai-buddy".into();
+        }
+        parent_chain_name().unwrap_or_else(|| "ai-buddy".into())
+    }
+
+    fn packaged() -> bool {
+        // Packaged: not under target/debug or target/release build directories.
+        std::env::current_exe().is_ok_and(|exe| {
+            !exe.to_string_lossy().contains(r"\target\debug")
+                && !exe.to_string_lossy().contains(r"\target\release")
+        })
+    }
+
+    fn parent_chain_name() -> Option<String> {
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+
+        let current_pid = unsafe { GetCurrentProcessId() };
+        let mut pid = current_pid;
+
+        for _ in 0..24 {
+            let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+            if snapshot == 0 || snapshot == (-1isize as HANDLE) {
+                return None;
+            }
+
+            let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+            if unsafe { Process32FirstW(snapshot, &mut entry) } == 0 {
+                unsafe { CloseHandle(snapshot) };
+                return None;
+            }
+
+            let mut found = false;
+            loop {
+                if entry.th32ProcessID == pid {
+                    pid = entry.th32ParentProcessID;
+                    found = true;
+                    break;
+                }
+                if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                    break;
+                }
+            }
+
+            unsafe { CloseHandle(snapshot) };
+
+            if !found || pid == 0 || pid == current_pid {
+                return None;
+            }
+
+            let parent_name = find_process_name(pid)?;
+            if !parent_name.is_empty() {
+                return Some(parent_name);
+            }
+        }
+
+        None
+    }
+
+    fn find_process_name(pid: u32) -> Option<String> {
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snapshot == 0 || snapshot == (-1isize as HANDLE) {
+            return None;
+        }
+
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if unsafe { Process32FirstW(snapshot, &mut entry) } == 0 {
+            unsafe { CloseHandle(snapshot) };
+            return None;
+        }
+
+        loop {
+            if entry.th32ProcessID == pid {
+                let name = parse_exe_name(&entry.szExeFile);
+                unsafe { CloseHandle(snapshot) };
+                return if name.is_empty() { None } else { Some(name) };
+            }
+            if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+
+        unsafe { CloseHandle(snapshot) };
+        None
+    }
+
+    fn parse_exe_name(sz_exe: &[u16; 260]) -> String {
+        let end = sz_exe.iter().position(|&c| c == 0).unwrap_or(260);
+        let name = String::from_utf16_lossy(&sz_exe[..end]);
+        name.trim_end_matches(".exe")
+            .split('\\')
+            .last()
+            .unwrap_or(&name)
+            .to_string()
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use std::ffi::c_void;
@@ -315,10 +430,25 @@ pub fn pane_intro(listed_as: &str) -> String {
 }
 
 /// Linux-specific intro: no consent system, names what is read without a grant.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
     "On Linux, no permission is requested. Window positions are read to keep the buddy visible."
         .to_string()
+}
+
+/// Windows-specific hint: names the process Privacy will list.
+#[cfg(target_os = "windows")]
+pub fn listed_under_hint(name: &str) -> String {
+    format!("Windows lists this process as {name}.")
+}
+
+/// Windows pane intro: names the process for future reference.
+#[cfg(target_os = "windows")]
+pub fn pane_intro(listed_as: &str) -> String {
+    format!(
+        "On Windows, permissions are requested through Settings when needed. {}",
+        listed_under_hint(listed_as)
+    )
 }
 
 /// The localized name TCC will show. Packaged builds are this app; `cargo run`
@@ -328,7 +458,11 @@ pub fn process_listed_as() -> String {
     {
         macos::tcc_list_name()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::process_list_name()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         "ai-buddy".into()
     }
@@ -465,7 +599,7 @@ mod tests {
 
     /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.
     #[test]
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     fn linux_pane_intro_is_tcc_free_and_explains_consent() {
         let prose = linux_pane_intro();
         assert!(!prose.is_empty(), "Linux prose must not be empty");
@@ -489,6 +623,57 @@ mod tests {
         assert!(
             !prose.contains("Privacy & Security"),
             "Linux prose must not mention macOS Privacy & Security, got {prose:?}"
+        );
+    }
+
+    /// Windows hint must name the process Privacy will list, without macOS/TCC vocabulary.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_hint_names_process_without_macos_vocabulary() {
+        let hint = listed_under_hint("Cursor");
+        assert!(
+            hint.contains("Cursor"),
+            "the user has to see the process name Privacy will list, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("macOS"),
+            "Windows hint must not mention macOS, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("Privacy & Security"),
+            "Windows hint must not mention macOS Privacy & Security pane, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("TCC"),
+            "Windows hint must not mention TCC, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("Accessibility"),
+            "Windows hint must not mention macOS Accessibility, got {hint:?}"
+        );
+    }
+
+    /// Windows pane intro must not contain macOS-specific vocabulary.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_pane_intro_is_not_macos_specific() {
+        let intro = pane_intro(&process_listed_as());
+        assert!(!intro.is_empty(), "Windows intro must not be empty");
+        assert!(
+            intro.contains(&process_listed_as()),
+            "Windows intro must name the process, got {intro:?}"
+        );
+        assert!(
+            !intro.contains("macOS"),
+            "Windows intro must not mention macOS, got {intro:?}"
+        );
+        assert!(
+            !intro.contains("Privacy & Security"),
+            "Windows intro must not mention macOS Privacy & Security, got {intro:?}"
+        );
+        assert!(
+            !intro.contains("TCC"),
+            "Windows intro must not mention TCC, got {intro:?}"
         );
     }
 }
