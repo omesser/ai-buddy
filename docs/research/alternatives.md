@@ -419,8 +419,9 @@ sources).
 The mascot has an authored personality file (`personality.txt`) and a Director
 that picks Behaviors and spoken lines non-deterministically. The Character talks
 in-character while living on your windows — not Clippy (no claiming machine
-abilities, no promising actions), not a chat app (no chat window, no
-back-and-forth; #17 Summon is specced). Director proposes a Behavior name and
+abilities, no promising actions). Not a chat-first app — Summon chat exists
+(#17 tracks polish/bugs), but idle personality-driven speech is the product center.
+Director proposes a Behavior name and
 optional spoken line; Static weights when no Completer is configured, HTTP
 Completer stand-in with API key/local server, Harness ACP Completer shipped
 (#433 2026-09-07, named claude/hermes/opencode/codex rows + custom ACP command
