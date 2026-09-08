@@ -1760,6 +1760,50 @@ pub(crate) fn run_frame_loop(
                     },
                 );
 
+                // Determine schedule mode for next iteration: idle if all visible
+                // sprites are grounded/perched with no behavior playing, active
+                // otherwise. Hidden sprites always idle. #183.
+                if index == 0 {
+                    let visible = presence.visible;
+                    let any_active = placed.iter().any(|instance| {
+                        let behavior_playing = lives
+                            .get(instance.index)
+                            .and_then(|live| roster.get(&live.id))
+                            .and_then(|inst| inst.playing_behavior().map(|b| !b.is_empty()))
+                            .unwrap_or(false);
+                        let frame_state = instance.sprite.state;
+                        scheduler::mode(
+                            &ai_buddy_core::engine::Frame {
+                                position: ai_buddy_core::engine::Point {
+                                    x: instance.sprite.position.x,
+                                    y: instance.sprite.position.y,
+                                },
+                                velocity: ai_buddy_core::engine::Point { x: 0.0, y: 0.0 },
+                                state: frame_state,
+                                animation: "",
+                                animation_ms: 0,
+                                variant_draw: 0,
+                                dialogue: None,
+                                behavior: None,
+                                playing_behavior: None,
+                                playing_primitive: None,
+                                riding: false,
+                                facing: 1.0,
+                                addressed: false,
+                                cue: None,
+                                refused: None,
+                            },
+                            visible,
+                            behavior_playing,
+                        ) == scheduler::ScheduleMode::Active
+                    });
+                    schedule_mode = if any_active {
+                        scheduler::ScheduleMode::Active
+                    } else {
+                        scheduler::ScheduleMode::Idle
+                    };
+                }
+
                 // Click-through is per-window, and a click only ever lands on
                 // the overlay the cursor is on. Every other overlay passes
                 // clicks through whatever the sprite is doing, so a click on
