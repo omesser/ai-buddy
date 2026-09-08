@@ -946,6 +946,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             placeholder,
                             frozen,
+                            help,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -997,6 +998,32 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
                             y += ROW_HEIGHT + ROW_GAP;
+                            // The `_help` suffix is what keeps a refresh from
+                            // writing the row's value over the hint.
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
+                                SetWindowTextA(help_hwnd, help_cstr.as_ptr() as *const u8);
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
                             control_id += 1;
                         }
                         FormRow::SecureField {

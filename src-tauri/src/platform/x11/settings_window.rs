@@ -256,6 +256,7 @@ impl SettingsWindow {
                 writes,
                 frozen,
                 batched,
+                help,
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -311,6 +312,10 @@ impl SettingsWindow {
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
+
+                if let Some(help_text) = help {
+                    help_line(container, help_text);
+                }
             }
             FormRow::SecureField {
                 id,
