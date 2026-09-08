@@ -10,6 +10,7 @@ use ai_buddy_core::engine::{BehaviorProposal, Cue, State, Verb};
 use ai_buddy_core::input::press_target;
 use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use ai_buddy_core::roster::{InstanceId, Roster};
+use ai_buddy_core::scheduler;
 use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::SnapshotAssembler;
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
@@ -156,15 +157,33 @@ pub(crate) fn run_frame_loop(
         // and so the only place that knows when this is true again.
         let covered = Arc::new(Mutex::new(covered));
 
+        // Spawn XI2 input event listener on X11. When available, the frame loop
+        // blocks on this channel when idle instead of polling at 16ms. #183.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let input_events = platform::x11::spawn_listener();
+        #[cfg(any(target_os = "macos", not(unix)))]
+        let input_events: Option<mpsc::Receiver<()>> = None;
+
         let mut button_was_down = false;
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
         let mut time_since_launch = Duration::ZERO;
         let mut tour_triggered = false;
+        let mut schedule_mode = scheduler::ScheduleMode::Active;
 
         loop {
-            thread::sleep(ENGINE_TICK);
+            // Scheduler-aware wait: either sleep 16ms (active) or block on input
+            // events (idle). When idle on X11 with XI2 events, this eliminates the
+            // 60Hz busy-wake. #183.
+            match (schedule_mode, &input_events) {
+                (scheduler::ScheduleMode::Idle, Some(events)) => {
+                    let _ = events.recv_timeout(ENGINE_TICK);
+                }
+                _ => {
+                    thread::sleep(ENGINE_TICK);
+                }
+            }
 
             // Read per tick, not once at setup: the Development tab can flip
             // these while the loop runs, and an atomic load is nothing beside
