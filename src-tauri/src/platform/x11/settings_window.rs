@@ -783,9 +783,14 @@ impl SettingsWindow {
         self.window.present();
     }
 
-    fn set_session(&self, session: SettingsSession) {
+    /// `fresh` is a window built this instant: its fields are still empty, so
+    /// nothing on the Director tab is staged and the first draw has to fill
+    /// every row. Read back as staged instead, they leave the tab showing
+    /// placeholders and arm Apply over a patch of empty strings (#530). A
+    /// window that was already open keeps whatever the user left staged.
+    fn set_session(&self, session: SettingsSession, fresh: bool) {
         *self.session.lock().unwrap() = Some(session);
-        self.refresh();
+        self.draw(fresh);
     }
 
     /// Redraw from live state, leaving anything staged on the Director tab
@@ -1174,11 +1179,11 @@ fn show_internal(session: SettingsSession) {
     WINDOW.with(|cell| {
         let mut borrow = cell.borrow_mut();
         if let Some(existing) = borrow.as_ref() {
-            existing.set_session(session);
+            existing.set_session(session, false);
             existing.show();
         } else {
             let window = SettingsWindow::new();
-            window.set_session(session);
+            window.set_session(session, true);
             window.show();
             *borrow = Some(window);
         }

@@ -574,15 +574,8 @@ impl DirectorDraft<'_> {
         self.edit(form::DIRECTOR_MODEL_ID, &self.model, &view.director_model)
     }
 
-    /// A blank field is an untouched one, never an edit to the empty string.
-    ///
-    /// Both windows build the tab's fields empty and fill them on the first
-    /// redraw, so a draft read before that fill holds `""` for every row and
-    /// would otherwise stage the whole tab on open — Apply then wrote the
-    /// saved URL and model away (#530). The cost is that clearing a row back
-    /// to its default is not a gesture the tab offers; retype the value.
     fn edit<'t>(&self, id: &str, text: &'t str, live: &str) -> Option<&'t str> {
-        (!text.trim().is_empty() && !self.description.frozen(id) && text != live).then_some(text)
+        (!self.description.frozen(id) && text != live).then_some(text)
     }
 
     /// What the key field means: the typed key, or the empty string for a
@@ -2378,54 +2371,8 @@ mod tests {
         });
     }
 
-    /// #530: both windows build the tab empty and fill it on the first
-    /// `refresh`, so the draft that redraw reads holds `""` for every row.
-    /// Reading that as an edit staged the whole tab on open, which enabled
-    /// Apply and let it write the saved URL and model away.
-    #[test]
-    fn an_untouched_tab_over_saved_values_applies_nothing() {
-        model::tests::with_env(None, None, None, || {
-            let view = director_view(true);
-            let description = form::describe();
-            let draft = DirectorDraft {
-                base_url: String::new(),
-                model: String::new(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
-            };
-            assert!(
-                draft.patch(&view).is_none(),
-                "a tab nobody typed in has nothing to apply"
-            );
-            assert!(
-                !draft.staged(&view).any(),
-                "and a redraw has to fill every field from live state"
-            );
-        });
-    }
-
-    /// Whitespace is blank: a space is no more an edit than an empty field,
-    /// and letting one through would write a base URL nothing can dial.
-    #[test]
-    fn a_field_holding_only_whitespace_is_untouched() {
-        model::tests::with_env(None, None, None, || {
-            let view = director_view(true);
-            let description = form::describe();
-            let draft = DirectorDraft {
-                base_url: "  ".into(),
-                model: " ".into(),
-                key: String::new(),
-                clear_key: false,
-                description: &description,
-            };
-            assert!(draft.patch(&view).is_none(), "a space is not a typed edit");
-            assert!(!draft.staged(&view).any());
-        });
-    }
-
-    /// The other half of #530: the empty guard must not take back what #279
-    /// fixed, so a typed edit still reads as staged and a redraw leaves it.
+    /// #279: a typed edit reads as staged, so the redraw that follows an app
+    /// switch or any `SettingsOp` leaves it where the user left it.
     #[test]
     fn a_typed_endpoint_edit_survives_a_redraw() {
         model::tests::with_env(None, None, None, || {
