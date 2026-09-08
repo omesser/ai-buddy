@@ -3193,6 +3193,250 @@ pub(crate) mod tests {
         );
     }
 
+    /// How #244's prompt phrasings differ.
+    ///
+    /// The personality file itself is never touched: the sample lines are why
+    /// the voices read as well as they do (#156), so only the frame around
+    /// them moves.
+    #[derive(Clone, Copy, Debug)]
+    enum Framing {
+        /// The prompt as shipped — personality first, format instruction after.
+        Today,
+        /// The quoted lines named as voice rather than as a reply to imitate.
+        Framed,
+        /// The personality moved below the format instruction.
+        After,
+    }
+
+    /// The last line of the format instruction, and the seam `After` cuts on.
+    const FORMAT_ENDS: &str = "Propose nothing else.\n";
+
+    const VOICE_NOTE: &str = "Those quoted lines are how this character sounds, \
+        not a format to copy: your own reply still begins with a behavior name.";
+
+    /// `prompt` said under `framing`.
+    ///
+    /// A rewrite of the built prompt rather than a second prompt builder, so
+    /// the harness cannot drift from the one production sends. A later turn
+    /// carries no Personality Prompt and comes back untouched.
+    fn reframed(prompt: &str, personality: &str, framing: Framing) -> String {
+        // An empty Personality Prompt renders as "(no personality)", which
+        // `strip_prefix("")` would happily match and then frame as a voice.
+        if personality.is_empty() {
+            return prompt.to_string();
+        }
+        let Some(rest) = prompt.strip_prefix(personality) else {
+            return prompt.to_string();
+        };
+        match framing {
+            Framing::Today => prompt.to_string(),
+            Framing::Framed => format!("{personality}\n\n{VOICE_NOTE}{rest}"),
+            Framing::After => match rest.split_once(FORMAT_ENDS) {
+                Some((head, tail)) => {
+                    format!("{}{FORMAT_ENDS}\n{personality}\n{tail}", head.trim_start())
+                }
+                None => prompt.to_string(),
+            },
+        }
+    }
+
+    /// The quoted sample lines a Personality Prompt offers, per #156's
+    /// convention ("It has been heard to say: …").
+    ///
+    /// ponytail: quote-character parity rather than the "heard to say" anchor,
+    /// which black-mage already words differently. It costs nothing and holds
+    /// for all eight shipped personalities; one unpaired quote in a future one
+    /// would invert it and the harness would report a clean zero. Anchor on
+    /// the colon if a personality ever needs a lone quote character.
+    fn sample_lines(personality: &str) -> Vec<&str> {
+        personality
+            .split(['"', '\u{201c}', '\u{201d}'])
+            .skip(1)
+            .step_by(2)
+            .collect()
+    }
+
+    /// Below this many squashed characters a quoted string is too short to
+    /// be a sample line: `"Mad Cat"` appears inside timber-wolf's prose, and
+    /// matching it would count any reply that used the name.
+    const QUOTE_FLOOR: usize = 12;
+
+    /// The sample line `reply` said back, when it said one back.
+    ///
+    /// ponytail: the reply containing a whole sample line, compared over
+    /// squashed text, rather than an edit distance. It catches the line
+    /// repunctuated, recased, or wrapped in a preamble, which is what #230
+    /// saw; a model that truncates or paraphrases it reads as prose and is
+    /// not counted. So the number is a floor on quoting, never an inflated
+    /// one — reach for a similarity measure only if the paraphrases matter.
+    fn quoted_sample_line(reply: &str, personality: &str) -> Option<String> {
+        let said = squashed(reply);
+        sample_lines(personality)
+            .into_iter()
+            .find(|line| {
+                let sample = squashed(line);
+                sample.len() >= QUOTE_FLOOR && said.contains(&sample)
+            })
+            .map(str::to_string)
+    }
+
+    /// `text` as its lowercase alphanumeric words, single-spaced.
+    fn squashed(text: &str) -> String {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Sends every wake under one phrasing.
+    ///
+    /// A Completer decorator, so `ModelDirector` still builds the prompt and
+    /// still classifies the reply — the comparison changes the wording and
+    /// nothing else.
+    struct Reframing<C> {
+        inner: C,
+        personality: String,
+        framing: Framing,
+    }
+
+    impl<C: Completer> Completer for Reframing<C> {
+        fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+            let mut sent = request.clone();
+            sent.prompt = reframed(&sent.prompt, &self.personality, self.framing);
+            self.inner.complete(&sent)
+        }
+    }
+
+    /// A Completer that fails every turn, for a test that only needs the
+    /// prompt `ModelDirector` builds.
+    struct Silent;
+
+    impl Completer for Silent {
+        fn complete(&self, _request: &WakeRequest) -> Result<String, String> {
+            Err("no server here".to_string())
+        }
+    }
+
+    /// A personality in #156's shape, small enough to reason about.
+    const TWO_SAMPLES: &str = "Cat claimed the desktop.\n\nIt has been heard to say: \
+        \"What is that one? Show me.\" - \"You may continue.\"";
+
+    /// #244: the quote counter has to recognise a sample line said back with
+    /// the model's own punctuation, and refuse a fragment short enough to
+    /// turn up in any sentence.
+    #[test]
+    fn a_sample_line_said_back_is_recognised_however_it_is_punctuated() {
+        let personality = TWO_SAMPLES;
+
+        assert_eq!(
+            quoted_sample_line("What is that one? Show me.", personality).as_deref(),
+            Some("What is that one? Show me.")
+        );
+        assert_eq!(
+            quoted_sample_line("what is that one - show me!!", personality).as_deref(),
+            Some("What is that one? Show me."),
+            "the punctuation is the model's, not the personality's"
+        );
+        assert_eq!(
+            quoted_sample_line("Hmm. What is that one? Show me.", personality).as_deref(),
+            Some("What is that one? Show me."),
+            "a sample line with a preamble is still a quote"
+        );
+    }
+
+    #[test]
+    fn prose_of_its_own_is_not_counted_as_a_quote() {
+        let personality = TWO_SAMPLES;
+
+        assert_eq!(
+            quoted_sample_line("I supervised that compile and I approve.", personality),
+            None
+        );
+        assert_eq!(
+            quoted_sample_line("Show me.", personality),
+            None,
+            "part of a sample line is the model's own sentence, not a quote"
+        );
+        assert_eq!(
+            quoted_sample_line(
+                "What is that one? Show me.",
+                "A personality with no samples."
+            ),
+            None
+        );
+        assert_eq!(
+            quoted_sample_line(
+                "It is a \"Mad Cat\" and I caught it.",
+                "It is a \"Mad Cat\"."
+            ),
+            None,
+            "a quoted string too short to be a sample line is a coincidence"
+        );
+    }
+
+    /// Against the shipped file, not a fixture. The convention separates the
+    /// quoted lines with em dashes and wraps them mid-sentence, and extraction
+    /// that failed on that would report a clean zero rather than an error.
+    #[test]
+    fn every_sample_line_the_shipped_cat_offers_is_recognised_verbatim() {
+        let personality = include_str!("../../characters/cat/personality.txt");
+        let lines = sample_lines(personality);
+
+        assert!(
+            !lines.is_empty(),
+            "the cat still offers sample lines (#156)"
+        );
+        for line in lines {
+            assert_eq!(
+                quoted_sample_line(line, personality).as_deref(),
+                Some(line),
+                "a shipped sample line said back verbatim has to count"
+            );
+        }
+    }
+
+    #[test]
+    fn framing_moves_the_personality_and_leaves_the_rest_alone() {
+        let personality =
+            "Cat claimed the desktop. It has been heard to say: \"Show me that one.\"";
+        let director = ModelDirector::new(Silent, ["stroll", "nap"], "buddy", "Cat");
+        let today = director.prompt(&Context {
+            personality: personality.to_string(),
+            happened: Happened::Poke,
+            standing: "the display floor".to_string(),
+            ..wake_context()
+        });
+
+        assert_eq!(reframed(&today, personality, Framing::Today), today);
+
+        let framed = reframed(&today, personality, Framing::Framed);
+        assert!(framed.starts_with(personality), "the voice still opens");
+        assert!(
+            framed.contains("not a format to copy"),
+            "the sample lines are marked as voice: {framed}"
+        );
+
+        let after = reframed(&today, personality, Framing::After);
+        assert!(!after.starts_with(personality), "the voice no longer opens");
+        assert!(
+            after.find(FORMAT_ENDS) < after.find(personality),
+            "and it now follows the format instruction: {after}"
+        );
+    }
+
+    #[test]
+    fn a_later_turn_carries_no_personality_and_is_left_alone() {
+        let follow_up = "what just happened: poked\nrecent: (none)\n";
+        for framing in [Framing::Today, Framing::Framed, Framing::After] {
+            assert_eq!(
+                reframed(follow_up, "Cat claimed the desktop.", framing),
+                follow_up,
+                "{framing:?} rewrote a turn that carries no personality"
+            );
+        }
+    }
+
     /// #175: how often a live local model breaks the reply contract, as the
     /// before number #144 argues from. Ignored because it needs a server and
     /// spends real seconds; it is the harness, not a check of our own code.
@@ -3210,6 +3454,9 @@ pub(crate) mod tests {
     /// ```
     ///
     /// `AI_BUDDY_BENCH_WAKES` sets the sample size; it defaults to 40.
+    /// `AI_BUDDY_BENCH_FRAMING` picks #244's phrasing — `today` (the default),
+    /// `framed`, or `after` — and the run reports how much of its prose was a
+    /// personality sample line quoted back.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {
@@ -3243,7 +3490,24 @@ pub(crate) mod tests {
         let cat = ai_buddy_core::character::load(&files).expect("and loads");
         let behaviors: Vec<String> = cat.behaviors.keys().cloned().collect();
 
-        let director = ModelDirector::new(endpoint, behaviors.clone(), "buddy", cat.name.clone());
+        let framing = match std::env::var("AI_BUDDY_BENCH_FRAMING")
+            .unwrap_or_default()
+            .as_str()
+        {
+            "framed" => Framing::Framed,
+            "after" => Framing::After,
+            _ => Framing::Today,
+        };
+        let director = ModelDirector::new(
+            Reframing {
+                inner: endpoint,
+                personality: cat.personality.clone(),
+                framing,
+            },
+            behaviors.clone(),
+            "buddy",
+            cat.name.clone(),
+        );
 
         // Vary the wake so the prompts differ: the reactive verbs plus ambient.
         let occasions = [
@@ -3260,6 +3524,10 @@ pub(crate) mod tests {
         // compares exactly. Counting it apart separates what the model got
         // wrong from what we do.
         let mut case_only = 0usize;
+        // #244: prose that is a sample line handed back. A subset of `speech`,
+        // because a reply that names a Behavior kept the contract whatever its
+        // dialogue borrowed.
+        let mut quoted = 0usize;
         let mut examples: Vec<String> = Vec::new();
         let started = Instant::now();
 
@@ -3301,13 +3569,21 @@ pub(crate) mod tests {
                     let near = behaviors
                         .iter()
                         .any(|declared| declared.eq_ignore_ascii_case(&offered));
+                    let quote = quoted_sample_line(&said, &cat.personality);
                     if near {
                         case_only += 1;
                     } else {
                         speech += 1;
+                        if quote.is_some() {
+                            quoted += 1;
+                        }
                     }
                     if examples.len() < 6 {
-                        let tag = if near { "case-only" } else { "speech" };
+                        let tag = match (near, quote.is_some()) {
+                            (true, _) => "case-only",
+                            (false, true) => "quoted",
+                            (false, false) => "speech",
+                        };
                         examples.push(format!("  {tag}: {}", said.replace('\n', " | ")));
                     }
                 }
@@ -3323,6 +3599,7 @@ pub(crate) mod tests {
         let percent = |n: usize| (n as f64) * 100.0 / (wakes as f64);
         println!("\n#175 reply-contract outcomes over {wakes} wakes");
         println!("  model:     {model} at {origin}");
+        println!("  framing:   {framing:?}  (#244)");
         println!("  behaviors: {}", behaviors.join(", "));
         println!("  elapsed:   {:.0}s", started.elapsed().as_secs_f64());
         println!("  accepted:   {accepted:>3}  ({:.0}%)", percent(accepted));
@@ -3333,6 +3610,10 @@ pub(crate) mod tests {
         println!(
             "  speech:     {speech:>3}  ({:.0}%)  genuine prose",
             percent(speech)
+        );
+        println!(
+            "  quoted:     {quoted:>3}  ({:.0}%)  of it a personality sample line",
+            percent(quoted)
         );
         println!("  failed:     {failed:>3}  ({:.0}%)", percent(failed));
         println!(
