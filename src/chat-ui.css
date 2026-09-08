@@ -517,11 +517,6 @@ body {
   text-align: center;
 }
 
-.empty .connect-btn:hover {
-  background: var(--chat-fill-soft);
-  border-color: var(--chat-accent);
-}
-
 .empty .connect-btn:focus-visible {
   outline: 2px solid var(--chat-accent);
   outline-offset: 2px;
@@ -532,12 +527,53 @@ body {
   color: var(--chat-ink-3);
 }
 
-.empty .connect-btn:hover .connect-icon {
-  color: var(--chat-accent);
-}
-
 .empty .connect-label {
   font-size: 12px;
+}
+
+/* Brand-specific accent colors per Harness */
+.empty .connect-btn[data-harness="claude"] {
+  border-color: color-mix(in srgb, var(--claude-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="claude"]:hover {
+  background: color-mix(in srgb, var(--claude-accent) 10%, var(--chat-fill));
+  border-color: var(--claude-accent);
+}
+.empty .connect-btn[data-harness="claude"] .connect-icon {
+  color: var(--claude-accent);
+}
+
+.empty .connect-btn[data-harness="codex"] {
+  border-color: color-mix(in srgb, var(--codex-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="codex"]:hover {
+  background: color-mix(in srgb, var(--codex-accent) 10%, var(--chat-fill));
+  border-color: var(--codex-accent);
+}
+.empty .connect-btn[data-harness="codex"] .connect-icon {
+  color: var(--codex-accent);
+}
+
+.empty .connect-btn[data-harness="grok"] {
+  border-color: color-mix(in srgb, var(--grok-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="grok"]:hover {
+  background: color-mix(in srgb, var(--grok-accent) 10%, var(--chat-fill));
+  border-color: var(--grok-accent);
+}
+.empty .connect-btn[data-harness="grok"] .connect-icon {
+  color: var(--grok-accent);
+}
+
+.empty .connect-btn[data-harness="opencode"] {
+  border-color: color-mix(in srgb, var(--opencode-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="opencode"]:hover {
+  background: color-mix(in srgb, var(--opencode-accent) 10%, var(--chat-fill));
+  border-color: var(--opencode-accent);
+}
+.empty .connect-btn[data-harness="opencode"] .connect-icon {
+  color: var(--opencode-accent);
 }
 
 .empty .settings-btn {
