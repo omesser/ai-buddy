@@ -37,6 +37,11 @@ in the frame loop.
 Completer. Chat (#17) is another turn in the same conversation, not a
 different prompt to a different endpoint.
 
+That conversation is per Character Instance. Two Instances never share an
+ACP session; a Character switch on one Instance is a different identity
+and keeps the previous id so a switch back can load it. There is still
+one Harness process and one ACP connection — no second mind. #558.
+
 An attached handle stays the configured Completer once it exists, alive or
 not. #469 asked the other way round: a Harness whose child never spawned, or
 died mid-session, leaves `model::completer_from` handing the Director a handle

@@ -2153,6 +2153,7 @@ mod tests {
                 &id,
                 &mut completer,
                 ["stroll"],
+                "cat",
                 &director,
                 config.configured,
             );
@@ -2902,6 +2903,7 @@ mod tests {
                     &id,
                     &mut completer,
                     ["stroll"],
+                    "cat",
                     &director,
                     configured,
                 );

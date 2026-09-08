@@ -137,15 +137,19 @@ pub struct Context {
 ///
 /// The prompt alone left the Shell unable to say which buddy woke, or whether
 /// the user caused it, in the one place that sees a session call — this seam is
-/// all the Harness Completer is handed (#435). Neither field reaches the model:
-/// the HTTP Completer ignores both, and the Harness writes them to the Action
-/// Log.
+/// all the Harness Completer is handed (#435). The HTTP Completer ignores the
+/// identity fields; the Harness writes them to the Action Log and, for ACP,
+/// keys the session by Instance and Character (#558).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WakeRequest {
     pub prompt: String,
     /// Which Character Instance woke. One `ModelDirector` per Instance, so
     /// this is known before the prompt is built.
     pub instance: InstanceId,
+    /// Which Character this Instance is right now. A retarget keeps the
+    /// Instance id and changes the Character Prompt (ADR-0012), so the
+    /// Harness cannot key a session on the Instance alone (#558).
+    pub character: String,
     /// Whether the user addressed the buddy, as against a proactive wake.
     /// ADR-0008's wake policy names the two.
     pub reactive: bool,
@@ -183,6 +187,9 @@ pub struct ModelDirector<C> {
     /// Shell may remember to set: there is one Director per Instance already,
     /// and a request that named no buddy would log as none.
     instance: InstanceId,
+    /// Which Character this Instance is. A retarget keeps `instance` and
+    /// changes this, so the Harness can keep both sessions (#558).
+    character: String,
     /// The Character Prompt is the opening turn only. After a successful
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
@@ -193,11 +200,13 @@ impl<C> ModelDirector<C> {
         completer: C,
         behaviors: impl IntoIterator<Item = impl Into<String>>,
         instance: impl Into<InstanceId>,
+        character: impl Into<String>,
     ) -> Self {
         Self {
             completer,
             behaviors: behaviors.into_iter().map(Into::into).collect(),
             instance: instance.into(),
+            character: character.into(),
             opened: AtomicBool::new(false),
         }
     }
@@ -218,6 +227,7 @@ impl<C: Completer> ModelDirector<C> {
         WakeRequest {
             prompt: self.prompt(context),
             instance: self.instance.clone(),
+            character: self.character.clone(),
             reactive: reactive(&context.happened),
         }
     }
@@ -1180,7 +1190,7 @@ mod tests {
         completer: C,
         behaviors: impl IntoIterator<Item = impl Into<String>>,
     ) -> ModelDirector<C> {
-        ModelDirector::new(completer, behaviors, "buddy-1")
+        ModelDirector::new(completer, behaviors, "buddy-1", "bmo")
     }
 
     #[test]
@@ -1209,6 +1219,7 @@ mod tests {
         director.wake(&moment);
         let asked = director.completer.seen().expect("a request was sent");
         assert_eq!(asked.instance, "buddy-1");
+        assert_eq!(asked.character, "bmo");
         assert!(asked.reactive, "Poke is the user addressing the buddy");
         assert_eq!(asked.prompt, expected, "the prompt still travels whole");
 

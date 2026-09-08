@@ -521,6 +521,7 @@ pub(crate) fn run_frame_loop(
                                 &live.id,
                                 &mut live.model,
                                 live.character.behaviors.keys().cloned(),
+                                live.character.name.clone(),
                                 &director,
                                 configured,
                             );
@@ -589,6 +590,7 @@ pub(crate) fn run_frame_loop(
                                 &written.instance,
                                 &mut live.model,
                                 live.character.behaviors.keys().cloned(),
+                                live.character.name.clone(),
                                 &director,
                                 config.configured,
                             );

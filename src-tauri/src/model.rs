@@ -1654,6 +1654,7 @@ pub fn retarget_model(
     id: &InstanceId,
     model: &mut Option<Arc<ModelDirector<AnyCompleter>>>,
     behaviors: impl IntoIterator<Item = impl Into<String>>,
+    character: impl Into<String>,
     settings: &DirectorSettings,
     configured: bool,
 ) {
@@ -1663,6 +1664,7 @@ pub fn retarget_model(
             completer_from(settings).expect("configured means a Completer exists"),
             behaviors,
             id.clone(),
+            character,
         ))
     });
 }
@@ -2734,6 +2736,7 @@ pub(crate) mod tests {
                     },
                     ["stroll"],
                     id.clone(),
+                    "cat",
                 )),
                 wake_context(),
             );
@@ -2744,6 +2747,7 @@ pub(crate) mod tests {
                 &id,
                 &mut model,
                 ["stroll"],
+                "cat",
                 &settings,
                 config.configured,
             );
@@ -2773,6 +2777,7 @@ pub(crate) mod tests {
                 &"buddy".to_string(),
                 &mut model,
                 ["stroll"],
+                "cat",
                 &settings,
                 config.configured,
             );
@@ -2794,6 +2799,7 @@ pub(crate) mod tests {
                 &"buddy".to_string(),
                 &mut model,
                 ["stroll"],
+                "cat",
                 &settings,
                 config.configured,
             );
@@ -2914,6 +2920,7 @@ pub(crate) mod tests {
             },
             ["stroll", "nap"],
             "buddy",
+            "cat",
         ))
     }
 
@@ -3040,6 +3047,7 @@ pub(crate) mod tests {
                 },
                 ["stroll"],
                 id.clone(),
+                "cat",
             )),
             wake_context(),
         );
@@ -3101,7 +3109,7 @@ pub(crate) mod tests {
         let cat = ai_buddy_core::character::load(&files).expect("and loads");
         let behaviors: Vec<String> = cat.behaviors.keys().cloned().collect();
 
-        let director = ModelDirector::new(endpoint, behaviors.clone(), "buddy");
+        let director = ModelDirector::new(endpoint, behaviors.clone(), "buddy", cat.name.clone());
 
         // Vary the wake so the prompts differ: the reactive verbs plus ambient.
         let occasions = [
@@ -3244,6 +3252,7 @@ pub(crate) mod tests {
         let request = WakeRequest {
             prompt: "hi".into(),
             instance: "buddy-1".into(),
+            character: "bmo".into(),
             reactive: true,
         };
         note_http_call(dir.path(), &request, Ok("the desktop floor"));
@@ -3269,6 +3278,7 @@ pub(crate) mod tests {
         let request = WakeRequest {
             prompt: "hi".into(),
             instance: "buddy-1".into(),
+            character: "bmo".into(),
             reactive: false,
         };
         note_http_call(dir.path(), &request, Err("connection refused"));

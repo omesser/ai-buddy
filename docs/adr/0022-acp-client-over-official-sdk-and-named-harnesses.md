@@ -37,8 +37,11 @@ supports `loadSession`.
 
 ## Consequences
 
-The Harness is the Completer for every Instance, so ADR-0008's one session
-holds across buddies and across wakes.
+The Harness is the Completer for every Instance. ADR-0008's one
+conversation holds across wakes for that Instance — Director, Chat, and
+tools — not across Character Instances. The Decision's "one session per
+app lifetime" is the ACP connection; session ids are per Instance (and
+Character identity on retarget). #558.
 
 A permission request is forwarded to every open Chat surface and answered only
 by a click there. A turn that times out sends `cancelled`, which is a
