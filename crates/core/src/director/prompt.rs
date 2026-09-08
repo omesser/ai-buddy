@@ -2,6 +2,9 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 
 /// The opening turn: who this is, what it may propose, and this moment.
 ///
+/// Who this is comes in two authored layers — the package's Personality Prompt
+/// and this Instance's own prompt, in that order (ADR-0012).
+///
 /// Later wakes send `follow_up` only. The Completer holds the conversation
 /// so the Personality Prompt is not paid for again.
 pub(crate) fn character_prompt(
@@ -23,11 +26,22 @@ pub(crate) fn character_prompt(
         context.personality.as_str()
     };
 
+    // The two authored layers, the package's and this Instance's, in that
+    // order and both ahead of everything below — so the roster and the voice
+    // rules come last and govern the user's words as they govern the author's.
+    // A layer nobody wrote is left out rather than emitted blank, which is what
+    // makes an Instance with no prompt of its own assemble the payload it
+    // always did (ADR-0012).
+    let authored = match context.instance_prompt.trim() {
+        "" => personality.to_string(),
+        written => format!("{personality}\n\n{written}"),
+    };
+
     // The universal voice rules, written once for every Character rather
     // than copied into personality files to drift (#156). A personality
     // supplies the material; this paragraph governs the delivery.
     format!(
-        "{personality}\n\
+        "{authored}\n\
          \n\
          You may propose one of these behaviors: {declared}\n\
          \n\

@@ -472,7 +472,7 @@ pub(crate) fn run_frame_loop(
                                     &app,
                                 );
                                 if let Ok(inspect) = inspect.lock() {
-                                    push_chat_opening(&app, &roster, &id, &inspect);
+                                    push_chat_opening(&app, &roster, &id, &inspect, &characters);
                                 }
                             }
                         } else {
@@ -559,6 +559,68 @@ pub(crate) fn run_frame_loop(
                     ChatMsg::Listening(id) => {
                         if let Some(live) = lives.iter_mut().find(|live| live.id == id) {
                             live.status_last = None;
+                        }
+                        continue;
+                    }
+                    // A saved Instance Prompt. Already inside the bound, which
+                    // `chat_prompt` is where a refusal can still be read.
+                    ChatMsg::Wrote(written) => {
+                        if !roster.set_prompt(&written.instance, written.text.clone()) {
+                            eprintln!("chat: no Instance {} to write for", written.instance);
+                            continue;
+                        }
+                        // The id this text is keyed to is persisted with it, or
+                        // the next launch mints another and loses it (ADR-0012).
+                        remember_instances(&roster, &settings, &settings_path);
+
+                        if let Some(live) =
+                            lives.iter_mut().find(|live| live.id == written.instance)
+                        {
+                            // The Character Prompt is the opening turn, and this
+                            // session opened without these words: no follow-up
+                            // can retrofit them. Same teardown a Character
+                            // switch uses — a Wake still on the wire is dropped
+                            // so the old host stops generating, and the next
+                            // wake opens with the new layer. Not woken here:
+                            // the edit takes effect at the next wake rather
+                            // than by re-asking to prove it landed (ADR-0012).
+                            model::retarget_model(
+                                &mut slots,
+                                &written.instance,
+                                &mut live.model,
+                                live.character.behaviors.keys().cloned(),
+                                &director,
+                                config.configured,
+                            );
+                        }
+
+                        // Same session replacement a Character switch uses:
+                        // the held turns go, the open surface is told, and
+                        // the Action Log keeps the boundary (#476, ADR-0012).
+                        session_log::new_session(
+                            &app,
+                            &written.instance,
+                            "the Instance Prompt changed",
+                        );
+                        // A prompt layer changing is exactly what a user needs
+                        // to find later. `chars` rather than the body, as the
+                        // `prompt` event already does (#435).
+                        crate::action_log::append(
+                            &ai_buddy_core::memory::data_dir(),
+                            "instance-prompt",
+                            serde_json::json!({
+                                "instance": written.instance,
+                                "chars": written.text.chars().count(),
+                            }),
+                        );
+                        if let Ok(inspect) = inspect.lock() {
+                            push_chat_opening(
+                                &app,
+                                &roster,
+                                &written.instance,
+                                &inspect,
+                                &characters,
+                            );
                         }
                         continue;
                     }
@@ -717,7 +779,7 @@ pub(crate) fn run_frame_loop(
             if reload_chat {
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.harness = harness::attached().map(|session| session.inspect());
-                    push_chat_openings(&app, &roster, &inspect);
+                    push_chat_openings(&app, &roster, &inspect, &characters);
                 }
             }
 
@@ -1038,6 +1100,7 @@ pub(crate) fn run_frame_loop(
                                 activity: activity.clone(),
                                 recent: live.recent.clone(),
                                 personality: live.character.personality.clone(),
+                                instance_prompt: instance.prompt().to_string(),
                                 state: live.last_state.unwrap_or(State::Grounded),
                                 happened: live.happened.clone(),
                                 standing: String::new(),
@@ -1137,7 +1200,11 @@ pub(crate) fn run_frame_loop(
                             let context = Context {
                                 activity: activity.clone(),
                                 recent: live.recent.clone(),
+                                // The two authored layers, the package's and
+                                // this Instance's own (ADR-0012). Read off the
+                                // roster, which is where a save lands.
                                 personality: live.character.personality.clone(),
+                                instance_prompt: instance.prompt().to_string(),
                                 state: frame.state,
                                 happened: live.happened.clone(),
                                 standing: assembler.standing_on(frame.position),

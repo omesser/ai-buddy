@@ -224,6 +224,22 @@ mod tests {
         assert_eq!(turns[2].said.as_deref(), Some("the desktop floor"));
     }
 
+    /// Production change that would fail this: forgetting every Instance's
+    /// turns when one Instance's session is reopened. Saving an Instance
+    /// Prompt reopens that Instance's session and no other (ADR-0012), and the
+    /// buddy beside it is still mid-conversation.
+    #[test]
+    fn forgetting_one_instance_leaves_the_others_conversation() {
+        let mut log = Log::new();
+        log.remember_you("saved", "before the edit", UNIX_EPOCH);
+        log.remember_you("other", "still talking", UNIX_EPOCH);
+
+        log.forget("saved");
+
+        assert!(log.replay("saved").is_empty());
+        assert_eq!(log.replay("other").len(), 1);
+    }
+
     /// Production change that would fail this: keeping turns after Retarget
     /// replaced the Completer session (#476: Chat is this session only).
     #[test]

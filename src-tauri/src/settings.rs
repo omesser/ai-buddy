@@ -33,6 +33,10 @@ pub struct InstanceRow {
     pub id: String,
     pub name: String,
     pub character: String,
+    /// This Instance's own layer of the Character Prompt (ADR-0012). Not shown
+    /// in the Settings window: these rows are also how `chat_opening` reads the
+    /// roster, and the Prompt tab is where the text is read and written.
+    pub prompt: String,
 }
 
 /// What the settings window shows. Built from the live file and roster so the
@@ -1492,10 +1496,7 @@ mod tests {
             launch_at_login: true,
             excluded_applications: vec!["1Password".to_string(), "Keychain Access".to_string()],
             character: "nim".to_string(),
-            instances: vec![InstanceSpec {
-                character: "bmo".to_string(),
-                name: "Beemo".to_string(),
-            }],
+            instances: vec![InstanceSpec::fresh("bmo", "Beemo")],
             director_base_url: "https://api.x.ai".into(),
             director_model: "grok-4.6".into(),
             director_timeout_secs: "45".into(),
@@ -1818,6 +1819,7 @@ mod tests {
                 id: "1".to_string(),
                 name: "Nim".to_string(),
                 character: "nim".to_string(),
+                prompt: String::new(),
             }],
             (false, String::new(), String::new()),
             None,
@@ -1894,6 +1896,7 @@ mod tests {
             id: "trump".to_string(),
             name: "Trump".to_string(),
             character: "Trump".to_string(),
+            prompt: String::new(),
         }];
         let view = SettingsView::from_parts(
             &settings,
