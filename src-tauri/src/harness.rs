@@ -2,8 +2,8 @@
 //!
 //! The sibling of `model.rs`. Where that file posts a Character Prompt to a
 //! chat-completions host, this one spawns the Harness in ACP mode and makes
-//! every wake one `session/prompt` in one session (ADR-0008, ADR-0010). The
-//! protocol itself lives in `acp_wire.rs`; this file owns the policy around
+//! every wake one `session/prompt` on that Instance's session (ADR-0008,
+//! ADR-0010, #558). The protocol itself lives in `acp_wire.rs`; this file owns the policy around
 //! it: which Harness, when to spawn and respawn, what a failure means, where
 //! the session id is kept, and what reaches the Action Log and the Chat
 //! surface. The frame loop never sees any of it: `complete` runs on a `Slots`
@@ -234,12 +234,44 @@ pub struct HarnessInspect {
     pub last_error: Option<String>,
 }
 
-/// What `harness-session.json` holds: a pointer at the Harness's own session.
+/// One remembered ACP session, keyed so a restart can load it for that
+/// identity and no other (#558).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct SavedSlot {
+    instance: String,
+    character: String,
+    session_id: String,
+}
+
+/// What `harness-session.json` holds. The map is the format that shipped
+/// with #558; `session_id` is the older single pointer, kept so an existing
+/// file still parses. That leftover is unattributed: it is not applied to
+/// any Character Instance.
 #[derive(Deserialize, Serialize)]
 struct SavedSession {
-    session_id: String,
     harness: String,
     agent: Option<String>,
+    #[serde(default)]
+    sessions: Vec<SavedSlot>,
+    #[serde(default, skip_serializing)]
+    session_id: Option<String>,
+}
+
+/// Instance plus Character: two Instances of one Character do not share, and
+/// a retarget on one Instance is a different Character Prompt (ADR-0012).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SessionKey {
+    instance: String,
+    character: String,
+}
+
+impl SessionKey {
+    fn from_request(request: &WakeRequest) -> Self {
+        Self {
+            instance: request.instance.clone(),
+            character: request.character.clone(),
+        }
+    }
 }
 
 /// What the Chat surface is told about a forwarded permission request.
@@ -259,7 +291,8 @@ pub enum Permission {
 
 type Forward = Box<dyn Fn(Permission) + Send + Sync>;
 
-/// One ACP session for the app's lifetime, shared by every Instance.
+/// The attached Harness: one child, one ACP connection, and one conversation
+/// per Character Instance identity (#558).
 pub struct Session {
     launch: Launch,
     dir: PathBuf,
@@ -296,12 +329,16 @@ pub struct Session {
     wanted: AtomicBool,
 }
 
+struct OpenedSession {
+    id: String,
+    /// Whether this id came from `session/load` and has not served a turn
+    /// yet — the one condition #448's reopen answers to.
+    loaded: bool,
+}
+
 #[derive(Default)]
 struct State {
-    session_id: Option<String>,
-    /// Whether `session_id` came from `session/load` and has not served a
-    /// turn yet — the one condition #448's reopen answers to.
-    loaded: bool,
+    sessions: HashMap<SessionKey, OpenedSession>,
     handshake: Handshake,
     login: Option<String>,
     auth_tried: Option<Instant>,
@@ -403,8 +440,8 @@ impl Session {
     /// so startup does not wait on `npx`; the outcome is one stderr line.
     pub fn spawn_preflight(self: &Arc<Self>) {
         let session = Arc::clone(self);
-        thread::spawn(move || match session.attach() {
-            Ok((_, id)) => eprintln!("harness: {} attached, session {id}", session.launch.name),
+        thread::spawn(move || match session.attach(None) {
+            Ok(_) => eprintln!("harness: {} attached", session.launch.name),
             Err(why) => eprintln!("harness: {why}; StaticDirector is in force until it answers"),
         });
     }
@@ -514,8 +551,9 @@ impl Session {
         // session, and `lost` has already charged the respawn. Nor is a
         // timeout, which says nothing about the id and would spend the
         // Completer's budget twice.
+        let key = SessionKey::from_request(request);
         let (session_id, outcome) = match &outcome {
-            Err(TurnError::Stopped(_) | TurnError::Failed(_)) if self.reopen_loaded() => {
+            Err(TurnError::Stopped(_) | TurnError::Failed(_)) if self.reopen_loaded(&key) => {
                 self.attempt(request)?
             }
             _ => (session_id, outcome),
@@ -535,7 +573,7 @@ impl Session {
                 ))
             }
             Err(TurnError::Stopped(reason)) => {
-                // One session serves every Instance (ADR-0008), so a cancel
+                // One child serves every Instance (ADR-0008), so a cancel
                 // sent for another buddy's wake reaches this turn without
                 // anything having superseded this Instance's own slot. The
                 // outcome is a wake with nothing to show either way; the log
@@ -581,10 +619,13 @@ impl Session {
         &self,
         request: &WakeRequest,
     ) -> Result<(String, Result<String, TurnError>), String> {
-        let (wire, session_id) = self.attach().map_err(|why| self.refused(request, &why))?;
+        let (wire, session_id) = self
+            .attach(Some(&SessionKey::from_request(request)))
+            .map_err(|why| self.refused(request, &why))?;
         // The Instance and the wake kind come through the seam rather than
-        // from anything here: one session serves every buddy (ADR-0008), so
-        // the session id alone cannot say whose wake this is (#435).
+        // from anything here: one child serves every buddy, so the process
+        // is not whose wake this is (#435). The session id is that Instance's
+        // conversation (#558).
         action_log::append(
             &self.dir,
             "prompt",
@@ -595,7 +636,7 @@ impl Session {
                 "chars": request.prompt.len(),
             }),
         );
-        let outcome = wire.prompt(&request.prompt, self.timeout);
+        let outcome = wire.prompt(&session_id, &request.prompt, self.timeout);
         // Before the outcome is dressed for the caller: a child that dies under
         // every turn is respawned on every wake unless the death pays the same
         // backoff a failed spawn does, and a child that is answering must not
@@ -608,7 +649,9 @@ impl Session {
             // A finished turn is the proof `session/load` was not, so any
             // later failure on this session is the Harness's own answer (#448).
             if outcome.is_ok() {
-                state.loaded = false;
+                if let Some(opened) = state.sessions.get_mut(&SessionKey::from_request(request)) {
+                    opened.loaded = false;
+                }
             }
         }
         Ok((session_id, outcome))
@@ -622,17 +665,24 @@ impl Session {
     /// The session file goes first, which is both how the reopen is kept from
     /// loading the same id straight back and how a restart is kept from
     /// resurrecting it.
-    fn reopen_loaded(&self) -> bool {
+    fn reopen_loaded(&self, key: &SessionKey) -> bool {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
-        if !state.loaded {
+        let Some(opened) = state.sessions.get(key) else {
+            return false;
+        };
+        if !opened.loaded {
             return false;
         }
-        state.loaded = false;
-        state.session_id = None;
-        let _ = std::fs::remove_file(self.dir.join(SESSION_FILE));
-        self.update_inspect(|inspect| inspect.session_id = None);
+        let dropped = opened.id.clone();
+        state.sessions.remove(key);
+        self.drop_saved(key);
+        self.update_inspect(|inspect| {
+            if inspect.session_id.as_deref() == Some(dropped.as_str()) {
+                inspect.session_id = None;
+            }
+        });
         true
     }
 
@@ -717,7 +767,7 @@ impl Session {
     }
 
     /// A live child and an open session, spawning and negotiating as needed.
-    fn attach(&self) -> Result<(Arc<Wire>, String), String> {
+    fn attach(&self, key: Option<&SessionKey>) -> Result<(Arc<Wire>, String), String> {
         if !self.wanted.load(Ordering::SeqCst) {
             return Err("harness detached".to_string());
         }
@@ -725,7 +775,8 @@ impl Session {
         let wire = match self.current_wire() {
             Some(wire) => wire,
             None => {
-                state.session_id = None;
+                // A new child does not have the previous process's sessions.
+                state.sessions.clear();
                 if let Some(until) = state.spawn_wait_until {
                     if Instant::now() < until {
                         return Err(format!(
@@ -744,15 +795,18 @@ impl Session {
                 }
             }
         };
-        if let Some(id) = &state.session_id {
-            return Ok((wire, id.clone()));
+        let Some(key) = key else {
+            return Ok((wire, String::new()));
+        };
+        if let Some(opened) = state.sessions.get(key) {
+            return Ok((wire, opened.id.clone()));
         }
         if let (Some(command), Some(tried)) = (&state.login, state.auth_tried) {
             if tried.elapsed() < self.auth_retry {
                 return Err(not_authenticated(command));
             }
         }
-        let id = self.open_session(&wire, &mut state)?;
+        let id = self.open_session(&wire, &mut state, key)?;
         Ok((wire, id))
     }
 
@@ -794,11 +848,16 @@ impl Session {
 
     /// `session/load` when the Harness can and the file names this Harness,
     /// else `session/new`. Either way the file ends up naming what is open.
-    fn open_session(&self, wire: &Arc<Wire>, state: &mut State) -> Result<String, String> {
+    fn open_session(
+        &self,
+        wire: &Arc<Wire>,
+        state: &mut State,
+        key: &SessionKey,
+    ) -> Result<String, String> {
         let saved = state
             .handshake
             .load_session
-            .then(|| self.saved_session())
+            .then(|| self.saved_id(key))
             .flatten();
         let mcp = mcp_server(&state.handshake);
         let id = match wire.open(saved.clone(), &self.dir, mcp.clone(), self.attach_timeout()) {
@@ -816,17 +875,19 @@ impl Session {
             }
             Err(OpenError::Failed(why)) => return Err(format!("session/new: {why}")),
         };
-        state.session_id = Some(id.clone());
-        // `Wire::open` hands back the id it was asked to load and falls through
-        // to `session/new` on a refusal, so the ids matching is exactly "the
-        // load was answered" — which is all #448's reopen may act on.
-        state.loaded = saved.as_deref() == Some(id.as_str());
+        state.sessions.insert(
+            key.clone(),
+            OpenedSession {
+                id: id.clone(),
+                loaded: saved.as_deref() == Some(id.as_str()),
+            },
+        );
         state.login = None;
         self.update_inspect(|inspect| {
             inspect.login = None;
             inspect.session_id = Some(id.clone());
         });
-        self.save_session(&id);
+        self.save_session(key, &id);
         action_log::append(
             &self.dir,
             "attach",
@@ -841,18 +902,56 @@ impl Session {
         Ok(id)
     }
 
-    fn saved_session(&self) -> Option<String> {
+    fn read_saved(&self) -> Option<SavedSession> {
         let text = std::fs::read_to_string(self.dir.join(SESSION_FILE)).ok()?;
-        let saved: SavedSession = serde_json::from_str(&text).ok()?;
-        (saved.harness == self.launch.name).then_some(saved.session_id)
+        serde_json::from_str(&text).ok()
     }
 
-    fn save_session(&self, id: &str) {
-        let record = SavedSession {
-            session_id: id.to_string(),
-            harness: self.launch.name.clone(),
-            agent: self.inspect().agent,
+    fn saved_id(&self, key: &SessionKey) -> Option<String> {
+        let saved = self.read_saved()?;
+        if saved.harness != self.launch.name {
+            return None;
+        }
+        saved.sessions.into_iter().find_map(|slot| {
+            (slot.instance == key.instance && slot.character == key.character)
+                .then_some(slot.session_id)
+        })
+    }
+
+    fn drop_saved(&self, key: &SessionKey) {
+        let Some(mut record) = self.read_saved() else {
+            return;
         };
+        record
+            .sessions
+            .retain(|slot| slot.instance != key.instance || slot.character != key.character);
+        if let Ok(text) = serde_json::to_string(&record) {
+            let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
+        }
+    }
+
+    fn save_session(&self, key: &SessionKey, id: &str) {
+        let mut record = self.read_saved().unwrap_or(SavedSession {
+            harness: self.launch.name.clone(),
+            agent: None,
+            sessions: Vec::new(),
+            session_id: None,
+        });
+        record.harness = self.launch.name.clone();
+        record.agent = self.inspect().agent;
+        record.session_id = None;
+        match record
+            .sessions
+            .iter_mut()
+            .find(|slot| slot.instance == key.instance && slot.character == key.character)
+        {
+            Some(slot) => slot.session_id = id.to_string(),
+            None => record.sessions.push(SavedSlot {
+                instance: key.instance.clone(),
+                character: key.character.clone(),
+                session_id: id.to_string(),
+            }),
+        }
         if let Ok(text) = serde_json::to_string(&record) {
             let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
         }
@@ -949,7 +1048,10 @@ fn probe(session: &Session) -> i32 {
     println!();
 
     println!("attach");
-    let session_id = match session.attach() {
+    let session_id = match session.attach(Some(&SessionKey {
+        instance: "probe".to_string(),
+        character: "probe".to_string(),
+    })) {
         Ok((_, id)) => id,
         // Nothing was asked, so this is configuration and not a turn: a
         // missing binary, a Harness that wants a login, a `session/new` the
@@ -1002,6 +1104,7 @@ fn probe(session: &Session) -> i32 {
         // is named for the probe so the line it leaves in the Action Log cannot
         // be read as a buddy's own wake (#435).
         instance: "probe".to_string(),
+        character: "probe".to_string(),
         reactive: true,
     }) {
         Ok(text) => {
@@ -1539,21 +1642,26 @@ mod tests {
                         // A new session is a new id. Without the reset the fake
                         // would hand back whichever id the last prompt named,
                         // and #448's reopen could not be told apart from the
-                        // dead session it replaced.
-                        session = "fresh-id".to_string();
+                        // dead session it replaced. Counted so two Instances
+                        // cannot share a minted id (#558).
+                        let n = recorded(count, "new");
+                        session = if n <= 1 {
+                            "fresh-id".to_string()
+                        } else {
+                            format!("fresh-id-{n}")
+                        };
                         say(json!({"jsonrpc": "2.0", "id": id, "result": {"sessionId": session}}));
                     }
                 }
                 Some("session/load") => {
                     record(count, "load");
-                    if message.pointer("/params/sessionId").and_then(Value::as_str)
-                        == Some("saved-ok")
+                    if message.pointer("/params/sessionId").and_then(Value::as_str) == Some("stale")
                     {
-                        say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
-                    } else {
                         say(
                             json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "no such session"}}),
                         );
+                    } else {
+                        say(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
                     }
                 }
                 Some("session/prompt") => {
@@ -1723,11 +1831,17 @@ mod tests {
         Arc::new(Box::new(|_| {}) as Forward)
     }
 
-    /// One reactive wake for `buddy-1`, which is every turn a test sends.
+    /// One reactive wake for `buddy-1` as BMO, which is every turn a test
+    /// sends unless it is naming another identity.
     fn asking(prompt: &str) -> WakeRequest {
+        asking_as("buddy-1", "bmo", prompt)
+    }
+
+    fn asking_as(instance: &str, character: &str, prompt: &str) -> WakeRequest {
         WakeRequest {
             prompt: prompt.to_string(),
-            instance: "buddy-1".to_string(),
+            instance: instance.to_string(),
+            character: character.to_string(),
             reactive: true,
         }
     }
@@ -1977,7 +2091,7 @@ mod tests {
         let saved: SavedSession =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
-        assert_eq!(saved.session_id, "fresh-id");
+        assert_eq!(saved.sessions[0].session_id, "fresh-id");
         assert_eq!(saved.harness, "fake");
         assert_eq!(saved.agent.as_deref(), Some("fake-agent"));
         let inspect = session.inspect();
@@ -1986,6 +2100,157 @@ mod tests {
         assert!(std::fs::read_to_string(fx.dir.join(action_log::FILE))
             .unwrap()
             .contains("\"event\":\"turn\""));
+        session.shutdown();
+    }
+
+    /// #558: the file is a map of remembered ids, not one pointer the next
+    /// buddy would inherit. Instance and Character together, because a
+    /// retarget keeps the Instance and changes the Character Prompt.
+    #[test]
+    fn the_session_file_keys_the_id_by_instance_and_character() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        let saved: Value =
+            serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
+                .unwrap();
+        let slots = saved["sessions"]
+            .as_array()
+            .expect("remembered ids are keyed, not a single session_id");
+        assert_eq!(slots.len(), 1, "{saved}");
+        assert_eq!(slots[0]["instance"], json!("buddy-1"));
+        assert_eq!(slots[0]["character"], json!("bmo"));
+        assert_eq!(slots[0]["session_id"], json!("fresh-id"));
+        session.shutdown();
+    }
+
+    /// #558: two Character Instances never share an ACP session, even when
+    /// they are the same Character. One Harness child throughout.
+    #[test]
+    fn two_character_instances_do_not_share_an_acp_session() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "hi")),
+            Ok("Hello".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "hi")),
+            Ok("Hello".to_string())
+        );
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 2, "{prompts:?}");
+        assert_ne!(
+            prompts[0]["session_id"], prompts[1]["session_id"],
+            "Instance B continued Instance A's session: {prompts:?}"
+        );
+        assert_eq!(fx.count("spawn"), 1, "a second Completer was spawned");
+        let saved: SavedSession =
+            serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
+    }
+
+    /// #558: switching away and back resumes the first Instance's session;
+    /// the second Instance's id is still remembered.
+    #[test]
+    fn switching_back_resumes_the_first_instance_session() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "a")),
+            Ok("Hello".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "b")),
+            Ok("Hello".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "c")),
+            Ok("Hello".to_string())
+        );
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 3, "{prompts:?}");
+        assert_eq!(prompts[0]["session_id"], prompts[2]["session_id"]);
+        assert_ne!(prompts[0]["session_id"], prompts[1]["session_id"]);
+        assert_eq!(
+            fx.count("new"),
+            2,
+            "A was minted again: {}",
+            fx.count("new")
+        );
+        assert_eq!(fx.count("spawn"), 1);
+    }
+
+    /// #558: a Character switch is a different identity. Switching back
+    /// loads the previous Character's session rather than leaving the new
+    /// Character holding the old transcript.
+    #[test]
+    fn a_character_switch_does_not_keep_the_previous_transcript() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "a")),
+            Ok("Hello".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "timber-wolf", "b")),
+            Ok("Hello".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "c")),
+            Ok("Hello".to_string())
+        );
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 3, "{prompts:?}");
+        assert_ne!(
+            prompts[0]["session_id"], prompts[1]["session_id"],
+            "Timber Wolf continued BMO's session"
+        );
+        assert_eq!(prompts[0]["session_id"], prompts[2]["session_id"]);
+        assert_eq!(fx.count("new"), 2);
+    }
+
+    /// #558: a new Session reading the file restores each identity's id.
+    #[test]
+    fn a_restart_loads_each_instance_session_from_the_file() {
+        let (fx, session) = Fixture::new("load");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"id-a"},{"instance":"buddy-2","character":"bmo","session_id":"id-b"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "again")),
+            Ok("Hello".to_string())
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "again")),
+            Ok("Hello".to_string())
+        );
+        session.shutdown();
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts[0]["session_id"], json!("id-a"));
+        assert_eq!(prompts[1]["session_id"], json!("id-b"));
+        assert_eq!(fx.count("load"), 2);
+        assert_eq!(fx.count("new"), 0, "restart minted instead of loading");
+    }
+
+    /// #558: the old single pointer cannot be attributed, so it is not
+    /// applied to every buddy.
+    #[test]
+    fn an_unattributed_legacy_id_is_not_applied_to_an_instance() {
+        let (fx, session) = Fixture::new("load");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"session_id":"saved-ok","harness":"fake"}"#,
+        )
+        .unwrap();
+        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(fx.count("load"), 0, "the leftover id was applied");
+        assert_eq!(fx.count("new"), 1);
         session.shutdown();
     }
 
@@ -2002,9 +2267,10 @@ mod tests {
         );
     }
 
-    /// #435: one session serves every buddy, so `session_id` cannot answer
-    /// "which Instance woke, and did the user ask for it". Both come through
-    /// the `WakeRequest` or not at all.
+    /// #435: `session_id` names the conversation, not the wake. Which Instance
+    /// woke, and whether the user asked for it, still come through the
+    /// `WakeRequest`. #558 keeps one id per identity; this line is still
+    /// whose wake it was.
     #[test]
     fn the_prompt_event_names_the_instance_and_the_wake_kind() {
         let (fx, session) = Fixture::new("happy");
@@ -2292,7 +2558,7 @@ mod tests {
         let (fx, session) = Fixture::new("load");
         std::fs::write(
             fx.dir.join(SESSION_FILE),
-            r#"{"session_id":"saved-ok","harness":"fake"}"#,
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
@@ -2304,7 +2570,7 @@ mod tests {
         let (fx, session) = Fixture::new("load");
         std::fs::write(
             fx.dir.join(SESSION_FILE),
-            r#"{"session_id":"stale","harness":"fake"}"#,
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"stale"}]}"#,
         )
         .unwrap();
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
@@ -2318,7 +2584,7 @@ mod tests {
         let (fx, session) = Fixture::new("load");
         std::fs::write(
             fx.dir.join(SESSION_FILE),
-            r#"{"session_id":"saved-ok","harness":"other"}"#,
+            r#"{"harness":"other","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
@@ -2334,7 +2600,7 @@ mod tests {
         let (fx, session) = Fixture::new("load-dead");
         std::fs::write(
             fx.dir.join(SESSION_FILE),
-            r#"{"session_id":"saved-ok","harness":"fake"}"#,
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
         assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
@@ -2356,7 +2622,7 @@ mod tests {
         let (fx, session) = Fixture::new("load-refusal");
         std::fs::write(
             fx.dir.join(SESSION_FILE),
-            r#"{"session_id":"saved-ok","harness":"fake"}"#,
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
         let reply = session.complete(&asking("hi"));
@@ -2422,7 +2688,7 @@ mod tests {
         session.shutdown();
     }
 
-    /// #499: one session serves every Instance (ADR-0008), so buddy B's wake
+    /// #499: one child serves every Instance (ADR-0008), so buddy B's wake
     /// takes buddy A's turn without A's own slot ever having been superseded.
     /// Nothing raised A's abandon flag, so A took a wake that read as broken.
     #[test]

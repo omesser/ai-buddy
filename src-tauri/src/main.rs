@@ -1615,6 +1615,7 @@ fn switch_instance(
             instance_id,
             &mut live.model,
             live.character.behaviors.keys().cloned(),
+            live.character.name.clone(),
             settings,
             config.configured,
         );
@@ -1663,6 +1664,7 @@ fn spawn_live(
                 model::completer_from(settings).expect("configured means a Completer exists"),
                 character.behaviors.keys().cloned(),
                 id.clone(),
+                character.name.clone(),
             ))
         }),
         recent: Vec::new(),
@@ -1953,6 +1955,7 @@ fn spawn_instances(
                     model::completer_from(settings).expect("configured means a Completer exists"),
                     character.behaviors.keys().cloned(),
                     id.clone(),
+                    character.name.clone(),
                 ))
             }),
             recent: Vec::new(),

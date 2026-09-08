@@ -178,6 +178,7 @@ enum Msg {
         reply: sync_mpsc::Sender<Result<String, OpenError>>,
     },
     Prompt {
+        session_id: String,
         text: String,
         reply: sync_mpsc::Sender<Result<String, TurnError>>,
     },
@@ -278,10 +279,16 @@ impl Wire {
     /// One `session/prompt`: the concatenated `agent_message_chunk`s once the
     /// turn ends in `end_turn`. Past `timeout`, `session/cancel` goes out and
     /// the reply is waited on for `CANCEL_GRACE` so the wire is quiet again.
-    pub fn prompt(&self, text: &str, timeout: Duration) -> Result<String, TurnError> {
+    pub fn prompt(
+        &self,
+        session_id: &str,
+        text: &str,
+        timeout: Duration,
+    ) -> Result<String, TurnError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
             .send(Msg::Prompt {
+                session_id: session_id.to_string(),
                 text: text.to_string(),
                 reply,
             })
@@ -482,7 +489,6 @@ async fn serve(
     mut incoming: mpsc::UnboundedReceiver<Incoming>,
     on_event: &OnEvent,
 ) {
-    let mut session: Option<SessionId> = None;
     loop {
         let command = tokio::select! {
             command = rx.recv() => match command {
@@ -502,16 +508,14 @@ async fn serve(
                 reply,
             } => {
                 let opened = open(cx, load, &cwd, mcp).await;
-                if let Ok(id) = &opened {
-                    session = Some(id.clone());
-                }
                 let _ = reply.send(opened.map(|id| id.0.to_string()));
             }
-            Msg::Prompt { text, reply } => {
-                let Some(id) = session.clone() else {
-                    let _ = reply.send(Err(TurnError::Failed("no session open".to_string())));
-                    continue;
-                };
+            Msg::Prompt {
+                session_id,
+                text,
+                reply,
+            } => {
+                let id = SessionId::new(session_id);
                 let outcome = turn(cx, &id, &mut rx, &mut incoming, &text, on_event).await;
                 let lost = outcome == Err(TurnError::Lost);
                 let _ = reply.send(outcome);

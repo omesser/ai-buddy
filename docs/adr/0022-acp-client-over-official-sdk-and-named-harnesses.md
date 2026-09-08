@@ -32,13 +32,15 @@ and provides an escape hatch for any custom command. Harnesses earn verified
 standing once a turn has been smoked against them; `codex` is unverified until
 smoked.
 
-One session per app lifetime, persisted across restarts when the Harness
-supports `loadSession`.
+One session per Character Instance (and Character identity on retarget),
+persisted across restarts when the Harness supports `loadSession`. One
+ACP connection for the app's lifetime.
 
 ## Consequences
 
-The Harness is the Completer for every Instance, so ADR-0008's one session
-holds across buddies and across wakes.
+The Harness is the Completer for every Instance. ADR-0008's one
+conversation holds across wakes for that Instance — Director, Chat, and
+tools — not across buddies. #558.
 
 A permission request is forwarded to every open Chat surface and answered only
 by a click there. A turn that times out sends `cancelled`, which is a
