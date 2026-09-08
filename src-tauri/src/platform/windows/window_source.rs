@@ -2,7 +2,8 @@
 //!
 //! EnumWindows returns visible windows in z-order. Filters to normal application
 //! windows (WS_VISIBLE, not WS_EX_TOOLWINDOW), reads bounds with GetWindowRect,
-//! and filters own overlays by process ID. Window owner from GetWindowTextW.
+//! and filters own overlays by process ID. Window owner from its process's
+//! image name, so `owner` is an application name on every platform (#197).
 //! Consent-free, like macOS CGWindowListCopyWindowInfo and X11 _NET_CLIENT_LIST.
 
 use std::sync::Mutex;
@@ -10,11 +11,11 @@ use std::sync::Mutex;
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
-    IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
+    EnumWindows, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
+    GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
 };
 
-const MAX_TITLE_LENGTH: usize = 256;
+use super::process::window_owner;
 
 /// The Windows window manager's view of the desktop.
 pub struct WindowsWindowSource {
@@ -136,11 +137,20 @@ fn window_rect(hwnd: HWND) -> Option<WindowRect> {
         return None;
     }
 
-    let owner = window_title(hwnd).unwrap_or_else(|| "Unknown".to_string());
-
-    if is_own_overlay(&owner, hwnd) {
+    if is_own_overlay(hwnd) {
         return None;
     }
+
+    // No fallback to the window title when the process cannot be named: the
+    // title was the bug (#197), and restoring it here would restore it
+    // silently. "Unknown" is what X11 reports for an owner it cannot read —
+    // it matches no exclusion anyone would write, so the window is reported
+    // naming nobody rather than under a name the user did not exclude. macOS
+    // drops such a window instead, and keeping it is the deliberate half of
+    // the trade: the Engine still needs the rectangle to Perch on and to
+    // occlude with, and what a nameless row leaks is that rectangle and the
+    // word "Unknown", never a title.
+    let owner = window_owner(hwnd).unwrap_or_else(|| "Unknown".to_string());
 
     Some(WindowRect {
         id: hwnd as u64,
@@ -155,30 +165,11 @@ fn window_rect(hwnd: HWND) -> Option<WindowRect> {
     })
 }
 
-/// Read window title as the owner identifier.
-fn window_title(hwnd: HWND) -> Option<String> {
-    let mut title_buf = [0u16; MAX_TITLE_LENGTH];
-    // SAFETY: GetWindowTextW writes into the buffer we own, up to the length
-    // we pass. hwnd is still valid from EnumWindows, and the buffer lives
-    // until this function returns.
-    let len = unsafe { GetWindowTextW(hwnd, title_buf.as_mut_ptr(), MAX_TITLE_LENGTH as i32) };
-    if len <= 0 {
-        return None;
-    }
-
-    String::from_utf16(&title_buf[..len as usize]).ok()
-}
-
 /// Whether this window is one of our own overlay windows.
 ///
-/// Filters by checking if the window belongs to the current process, as
-/// ai-buddy's overlays run in the same process. This prevents our overlays from
-/// blocking Perch detection.
-fn is_own_overlay(title: &str, hwnd: HWND) -> bool {
-    if title.is_empty() || title == "ai-buddy" {
-        return true;
-    }
-
+/// ai-buddy's overlays run in this process, so the process ID answers it. This
+/// prevents our overlays from blocking Perch detection.
+fn is_own_overlay(hwnd: HWND) -> bool {
     let mut window_pid: u32 = 0;
     // SAFETY: GetWindowThreadProcessId writes the process ID into the
     // out-pointer window_pid, which lives until this function returns.
@@ -188,17 +179,4 @@ fn is_own_overlay(title: &str, hwnd: HWND) -> bool {
     }
     let current_pid = std::process::id();
     window_pid == current_pid
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Our overlay windows must be filtered out so they do not block Perch
-    /// detection. Empty titles or "ai-buddy" are ours, plus same-process check.
-    #[test]
-    fn own_overlay_is_recognized() {
-        assert!(is_own_overlay("ai-buddy", std::ptr::null_mut()));
-        assert!(is_own_overlay("", std::ptr::null_mut()));
-    }
 }
