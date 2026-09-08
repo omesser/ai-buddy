@@ -1738,6 +1738,10 @@ mod tests {
             claude.argv,
             ["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"]
         );
+        assert_eq!(
+            launch(Some("codex")).unwrap().argv,
+            ["npx", "-y", "@agentclientprotocol/codex-acp@latest"]
+        );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
