@@ -140,13 +140,7 @@ impl SettingsWindow {
         operations: &HashMap<String, RowOperation>,
         rule: bool,
     ) -> bool {
-        let visible_rows: Vec<&FormRow> = section
-            .rows
-            .iter()
-            .filter(|row| !self.should_omit_row(row))
-            .collect();
-
-        if visible_rows.is_empty() && section.comment.is_none() {
+        if section.rows.is_empty() && section.comment.is_none() {
             return false;
         }
 
@@ -181,20 +175,11 @@ impl SettingsWindow {
             pack(container, &comment_label, HINT_GAP);
         }
 
-        for row in &visible_rows {
+        for row in &section.rows {
             self.build_row(container, row, operations);
         }
 
         true
-    }
-
-    fn should_omit_row(&self, row: &FormRow) -> bool {
-        match row {
-            FormRow::Checkbox { id, .. } => {
-                id == form::CONSENT_ACCESSIBILITY_ID || id == form::CONSENT_SCREEN_RECORDING_ID
-            }
-            _ => false,
-        }
     }
 
     fn build_row(

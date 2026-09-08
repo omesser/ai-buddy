@@ -55,6 +55,10 @@ pub const CAPABILITIES: &[Capability] = &[
 ];
 
 /// Linux, and tests that do not care about the live OS.
+///
+/// On Linux this is the answer, not a stub waiting for a port: sensing there is
+/// consent-free, so nothing has asked the user and nothing may report a grant.
+/// #250.
 #[cfg(not(target_os = "macos"))]
 pub struct Null;
 
@@ -443,9 +447,12 @@ pub fn pane_intro(listed_as: &str) -> String {
 }
 
 /// Linux-specific intro: no consent system, names what is read without a grant.
+///
+/// It carries the whole section, which has no rows under it — the prose has to
+/// say why the checkboxes the other platforms show are not there. #250.
 #[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
-    "On Linux, no permission is requested. Window positions are read to keep the buddy visible."
+    "On Linux there is nothing to turn on: no permission is requested. Window positions are read to keep the buddy visible."
         .to_string()
 }
 
@@ -608,6 +615,16 @@ mod tests {
     #[test]
     fn process_listed_as_is_not_empty() {
         assert!(!process_listed_as().is_empty());
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn the_null_probe_grants_nothing_and_prompts_for_nothing() {
+        let probe = live();
+        assert!(!probe.granted(CapabilityId::Accessibility));
+        assert!(!probe.granted(CapabilityId::ScreenRecording));
+        probe.prompt(CapabilityId::ScreenRecording);
+        assert!(!probe.granted(CapabilityId::ScreenRecording));
     }
 
     /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.

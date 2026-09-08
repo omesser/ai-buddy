@@ -920,7 +920,13 @@ pub enum BoolField {
     /// row. The patch field itself is not gated: the file carries it anywhere.
     #[cfg(target_os = "macos")]
     Capturable,
+    // The two consent rows, gated for the reason `Capturable` is: Linux offers
+    // neither, so no Linux row writes them, and a variant nothing constructs is
+    // a dead_code warning the Linux job denies. The patch fields are not gated;
+    // the file carries them. #250.
+    #[cfg(not(target_os = "linux"))]
     UseAccessibility,
+    #[cfg(not(target_os = "linux"))]
     UseScreenRecording,
 }
 
@@ -969,7 +975,9 @@ impl SettingsPatch {
             BoolField::TraceEngine => self.trace_engine = Some(value),
             #[cfg(target_os = "macos")]
             BoolField::Capturable => self.capturable = Some(value),
+            #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
+            #[cfg(not(target_os = "linux"))]
             BoolField::UseScreenRecording => self.use_screen_recording = Some(value),
         }
     }

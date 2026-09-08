@@ -372,6 +372,11 @@ the user understands the trade. The upgrade path is settings: a **What the
 buddy can see** pane names each grant, what it buys, and what it costs, and
 the system prompt fires only when the user flips one on.
 
+Both of those grants are macOS TCC rows, and Linux has no equivalent: X11
+geometry, `WM_CLASS`, frontmost, idle and DPMS need no grant, and there is no
+Dock SPI to ask for. So the pane offers no row on Linux and says so instead.
+#250 holds what changes when Linux does have a grant to offer.
+
 Beyond that, two consented modes:
 
 - **Ambient Capture** — configurable periodic sampling plus capture on
