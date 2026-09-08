@@ -8,6 +8,7 @@
 
 mod overlay;
 mod pointer;
+mod process;
 mod sensing;
 mod settings_window;
 mod window_source;
