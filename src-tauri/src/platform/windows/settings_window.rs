@@ -72,6 +72,7 @@ struct SettingsWindow {
     hwnd: HWND,
     session: Mutex<Option<SettingsSession>>,
     controls: RefCell<HashMap<String, Control>>,
+    control_id_to_form_id: RefCell<HashMap<i32, String>>,
     clear_pending: RefCell<bool>,
     refreshing: RefCell<bool>,
     current_tab: RefCell<usize>,
@@ -94,6 +95,7 @@ impl SettingsWindow {
             hwnd,
             session: Mutex::new(None),
             controls: RefCell::new(HashMap::new()),
+            control_id_to_form_id: RefCell::new(HashMap::new()),
             clear_pending: RefCell::new(false),
             refreshing: RefCell::new(false),
             current_tab: RefCell::new(0),
@@ -285,87 +287,112 @@ impl SettingsWindow {
             self.handle_dismiss((control_id - ID_BASE - 5000) as usize);
             return;
         }
-        let id_str = control_id.to_string();
-        if let Some(Control::Checkbox(..)) = self.controls.borrow().get(&id_str) {
-            self.handle_checkbox_toggle(control_id);
-        } else {
-            self.handle_operation(control_id);
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
+        if let Some(form_id) = form_id {
+            if let Some(Control::Checkbox(..)) = self.controls.borrow().get(&form_id) {
+                self.handle_checkbox_toggle(control_id);
+                return;
+            }
         }
+        self.handle_operation(control_id);
     }
 
     fn handle_checkbox_toggle(&self, control_id: i32) {
-        let id_str = control_id.to_string();
-        let controls = self.controls.borrow();
-        if let Some(Control::Checkbox(hwnd, _)) = controls.get(&id_str) {
-            let checked = unsafe { SendMessageA(*hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED as isize };
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
+        if let Some(form_id) = form_id {
+            let controls = self.controls.borrow();
+            if let Some(Control::Checkbox(hwnd, _)) = controls.get(&form_id) {
+                let checked =
+                    unsafe { SendMessageA(*hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED as isize };
 
-            if let Some(field) = form::describe().bool_write(&id_str) {
-                let mut patch = SettingsPatch::default();
-                patch.set_bool(field, checked);
-                drop(controls);
-                self.apply(patch);
+                if let Some(field) = form::describe().bool_write(&form_id) {
+                    let mut patch = SettingsPatch::default();
+                    patch.set_bool(field, checked);
+                    drop(controls);
+                    self.apply(patch);
+                }
             }
         }
     }
 
     fn handle_operation(&self, control_id: i32) {
         let description = form::describe();
-        let id_str = control_id.to_string();
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
 
-        if let Some(op) = description.operations.get(&id_str) {
-            match op {
-                RowOperation::Spawn => self.do_spawn(),
-                RowOperation::OpenMemory => self.do_memory_open(),
-                RowOperation::WipeMemory => self.do_memory_wipe(),
-                RowOperation::ClearKey => self.do_clear_key(),
-                RowOperation::Apply => self.do_apply(),
-                RowOperation::Cancel => self.do_cancel(),
+        if let Some(form_id) = form_id {
+            if let Some(op) = description.operations.get(&form_id) {
+                match op {
+                    RowOperation::Spawn => self.do_spawn(),
+                    RowOperation::OpenMemory => self.do_memory_open(),
+                    RowOperation::WipeMemory => self.do_memory_wipe(),
+                    RowOperation::ClearKey => self.do_clear_key(),
+                    RowOperation::Apply => self.do_apply(),
+                    RowOperation::Cancel => self.do_cancel(),
+                }
             }
         }
     }
 
     fn handle_text_change(&self, control_id: i32) {
-        let id_str = control_id.to_string();
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
 
-        if form::DIRECTOR_BASE_URL_ID == id_str
-            || form::DIRECTOR_MODEL_ID == id_str
-            || form::DIRECTOR_API_KEY_ID == id_str
-        {
-            let view = {
-                let guard = self.session.lock().unwrap();
-                guard.as_ref().map(|s| s.view())
-            };
-            if let Some(_view) = view {
-                let controls = self.controls.borrow();
-                for id in [form::APPLY_ID, form::CANCEL_ID] {
-                    if let Some(Control::Button(_, _)) = controls.get(id) {
-                        let description = form::describe();
-                        let _dirty = self.director_draft(&description).patch(&_view).is_some();
+        if let Some(form_id) = form_id {
+            if form::DIRECTOR_BASE_URL_ID == form_id
+                || form::DIRECTOR_MODEL_ID == form_id
+                || form::DIRECTOR_API_KEY_ID == form_id
+            {
+                let view = {
+                    let guard = self.session.lock().unwrap();
+                    guard.as_ref().map(|s| s.view())
+                };
+                if let Some(_view) = view {
+                    let controls = self.controls.borrow();
+                    for id in [form::APPLY_ID, form::CANCEL_ID] {
+                        if let Some(Control::Button(_, _)) = controls.get(id) {
+                            let description = form::describe();
+                            let _dirty = self.director_draft(&description).patch(&_view).is_some();
+                        }
                     }
                 }
-            }
-        } else {
-            let controls = self.controls.borrow();
-            if let Some(Control::Edit(hwnd, _)) = controls.get(&id_str) {
-                let text = unsafe {
-                    let len = GetWindowTextLengthA(*hwnd);
-                    if len > 0 {
-                        let mut buffer = vec![0u8; (len + 1) as usize];
-                        GetWindowTextA(*hwnd, buffer.as_mut_ptr(), len + 1);
-                        CString::from_vec_with_nul(buffer)
-                            .ok()
-                            .and_then(|c| c.into_string().ok())
-                            .unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                };
-                drop(controls);
+            } else {
+                let controls = self.controls.borrow();
+                if let Some(Control::Edit(hwnd, _)) = controls.get(&form_id) {
+                    let text = unsafe {
+                        let len = GetWindowTextLengthA(*hwnd);
+                        if len > 0 {
+                            let mut buffer = vec![0u8; (len + 1) as usize];
+                            GetWindowTextA(*hwnd, buffer.as_mut_ptr(), len + 1);
+                            CString::from_vec_with_nul(buffer)
+                                .ok()
+                                .and_then(|c| c.into_string().ok())
+                                .unwrap_or_default()
+                        } else {
+                            String::new()
+                        }
+                    };
+                    drop(controls);
 
-                if let Some(writes) = form::describe().text_write(&id_str) {
-                    let mut patch = SettingsPatch::default();
-                    if patch.set_text(writes, &text) {
-                        self.apply(patch);
+                    if let Some(writes) = form::describe().text_write(&form_id) {
+                        let mut patch = SettingsPatch::default();
+                        if patch.set_text(writes, &text) {
+                            self.apply(patch);
+                        }
                     }
                 }
             }
@@ -913,6 +940,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
                             window
+                                .control_id_to_form_id
+                                .borrow_mut()
+                                .insert(control_id, id.clone());
+                            window
                                 .controls
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Checkbox(hwnd, tab_index));
@@ -994,6 +1025,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .collect();
                             SendMessageW(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
                             window
+                                .control_id_to_form_id
+                                .borrow_mut()
+                                .insert(control_id, id.clone());
+                            window
                                 .controls
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
@@ -1072,6 +1107,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 "••••".encode_utf16().chain(std::iter::once(0)).collect();
                             SendMessageW(hwnd, EM_SETCUEBANNER, 0, cue_text.as_ptr() as LPARAM);
                             window
+                                .control_id_to_form_id
+                                .borrow_mut()
+                                .insert(control_id, id.clone());
+                            window
                                 .controls
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
@@ -1133,6 +1172,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .control_id_to_form_id
+                                .borrow_mut()
+                                .insert(control_id, id.clone());
                             window.controls.borrow_mut().insert(
                                 id.clone(),
                                 Control::ComboBox(hwnd, tab_index, options.clone()),
@@ -1237,6 +1280,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             cue_text.as_ptr() as LPARAM,
                                         );
                                         window
+                                            .control_id_to_form_id
+                                            .borrow_mut()
+                                            .insert(control_id, id.clone());
+                                        window
                                             .controls
                                             .borrow_mut()
                                             .insert(id.clone(), Control::Edit(hwnd, tab_index));
@@ -1282,6 +1329,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             ptr::null_mut(),
                                         );
                                         SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                        window
+                                            .control_id_to_form_id
+                                            .borrow_mut()
+                                            .insert(control_id, id.clone());
                                         window.controls.borrow_mut().insert(
                                             id.clone(),
                                             Control::ComboBox(hwnd, tab_index, Vec::new()),
@@ -1307,6 +1358,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             ptr::null_mut(),
                                         );
                                         SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                        window
+                                            .control_id_to_form_id
+                                            .borrow_mut()
+                                            .insert(control_id, id.clone());
                                         window
                                             .controls
                                             .borrow_mut()
@@ -1404,6 +1459,10 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 ptr::null_mut(),
                             );
                             SendMessageA(hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                            window
+                                .control_id_to_form_id
+                                .borrow_mut()
+                                .insert(control_id, id.clone());
                             window
                                 .controls
                                 .borrow_mut()

@@ -105,7 +105,7 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
             form::TRACE_ENGINE_ID.to_string(),
             dev_flags::TRACE_ENGINE.in_force(settings.trace_engine),
         ),
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         (
             form::CAPTURABLE_ID.to_string(),
             dev_flags::CAPTURABLE.in_force(settings.capturable),
@@ -916,9 +916,9 @@ pub enum BoolField {
     TraceHittest,
     TraceDirector,
     TraceEngine,
-    /// Only AppKit has a capture exclusion to drop, so only AppKit offers the
-    /// row. The patch field itself is not gated: the file carries it anywhere.
-    #[cfg(target_os = "macos")]
+    /// macOS and Windows support capture exclusion. The patch field itself is
+    /// not gated: the file carries it anywhere.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     Capturable,
     // The two consent rows, gated for the reason `Capturable` is: Linux offers
     // neither, so no Linux row writes them, and a variant nothing constructs is
@@ -973,7 +973,7 @@ impl SettingsPatch {
             BoolField::TraceHittest => self.trace_hittest = Some(value),
             BoolField::TraceDirector => self.trace_director = Some(value),
             BoolField::TraceEngine => self.trace_engine = Some(value),
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
             BoolField::UseAccessibility => self.use_accessibility = Some(value),
@@ -1276,8 +1276,9 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
-    /// Drop the overlay's capture exclusion. macOS reads it; the field is
-    /// unconditional so the document round-trips on every platform.
+    /// Appear in screenshots and screen shares. True (default) means the buddy
+    /// is capturable; false excludes it. macOS and Windows read it; the field
+    /// is unconditional so the document round-trips on every platform.
     pub capturable: bool,
     /// Use Accessibility where the OS has granted it. Off does not revoke TCC.
     pub use_accessibility: bool,
@@ -1312,7 +1313,7 @@ impl Default for Settings {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
-            capturable: false,
+            capturable: true,
             use_accessibility: false,
             use_screen_recording: false,
         }
@@ -1859,7 +1860,7 @@ mod tests {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
-            capturable: false,
+            capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
         };

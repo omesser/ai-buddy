@@ -18,7 +18,7 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 - **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue — no chat window, no prompting. Works offline with Static weights; optionally connect a Completer (API key or local model) for more variety.
 - **Perches on windows.** Falls, lands on a window's top edge, rides a slow drag, drops when you yank or close the window.
 - **Reacts to gestures.** Poke, pick up, throw — it arcs, lands, and keeps going.
-- **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B, and stays out of screen captures and shares.
+- **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
 - **Lives its own life.** Walks, idles, sits, sleeps — even with the Director off.
 
 ## See It
@@ -178,7 +178,7 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 | Perch on window edges | yes | yes † | yes |
 | Dock or panel as a Perch | yes | degraded | degraded |
 | Fade out for a fullscreen app | yes | yes † | degraded |
-| Never captured in a screen share | yes | degraded | yes |
+| Capturable; opt-out in settings | yes | degraded | yes |
 | Native settings window | yes | yes † | in progress |
 
 - `yes` — implemented.
