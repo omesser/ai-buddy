@@ -36,7 +36,7 @@
     --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
     color-scheme: light;
-    
+
     /* Brand accent colors (light theme) */
     --claude-accent: #D97757;
     --codex-accent: #10A37F;
@@ -53,7 +53,7 @@
       --line: #313746;
       --accent: #5CC9B5;
       color-scheme: dark;
-      
+
       /* Brand accent colors (dark theme) */
       --claude-accent: #E8A78A;
       --codex-accent: #26C399;
@@ -70,7 +70,7 @@
     --line: #313746;
     --accent: #5CC9B5;
     color-scheme: dark;
-    
+
     --claude-accent: #E8A78A;
     --codex-accent: #26C399;
     --grok-accent: #7A8FA3;
@@ -207,7 +207,7 @@
     transition: all 0.15s ease;
     text-align: center;
   }
-  
+
   /* Brand-specific accent colors */
   .connect-btn[data-harness="claude"] {
     border-color: color-mix(in srgb, var(--claude-accent) 30%, var(--line));
@@ -219,7 +219,7 @@
   .connect-btn[data-harness="claude"] .connect-btn-icon {
     color: var(--claude-accent);
   }
-  
+
   .connect-btn[data-harness="codex"] {
     border-color: color-mix(in srgb, var(--codex-accent) 30%, var(--line));
   }
@@ -230,7 +230,7 @@
   .connect-btn[data-harness="codex"] .connect-btn-icon {
     color: var(--codex-accent);
   }
-  
+
   .connect-btn[data-harness="grok"] {
     border-color: color-mix(in srgb, var(--grok-accent) 30%, var(--line));
   }
@@ -243,7 +243,7 @@
     font-size: 18px;
     font-weight: 700;
   }
-  
+
   .connect-btn[data-harness="opencode"] {
     border-color: color-mix(in srgb, var(--opencode-accent) 30%, var(--line));
   }
@@ -270,7 +270,7 @@
   .connect-btn-label {
     font-size: 13px;
   }
-  
+
   .settings-btn {
     width: 100%;
     display: flex;
@@ -345,7 +345,7 @@
 
   <div class="demo-section">
     <h3>Chat Window — Unified Landing with Real Marks</h3>
-    
+
     <div class="window" id="chat-window">
       <div class="window-header">BMO · Chat</div>
       <div class="window-body" id="chat-body">
@@ -467,9 +467,9 @@
   function render() {
     const s = STATES[state.current];
     const body = document.getElementById("chat-body");
-    
+
     let html = `<h3>${s.title}</h3>`;
-    
+
     if (s.command && s.hint) {
       html += `<p>${s.lede}</p>`;
       html += `<p class="hint">${s.hint}</p>`;
@@ -477,11 +477,11 @@
     } else {
       html += `<p>${s.lede}</p>`;
     }
-    
+
     if (s.showLanding) {
       html += `<div class="landing">${connectButtons()}</div>`;
     }
-    
+
     body.innerHTML = html;
 
     for (const btn of document.querySelectorAll("#state button")) {

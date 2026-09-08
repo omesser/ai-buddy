@@ -234,7 +234,7 @@ function attached(opening) {
   const ready = opening.configured && opening.enabled && !opening.login;
   const needsAuth = opening.configured && opening.enabled && opening.login;
   const isHttpMode = opening.configured && !opening.harness_name;
-  
+
   empty.hidden = ready;
   line.disabled = !ready;
   send.disabled = !ready;
@@ -265,7 +265,7 @@ function attached(opening) {
   } else {
     // Harness mode or no Completer: show unified landing with buttons
     landing.hidden = false;
-    
+
     const title = document.getElementById("landing-title");
     const lede = document.getElementById("landing-lede");
     const command = document.getElementById("landing-command");
@@ -294,7 +294,7 @@ function attached(opening) {
       hint.hidden = true;
     }
   }
-  
+
   return ready;
 }
 
@@ -304,7 +304,7 @@ for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
     const label = btn.querySelector(".connect-label").textContent;
-    
+
     invoke("harness_login", { harness })
       .then(() => {
         note(`Starting ${label} login. Sign in through the ${label} window.`);

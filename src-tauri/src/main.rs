@@ -1179,7 +1179,7 @@ fn harness_login(harness: String) -> Result<(), String> {
     {
         // On Windows, spawn in a new console so the user sees the auth flow
         std::process::Command::new("cmd")
-            .args(&["/c", "start", command[0]])
+            .args(["/c", "start", command[0]])
             .args(&command[1..])
             .spawn()
             .map_err(|why| format!("could not start {}: {why}", command[0]))?;
