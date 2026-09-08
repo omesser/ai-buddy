@@ -327,7 +327,7 @@ turn
   proposal     Wave | Hello from the probe.
 ```
 
-The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. ADR-0017's table says which Harnesses this has been run against.
+The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. The README's [Harness Support](../README.md#harness-support) table says which Harnesses this has been run against. Update that section when probe-harness results or `launch()` names/commands change.
 
 The `probe` folder keeps the session file and the Action Log out of a real install's. Memory is not isolated: the MCP server resolves `memory.md` from the data folder, so a `remember` during a probe writes the real one.
 
