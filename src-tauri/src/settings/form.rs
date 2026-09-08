@@ -750,7 +750,7 @@ fn presence_sections() -> Vec<FormSection> {
                     label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
                     frozen: false,
-                    help: Some("Checked: buddy is visible in screen captures (default). Unchecked: excluded.".to_string()),
+                    help: Some("Checked: buddy is visible in screen captures (default). Unchecked: excluded. Needs a restart.".to_string()),
                     comment: None,
                 },
                 FormRow::InspectBlock {
