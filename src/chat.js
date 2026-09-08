@@ -255,8 +255,7 @@ function showTab(name) {
     ["tab-prompt", prompt],
   ]) {
     const tab = document.getElementById(id);
-    tab.classList.toggle("on", on);
-    tab.setAttribute("aria-pressed", String(on));
+    tab.setAttribute("aria-selected", String(on));
   }
   if (prompt) {
     promptText.focus();

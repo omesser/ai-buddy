@@ -36,6 +36,7 @@
   --chat-radius-tail: 0;
   --chat-radius-control: 0;
   --chat-radius-badge: 0;
+  --chat-radius-tab: 0;
 
   --chat-sans: system-ui, sans-serif;
   --chat-mono: ui-monospace, monospace;
@@ -72,6 +73,7 @@
   --chat-radius-tail: 3px;
   --chat-radius-control: 10px;
   --chat-radius-badge: 5px;
+  --chat-radius-tab: 10px 10px 0 0;
 
   --chat-sans: system-ui, -apple-system, sans-serif;
   --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -103,7 +105,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 13px 14px 11px 18px;
+  padding: 13px 18px 8px;
 }
 
 .who {
@@ -128,29 +130,33 @@ body {
   color: var(--chat-ink-3);
 }
 
-/* The two tabs, at the far end of the title row: the window's furniture, not
-   part of either thing they switch between. */
+/* Under the name, not beside it: the title row has to stay a single line so a
+   Director-mode or Harness hint can sit there later. Selected is filled rather
+   than outlined, so the active pane is the colour, not a shared border with
+   the Character badge. */
 .tabs {
   display: flex;
+  flex: 0 0 auto;
   gap: 4px;
-  margin-inline-start: auto;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--chat-rule);
 }
 
 .tab {
-  padding: 3px 9px;
-  border: 1px solid var(--chat-line);
-  border-radius: var(--chat-radius-badge);
+  padding: 7px 12px 9px;
+  border: 0;
+  border-radius: var(--chat-radius-tab);
   background: transparent;
   color: var(--chat-ink-3);
   font: inherit;
-  font-size: 11px;
+  font-size: 12.5px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.tab.on {
-  border-color: var(--chat-accent);
-  background: var(--chat-accent-soft);
+.tab[aria-selected="true"] {
   color: var(--chat-accent);
+  background: var(--chat-accent-soft);
 }
 
 .tab:focus-visible {
@@ -168,7 +174,6 @@ body {
   align-content: start;
   gap: 8px;
   padding: 16px 18px 18px;
-  border-top: 1px solid var(--chat-rule);
 }
 
 .prompt h2 {
@@ -277,7 +282,6 @@ body {
   align-content: start;
   gap: 16px;
   padding: 18px 18px 8px;
-  border-top: 1px solid var(--chat-rule);
 }
 
 .row {

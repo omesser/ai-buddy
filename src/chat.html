@@ -15,16 +15,15 @@
         <span class="name" id="name"></span>
         <span class="of" id="character"></span>
       </span>
-
-      <!-- Two tabs, because the window holds two things: the conversation, and
-           the two authored layers of the prompt behind it (ADR-0012). The
-           assembled Character Prompt is not one of them — settings already
-           shows that, and one inspect surface is enough. -->
-      <nav class="tabs">
-        <button type="button" class="tab on" id="tab-chat" aria-pressed="true">Chat</button>
-        <button type="button" class="tab" id="tab-prompt" aria-pressed="false">Prompt</button>
-      </nav>
     </header>
+
+    <!-- Own row under the name: a Director-mode or Harness hint still has to
+         fit on the title line, and two triggers sharing it would crowd both.
+         The assembled Character Prompt stays in settings (ADR-0012). -->
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab" id="tab-chat" role="tab" aria-selected="true" aria-controls="log">Chat</button>
+      <button type="button" class="tab" id="tab-prompt" role="tab" aria-selected="false" aria-controls="prompt">Prompt</button>
+    </nav>
 
     <!-- Announced rather than silent: an answer lands while the caret is still
          in the field, so a reader who is not watching the log is told. -->
@@ -78,7 +77,7 @@
       <h2>Personality</h2>
       <p class="hint">
         What <span class="i-character"></span>'s package says it is. It belongs to the Character, so
-        it is shown here and edited nowhere.
+        it is shown here and determined in the character manifest.
       </p>
       <div class="frozen" id="personality"></div>
 
@@ -86,7 +85,7 @@
       <p class="hint">
         Written for <span class="i-name"></span> alone, and kept if you switch Characters. It follows
         the personality above and is bound by the same rule: it shapes how
-        <span class="i-name"></span> comes across, never what it can do. Up to
+        <span class="i-name"></span> comes across on this machine. Up to
         <span id="prompt-limit"></span> characters.
       </p>
       <textarea
