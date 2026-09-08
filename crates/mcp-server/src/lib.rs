@@ -1,9 +1,30 @@
-//! MCP server exposing ai-buddy tool dispatch over stdio.
+//! The stdio fallback: ai-buddy's tool dispatch, out of process and stubbed.
 //!
-//! A Harness can spawn this binary and call the seven tools from #15.
-//! v1 uses injected stubs: StubWindowSource (no real window sensing), empty
-//! roster, denylist from settings.json beside Memory. A Harness attach in
-//! #16 will provide real dependencies per instance.
+//! **This is not the path that reaches the buddy on screen.** ADR-0023 makes
+//! the running app serve MCP itself on loopback HTTP, because tools have to be
+//! dispatched where the `Roster` is — the Instance list a target resolves
+//! against, and the `ExpressionHandle` a resolved one is enqueued on.
+//! `src-tauri/src/mcp_http.rs` is that server, and it is what `session/new`
+//! hands any Harness that advertises `mcpCapabilities.http`.
+//!
+//! This is what the rest get, reached three ways and always the same code:
+//! `AI_BUDDY_MCP_BIN`, an `ai-buddy-mcp` sidecar beside the app, or the app
+//! binary re-executed as `ai-buddy --mcp-stdio` (#497). A Harness with no HTTP
+//! MCP — `hermes` is one (ADR-0017) — and story 66's power user pointing their
+//! own Harness at ai-buddy both land here, and both get only what a process
+//! outside the app can honestly do:
+//!
+//! - `recall` and `remember` are real. Memory is a file in the data folder and
+//!   this process can read and write it.
+//! - `speak` and `play_behavior` reach no Instance. There is no roster here, and
+//!   `tools::speak` reports an empty roster as success — so a Harness on this
+//!   path is told the line was said and nothing appears on screen. #470 is
+//!   closed for the HTTP path only. #501 is the shim that would dial the
+//!   running app and close it here too; #502 is the success this lies with.
+//! - `list_windows` and `describe_screen` see nothing: `StubWindowSource` below
+//!   is the only window source a process outside the app can have, since the
+//!   platform sensing lives behind the Shell's own consent (ADR-0005).
+//! - `list_instances` reports none, for the same reason as `speak`.
 
 mod settings;
 

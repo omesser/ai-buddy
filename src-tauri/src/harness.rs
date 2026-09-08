@@ -25,7 +25,7 @@ use ai_buddy_core::director::{Completer, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::acp_wire::{Event, Handshake, McpLaunch, OpenError, TurnError, Wire};
+use crate::acp_wire::{Event, Handshake, McpChoice, McpLaunch, OpenError, TurnError, Wire};
 use crate::action_log;
 
 pub use crate::acp_wire::PermissionAsk;
@@ -35,6 +35,9 @@ pub use crate::acp_wire::PermissionAsk;
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
 pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
+/// How long an unauthenticated Harness is left alone, in seconds. Named here
+/// with the two above so the Development row it owns can print it (#447).
+pub(crate) const AUTH_RETRY_SECS: &str = "AI_BUDDY_HARNESS_AUTH_RETRY_SECS";
 
 /// The one file the session survives a restart in.
 const SESSION_FILE: &str = "harness-session.json";
@@ -42,7 +45,16 @@ const SESSION_FILE: &str = "harness-session.json";
 /// How long a not-yet-authenticated Harness is left alone before `session/new`
 /// is tried again. Long enough not to hammer it, short enough that a user who
 /// runs the login command sees the buddy pick it up without a restart.
+///
+/// The default the Development row's blank means. A test that has to watch the
+/// retry cannot wait a minute for it, and neither can a smoke run (#447).
 const AUTH_RETRY: Duration = Duration::from_secs(60);
+
+/// What an empty auth-retry field means, in seconds. `model`'s placeholders
+/// are the same idea for the Completer limits.
+pub(crate) fn auth_retry_placeholder() -> String {
+    AUTH_RETRY.as_secs().to_string()
+}
 
 /// Respawn backoff after a wake the child could not serve: doubles from the
 /// first up to the cap, so a missing binary costs one attempt every five
@@ -106,6 +118,10 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
         "claude" => (
             value,
             vec!["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"],
+        ),
+        "codex" => (
+            value,
+            vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
@@ -316,7 +332,8 @@ impl Session {
             forward,
             timeout: crate::dev_flags::director_timeout_secs()
                 .map_or(crate::model::TIMEOUT, Duration::from_secs),
-            auth_retry: AUTH_RETRY,
+            auth_retry: crate::dev_flags::harness_auth_retry_secs()
+                .map_or(AUTH_RETRY, Duration::from_secs),
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
@@ -783,7 +800,7 @@ impl Session {
             .load_session
             .then(|| self.saved_session())
             .flatten();
-        let mcp = mcp_server();
+        let mcp = mcp_server(&state.handshake);
         let id = match wire.open(saved.clone(), &self.dir, mcp.clone(), self.attach_timeout()) {
             Ok(id) => id,
             Err(OpenError::Lost) => {
@@ -813,7 +830,13 @@ impl Session {
         action_log::append(
             &self.dir,
             "attach",
-            json!({"harness": self.launch.name, "session_id": id, "mcp": mcp.as_ref().map(McpLaunch::line)}),
+            // The label, never the choice: an `McpChoice::Http` carries the
+            // loopback token and the Action Log is a file on disk.
+            json!({
+                "harness": self.launch.name,
+                "session_id": id,
+                "mcp": mcp.as_ref().map(McpChoice::label),
+            }),
         );
         Ok(id)
     }
@@ -919,10 +942,6 @@ fn probe(session: &Session) -> i32 {
     println!("  command      {}", session.launch.line());
     println!("  dir          {}", session.dir.display());
     println!(
-        "  mcp          {}",
-        mcp_server().map_or_else(|| "none".to_string(), |launch| launch.line())
-    );
-    println!(
         "  timeout      turn {}s, attach {}s",
         session.timeout.as_secs(),
         session.attach_timeout().as_secs()
@@ -957,6 +976,13 @@ fn probe(session: &Session) -> i32 {
     );
     println!("  loadSession  {}", handshake.load_session);
     println!("  mcp http     {}", handshake.mcp_http);
+    // What the session was actually handed, not what was on offer: #470 closed
+    // on a probe that reported `mcp none` on every run and so never exercised
+    // a tool call. The label never carries the loopback token.
+    println!(
+        "  mcp          {}",
+        mcp_server(&handshake).map_or_else(|| "none".to_string(), |choice| choice.label())
+    );
     println!(
         "  authMethods  {}",
         if methods.is_empty() {
@@ -1158,18 +1184,45 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
         .unwrap_or_else(|| format!("{name} (run it once in a terminal and sign in)"))
 }
 
-/// The stdio MCP server to hand the session, when one can be launched.
+/// The MCP server to hand this session, in the transport the Harness takes.
 ///
-/// Beside the app, or wherever `AI_BUDDY_MCP_BIN` points. No loopback HTTP
-/// server exists yet (#166), so a missing binary means no tools this session
-/// unless the app binary itself can speak MCP on stdio.
-fn mcp_server() -> Option<McpLaunch> {
-    let env_bin = std::env::var_os(MCP_BIN).map(PathBuf::from);
-    mcp_launch(env_bin.as_deref(), std::env::current_exe().ok()?.as_path())
+/// The app's own loopback server first, because its tools dispatch against the
+/// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023,
+/// #470). A Harness that advertises no `mcpCapabilities.http` — `hermes` is one
+/// (ADR-0017) — gets `mcp_launch`'s stdio server instead, whose dispatch
+/// context is stubbed: a `speak` there returns success and moves nothing (#501,
+/// #502). Since #497 that fallback always exists, so `None` here is only ever
+/// an exe this code cannot recognise.
+fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
+    if handshake.mcp_http {
+        if let Some(endpoint) = crate::mcp_http::endpoint() {
+            return Some(McpChoice::Http {
+                url: endpoint.url.clone(),
+                authorization: endpoint.authorization(),
+            });
+        }
+    }
+    mcp_stdio().map(McpChoice::Stdio)
 }
 
-fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
-    if let Some(path) = env_bin.filter(|path| path.is_file()) {
+/// The stdio MCP server to hand the session, when one can be launched.
+///
+/// The Development row or `AI_BUDDY_MCP_BIN`, else a sidecar beside the app,
+/// else the app binary re-executed as its own server (#497).
+///
+/// Read here rather than at construction, so a path typed in the window is the
+/// one the next attach hands over (#447). `AI_BUDDY_MCP_BIN` still outranks
+/// the file; `dev_flags` holds that decision for every row.
+fn mcp_stdio() -> Option<McpLaunch> {
+    let configured = crate::dev_flags::mcp_bin();
+    mcp_launch(
+        configured.as_deref(),
+        std::env::current_exe().ok()?.as_path(),
+    )
+}
+
+fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
+    if let Some(path) = configured.filter(|path| path.is_file()) {
         return Some(McpLaunch {
             path: path.to_path_buf(),
             args: Vec::new(),
@@ -1187,8 +1240,9 @@ fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
             args: Vec::new(),
         });
     }
-    // Sibling / env still win; this is how `cargo run` and a bundle with no
-    // sidecar still hand the Harness a server. #166 is the loopback-HTTP follow-up.
+    // Sibling / configured path still win; this is how `cargo run` and a bundle
+    // with no sidecar still hand the Harness a server. The loopback server
+    // above is what a Harness that can take it gets instead.
     (current_exe.file_stem()? == "ai-buddy").then(|| McpLaunch {
         path: current_exe.to_path_buf(),
         args: vec!["--mcp-stdio".into()],
@@ -1358,11 +1412,19 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
             session.launch.name,
             session.launch.line()
         ),
-        match mcp_server() {
-            None => {
-                "harness: no ai-buddy-mcp binary found; the session gets no MCP servers".to_string()
+        // Before the handshake, so this says what is on offer rather than
+        // which one the session got. The probe's `mcp` line says the latter.
+        match (crate::mcp_http::endpoint(), mcp_stdio()) {
+            (Some(endpoint), Some(launch)) => format!(
+                "harness: MCP server {}, or `{}` (stubbed) for a Harness with no HTTP MCP",
+                endpoint.url,
+                launch.line()
+            ),
+            (Some(endpoint), None) => format!("harness: MCP server {}", endpoint.url),
+            (None, Some(launch)) => {
+                format!("harness: MCP server {} (stubbed)", launch.line())
             }
-            Some(launch) => format!("harness: MCP server {}", launch.line()),
+            (None, None) => "harness: no MCP server; the session gets no tools".to_string(),
         },
     ];
     // Startup cannot report a spawn that has not happened: `attach` runs on the
@@ -1696,6 +1758,10 @@ mod tests {
             claude.argv,
             ["npx", "-y", "@agentclientprotocol/claude-agent-acp@latest"]
         );
+        assert_eq!(
+            launch(Some("codex")).unwrap().argv,
+            ["npx", "-y", "@agentclientprotocol/codex-acp@latest"]
+        );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
@@ -1742,7 +1808,7 @@ mod tests {
     /// it is, with no key set, no config dir moved, and no `--bare`.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
-        for name in ["claude", "hermes", "opencode"] {
+        for name in ["claude", "codex", "hermes", "opencode"] {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(Path::new("/tmp"));
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");
@@ -2617,5 +2683,35 @@ mod tests {
         assert_eq!(mcp_launch(None, &current_exe), None);
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// ADR-0023's branch: the loopback server for a Harness that advertised
+    /// HTTP MCP, and never for one that did not — sending a URL to `hermes`,
+    /// which advertises none, is sending it somewhere it will not be read.
+    #[test]
+    fn the_loopback_server_goes_only_to_a_harness_that_advertised_http_mcp() {
+        let (calls, _held) = mpsc::channel();
+        let endpoint = crate::mcp_http::serve(calls).expect("loopback binds");
+
+        let http = Handshake {
+            mcp_http: true,
+            ..Handshake::default()
+        };
+        match mcp_server(&http) {
+            Some(McpChoice::Http { url, authorization }) => {
+                assert_eq!(url, endpoint.url);
+                assert!(authorization.starts_with("Bearer "));
+            }
+            other => panic!(
+                "expected the loopback server, got {:?}",
+                other.map(|c| c.label())
+            ),
+        }
+
+        let stdio_only = Handshake::default();
+        assert!(
+            !matches!(mcp_server(&stdio_only), Some(McpChoice::Http { .. })),
+            "a Harness with no mcpCapabilities.http is never handed a URL"
+        );
     }
 }

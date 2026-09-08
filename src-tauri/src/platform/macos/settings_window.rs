@@ -822,6 +822,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         placeholder,
                         frozen,
                         batched,
+                        help,
                         writes: _,
                     } => {
                         if let Some(label_text) = label {
@@ -844,6 +845,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             form::DIRECTOR_BASE_URL_ID => base_url_field = Some(field),
                             form::DIRECTOR_MODEL_ID => model_field = Some(field),
                             _ => {}
+                        }
+
+                        if let Some(help_text) = help {
+                            cursor.hint(help_text);
                         }
                     }
                     FormRow::SecureField {

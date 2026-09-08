@@ -62,6 +62,15 @@ impl<S: WindowSource> SnapshotAssembler<S> {
         }
     }
 
+    /// The window source itself, for a reader that is not a tick.
+    ///
+    /// The sensing tools answer a Harness on demand, and the two cadences this
+    /// type exists to manage are about the frame loop's needs, not theirs — a
+    /// `list_windows` wants the desktop now, not the one the last poll saw.
+    pub fn source(&self) -> &S {
+        &self.source
+    }
+
     /// Read at the ride cadence for as long as the sprite is holding on.
     /// Idle is the default so a sleeping buddy does not enumerate the
     /// desktop sixty times a second. #98.

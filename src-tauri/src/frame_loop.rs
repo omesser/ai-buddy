@@ -5,7 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::director::{self, Context, Happened, Wake};
-use ai_buddy_core::dispatch::DenyList;
+use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
 use ai_buddy_core::engine::{Cue, State, Verb};
 use ai_buddy_core::input::press_target;
 use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
@@ -19,12 +19,13 @@ use tauri::{Emitter, Manager};
 use super::session_log;
 use super::settings::SettingsOp;
 use super::{
-    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, menu, model,
-    note_happened, open_chat, overlay_label, paced, place_overlays, platform, publish_instances,
-    push_chat_opening, push_chat_openings, remember_instances, spawn_live, switch_instance, tray,
-    ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn, FrameExtras, InstanceState,
-    MenuChannel, MenuHold, MenuSignal, Placed, Placement, SpritePlacement, Traced, TrayHandle,
-    CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    apply_menu_action, chat_label, close_chat, describe_menu, dev_flags, harness, mcp_http, menu,
+    model, note_happened, open_chat, overlay_label, paced, place_overlays, platform,
+    publish_instances, push_chat_opening, push_chat_openings, remember_instances, spawn_live,
+    switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
+    FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
+    SpritePlacement, Traced, TrayHandle, CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT,
+    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// One overlay's last applied shape: the mask, then x, y, width and height.
@@ -80,6 +81,7 @@ pub(crate) fn run_frame_loop(
             instances: instance_rows,
             ops,
             chat,
+            mcp,
         } = extras;
         let mut slots = model::Slots::new();
         publish_instances(&roster, &instance_rows);
@@ -470,7 +472,7 @@ pub(crate) fn run_frame_loop(
                                     &app,
                                 );
                                 if let Ok(inspect) = inspect.lock() {
-                                    push_chat_opening(&app, &roster, &id, &inspect);
+                                    push_chat_opening(&app, &roster, &id, &inspect, &characters);
                                 }
                             }
                         } else {
@@ -560,6 +562,68 @@ pub(crate) fn run_frame_loop(
                         }
                         continue;
                     }
+                    // A saved Instance Prompt. Already inside the bound, which
+                    // `chat_prompt` is where a refusal can still be read.
+                    ChatMsg::Wrote(written) => {
+                        if !roster.set_prompt(&written.instance, written.text.clone()) {
+                            eprintln!("chat: no Instance {} to write for", written.instance);
+                            continue;
+                        }
+                        // The id this text is keyed to is persisted with it, or
+                        // the next launch mints another and loses it (ADR-0012).
+                        remember_instances(&roster, &settings, &settings_path);
+
+                        if let Some(live) =
+                            lives.iter_mut().find(|live| live.id == written.instance)
+                        {
+                            // The Character Prompt is the opening turn, and this
+                            // session opened without these words: no follow-up
+                            // can retrofit them. Same teardown a Character
+                            // switch uses — a Wake still on the wire is dropped
+                            // so the old host stops generating, and the next
+                            // wake opens with the new layer. Not woken here:
+                            // the edit takes effect at the next wake rather
+                            // than by re-asking to prove it landed (ADR-0012).
+                            model::retarget_model(
+                                &mut slots,
+                                &written.instance,
+                                &mut live.model,
+                                live.character.behaviors.keys().cloned(),
+                                &director,
+                                config.configured,
+                            );
+                        }
+
+                        // Same session replacement a Character switch uses:
+                        // the held turns go, the open surface is told, and
+                        // the Action Log keeps the boundary (#476, ADR-0012).
+                        session_log::new_session(
+                            &app,
+                            &written.instance,
+                            "the Instance Prompt changed",
+                        );
+                        // A prompt layer changing is exactly what a user needs
+                        // to find later. `chars` rather than the body, as the
+                        // `prompt` event already does (#435).
+                        crate::action_log::append(
+                            &ai_buddy_core::memory::data_dir(),
+                            "instance-prompt",
+                            serde_json::json!({
+                                "instance": written.instance,
+                                "chars": written.text.chars().count(),
+                            }),
+                        );
+                        if let Ok(inspect) = inspect.lock() {
+                            push_chat_opening(
+                                &app,
+                                &roster,
+                                &written.instance,
+                                &inspect,
+                                &characters,
+                            );
+                        }
+                        continue;
+                    }
                 };
                 let Some(live) = lives.iter_mut().find(|live| live.id == line.instance) else {
                     // Dismissed between the send and this drain. Answered
@@ -633,6 +697,20 @@ pub(crate) fn run_frame_loop(
                 live.happened = Happened::Chat(line.text);
             }
 
+            // A `tools/call` from the attached Harness. Here rather than on the
+            // listener's own thread because this is where the `Roster` is, and
+            // the `Roster` is both the Instance list a target resolves against
+            // and the `ExpressionHandle` a resolved one is enqueued on — which
+            // is the whole of what #470 was missing. A queued proposal reaches
+            // the screen on the next `Instance::tick`, a few lines below.
+            while let Ok(call) = mcp.try_recv() {
+                let excluded = settings
+                    .lock()
+                    .map(|settings| settings.excluded_applications.clone())
+                    .unwrap_or_default();
+                answer_tool_call(call, &mut roster, assembler.source(), excluded);
+            }
+
             {
                 let installed: Vec<String> = characters.keys().cloned().collect();
                 let current = lives
@@ -701,7 +779,7 @@ pub(crate) fn run_frame_loop(
             if reload_chat {
                 if let Ok(mut inspect) = inspect.lock() {
                     inspect.harness = harness::attached().map(|session| session.inspect());
-                    push_chat_openings(&app, &roster, &inspect);
+                    push_chat_openings(&app, &roster, &inspect, &characters);
                 }
             }
 
@@ -1022,6 +1100,7 @@ pub(crate) fn run_frame_loop(
                                 activity: activity.clone(),
                                 recent: live.recent.clone(),
                                 personality: live.character.personality.clone(),
+                                instance_prompt: instance.prompt().to_string(),
                                 state: live.last_state.unwrap_or(State::Grounded),
                                 happened: live.happened.clone(),
                                 standing: String::new(),
@@ -1121,7 +1200,11 @@ pub(crate) fn run_frame_loop(
                             let context = Context {
                                 activity: activity.clone(),
                                 recent: live.recent.clone(),
+                                // The two authored layers, the package's and
+                                // this Instance's own (ADR-0012). Read off the
+                                // roster, which is where a save lands.
                                 personality: live.character.personality.clone(),
+                                instance_prompt: instance.prompt().to_string(),
                                 state: frame.state,
                                 happened: live.happened.clone(),
                                 standing: assembler.standing_on(frame.position),
@@ -1819,4 +1902,152 @@ pub(crate) fn run_frame_loop(
             }
         }
     });
+}
+
+/// Dispatch one `tools/call` against the live Instances and answer it.
+///
+/// The seam #470 was missing. `crates/mcp-server` builds this context out of a
+/// `StubWindowSource`, an empty roster and no `ExpressionHandle`, which is why
+/// a `speak` through it came back `success: true` and changed nothing. Here
+/// every field is the running app's: the Instance list a target resolves
+/// against, the `Roster` a resolved one is enqueued on, the platform's real
+/// window source, and the user's own excluded applications.
+fn answer_tool_call(
+    call: mcp_http::Call,
+    roster: &mut Roster,
+    source: &dyn WindowSource,
+    excluded_applications: Vec<String>,
+) {
+    let live: Vec<InstanceInfo> = roster
+        .list()
+        .into_iter()
+        .map(|(id, name)| InstanceInfo { id, name })
+        .collect();
+    let mut context = DispatchContext {
+        window_source: source,
+        memory_path: ai_buddy_core::memory::shared_path(),
+        denylist: DenyList {
+            excluded_applications,
+            filter_password_fields: true,
+        },
+        roster: &live,
+        expression: Some(roster),
+    };
+    let _ = call
+        .reply
+        .send(dispatch(&call.tool, call.arguments, &mut context));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ai_buddy_core::character::{
+        Animation, Behavior, Character, CursorReaction, Primitive, DEFAULT_MODEL_BASE,
+        DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
+    };
+    use ai_buddy_core::engine::Point;
+    use ai_buddy_core::window_source::{Capabilities, WorldGeometry};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    /// `FakeWindowSource` is `cfg(test)` inside core, so it is not visible
+    /// here. A bare desktop is all this test needs: the sensing tools are
+    /// covered against a described desktop in `dispatch`.
+    struct EmptyDesktop;
+
+    impl WindowSource for EmptyDesktop {
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+
+        fn read(&self) -> WorldGeometry {
+            WorldGeometry::default()
+        }
+    }
+
+    fn character() -> Character {
+        let animations = REQUIRED_ANIMATIONS
+            .iter()
+            .map(|name| {
+                (
+                    (*name).to_string(),
+                    Animation {
+                        frames: vec![format!("{name}-0.png")],
+                        frame_size: (32, 32),
+                        fps: 8,
+                        looping: true,
+                        variants: Vec::new(),
+                        left_strip: None,
+                        // core keeps its own default private, and this test
+                        // only needs a Behavior something can pick.
+                        weight: 10,
+                    },
+                )
+            })
+            .collect();
+        let mut behaviors = BTreeMap::new();
+        behaviors.insert(
+            "wave".to_string(),
+            Behavior {
+                primitives: vec![Primitive::React],
+                then: None,
+                weight: 1,
+                trigger: None,
+            },
+        );
+        Character {
+            name: "Buddy".to_string(),
+            personality: String::new(),
+            animations,
+            behaviors,
+            art: BTreeMap::new(),
+            smooth: false,
+            scale: 1,
+            model_base: DEFAULT_MODEL_BASE,
+            model_power: DEFAULT_MODEL_POWER,
+            near_reaction: CursorReaction::default(),
+            rush_reaction: CursorReaction::default(),
+            source: None,
+        }
+    }
+
+    /// The wiring #470 was missing, and the only thing this test is for: the
+    /// tool semantics themselves are covered in `dispatch`, against the same
+    /// `Roster`. What is new here is that `answer_tool_call` builds the context
+    /// out of the running app's Instances rather than out of stubs, so a
+    /// `speak` from a Harness ends up on the Frame the bubble draws.
+    #[test]
+    fn a_tool_call_speaks_through_the_live_roster_onto_the_next_frame() {
+        let dir = std::env::temp_dir().join(format!("ai-buddy-mcp-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("a temp dir");
+        let mut roster = Roster::new();
+        let id = roster.spawn(&character(), "Pip".to_string(), Point { x: 0.0, y: 0.0 });
+
+        let (reply, answers) = mpsc::channel();
+        answer_tool_call(
+            mcp_http::Call {
+                tool: "speak".to_string(),
+                arguments: json!({"message": "hello from a Harness"}),
+                reply,
+            },
+            &mut roster,
+            &EmptyDesktop,
+            Vec::new(),
+        );
+        let result = answers
+            .recv()
+            .expect("the call is answered")
+            .expect("dispatch succeeds");
+        assert_eq!(result["success"], json!(true));
+
+        let snapshot =
+            SnapshotAssembler::new(EmptyDesktop).assemble(16, Point { x: 0.0, y: 0.0 }, Vec::new());
+        let frame = roster.get_mut(&id).expect("still there").tick(&snapshot);
+        assert_eq!(
+            frame.dialogue.as_deref(),
+            Some("hello from a Harness"),
+            "the Speech bubble draws Frame::dialogue"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

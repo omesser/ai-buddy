@@ -576,7 +576,8 @@ fn set_window_text(hwnd: HWND, text: &str) {
 /// Returns `true` when the label displays dynamic state (memory path, hotkey,
 /// last payload, harness state). Returns `false` when the label holds static
 /// text set at build_ui time: field labels (`*_label`), placeholders
-/// (`*_placeholder`), and help hints (`*_help`, `composite_help_*`).
+/// (`*_placeholder`), help hints (`*_help`, `composite_help_*`), and section
+/// heading/comment labels (`section_heading_*`, `section_comment_*`).
 fn should_update_label_text(id: &str) -> bool {
     if id == form::MEMORY_PATH_ID
         || id == form::HOTKEY_ID
@@ -589,6 +590,9 @@ fn should_update_label_text(id: &str) -> bool {
         return false;
     }
     if id.ends_with("_help") || id.starts_with("composite_help_") {
+        return false;
+    }
+    if id.starts_with("section_heading_") || id.starts_with("section_comment_") {
         return false;
     }
     true
@@ -839,8 +843,54 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
         for (tab_index, tab_def) in description.tabs.iter().enumerate() {
             let mut y = display_top + MARGIN;
 
-            for section in tab_def.sections.iter() {
+            for (section_index, section) in tab_def.sections.iter().enumerate() {
                 y += SECTION_GAP;
+
+                let heading_cstr = CString::new(section.heading.as_str()).unwrap();
+                let heading_hwnd = CreateWindowExA(
+                    0,
+                    c"STATIC".as_ptr() as *const u8,
+                    heading_cstr.as_ptr() as *const u8,
+                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                    display_left,
+                    y,
+                    FIELD_WIDTH,
+                    LABEL_HEIGHT,
+                    parent,
+                    ptr::null_mut(),
+                    GetModuleHandleA(ptr::null()),
+                    ptr::null_mut(),
+                );
+                SendMessageA(heading_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                window.controls.borrow_mut().insert(
+                    format!("section_heading_{}_{}", tab_index, section_index),
+                    Control::Label(heading_hwnd, tab_index),
+                );
+                y += LABEL_HEIGHT + HINT_GAP;
+
+                if let Some(comment_text) = &section.comment {
+                    let comment_cstr = CString::new(comment_text.as_str()).unwrap();
+                    let comment_hwnd = CreateWindowExA(
+                        0,
+                        c"STATIC".as_ptr() as *const u8,
+                        comment_cstr.as_ptr() as *const u8,
+                        WS_CHILD | WS_VISIBLE | SS_LEFT,
+                        display_left,
+                        y,
+                        FIELD_WIDTH,
+                        LABEL_HEIGHT * 2,
+                        parent,
+                        ptr::null_mut(),
+                        GetModuleHandleA(ptr::null()),
+                        ptr::null_mut(),
+                    );
+                    SendMessageA(comment_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                    window.controls.borrow_mut().insert(
+                        format!("section_comment_{}_{}", tab_index, section_index),
+                        Control::Label(comment_hwnd, tab_index),
+                    );
+                    y += LABEL_HEIGHT * 2 + HINT_GAP;
+                }
 
                 for row in &section.rows {
                     match row {
@@ -896,6 +946,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             placeholder,
                             frozen,
+                            help,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -947,6 +998,32 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
                             y += ROW_HEIGHT + ROW_GAP;
+                            // The `_help` suffix is what keeps a refresh from
+                            // writing the row's value over the hint.
+                            if let Some(help_text) = help {
+                                let help_hwnd = CreateWindowExA(
+                                    0,
+                                    c"STATIC".as_ptr() as *const u8,
+                                    ptr::null(),
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                    display_left,
+                                    y,
+                                    FIELD_WIDTH,
+                                    LABEL_HEIGHT,
+                                    parent,
+                                    ptr::null_mut(),
+                                    GetModuleHandleA(ptr::null()),
+                                    ptr::null_mut(),
+                                );
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
+                                SetWindowTextA(help_hwnd, help_cstr.as_ptr() as *const u8);
+                                SendMessageA(help_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                                window.controls.borrow_mut().insert(
+                                    format!("{}_help", id),
+                                    Control::Label(help_hwnd, tab_index),
+                                );
+                                y += LABEL_HEIGHT + HINT_GAP;
+                            }
                             control_id += 1;
                         }
                         FormRow::SecureField {
@@ -1829,6 +1906,22 @@ mod tests {
         assert!(
             !should_update_label_text("composite_help_45"),
             "all composite_help_* labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_heading_0_0"),
+            "section heading labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_heading_1_2"),
+            "all section_heading_* labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_comment_0_0"),
+            "section comment labels must be preserved"
+        );
+        assert!(
+            !should_update_label_text("section_comment_3_1"),
+            "all section_comment_* labels must be preserved"
         );
     }
 

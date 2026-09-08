@@ -13,15 +13,69 @@ use std::collections::BTreeMap;
 /// restarts (#13).
 pub type InstanceId = String;
 
-/// One Instance asked for at launch: which Character to run, and what to call
-/// it.
+/// How long an Instance Prompt may be, in characters.
 ///
-/// A request rather than an Instance. The id and the Engine arrive at `spawn`,
-/// and nothing here knows whether the Character named can actually be loaded.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// The author's bound, given to the user's layer: untrusted text in every
+/// opening turn, so an unbounded one spends the user's tokens and buries the
+/// sensing context under prose. Two authored layers double that worst case,
+/// which is the number to revisit if either bound moves (ADR-0012).
+pub const INSTANCE_PROMPT_LIMIT: usize = crate::character::PERSONALITY_LIMIT;
+
+/// `text` as an Instance Prompt, or why it cannot be one.
+///
+/// Refused rather than cut. A Personality Prompt over the bound is an author's
+/// mistake the loader reports at install; this one is a user's paste, and
+/// shortening it silently would drop words they can still see in the box. The
+/// length is in the message because "too long" alone does not say how much to
+/// take out.
+///
+/// Counted in characters, as the package loader counts a Personality Prompt,
+/// and counted after trimming because trimmed is what gets stored and sent.
+pub fn instance_prompt(text: &str) -> Result<String, String> {
+    let text = text.trim();
+    let length = text.chars().count();
+    if length > INSTANCE_PROMPT_LIMIT {
+        return Err(format!(
+            "The Instance Prompt is {length} characters, over the \
+             {INSTANCE_PROMPT_LIMIT}-character limit"
+        ));
+    }
+    Ok(text.to_string())
+}
+
+/// One Instance asked for at launch: which Character to run, what to call it,
+/// and what the user wrote for it last time.
+///
+/// A request rather than an Instance. The Engine arrives at `spawn`, and
+/// nothing here knows whether the Character named can actually be loaded.
+///
+/// Both new fields default, because a settings file written before them is the
+/// user's whole roster and must keep loading.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InstanceSpec {
     pub character: String,
     pub name: String,
+    /// The id this Instance ran under last time, and `None` for one that has
+    /// not run: a spec off the launch configuration, or a settings file older
+    /// than this field. The Instance Prompt hangs off this id, so minting a
+    /// fresh one every launch is what would lose the text (ADR-0012).
+    #[serde(default)]
+    pub id: Option<InstanceId>,
+    /// The Instance Prompt the user wrote for it. Empty by default.
+    #[serde(default)]
+    pub prompt: String,
+}
+
+impl InstanceSpec {
+    /// A spec for an Instance that has not run: no id to restore, and no
+    /// Instance Prompt written against one.
+    pub fn fresh(character: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            character: character.into(),
+            name: name.into(),
+            ..Self::default()
+        }
+    }
 }
 
 /// Read a list of Instances to run out of one configuration string.
@@ -51,10 +105,7 @@ pub fn parse_specs(raw: &str) -> Result<Vec<InstanceSpec>, String> {
                      or the Character alone to name it after its package"
                 ));
             }
-            Ok(InstanceSpec {
-                character: character.to_string(),
-                name: name.to_string(),
-            })
+            Ok(InstanceSpec::fresh(character, name))
         })
         .collect()
 }
@@ -64,6 +115,10 @@ pub struct Instance {
     pub id: InstanceId,
     pub name: String,
     character_name: String,
+    /// This Instance's own layer of the Character Prompt, empty until the user
+    /// writes one. Here rather than beside the Character, because it is what
+    /// makes two Instances of one Character differ in voice (ADR-0012).
+    prompt: String,
     engine: Engine,
     pending: Option<BehaviorProposal>,
 }
@@ -120,6 +175,17 @@ impl Instance {
     /// The name the user gave, which is what the menu and settings print.
     pub fn rename(&mut self, name: String) {
         self.name = name;
+    }
+
+    /// This Instance's own layer of the Character Prompt.
+    pub fn prompt(&self) -> &str {
+        &self.prompt
+    }
+
+    /// Take a new Instance Prompt. Bounded at the save surface by
+    /// `instance_prompt`, which is where a refusal can still be read.
+    pub fn set_prompt(&mut self, prompt: String) {
+        self.prompt = prompt;
     }
 }
 
@@ -191,8 +257,23 @@ impl Roster {
     /// would copy every frame of every Animation per buddy, which is the cost
     /// running several of one Character exists to avoid.
     pub fn spawn(&mut self, character: &Character, name: String, position: Point) -> InstanceId {
-        let uuid = uuid::Uuid::new_v4();
-        let id = uuid.to_string();
+        self.restore(character, name, position, None, String::new())
+    }
+
+    /// The same, for an Instance that has run before: `id` is what it ran
+    /// under and `prompt` is the Instance Prompt written against that id.
+    ///
+    /// `spawn` is this with neither, because an Instance whose id changed every
+    /// launch is an Instance whose prompt cannot be found again (ADR-0012).
+    pub fn restore(
+        &mut self,
+        character: &Character,
+        name: String,
+        position: Point,
+        id: Option<InstanceId>,
+        prompt: String,
+    ) -> InstanceId {
+        let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let engine = Engine::new(position)
             .with_behaviors(character.behaviors.clone())
             // How much room a Perch near the top of a display has to leave,
@@ -203,7 +284,7 @@ impl Roster {
             // The id is already this Instance's one random number, so it is
             // also what keeps two buddies of one Character from drawing the
             // same idle variants at the same moments. #316.
-            .with_variant_seed(uuid.as_u64_pair().0);
+            .with_variant_seed(variant_seed(&id));
         let name = if self.instances.is_empty() {
             adopted_name(
                 &name,
@@ -217,6 +298,7 @@ impl Roster {
             id: id.clone(),
             name,
             character_name: character.name.clone(),
+            prompt,
             engine,
             pending: None,
         };
@@ -286,6 +368,33 @@ impl Roster {
             }
             None => false,
         }
+    }
+
+    /// Write one Instance's own prompt layer. False when the id is unknown.
+    pub fn set_prompt(&mut self, id: &str, prompt: String) -> bool {
+        match self.instances.get_mut(id) {
+            Some(instance) => {
+                instance.set_prompt(prompt);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// The draw `id` seeds an Instance's variant ring with (#316).
+///
+/// An id ai-buddy minted is a uuid, and its first half is the random number
+/// #316 has always used. A restored id is that same uuid read back. A
+/// hand-edited settings file can hold anything, and hashing what is not a uuid
+/// keeps two of those apart where a constant would put them in lockstep.
+fn variant_seed(id: &str) -> u64 {
+    match uuid::Uuid::parse_str(id) {
+        Ok(uuid) => uuid.as_u64_pair().0,
+        // FNV-1a, which is five characters of arithmetic and needs no crate.
+        Err(_) => id.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        }),
     }
 }
 
@@ -565,10 +674,7 @@ mod tests {
     fn one_spec_names_a_character_and_what_to_call_it() {
         assert_eq!(
             parse_specs("bmo:Blip"),
-            Ok(vec![InstanceSpec {
-                character: "bmo".to_string(),
-                name: "Blip".to_string(),
-            }])
+            Ok(vec![InstanceSpec::fresh("bmo", "Blip")])
         );
     }
 
@@ -579,14 +685,8 @@ mod tests {
         assert_eq!(
             parse_specs(" bmo:Blip ,  jotaro:Jo "),
             Ok(vec![
-                InstanceSpec {
-                    character: "bmo".to_string(),
-                    name: "Blip".to_string(),
-                },
-                InstanceSpec {
-                    character: "jotaro".to_string(),
-                    name: "Jo".to_string(),
-                },
+                InstanceSpec::fresh("bmo", "Blip"),
+                InstanceSpec::fresh("jotaro", "Jo"),
             ])
         );
     }
@@ -599,14 +699,8 @@ mod tests {
         assert_eq!(
             parse_specs("bmo,jotaro:Jo"),
             Ok(vec![
-                InstanceSpec {
-                    character: "bmo".to_string(),
-                    name: "bmo".to_string(),
-                },
-                InstanceSpec {
-                    character: "jotaro".to_string(),
-                    name: "Jo".to_string(),
-                },
+                InstanceSpec::fresh("bmo", "bmo"),
+                InstanceSpec::fresh("jotaro", "Jo"),
             ])
         );
     }
@@ -631,10 +725,7 @@ mod tests {
         assert_eq!(parse_specs(",,"), Ok(Vec::new()));
         assert_eq!(
             parse_specs("bmo:Blip,"),
-            Ok(vec![InstanceSpec {
-                character: "bmo".to_string(),
-                name: "Blip".to_string(),
-            }])
+            Ok(vec![InstanceSpec::fresh("bmo", "Blip")])
         );
     }
 
@@ -807,6 +898,181 @@ mod tests {
         assert!(roster.rename(&id, "bmo".to_string()));
         assert!(roster.retarget(&id, &test_character("Cat")));
         assert_eq!(roster.list(), vec![(id, "Cat".to_string())]);
+    }
+
+    /// The load-bearing bug ADR-0012 names: the text hangs off the Instance's
+    /// id, and `spawn` minting a fresh uuid every launch would key it to an id
+    /// that never comes back — so the prompt would be gone on the next start.
+    #[test]
+    fn a_restored_instance_keeps_its_id_and_the_prompt_written_against_it() {
+        let character = test_character("bmo");
+        let mut roster = Roster::new();
+        let id = roster.spawn(&character, "Beemo".to_string(), Point { x: 10.0, y: 20.0 });
+        assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
+
+        // What the Shell persists on one launch and reads back on the next.
+        let spec = InstanceSpec {
+            character: "bmo".to_string(),
+            name: "Beemo".to_string(),
+            id: Some(id.clone()),
+            prompt: roster.get(&id).expect("still there").prompt().to_string(),
+        };
+        let written = serde_json::to_string(&spec).expect("a spec serialises");
+        let read: InstanceSpec = serde_json::from_str(&written).expect("and reads back");
+
+        let mut restarted = Roster::new();
+        let again = restarted.restore(
+            &character,
+            read.name.clone(),
+            Point { x: 10.0, y: 20.0 },
+            read.id.clone(),
+            read.prompt.clone(),
+        );
+
+        assert_eq!(again, id, "the same Instance, not a new one beside it");
+        assert_eq!(
+            restarted.get(&again).expect("spawned").prompt(),
+            "Answer in haiku.",
+            "the text the user wrote survived the restart"
+        );
+    }
+
+    /// ADR-0012: the text follows the Instance, not the Character. Dropping it
+    /// on a switch is silent loss of the user's own words for a reversible act,
+    /// and switching back would then have to resurrect what was discarded.
+    ///
+    /// Production change that would fail this: clearing the prompt in
+    /// `Roster::retarget` beside the Behaviors and the name.
+    #[test]
+    fn switching_character_keeps_the_instance_prompt() {
+        let mut roster = Roster::new();
+        let id = roster.spawn(
+            &test_character("BMO"),
+            "Pip".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
+        assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
+
+        assert!(roster.retarget(&id, &test_character("Timber Wolf")));
+
+        assert_eq!(
+            roster.get(&id).expect("still there").prompt(),
+            "Answer in haiku."
+        );
+    }
+
+    /// The other half of the switch: the reopened session's opening turn is the
+    /// new Character's personality with the text the Instance kept under it.
+    /// That is the moment the tab shows both, and it has to be the moment the
+    /// Director is told both.
+    #[test]
+    fn a_switched_instance_opens_the_new_character_with_the_text_it_kept() {
+        let wolf = test_character("Timber Wolf");
+        let mut roster = Roster::new();
+        let id = roster.spawn(
+            &test_character("BMO"),
+            "Pip".to_string(),
+            Point { x: 10.0, y: 20.0 },
+        );
+        assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
+        assert!(roster.retarget(&id, &wolf));
+
+        // The two authored layers as the Shell hands them to the Director:
+        // the new Character's, and this Instance's own.
+        let instance = roster.get(&id).expect("still there");
+        let opening = crate::director::character_prompt(
+            &crate::director::Context {
+                activity: crate::sensing::Activity {
+                    frontmost_application: None,
+                    switched: false,
+                    idle: std::time::Duration::ZERO,
+                    at: std::time::UNIX_EPOCH,
+                    hour: 9,
+                    minute: 0,
+                    displays_asleep: false,
+                },
+                recent: Vec::new(),
+                personality: wolf.personality.clone(),
+                instance_prompt: instance.prompt().to_string(),
+                state: crate::engine::State::Grounded,
+                happened: crate::director::Happened::Ambient,
+                standing: String::new(),
+            },
+            wolf.behaviors.keys(),
+        );
+
+        assert!(
+            opening.contains("A test character named Timber Wolf"),
+            "the new Character's own layer: {opening}"
+        );
+        assert!(
+            opening.contains("Answer in haiku."),
+            "and the layer the Instance kept: {opening}"
+        );
+    }
+
+    /// A spec with no id is an Instance that has not run: the launch
+    /// configuration's, and every settings file written before ids were
+    /// persisted. It gets one minted, as it always did.
+    #[test]
+    fn a_spec_with_no_id_is_spawned_under_a_fresh_one() {
+        let mut roster = Roster::new();
+        let id = roster.restore(
+            &test_character("bmo"),
+            "Beemo".to_string(),
+            Point { x: 10.0, y: 20.0 },
+            None,
+            String::new(),
+        );
+
+        assert!(!id.is_empty(), "an Instance still gets an id");
+        assert!(roster.get(&id).expect("spawned").prompt().is_empty());
+    }
+
+    /// Production change that would fail this: making the two new fields
+    /// required. A settings file written before this feature would stop
+    /// deserialising, and the user's whole roster would go with it.
+    #[test]
+    fn a_settings_file_written_before_the_instance_prompt_still_loads() {
+        let spec: InstanceSpec =
+            serde_json::from_str(r#"{"character":"bmo","name":"Beemo"}"#).expect("today's file");
+
+        assert_eq!(spec.character, "bmo");
+        assert_eq!(spec.name, "Beemo");
+        assert_eq!(spec.id, None, "nothing to restore, so an id is minted");
+        assert!(spec.prompt.is_empty(), "empty by default (ADR-0012)");
+    }
+
+    /// ADR-0012 gives the user's layer the bound the author's already has, and
+    /// counts characters rather than bytes as the package loader does — an
+    /// accented paragraph is not twice the prose of a plain one.
+    #[test]
+    fn an_instance_prompt_at_the_limit_is_taken_and_one_over_it_is_refused() {
+        let at_limit = "é".repeat(INSTANCE_PROMPT_LIMIT);
+        assert_eq!(
+            instance_prompt(&at_limit),
+            Ok(at_limit.clone()),
+            "the limit itself is not over it"
+        );
+
+        let over = "é".repeat(INSTANCE_PROMPT_LIMIT + 1);
+        let why = instance_prompt(&over).expect_err("one character over the limit");
+        assert!(
+            why.contains(&(INSTANCE_PROMPT_LIMIT + 1).to_string()),
+            "a user who pasted a page needs to know how much to cut: {why}"
+        );
+        assert!(
+            why.contains(&INSTANCE_PROMPT_LIMIT.to_string()),
+            "and what to cut it to: {why}"
+        );
+    }
+
+    /// Production change that would fail this: cutting an over-long prompt to
+    /// the limit instead of refusing it. Silent truncation loses words the user
+    /// typed and shows them nothing.
+    #[test]
+    fn an_over_long_instance_prompt_is_not_quietly_cut() {
+        assert!(instance_prompt(&"a".repeat(INSTANCE_PROMPT_LIMIT + 40)).is_err());
     }
 
     #[test]

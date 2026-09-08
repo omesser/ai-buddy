@@ -84,6 +84,13 @@ pub enum FormRow {
         label: Option<String>,
         placeholder: String,
         writes: TextField,
+        /// A hint under the field, in the words every other row's `help` uses.
+        ///
+        /// A label says what the row is and a placeholder says what blank
+        /// means; neither has room for what a value costs. The Completer
+        /// timeout is the case that earned it: it budgets a Harness turn as
+        /// well as an HTTP call, and nothing on screen said so (#447).
+        help: Option<String>,
         /// Read-only: the value shown is not the user's to change. True when
         /// an exported variable owns the field, since `model::resolve` gives
         /// it the last word and would discard an edit made here (#272).
@@ -288,7 +295,11 @@ pub const NEW_CHARACTER_ID: &str = "new_character";
 pub const SPAWN_ID: &str = "spawn";
 pub const MEMORY_OPEN_ID: &str = "memory_open";
 pub const MEMORY_WIPE_ID: &str = "memory_wipe";
+/// The two consent rows. Gated because Linux offers neither, so the ids exist
+/// only where the rows do. #250.
+#[cfg(not(target_os = "linux"))]
 pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
+#[cfg(not(target_os = "linux"))]
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
@@ -303,6 +314,8 @@ pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
 pub const HARNESS_STATE_ID: &str = "harness_state";
+pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
+pub const MCP_BIN_ID: &str = "mcp_bin";
 
 /// The two Completer-source titles the file does not spell the same way: Off
 /// is the empty string and Custom is `custom`, which defers to the command
@@ -314,7 +327,7 @@ pub const HARNESS_CUSTOM: &str = "Custom";
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0017's order. Grok, Copilot and Gemini reach
 /// the same Completer through Custom until a turn has been smoked.
-pub const HARNESS_PRESETS: [&str; 3] = ["claude", "hermes", "opencode"];
+pub const HARNESS_PRESETS: [&str; 4] = ["claude", "codex", "hermes", "opencode"];
 
 /// The endpoints the Base URL picker names, as (group, name, base URL).
 ///
@@ -581,6 +594,7 @@ fn director_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorWakeSecs,
                     frozen: wake_frozen,
                     batched: false,
+                    help: None,
                 },
                 // A shortcut above the field, not a replacement for it: almost
                 // every endpoint typed here is one of a dozen well-known
@@ -613,6 +627,7 @@ fn director_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorBaseUrl,
                     frozen: base_url_frozen,
                     batched: true,
+                    help: None,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MODEL_ID.to_string(),
@@ -621,6 +636,7 @@ fn director_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorModel,
                     frozen: model_frozen,
                     batched: true,
+                    help: None,
                 },
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
@@ -731,12 +747,13 @@ fn completer_source_section() -> FormSection {
                 writes: TextField::HarnessCommand,
                 frozen,
                 batched: false,
+                help: None,
             },
             FormRow::InspectBlock {
                 id: HARNESS_STATE_ID.to_string(),
                 label: None,
                 help: Some(
-                    "ai-buddy never asks for the Harness's credential — it signs itself in."
+                    "ai-buddy never asks for the Harness's credential - it signs itself in."
                         .to_string(),
                 ),
             },
@@ -870,31 +887,42 @@ fn privacy_sections() -> Vec<FormSection> {
     #[cfg(target_os = "macos")]
     let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
+
+    #[cfg(target_os = "linux")]
     let consent_comment = Some(consent::linux_pane_intro());
+
+    // Linux sensing asks the user for nothing, so it has no grant to offer a
+    // row for. #250. Windows keeps its rows; that platform is its own ticket.
+    #[cfg(not(target_os = "linux"))]
+    let consent_rows = vec![
+        FormRow::Checkbox {
+            id: CONSENT_ACCESSIBILITY_ID.to_string(),
+            label: "Accessibility".to_string(),
+            writes: BoolField::UseAccessibility,
+            frozen: false,
+            help: Some("Reads the Dock's position.".to_string()),
+            comment: None,
+        },
+        FormRow::Checkbox {
+            id: CONSENT_SCREEN_RECORDING_ID.to_string(),
+            label: "Screen Recording".to_string(),
+            writes: BoolField::UseScreenRecording,
+            frozen: false,
+            help: Some("Reads window titles.".to_string()),
+            comment: None,
+        },
+    ];
+
+    #[cfg(target_os = "linux")]
+    let consent_rows: Vec<FormRow> = Vec::new();
 
     vec![
         FormSection {
             heading: "What the buddy can see".to_string(),
             comment: consent_comment,
-            rows: vec![
-                FormRow::Checkbox {
-                    id: CONSENT_ACCESSIBILITY_ID.to_string(),
-                    label: "Accessibility".to_string(),
-                    writes: BoolField::UseAccessibility,
-                    frozen: false,
-                    help: Some("Reads the Dock's position.".to_string()),
-                    comment: None,
-                },
-                FormRow::Checkbox {
-                    id: CONSENT_SCREEN_RECORDING_ID.to_string(),
-                    label: "Screen Recording".to_string(),
-                    writes: BoolField::UseScreenRecording,
-                    frozen: false,
-                    help: Some("Reads window titles.".to_string()),
-                    comment: None,
-                },
-            ],
+            rows: consent_rows,
         },
         FormSection {
             heading: "Excluded applications".to_string(),
@@ -983,6 +1011,9 @@ fn development_sections() -> Vec<FormSection> {
 
     let (timeout_label, timeout_frozen) = env_row("Timeout, in seconds", model::TIMEOUT_SECS);
     let (max_tokens_label, max_tokens_frozen) = env_row("Reply cap, in tokens", model::MAX_TOKENS);
+    let (auth_retry_label, auth_retry_frozen) =
+        env_row("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
+    let (mcp_bin_label, mcp_bin_frozen) = env_row("MCP server binary", crate::harness::MCP_BIN);
 
     vec![
         FormSection {
@@ -1001,6 +1032,12 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
+                    help: Some(
+                        "One turn's budget, whichever mind serves it: an HTTP \
+                         Completer request or a Harness session/prompt. Expiry \
+                         cancels the turn, and the buddy stays as it was."
+                            .to_string(),
+                    ),
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MAX_TOKENS_ID.to_string(),
@@ -1009,6 +1046,51 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
+                    help: Some(
+                        "The HTTP Completer's alone. A Harness decides its own \
+                         reply length."
+                            .to_string(),
+                    ),
+                },
+            ],
+        },
+        // Development rather than the Director tab, which is where a user
+        // picks a Harness: neither row is a choice anyone makes to get a
+        // buddy working, and both exist so a test or a CI job can be told
+        // where to look and how long to wait (#447).
+        FormSection {
+            heading: "Harness attachment".to_string(),
+            comment: Some(
+                "Also for development and testing. Blank uses the default, and \
+                 both take effect on the next attach."
+                    .to_string(),
+            ),
+            rows: vec![
+                FormRow::TextField {
+                    id: HARNESS_AUTH_RETRY_SECS_ID.to_string(),
+                    label: Some(auth_retry_label),
+                    placeholder: crate::harness::auth_retry_placeholder(),
+                    writes: TextField::HarnessAuthRetrySecs,
+                    frozen: auth_retry_frozen,
+                    batched: false,
+                    help: Some(
+                        "How long a Harness that has not signed in is left \
+                         alone before session/new is tried again."
+                            .to_string(),
+                    ),
+                },
+                FormRow::TextField {
+                    id: MCP_BIN_ID.to_string(),
+                    label: Some(mcp_bin_label),
+                    placeholder: "beside the app, else this app on --mcp-stdio".to_string(),
+                    writes: TextField::McpBin,
+                    frozen: mcp_bin_frozen,
+                    batched: false,
+                    help: Some(
+                        "The stdio MCP server handed to the Harness session. A \
+                         path that is not a file falls back to the default."
+                            .to_string(),
+                    ),
                 },
             ],
         },
@@ -1089,6 +1171,7 @@ mod tests {
             "Director",
             "Do Not Disturb",
             "Excluded applications",
+            "Harness attachment",
             "Hide",
             "Instances",
             "Last user turn",
@@ -1630,36 +1713,58 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         {
-            assert_eq!(
-                consent.rows.len(),
-                2,
-                "Linux still declares the rows; the renderer omits them"
-            );
             let comment = consent
                 .comment
                 .as_ref()
-                .expect("Linux section has prose when rows are omitted");
+                .expect("Non-macOS section has prose when rows are omitted");
             assert!(
                 !comment.contains("Accessibility"),
-                "Linux prose must not use TCC vocabulary, got {comment:?}"
+                "Non-macOS prose must not use TCC vocabulary, got {comment:?}"
             );
             assert!(
                 !comment.contains("Screen Recording"),
-                "Linux prose must not use TCC vocabulary, got {comment:?}"
+                "Non-macOS prose must not use TCC vocabulary, got {comment:?}"
             );
             assert!(
                 !comment.contains("Privacy & Security"),
-                "Linux prose must not use TCC vocabulary, got {comment:?}"
+                "Non-macOS prose must not use TCC vocabulary, got {comment:?}"
             );
-            assert!(
-                comment.contains("no permission is requested")
-                    || comment.contains("no permission requested"),
-                "Linux prose must say nothing is requested, got {comment:?}"
-            );
-            assert!(
-                comment.contains("window") || comment.contains("Window"),
-                "Linux prose must name what is read without a grant, got {comment:?}"
-            );
+
+            #[cfg(target_os = "linux")]
+            {
+                assert!(
+                    consent.rows.is_empty(),
+                    "Linux has no grant to offer a row for, so it declares none (#250), got {:?}",
+                    consent.rows
+                );
+                assert!(
+                    comment.contains("no permission is requested")
+                        || comment.contains("no permission requested"),
+                    "Linux prose must say nothing is requested, got {comment:?}"
+                );
+                assert!(
+                    comment.contains("window") || comment.contains("Window"),
+                    "Linux prose must name what is read without a grant, got {comment:?}"
+                );
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                assert_eq!(
+                    consent.rows.len(),
+                    2,
+                    "Windows still declares the rows; #250 is about Linux"
+                );
+                let listed = crate::consent::process_listed_as();
+                assert!(
+                    comment.contains(&listed),
+                    "Windows prose must name the process Privacy will list ({listed}), got {comment:?}"
+                );
+                assert!(
+                    !comment.contains("macOS"),
+                    "Windows prose must not mention macOS, got {comment:?}"
+                );
+            }
         }
     }
 
@@ -1827,6 +1932,63 @@ mod tests {
         }
     }
 
+    /// #447: one timeout budgets both minds. A user who reads the row as the
+    /// HTTP Completer's alone cannot explain a Harness turn that was cancelled
+    /// halfway, and the row is where that has to be said.
+    #[test]
+    fn the_timeout_row_says_it_budgets_a_harness_turn() {
+        let description = describe();
+        let help = development_tab(&description)
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField { id, help, .. } if id == DIRECTOR_TIMEOUT_SECS_ID => {
+                    help.clone()
+                }
+                _ => None,
+            })
+            .expect("the timeout row carries help");
+
+        assert!(
+            help.contains("Harness"),
+            "the help has to name the other mind it budgets, got {help:?}"
+        );
+        assert!(
+            help.contains("session/prompt"),
+            "the help has to name the call it budgets, got {help:?}"
+        );
+        assert!(
+            help.contains("cancel"),
+            "the help has to say what expiry does, got {help:?}"
+        );
+    }
+
+    /// #447: both knobs are for testing, so they sit on Development rather
+    /// than beside the Completer source a user picks.
+    #[test]
+    fn the_harness_knobs_are_development_rows() {
+        let description = describe();
+        let ids: Vec<&str> = development_tab(&description)
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .filter_map(row_id)
+            .collect();
+
+        for (id, writes) in [
+            (HARNESS_AUTH_RETRY_SECS_ID, TextField::HarnessAuthRetrySecs),
+            (MCP_BIN_ID, TextField::McpBin),
+        ] {
+            assert!(ids.contains(&id), "{id} is a Development row");
+            assert_eq!(
+                description.text_write(id),
+                Some(writes),
+                "{id} writes the field it names"
+            );
+        }
+    }
+
     /// Every title the picker offers is one `endpoint_url` can spend, and
     /// the value it names comes back as the title that was picked. Custom is
     /// the one that writes nothing, because the field is what Custom means.
@@ -1912,7 +2074,10 @@ mod tests {
         crate::model::tests::with_harness(None, || {
             let description = describe();
             let (_, options, _) = popup_row(&description, HARNESS_ID);
-            assert_eq!(options, ["Off", "claude", "hermes", "opencode", "Custom"]);
+            assert_eq!(
+                options,
+                ["Off", "claude", "codex", "hermes", "opencode", "Custom"]
+            );
             assert_eq!(
                 description.text_write(HARNESS_ID),
                 Some(TextField::Harness),

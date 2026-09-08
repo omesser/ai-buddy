@@ -55,6 +55,10 @@ pub const CAPABILITIES: &[Capability] = &[
 ];
 
 /// Linux, and tests that do not care about the live OS.
+///
+/// On Linux this is the answer, not a stub waiting for a port: sensing there is
+/// consent-free, so nothing has asked the user and nothing may report a grant.
+/// #250.
 #[cfg(not(target_os = "macos"))]
 pub struct Null;
 
@@ -104,6 +108,134 @@ impl Probe for Macos {
             CapabilityId::Accessibility => macos::request_accessibility(),
             CapabilityId::ScreenRecording => macos::request_screen_recording(),
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows {
+    pub fn process_list_name() -> String {
+        if packaged() {
+            return "ai-buddy".into();
+        }
+        parent_chain_name().unwrap_or_else(|| "ai-buddy".into())
+    }
+
+    fn packaged() -> bool {
+        // Packaged: not under target/debug or target/release build directories.
+        // An installed NSIS build lives in Program Files or AppData; a dev
+        // build is always under the Cargo target directory.
+        std::env::current_exe().is_ok_and(|exe| {
+            !exe.to_string_lossy().contains(r"\target\debug")
+                && !exe.to_string_lossy().contains(r"\target\release")
+        })
+    }
+
+    fn parent_chain_name() -> Option<String> {
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+
+        let current_pid = unsafe { GetCurrentProcessId() };
+        let mut pid = current_pid;
+
+        for _ in 0..24 {
+            let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+            if snapshot == INVALID_HANDLE_VALUE {
+                return None;
+            }
+
+            let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+            if unsafe { Process32FirstW(snapshot, &mut entry) } == 0 {
+                unsafe { CloseHandle(snapshot) };
+                return None;
+            }
+
+            let mut found = false;
+            loop {
+                if entry.th32ProcessID == pid {
+                    pid = entry.th32ParentProcessID;
+                    found = true;
+                    break;
+                }
+                if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                    break;
+                }
+            }
+
+            unsafe { CloseHandle(snapshot) };
+
+            if !found || pid == 0 || pid == current_pid {
+                return None;
+            }
+
+            if let Some(parent_name) = find_process_name(pid) {
+                if !is_toolchain(&parent_name) {
+                    return Some(parent_name);
+                }
+            }
+        }
+
+        None
+    }
+
+    pub(super) fn is_toolchain(name: &str) -> bool {
+        // Skip Rust toolchain processes: a `cargo run` from Cursor is
+        // cargo → Cursor, so the first non-toolchain parent is what Privacy
+        // will list. Mirrors macOS bundled_ancestor_name skipping Helpers.
+        matches!(
+            name.to_lowercase().as_str(),
+            "cargo" | "rustc" | "rustup" | "rust-analyzer" | "rls"
+        )
+    }
+
+    fn find_process_name(pid: u32) -> Option<String> {
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        };
+
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        if unsafe { Process32FirstW(snapshot, &mut entry) } == 0 {
+            unsafe { CloseHandle(snapshot) };
+            return None;
+        }
+
+        loop {
+            if entry.th32ProcessID == pid {
+                let name = parse_exe_name(&entry.szExeFile);
+                unsafe { CloseHandle(snapshot) };
+                return if name.is_empty() { None } else { Some(name) };
+            }
+            if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+
+        unsafe { CloseHandle(snapshot) };
+        None
+    }
+
+    fn parse_exe_name(sz_exe: &[u16; 260]) -> String {
+        let end = sz_exe.iter().position(|&c| c == 0).unwrap_or(260);
+        let name = String::from_utf16_lossy(&sz_exe[..end]);
+        name.trim_end_matches(".exe")
+            .split('\\')
+            .next_back()
+            .unwrap_or(&name)
+            .to_string()
     }
 }
 
@@ -315,10 +447,28 @@ pub fn pane_intro(listed_as: &str) -> String {
 }
 
 /// Linux-specific intro: no consent system, names what is read without a grant.
-#[cfg(not(target_os = "macos"))]
+///
+/// It carries the whole section, which has no rows under it — the prose has to
+/// say why the checkboxes the other platforms show are not there. #250.
+#[cfg(target_os = "linux")]
 pub fn linux_pane_intro() -> String {
-    "On Linux, no permission is requested. Window positions are read to keep the buddy visible."
+    "On Linux there is nothing to turn on: no permission is requested. Window positions are read to keep the buddy visible."
         .to_string()
+}
+
+/// Windows-specific hint: names the process Privacy will list.
+#[cfg(target_os = "windows")]
+pub fn listed_under_hint(name: &str) -> String {
+    format!("Windows lists this process as {name}.")
+}
+
+/// Windows pane intro: names the process for future reference.
+#[cfg(target_os = "windows")]
+pub fn pane_intro(listed_as: &str) -> String {
+    format!(
+        "These permissions are not required yet. When needed later, Windows will prompt. {}",
+        listed_under_hint(listed_as)
+    )
 }
 
 /// The localized name TCC will show. Packaged builds are this app; `cargo run`
@@ -328,7 +478,11 @@ pub fn process_listed_as() -> String {
     {
         macos::tcc_list_name()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::process_list_name()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         "ai-buddy".into()
     }
@@ -463,9 +617,19 @@ mod tests {
         assert!(!process_listed_as().is_empty());
     }
 
-    /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.
     #[test]
     #[cfg(not(target_os = "macos"))]
+    fn the_null_probe_grants_nothing_and_prompts_for_nothing() {
+        let probe = live();
+        assert!(!probe.granted(CapabilityId::Accessibility));
+        assert!(!probe.granted(CapabilityId::ScreenRecording));
+        probe.prompt(CapabilityId::ScreenRecording);
+        assert!(!probe.granted(CapabilityId::ScreenRecording));
+    }
+
+    /// Linux prose must say nothing is requested and name what is read, without TCC vocabulary.
+    #[test]
+    #[cfg(target_os = "linux")]
     fn linux_pane_intro_is_tcc_free_and_explains_consent() {
         let prose = linux_pane_intro();
         assert!(!prose.is_empty(), "Linux prose must not be empty");
@@ -490,5 +654,80 @@ mod tests {
             !prose.contains("Privacy & Security"),
             "Linux prose must not mention macOS Privacy & Security, got {prose:?}"
         );
+    }
+
+    /// Windows hint must name the process Privacy will list, without macOS/TCC vocabulary.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_hint_names_process_without_macos_vocabulary() {
+        let hint = listed_under_hint("Cursor");
+        assert!(
+            hint.contains("Cursor"),
+            "the user has to see the process name Privacy will list, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("macOS"),
+            "Windows hint must not mention macOS, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("Privacy & Security"),
+            "Windows hint must not mention macOS Privacy & Security pane, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("TCC"),
+            "Windows hint must not mention TCC, got {hint:?}"
+        );
+        assert!(
+            !hint.contains("Accessibility"),
+            "Windows hint must not mention macOS Accessibility, got {hint:?}"
+        );
+    }
+
+    /// Windows pane intro must not contain macOS-specific vocabulary.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_pane_intro_is_not_macos_specific() {
+        let intro = pane_intro(&process_listed_as());
+        assert!(!intro.is_empty(), "Windows intro must not be empty");
+        assert!(
+            intro.contains(&process_listed_as()),
+            "Windows intro must name the process, got {intro:?}"
+        );
+        assert!(
+            !intro.contains("macOS"),
+            "Windows intro must not mention macOS, got {intro:?}"
+        );
+        assert!(
+            !intro.contains("Privacy & Security"),
+            "Windows intro must not mention macOS Privacy & Security, got {intro:?}"
+        );
+        assert!(
+            !intro.contains("TCC"),
+            "Windows intro must not mention TCC, got {intro:?}"
+        );
+    }
+
+    /// Windows toolchain processes are skipped when walking parents.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_toolchain_classification() {
+        use crate::consent::windows::is_toolchain;
+
+        // Toolchain: cargo, rustc, rustup, rust-analyzer, rls
+        assert!(is_toolchain("cargo"));
+        assert!(is_toolchain("rustc"));
+        assert!(is_toolchain("rustup"));
+        assert!(is_toolchain("rust-analyzer"));
+        assert!(is_toolchain("rls"));
+        assert!(is_toolchain("Cargo")); // case insensitive
+
+        // Not toolchain: IDEs, terminals, shells
+        assert!(!is_toolchain("Cursor"));
+        assert!(!is_toolchain("Code"));
+        assert!(!is_toolchain("WindowsTerminal"));
+        assert!(!is_toolchain("powershell"));
+        assert!(!is_toolchain("pwsh"));
+        assert!(!is_toolchain("cmd"));
+        assert!(!is_toolchain("ai-buddy"));
     }
 }

@@ -27,9 +27,10 @@ Action Log and Chat surface.
 
 The wire is isolated so the frame loop never sees futures (ADR-0004).
 
-The launch table names three harnesses with verified first-party ACP support
-(`claude`, `hermes`, `opencode`) and provides an escape hatch for any custom
-command. Harnesses earn a named row once a turn has been verified against them.
+The launch table names four harnesses (`claude`, `codex`, `hermes`, `opencode`)
+and provides an escape hatch for any custom command. Harnesses earn verified
+standing once a turn has been smoked against them; `codex` is unverified until
+smoked.
 
 One session per app lifetime, persisted across restarts when the Harness
 supports `loadSession`.
@@ -42,6 +43,11 @@ holds across buddies and across wakes.
 A permission request is forwarded to every open Chat surface and answered only
 by a click there. A turn that times out sends `cancelled`, which is a
 withdrawal, not an answer.
+
+The client hands the session its own tool endpoint, and which endpoint that is
+belongs to [ADR-0023](./0023-app-dispatches-its-own-tools.md): a Harness that
+can use the app's own server reaches the live Instances, and one that cannot is
+answered by a stub.
 
 Protocol-compatible harnesses not yet named (Grok Build, GitHub Copilot CLI,
 Gemini CLI) are reachable through the custom command and earn a named row once

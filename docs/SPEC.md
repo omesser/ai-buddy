@@ -371,8 +371,9 @@ A trait returning an optional Behavior proposal given a context record.
 
 v1 context is the free sensing tier only — frontmost application name, time of
 day, State, what just happened, what the feet stand on (window owner, display
-floor above the Dock, or screen edge), recent Behavior identifiers, and the
-active Character's Personality Prompt (opening turn only). No window titles, no
+floor above the Dock, or screen edge), recent Behavior identifiers, and the two
+authored prompt layers — the active Character's Personality Prompt and this
+Instance's own Instance Prompt (opening turn only, ADR-0012). No window titles, no
 screen capture, no clipboard, no input contents. Window titles need Screen
 Recording; the Perch is named by owning application instead.
 
