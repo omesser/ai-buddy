@@ -125,7 +125,7 @@ mod windows {
     }
 
     fn parent_chain_name() -> Option<String> {
-        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
         use windows_sys::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
             TH32CS_SNAPPROCESS,
@@ -216,7 +216,7 @@ mod windows {
         let name = String::from_utf16_lossy(&sz_exe[..end]);
         name.trim_end_matches(".exe")
             .split('\\')
-            .last()
+            .next_back()
             .unwrap_or(&name)
             .to_string()
     }
