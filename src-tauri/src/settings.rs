@@ -2371,6 +2371,34 @@ mod tests {
         });
     }
 
+    /// #279: a typed edit reads as staged, so the redraw that follows an app
+    /// switch or any `SettingsOp` leaves it where the user left it.
+    #[test]
+    fn a_typed_endpoint_edit_survives_a_redraw() {
+        model::tests::with_env(None, None, None, || {
+            let view = director_view(true);
+            let description = form::describe();
+            let draft = DirectorDraft {
+                base_url: "https://api.x.ai".into(),
+                model: view.director_model.clone(),
+                key: String::new(),
+                clear_key: false,
+                description: &description,
+            };
+            assert_eq!(
+                draft.staged(&view),
+                Staged {
+                    base_url: true,
+                    model: false,
+                    key: false,
+                }
+            );
+            let patch = draft.patch(&view).expect("a typed URL is dirty");
+            assert_eq!(patch.director_base_url.as_deref(), Some("https://api.x.ai"));
+            assert!(patch.director_model.is_none());
+        });
+    }
+
     #[test]
     fn a_clean_tab_has_nothing_to_apply() {
         model::tests::with_env(None, None, None, || {

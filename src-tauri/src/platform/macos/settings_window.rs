@@ -1114,7 +1114,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().tab_view.borrow_mut() = Some(tab_view);
     *controller.ivars().panes.borrow_mut() = panes;
     controller.fit_to_window();
-    controller.refresh();
+    // The fields were created empty a few lines ago, so nothing on the tab is
+    // staged and the first draw has to fill every one of them. `refresh` is
+    // the wrong call here: it reads the still-empty fields back as a staged
+    // edit, leaves them showing placeholders, and arms Apply over a patch of
+    // empty strings that wipes the saved endpoint (#530).
+    controller.draw(true);
     raise(&window, mtm);
 
     controller
