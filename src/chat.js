@@ -268,19 +268,21 @@ function attached(opening) {
   return ready;
 }
 
-// Connect button clicks: show the login command for that Harness. Settings
-// owns which one is attached; these buttons inform rather than configure.
+// Connect button clicks: spawn the login command for that Harness.
+// The Harness authenticates itself; ai-buddy never collects a credential.
 for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
-    const command = LOGIN_COMMANDS[harness];
-    if (command) {
-      const cmd = document.getElementById("login-command");
-      if (cmd) {
-        cmd.textContent = command;
-      }
-      note(`To attach ${btn.querySelector(".connect-label").textContent}, set AI_BUDDY_HARNESS=${harness} and run: ${command}`);
-    }
+    const label = btn.querySelector(".connect-label").textContent;
+    
+    invoke("harness_login", { harness })
+      .then(() => {
+        note(`Starting ${label} login. Sign in through the ${label} window, then set AI_BUDDY_HARNESS=${harness} at launch.`);
+      })
+      .catch((why) => {
+        console.error(`harness_login failed:`, why);
+        note(`Could not start ${label} login: ${why}. Run \`${LOGIN_COMMANDS[harness]}\` in a terminal.`);
+      });
   });
 }
 

@@ -2275,7 +2275,8 @@ fn main() {
             chat_send,
             chat_prompt,
             chat_ready,
-            permission_answer
+            permission_answer,
+            harness_login
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
