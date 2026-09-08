@@ -77,6 +77,12 @@
 
   --chat-sans: system-ui, -apple-system, sans-serif;
   --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  
+  /* Brand accent colors for Harness connect tiles */
+  --claude-accent: #E8A78A;
+  --codex-accent: #26C399;
+  --grok-accent: #7A8FA3;
+  --opencode-accent: #7A9EF0;
 }
 
 /* The empty-state panel and its parts are laid out as grids and hidden with

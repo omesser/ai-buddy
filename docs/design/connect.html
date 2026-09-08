@@ -9,10 +9,9 @@
   SVG only. The system font stack is the design — the chat's CSP blocks Google
   Fonts, and this is the same constraint.
 
-  Four main Harnesses: Claude Code, Codex, Grok, and OpenCode. One additional
-  control: "More options in Settings". Marks are trademarks; vendor guidelines
-  govern usage. Where a vendor's terms make that awkward, a wordmark in our own
-  type is the safe default.
+  Four main Harnesses: Claude Code, Codex, Grok, and OpenCode. Brand marks
+  where guidelines allow, with brand accent colors. Marks are trademarks; we
+  do not claim affiliation with Anthropic, OpenAI, xAI, or OpenCode.
 -->
 <html lang="en">
 <head>
@@ -32,6 +31,12 @@
     --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
     color-scheme: light;
+    
+    /* Brand accent colors (light theme) */
+    --claude-accent: #D97757;
+    --codex-accent: #10A37F;
+    --grok-accent: #536A7A;
+    --opencode-accent: #5B7FDB;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -43,6 +48,12 @@
       --line: #313746;
       --accent: #5CC9B5;
       color-scheme: dark;
+      
+      /* Brand accent colors (dark theme) */
+      --claude-accent: #E8A78A;
+      --codex-accent: #26C399;
+      --grok-accent: #7A8FA3;
+      --opencode-accent: #7A9EF0;
     }
   }
   :root[data-theme="dark"] {
@@ -54,6 +65,11 @@
     --line: #313746;
     --accent: #5CC9B5;
     color-scheme: dark;
+    
+    --claude-accent: #E8A78A;
+    --codex-accent: #26C399;
+    --grok-accent: #7A8FA3;
+    --opencode-accent: #7A9EF0;
   }
 
   body {
@@ -153,7 +169,7 @@
     margin-top: 8px;
   }
 
-  /* ---- unified landing: connect buttons ---- */
+  /* ---- unified landing: connect buttons with brand accents ---- */
   .landing {
     display: flex;
     flex-direction: column;
@@ -180,17 +196,58 @@
     border-radius: 8px;
     cursor: pointer;
     font: inherit;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--ink);
     transition: all 0.15s ease;
     text-align: center;
   }
-  .connect-btn:hover {
-    background: var(--paper);
-    border-color: var(--accent);
-    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  
+  /* Brand-specific accent colors */
+  .connect-btn[data-harness="claude"] {
+    border-color: color-mix(in srgb, var(--claude-accent) 30%, var(--line));
   }
+  .connect-btn[data-harness="claude"]:hover {
+    background: color-mix(in srgb, var(--claude-accent) 8%, var(--paper));
+    border-color: var(--claude-accent);
+  }
+  .connect-btn[data-harness="claude"] .connect-btn-icon {
+    color: var(--claude-accent);
+  }
+  
+  .connect-btn[data-harness="codex"] {
+    border-color: color-mix(in srgb, var(--codex-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="codex"]:hover {
+    background: color-mix(in srgb, var(--codex-accent) 8%, var(--paper));
+    border-color: var(--codex-accent);
+  }
+  .connect-btn[data-harness="codex"] .connect-btn-icon {
+    color: var(--codex-accent);
+  }
+  
+  .connect-btn[data-harness="grok"] {
+    border-color: color-mix(in srgb, var(--grok-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="grok"]:hover {
+    background: color-mix(in srgb, var(--grok-accent) 8%, var(--paper));
+    border-color: var(--grok-accent);
+  }
+  .connect-btn[data-harness="grok"] .connect-btn-icon {
+    color: var(--grok-accent);
+  }
+  
+  .connect-btn[data-harness="opencode"] {
+    border-color: color-mix(in srgb, var(--opencode-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="opencode"]:hover {
+    background: color-mix(in srgb, var(--opencode-accent) 8%, var(--paper));
+    border-color: var(--opencode-accent);
+  }
+  .connect-btn[data-harness="opencode"] .connect-btn-icon {
+    color: var(--opencode-accent);
+  }
+
   .connect-btn:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -264,9 +321,10 @@
     <p class="class">Dated design · <a href="https://github.com/omesser/ai-buddy/issues/459">#459</a> · 2026-09-09 · hand-written and frozen at this date; awaiting approval</p>
     <h1>Harness Connect Flow — Unified Landing</h1>
     <p class="lede">One Harness landing page for all Chat empty states (not configured,
-      switched off, needs login). Same structure, light copy variants. Four main Harnesses:
-      Claude Code, Codex, Grok, and OpenCode. One additional control: "More options in Settings".
-      Local assets and inline SVG only — the CSP blocks remote resources.</p>
+      switched off, needs login). Same structure, light copy variants. Four main Harnesses
+      with brand marks and accent colors: Claude Code, Codex, Grok, and OpenCode.
+      Local inline SVG only — the CSP blocks remote resources. Marks are trademarks;
+      we do not claim affiliation with Anthropic, OpenAI, xAI, or OpenCode.</p>
   </header>
 
   <div class="bar">
@@ -290,6 +348,23 @@
     </div>
   </div>
 
+  <h2>Brand marks and accent colors</h2>
+
+  <p><b>Claude Code</b>: Anthropic's starburst symbol in their warm terracotta
+    (#D97757 light, #E8A78A dark). The starburst is Anthropic's recognizable mark.</p>
+
+  <p><b>Codex</b>: OpenAI's circular "O" mark in their teal accent (#10A37F light,
+    #26C399 dark). OpenAI doesn't provide a specific Codex logo, so we use their
+    corporate identity's circle.</p>
+
+  <p><b>Grok</b>: xAI/SpaceXAI "X" lettermark in cool slate (#536A7A light, #7A8FA3 dark).
+    SpaceXAI branding is strictly monochrome, so the accent is a neutral cool tone
+    that distinguishes it from the others.</p>
+
+  <p><b>OpenCode</b>: Code-bracket lettermark in distinct blue (#5B7FDB light, #7A9EF0 dark)
+    that doesn't collide with Codex's teal. No official OpenCode brand found, so this
+    is a clean geometric mark.</p>
+
   <h2>One unified landing page</h2>
 
   <p>All three Chat empty situations (not configured, switched off, needs login)
@@ -310,13 +385,6 @@
     for those who prefer their own terminal. Clicking a button spawns the Harness's
     own login (ADR-0010: ai-buddy never collects a credential).</p>
 
-  <h2>Four main Harnesses</h2>
-
-  <p><b>Claude Code</b> (via Zed's adapter), <b>Codex</b>, <b>Grok</b>, and
-    <b>OpenCode</b> are the four tiles. Each gets a simple icon (marks are trademarks;
-    wordmarks in our own type are the safe default). Hermes is reachable through
-    "More options in Settings" but not a primary tile.</p>
-
   <h2>Connect behavior</h2>
 
   <p>Clicking a button spawns the Harness's login command detached (<code>claude /login</code>,
@@ -324,21 +392,16 @@
     No credentials collected, no auto-approve. "More options in Settings" opens Settings
     focused on the Completer/Harness row if practical.</p>
 
-  <h2>Out of scope</h2>
-
-  <p>Holding credentials (#371), auto-approve flags (ADR-0017), and which
-    Harnesses exist (#457, #458) are all out of scope. A connect button starts
-    the Harness's own login; it never collects, stores, or proxies a secret.</p>
-
   <footer>
     Frozen at its date. Built from <a href="https://github.com/omesser/ai-buddy">omesser/ai-buddy</a>.
+    Claude, Anthropic, OpenAI, Codex, xAI, Grok, SpaceXAI, and OpenCode are trademarks
+    of their respective owners. We do not claim affiliation.
   </footer>
 </div>
 
 <script>
   const state = { current: "none" };
 
-  // Linkable state: connect.html#auth
   if (location.hash.length > 1) {
     const hash = location.hash.slice(1);
     if (["none", "off", "auth", "ready"].includes(hash)) {
@@ -382,37 +445,35 @@
   function connectButtons() {
     return `
       <div class="connect-buttons">
-        <button class="connect-btn">
+        <button class="connect-btn" data-harness="claude">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="16" cy="16" r="11"/>
-              <circle cx="16" cy="16" r="4" fill="currentColor"/>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="currentColor">
+              <path d="M16 8l-2 6h6l-2-6zM10 16l-2 6h6l-2-6zM22 16l-2 6h6l-2-6zM16 24l-2 6h6l-2-6z"/>
+              <circle cx="16" cy="16" r="2" fill="currentColor"/>
             </svg>
           </span>
           <span class="connect-btn-label">Claude Code</span>
         </button>
-        <button class="connect-btn">
+        <button class="connect-btn" data-harness="codex">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="8" y="8" width="16" height="16" rx="3"/>
-              <path d="M12 12h8M12 16h8M12 20h5" stroke-linecap="round"/>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="16" cy="16" r="10"/>
             </svg>
           </span>
           <span class="connect-btn-label">Codex</span>
         </button>
-        <button class="connect-btn">
+        <button class="connect-btn" data-harness="grok">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M16 6l-10 6v8c0 5.5 4 10 10 10s10-4.5 10-10v-8l-10-6z" stroke-linejoin="round"/>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="currentColor">
+              <path d="M16 6l-3 8 3 2 3-2-3-8zM8 18l3 8 3-2-3-8-3 2zM24 18l-3 2-3 8 3-8 3-2z"/>
             </svg>
           </span>
           <span class="connect-btn-label">Grok</span>
         </button>
-        <button class="connect-btn">
+        <button class="connect-btn" data-harness="opencode">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="8" y="8" width="16" height="16" rx="3"/>
-              <path d="M13 13h6M13 16h6M13 19h4" stroke-linecap="round"/>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M12 10l-4 6 4 6M20 10l4 6-4 6"/>
             </svg>
           </span>
           <span class="connect-btn-label">OpenCode</span>
@@ -448,7 +509,6 @@
     
     body.innerHTML = html;
 
-    // Update button states
     for (const btn of document.querySelectorAll("#state button")) {
       btn.setAttribute("aria-pressed", String(btn.dataset.v === state.current));
     }
