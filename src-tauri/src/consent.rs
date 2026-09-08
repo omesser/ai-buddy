@@ -125,7 +125,7 @@ mod windows {
     }
 
     fn parent_chain_name() -> Option<String> {
-        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
         use windows_sys::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
             TH32CS_SNAPPROCESS,
@@ -137,7 +137,7 @@ mod windows {
 
         for _ in 0..24 {
             let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-            if snapshot == 0 || snapshot == (-1isize as HANDLE) {
+            if snapshot == INVALID_HANDLE_VALUE {
                 return None;
             }
 
@@ -177,14 +177,14 @@ mod windows {
     }
 
     fn find_process_name(pid: u32) -> Option<String> {
-        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
         use windows_sys::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
             TH32CS_SNAPPROCESS,
         };
 
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-        if snapshot == 0 || snapshot == (-1isize as HANDLE) {
+        if snapshot == INVALID_HANDLE_VALUE {
             return None;
         }
 
