@@ -561,10 +561,13 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux).
-/// SPEC gives the webview to the sprite and chat, so this is opened on the
-/// toolkit main thread where the native objects live.
-fn show_settings(app: &tauri::AppHandle) {
+/// Open the Settings window.
+///
+/// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
+/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
+/// this is opened on the toolkit main thread where the native objects live.
+#[tauri::command]
+fn show_settings(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
         eprintln!("settings: opened before the shell was ready");
         return;
