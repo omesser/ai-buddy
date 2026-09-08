@@ -760,7 +760,10 @@ fn privacy_sections() -> Vec<FormSection> {
     #[cfg(target_os = "macos")]
     let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
+
+    #[cfg(target_os = "linux")]
     let consent_comment = Some(consent::linux_pane_intro());
 
     vec![
@@ -1517,33 +1520,50 @@ mod tests {
             assert_eq!(
                 consent.rows.len(),
                 2,
-                "Linux still declares the rows; the renderer omits them"
+                "Non-macOS still declares the rows; the renderer omits them"
             );
             let comment = consent
                 .comment
                 .as_ref()
-                .expect("Linux section has prose when rows are omitted");
+                .expect("Non-macOS section has prose when rows are omitted");
             assert!(
                 !comment.contains("Accessibility"),
-                "Linux prose must not use TCC vocabulary, got {comment:?}"
+                "Non-macOS prose must not use TCC vocabulary, got {comment:?}"
             );
             assert!(
                 !comment.contains("Screen Recording"),
-                "Linux prose must not use TCC vocabulary, got {comment:?}"
+                "Non-macOS prose must not use TCC vocabulary, got {comment:?}"
             );
             assert!(
                 !comment.contains("Privacy & Security"),
-                "Linux prose must not use TCC vocabulary, got {comment:?}"
+                "Non-macOS prose must not use TCC vocabulary, got {comment:?}"
             );
-            assert!(
-                comment.contains("no permission is requested")
-                    || comment.contains("no permission requested"),
-                "Linux prose must say nothing is requested, got {comment:?}"
-            );
-            assert!(
-                comment.contains("window") || comment.contains("Window"),
-                "Linux prose must name what is read without a grant, got {comment:?}"
-            );
+
+            #[cfg(target_os = "linux")]
+            {
+                assert!(
+                    comment.contains("no permission is requested")
+                        || comment.contains("no permission requested"),
+                    "Linux prose must say nothing is requested, got {comment:?}"
+                );
+                assert!(
+                    comment.contains("window") || comment.contains("Window"),
+                    "Linux prose must name what is read without a grant, got {comment:?}"
+                );
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                let listed = crate::consent::process_listed_as();
+                assert!(
+                    comment.contains(&listed),
+                    "Windows prose must name the process Privacy will list ({listed}), got {comment:?}"
+                );
+                assert!(
+                    !comment.contains("macOS"),
+                    "Windows prose must not mention macOS, got {comment:?}"
+                );
+            }
         }
     }
 
