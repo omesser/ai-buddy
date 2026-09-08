@@ -8,12 +8,14 @@
 
 mod atoms;
 mod connection;
+mod input_events;
 mod overlay;
 mod pointer;
 mod sensing;
 mod settings_window;
 mod window_source;
 
+pub use input_events::{spawn_listener, InputEvent};
 pub use overlay::{configure_overlay, update_input_region};
 pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::X11ActivitySource;
