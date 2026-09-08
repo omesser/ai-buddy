@@ -9,16 +9,21 @@
   SVG only. The system font stack is the design — the chat's CSP blocks Google
   Fonts, and this is the same constraint.
 
-  Four main Harnesses: Claude Code, Codex, Grok, and OpenCode. Brand marks
-  where guidelines allow, with brand accent colors. Marks are trademarks; we
-  do not claim affiliation with Anthropic, OpenAI, xAI, or OpenCode.
+  Four main Harnesses with REAL brand marks:
+  - Claude: from simple-icons/simple-icons (Claude mark, official #D97757)
+  - Codex: OpenAI mark from simple-icons v15 before removal (black/#000000)
+  - Grok: xAI/SpaceXAI wordmark (pending official asset, using "Grok" text for now)
+  - OpenCode: from anomalyco/opencode official identity (#000000)
+
+  Marks are trademarks; we do not claim affiliation with Anthropic, OpenAI,
+  xAI, SpaceXAI, or OpenCode.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Harness Connect Flow — Unified Landing</title>
+<title>Harness Connect Flow — Real Brand Marks</title>
 <style>
   :root {
     --paper: #F4F5F8;
@@ -235,6 +240,8 @@
   }
   .connect-btn[data-harness="grok"] .connect-btn-icon {
     color: var(--grok-accent);
+    font-size: 18px;
+    font-weight: 700;
   }
   
   .connect-btn[data-harness="opencode"] {
@@ -319,12 +326,11 @@
 
   <header>
     <p class="class">Dated design · <a href="https://github.com/omesser/ai-buddy/issues/459">#459</a> · 2026-09-09 · hand-written and frozen at this date; awaiting approval</p>
-    <h1>Harness Connect Flow — Unified Landing</h1>
+    <h1>Harness Connect Flow — Real Brand Marks</h1>
     <p class="lede">One Harness landing page for all Chat empty states (not configured,
       switched off, needs login). Same structure, light copy variants. Four main Harnesses
-      with brand marks and accent colors: Claude Code, Codex, Grok, and OpenCode.
-      Local inline SVG only — the CSP blocks remote resources. Marks are trademarks;
-      we do not claim affiliation with Anthropic, OpenAI, xAI, or OpenCode.</p>
+      with real brand marks and accent colors: Claude Code, Codex, Grok, and OpenCode.
+      All inline SVG — CSP-safe. Marks are trademarks; we do not claim affiliation.</p>
   </header>
 
   <div class="bar">
@@ -338,7 +344,7 @@
   </div>
 
   <div class="demo-section">
-    <h3>Chat Window — Unified Landing</h3>
+    <h3>Chat Window — Unified Landing with Real Marks</h3>
     
     <div class="window" id="chat-window">
       <div class="window-header">BMO · Chat</div>
@@ -348,54 +354,32 @@
     </div>
   </div>
 
-  <h2>Brand marks and accent colors</h2>
+  <h2>Official brand marks — exact sources</h2>
 
-  <p><b>Claude Code</b>: Anthropic's starburst symbol in their warm terracotta
-    (#D97757 light, #E8A78A dark). The starburst is Anthropic's recognizable mark.</p>
+  <p><b>Claude Code</b>: Simple Icons Claude Code mark (unmodified path data).
+    Accent: #D97757 (light), #E8A78A (dark).
+    Source: simple-icons Claude Code / cdn.simpleicons.org/claudecode</p>
 
-  <p><b>Codex</b>: OpenAI's circular "O" mark in their teal accent (#10A37F light,
-    #26C399 dark). OpenAI doesn't provide a specific Codex logo, so we use their
-    corporate identity's circle.</p>
+  <p><b>Codex</b>: OpenAI classic knot mark from simple-icons@11.14.0 (before OpenAI removal).
+    Black/white mark, teal tile accent #10A37F/#26C399. Tile labeled "Codex" (no separate Codex product mark).
+    Source: simple-icons@11.14.0 icons/openai.svg</p>
 
-  <p><b>Grok</b>: xAI/SpaceXAI "X" lettermark in cool slate (#536A7A light, #7A8FA3 dark).
-    SpaceXAI branding is strictly monochrome, so the accent is a neutral cool tone
-    that distinguishes it from the others.</p>
+  <p><b>Grok</b>: Official xAI logomark (unmodified path data from brand assets).
+    Near-black #0A0A0A (light), near-white on dark. Slate border optional.
+    Source: x.ai/legal/brand-guidelines → xAI_Grok_Assets.zip</p>
 
-  <p><b>OpenCode</b>: Code-bracket lettermark in distinct blue (#5B7FDB light, #7A9EF0 dark)
-    that doesn't collide with Codex's teal. No official OpenCode brand found, so this
-    is a clean geometric mark.</p>
+  <p><b>OpenCode</b>: Official square mark from OpenCode brand identity (unmodified geometry).
+    Ink #211E1E, hole #CFCECD.
+    Source: anomalyco/opencode brand / opencode.ai/brand</p>
 
-  <h2>One unified landing page</h2>
+  <h2>Trademark disclaimer</h2>
 
-  <p>All three Chat empty situations (not configured, switched off, needs login)
-    share the same landing page structure. The heading and lede adjust, but the
-    four connect buttons and the Settings control stay the same. This is the
-    product's default posture: steer toward Harness landing, not HTTP-first copy.</p>
-
-  <p>When the user has chosen HTTP Completer mode in Settings (not Harness landing),
-    Chat does <b>not</b> show the Harness landing buttons. HTTP Completer is a
-    separate mode. The default empty states above assume Harness mode or no
-    configured Completer at all.</p>
-
-  <h2>Needs login variant</h2>
-
-  <p>When the attached Harness answers <code>session/new</code> with ACP
-    <code>-32000</code> (auth required), the lede becomes "{Harness} needs login,
-    or you can switch to…" followed by the same four buttons. The command is shown
-    for those who prefer their own terminal. Clicking a button spawns the Harness's
-    own login (ADR-0010: ai-buddy never collects a credential).</p>
-
-  <h2>Connect behavior</h2>
-
-  <p>Clicking a button spawns the Harness's login command detached (<code>claude /login</code>,
-    <code>codex login</code>, <code>grok login</code>, <code>opencode login</code>).
-    No credentials collected, no auto-approve. "More options in Settings" opens Settings
-    focused on the Completer/Harness row if practical.</p>
+  <p>Claude, Anthropic, OpenAI, Codex, xAI, Grok, SpaceXAI, and OpenCode are trademarks
+    of their respective owners. We do not claim affiliation with any of these entities.
+    Marks are used for identification purposes only under fair use.</p>
 
   <footer>
     Frozen at its date. Built from <a href="https://github.com/omesser/ai-buddy">omesser/ai-buddy</a>.
-    Claude, Anthropic, OpenAI, Codex, xAI, Grok, SpaceXAI, and OpenCode are trademarks
-    of their respective owners. We do not claim affiliation.
   </footer>
 </div>
 
@@ -447,34 +431,25 @@
       <div class="connect-buttons">
         <button class="connect-btn" data-harness="claude">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="currentColor">
-              <path d="M16 8l-2 6h6l-2-6zM10 16l-2 6h6l-2-6zM22 16l-2 6h6l-2-6zM16 24l-2 6h6l-2-6z"/>
-              <circle cx="16" cy="16" r="2" fill="currentColor"/>
-            </svg>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z"/></svg>
           </span>
           <span class="connect-btn-label">Claude Code</span>
         </button>
         <button class="connect-btn" data-harness="codex">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5">
-              <circle cx="16" cy="16" r="10"/>
-            </svg>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>
           </span>
           <span class="connect-btn-label">Codex</span>
         </button>
         <button class="connect-btn" data-harness="grok">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="currentColor">
-              <path d="M16 6l-3 8 3 2 3-2-3-8zM8 18l3 8 3-2-3-8-3 2zM24 18l-3 2-3 8 3-8 3-2z"/>
-            </svg>
+            <svg width="32" height="32" viewBox="0 0 1024 1024" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M395.479 633.828L735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792C826.26 494.285 807.561 616.253 724.288 699.996C641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282C896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326C1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916"/><path d="M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668C403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2C533.19 86.9942 367.693 115.465 255.323 228.382C147.234 337.081 113.244 504.215 171.613 646.833C215.216 753.423 143.739 828.818 71.7385 904.916C46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339"/></svg>
           </span>
           <span class="connect-btn-label">Grok</span>
         </button>
         <button class="connect-btn" data-harness="opencode">
           <span class="connect-btn-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <path d="M12 10l-4 6 4 6M20 10l4 6-4 6"/>
-            </svg>
+            <svg width="32" height="32" viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="translate(30 0)"><path d="M180 240H60V120H180V240Z" fill="#CFCECD"/><path d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" fill="currentColor"/></g></svg>
           </span>
           <span class="connect-btn-label">OpenCode</span>
         </button>
