@@ -19,11 +19,11 @@ use std::thread;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    AuthMethod, CancelNotification, ContentBlock, ErrorCode, HttpHeader, Implementation,
-    InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent,
+    AuthMethod, CancelNotification, ContentBlock, EnvVariable, ErrorCode, HttpHeader,
+    Implementation, InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp,
+    McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -46,7 +46,8 @@ pub enum McpChoice {
     /// reaches it. The only one whose tools reach the buddy on screen.
     Http { url: String, authorization: String },
     /// A stdio server the Harness spawns: the sidecar, or the app binary
-    /// re-executed as `--mcp-stdio` (#497). Its tools dispatch through stubs.
+    /// re-executed as `--mcp-stdio` (#497). A shim that relays to the loopback
+    /// server above, so its tools reach the same Instances (ADR-0026).
     Stdio(McpLaunch),
 }
 
@@ -139,6 +140,9 @@ pub enum Event {
 pub struct McpLaunch {
     pub path: PathBuf,
     pub args: Vec<String>,
+    /// What the shim reads to find the app and authorise itself (ADR-0026).
+    /// Deliberately absent from `line`.
+    pub env: Vec<(String, String)>,
 }
 
 impl McpLaunch {
@@ -549,7 +553,15 @@ fn mcp_server(choice: &McpChoice) -> McpServer {
             ]))
         }
         McpChoice::Stdio(launch) => McpServer::Stdio(
-            McpServerStdio::new("ai-buddy", launch.path.clone()).args(launch.args.clone()),
+            McpServerStdio::new("ai-buddy", launch.path.clone())
+                .args(launch.args.clone())
+                .env(
+                    launch
+                        .env
+                        .iter()
+                        .map(|(name, value)| EnvVariable::new(name.clone(), value.clone()))
+                        .collect(),
+                ),
         ),
     }
 }
@@ -908,6 +920,7 @@ mod tests {
         let sidecar = mcp_server(&McpChoice::Stdio(McpLaunch {
             path: PathBuf::from("/opt/ai-buddy-mcp"),
             args: Vec::new(),
+            env: Vec::new(),
         }));
         let wire = serde_json::to_value(&sidecar).expect("serializes");
         assert_eq!(wire["command"], serde_json::json!("/opt/ai-buddy-mcp"));
@@ -918,10 +931,44 @@ mod tests {
         let embedded = mcp_server(&McpChoice::Stdio(McpLaunch {
             path: PathBuf::from("/opt/ai-buddy"),
             args: vec!["--mcp-stdio".to_string()],
+            env: Vec::new(),
         }));
         let wire = serde_json::to_value(&embedded).expect("serializes");
         assert_eq!(wire["command"], serde_json::json!("/opt/ai-buddy"));
         assert_eq!(wire["args"], serde_json::json!(["--mcp-stdio"]));
+    }
+
+    /// How the shim is told where to dial (ADR-0026). In `env`, which the
+    /// Harness applies to the child it spawns, and not in an argv, which is in
+    /// a process list.
+    #[test]
+    fn a_stdio_choice_carries_the_endpoint_in_its_environment() {
+        let server = mcp_server(&McpChoice::Stdio(McpLaunch {
+            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            args: Vec::new(),
+            env: vec![
+                (
+                    "AI_BUDDY_MCP_URL".to_string(),
+                    "http://127.0.0.1:51234/mcp".to_string(),
+                ),
+                ("AI_BUDDY_MCP_TOKEN".to_string(), "deadbeef".to_string()),
+            ],
+        }));
+        let wire = serde_json::to_value(&server).expect("serializes");
+        assert_eq!(
+            wire["env"][0]["name"],
+            serde_json::json!("AI_BUDDY_MCP_URL")
+        );
+        assert_eq!(
+            wire["env"][0]["value"],
+            serde_json::json!("http://127.0.0.1:51234/mcp")
+        );
+        assert_eq!(
+            wire["env"][1]["name"],
+            serde_json::json!("AI_BUDDY_MCP_TOKEN")
+        );
+        assert_eq!(wire["env"][1]["value"], serde_json::json!("deadbeef"));
+        assert!(!wire["args"].to_string().contains("deadbeef"));
     }
 
     #[test]
@@ -932,6 +979,15 @@ mod tests {
         };
         assert_eq!(choice.label(), "http://127.0.0.1:1/mcp");
         assert!(!choice.label().contains("secret"));
+
+        // The Action Log takes this line too, and the stdio choice now carries
+        // a token of the same kind.
+        let stdio = McpChoice::Stdio(McpLaunch {
+            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            args: Vec::new(),
+            env: vec![("AI_BUDDY_MCP_TOKEN".to_string(), "secret".to_string())],
+        });
+        assert_eq!(stdio.label(), "/opt/ai-buddy-mcp");
     }
 
     /// A thought reaches the Shell and never the answer. `said` is the

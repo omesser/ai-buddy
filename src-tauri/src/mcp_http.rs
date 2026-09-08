@@ -73,6 +73,22 @@ impl Endpoint {
     pub fn authorization(&self) -> String {
         format!("Bearer {}", self.token)
     }
+
+    /// What a stdio shim needs to dial this endpoint, as environment
+    /// variables for the child the Harness spawns (ADR-0026).
+    ///
+    /// A method for the same reason `authorization` is one: the token leaves
+    /// this type only where it is being handed to the process that will
+    /// present it.
+    pub fn stdio_env(&self) -> Vec<(String, String)> {
+        vec![
+            (ai_buddy_mcp_server::URL_VAR.to_string(), self.url.clone()),
+            (
+                ai_buddy_mcp_server::TOKEN_VAR.to_string(),
+                self.token.clone(),
+            ),
+        ]
+    }
 }
 
 static ENDPOINT: OnceLock<Option<Endpoint>> = OnceLock::new();

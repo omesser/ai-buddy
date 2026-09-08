@@ -513,10 +513,17 @@ waiting. Coverage:
 
 ### Second seam: MCP tools
 
-Tested at tool-call level with a fake `WindowSource` and a temporary Memory file, not over
-the MCP transport. Coverage: each tool's success shape; behavior when no Character
-Instance exists; that no tool posts input events; that the denylist removes excluded
-applications and password fields from every sensing result.
+Dispatch is tested at tool-call level with a fake `WindowSource` and a temporary Memory
+file, not over the MCP transport. Coverage: each tool's success shape; behavior when no
+Character Instance exists; that no tool posts input events; that the denylist removes
+excluded applications and password fields from every sensing result.
+
+The published stdio binary dispatches nothing: it relays to the app, which dispatches
+where the Instances live (ADR-0026). It is tested against a stand-in app on loopback.
+Coverage: the endpoint is discovered from the environment and the token travels in a
+header; a URL naming anything but this machine is refused; no app, a refused token, an
+oversized answer and an answer with no body are each reported as a failure rather than a
+success; a notification is answered with nothing.
 
 ### Memory
 
