@@ -1148,6 +1148,41 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
+/// Spawn the login command for a named Harness, detached.
+///
+/// The command runs in the user's own terminal or spawns its own auth flow —
+/// ai-buddy never collects a credential (ADR-0010). Returns `Err` when the
+/// Harness name is unknown or the spawn fails.
+#[tauri::command]
+fn harness_login(harness: String) -> Result<(), String> {
+    let command = match harness.as_str() {
+        "claude" => vec!["claude", "/login"],
+        "hermes" => vec!["hermes", "login"],
+        "opencode" => vec!["opencode", "login"],
+        _ => return Err(format!("unknown Harness: {harness}")),
+    };
+
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(command[0])
+            .args(&command[1..])
+            .spawn()
+            .map_err(|why| format!("could not start {}: {why}", command[0]))?;
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, spawn in a new console so the user sees the auth flow
+        std::process::Command::new("cmd")
+            .args(&["/c", "start", command[0]])
+            .args(&command[1..])
+            .spawn()
+            .map_err(|why| format!("could not start {}: {why}", command[0]))?;
+    }
+
+    Ok(())
+}
+
 /// Push a full opening to an already-open Chat surface, without creating one.
 /// Always after switch: a chosen Instance name stays, but the Character line
 /// still has to move. Configured/enabled/login too: the window asked once at
