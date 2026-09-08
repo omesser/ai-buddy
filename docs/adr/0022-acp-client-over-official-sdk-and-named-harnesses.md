@@ -27,9 +27,10 @@ Action Log and Chat surface.
 
 The wire is isolated so the frame loop never sees futures (ADR-0004).
 
-The launch table names three harnesses with verified first-party ACP support
-(`claude`, `hermes`, `opencode`) and provides an escape hatch for any custom
-command. Harnesses earn a named row once a turn has been verified against them.
+The launch table names four harnesses (`claude`, `codex`, `hermes`, `opencode`)
+and provides an escape hatch for any custom command. Harnesses earn verified
+standing once a turn has been smoked against them; `codex` is unverified until
+smoked.
 
 One session per app lifetime, persisted across restarts when the Harness
 supports `loadSession`.

@@ -1214,7 +1214,7 @@ pub struct Settings {
     /// wait from here; this is only where it starts (#262).
     pub director_wake_secs: String,
     /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
-    /// empty for none, a preset name (`claude`, `hermes`, `opencode`), or
+    /// empty for none, a preset name (`claude`, `codex`, `hermes`, `opencode`), or
     /// `custom`, which defers to `harness_command`. The variable outranks it,
     /// and either way `harness::retarget` reaches the attachment now (#500).
     pub harness: String,
