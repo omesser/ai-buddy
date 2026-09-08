@@ -287,7 +287,11 @@ impl SettingsWindow {
             self.handle_dismiss((control_id - ID_BASE - 5000) as usize);
             return;
         }
-        let form_id = self.control_id_to_form_id.borrow().get(&control_id).cloned();
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
         if let Some(form_id) = form_id {
             if let Some(Control::Checkbox(..)) = self.controls.borrow().get(&form_id) {
                 self.handle_checkbox_toggle(control_id);
@@ -298,11 +302,16 @@ impl SettingsWindow {
     }
 
     fn handle_checkbox_toggle(&self, control_id: i32) {
-        let form_id = self.control_id_to_form_id.borrow().get(&control_id).cloned();
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
         if let Some(form_id) = form_id {
             let controls = self.controls.borrow();
             if let Some(Control::Checkbox(hwnd, _)) = controls.get(&form_id) {
-                let checked = unsafe { SendMessageA(*hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED as isize };
+                let checked =
+                    unsafe { SendMessageA(*hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED as isize };
 
                 if let Some(field) = form::describe().bool_write(&form_id) {
                     let mut patch = SettingsPatch::default();
@@ -316,7 +325,11 @@ impl SettingsWindow {
 
     fn handle_operation(&self, control_id: i32) {
         let description = form::describe();
-        let form_id = self.control_id_to_form_id.borrow().get(&control_id).cloned();
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
 
         if let Some(form_id) = form_id {
             if let Some(op) = description.operations.get(&form_id) {
@@ -333,7 +346,11 @@ impl SettingsWindow {
     }
 
     fn handle_text_change(&self, control_id: i32) {
-        let form_id = self.control_id_to_form_id.borrow().get(&control_id).cloned();
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
 
         if let Some(form_id) = form_id {
             if form::DIRECTOR_BASE_URL_ID == form_id
