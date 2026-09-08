@@ -13,9 +13,16 @@ window exactly when it is looking, and it visibly cannot look while asleep.
 ## No Capture is ever taken silently
 
 Every Capture needs the user's explicit permission for that Capture. The
-platform grant — Screen Recording on macOS, its equivalent elsewhere — is
-necessary and not sufficient: it makes capturing possible, and it does not
-authorise any particular one.
+platform grant — Screen Recording on macOS, an xdg-desktop-portal ScreenCast or
+Screenshot session on Linux — is necessary and not sufficient: it makes
+capturing possible, and it does not authorise any particular one.
+
+**That grant is not the same shape on every platform.** macOS sensing consent is
+two TCC rows this app preflights and prompts for. Linux has neither: X11
+geometry, `WM_CLASS`, frontmost, idle and DPMS are consent-free, and there is no
+Dock SPI to ask for. So the Linux probe grants nothing, prompts for nothing, and
+the settings pane offers no row — a row that cannot ask for anything is a grant
+the user thinks they gave. #250.
 
 **The ask is a Character act, not a system dialog.** Wanting to look is a
 Behavior the Character plays: it asks, in the chat surface when one is open

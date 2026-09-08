@@ -276,7 +276,11 @@ pub const NEW_CHARACTER_ID: &str = "new_character";
 pub const SPAWN_ID: &str = "spawn";
 pub const MEMORY_OPEN_ID: &str = "memory_open";
 pub const MEMORY_WIPE_ID: &str = "memory_wipe";
+/// The two consent rows. Gated because Linux offers neither, so the ids exist
+/// only where the rows do. #250.
+#[cfg(not(target_os = "linux"))]
 pub const CONSENT_ACCESSIBILITY_ID: &str = "consent_accessibility";
+#[cfg(not(target_os = "linux"))]
 pub const CONSENT_SCREEN_RECORDING_ID: &str = "consent_screen_recording";
 pub const LAUNCH_ID: &str = "launch";
 pub const TRACE_FRAMES_ID: &str = "trace_frames";
@@ -766,28 +770,36 @@ fn privacy_sections() -> Vec<FormSection> {
     #[cfg(target_os = "linux")]
     let consent_comment = Some(consent::linux_pane_intro());
 
+    // Linux sensing asks the user for nothing, so it has no grant to offer a
+    // row for. #250. Windows keeps its rows; that platform is its own ticket.
+    #[cfg(not(target_os = "linux"))]
+    let consent_rows = vec![
+        FormRow::Checkbox {
+            id: CONSENT_ACCESSIBILITY_ID.to_string(),
+            label: "Accessibility".to_string(),
+            writes: BoolField::UseAccessibility,
+            frozen: false,
+            help: Some("Reads the Dock's position.".to_string()),
+            comment: None,
+        },
+        FormRow::Checkbox {
+            id: CONSENT_SCREEN_RECORDING_ID.to_string(),
+            label: "Screen Recording".to_string(),
+            writes: BoolField::UseScreenRecording,
+            frozen: false,
+            help: Some("Reads window titles.".to_string()),
+            comment: None,
+        },
+    ];
+
+    #[cfg(target_os = "linux")]
+    let consent_rows: Vec<FormRow> = Vec::new();
+
     vec![
         FormSection {
             heading: "What the buddy can see".to_string(),
             comment: consent_comment,
-            rows: vec![
-                FormRow::Checkbox {
-                    id: CONSENT_ACCESSIBILITY_ID.to_string(),
-                    label: "Accessibility".to_string(),
-                    writes: BoolField::UseAccessibility,
-                    frozen: false,
-                    help: Some("Reads the Dock's position.".to_string()),
-                    comment: None,
-                },
-                FormRow::Checkbox {
-                    id: CONSENT_SCREEN_RECORDING_ID.to_string(),
-                    label: "Screen Recording".to_string(),
-                    writes: BoolField::UseScreenRecording,
-                    frozen: false,
-                    help: Some("Reads window titles.".to_string()),
-                    comment: None,
-                },
-            ],
+            rows: consent_rows,
         },
         FormSection {
             heading: "Excluded applications".to_string(),
@@ -1517,11 +1529,6 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         {
-            assert_eq!(
-                consent.rows.len(),
-                2,
-                "Non-macOS still declares the rows; the renderer omits them"
-            );
             let comment = consent
                 .comment
                 .as_ref()
@@ -1542,6 +1549,11 @@ mod tests {
             #[cfg(target_os = "linux")]
             {
                 assert!(
+                    consent.rows.is_empty(),
+                    "Linux has no grant to offer a row for, so it declares none (#250), got {:?}",
+                    consent.rows
+                );
+                assert!(
                     comment.contains("no permission is requested")
                         || comment.contains("no permission requested"),
                     "Linux prose must say nothing is requested, got {comment:?}"
@@ -1554,6 +1566,11 @@ mod tests {
 
             #[cfg(target_os = "windows")]
             {
+                assert_eq!(
+                    consent.rows.len(),
+                    2,
+                    "Windows still declares the rows; #250 is about Linux"
+                );
                 let listed = crate::consent::process_listed_as();
                 assert!(
                     comment.contains(&listed),
