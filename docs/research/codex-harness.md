@@ -1,7 +1,7 @@
 # OpenAI Codex CLI as an ai-buddy Harness
 
-**Research date:** 2026-09-08  
-**Researcher:** Cloud Agent  
+**Research date:** 2026-09-08
+**Researcher:** Cloud Agent
 **Primary sources:** OpenAI Codex GitHub repo, ACP adapter repos, official docs
 
 ---
@@ -28,7 +28,7 @@ OpenAI Codex CLI is a mature, actively maintained terminal coding agent with fir
 
 ### Fact: Terminal-Native Coding Agent
 
-> "Codex CLI is a coding agent from OpenAI that runs locally on your computer."  
+> "Codex CLI is a coding agent from OpenAI that runs locally on your computer."
 > — [openai/codex README](https://github.com/openai/codex)
 
 Capabilities:
@@ -51,8 +51,8 @@ The 2021 "Codex" model (deprecated March 2023) is separate. This CLI tool is a n
 
 ### Fact: Yes — Via Official Adapter
 
-**Package:** [`@agentclientprotocol/codex-acp`](https://github.com/agentclientprotocol/codex-acp)  
-**Command:** `npx -y @agentclientprotocol/codex-acp`  
+**Package:** [`@agentclientprotocol/codex-acp`](https://github.com/agentclientprotocol/codex-acp)
+**Command:** `npx -y @agentclientprotocol/codex-acp`
 **Standing:** 358 stars, active maintenance
 
 ### Fact: Architecture
@@ -95,7 +95,7 @@ Exposed via ACP: `/status`, `/mcp`, `/skills`, `/goal`, `/review`, `/review-bran
 
 The canonical integration for ai-buddy per ADR-0018.
 
-**Launch command:**  
+**Launch command:**
 ```bash
 npx -y @agentclientprotocol/codex-acp
 ```
@@ -138,13 +138,13 @@ Per ACP adapter's advertised `authMethods`:
 
 ### Fact: Credential Cache
 
-Auth cached at `~/.codex/auth.json` (or OS keyring).  
-Shared between CLI and IDE extension.  
+Auth cached at `~/.codex/auth.json` (or OS keyring).
+Shared between CLI and IDE extension.
 Logout clears both.
 
 ### Fact: Headless Support
 
-**Runtime option:** `NO_BROWSER=1`  
+**Runtime option:** `NO_BROWSER=1`
 - Hides browser-based ChatGPT auth method during ACP `initialize`
 - Advertises only API key and device code methods in remote/browserless environments
 
@@ -212,7 +212,7 @@ Based on adapter feature list, Codex should advertise in `initialize`:
 
 - `loadSession`: ✅ (adapter supports session resume)
 - `mcpCapabilities.http`: ✅ (adapter bridges HTTP MCP)
-- `authMethods`: 
+- `authMethods`:
   - `"Sign in with ChatGPT"` (when `NO_BROWSER != 1`)
   - `"Sign in with Device Code"` (beta)
   - `"API key via CODEX_API_KEY or OPENAI_API_KEY"`
@@ -512,7 +512,7 @@ Research (docs/research/codex-harness-research.md) confirms:
 
 ## The bar is already written
 
-ADR-0022 sets it: *"A row moves in this table when that command exits zero."*  
+ADR-0022 sets it: *"A row moves in this table when that command exits zero."*
 `scripts/probe-harness.sh` attaches the configured Harness with no overlay, runs one fixed prompt, and prints the handshake, stop reason, reply, and whether the reply parsed as a Behavior proposal.
 
 ## Scope
