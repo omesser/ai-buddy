@@ -461,6 +461,7 @@ body {
   font-weight: 700;
 }
 
+<<<<<<< HEAD
 /* One line, clipped rather than wrapped: this sits between the log and the
    composer, and a thought that grew the strip would push the conversation up
    the window every time the Harness changed its mind. */
@@ -473,6 +474,59 @@ body {
   font-size: 12.5px;
   font-style: italic;
   color: var(--chat-ink-4);
+=======
+.empty .connect-hint {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--chat-line);
+}
+
+.empty .connect-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.empty .connect-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--chat-fill);
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.empty .connect-btn:hover {
+  background: var(--chat-fill-soft);
+  border-color: var(--chat-accent);
+}
+
+.empty .connect-btn:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+.empty .connect-icon {
+  flex-shrink: 0;
+  color: var(--chat-ink-3);
+}
+
+.empty .connect-btn:hover .connect-icon {
+  color: var(--chat-accent);
+}
+
+.empty .connect-label {
+  flex: 1;
+  text-align: left;
+>>>>>>> 7c678f9 (feat(chat): Add branded connect buttons for Harness selection)
 }
 
 .composer {

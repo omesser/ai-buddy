@@ -222,6 +222,14 @@ function asked(ask) {
   return add(row);
 }
 
+// Login commands for the three named Harnesses. Shown when the user clicks a
+// connect button, since Settings owns which one is actually attached.
+const LOGIN_COMMANDS = {
+  claude: "claude /login",
+  hermes: "hermes login",
+  opencode: "opencode login",
+};
+
 // Whether anything can answer, and what to say when nothing can.
 //
 // SPEC gives this window the job of explaining how to connect something
@@ -258,6 +266,22 @@ function attached(opening) {
   }
   
   return ready;
+}
+
+// Connect button clicks: show the login command for that Harness. Settings
+// owns which one is attached; these buttons inform rather than configure.
+for (const btn of document.querySelectorAll(".connect-btn")) {
+  btn.addEventListener("click", () => {
+    const harness = btn.dataset.harness;
+    const command = LOGIN_COMMANDS[harness];
+    if (command) {
+      const cmd = document.getElementById("login-command");
+      if (cmd) {
+        cmd.textContent = command;
+      }
+      note(`To attach ${btn.querySelector(".connect-label").textContent}, set AI_BUDDY_HARNESS=${harness} and run: ${command}`);
+    }
+  });
 }
 
 

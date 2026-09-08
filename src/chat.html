@@ -114,7 +114,31 @@
             credential for it.
           </p>
           <p class="command" id="login-command"></p>
-          <p class="where">Or attach a different Harness in Settings.</p>
+          <div class="connect-hint">
+            <p class="where">Or choose a different Harness:</p>
+            <div class="connect-buttons">
+              <button type="button" class="connect-btn" data-harness="claude" title="Claude Code via Zed's adapter">
+                <svg class="connect-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <circle cx="10" cy="10" r="8"/>
+                  <circle cx="10" cy="10" r="3" fill="currentColor"/>
+                </svg>
+                <span class="connect-label">Claude Code</span>
+              </button>
+              <button type="button" class="connect-btn" data-harness="hermes" title="Hermes agent runtime">
+                <svg class="connect-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+                  <path d="M10 2L3 6v6c0 4.5 3 8 7 8s7-3.5 7-8V6l-7-4z"/>
+                </svg>
+                <span class="connect-label">Hermes</span>
+              </button>
+              <button type="button" class="connect-btn" data-harness="opencode" title="opencode agent runtime">
+                <svg class="connect-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="4" y="4" width="12" height="12" rx="2"/>
+                  <path d="M8 8h4M8 10h4M8 12h2" stroke-linecap="round"/>
+                </svg>
+                <span class="connect-label">opencode</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

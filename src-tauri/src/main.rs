@@ -1030,11 +1030,9 @@ fn chat_opening_from(
         character: instance.character_name().to_string(),
         configured: inspect.configured,
         enabled: inspect.enabled,
-<<<<<<< HEAD
         harness: chat_harness(inspect),
         model: inspect.model.clone(),
         host: inspect.host.clone(),
-=======
         login: inspect
             .harness
             .as_ref()
@@ -1043,7 +1041,6 @@ fn chat_opening_from(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
->>>>>>> f4deadd (feat(chat): Add fourth empty state for Harness needing authentication)
         personality: personality.to_string(),
         instance_prompt: instance.prompt().to_string(),
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
