@@ -9,8 +9,11 @@
 //! One static per switch rather than a map. The set is fixed at compile time,
 //! and a static is what lets a read site load the value without a lock.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::Mutex;
 
+use crate::harness;
 use crate::model;
 use crate::settings::Settings;
 
@@ -82,6 +85,14 @@ pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
 static TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 static MAX_TOKENS: AtomicU32 = AtomicU32::new(0);
 static WAKE_SECS: AtomicU64 = AtomicU64::new(0);
+static AUTH_RETRY_SECS: AtomicU64 = AtomicU64::new(0);
+
+/// Where the stdio MCP server is, as the variable or the file gives it.
+///
+/// A `Mutex` rather than an atomic because a path is not a number. Locked only
+/// on a seed and at attach, so the contention is nothing worth a cleverer
+/// type.
+static MCP_BIN: Mutex<String> = Mutex::new(String::new());
 
 /// The Completer timeout in force, in seconds.
 pub fn director_timeout_secs() -> Option<u64> {
@@ -99,6 +110,22 @@ pub fn director_max_tokens() -> Option<u32> {
 pub fn director_wake_secs() -> Option<u64> {
     let secs = WAKE_SECS.load(Ordering::Relaxed);
     (secs > 0).then_some(secs)
+}
+
+/// The Harness auth-retry interval in force, in seconds. Zero is unset for the
+/// reason a zero timeout is: retrying with no wait at all would hammer a child
+/// that has said it is not signed in.
+pub fn harness_auth_retry_secs() -> Option<u64> {
+    let secs = AUTH_RETRY_SECS.load(Ordering::Relaxed);
+    (secs > 0).then_some(secs)
+}
+
+/// The stdio MCP server path in force, if one is set.
+pub fn mcp_bin() -> Option<PathBuf> {
+    let path = MCP_BIN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    (!path.is_empty()).then(|| PathBuf::from(path.as_str()))
 }
 
 /// One variable per switch on the Development tab.
@@ -130,7 +157,13 @@ pub fn switch_vars() -> Vec<&'static str> {
 pub(crate) fn test_vars() -> Vec<&'static str> {
     flag_vars()
         .into_iter()
-        .chain([model::TIMEOUT_SECS, model::MAX_TOKENS, model::WAKE_SECS])
+        .chain([
+            model::TIMEOUT_SECS,
+            model::MAX_TOKENS,
+            model::WAKE_SECS,
+            harness::AUTH_RETRY_SECS,
+            harness::MCP_BIN,
+        ])
         .collect()
 }
 
@@ -167,6 +200,19 @@ pub fn seed(settings: &Settings) {
             .unwrap_or(0),
         Ordering::Relaxed,
     );
+    AUTH_RETRY_SECS.store(
+        model::env_or_file(harness::AUTH_RETRY_SECS, &settings.harness_auth_retry_secs)
+            .trim()
+            .parse()
+            .unwrap_or(0),
+        Ordering::Relaxed,
+    );
+    *MCP_BIN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+        model::env_or_file(harness::MCP_BIN, &settings.mcp_bin)
+            .trim()
+            .to_string();
 }
 
 #[cfg(test)]
@@ -279,6 +325,56 @@ mod tests {
 
             std::env::remove_var(model::TIMEOUT_SECS);
             std::env::remove_var(model::MAX_TOKENS);
+        });
+    }
+
+    /// The two Harness knobs #447 added answer to the same precedence as the
+    /// Completer limits above, so a CI job exporting either does not have to
+    /// know a settings file exists.
+    #[test]
+    fn an_exported_auth_retry_outranks_the_file() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert_eq!(harness_auth_retry_secs(), None, "blank is unset");
+
+            seed(&Settings {
+                harness_auth_retry_secs: "5".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(harness_auth_retry_secs(), Some(5));
+
+            std::env::set_var(harness::AUTH_RETRY_SECS, "1");
+            seed(&Settings {
+                harness_auth_retry_secs: "5".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(harness_auth_retry_secs(), Some(1));
+
+            std::env::remove_var(harness::AUTH_RETRY_SECS);
+        });
+    }
+
+    /// A path rather than a number, so blank is the only unset there is.
+    #[test]
+    fn an_exported_mcp_bin_outranks_the_file() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert_eq!(mcp_bin(), None, "blank is unset");
+
+            seed(&Settings {
+                mcp_bin: "/tmp/from-the-file".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(mcp_bin(), Some(PathBuf::from("/tmp/from-the-file")));
+
+            std::env::set_var(harness::MCP_BIN, "/tmp/from-the-env");
+            seed(&Settings {
+                mcp_bin: "/tmp/from-the-file".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(mcp_bin(), Some(PathBuf::from("/tmp/from-the-env")));
+
+            std::env::remove_var(harness::MCP_BIN);
         });
     }
 

@@ -137,6 +137,19 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
             form::DIRECTOR_WAKE_SECS_ID.to_string(),
             limit_in_force::<u64>(model::WAKE_SECS, &settings.director_wake_secs),
         ),
+        (
+            form::HARNESS_AUTH_RETRY_SECS_ID.to_string(),
+            limit_in_force::<u64>(
+                crate::harness::AUTH_RETRY_SECS,
+                &settings.harness_auth_retry_secs,
+            ),
+        ),
+        // Not a limit: any path the user typed is shown back verbatim, because
+        // a path this machine has not got yet is still the one to keep.
+        (
+            form::MCP_BIN_ID.to_string(),
+            model::env_or_file(crate::harness::MCP_BIN, &settings.mcp_bin),
+        ),
     ])
 }
 
@@ -871,6 +884,8 @@ pub struct SettingsPatch {
     pub director_wake_secs: Option<String>,
     pub harness: Option<String>,
     pub harness_command: Option<String>,
+    pub harness_auth_retry_secs: Option<String>,
+    pub mcp_bin: Option<String>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
@@ -928,6 +943,8 @@ pub enum TextField {
     /// that translates.
     Harness,
     HarnessCommand,
+    HarnessAuthRetrySecs,
+    McpBin,
     ExcludedApplications,
 }
 
@@ -975,6 +992,12 @@ impl SettingsPatch {
             // `harness::launch` reads, so Off is blank and Custom is `custom`.
             TextField::Harness => self.harness = Some(form::harness_choice(value)),
             TextField::HarnessCommand => self.harness_command = Some(value.trim().to_string()),
+            TextField::HarnessAuthRetrySecs => {
+                self.harness_auth_retry_secs = Some(value.to_string())
+            }
+            // Trimmed like the command line beside it: a path pasted out of a
+            // terminal carries the space that follows it.
+            TextField::McpBin => self.mcp_bin = Some(value.trim().to_string()),
             TextField::DirectorApiKey if key_was_typed(value) => {
                 self.director_api_key = Some(value.to_string())
             }
@@ -1012,6 +1035,8 @@ impl fmt::Debug for SettingsPatch {
                 "harness_command",
                 &self.harness_command.as_deref().map(command_line_debug),
             )
+            .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
+            .field("mcp_bin", &self.mcp_bin)
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
@@ -1111,6 +1136,12 @@ impl Settings {
         }
         if let Some(value) = patch.harness_command {
             self.harness_command = value;
+        }
+        if let Some(value) = patch.harness_auth_retry_secs {
+            self.harness_auth_retry_secs = value;
+        }
+        if let Some(value) = patch.mcp_bin {
+            self.mcp_bin = value;
         }
         if let Some(value) = patch.trace_frames {
             self.trace_frames = value;
@@ -1222,6 +1253,15 @@ pub struct Settings {
     /// own value is. Kept when a preset is picked, so coming back to Custom
     /// does not lose what was typed.
     pub harness_command: String,
+    /// How long an unauthenticated Harness is left alone before `session/new`
+    /// is tried again, in seconds. Empty means unset, and leaves the 60 in
+    /// `harness::AUTH_RETRY`. Read when a Session is built, so a change lands
+    /// on the next attach (#447).
+    pub harness_auth_retry_secs: String,
+    /// Where the stdio MCP server binary is. Empty means beside the app, then
+    /// the app binary's own `--mcp-stdio` (#166). For power users and CI,
+    /// which is why it is a Development row and not a Director one.
+    pub mcp_bin: String,
     /// Development switches. Off is the shipped answer for all of them; see
     /// `dev_flags`, which holds the live value each read site loads.
     pub trace_frames: bool,
@@ -1258,6 +1298,8 @@ impl Default for Settings {
             director_wake_secs: String::new(),
             harness: String::new(),
             harness_command: String::new(),
+            harness_auth_retry_secs: String::new(),
+            mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -1504,6 +1546,8 @@ mod tests {
             director_wake_secs: "300".into(),
             harness: "custom".into(),
             harness_command: "opencode acp".into(),
+            harness_auth_retry_secs: "5".into(),
+            mcp_bin: "/opt/ai-buddy-mcp".into(),
             trace_frames: true,
             trace_hittest: true,
             trace_director: true,
@@ -1801,6 +1845,8 @@ mod tests {
             director_wake_secs: String::new(),
             harness: String::new(),
             harness_command: String::new(),
+            harness_auth_retry_secs: String::new(),
+            mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
             trace_director: false,
@@ -2936,6 +2982,21 @@ mod tests {
                 ..SettingsPatch::default()
             }
         ));
+    }
+
+    /// #447: a Development row is worth nothing unless the patch it writes
+    /// reaches the file `dev_flags::seed` reads. The path is trimmed for the
+    /// same reason the Harness command line is — a pasted line carries space.
+    #[test]
+    fn the_harness_knobs_round_trip_through_a_patch() {
+        let mut patch = SettingsPatch::default();
+        assert!(patch.set_text(TextField::HarnessAuthRetrySecs, "5"));
+        assert!(patch.set_text(TextField::McpBin, "  /tmp/ai-buddy-mcp  "));
+
+        let mut settings = Settings::default();
+        settings.apply(patch);
+        assert_eq!(settings.harness_auth_retry_secs, "5");
+        assert_eq!(settings.mcp_bin, "/tmp/ai-buddy-mcp");
     }
 
     /// The row is the Director tab's, and the window fills it from the same

@@ -35,6 +35,9 @@ pub use crate::acp_wire::PermissionAsk;
 pub(crate) const VAR: &str = "AI_BUDDY_HARNESS";
 /// Where the stdio MCP server binary is, when it is not beside the app.
 pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
+/// How long an unauthenticated Harness is left alone, in seconds. Named here
+/// with the two above so the Development row it owns can print it (#447).
+pub(crate) const AUTH_RETRY_SECS: &str = "AI_BUDDY_HARNESS_AUTH_RETRY_SECS";
 
 /// The one file the session survives a restart in.
 const SESSION_FILE: &str = "harness-session.json";
@@ -42,7 +45,16 @@ const SESSION_FILE: &str = "harness-session.json";
 /// How long a not-yet-authenticated Harness is left alone before `session/new`
 /// is tried again. Long enough not to hammer it, short enough that a user who
 /// runs the login command sees the buddy pick it up without a restart.
+///
+/// The default the Development row's blank means. A test that has to watch the
+/// retry cannot wait a minute for it, and neither can a smoke run (#447).
 const AUTH_RETRY: Duration = Duration::from_secs(60);
+
+/// What an empty auth-retry field means, in seconds. `model`'s placeholders
+/// are the same idea for the Completer limits.
+pub(crate) fn auth_retry_placeholder() -> String {
+    AUTH_RETRY.as_secs().to_string()
+}
 
 /// Respawn backoff after a wake the child could not serve: doubles from the
 /// first up to the cap, so a missing binary costs one attempt every five
@@ -320,7 +332,8 @@ impl Session {
             forward,
             timeout: crate::dev_flags::director_timeout_secs()
                 .map_or(crate::model::TIMEOUT, Duration::from_secs),
-            auth_retry: AUTH_RETRY,
+            auth_retry: crate::dev_flags::harness_auth_retry_secs()
+                .map_or(AUTH_RETRY, Duration::from_secs),
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
@@ -1194,15 +1207,22 @@ fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
 
 /// The stdio MCP server to hand the session, when one can be launched.
 ///
-/// `AI_BUDDY_MCP_BIN`, else a sidecar beside the app, else the app binary
-/// re-executed as its own server (#497).
+/// The Development row or `AI_BUDDY_MCP_BIN`, else a sidecar beside the app,
+/// else the app binary re-executed as its own server (#497).
+///
+/// Read here rather than at construction, so a path typed in the window is the
+/// one the next attach hands over (#447). `AI_BUDDY_MCP_BIN` still outranks
+/// the file; `dev_flags` holds that decision for every row.
 fn mcp_stdio() -> Option<McpLaunch> {
-    let env_bin = std::env::var_os(MCP_BIN).map(PathBuf::from);
-    mcp_launch(env_bin.as_deref(), std::env::current_exe().ok()?.as_path())
+    let configured = crate::dev_flags::mcp_bin();
+    mcp_launch(
+        configured.as_deref(),
+        std::env::current_exe().ok()?.as_path(),
+    )
 }
 
-fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
-    if let Some(path) = env_bin.filter(|path| path.is_file()) {
+fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
+    if let Some(path) = configured.filter(|path| path.is_file()) {
         return Some(McpLaunch {
             path: path.to_path_buf(),
             args: Vec::new(),
@@ -1220,9 +1240,9 @@ fn mcp_launch(env_bin: Option<&Path>, current_exe: &Path) -> Option<McpLaunch> {
             args: Vec::new(),
         });
     }
-    // Sibling / env still win; this is how `cargo run` and a bundle with no
-    // sidecar still hand the Harness a server. The loopback server above is
-    // what a Harness that can take it gets instead.
+    // Sibling / configured path still win; this is how `cargo run` and a bundle
+    // with no sidecar still hand the Harness a server. The loopback server
+    // above is what a Harness that can take it gets instead.
     (current_exe.file_stem()? == "ai-buddy").then(|| McpLaunch {
         path: current_exe.to_path_buf(),
         args: vec!["--mcp-stdio".into()],
