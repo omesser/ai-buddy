@@ -838,9 +838,56 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
         for (tab_index, tab_def) in description.tabs.iter().enumerate() {
             let mut y = display_top + MARGIN;
+            let mut section_index = 0;
 
             for section in tab_def.sections.iter() {
                 y += SECTION_GAP;
+
+                let heading_hwnd = CreateWindowExA(
+                    0,
+                    c"STATIC".as_ptr() as *const u8,
+                    CString::new(section.heading.as_str()).unwrap().as_ptr() as *const u8,
+                    WS_CHILD | WS_VISIBLE | SS_LEFT,
+                    display_left,
+                    y,
+                    FIELD_WIDTH,
+                    LABEL_HEIGHT,
+                    parent,
+                    ptr::null_mut(),
+                    GetModuleHandleA(ptr::null()),
+                    ptr::null_mut(),
+                );
+                SendMessageA(heading_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                window.controls.borrow_mut().insert(
+                    format!("section_heading_{}_{}", tab_index, section_index),
+                    Control::Label(heading_hwnd, tab_index),
+                );
+                y += LABEL_HEIGHT + HINT_GAP;
+
+                if let Some(comment_text) = &section.comment {
+                    let comment_hwnd = CreateWindowExA(
+                        0,
+                        c"STATIC".as_ptr() as *const u8,
+                        CString::new(comment_text.as_str()).unwrap().as_ptr() as *const u8,
+                        WS_CHILD | WS_VISIBLE | SS_LEFT,
+                        display_left,
+                        y,
+                        FIELD_WIDTH,
+                        LABEL_HEIGHT * 2,
+                        parent,
+                        ptr::null_mut(),
+                        GetModuleHandleA(ptr::null()),
+                        ptr::null_mut(),
+                    );
+                    SendMessageA(comment_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+                    window.controls.borrow_mut().insert(
+                        format!("section_comment_{}_{}", tab_index, section_index),
+                        Control::Label(comment_hwnd, tab_index),
+                    );
+                    y += LABEL_HEIGHT * 2 + HINT_GAP;
+                }
+
+                section_index += 1;
 
                 for row in &section.rows {
                     match row {
