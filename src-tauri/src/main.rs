@@ -1651,7 +1651,7 @@ fn apply_menu_action(
         menu::MenuAction::OpenMemory => {
             let _ = platform::open_path(&memory::shared_path());
         }
-        menu::MenuAction::OpenSettings => show_settings(app),
+        menu::MenuAction::OpenSettings => show_settings(app.clone()),
         menu::MenuAction::Quit => quit_now(),
     }
 }
@@ -2275,7 +2275,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
     let app_handle = app.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
-            show_settings(&app_handle);
+            show_settings(app_handle.clone());
         }
     });
 
@@ -2316,7 +2316,8 @@ fn main() {
             chat_prompt,
             chat_ready,
             permission_answer,
-            harness_login
+            harness_login,
+            show_settings
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
@@ -2572,7 +2573,7 @@ fn main() {
             // Dev/test hook: open settings immediately if AI_BUDDY_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.
             if model::env_switch("AI_BUDDY_OPEN_SETTINGS").unwrap_or(false) {
-                show_settings(app.handle());
+                show_settings(app.handle().clone());
             }
 
             let tray = {
