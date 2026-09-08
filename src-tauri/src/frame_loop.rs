@@ -1068,6 +1068,25 @@ pub(crate) fn run_frame_loop(
                 fullscreen_frontmost: fullscreen_frontmost(&rects, &displays.frames),
             };
 
+            // Compute visibility before instance processing so scheduler::mode gets
+            // real visibility, not hardcoded true. #183.
+            let presence = rules
+                .lock()
+                .map(|mut rules| {
+                    if let Some(change) = rules.update(desktop) {
+                        eprintln!(
+                            "presence: {} over {}ms",
+                            if change.visible { "shown" } else { "hidden" },
+                            change.fade_ms,
+                        );
+                    }
+                    rules.presence()
+                })
+                .unwrap_or(Change {
+                    visible,
+                    fade_ms: 0,
+                });
+
             // Where each Instance ends up, in the space every display shares.
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
 
@@ -1289,8 +1308,9 @@ pub(crate) fn run_frame_loop(
                 // (c) idle_ms is accruing toward sleep (Grounded/Perched, not Asleep yet)
                 // #183 Architect review.
                 let behavior_playing = frame.playing_behavior.is_some();
-                let needs_active_for_motion = scheduler::mode(&frame, true, behavior_playing)
-                    == scheduler::ScheduleMode::Active;
+                let needs_active_for_motion =
+                    scheduler::mode(&frame, presence.visible, behavior_playing)
+                        == scheduler::ScheduleMode::Active;
 
                 let needs_active_for_animation =
                     if let Some(character) = characters.get(instance.character_name()) {
@@ -1641,30 +1661,8 @@ pub(crate) fn run_frame_loop(
 
             assembler.poll_fast(riding);
 
-            // The log is what is silent on almost every tick, not the
-            // renderer: only a change is worth a line, and a fullscreen
-            // application held for an hour is one of them rather than one an
-            // Engine tick.
-            let presence = rules
-                .lock()
-                .map(|mut rules| {
-                    if let Some(change) = rules.update(desktop) {
-                        // Unconditional, unlike the traces above, because it is
-                        // rare — a handful of lines in a session — and because
-                        // whether a rule fired is the first thing anyone
-                        // checking hiding by hand needs to know.
-                        eprintln!(
-                            "presence: {} over {}ms",
-                            if change.visible { "shown" } else { "hidden" },
-                            change.fade_ms,
-                        );
-                    }
-                    rules.presence()
-                })
-                .unwrap_or(Change {
-                    visible,
-                    fade_ms: 0,
-                });
+            // Visibility was already computed before the instance loop (so
+            // scheduler::mode gets real visibility). Use it here.
 
             // A display can be plugged in, unplugged or rearranged while the
             // app runs, and every display needs its overlay. Posted rather than

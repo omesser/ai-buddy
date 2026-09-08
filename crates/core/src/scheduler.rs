@@ -3,8 +3,13 @@
 //! The frame loop runs at 16ms when the sprite needs it — Grab, Throw, fall,
 //! walk, any playing Animation, multi-frame idle/sleep art, or sleep-after
 //! accrual — and blocks on `recv()` when it does not: single-frame still art,
-//! already asleep, or hidden. The saving is bounded to the deep-idle case,
-//! from 60 wakeups/s to zero; Director and activity sensing still wake.
+//! already asleep, or hidden.
+//!
+//! **Deep-idle savings:** With shipped Characters' multi-frame looping
+//! idle/sleep animations, visible buddies almost never reach deep-idle (block
+//! on recv). The CPU win is primarily when **Hidden** — a fullscreen app, a
+//! sleep rule, or DND. Optional future: duty-cycle the animation so visible
+//! idle buddies can also deep-idle between frames.
 //!
 //! Idle mode predicate: visible sprite with Grounded/Perched state runs Active
 //! until truly still (animation settled, sleep-after complete). Active ensures
