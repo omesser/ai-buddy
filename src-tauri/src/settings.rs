@@ -1291,6 +1291,10 @@ pub struct Settings {
     pub use_accessibility: bool,
     /// Use Screen Recording where the OS has granted it. Off does not revoke TCC.
     pub use_screen_recording: bool,
+    /// Whether the first-run gesture tour has been shown. Once only, persisted
+    /// per-app rather than per-Instance: a second buddy spawned later sees
+    /// this flag set.
+    pub first_run_tour_shown: bool,
 }
 
 impl Default for Settings {
@@ -1323,6 +1327,7 @@ impl Default for Settings {
             capturable: true,
             use_accessibility: false,
             use_screen_recording: false,
+            first_run_tour_shown: false,
         }
     }
 }

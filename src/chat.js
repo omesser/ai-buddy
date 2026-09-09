@@ -626,6 +626,18 @@ async function start() {
     { target: chat.label },
   );
 
+  await listen(
+    "first-run-tour",
+    () => {
+      note(
+        "Double-click me any time to open this window.\n\n" +
+          "Click once to Poke and get a reaction.\n\n" +
+          "Right-click to open the menu."
+      );
+    },
+    { target: chat.label },
+  );
+
   // Both listeners are up, so the state as it stands can be asked for. The bar
   // is pushed on change and a window opened between two of them would sit at
   // dashes until the sprite next did something different.

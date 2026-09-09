@@ -1674,6 +1674,13 @@ fn apply_menu_action(
             let _ = platform::open_path(&memory::shared_path());
         }
         menu::MenuAction::OpenSettings => show_settings(app.clone()),
+        menu::MenuAction::Summon => {
+            if let Some(instance) = roster.get(instance_id) {
+                let title = instance.name.clone();
+                open_chat(app, instance_id, title);
+                eprintln!("menu: Summon");
+            }
+        }
         menu::MenuAction::Quit => quit_now(),
     }
 }

@@ -156,6 +156,8 @@ pub(crate) fn run_frame_loop(
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
+        let mut time_since_launch = Duration::ZERO;
+        let mut tour_triggered = false;
 
         loop {
             thread::sleep(ENGINE_TICK);
@@ -933,6 +935,44 @@ pub(crate) fn run_frame_loop(
             // most of a tick.
             let elapsed = Duration::from_millis(u64::from(elapsed_ms));
             since_sense += elapsed;
+            time_since_launch += elapsed;
+
+            // First-run tour: 25 seconds after launch, open Chat for the first
+            // Instance and show the gesture instructions. Only once, only if
+            // the user has not already Summoned, and only if Do Not Disturb is off.
+            if !tour_triggered && time_since_launch.as_secs() >= 25 && lives.first().is_some() {
+                let should_show_tour = {
+                    let settings_guard = settings.lock();
+                    settings_guard
+                        .as_ref()
+                        .map_or(false, |s| !s.first_run_tour_shown && !s.do_not_disturb)
+                };
+
+                if should_show_tour {
+                    if let Some(first_live) = lives.first() {
+                        let already_opened = app
+                            .get_webview_window(&chat_label(&first_live.id))
+                            .is_some();
+
+                        if !already_opened {
+                            let title = roster
+                                .get(&first_live.id)
+                                .map(|instance| instance.name.clone())
+                                .unwrap_or_else(|| first_live.character.name.clone());
+
+                            open_chat(&app, &first_live.id, title);
+                            let _ = app.emit_to(chat_label(&first_live.id), "first-run-tour", ());
+
+                            if let Ok(mut settings_guard) = settings.lock() {
+                                settings_guard.first_run_tour_shown = true;
+                                let _ = settings_guard.save(&settings_path);
+                            }
+                            eprintln!("tour: first-run gesture tour shown");
+                        }
+                    }
+                }
+                tour_triggered = true;
+            }
 
             // One reading of the user for every Instance, taken before any of
             // them is ticked so that they all wake against the same desktop. A
