@@ -16,7 +16,7 @@ serde = {version = "1", features = ["derive"]}
 serde_json = "1"
 # Known OS data directories. Not a window-server binding: Memory lives in
 # Application Support so a reboot does not wipe what the buddies know. #18.
-dirs = "6"
+dirs = "7"
 
 # Local civil time for the Free tier. One `localtime_r` call. Not a
 # window-server binding; Windows is out of v1 and does not use this.
