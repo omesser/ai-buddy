@@ -86,6 +86,8 @@ Apple Silicon. The Release ships a `.dmg`. Open it and copy `ai-buddy` to Applic
 
 The build is ad-hoc signed, not notarized, so Gatekeeper will warn on the first open. Double-click the app, dismiss the dialog, then System Settings → Privacy & Security → Open Anyway. Note the button is time-limited after the blocked launch. Notarization is a follow-up.
 
+The same missing signature costs two Keychain dialogs at launch — "ai-buddy wants to use your confidential information stored in ai-buddy" — for anyone who saved a Director API key. An ad-hoc signature has no identity, so macOS records the app in the key's access list as a hash of that exact build, and the next release is a different hash and a stranger to its own key. Always Allow answers both, and holds until the next update replaces the hash. Exporting `AI_BUDDY_DIRECTOR_API_KEY` keeps the Keychain out of the launch entirely. A stable signing identity is what ends it ([#283](https://github.com/omesser/ai-buddy/issues/283)).
+
 ### Linux
 
 The Release ships an AppImage and a `.deb` (x86_64).
