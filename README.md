@@ -160,10 +160,10 @@ How they handle session differs, and changes what ai-buddy can do with them:
 |---|---|---|---|---|---|
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
-| `opencode` | yes | yes | yes | http | Login with opencode |
+| `opencode` | yes | yes, same session id | yes | http | Login with opencode |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude` and `opencode` set `agentCapabilities.mcpCapabilities.http` and get the loopback URL; `hermes` omits it and gets the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). A probe does not bind that listener, so it still hands `opencode` the `--mcp-stdio` shim.
+- † What `initialize` advertised: `claude` and `opencode` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` omits it and gets the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). A probe does not bind that listener, so it still hands `opencode` the `--mcp-stdio` shim.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP
