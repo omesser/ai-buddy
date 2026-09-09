@@ -283,9 +283,11 @@ _Avoid_: Reasoning pane, thoughts, chain of thought, transcript
 The window a Summon opens: where the user types to the attached Harness and
 reads the answers too long for a Speech bubble. Belongs to the Character
 Instance that was Summoned, and is drawn by ai-buddy rather than by the
-Harness. #17, ADR-0010.
-_Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
-design, not the window)
+Harness. The term for internal writing — code, ADRs, `DESIGN.md`. User-facing
+copy says "chat window", which is friendlier and names the same thing. #17,
+ADR-0010.
+_Avoid_: console, terminal, prompt box, Chat UI (its visual design, not the
+window); Chat surface in user-facing copy, Chat window in internal writing
 
 **Chat UI**:
 A named, swappable visual design for the Chat surface — palette, type scale and

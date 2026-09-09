@@ -365,8 +365,8 @@ mod tests {
     }
 
     /// A pair is spent for the whole run of clicks, not re-armed by the next
-    /// one. Drumming on the sprite would otherwise open a chat surface every
-    /// second click, and #17 makes that a window each time.
+    /// one. Drumming on the sprite would otherwise open the Chat surface every
+    /// second click, and each one of those is a window.
     #[test]
     fn drumming_on_the_sprite_summons_once() {
         let mut pointer = Pointer::default();

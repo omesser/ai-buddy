@@ -109,7 +109,7 @@ const HIDE_ID: &str = "hide";
 
 /// The id of the Chat row.
 ///
-/// It has one despite being disabled, so that enabling it when #17 lands is a
+/// It has one despite being disabled, so that wiring the row (#17) is a
 /// change to one flag rather than to the shape of the menu.
 const CHAT_ID: &str = "chat";
 
@@ -161,9 +161,10 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     let mut entries = Vec::new();
     let mut actions = HashMap::new();
 
-    // Chat… — #17. Disabled, and present anyway: the menu is where the feature
-    // will be, and an absent row would move everything under it on the day it
-    // arrives. No action is registered, so a click cannot do anything.
+    // Chat… — present and disabled: Summon is the only way into the Chat
+    // surface today, and an absent row would move everything under it on the
+    // day this one is wired (#17). No action is registered, so a click cannot
+    // do anything.
     entries.push(MenuEntry::Item {
         id: CHAT_ID.to_string(),
         label: "Chat…".to_string(),
@@ -536,8 +537,8 @@ mod tests {
         })
     }
 
-    /// The menu says what exists. Chat is in it before #17 ships, because the
-    /// row moving later is worse than a row that cannot be clicked yet.
+    /// The menu says what exists. Chat is in it and cannot be clicked, because
+    /// the row moving later is worse than a row that cannot be clicked yet.
     #[test]
     fn chat_is_listed_and_disabled() {
         let description = describe(snapshot(&[], "bmo", false));
@@ -549,7 +550,7 @@ mod tests {
                 label: "Chat…".to_string(),
                 enabled: false,
             }),
-            "Chat is present and disabled until #17"
+            "Chat is present and disabled until the row is wired (#17)"
         );
         assert!(
             !description.actions.contains_key("chat"),
