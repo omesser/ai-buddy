@@ -2,7 +2,7 @@
 
 A desktop mascot that lives on your screen — and acts in character.
 
-Pick a Character with an authored personality. The Director chooses idle Behaviors and short spoken lines to match. No chat window. It also perches on windows, reacts to gestures, and stays out of your way while you work.
+Pick a Character with an authored personality. The Director chooses idle Behaviors and short spoken lines to match. It also perches on windows, reacts to gestures, and stays out of your way while you work.
 
 <p align="center">
   <img src="./branding/logo-art/logo-512.png" width="200" alt="Buddy Bot" />
@@ -15,7 +15,7 @@ Pick a Character with an authored personality. The Director chooses idle Behavio
 
 ## What It Does
 
-- **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue — no chat window, no prompting. Works offline with Static weights; optionally connect a Completer (API key or local model) for more variety.
+- **Personality-driven AI.** Each Character ships with a `personality.txt`. The Director uses it to pick idle Behaviors and short dialogue. Works offline with Static weights; optionally connect a Completer (API key or local model) for more variety.
 - **Perches on windows.** Falls, lands on a window's top edge, rides a slow drag, drops when you yank or close the window.
 - **Reacts to gestures.** Poke, pick up, throw — it arcs, lands, and keeps going.
 - **Stays out of your way.** Fades for fullscreen, hides on Control-Option-Command-B. Appears in screenshots by default; opt-out available in settings.
@@ -217,7 +217,7 @@ What works today on each OS. Degraded and stub mean reduced or no-op — support
 
 **Design and decisions:**
 - [CONTEXT.md](./CONTEXT.md) — vocabulary
-- [DESIGN.md](./DESIGN.md) — design decisions ([chat mockups](https://omesser.github.io/ai-buddy/chat-mockups.html) are speculative; chat UI is not shipped — [#17](https://github.com/omesser/ai-buddy/issues/17))
+- [DESIGN.md](./DESIGN.md) — design decisions (the chat window ships; the [chat mockups](https://omesser.github.io/ai-buddy/chat-mockups.html) are a Dated page: a frozen proposal, not what ships. [#17](https://github.com/omesser/ai-buddy/issues/17) tracks what is left)
 - [docs/SPEC.md](./docs/SPEC.md) — v1 scope
 - [docs/adr/](./docs/adr/) — ADRs
 

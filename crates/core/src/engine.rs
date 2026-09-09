@@ -57,8 +57,8 @@ pub enum Verb {
     Poke,
     /// A right-click on the sprite. Opens the same menu the tray icon opens.
     Menu,
-    /// A double-click on the sprite. Opens the chat surface, which is #17;
-    /// until it exists the verb is accepted and shows nothing.
+    /// A double-click on the sprite. Opens the Chat surface, which the Shell
+    /// draws.
     ///
     /// Accepted now rather than added later because the verb set is fixed at
     /// five: every verb is a tax on every Character that will ever exist, and a

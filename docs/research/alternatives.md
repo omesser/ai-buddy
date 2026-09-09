@@ -37,7 +37,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
 | AI-powered behavior | ✅ (Director + personality.txt + spoken lines) | ❌ | ❌ | ❌ (deterministic XML) | ✅ (OpenAI chat window) | ✅ (plugin SDK + MCP say) | ✅ (QWEN 2.5 1.5b) |
-| Personality-driven idle AI (no chat window) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Personality-driven idle AI (unprompted) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Authored personality file | ✅ (personality.txt) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Spoken lines / talk bubble | ✅ (Director with Completer) | ❌ | ❌ | ❌ | ❌ | ✅ (MCP say, plugin-driven) | ❌ |
 | Idle life (model-free) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
