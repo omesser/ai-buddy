@@ -69,4 +69,4 @@ nothing — and a Harness that spawns it anyway is told so on every call. That i
 the same answer as before for a user with no app open, said out loud.
 
 Reversing this means a descriptor file with its permissions, staleness and
-cleanup, or accepting that a stdio-only Harness has no working tools.
+cleanup, or accepting that a Harness with no HTTP MCP has no working tools.
