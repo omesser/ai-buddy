@@ -83,6 +83,7 @@ body {
    of shrinking discs, and gives up the glance they bought — the argument is in
    ADR-0013's "One bubble for both states". */
 .bubble:not([data-mode="speech"]) .bubble-content,
+.bubble:not([data-mode="speech"]) .bubble-more,
 .bubble:not([data-mode="thinking"]) .thinking-dots {
   display: none;
 }

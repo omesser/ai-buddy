@@ -19,6 +19,15 @@ import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
 const stage = document.getElementById("stage");
 
+// #547: whether this overlay can take a click that is not the art. macOS
+// hit-tests the rectangle the renderer reports (`overlay_hotspots`); X11 and
+// Windows carve the input region from the sprite's alpha mask alone, so a
+// control drawn above the head there would look clickable and hand the press
+// to the window behind it. A control that lies is worse than no control, so
+// the truncated bubble keeps its ellipsis and draws nothing. Union these
+// rectangles into `update_input_region` and this goes.
+const CLICKABLE_OFF_ART = navigator.userAgent.includes("Macintosh");
+
 // Every Character's art as data: URLs, keyed by Character name and fetched
 // once. Art, not state, and one entry however many Instances draw from it.
 let characters = {};
@@ -174,15 +183,13 @@ function createView(id) {
       view.bubbleContent.textContent = lines.join("\n");
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
-      bubble.toggleAttribute("data-more", truncated);
+      bubble.toggleAttribute("data-more", truncated && CLICKABLE_OFF_ART);
       show("speech");
     },
     hideSpeech: hide,
     showThinking() {
-      // The same box in the other mode. A control left over from the last line
-      // would sit under the ellipsis and offer the Chat surface a turn that is
-      // no longer on screen.
-      bubble.removeAttribute("data-more");
+      // The same box in the other mode. main.css hides the control outside
+      // speech, so the attribute left over from the last line draws nothing.
       show("thinking");
     },
     hideThinking: hide,
@@ -198,13 +205,22 @@ function positionBubble(view, spriteRect, displayBounds) {
   view.bubble.style.top = `${pos.y}px`;
   view.bubble.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
 
-  // Read off the bubble's own placement rather than `getBoundingClientRect`,
-  // which would force a layout every frame the sprite moves. `offsetLeft` and
-  // `offsetTop` are relative to the bubble, which is the box just positioned.
-  view.hotspot = view.bubble.hasAttribute("data-more")
+  // Measured off the bubble just placed, so the offsets need no conversion —
+  // not because they are cheap. They force a layout exactly as
+  // `getBoundingClientRect` would, once per visible bubble per frame.
+  //
+  // `clientLeft` and `clientTop` are the bubble's 2px ring. An offset is
+  // measured from the offsetParent's padding edge, so without the ring the
+  // rectangle sits 2px up and left of the control: the bottom rows of an 18px
+  // target would pass the click through to whatever is behind the overlay.
+  //
+  // The attribute first, so a bubble with no control costs no second layout;
+  // a width of zero then catches the control CSS is hiding anyway, which in
+  // thinking mode is the attribute the last speech turn left set.
+  view.hotspot = view.bubble.hasAttribute("data-more") && view.more.offsetWidth
     ? [
-        Math.round(pos.x) + view.more.offsetLeft,
-        Math.round(pos.y) + view.more.offsetTop,
+        Math.round(pos.x) + view.bubble.clientLeft + view.more.offsetLeft,
+        Math.round(pos.y) + view.bubble.clientTop + view.more.offsetTop,
         view.more.offsetWidth,
         view.more.offsetHeight,
       ]

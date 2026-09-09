@@ -1578,11 +1578,13 @@ pub(crate) fn run_frame_loop(
             // `cursor_at` is in the shared point space, which is that space
             // plus the display's origin.
             //
-            // ponytail: macOS only in practice. X11 and Windows carve the input
-            // region from the sprite's alpha mask, so the window stops ignoring
-            // the cursor here but the region still ends at the art. Making it
-            // clickable there means unioning these rectangles into
-            // `update_input_region`, in code this machine cannot compile.
+            // ponytail: macOS only. X11 and Windows carve the input region
+            // from the sprite's alpha mask, so the window would stop ignoring
+            // the cursor here while the region still ended at the art, and the
+            // click would fall through. src/main.js draws no control on those
+            // platforms rather than one that lies, so no rectangle arrives and
+            // this reads empty. Making it work means unioning these rectangles
+            // into `update_input_region`, in code this machine cannot compile.
             let over_control = on_overlay.is_some_and(|index| {
                 displays.frames.get(index).is_some_and(|display| {
                     platform::over_overlay_hotspot(
