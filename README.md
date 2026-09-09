@@ -163,8 +163,33 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `opencode` | unverified | unverified | unverified | unverified | unverified |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised, not what a turn exercised: no probe run has yet found an `ai-buddy-mcp` binary, so no Harness has called the `speak` tool (#434).
+- † What `initialize` advertised: `claude` sets `agentCapabilities.mcpCapabilities.http` and gets the loopback URL; `hermes` omits it and gets the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026).
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
+
+### Harness ↔ MCP
+
+Two transports, two distinct axes:
+
+1. **ACP** (ai-buddy ↔ Harness): always stdio. How ai-buddy attaches to the Harness and prompts it.
+2. **MCP** (Harness → ai-buddy tools): How the Harness calls back so `speak` and sensing reach the buddy.
+
+**MCP transport** is gated by what the Harness advertises in ACP `initialize` → `agentCapabilities.mcpCapabilities.http`:
+- **true** → loopback HTTP URL + bearer token (ADR-0023, #491)
+- **omitted/false** → stdio MCP server entry; shim relays to same loopback endpoint (ADR-0026, #501)
+
+**Seven tools** from `crates/core/src/dispatch.rs`:
+
+| Tool | Category | What it does |
+|---|---|---|
+| `speak` | Expression | Make the Character speak dialogue |
+| `play_behavior` | Expression | Play a named Behavior |
+| `list_windows` | Sensing | List visible windows with bounds and owner |
+| `describe_screen` | Sensing | Describe screen (v1: window metadata only) |
+| `recall` | Memory | Read everything Memory holds |
+| `remember` | Memory | Write one fact under a heading |
+| `list_instances` | Identity | List Character Instances and their names |
+
+**Explicitly not served:** mouse/keyboard/Executor tools (ADR-0003). No click, no type, no input events by design.
 
 ## Platform Support
 
