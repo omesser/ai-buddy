@@ -11,6 +11,7 @@
 // thinking is the one thing drawn here that is not a line of the log, and
 // ADR-0025 says why it is a strip above the composer instead.
 
+import { composerPlaceholder } from "./chat-placeholder.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, statusCells } from "./chat-status.js";
 
@@ -238,7 +239,7 @@ function attached(opening) {
   empty.hidden = ready;
   line.disabled = !ready;
   send.disabled = !ready;
-  line.placeholder = ready ? `Ask ${opening.name}…` : "Nothing can answer yet";
+  line.placeholder = composerPlaceholder(opening);
 
   // Three modes: Harness landing (default), HTTP mode (no buttons), or ready.
   const landing = document.getElementById("landing");
@@ -429,7 +430,7 @@ function showWho(opening) {
     node.textContent = opening.character;
   }
   if (!line.disabled) {
-    line.placeholder = `Ask ${opening.name}…`;
+    line.placeholder = composerPlaceholder(opening);
   }
 }
 
