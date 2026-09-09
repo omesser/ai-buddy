@@ -459,13 +459,22 @@ fn run(
 /// SIGKILL the Harness's process group. `npx` grandchildren share that
 /// group; a direct `Child::kill` leaves them running.
 ///
+/// Never our own group. The child only leaves it once `own_interrupt` has
+/// taken Ctrl+C (`harness::apply_isolation`), and until then the group is
+/// ours: `--probe-harness` never installs that handler, so this SIGKILL used
+/// to take the probe down mid-shutdown — `end_turn` printed, exit code -9,
+/// and the shell that ran `scripts/probe-harness.sh` killed with it (#457).
+/// The same would happen in the app if the `ctrlc` handler failed to install.
+/// The caller's direct `Child::kill` still reaps the child; a grandchild that
+/// shares our group outlives us, which is the price of not killing ourselves.
+///
 /// On Windows, terminates the Job Object so grandchildren die too.
 pub(crate) fn kill_harness_tree(pid: u32) {
     #[cfg(unix)]
     {
         let pid = pid as libc::pid_t;
         let pgid = unsafe { libc::getpgid(pid) };
-        if pgid > 0 {
+        if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
             // SIGKILL, not SIGTERM: Claude's ACP adapter dumps
             // `Query closed before response received` on a polite
             // signal, which is the dump this isolation exists to avoid.

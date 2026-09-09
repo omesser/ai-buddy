@@ -27,10 +27,12 @@ Action Log and Chat surface.
 
 The wire is isolated so the frame loop never sees futures (ADR-0004).
 
-The launch table names four harnesses (`claude`, `codex`, `hermes`, `opencode`)
-and provides an escape hatch for any custom command. Harnesses earn verified
-standing once a turn has been smoked against them; `codex` is unverified until
-smoked.
+The launch table names five harnesses (`claude`, `codex`, `grok`, `hermes`,
+`opencode`) and provides an escape hatch for any custom command. Harnesses earn
+verified standing once a turn has been smoked against them, fresh and resumed;
+`codex` is unverified until smoked. A name in the table is a command line as
+much as a label, because a vendor's bare binary is usually its interactive TUI
+and its ACP mode a subcommand.
 
 One session per app lifetime, persisted across restarts when the Harness
 supports `loadSession`.
@@ -52,10 +54,10 @@ belongs to [ADR-0023](./0023-app-dispatches-its-own-tools.md): a Harness that
 can use the app's own server reaches the live Instances, and one that cannot is
 answered by a stub.
 
-Protocol-compatible harnesses not yet named (Grok Build, GitHub Copilot CLI,
-Gemini CLI) are reachable through the custom command and earn a named row once
-verified. Their always-approve or auto-approve flags are never passed by
-default — the Chat surface owns permissions.
+Protocol-compatible harnesses not yet named (GitHub Copilot CLI, Gemini CLI)
+are reachable through the custom command and earn a named row once verified.
+Their always-approve or auto-approve flags are never passed by default — the
+Chat surface owns permissions.
 
 ## Supersedes
 
