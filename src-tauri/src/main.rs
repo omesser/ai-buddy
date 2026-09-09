@@ -1160,7 +1160,7 @@ fn permission_answer(request: String, option: String) {
 #[tauri::command]
 fn select_harness(harness: String, state: tauri::State<'_, SettingsState>) -> Result<(), String> {
     // Validate that this is a known preset
-    if !["claude", "codex", "hermes", "opencode"].contains(&harness.as_str()) {
+    if !["claude", "codex", "grok", "hermes", "opencode"].contains(&harness.as_str()) {
         return Err(format!("unknown Harness preset: {harness}"));
     }
 
