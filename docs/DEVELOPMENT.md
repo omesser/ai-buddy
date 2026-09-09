@@ -97,9 +97,14 @@ node --test tests/*.test.js     # Renderer interpolation
 scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
 scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
+scripts/bench-rss.sh            # macOS: resident set over a run, per process
 ```
 
 Each checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
+
+`bench-rss.sh` measures rather than checks: it samples the app and its WebKit
+helpers and prints RSS and peak footprint. What the numbers came out as, and
+what they mean, is [docs/research/memory-rss-and-multi-monitor.md](research/memory-rss-and-multi-monitor.md).
 
 ### Manual Verification Checklist
 
