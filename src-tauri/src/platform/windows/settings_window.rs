@@ -10,7 +10,8 @@ use std::ffi::CString;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::core::BOOL;
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     ClientToScreen, EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, ScreenToClient,
     UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ, HMONITOR, MONITORINFO,
