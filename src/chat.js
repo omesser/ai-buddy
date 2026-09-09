@@ -222,39 +222,120 @@ function asked(ask) {
   return add(row);
 }
 
-// The login command the log last named, so re-asking `chat_opening` on every
-// send does not repeat it.
-let loginSaid = null;
-
 // Whether anything can answer, and what to say when nothing can.
 //
 // SPEC gives this window the job of explaining how to connect something
-// rather than failing, and the two reasons nothing can answer need different
-// sentences: never configured is a thing to attach, switched off is a thing to
-// turn back on. Both are fixed in Settings, and neither stops the buddy
-// moving. The composer is disabled rather than hidden, so the window reads as
-// waiting rather than as broken.
+// rather than failing, and four reasons nothing can answer need different
+// messages: never configured is a thing to attach, switched off is a thing to
+// turn back on, not signed in names the Harness and shows the login command,
+// and ready hides the empty state. The composer is disabled rather than
+// hidden, so the window reads as waiting rather than as broken.
 function attached(opening) {
-  const ready = opening.configured && opening.enabled;
+  const ready = opening.configured && opening.enabled && !opening.login;
+  const needsAuth = opening.configured && opening.enabled && opening.login;
+  const isHttpMode = opening.configured && !opening.harness_name;
+
   empty.hidden = ready;
   line.disabled = !ready;
   send.disabled = !ready;
   line.placeholder = ready ? `Ask ${opening.name}…` : "Nothing can answer yet";
 
-  // Which of the two states it is in, rather than which words to write: the
-  // copy is markup, and what to attach is not what to switch back on.
-  document.getElementById("empty-none").hidden = opening.configured;
-  document.getElementById("empty-off").hidden = !opening.configured;
+  // Three modes: Harness landing (default), HTTP mode (no buttons), or ready.
+  const landing = document.getElementById("landing");
+  const httpEmpty = document.getElementById("empty-http");
+  const httpOff = document.getElementById("empty-http-off");
 
-  // The third state: attached, and the Harness has nobody signed in. Said
-  // once per command, in the log, because the fix is a command for the user's
-  // own terminal and never a prompt of ours (ADR-0018).
-  const login = opening.harness?.login;
-  if (login && login !== loginSaid) {
-    loginSaid = login;
-    note(`${opening.name} is attached but not signed in. Run \`${login}\` in a terminal.`);
+  // Hide all empty state divs first
+  landing.hidden = true;
+  httpEmpty.hidden = true;
+  httpOff.hidden = true;
+
+  if (ready) {
+    // Connected and ready: nothing to show
+    return true;
   }
+
+  if (isHttpMode) {
+    // HTTP Completer mode: show HTTP-specific empty states, no Harness buttons
+    if (opening.enabled) {
+      httpEmpty.hidden = false;
+    } else {
+      httpOff.hidden = false;
+    }
+  } else {
+    // Harness mode or no Completer: show unified landing with buttons
+    landing.hidden = false;
+
+    const title = document.getElementById("landing-title");
+    const lede = document.getElementById("landing-lede");
+    const command = document.getElementById("landing-command");
+    const hint = document.getElementById("landing-hint");
+
+    if (needsAuth) {
+      // Needs login variant
+      const displayNames = {
+        claude: "Claude Code",
+        codex: "Codex",
+        grok: "Grok",
+        opencode: "OpenCode",
+        hermes: "Hermes",
+      };
+      const harnessName = displayNames[opening.harness_name] || opening.harness_name || "The Harness";
+      title.textContent = `${harnessName} needs login`;
+      lede.textContent = `${harnessName} needs login, or you can switch to a different Harness:`;
+      command.textContent = opening.login;
+      command.hidden = false;
+      hint.textContent = "Or run this in your terminal:";
+      hint.hidden = false;
+    } else if (!opening.configured) {
+      // Not configured
+      title.textContent = "Connect a Harness to get started";
+      lede.textContent = "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.";
+      command.hidden = true;
+      hint.hidden = true;
+    } else {
+      // Switched off
+      title.textContent = "Chat is switched off";
+      lede.textContent = "Turn AI back on in Settings, or connect a Harness below.";
+      command.hidden = true;
+      hint.hidden = true;
+    }
+  }
+
   return ready;
+}
+
+// Connect button clicks: spawn the login command for that Harness.
+// The Harness authenticates itself; ai-buddy never collects a credential.
+for (const btn of document.querySelectorAll(".connect-btn")) {
+  btn.addEventListener("click", () => {
+    const harness = btn.dataset.harness;
+    const label = btn.querySelector(".connect-label").textContent;
+
+    // First, select the Harness as the Completer source (persists to Settings)
+    invoke("select_harness", { harness })
+      .then(() => {
+        // Then spawn the login command
+        return invoke("harness_login", { harness });
+      })
+      .then(() => {
+        note(`Starting ${label} login. Sign in through the ${label} window.`);
+      })
+      .catch((why) => {
+        console.error(`connect failed:`, why);
+        note(`Could not connect to ${label}: ${why}.`);
+      });
+  });
+}
+
+// "More options in Settings" button: open Settings window.
+const settingsBtn = document.getElementById("settings-btn");
+if (settingsBtn) {
+  settingsBtn.addEventListener("click", () => {
+    invoke("show_settings").catch((err) => {
+      console.error("Failed to open Settings:", err);
+    });
+  });
 }
 
 

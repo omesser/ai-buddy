@@ -561,10 +561,13 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux).
-/// SPEC gives the webview to the sprite and chat, so this is opened on the
-/// toolkit main thread where the native objects live.
-fn show_settings(app: &tauri::AppHandle) {
+/// Open the Settings window.
+///
+/// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
+/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
+/// this is opened on the toolkit main thread where the native objects live.
+#[tauri::command]
+fn show_settings(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
         eprintln!("settings: opened before the shell was ready");
         return;
@@ -979,6 +982,12 @@ struct ChatOpening {
     /// The HTTP Completer in force: model and host, never a credential.
     model: String,
     host: String,
+    /// A Harness is attached but not signed in: the command that fixes it,
+    /// for the user's own terminal. The third state ADR-0010 names.
+    login: Option<String>,
+    /// Which Harness is attached, when one is. Used to name it in the fourth
+    /// empty state (needs authentication).
+    harness_name: Option<String>,
     /// The Character's own Personality Prompt, frozen: the Prompt tab shows it
     /// for reference above the layer the user may write (ADR-0012). Empty when
     /// the package shipped none.
@@ -1027,6 +1036,14 @@ fn chat_opening_from(
         harness: chat_harness(inspect),
         model: inspect.model.clone(),
         host: inspect.host.clone(),
+        login: inspect
+            .harness
+            .as_ref()
+            .and_then(|attached| attached.login.clone()),
+        harness_name: inspect
+            .harness
+            .as_ref()
+            .map(|attached| attached.name.clone()),
         personality: personality.to_string(),
         instance_prompt: instance.prompt().to_string(),
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
@@ -1091,6 +1108,14 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .as_ref()
             .map(|read| read.host.clone())
             .unwrap_or_default(),
+        login: inspect
+            .as_ref()
+            .and_then(|read| read.harness.as_ref())
+            .and_then(|attached| attached.login.clone()),
+        harness_name: inspect
+            .as_ref()
+            .and_then(|read| read.harness.as_ref())
+            .map(|attached| attached.name.clone()),
         instance_prompt,
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
@@ -1124,6 +1149,65 @@ fn permission_answer(request: String, option: String) {
     if let Some(session) = harness::attached() {
         session.answer_permission(&request, &option);
     }
+}
+
+/// Select a Harness as the Completer source, persisting to Settings.
+///
+/// This configures the product to use the named Harness (claude, codex,
+/// hermes, opencode) as the Completer. The Harness is then attached and will
+/// authenticate through its own flow. This is step 1 of connecting from the
+/// Chat UI; step 2 is calling `harness_login` to spawn the auth command.
+#[tauri::command]
+fn select_harness(harness: String, state: tauri::State<'_, SettingsState>) -> Result<(), String> {
+    // Validate that this is a known preset
+    if !["claude", "codex", "grok", "hermes", "opencode"].contains(&harness.as_str()) {
+        return Err(format!("unknown Harness preset: {harness}"));
+    }
+
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    let mut patch = settings::SettingsPatch::default();
+    patch.set_text(settings::TextField::Harness, &harness);
+
+    settings.apply(patch);
+    settings.save(&state.path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Spawn the login command for a named Harness, detached.
+///
+/// The command runs in the user's own terminal or spawns its own auth flow —
+/// ai-buddy never collects a credential (ADR-0010). Returns `Err` when the
+/// Harness name is unknown or the spawn fails.
+#[tauri::command]
+fn harness_login(harness: String) -> Result<(), String> {
+    let command = match harness.as_str() {
+        "claude" => vec!["claude", "/login"],
+        "codex" => vec!["codex", "login"],
+        "grok" => vec!["grok", "login"],
+        "hermes" => vec!["hermes", "login"],
+        "opencode" => vec!["opencode", "login"],
+        _ => return Err(format!("unknown Harness: {harness}")),
+    };
+
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(command[0])
+            .args(&command[1..])
+            .spawn()
+            .map_err(|why| format!("could not start {}: {why}", command[0]))?;
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, spawn in a new console so the user sees the auth flow
+        std::process::Command::new("cmd")
+            .args(["/c", "start", command[0]])
+            .args(&command[1..])
+            .spawn()
+            .map_err(|why| format!("could not start {}: {why}", command[0]))?;
+    }
+
+    Ok(())
 }
 
 /// Push a full opening to an already-open Chat surface, without creating one.
@@ -1589,7 +1673,7 @@ fn apply_menu_action(
         menu::MenuAction::OpenMemory => {
             let _ = platform::open_path(&memory::shared_path());
         }
-        menu::MenuAction::OpenSettings => show_settings(app),
+        menu::MenuAction::OpenSettings => show_settings(app.clone()),
         menu::MenuAction::Quit => quit_now(),
     }
 }
@@ -2213,7 +2297,7 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
     let app_handle = app.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
-            show_settings(&app_handle);
+            show_settings(app_handle.clone());
         }
     });
 
@@ -2253,7 +2337,10 @@ fn main() {
             chat_send,
             chat_prompt,
             chat_ready,
-            permission_answer
+            permission_answer,
+            select_harness,
+            harness_login,
+            show_settings
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
@@ -2509,7 +2596,7 @@ fn main() {
             // Dev/test hook: open settings immediately if AI_BUDDY_OPEN_SETTINGS=1.
             // For verify/smoke scripts that need the settings window on launch.
             if model::env_switch("AI_BUDDY_OPEN_SETTINGS").unwrap_or(false) {
-                show_settings(app.handle());
+                show_settings(app.handle().clone());
             }
 
             let tray = {

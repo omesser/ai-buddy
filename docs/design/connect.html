@@ -1,0 +1,501 @@
+<!doctype html>
+<!--
+  The Harness connect flow for omesser/ai-buddy#459: a unified landing page
+  for Chat empty states (not configured, switched off, needs login) with
+  branded connect buttons for the main Harnesses.
+
+  A Dated page under ADR-0011: hand-written and frozen at its date. Design
+  approved 2026-09-08. Self-contained on purpose: no font link, no remote
+  images, inline SVG only. The system font stack is the design — the chat's
+  CSP blocks Google Fonts, and this is the same constraint.
+
+  Four main Harnesses with REAL brand marks:
+  - Claude: from simple-icons/simple-icons (Claude mark, official #D97757)
+  - Codex: OpenAI mark from simple-icons v15 before removal (black/#000000)
+  - Grok: xAI/SpaceXAI wordmark (pending official asset, using "Grok" text for now)
+  - OpenCode: from anomalyco/opencode official identity (#000000)
+
+  Marks are trademarks; we do not claim affiliation with Anthropic, OpenAI,
+  xAI, SpaceXAI, or OpenCode.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Connect Flow — Real Brand Marks</title>
+<style>
+  :root {
+    --paper: #F4F5F8;
+    --paper-2: #E9EBF1;
+    --ink: #1D2027;
+    --ink-2: #4A5060;
+    --ink-3: #8A90A0;
+    --line: #D3D7E0;
+    --accent: #2C8C7C;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+
+    /* Brand accent colors (light theme) */
+    --claude-accent: #D97757;
+    --codex-accent: #10A37F;
+    --grok-accent: #536A7A;
+    --opencode-accent: #5B7FDB;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171A22;
+      --paper-2: #1F232D;
+      --ink: #EEF0F5;
+      --ink-2: #B4BAC8;
+      --ink-3: #7B8294;
+      --line: #313746;
+      --accent: #5CC9B5;
+      color-scheme: dark;
+
+      /* Brand accent colors (dark theme) */
+      --claude-accent: #E8A78A;
+      --codex-accent: #26C399;
+      --grok-accent: #7A8FA3;
+      --opencode-accent: #7A9EF0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #171A22;
+    --paper-2: #1F232D;
+    --ink: #EEF0F5;
+    --ink-2: #B4BAC8;
+    --ink-3: #7B8294;
+    --line: #313746;
+    --accent: #5CC9B5;
+    color-scheme: dark;
+
+    --claude-accent: #E8A78A;
+    --codex-accent: #26C399;
+    --grok-accent: #7A8FA3;
+    --opencode-accent: #7A9EF0;
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header { display: flex; flex-direction: column; gap: 8px; margin-bottom: 26px; }
+  .class {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .02em;
+    color: var(--ink-3); margin: 0;
+  }
+  .class a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  .class a:hover { text-decoration: underline; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  .lede { color: var(--ink-2); max-width: 66ch; margin: 0; }
+  .lede code, p code, li code { font-family: var(--mono); font-size: 0.92em; }
+  h2 {
+    font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); margin: 40px 0 12px;
+  }
+  p { max-width: 74ch; }
+
+  /* ---- controls ---- */
+  .bar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 12px 0 14px; margin-bottom: 18px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar .lbl { font-size: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--paper-2); gap: 2px; }
+  .seg button {
+    font: inherit; font-weight: 700; font-size: 13px;
+    border: 0; background: transparent; color: var(--ink-2);
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- chat window ---- */
+  .window {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 500px;
+    background: var(--paper);
+  }
+  .window-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .window-body {
+    padding: 40px 28px;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    text-align: center;
+  }
+  .window-body h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    line-height: 1.3;
+  }
+  .window-body p {
+    color: var(--ink-2);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0;
+    max-width: 38ch;
+  }
+  .window-body .command {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--paper-2);
+    padding: 10px 14px;
+    border-radius: 6px;
+    color: var(--accent);
+    margin: 8px 0;
+    border: 1px solid var(--line);
+  }
+  .window-body .hint {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 8px;
+  }
+
+  /* ---- unified landing: connect buttons with brand accents ---- */
+  .landing {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 340px;
+    margin-top: 20px;
+  }
+  .connect-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+  .connect-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px 12px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    transition: all 0.15s ease;
+    text-align: center;
+  }
+
+  /* Brand-specific accent colors */
+  .connect-btn[data-harness="claude"] {
+    border-color: color-mix(in srgb, var(--claude-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="claude"]:hover {
+    background: color-mix(in srgb, var(--claude-accent) 8%, var(--paper));
+    border-color: var(--claude-accent);
+  }
+  .connect-btn[data-harness="claude"] .connect-btn-icon {
+    color: var(--claude-accent);
+  }
+
+  .connect-btn[data-harness="codex"] {
+    border-color: color-mix(in srgb, var(--codex-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="codex"]:hover {
+    background: color-mix(in srgb, var(--codex-accent) 8%, var(--paper));
+    border-color: var(--codex-accent);
+  }
+  .connect-btn[data-harness="codex"] .connect-btn-icon {
+    color: var(--codex-accent);
+  }
+
+  .connect-btn[data-harness="grok"] {
+    border-color: color-mix(in srgb, var(--grok-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="grok"]:hover {
+    background: color-mix(in srgb, var(--grok-accent) 8%, var(--paper));
+    border-color: var(--grok-accent);
+  }
+  .connect-btn[data-harness="grok"] .connect-btn-icon {
+    color: var(--grok-accent);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .connect-btn[data-harness="opencode"] {
+    border-color: color-mix(in srgb, var(--opencode-accent) 30%, var(--line));
+  }
+  .connect-btn[data-harness="opencode"]:hover {
+    background: color-mix(in srgb, var(--opencode-accent) 8%, var(--paper));
+    border-color: var(--opencode-accent);
+  }
+  .connect-btn[data-harness="opencode"] .connect-btn-icon {
+    color: var(--opencode-accent);
+  }
+
+  .connect-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .connect-btn-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .connect-btn-label {
+    font-size: 13px;
+  }
+
+  .settings-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    transition: all 0.15s ease;
+  }
+  .settings-btn:hover {
+    background: var(--paper-2);
+    color: var(--ink);
+  }
+  .settings-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ---- demo sections ---- */
+  .demo-section {
+    margin: 32px 0;
+    padding: 24px;
+    background: var(--paper-2);
+    border-radius: 12px;
+  }
+  .demo-section h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+    color: var(--ink-2);
+  }
+
+  footer {
+    margin-top: 44px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 13px;
+  }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <p class="class">Dated design · <a href="https://github.com/omesser/ai-buddy/issues/459">#459</a> · 2026-09-09 · hand-written and frozen at this date; awaiting approval</p>
+    <h1>Harness Connect Flow — Real Brand Marks</h1>
+    <p class="lede">One Harness landing page for all Chat empty states (not configured,
+      switched off, needs login). Same structure, light copy variants. Four main Harnesses
+      with real brand marks and accent colors: Claude Code, Codex, Grok, and OpenCode.
+      All inline SVG — CSP-safe. Marks are trademarks; we do not claim affiliation.</p>
+  </header>
+
+  <div class="bar">
+    <span class="lbl">State</span>
+    <div class="seg" id="state">
+      <button type="button" data-v="none" aria-pressed="true">Not configured</button>
+      <button type="button" data-v="off" aria-pressed="false">Switched off</button>
+      <button type="button" data-v="auth" aria-pressed="false">Needs login</button>
+      <button type="button" data-v="ready" aria-pressed="false">Connected</button>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <h3>Chat Window — Unified Landing with Real Marks</h3>
+
+    <div class="window" id="chat-window">
+      <div class="window-header">BMO · Chat</div>
+      <div class="window-body" id="chat-body">
+        <!-- Content injected by script -->
+      </div>
+    </div>
+  </div>
+
+  <h2>Official brand marks — exact sources</h2>
+
+  <p><b>Claude Code</b>: Simple Icons Claude Code mark (unmodified path data).
+    Accent: #D97757 (light), #E8A78A (dark).
+    Source: simple-icons Claude Code / cdn.simpleicons.org/claudecode</p>
+
+  <p><b>Codex</b>: OpenAI classic knot mark from simple-icons@11.14.0 (before OpenAI removal).
+    Black/white mark, teal tile accent #10A37F/#26C399. Tile labeled "Codex" (no separate Codex product mark).
+    Source: simple-icons@11.14.0 icons/openai.svg</p>
+
+  <p><b>Grok</b>: Official xAI logomark (unmodified path data from brand assets).
+    Near-black #0A0A0A (light), near-white on dark. Slate border optional.
+    Source: x.ai/legal/brand-guidelines → xAI_Grok_Assets.zip</p>
+
+  <p><b>OpenCode</b>: Official square mark from OpenCode brand identity (unmodified geometry).
+    Ink #211E1E, hole #CFCECD.
+    Source: anomalyco/opencode brand / opencode.ai/brand</p>
+
+  <h2>Trademark disclaimer</h2>
+
+  <p>Claude, Anthropic, OpenAI, Codex, xAI, Grok, SpaceXAI, and OpenCode are trademarks
+    of their respective owners. We do not claim affiliation with any of these entities.
+    Marks are used for identification purposes only under fair use.</p>
+
+  <footer>
+    Frozen at its date. Built from <a href="https://github.com/omesser/ai-buddy">omesser/ai-buddy</a>.
+  </footer>
+</div>
+
+<script>
+  const state = { current: "none" };
+
+  if (location.hash.length > 1) {
+    const hash = location.hash.slice(1);
+    if (["none", "off", "auth", "ready"].includes(hash)) {
+      state.current = hash;
+    }
+  }
+
+  const STATES = {
+    none: {
+      title: "Connect a Harness to get started",
+      lede: "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.",
+      command: null,
+      hint: null,
+      showLanding: true
+    },
+    off: {
+      title: "Chat is switched off",
+      lede: "Turn AI back on in Settings, or connect a Harness below.",
+      command: null,
+      hint: null,
+      showLanding: true
+    },
+    auth: {
+      title: "Claude Code needs login",
+      lede: "Sign in to use Claude Code, or you can switch to a different Harness:",
+      command: "claude /login",
+      hint: "Or run this in your terminal:",
+      showLanding: true,
+      harness: "Claude Code"
+    },
+    ready: {
+      title: "Ready",
+      lede: "Claude Code is connected. Type below to start a conversation.",
+      command: null,
+      hint: null,
+      showLanding: false,
+      harness: "Claude Code"
+    }
+  };
+
+  function connectButtons() {
+    return `
+      <div class="connect-buttons">
+        <button class="connect-btn" data-harness="claude">
+          <span class="connect-btn-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z"/></svg>
+          </span>
+          <span class="connect-btn-label">Claude Code</span>
+        </button>
+        <button class="connect-btn" data-harness="codex">
+          <span class="connect-btn-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>
+          </span>
+          <span class="connect-btn-label">Codex</span>
+        </button>
+        <button class="connect-btn" data-harness="grok">
+          <span class="connect-btn-icon">
+            <svg width="32" height="32" viewBox="0 0 1024 1024" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M395.479 633.828L735.91 381.105C752.599 368.715 776.454 373.548 784.406 392.792C826.26 494.285 807.561 616.253 724.288 699.996C641.016 783.739 525.151 802.104 419.247 760.277L303.556 814.143C469.49 928.202 670.987 899.995 796.901 773.282C896.776 672.843 927.708 535.937 898.785 412.476L899.047 412.739C857.105 231.37 909.358 158.874 1016.4 10.6326C1018.93 7.11771 1021.47 3.60279 1024 0L883.144 141.651V141.212L395.392 633.916"/><path d="M325.226 695.251C206.128 580.84 226.662 403.776 328.285 301.668C403.431 226.097 526.549 195.254 634.026 240.596L749.454 186.994C728.657 171.88 702.007 155.623 671.424 144.2C533.19 86.9942 367.693 115.465 255.323 228.382C147.234 337.081 113.244 504.215 171.613 646.833C215.216 753.423 143.739 828.818 71.7385 904.916C46.2237 931.893 20.6216 958.87 0 987.429L325.139 695.339"/></svg>
+          </span>
+          <span class="connect-btn-label">Grok</span>
+        </button>
+        <button class="connect-btn" data-harness="opencode">
+          <span class="connect-btn-icon">
+            <svg width="32" height="32" viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g transform="translate(30 0)"><path d="M180 240H60V120H180V240Z" fill="#CFCECD"/><path d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" fill="currentColor"/></g></svg>
+          </span>
+          <span class="connect-btn-label">OpenCode</span>
+        </button>
+      </div>
+      <button class="settings-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"/>
+        </svg>
+        More options in Settings
+      </button>
+    `;
+  }
+
+  function render() {
+    const s = STATES[state.current];
+    const body = document.getElementById("chat-body");
+
+    let html = `<h3>${s.title}</h3>`;
+
+    if (s.command && s.hint) {
+      html += `<p>${s.lede}</p>`;
+      html += `<p class="hint">${s.hint}</p>`;
+      html += `<div class="command">${s.command}</div>`;
+    } else {
+      html += `<p>${s.lede}</p>`;
+    }
+
+    if (s.showLanding) {
+      html += `<div class="landing">${connectButtons()}</div>`;
+    }
+
+    body.innerHTML = html;
+
+    for (const btn of document.querySelectorAll("#state button")) {
+      btn.setAttribute("aria-pressed", String(btn.dataset.v === state.current));
+    }
+  }
+
+  document.getElementById("state").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    state.current = btn.dataset.v;
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>
