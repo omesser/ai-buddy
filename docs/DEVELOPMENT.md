@@ -204,7 +204,7 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | One turn's budget, whichever mind serves it: an HTTP Completer request or a Harness `session/prompt`. Expiry cancels the turn. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap for the HTTP Completer. Default 80 remote, 512 local. A Harness decides its own reply length. |
 | `AI_BUDDY_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `codex`, `hermes`, `opencode`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the Director tab's Completer source row saved. Unset falls through to that row, which offers the same choices (Off, the presets, and Custom). ADR-0017, #436. |
-| `AI_BUDDY_MCP_URL`, `AI_BUDDY_MCP_TOKEN` | Where the running app serves MCP on loopback, and the per-run bearer token that reaches it. The app sets both on the stdio MCP server entry it hands the Harness, and the shim relays there; with neither set it answers every call with a failure. Set them by hand to point the shim at an app you are already running. Never written to a file or a log. ADR-0026. |
+| `AI_BUDDY_MCP_URL`, `AI_BUDDY_MCP_TOKEN` | Where the running app serves MCP on loopback, and the per-run bearer token that reaches it. The app sets both on the stdio MCP server entry it hands the Harness, and the shim relays there; with neither set it answers every call with a failure. Setting them by hand is how a Harness you run yourself would reach a running app, and is the one thing that cannot be done: the app shows neither value anywhere ([#577](https://github.com/omesser/ai-buddy/issues/577)). Never written to a file or a log. ADR-0026. |
 | `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Overrides Settings → Development's "MCP server binary", and is read at attach, so a change lands on the next one. First of three stdio routes: this, else an `ai-buddy-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three relay to the running app over loopback, so a `speak` over them reaches the buddy once the app hands them the two variables above (#501). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server directly (ADR-0023). |
 | `AI_BUDDY_HARNESS_AUTH_RETRY_SECS` | How long a Harness that has not signed in is left alone before `session/new` is tried again. Overrides Settings → Development's "Auth retry, in seconds", and 60 stands when neither says anything. Read when the Session is built, so a change lands on the next attach. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → Director's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
@@ -506,6 +506,62 @@ Two transport axes (do not conflate):
 - `list_instances` — List Character Instances and their names
 
 All requests are synchronous; no streaming, no push. The loopback server (`mcp_http.rs`) is thread-per-request with no async runtime.
+
+### Pointing a Harness you run yourself at ai-buddy
+
+A Harness the app attached needs no MCP config of yours. The app fills the
+`mcpServers` list on `session/new` itself — the loopback URL, or the shim with
+the two variables above — and writes nothing to `~/.claude.json`,
+`opencode.json` or `~/.hermes/config.yaml`.
+
+The other case is a session of your own, running beside the app: your `claude`,
+your prompt, `speak` reaching the buddy on your screen. That one is an entry in
+the Harness's own MCP config, and every harness spells the same thing — the
+stdio shim, with `AI_BUDDY_MCP_URL` and `AI_BUDDY_MCP_TOKEN` in its
+environment. `<shim>` below is that binary: the app itself
+(`/Applications/ai-buddy.app/Contents/MacOS/ai-buddy` on macOS), which serves
+stdio MCP under `--mcp-stdio`, or `target/debug/ai-buddy-mcp` from a checkout
+after `cargo build -p ai-buddy-mcp-server`, which takes no argument — drop the
+`--mcp-stdio` from the lines below when you use it.
+
+**The entry cannot be filled in today.** Both values are per-run and the app
+hands them to nothing but the Harness it attached: the port is whatever the OS
+gave the `127.0.0.1:0` bind, the token is 32 bytes that live in memory, and no
+window, log or file shows either (ADR-0010, ADR-0026). A hand-written entry
+gets `AI_BUDDY_MCP_URL is unset` on every call, which is the failure contract
+working rather than a mistake in the entry. [#577](https://github.com/omesser/ai-buddy/issues/577)
+is the missing half; the shapes below are what it will fill.
+
+| Harness | The entry |
+|---|---|
+| `claude` | `claude mcp add ai-buddy -e AI_BUDDY_MCP_URL=… -e AI_BUDDY_MCP_TOKEN=… -- <shim> --mcp-stdio`. `--scope local` (the default) and `user` land in `~/.claude.json`, `project` in `.mcp.json`. Tools arrive as `mcp__ai-buddy__speak`, which is the name a permission rule has to spell in full. A project entry reads `⏸ Pending approval` until an interactive `claude` approves it; `claude -p --strict-mcp-config --mcp-config .mcp.json` loads it without asking. |
+| `hermes` | `hermes mcp add ai-buddy --command <shim> --env AI_BUDDY_MCP_URL=… AI_BUDDY_MCP_TOKEN=… --args --mcp-stdio` — `--args` has to come last. Lands under `mcp_servers:` in `~/.hermes/config.yaml`; `HERMES_HOME` moves that file. It connects before it saves and writes `enabled: false` for a server it could not reach, so an entry written before the app is up needs `hermes mcp test ai-buddy` afterwards. |
+| `opencode` | The `mcp` key in `opencode.json`, hand-written — `command` is an argv array, not a shell string, so the Claude Code line cannot be pasted across. `opencode mcp add` asks for the same fields interactively. See the block below. |
+| `codex` | Unverified. `codex` is not installed on the machine this was written on, and a config shape nobody ran is a guess, not documentation. |
+| anything else | Any MCP client that can spawn a command with an environment. Grok Build, for one: `grok mcp add ai-buddy <shim> -e AI_BUDDY_MCP_URL=… -e AI_BUDDY_MCP_TOKEN=… -- --mcp-stdio` writes `[mcp_servers.ai-buddy]` to `~/.grok/config.toml`, and `grok mcp doctor` reports the handshake. A client that speaks Streamable HTTP skips the shim entirely and takes the loopback URL with an `Authorization: Bearer` header (ADR-0023). |
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ai-buddy": {
+      "type": "local",
+      "command": ["/Applications/ai-buddy.app/Contents/MacOS/ai-buddy", "--mcp-stdio"],
+      "enabled": true,
+      "environment": {
+        "AI_BUDDY_MCP_URL": "http://127.0.0.1:PORT/mcp",
+        "AI_BUDDY_MCP_TOKEN": "TOKEN"
+      }
+    }
+  }
+}
+```
+
+Each shape above was run against the CLI it names — Claude Code 2.1.266, Hermes
+Agent v0.18.2, opencode 1.18.30, Grok Build 1.0.13 — with the shim pointed at a
+stub loopback endpoint standing in for the app, since the real one hands out no
+token. All four spawned the shim, completed the MCP handshake through it and
+listed the tool the stub served.
 
 ### What MCP implements today
 

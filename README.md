@@ -150,6 +150,7 @@ We use `scripts/probe-harness.sh` to test and prove various behaviors.
 | Harness | Command | Standing |
 |---|---|---|
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
+| `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Named in the launch table since [ADR-0022](./docs/adr/0022-acp-client-over-official-sdk-and-named-harnesses.md). **Unverified**: `codex` is not installed on the machine this was checked on, and no turn has been smoked against it. |
 | <img src="https://cdn.simpleicons.org/hermes" width="14" alt="" /> `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once a failed first turn reopens the session it had only said it loaded (#448). |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. **Unverified**: not installed on the machine either #433 or #434 was written on. #457 smokes it. |
 | anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. Grok Build (`grok agent stdio`), <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) and <img src="https://cdn.simpleicons.org/googlegemini" width="14" alt="" /> Gemini CLI (`gemini --acp`) reach ai-buddy this way today and earn a named row once a turn is smoked (#457). |
@@ -159,6 +160,7 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | Harness | Fresh session | Resumed session | `loadSession` | MCP transport † | Auth methods ‡ |
 |---|---|---|---|---|---|
 | `claude` | yes | yes | yes | http | none advertised when signed in |
+| `codex` | unverified | unverified | unverified | unverified | unverified |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `opencode` | unverified | unverified | unverified | unverified | unverified |
 | anything else | unverified | unverified | unverified | unverified | unverified |
@@ -176,6 +178,13 @@ Two transports, two distinct axes:
 **MCP transport** is gated by what the Harness advertises in ACP `initialize` → `agentCapabilities.mcpCapabilities.http`:
 - **true** → loopback HTTP URL + bearer token (ADR-0023, #491)
 - **omitted/false** → stdio MCP server entry; shim relays to same loopback endpoint (ADR-0026, #501)
+
+Either way you configure nothing. The app hands the Harness its own tool
+surface when the session opens, so no MCP entry of yours is added to
+`~/.claude.json`, `opencode.json` or `~/.hermes/config.yaml`, and none is left
+behind when the app quits. Pointing a Harness you run *yourself* at a running
+ai-buddy is the other case, and [DEVELOPMENT.md](./docs/DEVELOPMENT.md#pointing-a-harness-you-run-yourself-at-ai-buddy)
+has the per-harness entry and what still blocks it.
 
 **Seven tools** from `crates/core/src/dispatch.rs`:
 
