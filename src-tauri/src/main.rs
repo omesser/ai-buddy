@@ -972,9 +972,13 @@ struct ChatOpening {
     /// Whether the switch is on as well. Configured and switched off is a
     /// different sentence from never configured, and the surface says which.
     enabled: bool,
-    /// A Harness is attached but not signed in: the command that fixes it,
-    /// for the user's own terminal. The third state ADR-0010 names.
-    login: Option<String>,
+    /// Which mind answers here, or would (#474): the Harness that was named,
+    /// whether the child is up, and the session that proves it. `None` when
+    /// none was named, and the HTTP rows below are the answer instead.
+    harness: Option<ChatHarness>,
+    /// The HTTP Completer in force: model and host, never a credential.
+    model: String,
+    host: String,
     /// The Character's own Personality Prompt, frozen: the Prompt tab shows it
     /// for reference above the layer the user may write (ADR-0012). Empty when
     /// the package shipped none.
@@ -984,6 +988,30 @@ struct ChatOpening {
     /// What the tab may not exceed, so the box can say so before the save
     /// surface has to.
     prompt_limit: usize,
+}
+
+/// The Harness half of an opening. Facts and not a sentence: the wording is
+/// the window's, and `chat-status.js` is where it has a test.
+#[derive(Clone, Serialize)]
+struct ChatHarness {
+    name: String,
+    /// Attached but not signed in: the command that fixes it, for the user's
+    /// own terminal. The third state ADR-0010 names.
+    login: Option<String>,
+    /// Whether the child is up. Set and dead is the state the Chat surface
+    /// could not tell from attached before #474, and it is a lie worth more
+    /// than a missing label.
+    alive: bool,
+    session: Option<String>,
+}
+
+fn chat_harness(inspect: &model::DirectorInspect) -> Option<ChatHarness> {
+    inspect.harness.as_ref().map(|attached| ChatHarness {
+        name: attached.name.clone(),
+        login: attached.login.clone(),
+        alive: attached.alive,
+        session: attached.session_id.clone(),
+    })
 }
 
 fn chat_opening_from(
@@ -996,10 +1024,9 @@ fn chat_opening_from(
         character: instance.character_name().to_string(),
         configured: inspect.configured,
         enabled: inspect.enabled,
-        login: inspect
-            .harness
-            .as_ref()
-            .and_then(|attached| attached.login.clone()),
+        harness: chat_harness(inspect),
+        model: inspect.model.clone(),
+        host: inspect.host.clone(),
         personality: personality.to_string(),
         instance_prompt: instance.prompt().to_string(),
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
@@ -1055,10 +1082,15 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
         enabled: inspect.as_ref().is_some_and(|read| read.enabled),
-        login: inspect
+        harness: inspect.as_ref().and_then(|read| chat_harness(read)),
+        model: inspect
             .as_ref()
-            .and_then(|read| read.harness.as_ref())
-            .and_then(|attached| attached.login.clone()),
+            .map(|read| read.model.clone())
+            .unwrap_or_default(),
+        host: inspect
+            .as_ref()
+            .map(|read| read.host.clone())
+            .unwrap_or_default(),
         instance_prompt,
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
@@ -2397,7 +2429,7 @@ fn main() {
             let mut config = model::config_from(&director);
             config.apply_switch(settings.director_enabled);
             config.ambient_allowed = settings.ambient_wakes;
-            let inspect = Arc::new(Mutex::new(config.inspect()));
+            let inspect = Arc::new(Mutex::new(config.inspect(&director)));
             app.manage(Arc::clone(&inspect));
             for line in model::env_switch_warnings(&dev_flags::switch_vars()) {
                 eprintln!("{line}");
@@ -2638,6 +2670,8 @@ mod tests {
             wake_secs: 60,
             last_payload: None,
             harness: None,
+            model: "gpt-4o-mini".to_string(),
+            host: "api.openai.com".to_string(),
         }
     }
 
@@ -2686,11 +2720,7 @@ mod tests {
         let instance = roster.get(&id).expect("still there");
         let inspect = model::DirectorInspect {
             enabled: false,
-            configured: true,
-            ambient_wakes: true,
-            wake_secs: 60,
-            last_payload: None,
-            harness: None,
+            ..stub_inspect()
         };
 
         let opening = chat_opening_from(instance, &inspect, "");
@@ -2698,7 +2728,53 @@ mod tests {
         assert_eq!(opening.character, "nim");
         assert!(opening.configured);
         assert!(!opening.enabled);
-        assert_eq!(opening.login, None);
+        assert!(opening.harness.is_none());
+    }
+
+    /// Production change that would fail this: an opening that says a Harness
+    /// is there without carrying whether it is up, which is the difference
+    /// between the header naming a mind and naming a hope (#474).
+    #[test]
+    fn chat_opening_carries_the_harness_facts_the_header_names() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let inspect = model::DirectorInspect {
+            harness: Some(crate::harness::HarnessInspect {
+                name: "hermes".to_string(),
+                session_id: Some("sess-7".to_string()),
+                alive: false,
+                ..Default::default()
+            }),
+            ..stub_inspect()
+        };
+
+        let harness = chat_opening_from(instance, &inspect, "")
+            .harness
+            .expect("the opening carries the attachment");
+        assert_eq!(harness.name, "hermes");
+        assert_eq!(harness.session.as_deref(), Some("sess-7"));
+        assert!(!harness.alive, "a handle that never answered is not alive");
+        assert_eq!(harness.login, None);
+    }
+
+    /// The HTTP half, and the rule that guards it: ADR-0010 forbids drawing a
+    /// credential, and a base URL is where one hides in plain sight.
+    #[test]
+    fn chat_opening_names_the_endpoint_without_its_userinfo() {
+        let mut roster = Roster::new();
+        let character = stub_character("nim");
+        let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+        let instance = roster.get(&id).expect("still there");
+        let inspect = model::DirectorInspect {
+            host: model::host_of("https://user:sk-secret@api.openai.com/v1"),
+            ..stub_inspect()
+        };
+
+        let opening = chat_opening_from(instance, &inspect, "");
+        assert_eq!(opening.model, "gpt-4o-mini");
+        assert_eq!(opening.host, "api.openai.com");
     }
 
     /// ADR-0012: the Prompt tab draws the two authored layers, so the opening

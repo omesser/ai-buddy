@@ -502,6 +502,11 @@ pub(crate) fn run_frame_loop(
                             inspect.enabled = config.enabled;
                             inspect.configured = config.configured;
                             inspect.ambient_wakes = config.ambient_allowed;
+                            // A Retarget is how the endpoint moves, so it is
+                            // also how the Chat header stops naming the old
+                            // one (#474).
+                            inspect.model = director.model.clone();
+                            inspect.host = model::host_of(&director.base_url);
                         }
                         let interval_moved = config.ambient_first != was_first;
                         for live in &mut lives {

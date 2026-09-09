@@ -523,11 +523,18 @@ fn harness_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 /// Director on/off never retargets. Every Completer source change does since
 /// #500. All of them still change what `chat_opening` would say, and the
 /// window only asked once. #473.
+///
+/// A Completer retarget joins them since #474: the header names the model and
+/// the host, so an endpoint edit moves what an open window is drawing. The
+/// predicate is `completer_retargets` whole rather than its two endpoint terms,
+/// because a key or a timeout change re-pushes an opening that reads the same,
+/// and one redundant event is cheaper than a second rule to keep in step.
 fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
     patch
         .director_enabled
         .is_some_and(|on| on != settings.director_enabled)
         || harness_source_changed(settings, patch)
+        || completer_retargets(settings, patch)
 }
 
 fn harness_source_changed(settings: &Settings, patch: &SettingsPatch) -> bool {
@@ -3519,6 +3526,30 @@ mod tests {
             ..SettingsPatch::default()
         };
         assert!(!chat_surface_reloads(&Settings::default(), &patch));
+    }
+
+    /// The Chat header names the model and the host, so an endpoint edit has
+    /// to reach an open window. Production change that would fail this: a
+    /// `chat_surface_reloads` that watches only the switch and the Harness
+    /// source, which is what it did before #474 — the header would keep
+    /// naming the endpoint the user just left.
+    #[test]
+    fn a_new_endpoint_reloads_chat() {
+        let settings = Settings::default();
+        let patch = SettingsPatch {
+            director_base_url: Some("http://localhost:11434".to_string()),
+            ..SettingsPatch::default()
+        };
+        assert!(chat_surface_reloads(&settings, &patch));
+
+        let unchanged = SettingsPatch {
+            director_base_url: Some(settings.director_base_url.clone()),
+            ..SettingsPatch::default()
+        };
+        assert!(
+            !chat_surface_reloads(&settings, &unchanged),
+            "both windows commit on blur, so an untouched row is not a change"
+        );
     }
 
     /// Completer source still reloads Chat even when Off also Retargets,

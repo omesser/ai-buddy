@@ -1,12 +1,13 @@
 // Run with `node --test tests/`.
 //
 // The status bar's arithmetic: what each cell says for one push, and the
-// countdown the window runs between pushes.
+// countdown the window runs between pushes. Plus the header's one line about
+// which mind answers, which the same module writes.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { statusCells, untilWake } from "../src/chat-status.js";
+import { mindLine, statusCells, untilWake } from "../src/chat-status.js";
 
 // One push, as the Shell serializes it.
 const push = {
@@ -116,4 +117,79 @@ test("the closed vocabularies fit the narrowest the window goes", () => {
     fixed * ADVANCE + GUTTERS <= NARROWEST,
     `the fixed cells want ${Math.ceil(fixed * ADVANCE + GUTTERS)}pt of ${NARROWEST}`,
   );
+});
+
+// The header's line about which mind answers (#474). Branch for branch with
+// `settings::harness_state`, so Settings and Chat cannot disagree about it.
+const http = { enabled: true, model: "gpt-4o-mini", host: "localhost:8000", harness: null };
+
+test("with no Harness the header names the model and the host", () => {
+  assert.equal(mindLine(http), "gpt-4o-mini · localhost:8000");
+});
+
+test("an attached Harness is named with the session that proves it is live", () => {
+  const opening = {
+    ...http,
+    harness: {
+      name: "hermes",
+      session: "8cecc6dc-497f-4899-a827-a4e42fbdc1f2",
+      alive: true,
+      login: null,
+    },
+  };
+
+  // The head of the id: a whole UUID leaves the header no room for the name
+  // this window belongs to, and the session is here as proof rather than as a
+  // value anyone reads back.
+  assert.equal(mindLine(opening), "hermes · session 8cecc6dc");
+});
+
+// The state the issue was filed for: set and not answering used to read
+// exactly like an attachment that came up.
+test("a Harness that never came up says so rather than claiming the turn", () => {
+  const opening = {
+    ...http,
+    harness: { name: "hermes", session: null, alive: false, login: null },
+  };
+
+  assert.equal(mindLine(opening), "hermes · not running");
+});
+
+test("not signed in outranks the session, and names the login command", () => {
+  const opening = {
+    ...http,
+    harness: { name: "hermes", session: "655092d4", alive: true, login: "hermes login" },
+  };
+
+  assert.equal(mindLine(opening), "hermes · not signed in — `hermes login`");
+});
+
+test("attached before a session opens claims no session", () => {
+  const opening = {
+    ...http,
+    harness: { name: "hermes", session: null, alive: true, login: null },
+  };
+
+  assert.equal(mindLine(opening), "hermes · no session yet");
+});
+
+test("switched off there is no mind to name", () => {
+  assert.equal(mindLine({ ...http, enabled: false }), "static weights");
+  assert.equal(
+    mindLine({
+      ...http,
+      enabled: false,
+      harness: { name: "hermes", session: "655092d4", alive: true, login: null },
+    }),
+    "static weights",
+  );
+});
+
+test("the header says nothing before the first opening arrives", () => {
+  assert.equal(mindLine(null), "");
+});
+
+// The Shell sends empty strings only when it could not read its own inspect.
+test("an endpoint the Shell could not read draws nothing, not a separator", () => {
+  assert.equal(mindLine({ ...http, model: "", host: "" }), "");
 });

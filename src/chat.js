@@ -12,7 +12,7 @@
 // ADR-0025 says why it is a strip above the composer instead.
 
 import { stampWhen } from "./chat-stamp.js";
-import { statusCells } from "./chat-status.js";
+import { mindLine, statusCells } from "./chat-status.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -249,9 +249,10 @@ function attached(opening) {
   // The third state: attached, and the Harness has nobody signed in. Said
   // once per command, in the log, because the fix is a command for the user's
   // own terminal and never a prompt of ours (ADR-0018).
-  if (opening.login && opening.login !== loginSaid) {
-    loginSaid = opening.login;
-    note(`${opening.name} is attached but not signed in. Run \`${opening.login}\` in a terminal.`);
+  const login = opening.harness?.login;
+  if (login && login !== loginSaid) {
+    loginSaid = login;
+    note(`${opening.name} is attached but not signed in. Run \`${login}\` in a terminal.`);
   }
   return ready;
 }
@@ -336,6 +337,10 @@ function showWho(opening) {
   them = opening.name;
   document.getElementById("name").textContent = opening.name;
   document.getElementById("character").textContent = opening.character;
+  // Refilled on every opening, not only the first: #480 pushes one when the
+  // Completer source moves, and a mode label that keeps the mode it opened
+  // with is the lie this was written to stop (#474).
+  document.getElementById("mind-text").textContent = mindLine(opening);
   for (const node of document.querySelectorAll(".i-name")) {
     node.textContent = opening.name;
   }
@@ -359,6 +364,11 @@ composer.addEventListener("submit", (event) => {
   // here needs to know the moment it changes.
   invoke("chat_opening", { instance })
     .then((opening) => {
+      // The header too, not only whether anything can answer: this opening is
+      // the one place a Harness that came up after the window opened is
+      // noticed, and a header still saying `not running` over a live session
+      // is the lie #474 is about.
+      showWho(opening);
       if (!attached(opening)) {
         return;
       }
