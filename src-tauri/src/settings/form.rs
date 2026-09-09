@@ -559,12 +559,12 @@ fn director_sections() -> Vec<FormSection> {
         http_row("Base URL", model::BASE_URL, driving, configured);
     let (model_label, model_frozen) = http_row("Model", model::MODEL, driving, configured);
     let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, driving, configured);
-    let (director_label, director_frozen) = switch_row("Director on", model::ENABLED);
+    let (director_label, director_frozen) = switch_row("AI on", model::ENABLED);
     let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
 
     vec![
         FormSection {
-            heading: "Director".to_string(),
+            heading: "AI".to_string(),
             comment: None,
             rows: vec![
                 FormRow::Checkbox {
@@ -715,7 +715,7 @@ fn director_sections() -> Vec<FormSection> {
 fn completer_source_section() -> FormSection {
     let (source_label, frozen) = harness_env_row("Harness");
     FormSection {
-        heading: "Completer source".to_string(),
+        heading: "AI source".to_string(),
         comment: Some(
             "Director off runs on static weights. Director on with no Harness is the \
              HTTP Completer above. Director on with a Harness that answers makes \
@@ -1017,7 +1017,7 @@ fn development_sections() -> Vec<FormSection> {
             rows,
         },
         FormSection {
-            heading: "Completer limits".to_string(),
+            heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
             rows: vec![
                 FormRow::TextField {
@@ -1104,7 +1104,7 @@ pub fn describe() -> FormDescription {
             sections: character_sections(),
         },
         FormTab {
-            title: "Director".to_string(),
+            title: "AI".to_string(),
             sections: director_sections(),
         },
         FormTab {
@@ -1161,9 +1161,9 @@ mod tests {
 
         let mut expected = vec![
             "Character",
-            "Completer limits",
-            "Completer source",
-            "Director",
+            "HTTP limits",
+            "AI source",
+            "AI",
             "Do Not Disturb",
             "Excluded applications",
             "Harness attachment",
@@ -1189,13 +1189,7 @@ mod tests {
             .collect();
         assert_eq!(
             titles,
-            vec![
-                "Presence",
-                "Character",
-                "Director",
-                "Privacy",
-                "Development"
-            ]
+            vec!["Presence", "Character", "AI", "Privacy", "Development"]
         );
         for tab in &description.tabs {
             assert!(!tab.sections.is_empty(), "{} has no section", tab.title);
@@ -1357,12 +1351,12 @@ mod tests {
     }
 
     #[test]
-    fn director_section_has_two_checkboxes() {
+    fn ai_section_has_two_checkboxes() {
         let description = describe();
         let director = description
             .sections()
-            .find(|s| s.heading == "Director")
-            .expect("Director section");
+            .find(|s| s.heading == "AI")
+            .expect("AI section");
 
         assert_eq!(director.rows.len(), 9);
         assert!(matches!(
@@ -1581,9 +1575,9 @@ mod tests {
                 .is_some()
         };
 
-        assert!(has_help("Director", DIRECTOR_ID));
-        assert!(has_help("Director", AMBIENT_ID));
-        assert!(has_help("Completer source", HARNESS_STATE_ID));
+        assert!(has_help("AI", DIRECTOR_ID));
+        assert!(has_help("AI", AMBIENT_ID));
+        assert!(has_help("AI source", HARNESS_STATE_ID));
         assert!(has_help("Last user turn", PAYLOAD_ID));
         assert!(has_help("Do Not Disturb", DND_ID));
         assert!(has_help("Do Not Disturb", SOUND_ID));
@@ -2039,8 +2033,8 @@ mod tests {
     fn source_section(description: &FormDescription) -> &FormSection {
         description
             .sections()
-            .find(|section| section.heading == "Completer source")
-            .expect("the Completer source section exists")
+            .find(|section| section.heading == "AI source")
+            .expect("the AI source section exists")
     }
 
     fn popup_row(description: &FormDescription, id: &str) -> (String, Vec<String>, bool) {

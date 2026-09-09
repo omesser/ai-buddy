@@ -228,8 +228,8 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     entries.push(MenuEntry::Check {
         id: DIRECTOR_ID.to_string(),
         label: match snapshot.director_env_owned {
-            true => format!("Director (set by {})", crate::model::ENABLED),
-            false => "Director".to_string(),
+            true => format!("AI (set by {})", crate::model::ENABLED),
+            false => "AI".to_string(),
         },
         enabled: !snapshot.director_env_owned,
         checked: snapshot.director_enabled,
