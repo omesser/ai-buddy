@@ -4,6 +4,8 @@
 //! reads the current button state without needing XI2 events or grabs.
 //! This is the interim X11 fallback; #183 may make pointer events portable.
 
+use gtk::glib;
+use gtk::prelude::SettingsExt;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{self, ButtonMask};
 
@@ -36,4 +38,19 @@ fn button_state_mask() -> Option<u16> {
         .reply()
         .ok()?;
     Some(reply.mask.into())
+}
+
+/// The OS double-click interval, in milliseconds.
+///
+/// Reads GtkSettings gtk-double-click-time. Returns None if GTK is not
+/// initialized or the query fails.
+pub fn double_click_interval_ms() -> Option<u32> {
+    glib::MainContext::default().block_on(async {
+        gtk::Settings::default().and_then(|settings| {
+            settings
+                .property::<i32>("gtk-double-click-time")
+                .try_into()
+                .ok()
+        })
+    })
 }

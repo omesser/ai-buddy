@@ -13,6 +13,7 @@
 //! false for a click our own window swallowed.
 
 use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
+use objc2_foundation::NSEvent;
 
 /// Whether the primary mouse button is down.
 ///
@@ -33,4 +34,17 @@ pub fn secondary_button_down() -> bool {
         CGEventSourceStateID::CombinedSessionState,
         CGMouseButton::Right,
     )
+}
+
+/// The OS double-click interval, in milliseconds.
+///
+/// Reads NSEvent.doubleClickInterval (seconds) and converts to milliseconds.
+/// Returns None if the query fails.
+pub fn double_click_interval_ms() -> Option<u32> {
+    let seconds = NSEvent::doubleClickInterval();
+    if seconds > 0.0 {
+        Some((seconds * 1000.0).round() as u32)
+    } else {
+        None
+    }
 }

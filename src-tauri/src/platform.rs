@@ -549,6 +549,37 @@ pub fn update_input_region(
     Ok(())
 }
 
+/// The OS double-click interval, in milliseconds, or the fallback when the OS
+/// cannot provide one.
+///
+/// Queried once at startup and injected into every Pointer. Logged when the
+/// fallback is used.
+pub fn double_click_interval_ms() -> u32 {
+    const FALLBACK: u32 = 400;
+    os_double_click_interval_ms().unwrap_or_else(|| {
+        log::info!("overlay: double-click interval fallback to {FALLBACK}ms");
+        FALLBACK
+    })
+}
+
+/// The OS double-click interval, in milliseconds, from the platform layer.
+///
+/// Returns None when the query fails or the platform has nothing to offer.
+#[cfg(target_os = "macos")]
+fn os_double_click_interval_ms() -> Option<u32> {
+    macos::double_click_interval_ms()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn os_double_click_interval_ms() -> Option<u32> {
+    x11::double_click_interval_ms()
+}
+
+#[cfg(not(unix))]
+fn os_double_click_interval_ms() -> Option<u32> {
+    windows::double_click_interval_ms()
+}
+
 /// Which mouse buttons are down, or were pressed since the last call.
 ///
 /// The session poll sees a drag that outruns the art. The overlay witness

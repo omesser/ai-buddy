@@ -5,6 +5,7 @@
 //! and X11 XQueryPointer.
 
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+use windows_sys::Win32::UI::WindowsAndMessaging::GetDoubleClickTime;
 
 use crate::platform::ButtonsDown;
 
@@ -26,4 +27,17 @@ fn button_down(vk_button: i32) -> bool {
     // pressed. The call is documented as safe; a bad vk_button yields zero
     // (not pressed), which is the safe answer.
     unsafe { GetAsyncKeyState(vk_button) < 0 }
+}
+
+/// The OS double-click interval, in milliseconds.
+///
+/// Reads GetDoubleClickTime() from Windows. Returns None if zero (should not
+/// happen in practice, but handles the unusual case).
+pub fn double_click_interval_ms() -> Option<u32> {
+    let ms = unsafe { GetDoubleClickTime() };
+    if ms > 0 {
+        Some(ms)
+    } else {
+        None
+    }
 }
