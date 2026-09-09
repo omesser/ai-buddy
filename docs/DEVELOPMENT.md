@@ -204,7 +204,8 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 | `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` | One turn's budget, whichever mind serves it: an HTTP Completer request or a Harness `session/prompt`. Expiry cancels the turn. Default 20 remote, 120 local — a cold local model loads weights on the first call. |
 | `AI_BUDDY_DIRECTOR_MAX_TOKENS` | Reply cap for the HTTP Completer. Default 80 remote, 512 local. A Harness decides its own reply length. |
 | `AI_BUDDY_HARNESS` | Attach a Harness as the Completer instead of the HTTP one: `claude`, `codex`, `hermes`, `opencode`, or a command line that speaks ACP on stdio. The Harness signs in on its own; a not-signed-in one is named in the Chat surface with the command that fixes it. Set and empty is the kill switch — Off, whatever the Director tab's Completer source row saved. Unset falls through to that row, which offers the same choices (Off, the presets, and Custom). ADR-0017, #436. |
-| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Overrides Settings → Development's "MCP server binary", and is read at attach, so a change lands on the next one. First of three stdio routes: this, else an `ai-buddy-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three dispatch through stubs, so a `speak` over them moves nothing (#501, #502). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server instead, and that is the only path whose `speak` reaches a buddy on screen (ADR-0023). |
+| `AI_BUDDY_MCP_URL`, `AI_BUDDY_MCP_TOKEN` | Where the running app serves MCP on loopback, and the per-run bearer token that reaches it. The app sets both on the stdio MCP server entry it hands the Harness, and the shim relays there; with neither set it answers every call with a failure. Set them by hand to point the shim at an app you are already running. Never written to a file or a log. ADR-0026. |
+| `AI_BUDDY_MCP_BIN` | Where the stdio MCP server binary is, when it is not beside the app. Overrides Settings → Development's "MCP server binary", and is read at attach, so a change lands on the next one. First of three stdio routes: this, else an `ai-buddy-mcp` sidecar beside the app, else the app binary itself (`--mcp-stdio`). All three relay to the running app over loopback, so a `speak` over them reaches the buddy once the app hands them the two variables above (#501). A Harness that advertises `mcpCapabilities.http` is handed the app's own loopback MCP server directly (ADR-0023). |
 | `AI_BUDDY_HARNESS_AUTH_RETRY_SECS` | How long a Harness that has not signed in is left alone before `session/new` is tried again. Overrides Settings → Development's "Auth retry, in seconds", and 60 stands when neither says anything. Read when the Session is built, so a change lands on the next attach. |
 | `AI_BUDDY_DIRECTOR_WAKE_SECS` | First proactive model-call wait, in seconds. Overrides Settings → Director's "First wake, in seconds", and 120 stands when neither says anything. After each proactive model call the wait grows by the Character's `[director]` `model_base` and `model_power` (`wait * model_base ^ model_power`, default doubling), and caps at two hours. Not a heartbeat. Poke and Summon wake immediately. |
 
@@ -329,8 +330,10 @@ turn
 ```
 
 `mcp` sits under the handshake because it is what the session was actually
-handed, and `mcp http` above it is why: `hermes` advertises none, so it gets the
-stubbed stdio server. A Harness that advertises HTTP MCP prints a
+handed, and `mcp http` above it is why: `hermes` advertises none on ACP
+`initialize`, so it gets the stdio server, which relays to the app (ADR-0026).
+That is the handshake bit alone — hermes speaks MCP over HTTP perfectly well as
+a client of someone else's server. A Harness that advertises HTTP MCP prints a
 `http://127.0.0.1:…/mcp` URL there instead — never the bearer token that
 reaches it — but only when a running app bound that listener, which a probe
 does not (ADR-0023).
@@ -475,6 +478,58 @@ NSIS installer ships. Some cells stub/degraded (see platform table in main READM
 #### Harness Process Termination
 
 On Windows, the ACP Harness child and its descendants (e.g. `npx` spawning Node) are assigned to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` at create time. The process is spawned suspended, assigned to the job, then resumed before any user code runs. When the app quits or the Harness is detached, terminating the job ensures grandchildren do not linger. The child is also in its own process group (`CREATE_NEW_PROCESS_GROUP`) so Ctrl+C into `cargo run` does not interrupt it.
+
+## MCP Server: Developer Flow
+
+Two transport axes (do not conflate):
+
+1. **ACP** (ai-buddy ↔ Harness): always stdio. ai-buddy spawns the Harness and prompts it over newline-delimited JSON-RPC on stdio.
+2. **MCP** (Harness → ai-buddy tools): The Harness calls back so `speak`, sensing, and Memory tools reach the buddy.
+
+### How it works
+
+**Dispatch lives in the running app** (ADR-0023, #491). `src-tauri/src/mcp_http.rs` serves seven synchronous tools on `http://127.0.0.1:<random-port>/mcp` behind a per-run bearer token. The token is 32 fresh bytes held in memory, never written to disk or a log. The endpoint binds on app launch; if the bind fails, the app continues without MCP (ADR-0010).
+
+**The gate is one ACP handshake bit:** `agentCapabilities.mcpCapabilities.http` on `initialize`.
+
+- **Advertises it (true)** → the Harness gets the loopback URL + bearer token directly (ADR-0023). Tool calls hit the app's endpoint; `speak` reaches the buddy.
+- **Omits it (false or absent)** → the Harness gets a stdio MCP server entry: a binary path it spawns as a child of its own (ADR-0026, #501). That binary is a relay shim with no state; it posts every JSON-RPC message to the app's loopback endpoint and passes the app's answer back untouched. The environment carries `AI_BUDDY_MCP_URL` and `AI_BUDDY_MCP_TOKEN` from the app to the shim. Three stdio routes: `AI_BUDDY_MCP_BIN`, an `ai-buddy-mcp` sidecar, or `ai-buddy --mcp-stdio`; all three relay.
+
+**Seven tools** (`crates/core/src/dispatch.rs`):
+
+- `speak` — Make the Character speak dialogue
+- `play_behavior` — Play a named Behavior
+- `list_windows` — List visible windows with bounds and owner
+- `describe_screen` — Describe screen (v1: window metadata only; Capture deferred)
+- `recall` — Read everything Memory holds
+- `remember` — Write one fact under a heading
+- `list_instances` — List Character Instances and their names
+
+All requests are synchronous; no streaming, no push. The loopback server (`mcp_http.rs`) is thread-per-request with no async runtime.
+
+### What MCP implements today
+
+- Seven sync tools, JSON-RPC 2.0 over HTTP POST
+- Bearer auth on every request (`Authorization: Bearer <token>`)
+- Loopback-only binding; remote connections refused by design (ADR-0010)
+- Request/response; no notifications from server to client
+- DenyList applied to `list_windows` and `describe_screen` (filters password managers, redacts password fields)
+
+### What it can but doesn't
+
+- **Richer sensing (Capture)** — *deferred*. `describe_screen` v1 is window metadata only; pixels/OCR/vision are not shipped. When added, they gate behind user consent (sensing permissions already exist for window geometry).
+- **Executor / input events (click, type, move mouse)** — *by design no* (ADR-0003). The Harness owns desktop control; ai-buddy ships no synthetic event tools. Prevents permission duplication and keeps the capability research-preview portable.
+- **MCP sampling, progress, SSE push** — *out of scope today*. The server is sync request/response; no `notifications/progress`, no server-initiated push. Sampling requires long-lived connections the current thread-per-request model doesn't hold.
+- **Resources / prompts** — *not served*. MCP resources and prompt templates are not exposed; the protocol layer stops at tools.
+- **Non-loopback MCP** — *by design no* (ADR-0010). The bearer token authorizes moving the buddy; an off-host endpoint would post it there. The bind is `127.0.0.1` only; LAN/WAN addresses are refused.
+- **A Harness advertising `mcpCapabilities.http`** — *Harness-side*. Whether a Harness sets that bit is the Harness's decision; ai-buddy branches on what `initialize` advertised. Hermes as an MCP *client* already speaks HTTP/SSE via its own `mcp_servers` config; that is a different axis from the ACP capability bit ai-buddy gates on. A future Hermes setting the bit would take the loopback path with no change here.
+
+### Related decisions
+
+- ADR-0003 — no Executor tools (mouse/keyboard events) in ai-buddy
+- ADR-0010 — credential rules, loopback-only MCP, token stays out of logs
+- ADR-0023 — dispatch inside the running app, loopback HTTP MCP
+- ADR-0026 — stdio MCP binary is a relay shim
 
 ## Further Reading
 

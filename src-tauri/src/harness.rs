@@ -1299,21 +1299,42 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 ///
 /// The app's own loopback server first, because its tools dispatch against the
 /// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023,
-/// #470). A Harness that advertises no `mcpCapabilities.http` — `hermes` is one
-/// (ADR-0017) — gets `mcp_launch`'s stdio server instead, whose dispatch
-/// context is stubbed: a `speak` there returns success and moves nothing (#501,
-/// #502). Since #497 that fallback always exists, so `None` here is only ever
-/// an exe this code cannot recognise.
+/// #470). A Harness that does not advertise `mcpCapabilities.http` on
+/// `initialize` — `hermes` does not — gets `mcp_launch`'s stdio server
+/// instead, which relays to that same loopback server and so reaches the same
+/// Instances (ADR-0026). The test is that handshake bit and only that bit: a
+/// Harness may be a fluent HTTP MCP client and still not set it, and one that
+/// starts setting it takes the loopback branch above with nothing to change
+/// here. It is
+/// handed the endpoint in its environment; with no loopback server to name,
+/// the shim answers every call with a failure rather than a stubbed success.
+/// Since #497 that fallback always exists, so `None` here is only ever an exe
+/// this code cannot recognise.
 fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
+    choose_mcp(handshake, crate::mcp_http::endpoint(), mcp_stdio())
+}
+
+/// The choice itself, with both candidates handed in: a test binary is not
+/// named `ai-buddy` and has no sidecar beside it, so `mcp_stdio` finds nothing
+/// there and the stdio branch would never be exercised.
+fn choose_mcp(
+    handshake: &Handshake,
+    endpoint: Option<crate::mcp_http::Endpoint>,
+    stdio: Option<McpLaunch>,
+) -> Option<McpChoice> {
     if handshake.mcp_http {
-        if let Some(endpoint) = crate::mcp_http::endpoint() {
+        if let Some(endpoint) = &endpoint {
             return Some(McpChoice::Http {
                 url: endpoint.url.clone(),
                 authorization: endpoint.authorization(),
             });
         }
     }
-    mcp_stdio().map(McpChoice::Stdio)
+    let mut launch = stdio?;
+    launch.env = endpoint
+        .map(|endpoint| endpoint.stdio_env())
+        .unwrap_or_default();
+    Some(McpChoice::Stdio(launch))
 }
 
 /// The stdio MCP server to hand the session, when one can be launched.
@@ -1337,6 +1358,7 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
         return Some(McpLaunch {
             path: path.to_path_buf(),
             args: Vec::new(),
+            env: Vec::new(),
         });
     }
     let beside = current_exe.parent()?.join("ai-buddy-mcp");
@@ -1349,6 +1371,7 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
         return Some(McpLaunch {
             path: sibling,
             args: Vec::new(),
+            env: Vec::new(),
         });
     }
     // Sibling / configured path still win; this is how `cargo run` and a bundle
@@ -1357,6 +1380,7 @@ fn mcp_launch(configured: Option<&Path>, current_exe: &Path) -> Option<McpLaunch
     (current_exe.file_stem()? == "ai-buddy").then(|| McpLaunch {
         path: current_exe.to_path_buf(),
         args: vec!["--mcp-stdio".into()],
+        env: Vec::new(),
     })
 }
 
@@ -1527,13 +1551,16 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
         // which one the session got. The probe's `mcp` line says the latter.
         match (crate::mcp_http::endpoint(), mcp_stdio()) {
             (Some(endpoint), Some(launch)) => format!(
-                "harness: MCP server {}, or `{}` (stubbed) for a Harness with no HTTP MCP",
+                "harness: MCP server {}, or `{}` (relays here) for a Harness that advertises no mcpCapabilities.http",
                 endpoint.url,
                 launch.line()
             ),
             (Some(endpoint), None) => format!("harness: MCP server {}", endpoint.url),
             (None, Some(launch)) => {
-                format!("harness: MCP server {} (stubbed)", launch.line())
+                format!(
+                    "harness: MCP server {} (no app endpoint to relay to)",
+                    launch.line()
+                )
             }
             (None, None) => "harness: no MCP server; the session gets no tools".to_string(),
         },
@@ -2986,9 +3013,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// ADR-0023's branch: the loopback server for a Harness that advertised
-    /// HTTP MCP, and never for one that did not — sending a URL to `hermes`,
-    /// which advertises none, is sending it somewhere it will not be read.
+    /// ADR-0023's branch: the loopback server for a Harness whose ACP
+    /// `initialize` advertised `agentCapabilities.mcpCapabilities.http`, and
+    /// never for one that did not — a future Hermes with that bit set would get
+    /// the HTTP server directly.
     #[test]
     fn the_loopback_server_goes_only_to_a_harness_that_advertised_http_mcp() {
         let (calls, _held) = mpsc::channel();
@@ -3012,7 +3040,57 @@ mod tests {
         let stdio_only = Handshake::default();
         assert!(
             !matches!(mcp_server(&stdio_only), Some(McpChoice::Http { .. })),
-            "a Harness with no mcpCapabilities.http is never handed a URL"
+            "a Harness whose initialize advertises no mcpCapabilities.http is never handed a URL"
         );
+    }
+
+    /// #501: the stdio server is a shim that dials the app, so the choice has
+    /// to carry the endpoint the shim reads — and carry it in the environment,
+    /// never in the line the Action Log takes.
+    #[test]
+    fn the_stdio_server_is_handed_the_endpoint_in_its_environment() {
+        let (calls, _held) = mpsc::channel();
+        let endpoint = crate::mcp_http::serve(calls).expect("loopback binds");
+
+        let sidecar = McpLaunch {
+            path: PathBuf::from("/opt/ai-buddy-mcp"),
+            args: Vec::new(),
+            env: Vec::new(),
+        };
+        let Some(McpChoice::Stdio(launch)) = choose_mcp(
+            &Handshake::default(),
+            Some(endpoint.clone()),
+            Some(sidecar.clone()),
+        ) else {
+            panic!("no stdio server to hand over");
+        };
+        let value = |name: &str| {
+            launch
+                .env
+                .iter()
+                .find(|(var, _)| var == name)
+                .map(|(_, value)| value.clone())
+                .unwrap_or_else(|| panic!("{name} is not in the environment"))
+        };
+        assert_eq!(value(ai_buddy_mcp_server::URL_VAR), endpoint.url);
+        assert_eq!(
+            format!("Bearer {}", value(ai_buddy_mcp_server::TOKEN_VAR)),
+            endpoint.authorization()
+        );
+        assert!(
+            !launch
+                .line()
+                .contains(&value(ai_buddy_mcp_server::TOKEN_VAR)),
+            "the token reached the line the Action Log takes"
+        );
+
+        // No app serving loopback is a shim that fails visibly, not one
+        // dialling an endpoint it invented.
+        let Some(McpChoice::Stdio(unreachable)) =
+            choose_mcp(&Handshake::default(), None, Some(sidecar))
+        else {
+            panic!("no stdio server to hand over");
+        };
+        assert!(unreachable.env.is_empty());
     }
 }
