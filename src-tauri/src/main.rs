@@ -1169,7 +1169,7 @@ fn select_harness(harness: String, state: tauri::State<'_, SettingsState>) -> Re
     patch.set_text(settings::TextField::Harness, &harness);
 
     settings.apply(patch);
-    settings::write(&state.path, &settings).map_err(|e| e.to_string())?;
+    settings.save(&state.path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
