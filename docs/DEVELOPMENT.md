@@ -330,8 +330,10 @@ turn
 ```
 
 `mcp` sits under the handshake because it is what the session was actually
-handed, and `mcp http` above it is why: `hermes` advertises none, so it gets the
-stubbed stdio server. A Harness that advertises HTTP MCP prints a
+handed, and `mcp http` above it is why: `hermes` advertises none on ACP
+`initialize`, so it gets the stdio server, which relays to the app (ADR-0026).
+That is the handshake bit alone — hermes speaks MCP over HTTP perfectly well as
+a client of someone else's server. A Harness that advertises HTTP MCP prints a
 `http://127.0.0.1:…/mcp` URL there instead — never the bearer token that
 reaches it — but only when a running app bound that listener, which a probe
 does not (ADR-0023).

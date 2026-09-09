@@ -1299,9 +1299,13 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 ///
 /// The app's own loopback server first, because its tools dispatch against the
 /// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023,
-/// #470). A Harness that advertises no `mcpCapabilities.http` — `hermes` is one
-/// (ADR-0017) — gets `mcp_launch`'s stdio server instead, which relays to that
-/// same loopback server and so reaches the same Instances (ADR-0026). It is
+/// #470). A Harness that does not advertise `mcpCapabilities.http` on
+/// `initialize` — `hermes` does not — gets `mcp_launch`'s stdio server
+/// instead, which relays to that same loopback server and so reaches the same
+/// Instances (ADR-0026). The test is that handshake bit and only that bit: a
+/// Harness may be a fluent HTTP MCP client and still not set it, and one that
+/// starts setting it takes the loopback branch above with nothing to change
+/// here. It is
 /// handed the endpoint in its environment; with no loopback server to name,
 /// the shim answers every call with a failure rather than a stubbed success.
 /// Since #497 that fallback always exists, so `None` here is only ever an exe
@@ -1547,7 +1551,7 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
         // which one the session got. The probe's `mcp` line says the latter.
         match (crate::mcp_http::endpoint(), mcp_stdio()) {
             (Some(endpoint), Some(launch)) => format!(
-                "harness: MCP server {}, or `{}` (relays here) for a Harness with no HTTP MCP",
+                "harness: MCP server {}, or `{}` (relays here) for a Harness that advertises no HTTP MCP",
                 endpoint.url,
                 launch.line()
             ),

@@ -3,8 +3,13 @@
 ## Context
 
 ADR-0023 put dispatch inside the running app, which serves MCP on loopback
-behind a per-run bearer token. A Harness whose handshake advertises no HTTP
-capability — hermes is one — is given the stdio binary instead. That binary
+behind a per-run bearer token. The gate is one bit of the ACP handshake:
+`agentCapabilities.mcpCapabilities.http` on `initialize`. A Harness that does
+not set it — hermes does not — is given the stdio binary instead. That is a
+statement about the handshake and nothing else: hermes is itself an MCP client
+that speaks Streamable HTTP and SSE through its own `mcp_servers` config, and
+a Harness that starts setting the bit would take ADR-0023's path with no change
+here. That binary
 answered from stubs: no window sensing, no Instances, no expression. A `speak`
 there returned success and nothing appeared on screen, which is
 indistinguishable from working (#470, #501).
@@ -69,4 +74,5 @@ nothing — and a Harness that spawns it anyway is told so on every call. That i
 the same answer as before for a user with no app open, said out loud.
 
 Reversing this means a descriptor file with its permissions, staleness and
-cleanup, or accepting that a Harness with no HTTP MCP has no working tools.
+cleanup, or accepting that a Harness which does not advertise the bit has no
+working tools.
