@@ -63,22 +63,18 @@ test("bubble placement stays above sprite by default", () => {
   assert.equal(pos.tailOffset, 0, "tail centered when bubble not clamped");
 });
 
-// What replaced the flip (ADR-0013, amended by #441): the bubble always sits
-// above the head, so near the ceiling it clamps to the display edge and
-// overlaps the sprite rather than moving below it. main.js draws it in front.
-test("bubble clamps to display top and overlaps sprite near the ceiling", () => {
+// ADR-0013 amended by #441, then by #546: near the ceiling the bubble inverts
+// below the sprite at the same mirrored distance when above would cover the face.
+// This replaces the clamp-and-overlap behavior #441 shipped.
+test("bubble inverts below sprite at ceiling when above would cover face", () => {
   const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
   const bubbleSize = { width: 200, height: 100 };
   const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
 
   const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
 
-  assert.equal(pos.y, displayBounds.y, "clamped to the top of the display");
-  assert.ok(pos.y < spriteRect.y + spriteRect.height, "overlaps the sprite rather than flipping below it");
-  assert.ok(
-    pos.y + bubbleSize.height > spriteRect.y,
-    "the overlap is real: the bubble reaches past the head",
-  );
+  assert.ok(pos.y > spriteRect.y + spriteRect.height, "bubble is below sprite, not clamped above");
+  assert.equal(pos.y, spriteRect.y + spriteRect.height + 10, "10px gap below, mirroring the normal above gap");
 });
 
 // The clamp is the only thing that moves the bubble off the head: with room
@@ -91,6 +87,28 @@ test("bubble keeps its 10px gap over the head when there is room", () => {
   const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
 
   assert.equal(pos.y + bubbleSize.height, spriteRect.y - 10, "10px of clear air under the tail");
+});
+
+test("bubble inverts below sprite when ceiling clamp would cover the face", () => {
+  const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
+  const bubbleSize = { width: 200, height: 100 };
+  const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
+
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
+
+  assert.ok(pos.y > spriteRect.y + spriteRect.height, "bubble is below sprite when ceiling would cover face");
+  assert.equal(pos.y, spriteRect.y + spriteRect.height + 10, "mirrored 10px gap below sprite");
+});
+
+test("bubble inverts only when clamp would cover sprite, not when it clears", () => {
+  const spriteRect = { x: 100, y: 150, width: 64, height: 64 };
+  const bubbleSize = { width: 200, height: 60 };
+  const displayBounds = { x: 0, y: 0, width: 1000, height: 800 };
+
+  const pos = placeBubble(spriteRect, bubbleSize, displayBounds);
+
+  assert.ok(pos.y < spriteRect.y, "bubble stays above when it fits without covering");
+  assert.equal(pos.y, spriteRect.y - bubbleSize.height - 10, "normal above placement");
 });
 
 test("bubble slides horizontally at display edges", () => {

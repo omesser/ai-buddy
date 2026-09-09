@@ -163,15 +163,23 @@ export function createBubbleMachine(io) {
   };
 }
 
-// The bubble always sits above the head (ADR-0013, amended by #441). Near the
-// top of a display the clamp below is the whole answer: the bubble stops at the
-// display edge and overlaps the sprite, drawn in front of it by main.js. A line
-// that cannot be read is a worse failure than art briefly covered.
+// The bubble sits above the head (ADR-0013, amended by #441). At the ceiling,
+// when the clamp would cover the Character's face (#546), invert: put the bubble
+// under the Character at the same mirrored vertical distance.
 export function placeBubble(spriteRect, bubbleSize, displayBounds) {
   const spriteCenterX = spriteRect.x + spriteRect.width / 2;
+  const gap = 10;
 
   let x = spriteCenterX - bubbleSize.width / 2;
-  let y = spriteRect.y - bubbleSize.height - 10;
+  let y = spriteRect.y - bubbleSize.height - gap;
+
+  const wouldClampToTop = y < displayBounds.y;
+  const clampedY = displayBounds.y;
+  const wouldCoverSprite = wouldClampToTop && (clampedY + bubbleSize.height > spriteRect.y);
+
+  if (wouldCoverSprite) {
+    y = spriteRect.y + spriteRect.height + gap;
+  }
 
   x = Math.max(displayBounds.x, Math.min(x, displayBounds.x + displayBounds.width - bubbleSize.width));
   y = Math.max(displayBounds.y, Math.min(y, displayBounds.y + displayBounds.height - bubbleSize.height));
