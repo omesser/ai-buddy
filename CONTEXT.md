@@ -111,8 +111,12 @@ _Avoid_: Routine, script, macro
 The role that proposes a Behavior, and Speech when the session is on. Static
 weights fill Behaviors and never speak; an attached Harness is that role and
 proposes Speech by calling speak. Never runs in the frame loop and never
-drives animation directly.
-_Avoid_: Brain, agent, planner
+drives animation directly. Covers both Static Director and AI Director (ModelDirector).
+The environment variables `AI_BUDDY_DIRECTOR_*` configure the HTTP Completer,
+which is one fill of this role (#466).
+_Avoid_: Brain, agent, planner. In user-facing Settings and README: the role
+name "Director" when it means the on/off switch or HTTP configuration — say
+"AI" / "AI on" for the toggle, "Model" / "API" for HTTP knobs instead
 
 **Proactive model call**:
 A Director session wake that fires because the buddy was left alone long
@@ -178,15 +182,19 @@ behalf. Supplied by the user, never bundled.
 _Avoid_: Backend, provider, model
 
 **Completer**:
-Whatever answers a Character Prompt behind the one session trait
-([ADR-0008](./docs/adr/0008-one-harness-session.md)): the attached Harness
-over ACP, or the HTTP chat-completions endpoint when none is attached
-([ADR-0017](./docs/adr/0017-acp-client-over-the-official-sdk-and-supported-harnesses.md)).
-Settings names the HTTP one's timeout and reply cap, which is where the word
-reaches the screen. That one streams, so the first token arrives long before
-the reply and a dropped call stops the host generating rather than merely
-going unheard; one that will not stream is answered whole instead.
-_Avoid_: Model, LLM, provider, API
+The session trait the Director role uses to answer Character Prompts, filled by
+either HTTP chat-completions or an attached Harness over ACP
+([ADR-0008](./docs/adr/0008-one-harness-session.md),
+[ADR-0017](./docs/adr/0017-acp-client-over-the-official-sdk-and-supported-harnesses.md)).
+Director is the role; Completer is the umbrella trait both fills implement.
+When no Harness is attached, the HTTP Completer streams chat-completions (first
+token arrives long before the reply; a dropped call stops the host generating
+rather than merely going unheard; non-streaming hosts are answered whole). When
+a Harness is attached, it fills the trait instead. Settings names the HTTP
+fill's timeout and reply cap. The environment variables
+`AI_BUDDY_DIRECTOR_BASE_URL`, `AI_BUDDY_DIRECTOR_MODEL`, and
+`AI_BUDDY_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
+_Avoid_: Using "Completer" as user-facing brand, or as synonym for HTTP-only fill
 
 **Executor**:
 Whatever posts synthetic mouse and keyboard events to the operating system.
@@ -283,11 +291,9 @@ _Avoid_: Reasoning pane, thoughts, chain of thought, transcript
 The window a Summon opens: where the user types to the attached Harness and
 reads the answers too long for a Speech bubble. Belongs to the Character
 Instance that was Summoned, and is drawn by ai-buddy rather than by the
-Harness. The term for internal writing — code, ADRs, `DESIGN.md`. User-facing
-copy says "chat window", which is friendlier and names the same thing. #17,
-ADR-0010.
-_Avoid_: console, terminal, prompt box, Chat UI (its visual design, not the
-window); Chat surface in user-facing copy, Chat window in internal writing
+Harness. #17, ADR-0010.
+_Avoid_: Chat window, console, terminal, prompt box, Chat UI (its visual
+design, not the window)
 
 **Chat UI**:
 A named, swappable visual design for the Chat surface — palette, type scale and

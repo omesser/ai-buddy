@@ -37,14 +37,15 @@ No mechanical renames identified. The codebase accurately uses CONTEXT.md terms:
 - **State, Perch, Surface, Contact**: Match glossary.
 - **Speech, speak, Cue**: Correct usage.
 
-### 🟡 Defer / Issue
+### 🟢 Completed (Issue #466)
 
 **User-facing Settings UI copy** (issue #466):
-- Variable names like `AI_BUDDY_DIRECTOR_BASE_URL` say "Director" but configure
-  the Completer's endpoint.
-- Settings section "Director" mixes Director-the-role with Completer fields.
-- This is a **product decision**, not a code-internal naming issue.
-- Already tracked in #466; no code PR should touch this without Oded's input.
+- Decision (locked): Keep Director as domain role; fix user-facing labels
+- Environment variables remain `AI_BUDDY_DIRECTOR_*` (no breaking change)
+- Settings section renamed to "AI" (not "Director" or "AI Completer")
+- Toggle label: "AI on" (clear what it means)
+- HTTP field labels: "Model", "API key" (not "Director" or "Completer")
+- CONTEXT.md clarifies: Director = role, Completer = trait (HTTP|Harness umbrella)
 
 ### ⚪ Leave (Intentional / Not Churny)
 
