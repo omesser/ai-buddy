@@ -1151,6 +1151,27 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
+/// Select a Harness as the Completer source, persisting to Settings.
+///
+/// This configures the product to use the named Harness (claude, codex,
+/// hermes, opencode) as the Completer. The Harness is then attached and will
+/// authenticate through its own flow. This is step 1 of connecting from the
+/// Chat UI; step 2 is calling `harness_login` to spawn the auth command.
+#[tauri::command]
+fn select_harness(harness: String, state: tauri::State<'_, SettingsState>) -> Result<(), String> {
+    // Validate that this is a known preset
+    if !["claude", "codex", "hermes", "opencode"].contains(&harness.as_str()) {
+        return Err(format!("unknown Harness preset: {harness}"));
+    }
+
+    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
+    let mut patch = settings::SettingsPatch::default();
+    patch.set_text(settings::TextField::Harness, &harness);
+
+    state.apply(patch)?;
+    Ok(())
+}
+
 /// Spawn the login command for a named Harness, detached.
 ///
 /// The command runs in the user's own terminal or spawns its own auth flow —
@@ -2316,6 +2337,7 @@ fn main() {
             chat_prompt,
             chat_ready,
             permission_answer,
+            select_harness,
             harness_login,
             show_settings
         ])

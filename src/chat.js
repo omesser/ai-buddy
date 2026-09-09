@@ -312,13 +312,18 @@ for (const btn of document.querySelectorAll(".connect-btn")) {
     const harness = btn.dataset.harness;
     const label = btn.querySelector(".connect-label").textContent;
 
-    invoke("harness_login", { harness })
+    // First, select the Harness as the Completer source (persists to Settings)
+    invoke("select_harness", { harness })
+      .then(() => {
+        // Then spawn the login command
+        return invoke("harness_login", { harness });
+      })
       .then(() => {
         note(`Starting ${label} login. Sign in through the ${label} window.`);
       })
       .catch((why) => {
-        console.error(`harness_login failed:`, why);
-        note(`Could not start ${label} login: ${why}.`);
+        console.error(`connect failed:`, why);
+        note(`Could not connect to ${label}: ${why}.`);
       });
   });
 }
