@@ -1,0 +1,47 @@
+name: Default Milestone
+
+# Everything filed today belongs to V1, and an issue left without a milestone
+# is invisible to the milestone view triage works from. Rather than ask every
+# reporter to remember, the repository picks the default for them.
+#
+# Pull requests are untouched, deliberately: the `issues` event does not fire
+# for them at all — they arrive as `pull_request` — so "every new issue" here
+# means issues, and a pull request keeps whatever milestone its author chose.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  # One API call, one scope. There is no checkout, so not even `contents: read`
+  # is worth spending.
+  issues: write
+
+jobs:
+  milestone:
+    # A milestone the author picked is a decision this workflow does not
+    # overrule — including a deliberate V1. GitHub sends `milestone` as null
+    # exactly when the issue arrived without one, so that is the whole test.
+    if: github.event.issue.milestone == null
+    runs-on: ubuntu-latest
+    steps:
+      # `gh` rather than actions/github-script: the job is a single edit the
+      # CLI already wraps, leaving no third-party action to pin and no
+      # JavaScript to review.
+      #
+      # `--milestone` takes the title and resolves it against the repository at
+      # run time. A hardcoded number (V1 is 1 today) would break silently the
+      # first time milestones are renumbered; a title that no longer exists
+      # fails the run instead, loudly.
+      #
+      # This cannot retrigger itself: setting a milestone raises
+      # `issues: milestoned`, and the only type subscribed to above is
+      # `opened`.
+      - name: Put the issue in V1
+        run: gh issue edit "$ISSUE" --milestone V1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # Through `env:` rather than spliced into the `run:` line, so nothing
+          # from the event payload is ever expanded as shell.
+          ISSUE: ${{ github.event.issue.number }}
