@@ -187,6 +187,14 @@ jobs:
         # reach. dbus-run-session is already present.
         if: runner.os == 'Linux' && steps.changes.outputs.code == 'true'
         run: |
+          # The runner image ships Google's Chrome apt source, and nothing
+          # installed below comes from it. When that mirror serves an
+          # inconsistent index, `apt-get update` exits 100 and the whole Linux
+          # job goes red for a reason no pull request can fix or reproduce —
+          # which is exactly what happened repo-wide, `main` included, on
+          # 2026-09-09. Dropping the source we do not use makes this job depend
+          # on Ubuntu's archives alone.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
