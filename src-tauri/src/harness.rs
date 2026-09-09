@@ -1551,7 +1551,7 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
         // which one the session got. The probe's `mcp` line says the latter.
         match (crate::mcp_http::endpoint(), mcp_stdio()) {
             (Some(endpoint), Some(launch)) => format!(
-                "harness: MCP server {}, or `{}` (relays here) for a Harness that advertises no HTTP MCP",
+                "harness: MCP server {}, or `{}` (relays here) for a Harness that advertises no mcpCapabilities.http",
                 endpoint.url,
                 launch.line()
             ),
@@ -3013,9 +3013,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// ADR-0023's branch: the loopback server for a Harness that advertised
-    /// HTTP MCP, and never for one that did not — sending a URL to `hermes`,
-    /// which advertises none, is sending it somewhere it will not be read.
+    /// ADR-0023's branch: the loopback server for a Harness whose ACP
+    /// `initialize` advertised `agentCapabilities.mcpCapabilities.http`, and
+    /// never for one that did not — a future Hermes with that bit set would get
+    /// the HTTP server directly.
     #[test]
     fn the_loopback_server_goes_only_to_a_harness_that_advertised_http_mcp() {
         let (calls, _held) = mpsc::channel();
@@ -3039,7 +3040,7 @@ mod tests {
         let stdio_only = Handshake::default();
         assert!(
             !matches!(mcp_server(&stdio_only), Some(McpChoice::Http { .. })),
-            "a Harness with no mcpCapabilities.http is never handed a URL"
+            "a Harness whose initialize advertises no mcpCapabilities.http is never handed a URL"
         );
     }
 
