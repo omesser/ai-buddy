@@ -69,7 +69,7 @@ image = {version = "0.25", default-features = false, features = ["png"]}
 # The bearer token for the loopback MCP server (ADR-0023). The OS CSPRNG and
 # nothing else: already in the tree under keyring and tokio, and a token minted
 # from a clock is a token an attacker can guess.
-getrandom = "0.3"
+getrandom = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 # Process-group teardown for an `npx` Harness: `getpgid` / `killpg`.
