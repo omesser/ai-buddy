@@ -1016,7 +1016,7 @@ pub fn run_probe() -> i32 {
         eprintln!("probe-harness: {VAR} is unset, so there is no Harness to attach");
         return 2;
     };
-    let session = Session::new(
+    let session = Arc::new(Session::new(
         launch,
         // The probe's own folder under the app's, which keeps the session file
         // and the Action Log out of a real install's — a probe is still the way
@@ -1035,7 +1035,24 @@ pub fn run_probe() -> i32 {
                 println!("  permission   {} [{}]", ask.title, ask.request);
             }
         }) as Forward),
-    );
+    ));
+    // Ctrl+C is ours before the child spawns, so the child gets its own
+    // process group and `acp_wire::kill_harness_tree` can reap the `npx`
+    // grandchildren that would otherwise outlive the probe (#457). The
+    // handler is what keeps that from orphaning the child: once the child has
+    // left this group, a Ctrl+C mid-probe no longer reaches it, so shutting
+    // the session down is now our job. 130 is the shell's code for SIGINT,
+    // and none of the three codes the probe otherwise reports.
+    let interrupted = session.clone();
+    match ctrlc::set_handler(move || {
+        interrupted.shutdown();
+        std::process::exit(130);
+    }) {
+        Ok(()) => own_interrupt(),
+        Err(why) => eprintln!(
+            "probe-harness: could not catch interrupt: {why}; the Harness stays in this process group"
+        ),
+    }
     let code = probe(&session);
     session.shutdown();
     code
@@ -2056,26 +2073,46 @@ mod tests {
     /// group without checking whose it is, and a child that never left ours
     /// takes this process with it. That is how `--probe-harness` died at -9
     /// after printing `end_turn` (#457).
+    ///
+    /// Asserted through the predicate rather than by calling
+    /// `kill_harness_tree` on a child in our own group. That call is the bug
+    /// itself: were the guard to regress, it would SIGKILL this test binary,
+    /// `cargo test` and the terminal running them, with no failure printed.
     #[cfg(unix)]
     #[test]
-    fn killing_an_unisolated_child_does_not_kill_us() {
+    fn our_own_group_is_never_killable() {
+        let shared = sleep_pgid(false);
+        let isolated = sleep_pgid(true);
+        assert_eq!(
+            Some(shared),
+            pgid_of(std::process::id()),
+            "the unisolated child under test has to share our group"
+        );
+        assert!(
+            !crate::acp_wire::killable_group(shared as libc::pid_t),
+            "SIGKILLing this group would take the probe, cargo test and the shell with it"
+        );
+        assert!(
+            crate::acp_wire::killable_group(isolated as libc::pid_t),
+            "an isolated child's group is the one kill_harness_tree exists to reap"
+        );
+    }
+
+    /// The process group a `/bin/sleep` spawned under
+    /// `apply_isolation(isolate)` landed in. The child is reaped before this
+    /// returns; only its group is of interest.
+    #[cfg(unix)]
+    fn sleep_pgid(isolate: bool) -> i32 {
         let mut command = std::process::Command::new("/bin/sleep");
         command.arg("8");
         command.stdout(std::process::Stdio::null());
         command.stderr(std::process::Stdio::null());
-        apply_isolation(&mut command, false);
+        apply_isolation(&mut command, isolate);
         let mut child = command.spawn().expect("sleep");
-        assert_eq!(
-            pgid_of(child.id()),
-            pgid_of(std::process::id()),
-            "the child under test has to share our group"
-        );
-        crate::acp_wire::kill_harness_tree(child.id());
-        // Reached only if the line above spared us. The direct kill the
-        // caller pairs it with is what reaps this child.
-        assert!(alive(std::process::id()));
+        let pgid = pgid_of(child.id()).expect("child pgid");
         let _ = child.kill();
         let _ = child.wait();
+        pgid
     }
 
     #[cfg(unix)]

@@ -456,25 +456,34 @@ fn run(
     });
 }
 
+/// Whether `pgid` is a group we may SIGKILL: a real group, and not our own.
+///
+/// A child leaves our group only once `own_interrupt` has taken Ctrl+C
+/// (`harness::apply_isolation`). Both entry points do that before spawning —
+/// the app in `quit_harness_on_interrupt`, the probe in `harness::run_probe`
+/// — so in practice the answer is yes and the grandchildren die with the
+/// child. This exists for when that fails: a `ctrlc` handler that would not
+/// install leaves the child in our group, and SIGKILLing it there kills us.
+/// That is how `--probe-harness` died at -9 after printing `end_turn`, taking
+/// the shell that ran `scripts/probe-harness.sh` with it (#457).
+#[cfg(unix)]
+pub(crate) fn killable_group(pgid: libc::pid_t) -> bool {
+    pgid > 0 && pgid != unsafe { libc::getpgrp() }
+}
+
 /// SIGKILL the Harness's process group. `npx` grandchildren share that
 /// group; a direct `Child::kill` leaves them running.
 ///
-/// Never our own group. The child only leaves it once `own_interrupt` has
-/// taken Ctrl+C (`harness::apply_isolation`), and until then the group is
-/// ours: `--probe-harness` never installs that handler, so this SIGKILL used
-/// to take the probe down mid-shutdown — `end_turn` printed, exit code -9,
-/// and the shell that ran `scripts/probe-harness.sh` killed with it (#457).
-/// The same would happen in the app if the `ctrlc` handler failed to install.
-/// The caller's direct `Child::kill` still reaps the child; a grandchild that
-/// shares our group outlives us, which is the price of not killing ourselves.
+/// Never our own group, per `killable_group`. In the case that guard is for,
+/// the caller's direct `Child::kill` still reaps the child and a grandchild
+/// sharing our group outlives it.
 ///
 /// On Windows, terminates the Job Object so grandchildren die too.
 pub(crate) fn kill_harness_tree(pid: u32) {
     #[cfg(unix)]
     {
-        let pid = pid as libc::pid_t;
-        let pgid = unsafe { libc::getpgid(pid) };
-        if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
+        let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
+        if killable_group(pgid) {
             // SIGKILL, not SIGTERM: Claude's ACP adapter dumps
             // `Query closed before response received` on a polite
             // signal, which is the dump this isolation exists to avoid.

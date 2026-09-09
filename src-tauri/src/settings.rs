@@ -1261,8 +1261,9 @@ pub struct Settings {
     pub director_wake_secs: String,
     /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
     /// empty for none, a preset name (`claude`, `codex`, `grok`, `hermes`,
-    /// `opencode`), or `custom`, which defers to `harness_command`. The variable outranks it,
-    /// and either way `harness::retarget` reaches the attachment now (#500).
+    /// `opencode`), or `custom`, which defers to `harness_command`. The
+    /// variable outranks it, and either way `harness::retarget` reaches the
+    /// attachment now (#500).
     pub harness: String,
     /// The command line `custom` runs, split on whitespace as the variable's
     /// own value is. Kept when a preset is picked, so coming back to Custom
