@@ -273,9 +273,16 @@ function attached(opening) {
 
     if (needsAuth) {
       // Needs login variant
-      const harnessName = opening.harness_name || "The Harness";
+      const displayNames = {
+        claude: "Claude Code",
+        codex: "Codex",
+        grok: "Grok",
+        opencode: "OpenCode",
+        hermes: "Hermes",
+      };
+      const harnessName = displayNames[opening.harness_name] || opening.harness_name || "The Harness";
       title.textContent = `${harnessName} needs login`;
-      lede.textContent = `Sign in to use ${harnessName}, or you can switch to a different Harness:`;
+      lede.textContent = `${harnessName} needs login, or you can switch to a different Harness:`;
       command.textContent = opening.login;
       command.hidden = false;
       hint.textContent = "Or run this in your terminal:";

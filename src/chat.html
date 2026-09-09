@@ -187,10 +187,10 @@
          has to feel like one thing, so the composer is never hidden. The button
          disables when the field does, so a line the user can still see but not
          send says why. -->
-    <div class="composer" id="composer">
+    <form class="composer" id="composer">
       <input type="text" id="line" placeholder="Nothing can answer yet" autocomplete="off" />
-      <button type="button" id="send">Send</button>
-    </div>
+      <button type="submit" id="send">Send</button>
+    </form>
 
     <!-- The same status bar the overlay draws. Behaviour and pose, as the
          Director saw them, which is a few frames behind the screen when the
@@ -198,7 +198,7 @@
          Layer said. The rest is the Spatial Layer's own state, on which a snap
          would draw the same sprite the frame loop is holding. Own tab because
          Prompt has to rise over it, like the menu. -->
-    <footer class="status">
+    <footer class="bar">
       <span id="s-behavior"></span>
       <span id="s-primitive"></span>
       <span id="s-animation"></span>
