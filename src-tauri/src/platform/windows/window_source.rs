@@ -9,7 +9,8 @@
 use std::sync::Mutex;
 
 use ai_buddy_core::window_source::{Capabilities, Rect, WindowRect, WindowSource, WorldGeometry};
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
+use windows_sys::core::BOOL;
+use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
     GWL_EXSTYLE, GWL_STYLE, WS_EX_TOOLWINDOW, WS_VISIBLE,
