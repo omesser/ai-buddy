@@ -80,7 +80,7 @@ dependencies = [
  "bytemuck",
  "ctrlc",
  "file-rotate",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "gtk",
  "image",
  "keyring",
