@@ -23,7 +23,9 @@ the page is judged from `--out`, never from `docs/design/`.
 
 Pure standard library. The CSS slice is text, not a parser, so it cannot
 quietly pick up the overlay's transparent fullscreen rules sitting above
-`.bubble`.
+`.bubble`. Overlay `@import`s are inlined into that slice: the published
+page is one file, and leaving `var(--shared-*)` unset would paint a
+transparent hole.
 """
 
 import argparse
@@ -110,7 +112,23 @@ def require_module(source):
             raise Malformed(f"src/bubble.js does not export {name}")
 
 
-def extract_bubble_css(css):
+IMPORT = re.compile(
+    r"""@import\s+(?:url\(\s*)?["']([^"']+)["']\s*\)?\s*;""",
+)
+
+
+def inline_css_imports(css, base_dir):
+    """Follow overlay `@import`s so the published page is still one stylesheet."""
+    chunks = []
+    for match in IMPORT.finditer(css):
+        imported = (base_dir / match.group(1)).resolve()
+        if not imported.is_file():
+            raise Malformed(f"src/main.css imports missing {match.group(1)}")
+        chunks.append(imported.read_text(encoding="utf-8").rstrip())
+    return "\n".join(chunks)
+
+
+def extract_bubble_css(css, base_dir=None):
     """The bubble rules only.
 
     Copying main.css wholesale paints a transparent fullscreen overlay onto a
@@ -138,6 +156,10 @@ def extract_bubble_css(css):
                 sliced = css[start : index + 1].strip() + "\n"
                 if "html," in sliced or "background: transparent" in sliced:
                     raise Malformed("bubble CSS slice picked up overlay layout")
+                if base_dir is not None:
+                    prefix = inline_css_imports(css, base_dir)
+                    if prefix:
+                        return prefix + "\n" + sliced
                 return sliced
     raise Malformed("src/main.css thinking-bounce keyframes never close")
 
@@ -281,7 +303,7 @@ def assemble(src_root, out):
 
     if not css_path.is_file():
         raise Malformed("src/main.css is missing")
-    css = extract_bubble_css(css_path.read_text(encoding="utf-8"))
+    css = extract_bubble_css(css_path.read_text(encoding="utf-8"), css_path.parent)
 
     if not shell_path.is_file():
         raise Malformed("docs/design/expression.html is missing")
@@ -388,6 +410,7 @@ def self_check():
         css = (out / "good" / "bubble.css").read_text(encoding="utf-8")
         assert ".bubble.visible" in css
         assert ".thinking-dots" in css
+        assert "--shared-panel:" in css
         copied = (out / "good" / "bubble.js").read_text(encoding="utf-8")
         assert copied == good_js
         sprite = extract_sprite(html)

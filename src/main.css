@@ -1,3 +1,5 @@
+@import url("./chat-shared.css");
+
 /* The overlay must never paint a backdrop. Anything opaque here is a grey sheet
    over the user's desktop, which is the most obvious way this window can look
    broken. */
@@ -20,12 +22,12 @@ body {
    desktop (ADR-0013, amended by #441; ported from docs/design/bubble.html).
    The overlay loads no chat-ui.css and takes no `.chat-ui-*` class — importing
    it would drag the alpha-over-panel tokens into the one document that has no
-   panel — so the values below are inherited from the default chat UI by hand,
-   each naming the chat token it came from. */
+   panel — so only the shared snippet crosses, and a future Chat UI class still
+   cannot reach this document. */
 .bubble {
-  --bubble-panel: #14171e; /* chat-ui.css --chat-panel */
-  --bubble-ink: #e8ebf2; /* chat-ui.css --chat-ink */
-  --bubble-accent: #5cc9b5; /* chat-ui.css --chat-accent */
+  --bubble-panel: var(--shared-panel);
+  --bubble-ink: var(--shared-ink);
+  --bubble-accent: var(--shared-accent);
 
   position: absolute;
   max-width: 260px;
@@ -38,7 +40,7 @@ body {
      its --chat-radius-tail corner is the gesture for *you said this*, so it
      does not travel and the corner stays uniform. */
   padding: 10px 13px;
-  border-radius: 12px; /* chat-ui.css --chat-radius */
+  border-radius: var(--shared-radius);
   background: var(--bubble-panel);
   color: var(--bubble-ink);
 
@@ -48,12 +50,12 @@ body {
      the fill vanishes and the ring carries it. No single ground hides both,
      which a single-value edge cannot promise. The shadow closes the mid-tone
      case, where neither is at full strength. */
-  border: 2px solid var(--bubble-ink);
+  border: 2px solid var(--shared-ink);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
   font-family: system-ui, -apple-system, sans-serif; /* chat-ui.css --chat-sans */
-  font-size: 13.5px; /* chat-ui.css body */
-  line-height: 1.55; /* .row.them .said */
+  font-size: var(--shared-type-size);
+  line-height: var(--shared-type-leading);
 
   pointer-events: none;
   opacity: 0;
@@ -108,7 +110,7 @@ body {
 
 .bubble::before {
   bottom: -10px;
-  border-top: 10px solid var(--bubble-ink);
+  border-top: 10px solid var(--shared-ink);
 }
 
 .bubble::after {
