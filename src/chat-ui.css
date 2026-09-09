@@ -1,3 +1,5 @@
+@import url("./chat-shared.css");
+
 /* The Chat surface's visual language.
  *
  * One Chat UI ships — modern minimal — and this file is its single definition:
@@ -5,6 +7,8 @@
  * rules that consume them. A second design is a second .chat-ui-* block and
  * nothing else, which is why no colour, font family or radius literal is
  * written outside one; tests/chat-ui-tokens.test.js checks that. ADR-0013.
+ * Opaque tokens the Speech bubble may share live in chat-shared.css and are
+ * read here through var(); they are not a second Chat UI.
  *
  * Structure and density stay literal: they are what modern minimal happens to
  * be, not a scale another design has to inherit.
@@ -54,12 +58,12 @@
 .chat-ui-minimal {
   color-scheme: dark;
 
-  --chat-panel: #14171e;
-  --chat-ink: #e8ebf2;
+  --chat-panel: var(--shared-panel);
+  --chat-ink: var(--shared-ink);
   --chat-ink-2: #9aa2b4;
   --chat-ink-3: #7c8496;
   --chat-ink-4: #6c7488;
-  --chat-accent: #5cc9b5;
+  --chat-accent: var(--shared-accent);
   --chat-accent-ink: #0b231f;
   --chat-accent-soft: rgba(92, 201, 181, 0.13);
 
@@ -69,7 +73,7 @@
   --chat-rule: rgba(255, 255, 255, 0.07);
   --chat-line: rgba(255, 255, 255, 0.13);
 
-  --chat-radius: 12px;
+  --chat-radius: var(--shared-radius);
   --chat-radius-tail: 3px;
   --chat-radius-control: 10px;
   --chat-radius-badge: 5px;
@@ -100,7 +104,7 @@ body {
   background: var(--chat-panel);
   color: var(--chat-ink);
   font-family: var(--chat-sans);
-  font-size: 13.5px;
+  font-size: var(--shared-type-size);
 }
 
 /* The window's own furniture. No close button: the window is decorated, so
@@ -367,7 +371,7 @@ body {
 
 .row.them .said {
   max-width: 94%;
-  line-height: 1.55;
+  line-height: var(--shared-type-leading);
 }
 
 .caret {
