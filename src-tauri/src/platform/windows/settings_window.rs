@@ -520,8 +520,7 @@ impl SettingsWindow {
             let mut y = 0;
             for (index, instance) in view.instances.iter().enumerate() {
                 let line = format!("{} ({})", instance.name, instance.character);
-                // Win32 copies lpWindowName; the bind is so a reader does not
-                // re-derive that an argument temporary would also be valid. #572
+                // Win32 copies lpWindowName; the bind is for clarity, not correctness. #572
                 let line_cstr = CString::new(line).unwrap();
                 let label = CreateWindowExA(
                     0,
