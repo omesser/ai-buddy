@@ -30,7 +30,12 @@ pub enum RowOperation {
 pub struct FormSection {
     pub heading: String,
     pub rows: Vec<FormRow>,
+    /// Short introductory text, always visible.
     pub comment: Option<String>,
+    /// Extended explanation behind progressive disclosure ("What is this?").
+    pub disclosure: Option<String>,
+    /// Status information shown in a muted strip (env overrides, session state).
+    pub status: Option<String>,
 }
 
 /// One row of the settings form, as data.
@@ -48,12 +53,20 @@ pub enum FormRow {
         frozen: bool,
         help: Option<String>,
         comment: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info (e.g., env override) shown in a muted strip.
+        status: Option<String>,
     },
     /// An inspect-only text block showing current state.
     InspectBlock {
         id: String,
         label: Option<String>,
         help: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// An inspect-only wrapping label showing a path.
     InspectPath { id: String },
@@ -69,6 +82,10 @@ pub enum FormRow {
         options: Vec<String>,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// A multiline text field that writes to Settings.
     Multiline {
@@ -77,6 +94,8 @@ pub enum FormRow {
         writes: TextField,
         help: Option<String>,
         editable: bool,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
     },
     /// An editable text field that writes a string to Settings.
     TextField {
@@ -103,6 +122,10 @@ pub enum FormRow {
         /// never meant to go together, and every commit drops the in-flight
         /// session history with it (#279).
         batched: bool,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// A secure text field for passwords/keys.
     ///
@@ -117,18 +140,24 @@ pub enum FormRow {
         writes: TextField,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// A scrollable list of items with dismiss buttons.
     List {
         id: String,
         dismiss_label: String,
         help: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
     },
     /// A row of multiple controls (e.g., new instance spawn row).
     Composite {
         id: String,
         controls: Vec<CompositeControl>,
         help: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
     },
 }
 
@@ -448,48 +477,87 @@ pub fn harness_choice(title: &str) -> String {
     }
 }
 
-/// The label of a row an environment variable can own, and whether it does.
+/// The label of a row an environment variable can own, whether it owns it, and
+/// status information for rendering.
 ///
-/// A frozen row says it is overridden and names the variable doing it, so both
-/// the reason it takes no edit and the export to drop are on screen beside it.
-/// The ownership question for a row holding text: the Director endpoint and
-/// the Completer limits, which take any value the process exports.
-fn env_row(label: &str, var: &str) -> (String, bool) {
-    owned_row(label, var, model::env_override(var).is_some())
+/// A frozen row says it is overridden in a status strip, not inline in the
+/// label. The ownership question for a row holding text: the Director endpoint
+/// and the Completer limits, which take any value the process exports.
+fn env_row_parts(label: &str, var: &str) -> (String, bool, Option<String>) {
+    owned_row_parts(label, var, model::env_override(var).is_some())
 }
 
 /// The same question for a row holding a switch, which answers to a narrower
 /// set of values: one `model::env_switch` cannot read owns nothing, so the row
 /// stays the user's rather than freezing over a value nobody obeyed.
-fn switch_row(label: &str, var: &str) -> (String, bool) {
-    owned_row(label, var, model::env_switch(var).is_some())
+fn switch_row_parts(label: &str, var: &str) -> (String, bool, Option<String>) {
+    owned_row_parts(label, var, model::env_switch(var).is_some())
 }
 
-/// One wording for both, so a frozen row reads the same wherever it is drawn.
-fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
+/// Returns (label, frozen, status) for a row that may be owned by the environment.
+fn owned_row_parts(label: &str, var: &str, owned: bool) -> (String, bool, Option<String>) {
     match owned {
-        true => (format!("{label} (overridden by env: {var})"), true),
-        false => (label.to_string(), false),
+        true => (
+            label.to_string(),
+            true,
+            Some(format!("Overridden by env: {var}")),
+        ),
+        false => (label.to_string(), false, None),
     }
 }
 
-/// The Completer source rows' ownership question.
+/// Legacy interface: returns (label, frozen) with status baked into label.
+/// Used by existing code until fully migrated to status strips.
+fn env_row(label: &str, var: &str) -> (String, bool) {
+    let (label, frozen, status) = env_row_parts(label, var);
+    match status {
+        Some(s) => (format!("{label} ({s})"), frozen),
+        None => (label, frozen),
+    }
+}
+
+/// Legacy interface for switch rows.
+fn switch_row(label: &str, var: &str) -> (String, bool) {
+    let (label, frozen, status) = switch_row_parts(label, var);
+    match status {
+        Some(s) => (format!("{label} ({s})"), frozen),
+        None => (label, frozen),
+    }
+}
+
+/// Legacy interface for owned rows.
+fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
+    let (label, frozen, status) = owned_row_parts(label, var, owned);
+    match status {
+        Some(s) => (format!("{label} ({s})"), frozen),
+        None => (label, frozen),
+    }
+}
+
+/// The Completer source rows' ownership question, returning (label, frozen, status).
 ///
 /// Exported at all owns them, empty included, because
 /// `harness::from_settings` reads an empty value as Off rather than falling
 /// through to the file — so a row left editable there would take an edit the
 /// launch discards (#452). `env_row`'s emptiness rule belongs to the endpoint
 /// rows and does not carry over.
+fn harness_env_row_parts(label: &str) -> (String, bool, Option<String>) {
+    let var = crate::harness::VAR;
+    let owned = std::env::var_os(var).is_some();
+    owned_row_parts(label, var, owned)
+}
+
+/// Legacy interface for harness env row.
 fn harness_env_row(label: &str) -> (String, bool) {
-    owned_row(
-        label,
-        crate::harness::VAR,
-        std::env::var_os(crate::harness::VAR).is_some(),
-    )
+    let (label, frozen, status) = harness_env_row_parts(label);
+    match status {
+        Some(s) => (format!("{label} ({s})"), frozen),
+        None => (label, frozen),
+    }
 }
 
 /// One of the three HTTP rows, which answer to an attachment as well as to a
-/// variable.
+/// variable. Returns (label, frozen, status).
 ///
 /// A Harness that *answers* is the Completer (ADR-0008), so these three drive
 /// nothing while one is up, and #272's rule applies for the same reason it
@@ -513,20 +581,41 @@ fn harness_env_row(label: &str) -> (String, bool) {
 /// relaunch — the Session retries the child on its own backoff, and Off in the
 /// source row hands these three back at once — so the label names the pick
 /// that ends it instead of a launch.
-fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String, bool) {
+fn http_row_parts(
+    label: &str,
+    var: &str,
+    driving: bool,
+    configured: bool,
+) -> (String, bool, Option<String>) {
     if driving {
         return (
-            format!("{label} (not in use: a Harness is the Completer)"),
+            label.to_string(),
             true,
+            Some("Not in use: a Harness is the Completer".to_string()),
         );
     }
-    let (label, frozen) = env_row(label, var);
-    match configured {
-        true => (
-            format!("{label} (not in use until the source below is Off: a Harness is still the Completer)"),
-            frozen,
-        ),
-        false => (label, frozen),
+    let (label, frozen, mut status) = env_row_parts(label, var);
+    if configured {
+        let status_text = match status {
+            Some(s) => format!(
+                "{}; not in use until source is Off: a Harness is still the Completer",
+                s
+            ),
+            None => {
+                "Not in use until source below is Off: a Harness is still the Completer".to_string()
+            }
+        };
+        status = Some(status_text);
+    }
+    (label, frozen, status)
+}
+
+/// Legacy interface for http row.
+fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String, bool) {
+    let (label, frozen, status) = http_row_parts(label, var, driving, configured);
+    match status {
+        Some(s) => (format!("{label} ({s})"), frozen),
+        None => (label, frozen),
     }
 }
 
@@ -541,7 +630,7 @@ fn flag_row(
     label: &str,
     help: &str,
 ) -> FormRow {
-    let (label, frozen) = switch_row(label, flag.var());
+    let (label, frozen, status) = switch_row_parts(label, flag.var());
     FormRow::Checkbox {
         id: id.to_string(),
         label,
@@ -549,6 +638,8 @@ fn flag_row(
         frozen,
         help: Some(help.to_string()),
         comment: None,
+        disclosure: None,
+        status,
     }
 }
 
@@ -556,25 +647,33 @@ fn director_sections() -> Vec<FormSection> {
     let driving = crate::harness::driving();
     // Configured, not driving: the handle still shadows these three (#469).
     let configured = crate::harness::attached().is_some();
-    let (base_url_label, base_url_frozen) =
-        http_row("Base URL", model::BASE_URL, driving, configured);
-    let (model_label, model_frozen) = http_row("Model", model::MODEL, driving, configured);
-    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, driving, configured);
-    let (director_label, director_frozen) = switch_row("AI on", model::ENABLED);
-    let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
+    let (base_url_label, base_url_frozen, base_url_status) =
+        http_row_parts("Base URL", model::BASE_URL, driving, configured);
+    let (model_label, model_frozen, model_status) =
+        http_row_parts("Model", model::MODEL, driving, configured);
+    let (api_key_label, api_key_frozen, api_key_status) =
+        http_row_parts("API key", model::API_KEY, driving, configured);
+    let (director_label, director_frozen, director_status) =
+        switch_row_parts("AI on", model::ENABLED);
+    let (wake_label, wake_frozen, wake_status) =
+        env_row_parts("First wake, in seconds", model::WAKE_SECS);
 
     vec![
         FormSection {
             heading: "AI".to_string(),
-            comment: None,
+            comment: Some("Control whether the buddy improvises, and how often it starts a conversation on its own.".to_string()),
+            disclosure: Some("The buddy can run on static weights (no model calls) or with a Completer (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP Completer. An attached Harness that answers becomes the mind.".to_string()),
+            status: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: DIRECTOR_ID.to_string(),
                     label: director_label,
                     writes: BoolField::DirectorEnabled,
                     frozen: director_frozen,
-                    help: Some("The model picks what happens next.".to_string()),
+                    help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
+                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP Completer (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the mind for every Instance.".to_string()),
+                    status: director_status,
                 },
                 FormRow::Checkbox {
                     id: AMBIENT_ID.to_string(),
@@ -583,11 +682,9 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
+                    disclosure: Some("Ambient wakes are proactive model calls: the buddy addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.".to_string()),
+                    status: None,
                 },
-                // Not batched, and above the Apply the three endpoint rows
-                // answer to: this one is a number the user turns to watch the
-                // buddy get chattier or quieter, and a button between the
-                // change and its effect would undo that (#262).
                 FormRow::TextField {
                     id: DIRECTOR_WAKE_SECS_ID.to_string(),
                     label: Some(wake_label),
@@ -596,25 +693,16 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: wake_frozen,
                     batched: false,
                     help: None,
+                    disclosure: None,
+                    status: wake_status,
                 },
-                // A shortcut above the field, not a replacement for it: almost
-                // every endpoint typed here is one of a dozen well-known
-                // strings, and a typo in one of those fails silently several
-                // layers down (#465). Anything off the list stays typeable.
-                //
-                // It writes to the field rather than to the file, which is why
-                // it is a composite control and carries no `writes` of its
-                // own: the four Director rows only mean anything together, and
-                // a pick that saved on its own would point the Completer at a
-                // host and model that were never meant to go together (#279).
                 FormRow::Composite {
                     id: "base_url_pick".to_string(),
                     help: Some(match base_url_frozen {
                         true => "Off, for the same reason the Base URL below is.".to_string(),
-                        false => "Fills in the Base URL below. Any other \
-                                  OpenAI-compatible endpoint can be typed there."
-                            .to_string(),
+                        false => "Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
                     }),
+                    disclosure: None,
                     controls: vec![CompositeControl::Popup {
                         id: DIRECTOR_BASE_URL_PICK_ID.to_string(),
                         options: endpoint_options(),
@@ -629,6 +717,8 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: base_url_frozen,
                     batched: true,
                     help: None,
+                    disclosure: None,
+                    status: base_url_status,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MODEL_ID.to_string(),
@@ -638,34 +728,30 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: model_frozen,
                     batched: true,
                     help: None,
+                    disclosure: None,
+                    status: model_status,
                 },
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
                     label: Some(api_key_label),
                     writes: TextField::DirectorApiKey,
                     frozen: api_key_frozen,
+                    status: api_key_status,
                 },
                 FormRow::Composite {
                     id: "api_key_actions".to_string(),
                     help: None,
-                    // Clearing the store while a variable supplies the key
-                    // would change nothing the Director can see (#272).
+                    disclosure: None,
                     controls: vec![CompositeControl::Button {
                         id: CLEAR_KEY_ID.to_string(),
                         label: "Clear key".to_string(),
                         frozen: api_key_frozen,
                     }],
                 },
-                // A row of their own rather than beside Clear key: these two
-                // answer for the four rows above, and Clear key is one of the
-                // four. Never frozen, because Cancel has to stay reachable
-                // even when a variable owns every field it would restore.
-                //
-                // The help says which rows, now that the wake interval sits
-                // above them and commits on its own.
                 FormRow::Composite {
                     id: "director_actions".to_string(),
                     help: Some("The endpoint rows take effect on Apply.".to_string()),
+                    disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
                             id: APPLY_ID.to_string(),
@@ -685,10 +771,14 @@ fn director_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Last user turn".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::InspectBlock {
                 id: PAYLOAD_ID.to_string(),
                 label: None,
                 help: Some("The last thing sent to the model.".to_string()),
+                disclosure: Some("This is the Character Prompt (opening turn) or the short follow-up (later wakes), inspectable so you can see exactly what context leaves your machine.".to_string()),
+                status: None,
             }],
         },
     ]
@@ -714,33 +804,23 @@ fn director_sections() -> Vec<FormSection> {
 /// landed from. The file field is the setting either way, so a hand-edit
 /// works everywhere today.
 fn completer_source_section() -> FormSection {
-    let (source_label, frozen) = harness_env_row("Harness");
+    let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
-        comment: Some(
-            "Director off runs on static weights. Director on with no Harness is the \
-             HTTP Completer above. Director on with a Harness that answers makes \
-             that Harness the mind for every Instance, and the HTTP rows stop \
-             driving it."
-                .to_string(),
-        ),
+        comment: Some("Choose which mind answers: Off (static weights), HTTP Completer (above), or an attached Harness.".to_string()),
+        disclosure: Some("AI off runs on static weights only. AI on with no Harness attached uses the HTTP Completer above (base URL, model, and key). AI on with a Harness that answers makes that Harness the mind for every Instance, and the HTTP rows stop driving it. Every pick takes effect now: Off leaves the HTTP Completer, and a Harness is attached at once, answering once its child is up.".to_string()),
+        status: None,
         rows: vec![
             FormRow::Popup {
                 id: HARNESS_ID.to_string(),
                 label: Some(source_label),
                 writes: TextField::Harness,
-                help: Some(
-                    "Every pick takes effect now: Off leaves the HTTP Completer, \
-                     and a Harness is attached at once, answering once its \
-                     child is up. The line below says what is attached."
-                        .to_string(),
-                ),
+                help: Some("Which mind answers for the buddy.".to_string()),
                 options: harness_options(),
                 frozen,
+                disclosure: Some("Off: static weights only, no model. A named Harness (claude, codex, hermes, opencode): starts that Harness and makes it the Completer. Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
+                status: source_status,
             },
-            // Not batched: the blur that writes the row is what re-opens the
-            // attachment since #500, so a button between the typing and the
-            // file would only be one more thing to click.
             FormRow::TextField {
                 id: HARNESS_COMMAND_ID.to_string(),
                 label: Some("Custom command line".to_string()),
@@ -749,14 +829,15 @@ fn completer_source_section() -> FormSection {
                 frozen,
                 batched: false,
                 help: None,
+                disclosure: Some("The command ai-buddy runs when Custom is picked above. Blur commits it and re-opens the attachment.".to_string()),
+                status: None,
             },
             FormRow::InspectBlock {
                 id: HARNESS_STATE_ID.to_string(),
                 label: None,
-                help: Some(
-                    "ai-buddy never asks for the Harness's credential - it signs itself in."
-                        .to_string(),
-                ),
+                help: Some("Harness signs itself in - ai-buddy never asks for credentials.".to_string()),
+                disclosure: Some("ADR-0010: ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
+                status: None,
             },
         ],
     }
@@ -767,6 +848,8 @@ fn character_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Character".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::Popup {
                 id: CHARACTER_ID.to_string(),
                 label: None,
@@ -774,20 +857,26 @@ fn character_sections() -> Vec<FormSection> {
                 help: Some("The character your buddy wears.".to_string()),
                 options: Vec::new(),
                 frozen: false,
+                disclosure: Some("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.".to_string()),
+                status: None,
             }],
         },
         FormSection {
             heading: "Instances".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![
                 FormRow::List {
                     id: INSTANCES_ID.to_string(),
                     dismiss_label: "Dismiss".to_string(),
                     help: Some("Buddies on screen now.".to_string()),
+                    disclosure: Some("An Instance is one spawned buddy: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
                 },
                 FormRow::Composite {
                     id: "new_instance".to_string(),
                     help: Some("Adds another buddy.".to_string()),
+                    disclosure: None,
                     controls: vec![
                         CompositeControl::TextField {
                             id: NEW_NAME_ID.to_string(),
@@ -813,21 +902,20 @@ fn character_sections() -> Vec<FormSection> {
 fn presence_sections() -> Vec<FormSection> {
     vec![
         FormSection {
-            // Named for quiet rather than for hiding: Do Not Disturb leaves the
-            // buddy on screen, and a Hide heading would teach the opposite.
             heading: "Do Not Disturb".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: DND_ID.to_string(),
                     label: "Do Not Disturb".to_string(),
                     writes: BoolField::DoNotDisturb,
                     frozen: false,
-                    help: Some(
-                        "Stays on screen. Silences sounds and stops initiating actions."
-                            .to_string(),
-                    ),
+                    help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
                     comment: None,
+                    disclosure: Some("Do Not Disturb leaves the buddy visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
+                    status: None,
                 },
                 FormRow::Checkbox {
                     id: SOUND_ID.to_string(),
@@ -836,12 +924,16 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Off silences audio cues.".to_string()),
                     comment: None,
+                    disclosure: Some("A synthesized sound accompanies each Cue. This switch silences them. Do Not Disturb (above) takes the sound with it.".to_string()),
+                    status: None,
                 },
             ],
         },
         FormSection {
             heading: "Hide".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: HIDDEN_ID.to_string(),
@@ -850,6 +942,8 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Go off screen. But still exist.".to_string()),
                     comment: None,
+                    disclosure: None,
+                    status: None,
                 },
                 FormRow::Checkbox {
                     id: FULLSCREEN_ID.to_string(),
@@ -858,6 +952,8 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Steps aside for fullscreen apps.".to_string()),
                     comment: None,
+                    disclosure: None,
+                    status: None,
                 },
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 FormRow::Checkbox {
@@ -865,29 +961,34 @@ fn presence_sections() -> Vec<FormSection> {
                     label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
                     frozen: false,
-                    help: Some("Checked: buddy is visible in screen captures (default). Unchecked: excluded. Needs a restart.".to_string()),
+                    help: Some("Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()),
                     comment: None,
+                    disclosure: None,
+                    status: None,
                 },
                 FormRow::InspectBlock {
                     id: HOTKEY_ID.to_string(),
                     label: Some("Hide/Show Toggle".to_string()),
                     help: Some("Hides or shows from any app.".to_string()),
+                    disclosure: None,
+                    status: None,
                 },
             ],
         },
         FormSection {
             heading: "Launch".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::Checkbox {
                 id: LAUNCH_ID.to_string(),
                 label: "Launch at login (unimplemented)".to_string(),
                 writes: BoolField::LaunchAtLogin,
                 frozen: true,
-                // No installed app on any OS yet, so there is nothing for the
-                // system to start: a Launch Agent pointing at `cargo run` is
-                // not launch-at-login.
                 help: Some("Not available yet.".to_string()),
                 comment: None,
+                disclosure: None,
+                status: None,
             }],
         },
     ]
@@ -903,8 +1004,6 @@ fn privacy_sections() -> Vec<FormSection> {
     #[cfg(target_os = "linux")]
     let consent_comment = Some(consent::linux_pane_intro());
 
-    // Linux sensing asks the user for nothing, so it has no grant to offer a
-    // row for. #250. Windows keeps its rows; that platform is its own ticket.
     #[cfg(not(target_os = "linux"))]
     let consent_rows = vec![
         FormRow::Checkbox {
@@ -914,6 +1013,8 @@ fn privacy_sections() -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads the Dock's position.".to_string()),
             comment: None,
+            disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.".to_string()),
+            status: None,
         },
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
@@ -922,6 +1023,8 @@ fn privacy_sections() -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads window titles.".to_string()),
             comment: None,
+            disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles would reach MCP sensing tools; not used in v1.".to_string()),
+            status: None,
         },
     ];
 
@@ -932,22 +1035,29 @@ fn privacy_sections() -> Vec<FormSection> {
         FormSection {
             heading: "What the buddy can see".to_string(),
             comment: consent_comment,
+            disclosure: None,
+            status: None,
             rows: consent_rows,
         },
         FormSection {
             heading: "Excluded applications".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::Multiline {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
                 writes: TextField::ExcludedApplications,
-                help: Some("One application name per line. Those windows stay out of MCP sensing. The buddy can still sit on them.".to_string()),
+                help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
                 editable: true,
+                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata, eventual Capture). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
             }],
         },
         FormSection {
             heading: "Memory File".to_string(),
             comment: Some("What your buddy remembers between runs.".to_string()),
+            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every Character Instance. Every recall reads the file, so an edit made outside ai-buddy is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
+            status: None,
             rows: vec![
                 FormRow::InspectPath {
                     id: MEMORY_PATH_ID.to_string(),
@@ -955,6 +1065,7 @@ fn privacy_sections() -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "memory_actions".to_string(),
                     help: None,
+                    disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
                             id: MEMORY_OPEN_ID.to_string(),
@@ -993,7 +1104,7 @@ fn development_sections() -> Vec<FormSection> {
             TRACE_DIRECTOR_ID,
             &dev_flags::TRACE_DIRECTOR,
             BoolField::TraceDirector,
-            "Trace Director",
+            "Trace AI",
             "Prints each model call.",
         ),
         flag_row(
@@ -1005,21 +1116,28 @@ fn development_sections() -> Vec<FormSection> {
         ),
     ];
 
-    let (timeout_label, timeout_frozen) = env_row("Timeout, in seconds", model::TIMEOUT_SECS);
-    let (max_tokens_label, max_tokens_frozen) = env_row("Reply cap, in tokens", model::MAX_TOKENS);
-    let (auth_retry_label, auth_retry_frozen) =
-        env_row("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
-    let (mcp_bin_label, mcp_bin_frozen) = env_row("MCP server binary", crate::harness::MCP_BIN);
+    let (timeout_label, timeout_frozen, timeout_status) =
+        env_row_parts("Timeout, in seconds", model::TIMEOUT_SECS);
+    let (max_tokens_label, max_tokens_frozen, max_tokens_status) =
+        env_row_parts("Reply cap, in tokens", model::MAX_TOKENS);
+    let (auth_retry_label, auth_retry_frozen, auth_retry_status) =
+        env_row_parts("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
+    let (mcp_bin_label, mcp_bin_frozen, mcp_bin_status) =
+        env_row_parts("MCP server binary", crate::harness::MCP_BIN);
 
     vec![
         FormSection {
             heading: "Traces".to_string(),
             comment: Some("Switches for development and testing.".to_string()),
+            disclosure: Some("Development switches print to stderr. Trace frames prints each frame the Engine produces. Trace hit-test prints where each click went (the sprite or click-through). Trace AI prints each model call with its context. Trace Engine prints each change of Behavior or Animation.".to_string()),
+            status: None,
             rows,
         },
         FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
+            disclosure: Some("Timeout budgets one turn, whichever mind serves it: an HTTP Completer request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP Completer's alone (max_tokens); a Harness decides its own reply length.".to_string()),
+            status: None,
             rows: vec![
                 FormRow::TextField {
                     id: DIRECTOR_TIMEOUT_SECS_ID.to_string(),
@@ -1028,12 +1146,9 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
-                    help: Some(
-                        "One turn's budget, whichever mind serves it: an HTTP \
-                         Completer request or a Harness session/prompt. Expiry \
-                         cancels the turn, and the buddy stays as it was."
-                            .to_string(),
-                    ),
+                    help: Some("One turn's budget. Expiry cancels the turn.".to_string()),
+                    disclosure: None,
+                    status: timeout_status,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MAX_TOKENS_ID.to_string(),
@@ -1042,25 +1157,17 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
-                    help: Some(
-                        "The HTTP Completer's alone. A Harness decides its own \
-                         reply length."
-                            .to_string(),
-                    ),
+                    help: Some("HTTP Completer only. Harness decides its own.".to_string()),
+                    disclosure: None,
+                    status: max_tokens_status,
                 },
             ],
         },
-        // Development rather than the Director tab, which is where a user
-        // picks a Harness: neither row is a choice anyone makes to get a
-        // buddy working, and both exist so a test or a CI job can be told
-        // where to look and how long to wait (#447).
         FormSection {
             heading: "Harness attachment".to_string(),
-            comment: Some(
-                "Also for development and testing. Blank uses the default, and \
-                 both take effect on the next attach."
-                    .to_string(),
-            ),
+            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
+            disclosure: Some("Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, else this app on --mcp-stdio).".to_string()),
+            status: None,
             rows: vec![
                 FormRow::TextField {
                     id: HARNESS_AUTH_RETRY_SECS_ID.to_string(),
@@ -1069,11 +1176,9 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::HarnessAuthRetrySecs,
                     frozen: auth_retry_frozen,
                     batched: false,
-                    help: Some(
-                        "How long a Harness that has not signed in is left \
-                         alone before session/new is tried again."
-                            .to_string(),
-                    ),
+                    help: Some("How long before retrying session/new.".to_string()),
+                    disclosure: None,
+                    status: auth_retry_status,
                 },
                 FormRow::TextField {
                     id: MCP_BIN_ID.to_string(),
@@ -1082,11 +1187,9 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::McpBin,
                     frozen: mcp_bin_frozen,
                     batched: false,
-                    help: Some(
-                        "The stdio MCP server handed to the Harness session. A \
-                         path that is not a file falls back to the default."
-                            .to_string(),
-                    ),
+                    help: Some("The stdio MCP server for the Harness.".to_string()),
+                    disclosure: None,
+                    status: mcp_bin_status,
                 },
             ],
         },
