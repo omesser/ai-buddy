@@ -99,7 +99,7 @@ gtk = "0.18"
 # Native Win32 settings window: controls, tabs, fonts.
 # Job Object for Harness process tree teardown: grandchildren die with us.
 # Extended startup info for create-time job association (#517).
-windows-sys = {version = "0.59", features = [
+windows-sys = {version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Security",
