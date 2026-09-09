@@ -53,7 +53,28 @@ function createView(id) {
   for (let i = 0; i < 3; i += 1) {
     dots.appendChild(document.createElement("span"));
   }
-  bubble.append(bubbleContent, dots);
+  // #547: the way out of a line that did not fit. Drawn only when the turn was
+  // truncated, so a one-liner keeps the bubble bare — and clicked, never
+  // implied: opening the Chat surface stays a deliberate act (ADR-0019), which
+  // is why nothing here reacts to the line merely arriving.
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "bubble-more";
+  more.textContent = "Open chat";
+  // The overlay's own pointer listeners report a press to the Engine, which
+  // answers a click on the art with a Poke. This press is on a control, not on
+  // the Character, so it stops here.
+  const swallow = (event) => event.stopPropagation();
+  more.addEventListener("pointerdown", swallow);
+  more.addEventListener("pointerup", swallow);
+  more.addEventListener("click", (event) => {
+    event.stopPropagation();
+    window.__TAURI__.core.invoke("overlay_open_chat", { id }).catch((err) => {
+      console.error("overlay_open_chat", err);
+    });
+  });
+
+  bubble.append(bubbleContent, dots, more);
 
   // The Instance's cues, in a layer of their own so a dismissed buddy takes
   // any still playing with it. Last of the three, so a cue sharing the sprite's
@@ -73,7 +94,12 @@ function createView(id) {
     sprite,
     bubble,
     bubbleContent,
+    more,
     cueLayer,
+    // Where "Open chat" is, in this overlay's coordinates, or null when it is
+    // not drawn. `reportHotspots` sends the set across; see there for why the
+    // renderer is the one who has to.
+    hotspot: null,
     // The two most recent placements and when each arrived. Drawing the latest
     // one the instant it lands would put the sprite wherever the Engine's tick
     // happened to fall relative to the display's refresh, which is a stutter
@@ -131,6 +157,7 @@ function createView(id) {
 
   function hide() {
     bubble.classList.remove("visible");
+    view.hotspot = null;
   }
 
   // Anchored when the cue fires rather than followed afterwards: a cue is a
@@ -143,11 +170,19 @@ function createView(id) {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = "14px system-ui, sans-serif";
-      view.bubbleContent.textContent = wrapText(text, 260, ctx.measureText.bind(ctx)).join("\n");
+      const { lines, truncated } = wrapText(text, 260, ctx.measureText.bind(ctx));
+      view.bubbleContent.textContent = lines.join("\n");
+      // Set before `show`, which measures the bubble to place it: the control
+      // is part of what it measures.
+      bubble.toggleAttribute("data-more", truncated);
       show("speech");
     },
     hideSpeech: hide,
     showThinking() {
+      // The same box in the other mode. A control left over from the last line
+      // would sit under the ellipsis and offer the Chat surface a turn that is
+      // no longer on screen.
+      bubble.removeAttribute("data-more");
       show("thinking");
     },
     hideThinking: hide,
@@ -162,6 +197,46 @@ function positionBubble(view, spriteRect, displayBounds) {
   view.bubble.style.left = `${pos.x}px`;
   view.bubble.style.top = `${pos.y}px`;
   view.bubble.style.setProperty("--tail-offset", `${pos.tailOffset}px`);
+
+  // Read off the bubble's own placement rather than `getBoundingClientRect`,
+  // which would force a layout every frame the sprite moves. `offsetLeft` and
+  // `offsetTop` are relative to the bubble, which is the box just positioned.
+  view.hotspot = view.bubble.hasAttribute("data-more")
+    ? [
+        Math.round(pos.x) + view.more.offsetLeft,
+        Math.round(pos.y) + view.more.offsetTop,
+        view.more.offsetWidth,
+        view.more.offsetHeight,
+      ]
+    : null;
+}
+
+// Tell the Rust side where this overlay wants a click.
+//
+// The overlay passes clicks through wherever the Character is not drawn, and
+// the frame loop decides that from the sprite's alpha mask alone. "Open chat"
+// sits above the head, outside the art, so without this the click would land on
+// whatever is behind the overlay. Only the renderer knows where the control is:
+// the bubble is sized by the wrapped text, which is measured here.
+//
+// ponytail: sent whenever the rectangle changes, which while a truncated line
+// is up and the Character is walking is once a frame. Under a hundred bytes an
+// invoke and only while such a bubble is on screen; if that ever shows up in a
+// profile, the upgrade is to send the control's offset from the sprite once per
+// line and let the frame loop follow the sprite itself.
+let reportedHotspots = "";
+
+function reportHotspots() {
+  const rects = [];
+  for (const view of views.values()) {
+    if (view.hotspot) rects.push(view.hotspot);
+  }
+  const serialized = JSON.stringify(rects);
+  if (serialized === reportedHotspots) return;
+  reportedHotspots = serialized;
+  window.__TAURI__.core.invoke("overlay_hotspots", { rects }).catch((err) => {
+    console.error("overlay_hotspots", err);
+  });
 }
 
 // An Instance that stopped arriving was dismissed. Its elements go with it, and
@@ -203,6 +278,9 @@ function drawView(view, now) {
   view.bubble.style.transition = `opacity ${latest.fade_ms}ms linear`;
   if (!latest.visible) {
     view.bubble.style.opacity = "0";
+    // A control nobody can see is not one to click, and a fading bubble is
+    // still `.visible` — so this is cleared here as well as in `hide`.
+    view.hotspot = null;
     if (latest.fade_ms === 0) {
       view.bubbles.hideAllNow();
     }
@@ -252,6 +330,7 @@ function draw(now) {
       drawView(view, now);
     }
   }
+  reportHotspots();
 }
 
 async function start() {

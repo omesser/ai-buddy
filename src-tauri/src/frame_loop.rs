@@ -1570,7 +1570,30 @@ pub(crate) fn run_frame_loop(
             // transparent pixels, hand the button to whatever is underneath,
             // and drop the sprite in the user's hand.
             let holding = lives.iter().any(|live| live.pointer.grabbing());
-            let ignore = !(presence.visible && (over_sprite || holding));
+
+            // The second exception: the speech bubble's "Open chat" control
+            // (#547). It is drawn above the head, where the mask says there is
+            // no art, so the click would go to the window underneath. The
+            // renderer reports the rectangle in its overlay's coordinates —
+            // `cursor_at` is in the shared point space, which is that space
+            // plus the display's origin.
+            //
+            // ponytail: macOS only in practice. X11 and Windows carve the input
+            // region from the sprite's alpha mask, so the window stops ignoring
+            // the cursor here but the region still ends at the art. Making it
+            // clickable there means unioning these rectangles into
+            // `update_input_region`, in code this machine cannot compile.
+            let over_control = on_overlay.is_some_and(|index| {
+                displays.frames.get(index).is_some_and(|display| {
+                    platform::over_overlay_hotspot(
+                        &overlay_label(index),
+                        cursor_at.0 - display.x.round() as i32,
+                        cursor_at.1 - display.y.round() as i32,
+                    )
+                })
+            });
+
+            let ignore = !(presence.visible && (over_sprite || over_control || holding));
             let mut flipped = false;
 
             for (index, display) in displays.frames.iter().enumerate() {

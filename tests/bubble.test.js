@@ -29,25 +29,44 @@ test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
 
 test("wrap text at max width", () => {
   const short = "hi";
-  const wrapped = wrapText(short, 260, testMeasureFn);
-  assert.equal(wrapped.length, 1);
-  assert.equal(wrapped[0], "hi");
+  const { lines, truncated } = wrapText(short, 260, testMeasureFn);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0], "hi");
+  assert.equal(truncated, false, "a line that fits is not truncated");
 });
 
 test("long text wraps at word boundaries", () => {
   const text = "The quick brown fox jumps over the lazy dog";
-  const wrapped = wrapText(text, 100, testMeasureFn);
-  assert.ok(wrapped.length > 1, "text should wrap");
-  assert.ok(wrapped.every(line => line.length > 0), "no empty lines");
+  const { lines } = wrapText(text, 100, testMeasureFn);
+  assert.ok(lines.length > 1, "text should wrap");
+  assert.ok(lines.every(line => line.length > 0), "no empty lines");
 });
 
 test("text truncates with ellipsis past 6 lines", () => {
   const manyLines = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8";
-  const wrapped = wrapText(manyLines, 260, testMeasureFn);
-  assert.ok(wrapped.length <= 6, "truncated to 6 lines");
-  if (wrapped.length === 6) {
-    assert.ok(wrapped[5].endsWith("…"), "last line has ellipsis");
-  }
+  const { lines, truncated } = wrapText(manyLines, 260, testMeasureFn);
+  assert.equal(lines.length, 6, "truncated to 6 lines");
+  assert.ok(lines[5].endsWith("…"), "last line has ellipsis");
+  assert.equal(truncated, true, "and says so");
+});
+
+// #547: the flag is what puts the "Open chat" control in the bubble, so it has
+// to be true for a turn that ran off the bottom by wrapping as well as one that
+// arrived with too many paragraphs — and false for a line that merely fills the
+// last one.
+test("wrapping past the last line is truncation too", () => {
+  const oneLongParagraph = "word ".repeat(200).trim();
+  const { lines, truncated } = wrapText(oneLongParagraph, 100, testMeasureFn);
+  assert.equal(lines.length, 6);
+  assert.equal(truncated, true, "the paragraph outran the bubble");
+});
+
+test("exactly six lines is not truncation", () => {
+  const sixLines = "line1\nline2\nline3\nline4\nline5\nline6";
+  const { lines, truncated } = wrapText(sixLines, 260, testMeasureFn);
+  assert.equal(lines.length, 6);
+  assert.equal(truncated, false, "nothing was left out");
+  assert.equal(lines[5], "line6", "so no ellipsis either");
 });
 
 test("bubble placement stays above sprite by default", () => {

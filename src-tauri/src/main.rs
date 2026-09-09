@@ -670,6 +670,36 @@ fn overlay_secondary(down: bool) {
     platform::set_overlay_secondary(down);
 }
 
+/// Where this overlay wants a click besides the art (#547).
+///
+/// The frame loop decides click-through from the sprite's alpha mask, and the
+/// speech bubble's "Open chat" control sits above the head, outside it. The
+/// renderer is the only side that knows where the control is — the bubble is
+/// sized by text it measures — so it says, in its own coordinates, and the
+/// frame loop converts.
+#[tauri::command]
+fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
+    platform::set_overlay_hotspots(window.label(), rects);
+}
+
+/// Open one Instance's Chat surface from the bubble's control.
+///
+/// The same call a Summon makes (#17), and deliberately not a Summon: the user
+/// clicked a control, not the Character, so the Engine hears nothing and the
+/// buddy does not react. Nothing else opens a Chat surface on its own — a turn
+/// that does not fit the bubble still waits to be asked for.
+#[tauri::command]
+fn overlay_open_chat(app: tauri::AppHandle, id: String) {
+    let title = app
+        .try_state::<SettingsState>()
+        .and_then(|state| state.instances.lock().ok().map(|rows| rows.clone()))
+        .unwrap_or_default()
+        .iter()
+        .find(|row| row.id == id)
+        .map_or_else(|| id.clone(), |row| row.name.clone());
+    open_chat(&app, &id, title);
+}
+
 /// Put the overlay over one display, covering it exactly.
 ///
 /// Sized before it is moved. Growing a window anchors its bottom-left corner,
@@ -2333,6 +2363,8 @@ fn main() {
             character,
             overlay_primary,
             overlay_secondary,
+            overlay_hotspots,
+            overlay_open_chat,
             chat_opening,
             chat_send,
             chat_prompt,

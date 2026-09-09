@@ -87,6 +87,36 @@ body {
   display: none;
 }
 
+/* #547: the way to the rest of a turn that did not fit. `data-more` is written
+   by main.js only when the wrap truncated, so a line that fits shows nothing at
+   all — the bubble is the Character speaking, and a control on every line would
+   make it chrome (ADR-0019).
+
+   A word in the accent colour rather than a filled button, for the same reason:
+   the accent is already what this surface uses for "the app is saying
+   something" (the thinking ellipsis), and a raised button would be the chat
+   surface's furniture standing on the desktop. */
+.bubble:not([data-more]) .bubble-more {
+  display: none;
+}
+
+.bubble-more {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--bubble-accent);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  /* The one place the overlay takes a click that is not the art. The frame loop
+     is told this rectangle (`overlay_hotspots`) so the window stops passing
+     clicks through while the cursor is over it. */
+  pointer-events: auto;
+}
+
 .bubble-content {
   white-space: pre-wrap;
 }

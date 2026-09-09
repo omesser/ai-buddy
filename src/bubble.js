@@ -11,23 +11,31 @@ export function bubbleDuration(text) {
   return Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, duration));
 }
 
+// The lines the bubble draws, and whether the turn ran past them.
+//
+// The flag is the whole point of returning an object: a turn that did not fit
+// is one the user can only finish on the Chat surface, and #547 puts a control
+// in the bubble to get there. Reading it back off the trailing "…" would call
+// a line that ends in one truncated.
 export function wrapText(text, maxWidth, measureFn) {
   const lines = [];
-  const paragraphs = text.split("\n");
+  let truncated = false;
 
-  for (const paragraph of paragraphs) {
-    if (lines.length >= MAX_LINES) break;
+  for (const paragraph of text.split("\n")) {
+    if (lines.length >= MAX_LINES) {
+      truncated = true;
+      break;
+    }
 
-    const words = paragraph.split(" ");
     let currentLine = "";
-
-    for (const word of words) {
-      if (lines.length >= MAX_LINES) break;
+    for (const word of paragraph.split(" ")) {
+      if (lines.length >= MAX_LINES) {
+        truncated = true;
+        break;
+      }
 
       const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const metrics = measureFn(testLine);
-
-      if (metrics.width > maxWidth && currentLine) {
+      if (measureFn(testLine).width > maxWidth && currentLine) {
         lines.push(currentLine);
         currentLine = word;
       } else {
@@ -35,17 +43,20 @@ export function wrapText(text, maxWidth, measureFn) {
       }
     }
 
-    if (currentLine && lines.length < MAX_LINES) {
-      lines.push(currentLine);
+    if (currentLine) {
+      if (lines.length < MAX_LINES) {
+        lines.push(currentLine);
+      } else {
+        truncated = true;
+      }
     }
   }
 
-  if (lines.length === MAX_LINES && (lines.length < paragraphs.length ||
-      paragraphs[paragraphs.length - 1].split(" ").length > lines[lines.length - 1].split(" ").length)) {
+  if (truncated) {
     lines[MAX_LINES - 1] = lines[MAX_LINES - 1].trimEnd() + "…";
   }
 
-  return lines.slice(0, MAX_LINES);
+  return { lines, truncated };
 }
 
 export const THINKING_GRACE_MS = 250;

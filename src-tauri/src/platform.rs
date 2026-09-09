@@ -92,6 +92,34 @@ pub fn set_overlay_primary(down: bool) {
     OVERLAY_PRIMARY.report(down);
 }
 
+/// Rectangles one overlay wants clicks over, besides the art: `(label, [x, y,
+/// width, height])` in that overlay's own coordinates.
+///
+/// Only ever the speech bubble's "Open chat" control (#547), and only while one
+/// is drawn — so this is empty on almost every tick. A `Vec` of pairs rather
+/// than a map because it is read once a tick and written once a line, and
+/// `Vec::new` is const where `HashMap::new` is not.
+static OVERLAY_HOTSPOTS: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
+
+/// Replace everything `label` asked for. An empty list is how an overlay says
+/// it wants nothing but the art again.
+pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
+    let Ok(mut hotspots) = OVERLAY_HOTSPOTS.lock() else {
+        return;
+    };
+    hotspots.retain(|(owner, _)| owner != label);
+    hotspots.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
+}
+
+/// Whether `label`'s overlay wants the click at `(x, y)`, in its coordinates.
+pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
+    OVERLAY_HOTSPOTS.lock().is_ok_and(|hotspots| {
+        hotspots.iter().any(|(owner, [left, top, width, height])| {
+            owner == label && x >= *left && x < left + width && y >= *top && y < top + height
+        })
+    })
+}
+
 /// The overlay heard the secondary button go down or up.
 ///
 /// Same reason as the primary: a right-click on our window is one
@@ -855,6 +883,37 @@ mod tests {
         set_overlay_primary(false);
         // The session poll may still be true if a real button is held during
         // the test; only the overlay half is under this test's control.
+    }
+
+    /// The bubble's "Open chat" control (#547) belongs to the overlay that
+    /// drew it: one display's control must not make a neighbour's overlay stop
+    /// passing clicks through at the same coordinates. And a bubble that goes
+    /// takes its rectangle with it — a stale one would leave a hole in the
+    /// desktop that swallows clicks and does nothing with them.
+    #[test]
+    fn a_hotspot_belongs_to_one_overlay_and_goes_when_it_does() {
+        set_overlay_hotspots("overlay-test-a", vec![[10, 20, 30, 40]]);
+        set_overlay_hotspots("overlay-test-b", vec![]);
+
+        assert!(over_overlay_hotspot("overlay-test-a", 10, 20), "top left");
+        assert!(
+            over_overlay_hotspot("overlay-test-a", 39, 59),
+            "bottom right"
+        );
+        assert!(
+            !over_overlay_hotspot("overlay-test-a", 40, 60),
+            "the far edges are outside, as a rectangle's are"
+        );
+        assert!(
+            !over_overlay_hotspot("overlay-test-b", 20, 30),
+            "the neighbour asked for nothing there"
+        );
+
+        set_overlay_hotspots("overlay-test-a", vec![]);
+        assert!(
+            !over_overlay_hotspot("overlay-test-a", 20, 30),
+            "the bubble is gone and so is its rectangle"
+        );
     }
 
     /// A click can begin and end between two polls. The level alone reads
