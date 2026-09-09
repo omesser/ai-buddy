@@ -82,6 +82,8 @@
 
   --chat-sans: var(--shared-sans);
   --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --chat-size: var(--shared-size);
+  --chat-leading: var(--shared-leading);
 
   /* Brand accent colors for Harness connect tiles */
   --claude-accent: #E8A78A;
@@ -105,7 +107,7 @@ body {
   background: var(--chat-panel);
   color: var(--chat-ink);
   font-family: var(--chat-sans);
-  font-size: var(--shared-size);
+  font-size: var(--chat-size);
 }
 
 /* The window's own furniture. No close button: the window is decorated, so
@@ -372,7 +374,7 @@ body {
 
 .row.them .said {
   max-width: 94%;
-  line-height: var(--shared-leading);
+  line-height: var(--chat-leading);
 }
 
 .caret {
