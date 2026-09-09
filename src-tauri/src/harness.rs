@@ -1547,13 +1547,16 @@ pub fn startup_lines(spawning: bool) -> Vec<String> {
         // which one the session got. The probe's `mcp` line says the latter.
         match (crate::mcp_http::endpoint(), mcp_stdio()) {
             (Some(endpoint), Some(launch)) => format!(
-                "harness: MCP server {}, or `{}` (stubbed) for a Harness with no HTTP MCP",
+                "harness: MCP server {}, or `{}` (relays here) for a Harness with no HTTP MCP",
                 endpoint.url,
                 launch.line()
             ),
             (Some(endpoint), None) => format!("harness: MCP server {}", endpoint.url),
             (None, Some(launch)) => {
-                format!("harness: MCP server {} (stubbed)", launch.line())
+                format!(
+                    "harness: MCP server {} (no app endpoint to relay to)",
+                    launch.line()
+                )
             }
             (None, None) => "harness: no MCP server; the session gets no tools".to_string(),
         },

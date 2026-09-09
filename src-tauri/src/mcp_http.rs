@@ -1,11 +1,11 @@
 //! The MCP server the app serves itself, on loopback HTTP.
 //!
-//! The one tool surface that reaches a buddy on screen (ADR-0023).
-//! `crates/mcp-server` runs in a separate process with a stubbed
-//! `DispatchContext` — however it is reached, sidecar or `--mcp-stdio` — so a
-//! `speak` there returns success and moves nothing. The tools have to be
-//! dispatched where the `Roster` lives, and the `Roster` lives on the
-//! frame-loop thread. This file is therefore only a transport and a gate:
+//! The one place tools are dispatched (ADR-0023), and so the one thing that
+//! reaches a buddy on screen. `crates/mcp-server` runs in a separate process
+//! — however it is reached, sidecar or `--mcp-stdio` — and relays back here
+//! rather than answering, because the tools have to be dispatched where the
+//! `Roster` lives, and the `Roster` lives on the frame-loop thread. This file
+//! is therefore only a transport and a gate:
 //! every `tools/call` is handed to the frame loop over `calls` and answered
 //! from there.
 //!
