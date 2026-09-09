@@ -37,7 +37,7 @@
 <div class="container">
   <h1>Bubble Ceiling Invert</h1>
   <p class="meta">Dated design · <a href="https://github.com/omesser/ai-buddy/issues/546">#546</a> · 2026-09-09</p>
-  
+
   <p>When the Speech bubble would clamp to the ceiling and cover the Character's face (#441 behavior, left), invert the bubble below the Character at the same mirrored distance (10px gap, right).</p>
 
   <div class="demo">
@@ -50,7 +50,7 @@
       </div>
       <div class="sprite"></div>
     </div>
-    
+
     <div class="stage after">
       <div class="ceiling"></div>
       <div class="label">After (#546)</div>
@@ -64,7 +64,7 @@
 
   <h2>Decision</h2>
   <p>The #441 clamp-and-overlap (left) is readable over wallpaper, but the speaker disappears. The #546 invert (right) keeps the Character visible. The 10px gap above becomes a 10px gap below.</p>
-  
+
   <p>This is a ceiling/cover case only — not a return of the general below-head flip retired in #456. The bubble inverts only when placing it above would cause it to clamp and cover the face.</p>
 
   <h2>Acceptance</h2>
