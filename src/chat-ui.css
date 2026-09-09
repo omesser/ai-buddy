@@ -10,6 +10,11 @@
  * be, not a scale another design has to inherit.
  */
 
+/* The values the overlay Speech bubble is allowed to share. They are modern
+ * minimal's own, mapped onto --chat-* below; a second design overrides them in
+ * its own .chat-ui-* block and the bubble never sees it. ADR-0019. */
+@import url("shared-tokens.css");
+
 /* Named, not set. System keywords carry no literal, so this block passes the
  * hook that guards the ones below it — and a typo in the root class leaves a
  * plain, legible window that follows the desktop rather than an invisible one.
@@ -54,12 +59,12 @@
 .chat-ui-minimal {
   color-scheme: dark;
 
-  --chat-panel: #14171e;
-  --chat-ink: #e8ebf2;
+  --chat-panel: var(--shared-panel);
+  --chat-ink: var(--shared-ink);
   --chat-ink-2: #9aa2b4;
   --chat-ink-3: #7c8496;
   --chat-ink-4: #6c7488;
-  --chat-accent: #5cc9b5;
+  --chat-accent: var(--shared-accent);
   --chat-accent-ink: #0b231f;
   --chat-accent-soft: rgba(92, 201, 181, 0.13);
 
@@ -69,13 +74,13 @@
   --chat-rule: rgba(255, 255, 255, 0.07);
   --chat-line: rgba(255, 255, 255, 0.13);
 
-  --chat-radius: 12px;
+  --chat-radius: var(--shared-radius);
   --chat-radius-tail: 3px;
   --chat-radius-control: 10px;
   --chat-radius-badge: 5px;
   --chat-radius-tab: 10px 10px 0 0;
 
-  --chat-sans: system-ui, -apple-system, sans-serif;
+  --chat-sans: var(--shared-sans);
   --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Brand accent colors for Harness connect tiles */
@@ -100,7 +105,7 @@ body {
   background: var(--chat-panel);
   color: var(--chat-ink);
   font-family: var(--chat-sans);
-  font-size: 13.5px;
+  font-size: var(--shared-size);
 }
 
 /* The window's own furniture. No close button: the window is decorated, so
@@ -367,7 +372,7 @@ body {
 
 .row.them .said {
   max-width: 94%;
-  line-height: 1.55;
+  line-height: var(--shared-leading);
 }
 
 .caret {

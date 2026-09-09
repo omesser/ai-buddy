@@ -1,0 +1,34 @@
+/* The only values allowed to cross between the Chat panel and the overlay
+ * Speech bubble.
+ *
+ * ADR-0019: the bubble inherits opaque type, shape and hue from the default
+ * Chat UI, and must never take chat layout, chrome, or alpha-over-panel
+ * tokens — it is drawn over the user's wallpaper, where a 7 percent hairline
+ * is not a border and there is no panel for an alpha to sit on. Until now
+ * those values were hand-copied into `src/main.css`, so every Chat token tweak
+ * risked silent drift. This file is the one copy: `src/chat-ui.css` and the
+ * `.bubble` rules in `src/main.css` both read it (#545).
+ *
+ * What may be added here: an opaque hue, a shape, a type size, a leading —
+ * something that means the same thing on any ground. What may not: every
+ * `--chat-fill*`, `--chat-rule`, `--chat-line`, `--chat-accent-soft`, and
+ * anything about the chat window's own furniture. `tests/shared-tokens.test.js`
+ * holds that line.
+ *
+ * These are modern minimal's values, because the bubble follows the default
+ * Chat UI. v2's switcher repaints the chat surface and does not reach the
+ * bubble: a second design sets its own `--chat-*` literals in its own
+ * `.chat-ui-*` block, which outranks the mapping below and never leaves the
+ * chat window.
+ */
+:root {
+  --shared-panel: #14171e;
+  --shared-ink: #e8ebf2;
+  --shared-accent: #5cc9b5;
+
+  --shared-radius: 12px;
+
+  --shared-sans: system-ui, -apple-system, sans-serif;
+  --shared-size: 13.5px;
+  --shared-leading: 1.55;
+}

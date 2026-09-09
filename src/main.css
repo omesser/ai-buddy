@@ -1,6 +1,13 @@
 /* The overlay must never paint a backdrop. Anything opaque here is a grey sheet
    over the user's desktop, which is the most obvious way this window can look
    broken. */
+
+/* The Chat panel's opaque type, shape and hue — the only values allowed to
+   cross out here. The overlay still loads no chat-ui.css and takes no
+   `.chat-ui-*` class, so no chat layout, chrome or alpha-over-panel token
+   comes with them. ADR-0019, #545. */
+@import url("shared-tokens.css");
+
 html,
 body {
   margin: 0;
@@ -20,12 +27,13 @@ body {
    desktop (ADR-0013, amended by #441; ported from docs/design/bubble.html).
    The overlay loads no chat-ui.css and takes no `.chat-ui-*` class — importing
    it would drag the alpha-over-panel tokens into the one document that has no
-   panel — so the values below are inherited from the default chat UI by hand,
-   each naming the chat token it came from. */
+   panel — so it reads shared-tokens.css instead, which holds only the opaque
+   type, shape and hue both surfaces are allowed to share (#545). Hand-copying
+   them was silent drift waiting to happen. */
 .bubble {
-  --bubble-panel: #14171e; /* chat-ui.css --chat-panel */
-  --bubble-ink: #e8ebf2; /* chat-ui.css --chat-ink */
-  --bubble-accent: #5cc9b5; /* chat-ui.css --chat-accent */
+  --bubble-panel: var(--shared-panel);
+  --bubble-ink: var(--shared-ink);
+  --bubble-accent: var(--shared-accent);
 
   position: absolute;
   max-width: 260px;
@@ -38,7 +46,7 @@ body {
      its --chat-radius-tail corner is the gesture for *you said this*, so it
      does not travel and the corner stays uniform. */
   padding: 10px 13px;
-  border-radius: 12px; /* chat-ui.css --chat-radius */
+  border-radius: var(--shared-radius);
   background: var(--bubble-panel);
   color: var(--bubble-ink);
 
@@ -51,9 +59,9 @@ body {
   border: 2px solid var(--bubble-ink);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
-  font-family: system-ui, -apple-system, sans-serif; /* chat-ui.css --chat-sans */
-  font-size: 13.5px; /* chat-ui.css body */
-  line-height: 1.55; /* .row.them .said */
+  font-family: var(--shared-sans);
+  font-size: var(--shared-size);
+  line-height: var(--shared-leading);
 
   pointer-events: none;
   opacity: 0;

@@ -30,9 +30,12 @@ distinct.
 The unshipped two designs survive as a Dated page, which is what carries them
 to v2.
 
-The overlay inherits from the default chat UI once, by hand. The switcher
-repaints the chat surface and nothing else. The bubble stays separate: changing
-the chat UI does not change the Character's expression.
+The overlay inherits from the default chat UI once, through
+`src/shared-tokens.css` — the closed set of opaque type, shape and hue, with no
+chat layout, chrome or alpha token in it (#545; hand-copied literals before
+that). The switcher repaints the chat surface and nothing else. The bubble
+stays separate: changing the chat UI does not change the Character's
+expression.
 
 CONTEXT.md gains **Chat UI** beside **Chat surface**, so the design has a word
 of its own.
