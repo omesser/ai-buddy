@@ -4,10 +4,6 @@
 // `.chat-ui-*` block breaks it, and breaks it quietly — the surface still
 // renders, and the next design simply cannot recolour it.
 //
-// Shared opaque tokens live in `src/chat-shared.css` and are consumed here
-// via `var()`. That file is the one exception; it is not a Chat UI. Hex for
-// a design still belongs in a `.chat-ui-*` block.
-//
 // `rgb()` and `rgba()` go beyond the three the ADR names, because most of
 // modern minimal's palette is white tints and hex alone would let them back in.
 

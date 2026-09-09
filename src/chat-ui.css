@@ -7,8 +7,6 @@
  * rules that consume them. A second design is a second .chat-ui-* block and
  * nothing else, which is why no colour, font family or radius literal is
  * written outside one; tests/chat-ui-tokens.test.js checks that. ADR-0013.
- * Opaque tokens the Speech bubble may share live in chat-shared.css and are
- * read here through var(); they are not a second Chat UI.
  *
  * Structure and density stay literal: they are what modern minimal happens to
  * be, not a scale another design has to inherit.

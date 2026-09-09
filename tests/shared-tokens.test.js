@@ -19,7 +19,6 @@ const IMPORT = new RegExp(
 const SHARED = [
   "--shared-panel",
   "--shared-ink",
-  "--shared-ring",
   "--shared-accent",
   "--shared-radius",
   "--shared-type-size",
@@ -68,8 +67,12 @@ test("the snippet is the single source both surfaces read", () => {
 
   assert.match(snippet, /--shared-panel:\s*#14171e\b/);
   assert.match(snippet, /--shared-ink:\s*#e8ebf2\b/);
-  assert.match(snippet, /--shared-ring:\s*#e8ebf2\b/);
   assert.match(snippet, /--shared-accent:\s*#5cc9b5\b/);
+  assert.doesNotMatch(
+    snippet,
+    /--shared-ring\s*:/,
+    "Chat has no opaque ring token; the bubble edge is ink, as it was before the snippet",
+  );
   assert.match(snippet, /--shared-radius:\s*12px\b/);
   assert.match(snippet, /--shared-type-size:\s*13\.5px\b/);
   assert.match(snippet, /--shared-type-leading:\s*1\.55\b/);
@@ -84,7 +87,7 @@ test("the snippet is the single source both surfaces read", () => {
   assert.match(overlay, /--bubble-panel:\s*var\(--shared-panel\)/);
   assert.match(overlay, /--bubble-ink:\s*var\(--shared-ink\)/);
   assert.match(overlay, /--bubble-accent:\s*var\(--shared-accent\)/);
-  assert.match(overlay, /border:\s*2px solid var\(--shared-ring\)/);
+  assert.match(overlay, /border:\s*2px solid var\(--shared-ink\)/);
   assert.match(overlay, /border-radius:\s*var\(--shared-radius\)/);
   assert.match(overlay, /font-size:\s*var\(--shared-type-size\)/);
   assert.match(overlay, /line-height:\s*var\(--shared-type-leading\)/);

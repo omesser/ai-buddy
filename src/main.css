@@ -50,7 +50,7 @@ body {
      the fill vanishes and the ring carries it. No single ground hides both,
      which a single-value edge cannot promise. The shadow closes the mid-tone
      case, where neither is at full strength. */
-  border: 2px solid var(--shared-ring);
+  border: 2px solid var(--shared-ink);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
   font-family: system-ui, -apple-system, sans-serif; /* chat-ui.css --chat-sans */
@@ -110,7 +110,7 @@ body {
 
 .bubble::before {
   bottom: -10px;
-  border-top: 10px solid var(--shared-ring);
+  border-top: 10px solid var(--shared-ink);
 }
 
 .bubble::after {
