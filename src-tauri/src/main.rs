@@ -1153,7 +1153,7 @@ fn permission_answer(request: String, option: String) {
 
 /// Select a Harness as the Completer source, persisting to Settings.
 ///
-/// This configures the product to use the named Harness (claude, codex,
+/// This configures the product to use the named Harness (claude, codex, grok,
 /// hermes, opencode) as the Completer. The Harness is then attached and will
 /// authenticate through its own flow. This is step 1 of connecting from the
 /// Chat UI; step 2 is calling `harness_login` to spawn the auth command.

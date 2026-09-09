@@ -92,10 +92,10 @@ pub struct Launch {
 /// The launch table. `None` means the HTTP Completer path, unchanged.
 ///
 /// Claude Code goes through Zed's adapter because it has no first-party ACP
-/// mode; `hermes acp` and `opencode acp` are first-party. Anything else is a
-/// command line of the user's own, which is how Grok Build, Copilot CLI and
-/// Gemini CLI attach until they are smoked; Pi and Codex are deferred
-/// (ADR-0017).
+/// mode; `grok agent stdio`, `hermes acp` and `opencode acp` are
+/// first-party. Anything else is a command line of the user's own, which is
+/// how Copilot CLI and Gemini CLI attach until they are smoked; Pi is
+/// deferred (ADR-0022).
 ///
 /// The README's Harness Support table is this table's user-facing half and is
 /// maintained by hand: a name or command changed here, or a new
@@ -123,6 +123,11 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             value,
             vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
+        // `grok` alone is the interactive TUI; the ACP agent is the
+        // subcommand. The Chat surface has offered a Grok button since
+        // #563, and without this arm the escape hatch below launched that
+        // TUI on stdio and the attach timed out (#457).
+        "grok" => (value, vec!["grok", "agent", "stdio"]),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
         custom => {
@@ -1011,7 +1016,7 @@ pub fn run_probe() -> i32 {
         eprintln!("probe-harness: {VAR} is unset, so there is no Harness to attach");
         return 2;
     };
-    let session = Session::new(
+    let session = Arc::new(Session::new(
         launch,
         // The probe's own folder under the app's, which keeps the session file
         // and the Action Log out of a real install's — a probe is still the way
@@ -1030,7 +1035,24 @@ pub fn run_probe() -> i32 {
                 println!("  permission   {} [{}]", ask.title, ask.request);
             }
         }) as Forward),
-    );
+    ));
+    // Ctrl+C is ours before the child spawns, so the child gets its own
+    // process group and `acp_wire::kill_harness_tree` can reap the `npx`
+    // grandchildren that would otherwise outlive the probe (#457). The
+    // handler is what keeps that from orphaning the child: once the child has
+    // left this group, a Ctrl+C mid-probe no longer reaches it, so shutting
+    // the session down is now our job. 130 is the shell's code for SIGINT,
+    // and none of the three codes the probe otherwise reports.
+    let interrupted = session.clone();
+    match ctrlc::set_handler(move || {
+        interrupted.shutdown();
+        std::process::exit(130);
+    }) {
+        Ok(()) => own_interrupt(),
+        Err(why) => eprintln!(
+            "probe-harness: could not catch interrupt: {why}; the Harness stays in this process group"
+        ),
+    }
     let code = probe(&session);
     session.shutdown();
     code
@@ -1911,6 +1933,10 @@ mod tests {
             launch(Some("codex")).unwrap().argv,
             ["npx", "-y", "@agentclientprotocol/codex-acp@latest"]
         );
+        assert_eq!(
+            launch(Some("grok")).unwrap().argv,
+            ["grok", "agent", "stdio"]
+        );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
@@ -1984,7 +2010,7 @@ mod tests {
     /// it is, with no key set, no config dir moved, and no `--bare`.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
-        for name in ["claude", "codex", "hermes", "opencode"] {
+        for name in ["claude", "codex", "grok", "hermes", "opencode"] {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(Path::new("/tmp"));
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");
@@ -2041,6 +2067,52 @@ mod tests {
             child_pgid, app_pgid,
             "a failed ctrlc handler must not orphan a tree Ctrl+C can no longer reap"
         );
+    }
+
+    /// Production change that would fail this: `kill_harness_tree` SIGKILLs a
+    /// group without checking whose it is, and a child that never left ours
+    /// takes this process with it. That is how `--probe-harness` died at -9
+    /// after printing `end_turn` (#457).
+    ///
+    /// Asserted through the predicate rather than by calling
+    /// `kill_harness_tree` on a child in our own group. That call is the bug
+    /// itself: were the guard to regress, it would SIGKILL this test binary,
+    /// `cargo test` and the terminal running them, with no failure printed.
+    #[cfg(unix)]
+    #[test]
+    fn our_own_group_is_never_killable() {
+        let shared = sleep_pgid(false);
+        let isolated = sleep_pgid(true);
+        assert_eq!(
+            Some(shared),
+            pgid_of(std::process::id()),
+            "the unisolated child under test has to share our group"
+        );
+        assert!(
+            !crate::acp_wire::killable_group(shared as libc::pid_t),
+            "SIGKILLing this group would take the probe, cargo test and the shell with it"
+        );
+        assert!(
+            crate::acp_wire::killable_group(isolated as libc::pid_t),
+            "an isolated child's group is the one kill_harness_tree exists to reap"
+        );
+    }
+
+    /// The process group a `/bin/sleep` spawned under
+    /// `apply_isolation(isolate)` landed in. The child is reaped before this
+    /// returns; only its group is of interest.
+    #[cfg(unix)]
+    fn sleep_pgid(isolate: bool) -> i32 {
+        let mut command = std::process::Command::new("/bin/sleep");
+        command.arg("8");
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+        apply_isolation(&mut command, isolate);
+        let mut child = command.spawn().expect("sleep");
+        let pgid = pgid_of(child.id()).expect("child pgid");
+        let _ = child.kill();
+        let _ = child.wait();
+        pgid
     }
 
     #[cfg(unix)]

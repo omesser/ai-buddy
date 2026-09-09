@@ -152,7 +152,8 @@ We use `scripts/probe-harness.sh` to test and prove various behaviors.
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
 | <img src="https://cdn.simpleicons.org/hermes" width="14" alt="" /> `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once a failed first turn reopens the session it had only said it loaded (#448). |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. **Verified 2026-09-09**: `end_turn` on a fresh session and again on a resumed one. |
-| anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. Grok Build (`grok agent stdio`), <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) and <img src="https://cdn.simpleicons.org/googlegemini" width="14" alt="" /> Gemini CLI (`gemini --acp`) reach ai-buddy this way today and earn a named row once a turn is smoked (#457). |
+| `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. **Verified 2026-09-09**: `end_turn` on a fresh session and again on a resumed one (#457). |
+| anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) and <img src="https://cdn.simpleicons.org/googlegemini" width="14" alt="" /> Gemini CLI (`gemini --acp`) reach ai-buddy this way today and earn a named row once a turn is smoked (#457). |
 
 How they handle session differs, and changes what ai-buddy can do with them:
 
@@ -161,9 +162,10 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `opencode` | yes | yes, same session id | yes | http | Login with opencode |
+| `grok` | yes | yes, same session id | yes | http | three: xai.api_key, cached_token, Grok |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude` and `opencode` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` omits it and gets the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). A probe does not bind that listener, so it still hands `opencode` the `--mcp-stdio` shim.
+- † What `initialize` advertised: `claude`, `opencode` and `grok` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` omits it and gets the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). A probe does not bind that listener, so it still hands `opencode` and `grok` the `--mcp-stdio` shim. `opencode` and `grok` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP

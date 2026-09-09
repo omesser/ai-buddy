@@ -325,9 +325,9 @@ pub const HARNESS_CUSTOM: &str = "Custom";
 /// What `harness_choice` writes for Custom. Not a value `AI_BUDDY_HARNESS`
 /// can take, so it cannot collide with a Harness of that name.
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
-/// The named launch rows, in ADR-0017's order. Grok, Copilot and Gemini reach
-/// the same Completer through Custom until a turn has been smoked.
-pub const HARNESS_PRESETS: [&str; 4] = ["claude", "codex", "hermes", "opencode"];
+/// The named launch rows, in ADR-0022's order. Copilot and Gemini reach the
+/// same Completer through Custom until a turn has been smoked.
+pub const HARNESS_PRESETS: [&str; 5] = ["claude", "codex", "grok", "hermes", "opencode"];
 
 /// The endpoints the Base URL picker names, as (group, name, base URL).
 ///
@@ -2056,16 +2056,16 @@ mod tests {
             .expect("the source popup exists")
     }
 
-    /// Off, the three named launch rows, and the escape hatch — ADR-0017's
-    /// table, and nothing for Grok, Copilot or Gemini until one is smoked.
+    /// Off, the named launch rows, and the escape hatch — ADR-0022's table,
+    /// and nothing for Copilot or Gemini until one is smoked.
     #[test]
-    fn the_completer_source_offers_off_three_presets_and_custom() {
+    fn the_completer_source_offers_off_the_presets_and_custom() {
         crate::model::tests::with_harness(None, || {
             let description = describe();
             let (_, options, _) = popup_row(&description, HARNESS_ID);
             assert_eq!(
                 options,
-                ["Off", "claude", "codex", "hermes", "opencode", "Custom"]
+                ["Off", "claude", "codex", "grok", "hermes", "opencode", "Custom"]
             );
             assert_eq!(
                 description.text_write(HARNESS_ID),
