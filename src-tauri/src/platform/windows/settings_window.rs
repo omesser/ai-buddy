@@ -520,10 +520,13 @@ impl SettingsWindow {
             let mut y = 0;
             for (index, instance) in view.instances.iter().enumerate() {
                 let line = format!("{} ({})", instance.name, instance.character);
+                // Win32 copies lpWindowName; the bind is so a reader does not
+                // re-derive that an argument temporary would also be valid. #572
+                let line_cstr = CString::new(line).unwrap();
                 let label = CreateWindowExA(
                     0,
                     c"STATIC".as_ptr() as *const u8,
-                    CString::new(line).unwrap().as_ptr() as *const u8,
+                    line_cstr.as_ptr() as *const u8,
                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                     0,
                     y,
@@ -924,10 +927,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::Checkbox {
                             id, label, help, ..
                         } => {
+                            let label_cstr = CString::new(label.as_str()).unwrap();
                             let hwnd = CreateWindowExA(
                                 0,
                                 c"BUTTON".as_ptr() as *const u8,
-                                CString::new(label.as_str()).unwrap().as_ptr() as *const u8,
+                                label_cstr.as_ptr() as *const u8,
                                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
                                 display_left,
                                 y,
@@ -949,10 +953,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .insert(id.clone(), Control::Checkbox(hwnd, tab_index));
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
                                 let help_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    help_cstr.as_ptr() as *const u8,
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     display_left,
                                     y,
@@ -1182,10 +1187,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             );
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
                                 let help_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    help_cstr.as_ptr() as *const u8,
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     display_left,
                                     y,
@@ -1226,10 +1232,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             );
                             y += MULTILINE_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
                                 let help_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    help_cstr.as_ptr() as *const u8,
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     display_left,
                                     y,
@@ -1342,11 +1349,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     }
                                     form::CompositeControl::Button { id, label, .. } => {
                                         let button_width = 80;
+                                        let label_cstr = CString::new(label.as_str()).unwrap();
                                         let hwnd = CreateWindowExA(
                                             0,
                                             c"BUTTON".as_ptr() as *const u8,
-                                            CString::new(label.as_str()).unwrap().as_ptr()
-                                                as *const u8,
+                                            label_cstr.as_ptr() as *const u8,
                                             WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                                             x,
                                             y,
@@ -1373,10 +1380,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             }
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
                                 let help_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    help_cstr.as_ptr() as *const u8,
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     display_left,
                                     y,
@@ -1469,10 +1477,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
                             y += MULTILINE_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
                                 let help_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    help_cstr.as_ptr() as *const u8,
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     display_left,
                                     y,
@@ -1544,10 +1553,11 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .insert(id.clone(), Control::Label(hwnd, tab_index));
                             y += INSPECT_BLOCK_HEIGHT + ROW_GAP;
                             if let Some(help_text) = help {
+                                let help_cstr = CString::new(help_text.as_str()).unwrap();
                                 let help_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
-                                    CString::new(help_text.as_str()).unwrap().as_ptr() as *const u8,
+                                    help_cstr.as_ptr() as *const u8,
                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
                                     display_left,
                                     y,
