@@ -68,34 +68,37 @@ hermes attached and answering. Session 8a4c2d1e
 <div class="section">
 <div class="section-heading">Model / API</div>
 <div class="row">
-<select>
+<select disabled style="background: #f5f5f5; color: #999;">
 <option selected>Custom</option>
 <option>Ollama (http://localhost:11434)</option>
 <option>LM Studio (http://localhost:1234)</option>
 </select>
-<div class="help">Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.</div>
+<div class="help" style="color: #999;">Off, for the same reason the Base URL below is.</div>
 </div>
 <div class="row">
 <div class="row-label">Base URL</div>
-<input type="text" placeholder="https://api.openai.com" value="https://api.anthropic.com">
+<input type="text" placeholder="https://api.openai.com" value="https://api.anthropic.com" disabled style="background: #f5f5f5; color: #999;">
+<div style="padding: 4px 6px; background: #f9f9f9; border-radius: 3px; font-size: 11px; color: #888; margin-top: 3px; font-style: italic;">Not in use: a Harness is the Completer</div>
 </div>
 <div class="row">
 <div class="row-label">Model</div>
-<input type="text" placeholder="gpt-4o-mini" value="claude-3-5-sonnet-20241022">
+<input type="text" placeholder="gpt-4o-mini" value="claude-3-5-sonnet-20241022" disabled style="background: #f5f5f5; color: #999;">
+<div style="padding: 4px 6px; background: #f9f9f9; border-radius: 3px; font-size: 11px; color: #888; margin-top: 3px; font-style: italic;">Not in use: a Harness is the Completer</div>
 </div>
 <div class="row">
 <div class="row-label">API key</div>
-<input type="password" value="••••••••••••">
+<input type="password" value="••••••••••••" disabled style="background: #f5f5f5; color: #999;">
+<div style="padding: 4px 6px; background: #f9f9f9; border-radius: 3px; font-size: 11px; color: #888; margin-top: 3px; font-style: italic;">Not in use: a Harness is the Completer</div>
 </div>
 <div class="row">
 <div class="composite">
-<button>Clear key</button>
+<button disabled style="background: #f5f5f5; color: #999; cursor: not-allowed;">Clear key</button>
 </div>
 </div>
 <div class="row">
 <div class="composite">
-<button>Apply</button>
-<button>Cancel</button>
+<button disabled style="background: #f5f5f5; color: #999; cursor: not-allowed;">Apply</button>
+<button disabled style="background: #f5f5f5; color: #999; cursor: not-allowed;">Cancel</button>
 </div>
 <div class="help">The endpoint rows take effect on Apply.</div>
 </div>
