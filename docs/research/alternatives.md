@@ -299,4 +299,51 @@ extending functionality.
 Click-through (per-pixel transparency). Multi-instance (multiple pet windows;
 agent pets routed by lease). Multi-monitor (display geometry helpers, pets roam
 across displays). Character packages via catalog (openpets.dev serves versioned
-pet catalog; pets are ZIP downloads with sprites
+pet catalog; pets are ZIP downloads with spritesheet.webp + manifest). Official
+plugins: Day Routine, Focus Buddy (Pomodoro), Fortune Cookie, Launch Buddy,
+Magic 8 Ball, Mood Check-in, Reminders, Virtual Pet (Tamagotchi-style stats),
+Water Reminder. Plugin SDK v3: sandboxed JS/TS runtime, permissions model
+(explicit consent for sensitive APIs), schedules, storage, commands, panels,
+audio, notifications, ctx.ai (Anthropic/OpenAI/Ollama with user-configured
+keys). MCP server (stdio, tools: `openpets_status`, `openpets_react`,
+`openpets_say`). Agent integrations: Claude Code, OpenCode, Cursor, Pi. Speech
+sanitized (redacts paths, secrets, code). Local-first (no accounts, no cloud
+required). BYO model via plugin SDK ctx.ai gateway. Consent-per-feature
+(permissions declared in manifest, approved at install, flagged sensitive APIs
+require explicit toggles). Memory via plugin storage (ctx.storage JSON key-value
+with change subscriptions). Idle life (pets animate continuously). Reacts to
+user (click, drag). Spritesheet.webp animation format. Declarative via plugins
+(SDK v3 allows defining pet behaviors). **Physics (kind matters).** Gravity
+overlay + Walkabout roam (motion-engine in desktop.md / docs/desktop.md); not
+window-edge Perch riding.
+
+**Absent.** No ballistic Perch riding model (ai-buddy's throw arcs + window-top
+Perches with acceleration gate). No hide rules (fullscreen auto-hide, hotkey).
+No capture exclusion verified. No window awareness (pets don't track app names
+or geometry). No Ambient or On-Demand Capture. No Denylist (excluded apps).
+
+**Linux reality.** AppImage available; Wayland overlay issues reported (focus
+steal #32, invisible pet / tray-only #108/#141).
+
+**Onboarding reality.** Unsigned macOS builds may trigger quarantine warning
+(vendor docs: `xattr -dr com.apple.quarantine /Applications/OpenPets.app`).
+
+**Differences.** OpenPets is the closest shipped agent-pet alternative to
+ai-buddy on architecture: overlay pet + plugin/agent extensibility + MCP +
+local-first + BYO model. OpenPets ships MCP (`openpets_status`, `openpets_react`,
+`openpets_say`) and plugin SDK v3 today; ai-buddy ships Harness ACP Completer
+(#433 2026-09-07) + MCP server (loopback HTTP + stdio fallback, #117/#491/#497
+2026-09-08). OpenPets has mature catalog (openpets.dev) and 9 official plugins;
+ai-buddy has eight Character Packages and no plugin system. ai-buddy adds
+ballistic physics (gravity arcs, throw, Perches with acceleration gate) and
+window awareness; OpenPets has gravity overlay but no Perch riding or window app
+name tracking. OpenPets plugin runtime is sandboxed Electron BrowserWindows with
+permissions; ai-buddy's Harness model is external (user attaches their own
+MCP-compatible agent). Both MIT licensed, local-first, no accounts.
+
+### MateEngine
+
+**What it is.** Free and open source desktop companion (GitHub:
+shinyflvre/Mate-Engine, 3,532 stars as of Sep 3 2026), also on Steam (App ID
+3625270, launched April 16, 2025, $5.49). Positioned as free Desktop Mate
+alternative after DM charged $10–$25 per 
