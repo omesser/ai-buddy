@@ -215,10 +215,15 @@ function positionBubble(view, spriteRect, displayBounds) {
   // The attribute first, so a bubble with no control costs no second layout;
   // a width of zero then catches the control CSS is hiding anyway, which in
   // thinking mode is the attribute the last speech turn left set.
+  // Round to 8px grid to reduce update frequency on X11/Windows. When the sprite
+  // walks, the bubble follows and the hotspot moves every frame. Rounding keeps
+  // the control clickable (8px is imperceptible) while cutting updates ~8×,
+  // sparing the main thread from 60 SetWindowRgn calls per second.
+  const roundToGrid = (n) => Math.round(n / 8) * 8;
   view.hotspot = view.bubble.hasAttribute("data-more") && view.more.offsetWidth
     ? [
-        Math.round(pos.x) + view.bubble.clientLeft + view.more.offsetLeft,
-        Math.round(pos.y) + view.bubble.clientTop + view.more.offsetTop,
+        roundToGrid(Math.round(pos.x) + view.bubble.clientLeft + view.more.offsetLeft),
+        roundToGrid(Math.round(pos.y) + view.bubble.clientTop + view.more.offsetTop),
         view.more.offsetWidth,
         view.more.offsetHeight,
       ]
