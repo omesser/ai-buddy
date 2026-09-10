@@ -940,12 +940,12 @@ pub(crate) fn run_frame_loop(
             // First-run tour: 25 seconds after launch, open Chat for the first
             // Instance and show the gesture instructions. Only once, only if
             // the user has not already Summoned, and only if Do Not Disturb is off.
-            if !tour_triggered && time_since_launch.as_secs() >= 25 && lives.first().is_some() {
+            if !tour_triggered && time_since_launch.as_secs() >= 25 && !lives.is_empty() {
                 let should_show_tour = {
                     let settings_guard = settings.lock();
                     settings_guard
                         .as_ref()
-                        .map_or(false, |s| !s.first_run_tour_shown && !s.do_not_disturb)
+                        .is_ok_and(|s| !s.first_run_tour_shown && !s.do_not_disturb)
                 };
 
                 if should_show_tour {
