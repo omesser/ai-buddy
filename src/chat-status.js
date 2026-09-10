@@ -47,8 +47,8 @@ export function statusCells(status, msLeft) {
 }
 
 // Plain-language status for first-time readers: what the buddy is doing right
-// now, without Primitive/State vocabulary. Three states the user can understand
-// without the ladder.
+// now, without Primitive/State vocabulary. Connects to the visual character's
+// behavior and actions rather than only chat state.
 export function plainStatus(status, msLeft) {
   if (!status) {
     return "Starting up…";
@@ -56,11 +56,175 @@ export function plainStatus(status, msLeft) {
   if (status.asking) {
     return "Thinking…";
   }
-  const wake = untilWake(msLeft);
-  if (wake === "due" || wake === NONE) {
-    return "Idle";
+
+  let parts = [];
+  const activity = humanizeActivity(status);
+  if (activity) {
+    parts.push(activity);
+  } else {
+    parts.push("Idle");
   }
-  return `Idle · next thought in ${wake}`;
+
+  const cue = humanizeHappened(status.happened);
+  if (cue) {
+    parts.push(cue);
+  }
+
+  const wake = untilWake(msLeft);
+  if (wake !== "due" && wake !== NONE && !cue) {
+    parts.push(`next thought in ${wake}`);
+  }
+
+  return parts.join(" · ");
+}
+
+// Map behavior/animation/primitive to a human-readable activity phrase.
+function humanizeActivity(status) {
+  if (status.behavior) {
+    const readable = humanizeBehavior(status.behavior);
+    if (readable) {
+      return readable;
+    }
+  }
+
+  if (status.animation) {
+    const readable = humanizeAnimation(status.animation);
+    if (readable) {
+      return readable;
+    }
+  }
+
+  if (status.primitive && status.primitive !== NONE) {
+    const readable = humanizePrimitive(status.primitive);
+    if (readable) {
+      return readable;
+    }
+  }
+
+  return null;
+}
+
+// Turn behavior package names into readable gerunds/phrases.
+function humanizeBehavior(behavior) {
+  if (!behavior || behavior === NONE) {
+    return null;
+  }
+
+  const map = {
+    prowl: "Prowling",
+    greet: "Greeting",
+    inspect: "Inspecting",
+    remark: "Remarking",
+    groom: "Grooming",
+    supervise: "Supervising",
+    nap: "Napping",
+    "play-with-cursor": "Playing",
+    jump: "Jumping",
+    walk: "Walking",
+    doze: "Dozing",
+    amble: "Ambling",
+    stretch: "Stretching",
+    mumble: "Mumbling",
+    patrol: "Patrolling",
+    report: "Reporting",
+    fidget: "Fidgeting",
+    settle: "Settling in",
+    ponder: "Pondering",
+    meditate: "Meditating",
+    stand: "Standing",
+    mutter: "Muttering",
+    watch: "Watching",
+    rest: "Resting",
+    help: "Helping",
+    stroll: "Strolling",
+    engage: "Engaging",
+    standby: "Standing by",
+    power_down: "Powering down",
+    pursue: "Pursuing",
+    sit: "Sitting",
+  };
+
+  if (map[behavior]) {
+    return map[behavior];
+  }
+
+  return cleanName(behavior);
+}
+
+// Turn animation names into readable phrases.
+function humanizeAnimation(animation) {
+  if (!animation || animation === NONE) {
+    return null;
+  }
+
+  const map = {
+    idle: "Idle",
+    waiting: "Waiting",
+    walk: "Walking",
+    talk: "Talking",
+    fall: "Falling",
+    land: "Landing",
+    hold: "Holding on",
+    react: "Reacting",
+    sit: "Sitting",
+    sleep: "Sleeping",
+    jump: "Jumping",
+    chase: "Chasing",
+    climb: "Climbing",
+    grab: "Grabbed",
+  };
+
+  return map[animation] || cleanName(animation);
+}
+
+// Turn primitive names into readable phrases.
+function humanizePrimitive(primitive) {
+  if (!primitive || primitive === NONE) {
+    return null;
+  }
+
+  const map = {
+    Idle: "Idle",
+    Walk: "Walking",
+    Land: "Landing",
+    Sit: "Sitting",
+    Sleep: "Sleeping",
+    React: "Reacting",
+    Talk: "Talking",
+    Hold: "Holding on",
+    Chase: "Chasing",
+    Jump: "Jumping",
+  };
+
+  return map[primitive] || cleanName(primitive);
+}
+
+// Turn happened cues into readable phrases.
+function humanizeHappened(happened) {
+  if (!happened || happened === NONE) {
+    return null;
+  }
+
+  const map = {
+    poked: "just poked",
+    summoned: "just summoned",
+    thrown: "just thrown",
+    grabbed: "just grabbed",
+    dropped: "just dropped",
+    "spoken to": "just spoken to",
+  };
+
+  return map[happened] || `just ${happened}`;
+}
+
+// Clean a raw package name into something readable: underscores to spaces,
+// title case the first word.
+function cleanName(raw) {
+  if (!raw) {
+    return null;
+  }
+  const cleaned = raw.replace(/_/g, " ").replace(/-/g, " ");
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 // Which mind answers this window, for the header beside who you are talking

@@ -194,21 +194,94 @@ test("an endpoint the Shell could not read draws nothing, not a separator", () =
   assert.equal(mindLine({ ...http, model: "", host: "" }), "");
 });
 
-// Plain-language status for first-time readers, without the technical ladder.
+// Plain-language status that connects to the visual character's behavior and
+// actions, not only chat state.
 test("plain status says Thinking when a turn is on the wire", () => {
   assert.equal(plainStatus({ ...push, asking: true }, 12_000), "Thinking…");
 });
 
-test("plain status says Idle with next wake when not thinking", () => {
-  assert.equal(plainStatus(push, 24_000), "Idle · next thought in 24s");
-  assert.equal(plainStatus(push, 90_000), "Idle · next thought in 2m");
-  assert.equal(plainStatus(push, 7_200_000), "Idle · next thought in 2h");
+test("plain status reflects behavior as human-readable activity", () => {
+  assert.equal(
+    plainStatus({ ...push, behavior: "prowl", happened: null }, 24_000),
+    "Prowling · next thought in 24s",
+  );
+  assert.equal(plainStatus({ ...push, behavior: "nap", happened: null }, 60_000), "Napping · next thought in 1m");
+  assert.equal(plainStatus({ ...push, behavior: "supervise", happened: null }, 0), "Supervising");
 });
 
-test("plain status says Idle without a wake when the countdown is due or unknown", () => {
-  assert.equal(plainStatus(push, 0), "Idle");
-  assert.equal(plainStatus(push, -3000), "Idle");
-  assert.equal(plainStatus(push, null), "Idle");
+test("plain status falls back to animation when behavior is null", () => {
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: "walk", happened: null }, 30_000),
+    "Walking · next thought in 30s",
+  );
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: "fall", happened: null }, 5000),
+    "Falling · next thought in 5s",
+  );
+  assert.equal(plainStatus({ ...push, behavior: null, animation: "sit", happened: null }, null), "Sitting");
+});
+
+test("plain status falls back to primitive when behavior and animation are null", () => {
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: null, primitive: "Sleep", happened: null }, 120_000),
+    "Sleeping · next thought in 2m",
+  );
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: null, primitive: "Walk", happened: null }, 0),
+    "Walking",
+  );
+});
+
+test("plain status appends happened cue when present", () => {
+  assert.equal(plainStatus({ ...push, behavior: "sit", happened: "poked" }, 30_000), "Sitting · just poked");
+  assert.equal(
+    plainStatus({ ...push, behavior: "prowl", happened: "spoken to" }, 60_000),
+    "Prowling · just spoken to",
+  );
+  assert.equal(plainStatus({ ...push, behavior: "greet", happened: "summoned" }, null), "Greeting · just summoned");
+});
+
+test("plain status omits wake countdown when happened cue is present", () => {
+  assert.equal(plainStatus({ ...push, behavior: "walk", happened: "thrown" }, 24_000), "Walking · just thrown");
+  assert.equal(plainStatus({ ...push, behavior: "inspect", happened: "poked" }, 90_000), "Inspecting · just poked");
+});
+
+test("plain status humanizes unknown behaviors by cleaning the name", () => {
+  assert.equal(
+    plainStatus({ ...push, behavior: "custom_behavior", happened: null }, 30_000),
+    "Custom behavior · next thought in 30s",
+  );
+  assert.equal(plainStatus({ ...push, behavior: "test-name", happened: null }, 0), "Test name");
+});
+
+test("plain status maps common behaviors to readable gerunds", () => {
+  assert.equal(
+    plainStatus({ ...push, behavior: "fidget", happened: null }, 15_000),
+    "Fidgeting · next thought in 15s",
+  );
+  assert.equal(
+    plainStatus({ ...push, behavior: "meditate", happened: null }, 120_000),
+    "Meditating · next thought in 2m",
+  );
+  assert.equal(
+    plainStatus({ ...push, behavior: "power_down", happened: null }, 60_000),
+    "Powering down · next thought in 1m",
+  );
+});
+
+test("plain status says Idle when behavior/animation/primitive are all null", () => {
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: null, primitive: null, happened: null }, 24_000),
+    "Idle · next thought in 24s",
+  );
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: null, primitive: null, happened: null }, 0),
+    "Idle",
+  );
+  assert.equal(
+    plainStatus({ ...push, behavior: null, animation: null, primitive: "—", happened: null }, 30_000),
+    "Idle · next thought in 30s",
+  );
 });
 
 test("plain status says Starting up before the first push", () => {
