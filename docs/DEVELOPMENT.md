@@ -343,7 +343,7 @@ a client of someone else's server. A Harness that advertises HTTP MCP prints a
 reaches it — but only when a running app bound that listener, which a probe
 does not (ADR-0023).
 
-The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. The README's [Harness Support](../README.md#harness-support) table says which Harnesses this has been run against. Update that section when probe-harness results or `launch()` names/commands change.
+The exit code splits on those last two blocks: 2 is never having asked — nothing configured, no binary, not signed in — 1 is asked and not answered, and 0 is `end_turn`. That stop reason is the probe's, not session teardown: a turn completed, which is not the same as the session ending. Dated transcripts belong on the issue that ran the probe. Update the README's [Harness Support](../README.md#harness-support) table when a named row's command or user-visible session behavior changes — not when a probe is re-run.
 
 The `probe` folder keeps the session file and the Action Log out of a real install's. Memory is not isolated: the MCP server resolves `memory.md` from the data folder, so a `remember` during a probe writes the real one.
 
