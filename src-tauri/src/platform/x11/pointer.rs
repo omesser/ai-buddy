@@ -44,6 +44,9 @@ fn button_state_mask() -> Option<u16> {
 /// Reads GtkSettings gtk-double-click-time. Returns None if GTK is not
 /// initialized or the query fails.
 pub fn double_click_interval_ms() -> Option<u32> {
+    if !gtk::is_initialized() {
+        return None;
+    }
     gtk::Settings::default().and_then(|settings| {
         let interval = settings.gtk_double_click_time();
         if interval > 0 {
@@ -64,7 +67,17 @@ mod tests {
     fn double_click_interval_ms_matches_gtk_settings() {
         // Settings::default() is None until GTK is up; production runs after
         // Tauri has initialized GTK. Unit tests must init themselves.
+        // Without a display, gtk::init fails and Settings props panic — so only
+        // read gtk-double-click-time when GTK is actually initialized.
         let _ = gtk::init();
+        if !gtk::is_initialized() {
+            assert_eq!(
+                double_click_interval_ms(),
+                None,
+                "without GTK init, x11::double_click_interval_ms must return None"
+            );
+            return;
+        }
         let independent = gtk::Settings::default().and_then(|settings| {
             let interval = settings.gtk_double_click_time();
             if interval > 0 {

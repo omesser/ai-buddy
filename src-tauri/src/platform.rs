@@ -1283,6 +1283,23 @@ mod tests {
             cached,
             "OnceLock must return the same value on a second call"
         );
+
+        // Without a display, GTK init fails; do not touch Settings properties.
+        // The OS reader returns None and the public API resolves to FALLBACK.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        if !gtk::is_initialized() {
+            assert_eq!(
+                cached, FALLBACK_DOUBLE_CLICK_MS,
+                "without GTK init, public double_click_interval_ms must use FALLBACK"
+            );
+            assert_eq!(
+                cached,
+                resolve_double_click_interval(None),
+                "cached public value must equal resolve(None) when OS returns None"
+            );
+            return;
+        }
+
         assert_eq!(
             cached,
             resolve_double_click_interval(os_double_click_interval_ms()),
