@@ -392,4 +392,52 @@ VRM-driven (user's 3D rigged models) and ai-buddy is 2D sprite + ballistic
 physics. MateEngine has Steam Workshop + mods (the capability Desktop Mate
 removed); ai-buddy has import adapters for petdex + Shimeji-ee (authoring-time,
 not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
-no hid
+no hide rules, no capture exclusion, no MCP, no agent Harness. ai-buddy's Spatial
+Layer ships ballistic Perch riding + acceleration gate + hide rules + capture
+exclusion; ai-buddy's Functional Layer (Harness ACP Completer #433 2026-09-07 +
+MCP server loopback HTTP + stdio fallback #117/#491/#497 2026-09-08) is shipped.
+User need: MateEngine is *my VRM* after Desktop Mate's mod removal; ai-buddy is
+authored personality + idle speech + physics.
+
+## Physics note (kind matters)
+
+ai-buddy ships a ballistic integrator: gravity, throw arcs, and window-top
+Perches that the sprite rides until an acceleration gate drops it. That is not
+the same as (a) Shimeji-ee's required Fall/Thrown and gravity in Fall.java
+(sprite kinematics + throw/climb), or (b) OpenPets' gravity overlay / Walkabout
+roam (motion-engine). Desktop Mate and MateEngine sit on windows (Perch-like)
+without a documented ballistic throw-physics model. Do not mark Shimeji-ee or
+OpenPets as "no physics" — mark them ~ (partial) because they have gravity but
+not ai-buddy's ballistic Perch gate. Desktop Mate / VPet / Desktop Pet /
+MateEngine: ❌ (no ballistic throw / no gravity integrator found in cited
+sources).
+
+## Unique-combo reality check
+
+**What ai-buddy ships differently:**
+
+The mascot has an authored personality file (`personality.txt`) and a Director
+that picks Behaviors and spoken lines non-deterministically. The Character talks
+in-character while living on your windows — not Clippy (no claiming machine
+abilities, no promising actions). Not a chat-first app — Summon chat exists
+(#17 tracks polish/bugs), but idle personality-driven speech is the product center.
+Director proposes a Behavior name and
+optional spoken line; Static weights when no Completer is configured, HTTP
+Completer stand-in with API key/local server, Harness ACP Completer shipped
+(#433 2026-09-07, named claude/hermes/opencode/codex/grok rows + custom ACP command
+per #556 2026-09-08; grok verified #587 2026-09-09; codex unverified). Each Instance has its own Director and
+seed — two of the same Character don't move or speak in lockstep. Each Instance
+has its own user-authored Instance Prompt layer (#531 2026-09-08, ADR-0012)
+strengthening multi-instance personality differentiation; personality.txt remains
+package-authored.
+
+1. **Personality-driven AI behavior (shipped).** Authored `personality.txt` (who
+   they are, fixations, sample lines; loader never interprets it) drives Director
+   that picks idle Behaviors + spoken lines non-deterministically, in-character.
+   Completer contract: Behavior name on one line, optional spoken line on the
+   next. `talk` animation plays when a proposal includes it. Universal rules
+   (stay in character, bubble length, no claiming machine abilities) injected in
+   `character_prompt`, not in the file. Unparsable reply becomes speech; failed
+   wake falls back to Static. Engine keeps the sprite alive while the model
+   thinks. Static weights when no Completer configured; HTTP Completer stand-in
+   w
