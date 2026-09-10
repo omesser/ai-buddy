@@ -325,8 +325,9 @@ pub const HARNESS_CUSTOM: &str = "Custom";
 /// What `harness_choice` writes for Custom. Not a value `AI_BUDDY_HARNESS`
 /// can take, so it cannot collide with a Harness of that name.
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
-/// The named launch rows, in ADR-0022's order. Copilot and Gemini reach the
-/// same Completer through Custom until a turn has been smoked.
+/// The named launch rows, in ADR-0022's order. Copilot reaches the same
+/// Completer through Custom until a turn has been smoked. Antigravity cannot:
+/// it does not speak ACP, and wants an adapter first (#604).
 pub const HARNESS_PRESETS: [&str; 5] = ["claude", "codex", "grok", "hermes", "opencode"];
 
 /// The endpoints the Base URL picker names, as (group, name, base URL).
@@ -2057,7 +2058,7 @@ mod tests {
     }
 
     /// Off, the named launch rows, and the escape hatch — ADR-0022's table,
-    /// and nothing for Copilot or Gemini until one is smoked.
+    /// and nothing for Copilot until it is smoked.
     #[test]
     fn the_completer_source_offers_off_the_presets_and_custom() {
         crate::model::tests::with_harness(None, || {
