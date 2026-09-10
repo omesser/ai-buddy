@@ -952,7 +952,9 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     }
 }
 
-/// Show the Harness's latest thought in every open Chat surface.
+/// Show the latest thought in every open Chat surface, from whichever
+/// Completer is on the wire — an attached Harness, or the HTTP lane's marked
+/// reasoning deltas (#611).
 ///
 /// Every one, for the reason `forward_ask` gives: the session is shared and
 /// the wire does not say whose turn is on it, so the Shell cannot address the
@@ -2572,6 +2574,11 @@ fn main() {
                     harness::Forwarded::Thought(line) => show_thought(&forward_to, line),
                 }),
             );
+            // The other lane's thoughts, through the same door. Only one lane
+            // completes at a time — a Harness attached is the Completer
+            // (ADR-0008) — so the strip is never written by both.
+            let thought_to = app.handle().clone();
+            model::on_thought(Box::new(move |line| show_thought(&thought_to, line)));
             let director = match settings::director_settings(&settings, secrets.as_ref()) {
                 Ok(director) => director,
                 Err(why) => {
