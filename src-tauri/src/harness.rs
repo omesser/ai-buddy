@@ -94,8 +94,9 @@ pub struct Launch {
 /// Claude Code goes through Zed's adapter because it has no first-party ACP
 /// mode; `grok agent stdio`, `hermes acp` and `opencode acp` are
 /// first-party. Anything else is a command line of the user's own, which is
-/// how Copilot CLI and Gemini CLI attach until they are smoked; Pi is
-/// deferred (ADR-0022).
+/// how Copilot CLI attaches until it is smoked. Google has no row: the Gemini
+/// CLI is sunset and Antigravity does not speak ACP (#603). Pi is deferred
+/// (ADR-0022).
 ///
 /// The README's Harness Support table is this table's user-facing half and is
 /// maintained by hand: a name or command changed here, or a new

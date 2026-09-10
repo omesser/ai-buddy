@@ -155,7 +155,7 @@ We use `scripts/probe-harness.sh` to test and prove various behaviors.
 | <img src="https://cdn.simpleicons.org/hermes" width="14" alt="" /> `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once a failed first turn reopens the session it had only said it loaded (#448). |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. **Verified 2026-09-09**: `end_turn` on a fresh session and again on a resumed one. |
 | `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. **Verified 2026-09-09**: `end_turn` on a fresh session and again on a resumed one (#457). |
-| anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) and <img src="https://cdn.simpleicons.org/googlegemini" width="14" alt="" /> Gemini CLI (`gemini --acp`) reach ai-buddy this way today and earn a named row once a turn is smoked (#457). |
+| anything else | as typed, split on whitespace | Unnamed, unverified, and it works: any command that speaks ACP on stdio attaches. <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) reaches ai-buddy this way today and earns a named row once a turn is smoked (#457). Google has none: the Gemini CLI is sunset, and Antigravity speaks its own protocol rather than ACP (#603), so it needs an adapter (#604). |
 
 How they handle session differs, and changes what ai-buddy can do with them:
 
