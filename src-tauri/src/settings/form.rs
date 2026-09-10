@@ -2219,7 +2219,11 @@ mod tests {
             ("API key", crate::model::API_KEY),
         ];
         for (label, var) in ROWS {
-            let (label, frozen) = http_row(label, var, true, true);
+            let (label, frozen, status) = http_row_parts(label, var, true, true);
+            let label = match status {
+                Some(s) => format!("{label} ({s})"),
+                None => label,
+            };
             assert!(frozen, "a driving Harness discards an edit here");
             assert!(
                 label.contains("not in use"),
@@ -2228,7 +2232,11 @@ mod tests {
         }
         crate::model::tests::with_env(None, None, None, || {
             for (label, var) in ROWS {
-                let (label, frozen) = http_row(label, var, false, false);
+                let (label, frozen, status) = http_row_parts(label, var, false, false);
+                let label = match status {
+                    Some(s) => format!("{label} ({s})"),
+                    None => label,
+                };
                 assert!(
                     !frozen,
                     "with nothing driving, {label:?} is the only Completer left"
@@ -2254,7 +2262,11 @@ mod tests {
                 ("Model", crate::model::MODEL),
                 ("API key", crate::model::API_KEY),
             ] {
-                let (label, frozen) = http_row(label, var, false, true);
+                let (label, frozen, status) = http_row_parts(label, var, false, true);
+                let label = match status {
+                    Some(s) => format!("{label} ({s})"),
+                    None => label,
+                };
                 assert!(!frozen, "the way back has to stay typeable, got {label:?}");
                 assert!(
                     !label.contains("next launch"),
