@@ -1,1 +1,1 @@
-@/workspace/ai-buddy-alts/alternatives.md
+PLACEHOLDER_WILL_REPLACE
