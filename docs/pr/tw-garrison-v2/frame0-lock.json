@@ -31,7 +31,22 @@
     "bottom_margin": 0
   },
   "processing": {
-    "background_removal": "v6: v2 cavity removal (dark + desaturated) + hard torso protection mask (ellipse)",
+    "background_removal": "v7: v2 cavity removal (dark + desaturated) + enlarged torso protection mask (65%\u00d755% ellipse)",
+    "torso_protection": {
+      "type": "ellipse",
+      "center": {
+        "x": 632,
+        "y": 325
+      },
+      "radii": {
+        "width": 368,
+        "height": 247
+      },
+      "coverage": {
+        "width_pct": 65,
+        "height_pct": 55
+      }
+    },
     "interpolation": "LANCZOS4",
     "alignment_strategy": "feet at bottom, centered horizontally"
   }
