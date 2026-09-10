@@ -74,16 +74,16 @@ seventeen-agent list inherited from a CLI.
 
 | Name | Command | Standing |
 |---|---|---|
-| `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. `@latest` because the adapter bundles its own Claude Code, and an npx cache serves a bundle too old for a current model (#514). **Verified 2026-09-07**: `end_turn` on a fresh session and again on a resumed one. |
-| `hermes` | `hermes acp` | First-party. **Verified 2026-09-07**: `end_turn` on a fresh session, and on a resumed one once the reopen above has replaced the session it only said it loaded (#448). |
-| `opencode` | `opencode acp` | First-party. **Verified 2026-09-09**: `end_turn` on a fresh session and again on a resumed one. |
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. `@latest` because the adapter bundles its own Claude Code, and an npx cache serves a bundle too old for a current model (#514). Fresh and resumed sessions both work. |
+| `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
+| `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | anything else | as typed, split on whitespace | The escape hatch for every row below, and the next adapter. |
 
-`scripts/probe-harness.sh` is what "verified" means: it attaches the
+`scripts/probe-harness.sh` is how a named row is smoked: it attaches the
 configured Harness with no overlay, runs one fixed prompt, and prints the
 handshake, the stop reason, the reply and whether the reply parsed as a
-proposal. A row moves in this table when that command exits zero, and the
-handshake it printed is what the next paragraph records.
+proposal. A row moves in this table when that command exits zero. The dated
+run belongs on the issue that did it, not in the standing cell.
 
 What the two installed Harnesses advertise in `initialize` differs enough to
 matter. `hermes` offers `loadSession` and two `authMethods` — `custom runtime
