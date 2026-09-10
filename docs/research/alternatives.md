@@ -440,4 +440,53 @@ package-authored.
    `character_prompt`, not in the file. Unparsable reply becomes speech; failed
    wake falls back to Static. Engine keeps the sprite alive while the model
    thinks. Static weights when no Completer configured; HTTP Completer stand-in
-   w
+   with API key/local server; Harness ACP Completer shipped (#433 2026-09-07,
+   named claude/hermes/opencode/codex/grok rows + custom ACP command per #556
+   2026-09-08; grok verified #587 2026-09-09; codex unverified). No other desktop pet ships authored personality
+   + Director-driven non-deterministic idle speech.
+
+2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
+   Perch acceleration gate). Capture exclusion (no screen share). Fullscreen
+   fade + hotkey hide. Window app name tracking. Local idle life without model.
+
+3. **Agent integrations (shipped).** Harness ACP Completer (#433 2026-09-07)
+   speaks to a spawned Harness as the session Completer; named claude/hermes/
+   opencode/codex/grok rows + custom ACP command (#556 2026-09-08; grok verified
+   #587 2026-09-09; codex unverified
+   until smoked, same bar as opencode). MCP server shipped (#117/#497 era +
+   #491 2026-09-08) serving loopback HTTP so Harness `speak` lands on screen;
+   `ai-buddy-mcp` stdio remains fallback. Summon chat surface shipped; #17 tracks polish/bugs. OpenPets
+   *already ships* overlay pet + MCP (`openpets_status` / `openpets_react` /
+   `openpets_say`) + plugin SDK. Closest *shipped* agent-pet is OpenPets;
+   ai-buddy's shipped differentiators are personality-driven Director speech +
+   Spatial (capture exclusion, fullscreen fade, hotkey hide, Perch
+   acceleration-gate) + Harness ACP + MCP loopback HTTP + Summon chat.
+
+**What other projects have that ai-buddy doesn't (yet):**
+
+1. **Character ecosystems (who controls the pack).** Desktop Mate: official SKUs
+   vs *my* character; Mixed reviews + DLC/mod removal through 2026. VPet
+   Workshop-open is the actual ecosystem strength (98% of 51,678 reviews).
+   MateEngine: VRM + Workshop-open, free, the switching target after Desktop
+   Mate disabled mods (3,532 stars + 974 Steam reviews 97%). Shimeji-ee: 1000s
+   free packs, community folklore. OpenPets: openpets.dev catalog. ai-buddy: eight
+   Character Packages + `scripts/import-pet.py` (petdex + Shimeji-ee) =
+   authoring-time import, not a live gallery or first-party store.
+
+2. **Agent integrations shipped.** Desktop Pet has OpenAI chat (vendor-only
+   evidence). OpenPets has MCP + plugin SDK v3 + 9 official plugins (1,130 stars,
+   verifiable). MateEngine has built-in AI (QWEN 2.5 1.5b LLM), not BYO agent
+   attach. ai-buddy's Harness ACP Completer (#433 2026-09-07) + MCP server
+   (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are shipped; #17 tracks polish/bugs.
+
+3. **Distribution reach.** Desktop Mate, VPet, and MateEngine are on Steam;
+   OpenPets has signed Windows builds and catalog. ai-buddy is GitHub releases
+   with no store presence.
+
+## Evidence footer
+
+- **✅** = present in running app / cited source (Steam page, GitHub README,
+  review/issue citation, vendor homepage).
+- **~** = documented not shipped (MateEngine
+  macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
+  
