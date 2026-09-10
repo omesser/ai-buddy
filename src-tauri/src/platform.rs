@@ -574,17 +574,23 @@ pub fn double_click_interval_ms() -> u32 {
     *DOUBLE_CLICK_INTERVAL_MS.get_or_init(|| {
         let raw = os_double_click_interval_ms();
         let resolved = resolve_double_click_interval(raw);
-        
+
         if let Some(value) = raw {
             if value > 0 && value != resolved {
-                eprintln!("overlay: double-click interval {}ms (clamped from {}ms)", resolved, value);
+                eprintln!(
+                    "overlay: double-click interval {}ms (clamped from {}ms)",
+                    resolved, value
+                );
             } else {
                 eprintln!("overlay: double-click interval {}ms", resolved);
             }
         } else {
-            eprintln!("overlay: double-click interval fallback to {}ms", FALLBACK_DOUBLE_CLICK_MS);
+            eprintln!(
+                "overlay: double-click interval fallback to {}ms",
+                FALLBACK_DOUBLE_CLICK_MS
+            );
         }
-        
+
         resolved
     })
 }
@@ -1225,7 +1231,10 @@ mod tests {
     /// windows that would make double-clicks impossible.
     #[test]
     fn double_click_interval_clamps_too_small() {
-        assert_eq!(resolve_double_click_interval(Some(0)), FALLBACK_DOUBLE_CLICK_MS);
+        assert_eq!(
+            resolve_double_click_interval(Some(0)),
+            FALLBACK_DOUBLE_CLICK_MS
+        );
         assert_eq!(resolve_double_click_interval(Some(50)), MIN_DOUBLE_CLICK_MS);
         assert_eq!(resolve_double_click_interval(Some(99)), MIN_DOUBLE_CLICK_MS);
     }
@@ -1234,14 +1243,26 @@ mod tests {
     /// windows. Win32 caps at 5000; we want a sane shared ceiling.
     #[test]
     fn double_click_interval_clamps_too_large() {
-        assert_eq!(resolve_double_click_interval(Some(5000)), MAX_DOUBLE_CLICK_MS);
-        assert_eq!(resolve_double_click_interval(Some(10000)), MAX_DOUBLE_CLICK_MS);
-        assert_eq!(resolve_double_click_interval(Some(2001)), MAX_DOUBLE_CLICK_MS);
+        assert_eq!(
+            resolve_double_click_interval(Some(5000)),
+            MAX_DOUBLE_CLICK_MS
+        );
+        assert_eq!(
+            resolve_double_click_interval(Some(10000)),
+            MAX_DOUBLE_CLICK_MS
+        );
+        assert_eq!(
+            resolve_double_click_interval(Some(2001)),
+            MAX_DOUBLE_CLICK_MS
+        );
     }
 
     /// When the OS cannot provide an interval, the fallback is used.
     #[test]
     fn double_click_interval_falls_back_when_os_query_fails() {
-        assert_eq!(resolve_double_click_interval(None), FALLBACK_DOUBLE_CLICK_MS);
+        assert_eq!(
+            resolve_double_click_interval(None),
+            FALLBACK_DOUBLE_CLICK_MS
+        );
     }
 }

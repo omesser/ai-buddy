@@ -515,7 +515,11 @@ mod tests {
         for _ in 0..13 {
             tight.update(true, false, false, at(100.0, 100.0), TICK);
         }
-        assert_eq!(click(&mut tight), vec![Verb::Poke], "200ms gap exceeds 100ms interval");
+        assert_eq!(
+            click(&mut tight),
+            vec![Verb::Poke],
+            "200ms gap exceeds 100ms interval"
+        );
     }
 
     /// Once held, the cursor is free to leave the art. That is the whole point:
