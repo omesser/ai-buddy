@@ -346,4 +346,50 @@ MCP-compatible agent). Both MIT licensed, local-first, no accounts.
 **What it is.** Free and open source desktop companion (GitHub:
 shinyflvre/Mate-Engine, 3,532 stars as of Sep 3 2026), also on Steam (App ID
 3625270, launched April 16, 2025, $5.49). Positioned as free Desktop Mate
-alternative after DM charged $10–$25 per 
+alternative after DM charged $10–$25 per model and disabled mods. 974 Steam
+reviews, 97% positive, Overwhelmingly Positive (Steambase July 2026).
+([Steam](https://store.steampowered.com/app/3625270/MateEngine/);
+[GitHub](https://github.com/shinyflvre/Mate-Engine))
+
+**Verified present.** Overlay (always-on-top). Click-through. Window sitting
+(sits on window top edges, similar to ai-buddy Perches). Taskbar sitting. Idle
+animations. Drag animations. Dance to music. Custom VRM avatar support (user's
+own 3D VRM models). Steam Workshop support for mods, custom models, dances. Mod
+support (.ME file format). Multi-instance (inferred from VRM support +
+Workshop). Multi-monitor (inferred from desktop overlay). Always-on-top toggle.
+AI integration: QWEN 2.5 1.5b LLM (Apache License, built-in). Timer, alarm
+features. Screensaver mode. Touch regions. Avatar SFX. Particle effects. FPS
+control. Head tracking, spine tracking, eye tracking, hand movement. Custom
+shaders. Free on GitHub, $5.49 on Steam. Windows 11 official.
+
+**Absent.** No ballistic physics (gravity, throw) found in README comparison
+table. No hide rules (fullscreen auto-hide, hotkey, Boss mode). No capture
+exclusion. No agent integrations beyond built-in AI (no MCP, no Harness attach,
+no BYO model key — AI is local QWEN). No Memory system. No BYO OpenAI/Anthropic
+key (uses local LLM). No required animation set (VRM rigged models, not sprite
+sequences). **macOS:** ~ (PR #551 open as of May 2026, experimental). **Linux:**
+❌ official (issue #85 closed wontfix, "does not make sense" due to .NET/audio
+library incompatibilities); unofficial Linux port exists
+([Marksonthegamer/Mate-Engine-Linux-Port](https://github.com/Marksonthegamer/Mate-Engine-Linux-Port),
+269 stars, X11-only, Wayland transparency issues, window snapping/dock sitting
+don't work on XWayland).
+
+**User perspective.** MateEngine README: "Desktop Mate charges $10–$25 USD for
+single character models... modding and custom models were disabled in later
+versions." VaporLens Desktop Mate sentiment: 22% recommend MateEngine; "fair and
+reasonable" pricing vs Desktop Mate's "high DLC prices." Steam reviews: "just
+buy mate engine" in Desktop Mate negative cluster.
+
+**Onboarding reality.** Windows 11 only official. macOS experimental (PR open).
+Linux unofficial port requires X11, has Wayland issues.
+
+**Differences.** MateEngine is the user-owned VRM/Workshop answer to Desktop
+Mate's SKU lock. ai-buddy ships authored personality + Director-driven idle
+speech (Character talks from personality while living on windows); MateEngine has
+built-in local LLM (QWEN 2.5 1.5b) but no authored personality file or
+Director-driven idle speech. Both sit on windows (Perches), but MateEngine is
+VRM-driven (user's 3D rigged models) and ai-buddy is 2D sprite + ballistic
+physics. MateEngine has Steam Workshop + mods (the capability Desktop Mate
+removed); ai-buddy has import adapters for petdex + Shimeji-ee (authoring-time,
+not live Workshop). MateEngine has no ballistic physics (no gravity/throw arcs),
+no hid
