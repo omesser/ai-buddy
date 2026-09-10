@@ -346,11 +346,11 @@ pub const HARNESS_STATE_ID: &str = "harness_state";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 
-/// The two Completer-source titles the file does not spell the same way: Off
-/// is the empty string and Custom is `custom`, which defers to the command
-/// line beside it.
-pub const HARNESS_OFF: &str = "Off";
-pub const HARNESS_CUSTOM: &str = "Custom";
+/// The two Completer-source titles the file does not spell the same way: Model
+/// API (wire: empty string) and Harness · Custom (wire: `custom`), which
+/// defers to the command line beside it.
+pub const HARNESS_OFF: &str = "Model API";
+pub const HARNESS_CUSTOM: &str = "Harness · Custom";
 /// What `harness_choice` writes for Custom. Not a value `AI_BUDDY_HARNESS`
 /// can take, so it cannot collide with a Harness of that name.
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
@@ -434,7 +434,11 @@ pub fn endpoint_title(base_url: &str) -> String {
 /// The Completer-source popup's choices, in the order it draws them.
 pub fn harness_options() -> Vec<String> {
     let mut options = vec![HARNESS_OFF.to_string()];
-    options.extend(HARNESS_PRESETS.iter().map(|name| name.to_string()));
+    options.extend(
+        HARNESS_PRESETS
+            .iter()
+            .map(|name| format!("Harness · {}", name)),
+    );
     options.push(HARNESS_CUSTOM.to_string());
     options
 }
@@ -450,7 +454,9 @@ pub fn harness_rows(value: &str, command: &str) -> (String, String) {
     match value.trim() {
         "" => (HARNESS_OFF.to_string(), command.to_string()),
         HARNESS_CUSTOM_VALUE => (HARNESS_CUSTOM.to_string(), command.to_string()),
-        preset if HARNESS_PRESETS.contains(&preset) => (preset.to_string(), command.to_string()),
+        preset if HARNESS_PRESETS.contains(&preset) => {
+            (format!("Harness · {}", preset), command.to_string())
+        }
         line => (HARNESS_CUSTOM.to_string(), line.to_string()),
     }
 }
@@ -473,6 +479,10 @@ pub fn harness_choice(title: &str) -> String {
     match title {
         HARNESS_OFF => String::new(),
         HARNESS_CUSTOM => HARNESS_CUSTOM_VALUE.to_string(),
+        title if title.starts_with("Harness · ") => title
+            .strip_prefix("Harness · ")
+            .unwrap_or(title)
+            .to_string(),
         preset => preset.to_string(),
     }
 }
@@ -565,7 +575,7 @@ fn http_row_parts(
                 s
             ),
             None => {
-                "Not in use until source below is Off: a Harness is still the Completer".to_string()
+                "Not in use until source above is Off: a Harness is still the Completer".to_string()
             }
         };
         status = Some(status_text);
@@ -650,6 +660,15 @@ fn director_sections() -> Vec<FormSection> {
                     disclosure: None,
                     status: wake_status,
                 },
+            ],
+        },
+        completer_source_section(),
+        FormSection {
+            heading: "HTTP Completer".to_string(),
+            comment: None,
+            disclosure: None,
+            status: None,
+            rows: vec![
                 FormRow::Composite {
                     id: "base_url_pick".to_string(),
                     help: Some(match base_url_frozen {
@@ -721,7 +740,6 @@ fn director_sections() -> Vec<FormSection> {
                 },
             ],
         },
-        completer_source_section(),
         FormSection {
             heading: "Last user turn".to_string(),
             comment: None,
@@ -761,8 +779,8 @@ fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
-        comment: Some("Choose which mind answers: Off (static weights), HTTP Completer (above), or an attached Harness.".to_string()),
-        disclosure: Some("AI off runs on static weights only. AI on with no Harness attached uses the HTTP Completer above (base URL, model, and key). AI on with a Harness that answers makes that Harness the mind for every Instance, and the HTTP rows stop driving it. Every pick takes effect now: Off leaves the HTTP Completer, and a Harness is attached at once, answering once its child is up.".to_string()),
+        comment: Some("Choose which mind answers: Model API (HTTP Completer below) or an attached Harness.".to_string()),
+        disclosure: Some("Model API uses the HTTP Completer below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the Completer, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP Completer, and a Harness is attached at once, answering once its child is up.".to_string()),
         status: None,
         rows: vec![
             FormRow::Popup {
@@ -772,7 +790,7 @@ fn completer_source_section() -> FormSection {
                 help: Some("Which mind answers for the buddy.".to_string()),
                 options: harness_options(),
                 frozen,
-                disclosure: Some("Off: static weights only, no model. A named Harness (claude, codex, hermes, opencode): starts that Harness and makes it the Completer. Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
+                disclosure: Some("Model API: the HTTP Completer below. Harness · {name}: starts that Harness and makes it the Completer. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
                 status: source_status,
             },
             FormRow::TextField {
@@ -1219,6 +1237,7 @@ mod tests {
 
         let mut expected = vec![
             "Character",
+            "HTTP Completer",
             "HTTP limits",
             "AI source",
             "AI",
@@ -1436,7 +1455,7 @@ mod tests {
             .find(|s| s.heading == "AI")
             .expect("AI section");
 
-        assert_eq!(director.rows.len(), 9);
+        assert_eq!(director.rows.len(), 3);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -1451,30 +1470,41 @@ mod tests {
             director.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_WAKE_SECS_ID
         ));
+    }
+
+    #[test]
+    fn http_completer_section_has_endpoint_rows() {
+        let description = describe();
+        let http_section = description
+            .sections()
+            .find(|s| s.heading == "HTTP Completer")
+            .expect("HTTP Completer section");
+
+        assert_eq!(http_section.rows.len(), 6);
         // The picker stands above the field it fills, so the shortcut is read
         // before the typing starts (#465).
         assert!(matches!(
-            director.rows[3],
+            http_section.rows[0],
             FormRow::Composite { ref id, .. } if id == "base_url_pick"
         ));
         assert!(matches!(
-            director.rows[4],
+            http_section.rows[1],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
         ));
         assert!(matches!(
-            director.rows[5],
+            http_section.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
         ));
         assert!(matches!(
-            director.rows[6],
+            http_section.rows[3],
             FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
         ));
         assert!(matches!(
-            director.rows[7],
+            http_section.rows[4],
             FormRow::Composite { ref id, .. } if id == "api_key_actions"
         ));
         assert!(matches!(
-            director.rows[8],
+            http_section.rows[5],
             FormRow::Composite { ref id, .. } if id == "director_actions"
         ));
     }
@@ -2165,7 +2195,7 @@ mod tests {
             .expect("the source popup exists")
     }
 
-    /// Off, the named launch rows, and the escape hatch — ADR-0022's table,
+    /// Model API, the named launch rows, and the escape hatch — ADR-0022's table,
     /// and nothing for Copilot until it is smoked.
     #[test]
     fn the_completer_source_offers_off_the_presets_and_custom() {
@@ -2174,7 +2204,16 @@ mod tests {
             let (_, options, _, _) = popup_row(&description, HARNESS_ID);
             assert_eq!(
                 options,
-                ["Off", "claude", "codex", "grok", "hermes", "opencode", "pi", "Custom"]
+                [
+                    "Model API",
+                    "Harness · claude",
+                    "Harness · codex",
+                    "Harness · grok",
+                    "Harness · hermes",
+                    "Harness · opencode",
+                    "Harness · pi",
+                    "Harness · Custom"
+                ]
             );
             assert_eq!(
                 description.text_write(HARNESS_ID),
@@ -2319,8 +2358,8 @@ mod tests {
                     "no edit here waits for one any more, got {status:?}"
                 );
                 assert!(
-                    status.contains("Off"),
-                    "the status has to name what ends the wait, not {status:?}"
+                    status.contains("source above"),
+                    "the status has to say where the source is, not {status:?}"
                 );
             }
         });
@@ -2345,6 +2384,36 @@ mod tests {
                 !copy.to_lowercase().contains("next launch")
                     && !copy.to_lowercase().contains("restart"),
                 "got {copy:?}"
+            );
+        });
+    }
+
+    /// Model API (the Off choice) means HTTP Completer, not static weights.
+    /// Static weights is AI on off (the DIRECTOR_ENABLED switch).
+    #[test]
+    fn completer_source_does_not_equate_model_api_with_static_weights() {
+        crate::model::tests::with_harness(None, || {
+            let section = completer_source_section();
+            let mut copy = section.comment.clone().unwrap_or_default();
+            copy.push(' ');
+            copy.push_str(&section.disclosure.clone().unwrap_or_default());
+            for row in &section.rows {
+                if let FormRow::Popup {
+                    help, disclosure, ..
+                } = row
+                {
+                    copy.push(' ');
+                    copy.push_str(help.as_deref().unwrap_or_default());
+                    copy.push(' ');
+                    copy.push_str(disclosure.as_deref().unwrap_or_default());
+                }
+            }
+            let lower = copy.to_lowercase();
+            assert!(
+                !lower.contains("off: static weights")
+                    && !lower.contains("off (static weights)")
+                    && !(lower.contains("off") && lower.contains("static weights only")),
+                "Model API should not be described as static weights; that is AI on off. Got: {copy:?}"
             );
         });
     }
