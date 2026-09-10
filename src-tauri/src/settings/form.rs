@@ -1800,7 +1800,10 @@ mod tests {
 
     fn row_id(row: &FormRow) -> Option<&str> {
         match row {
-            FormRow::Checkbox { id, .. } | FormRow::TextField { id, .. } => Some(id.as_str()),
+            FormRow::Checkbox { id, .. }
+            | FormRow::TextField { id, .. }
+            | FormRow::InspectBlock { id, .. }
+            | FormRow::Composite { id, .. } => Some(id.as_str()),
             _ => None,
         }
     }
@@ -1823,8 +1826,10 @@ mod tests {
                 "{} has to say what its rows are for, got {warning:?}",
                 section.heading
             );
+            // MCP section has read-only rows (InspectBlock) and action buttons (Composite)
+            // which are allowed for displaying runtime state and triggering operations.
             for row in &section.rows {
-                row_id(row).expect("every development row is a control that writes");
+                row_id(row).expect("every development row has an id");
             }
         }
     }
