@@ -1,1 +1,1 @@
-PLACEHOLDER
+file:///workspace/ai-buddy-alts/alternatives.md
