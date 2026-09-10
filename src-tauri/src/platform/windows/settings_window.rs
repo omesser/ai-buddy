@@ -487,9 +487,11 @@ impl SettingsWindow {
 
     fn do_copy_mcp_token(&self) {
         use windows_sys::Win32::System::DataExchange::{
-            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData, CF_TEXT,
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
         };
         use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+        const CF_TEXT: u32 = 1;
 
         if let Some(endpoint) = crate::mcp_http::endpoint() {
             let token = endpoint.authorization();
