@@ -545,6 +545,6 @@ is a one-line addition to an existing ADR, not a decision to record.
 - Whether an oMLX `thinking_budget` misfires on gpt-oss the way it did on
   Qwen3.5 was not tested beyond the one run in §6.1, which behaved.
 - `docs/research/director-in-flight-and-latency.md` §2.5 and item 4 of its
-  recommendations cite `model.rs:65-72` and `model.rs:850-859`, which have
-  moved; the argument there still holds and this document supersedes its
-  lines on the effort lever.
+  recommendations cited `model.rs` line numbers that had moved; #613 replaced
+  them with symbol names. The argument there still holds and this document
+  supersedes its lines on the effort lever.
