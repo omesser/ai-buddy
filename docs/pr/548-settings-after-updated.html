@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { font-family: -apple-system, sans-serif; font-size: 13px; margin: 20px; background: #f5f5f5; }
+.settings { background: white; padding: 20px; width: 400px; border: 1px solid #ddd; }
+.section { margin-bottom: 24px; }
+.section-heading { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+.section-comment { color: #666; margin-bottom: 12px; font-size: 12px; line-height: 1.4; }
+.row { margin-bottom: 10px; }
+.row-label { margin-bottom: 4px; font-size: 12px; }
+.checkbox { display: flex; align-items: center; }
+.checkbox input { margin-right: 6px; }
+input[type="text"], select { width: 100%; padding: 4px 6px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; }
+.help { color: #888; font-size: 11px; margin-top: 3px; }
+.composite { display: flex; gap: 6px; }
+.composite button { padding: 4px 12px; border: 1px solid #ccc; border-radius: 3px; background: #f9f9f9; font-size: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="settings">
+<div class="section">
+<div class="section-heading">AI</div>
+<div class="section-comment">Control whether the buddy improvises, and how often it starts a conversation on its own.</div>
+<div class="row">
+<div class="checkbox"><input type="checkbox" checked> <span>AI on</span></div>
+<div class="help">Lets the model pick what happens next.</div>
+</div>
+<div class="row">
+<div class="checkbox"><input type="checkbox" checked> <span>Ambient session wakes</span></div>
+<div class="help">Acts on its own, not only when asked.</div>
+</div>
+<div class="row">
+<div class="row-label">First wake, in seconds</div>
+<input type="text" placeholder="60" value="">
+</div>
+</div>
+
+<div class="section">
+<div class="section-heading">AI source</div>
+<div class="section-comment">Choose which "AI brain" answers: Model API (HTTP Completer below) or an attached Harness.</div>
+<div class="row">
+<div class="row-label">AI source</div>
+<select>
+<option>Model API</option>
+<option>Harness · claude</option>
+<option>Harness · codex</option>
+<option>Harness · grok</option>
+<option selected>Harness · hermes</option>
+<option>Harness · opencode</option>
+<option>Harness · Custom</option>
+</select>
+<div class="help">Which "AI brain" answers for the buddy.</div>
+</div>
+<div class="row">
+<div class="row-label">Custom command line</div>
+<input type="text" placeholder="opencode acp">
+<div class="help">The command ai-buddy runs when Custom is picked above.</div>
+</div>
+<div class="row">
+<div style="padding: 8px; background: #f9f9f9; border-radius: 3px; font-size: 11px; color: #666;">
+hermes attached and answering. Session 8a4c2d1e
+</div>
+<div class="help">Harness signs itself in - ai-buddy never asks for credentials.</div>
+</div>
+</div>
+
+<div class="section">
+<div class="section-heading">Model / API</div>
+<div class="row">
+<select>
+<option selected>Custom</option>
+<option>Ollama (http://localhost:11434)</option>
+<option>LM Studio (http://localhost:1234)</option>
+</select>
+<div class="help">Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.</div>
+</div>
+<div class="row">
+<div class="row-label">Base URL</div>
+<input type="text" placeholder="https://api.openai.com" value="https://api.anthropic.com">
+</div>
+<div class="row">
+<div class="row-label">Model</div>
+<input type="text" placeholder="gpt-4o-mini" value="claude-3-5-sonnet-20241022">
+</div>
+<div class="row">
+<div class="row-label">API key</div>
+<input type="password" value="••••••••••••">
+</div>
+<div class="row">
+<div class="composite">
+<button>Clear key</button>
+</div>
+</div>
+<div class="row">
+<div class="composite">
+<button>Apply</button>
+<button>Cancel</button>
+</div>
+<div class="help">The endpoint rows take effect on Apply.</div>
+</div>
+</div>
+
+<div class="section">
+<div class="section-heading">Last user turn</div>
+<div class="row">
+<div style="padding: 8px; background: #f9f9f9; border-radius: 3px; font-size: 11px; color: #333; font-family: monospace;">
+You are a friendly desktop buddy...
+</div>
+<div class="help">The last thing sent to the model.</div>
+</div>
+</div>
+
+</div>
+</body>
+</html>
