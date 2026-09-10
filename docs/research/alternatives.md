@@ -148,4 +148,55 @@ this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
 
 **Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
 packs at $7.49–$14.99 each); ai-buddy has eight Character Packages, internal
-package format (und
+package format (undocumented until v2), and import adapters for petdex / Pets
+Codex and Shimeji-ee ecosystems. User preference: official SKUs vs *my* character.
+Desktop Mate has no ballistic physics, no agent integrations, no BYO character
+creation after mod removal. ai-buddy's Spatial Layer includes ballistic physics
+and Perch riding/dropping under a gate, and its shipped agent integrations
+(Harness ACP Completer per #433 2026-09-07, MCP server loopback HTTP + stdio
+fallback per #117/#491/#497 2026-09-08) target capabilities Desktop Mate does not
+attempt.
+
+### VPet-Simulator
+
+**What it is.** Free and open source desktop pet on Steam (App ID 1920960,
+launched Aug 13, 2023). 51,678 reviews, 98% positive, Overwhelmingly Positive
+(August 2026). Steam Charts all-time peak 85,283 players. Windows only (official
+Steam platforms: `mac: false`, `linux: false`). Built to promote VUP Simulator;
+the desktop pet is extracted from that program.
+([Steam](https://store.steampowered.com/app/1920960/VPetSimulator/);
+[GitHub](https://github.com/LorisYounger/VPet))
+
+**Verified present.** Overlay with click-through. Multi-instance (spawn multiple
+pets). Extensive Steam Workshop support for community animations, interactions,
+skins (stated in Steam description and community discussions). Two paid DLC
+(ModMaker, Pancake Cat Skin package) plus free Workshop content. No purchase
+price for base app. Cross-platform claim: Windows only official; GitHub
+https://github.com/LorisYounger/VPet is WPF Windows. Open source on GitHub.
+Animation assets require specific PNG sequence-frame structure:
+`{status}/{type}/{name}_{action}_{time}.png`.
+
+**Absent.** No ballistic physics (gravity, throw). No window top-edge Perches
+(sprite appears to rest on desktop floor, not on windows). No agent
+integrations, MCP, chat, or Harness. No Memory system. No Ambient Capture. No
+evidence of screen-sharing exclusion. Hide rules not verified (no fullscreen
+auto-hide or hotkey hide mentioned in Steam page or README). **macOS:** ❌
+official Steam. **Linux:** ❌ official; Proton users report non-transparent /
+black background (ValveSoftware/Proton#8471).
+
+**Onboarding reality.** "starts in Chinese" (review language); off-screen after
+DPI/monitor changes (issue #546).
+
+**Differences.** VPet's Workshop ecosystem is live and massive (98% of 51,678
+reviews), while ai-buddy's Character Package format is internal and undocumented
+until v2. VPet has no window awareness or Perches, no ballistic physics, and no
+agent integrations or MCP layer. ai-buddy ships Director + authored
+personality-driven idle speech (VPet has no personality file or non-deterministic
+speech; its behavior is Workshop-defined animations). Harness ACP Completer
+shipped (#433 2026-09-07); MCP server shipped (#117/#491/#497 2026-09-08,
+loopback HTTP + stdio fallback). User need: care-sim + Workshop-open vs
+ai-buddy's personality-driven idle life + physics.
+
+### Shimeji-ee ecosystem
+
+**What it is.** Windows-first Java desktop mascot, originally by Yuki Yamada /
