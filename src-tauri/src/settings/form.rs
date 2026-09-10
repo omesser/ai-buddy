@@ -2276,7 +2276,7 @@ mod tests {
             assert!(frozen, "a driving Harness discards an edit here");
             let status = status.expect("frozen row must have status");
             assert!(
-                status.contains("not in use"),
+                status.to_lowercase().contains("not in use"),
                 "the status has to say why it is dead, not {status:?}"
             );
         }
