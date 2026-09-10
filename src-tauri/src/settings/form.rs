@@ -23,6 +23,7 @@ pub enum RowOperation {
     Apply,
     /// Redraw the Director tab from live state, writing nothing.
     Cancel,
+    CopyMcpToken,
 }
 
 /// One section of the settings form.
@@ -316,6 +317,8 @@ pub const HARNESS_COMMAND_ID: &str = "harness_command";
 pub const HARNESS_STATE_ID: &str = "harness_state";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
+pub const MCP_URL_ID: &str = "mcp_url";
+pub const MCP_COPY_TOKEN_ID: &str = "mcp_copy_token";
 
 /// The two Completer-source titles the file does not spell the same way: Off
 /// is the empty string and Custom is `custom`, which defers to the command
@@ -1089,6 +1092,34 @@ fn development_sections() -> Vec<FormSection> {
                 },
             ],
         },
+        FormSection {
+            heading: "MCP".to_string(),
+            comment: Some(
+                "For pointing a Harness you run yourself at ai-buddy. The URL \
+                 and token change on every launch."
+                    .to_string(),
+            ),
+            rows: vec![
+                FormRow::InspectBlock {
+                    id: MCP_URL_ID.to_string(),
+                    label: Some("URL".to_string()),
+                    help: None,
+                },
+                FormRow::Composite {
+                    id: "mcp_token_row".to_string(),
+                    controls: vec![CompositeControl::Button {
+                        id: MCP_COPY_TOKEN_ID.to_string(),
+                        label: "Copy token to clipboard".to_string(),
+                        frozen: false,
+                    }],
+                    help: Some(
+                        "The token never appears on screen. Copying it to the \
+                         clipboard is the trade ADR-0026 makes."
+                            .to_string(),
+                    ),
+                },
+            ],
+        },
     ]
 }
 
@@ -1124,6 +1155,10 @@ pub fn describe() -> FormDescription {
         (CLEAR_KEY_ID.to_string(), RowOperation::ClearKey),
         (APPLY_ID.to_string(), RowOperation::Apply),
         (CANCEL_ID.to_string(), RowOperation::Cancel),
+        (
+            MCP_COPY_TOKEN_ID.to_string(),
+            RowOperation::CopyMcpToken,
+        ),
     ]);
 
     FormDescription { tabs, operations }

@@ -85,6 +85,7 @@ struct Ivars {
     excluded: RefCell<Option<Retained<NSTextView>>>,
     payload: RefCell<Option<Retained<NSTextField>>>,
     memory_path: RefCell<Option<Retained<NSTextField>>>,
+    mcp_url: RefCell<Option<Retained<NSTextField>>>,
     character: RefCell<Option<Retained<NSPopUpButton>>>,
     harness: RefCell<Option<Retained<NSPopUpButton>>>,
     harness_state: RefCell<Option<Retained<NSTextField>>>,
@@ -277,6 +278,7 @@ define_class!(
                 form::RowOperation::ClearKey => self.do_clear_key(),
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
+                form::RowOperation::CopyMcpToken => self.do_copy_mcp_token(),
             }
         }
 
@@ -444,6 +446,18 @@ impl SettingsController {
         self.draw(true);
     }
 
+    fn do_copy_mcp_token(&self) {
+        use objc2_app_kit::NSPasteboard;
+
+        if let Some(endpoint) = crate::mcp_http::endpoint() {
+            let mtm = self.mtm();
+            let pb = NSPasteboard::generalPasteboard(mtm);
+            pb.clearContents();
+            let token_string = NSString::from_str(&endpoint.authorization());
+            pb.setString_forType(&token_string, objc2_app_kit::NSPasteboardTypeString);
+        }
+    }
+
     /// The field comes off the row itself rather than a literal, so the blur
     /// and the row cannot disagree about which field the text belongs to.
     fn commit_excluded(&self) {
@@ -571,6 +585,9 @@ impl SettingsController {
         }
         if let Some(field) = self.ivars().memory_path.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.memory_path));
+        }
+        if let Some(field) = self.ivars().mcp_url.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.mcp_url));
         }
         if let Some(field) = self.ivars().payload.borrow().clone() {
             field.setStringValue(&NSString::from_str(
@@ -727,6 +744,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut excluded_text = None;
     let mut payload_field = None;
     let mut memory_path_field = None;
+    let mut mcp_url_field = None;
     let mut character_popup = None;
     let mut harness_popup = None;
     let mut harness_state_field = None;
@@ -927,6 +945,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 let field = inspect_block(mtm);
                                 cursor.place(&field, 44.0);
                                 harness_state_field = Some(field);
+                            }
+                            form::MCP_URL_ID => {
+                                let field = inspect_line(mtm);
+                                field.setSelectable(true);
+                                cursor.place(&field, 22.0);
+                                mcp_url_field = Some(field);
                             }
                             _ => {}
                         }
@@ -1147,6 +1171,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().excluded.borrow_mut() = excluded_text;
     *controller.ivars().payload.borrow_mut() = payload_field;
     *controller.ivars().memory_path.borrow_mut() = memory_path_field;
+    *controller.ivars().mcp_url.borrow_mut() = mcp_url_field;
     *controller.ivars().character.borrow_mut() = character_popup;
     *controller.ivars().harness.borrow_mut() = harness_popup;
     *controller.ivars().harness_state.borrow_mut() = harness_state_field;

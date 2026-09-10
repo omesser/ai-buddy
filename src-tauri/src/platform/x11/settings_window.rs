@@ -703,6 +703,15 @@ impl SettingsWindow {
                                                             eprintln!("settings: {e}");
                                                         }
                                                     }
+                                                    RowOperation::CopyMcpToken => {
+                                                        if let Some(endpoint) =
+                                                            crate::mcp_http::endpoint()
+                                                        {
+                                                            let clipboard =
+                                                                gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
+                                                            clipboard.set_text(&endpoint.authorization());
+                                                        }
+                                                    }
                                                     _ => {}
                                                 }
                                             }
@@ -931,6 +940,9 @@ impl SettingsWindow {
         }
         if let Some(Control::Label(label)) = controls.get(form::MEMORY_PATH_ID) {
             label.set_text(&view.memory_path);
+        }
+        if let Some(Control::Label(label)) = controls.get(form::MCP_URL_ID) {
+            label.set_text(&view.mcp_url);
         }
         if let Some(Control::Label(label)) = controls.get(form::PAYLOAD_ID) {
             label.set_text(view.last_payload.as_deref().unwrap_or("Nothing sent yet."));

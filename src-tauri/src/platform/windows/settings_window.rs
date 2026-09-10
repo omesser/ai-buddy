@@ -181,6 +181,7 @@ impl SettingsWindow {
                         }
                         let text = match id.as_str() {
                             form::MEMORY_PATH_ID => view.memory_path.clone(),
+                            form::MCP_URL_ID => view.mcp_url.clone(),
                             form::HOTKEY_ID => view.hide_hotkey.clone(),
                             form::PAYLOAD_ID => view
                                 .last_payload
@@ -341,6 +342,7 @@ impl SettingsWindow {
                     RowOperation::ClearKey => self.do_clear_key(),
                     RowOperation::Apply => self.do_apply(),
                     RowOperation::Cancel => self.do_cancel(),
+                    RowOperation::CopyMcpToken => self.do_copy_mcp_token(),
                 }
             }
         }
@@ -483,6 +485,40 @@ impl SettingsWindow {
         self.draw(true);
     }
 
+    fn do_copy_mcp_token(&self) {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+        use windows_sys::Win32::System::SystemServices::CF_TEXT;
+
+        if let Some(endpoint) = crate::mcp_http::endpoint() {
+            let token = endpoint.authorization();
+            let token_bytes = token.as_bytes();
+
+            unsafe {
+                if OpenClipboard(self.hwnd) != 0 {
+                    EmptyClipboard();
+                    let h_mem = GlobalAlloc(GMEM_MOVEABLE, token_bytes.len() + 1);
+                    if !h_mem.is_null() {
+                        let p_mem = GlobalLock(h_mem);
+                        if !p_mem.is_null() {
+                            ptr::copy_nonoverlapping(
+                                token_bytes.as_ptr(),
+                                p_mem as *mut u8,
+                                token_bytes.len(),
+                            );
+                            *(p_mem.add(token_bytes.len()) as *mut u8) = 0;
+                            GlobalUnlock(h_mem);
+                            SetClipboardData(CF_TEXT, h_mem as _);
+                        }
+                    }
+                    CloseClipboard();
+                }
+            }
+        }
+    }
+
     fn update_tab_visibility(&self) {
         let current_tab = *self.current_tab.borrow();
         let controls = self.controls.borrow();
@@ -610,6 +646,7 @@ fn set_window_text(hwnd: HWND, text: &str) {
 /// heading/comment labels (`section_heading_*`, `section_comment_*`).
 fn should_update_label_text(id: &str) -> bool {
     if id == form::MEMORY_PATH_ID
+        || id == form::MCP_URL_ID
         || id == form::HOTKEY_ID
         || id == form::PAYLOAD_ID
         || id == form::HARNESS_STATE_ID

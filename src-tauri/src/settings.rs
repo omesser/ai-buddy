@@ -81,6 +81,10 @@ pub struct SettingsView {
     pub consent: Vec<ConsentRow>,
     /// The name Privacy & Security will show for this process.
     pub consent_listed_as: String,
+    /// The MCP server URL, when the server is running.
+    pub mcp_url: String,
+    /// Whether the MCP token can be copied (server is running and has a token).
+    pub mcp_token_available: bool,
 }
 
 /// The Development switches, by row id, as the window must draw them.
@@ -247,6 +251,10 @@ impl SettingsView {
         harness: Option<crate::harness::HarnessInspect>,
     ) -> Self {
         let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
+        let (mcp_url, mcp_token_available) = match crate::mcp_http::endpoint() {
+            Some(endpoint) => (endpoint.url, true),
+            None => ("Not running".to_string(), false),
+        };
         Self {
             // The value in force, as the Development rows show theirs: an
             // exported switch reads as it exported, however the file has it.
@@ -277,6 +285,8 @@ impl SettingsView {
             development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
             consent_listed_as: String::new(),
+            mcp_url,
+            mcp_token_available,
         }
     }
 
@@ -2739,6 +2749,38 @@ mod tests {
             assert_eq!(view.director_model, settings.director_model);
             assert_eq!(view.api_key_placeholder(), "Not set");
         });
+    }
+
+    /// The MCP URL is populated when the server is running, and the token
+    /// never appears in the view.
+    #[test]
+    fn mcp_url_is_shown_but_token_is_never_visible() {
+        let view = endpoint_view(&Settings::default());
+        // The URL field is populated (either with a URL or "Not running").
+        assert!(!view.mcp_url.is_empty(), "MCP URL must be populated");
+        // The token availability flag reflects whether there's an endpoint.
+        assert_eq!(
+            view.mcp_token_available,
+            crate::mcp_http::endpoint().is_some(),
+            "Token availability must match endpoint presence"
+        );
+        // The token itself never appears in any field.
+        let view_debug = format!("{view:?}");
+        assert!(
+            !view_debug.contains("Bearer"),
+            "Token must not appear in Debug output"
+        );
+        if let Some(endpoint) = crate::mcp_http::endpoint() {
+            let token = endpoint.authorization();
+            assert!(
+                !view.mcp_url.contains(&token),
+                "Token must not appear in the URL field"
+            );
+            assert!(
+                !view_debug.contains(&token),
+                "Token must not appear in Debug output"
+            );
+        }
     }
 
     /// Every Development control the window draws has to find its value in
