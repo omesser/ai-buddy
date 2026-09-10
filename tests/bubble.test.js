@@ -2,6 +2,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   bubbleDuration,
@@ -414,4 +417,22 @@ test("a line crossing the seam hides on the old display before it shows on the n
   b.machine.frame(forOverlay(b.placement({ bubble: true })));
   assert.equal(a.surface(), null, "the old display is already clear");
   assert.equal(b.surface(), "speech", "and the new one shows the same line");
+});
+
+// The control draws only where the Shell says a reported rectangle wins the
+// click, and it asks by name across a language boundary. A typo on either side
+// is silent: the renderer's `invoke` rejects, the flag stays false, and the
+// control simply never appears on the one platform that supports it.
+test("the capability the renderer asks for is a command the Shell registers", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
+  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
+
+  const asked = renderer.match(/invoke\(\s*"(overlay_hit_tests_hotspots)"/);
+  assert.ok(asked, "the renderer asks the Shell whether it hit-tests hotspots");
+  assert.match(
+    shell,
+    new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
+    `${asked[1]} is registered in generate_handler!`,
+  );
 });

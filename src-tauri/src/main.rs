@@ -677,6 +677,19 @@ fn overlay_secondary(down: bool) {
 /// renderer is the only side that knows where the control is — the bubble is
 /// sized by text it measures — so it says, in its own coordinates, and the
 /// frame loop converts.
+/// Whether reporting a rectangle would actually win the click (#547).
+///
+/// Asked once at startup, because the answer is a property of the lane the
+/// Shell was built for, not of any window. The renderer draws the control only
+/// where this is true. It replaces a user-agent sniff, which said "macOS" when
+/// the question is "does this lane hit-test off-art rectangles" — two facts
+/// that agree today and would part the moment X11 or Windows unions them into
+/// its input region.
+#[tauri::command]
+fn overlay_hit_tests_hotspots() -> bool {
+    platform::hotspots_hit_tested()
+}
+
 #[tauri::command]
 fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
     platform::set_overlay_hotspots(window.label(), rects);
@@ -2364,6 +2377,7 @@ fn main() {
             overlay_primary,
             overlay_secondary,
             overlay_hotspots,
+            overlay_hit_tests_hotspots,
             overlay_open_chat,
             chat_opening,
             chat_send,

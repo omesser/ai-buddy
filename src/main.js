@@ -19,14 +19,15 @@ import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
 const stage = document.getElementById("stage");
 
-// #547: whether this overlay can take a click that is not the art. macOS
-// hit-tests the rectangle the renderer reports (`overlay_hotspots`); X11 and
-// Windows carve the input region from the sprite's alpha mask alone, so a
-// control drawn above the head there would look clickable and hand the press
-// to the window behind it. A control that lies is worse than no control, so
-// the truncated bubble keeps its ellipsis and draws nothing. Union these
-// rectangles into `update_input_region` and this goes.
-const CLICKABLE_OFF_ART = navigator.userAgent.includes("Macintosh");
+// #547: whether this overlay can take a click that is not the art. The Shell
+// answers, per platform lane, because it is the side that knows: macOS
+// hit-tests the rectangles `overlay_hotspots` reports, while X11 and Windows
+// carve the input region from the sprite's alpha mask alone, so a control
+// drawn above the head there would look clickable and hand the press to the
+// window behind it. A control that lies is worse than no control, so the
+// truncated bubble keeps its ellipsis and draws nothing. False until `start`
+// asks, which is the safe way to be wrong.
+let clickableOffArt = false;
 
 // Every Character's art as data: URLs, keyed by Character name and fetched
 // once. Art, not state, and one entry however many Instances draw from it.
@@ -183,7 +184,7 @@ function createView(id) {
       view.bubbleContent.textContent = lines.join("\n");
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
-      bubble.toggleAttribute("data-more", truncated && CLICKABLE_OFF_ART);
+      bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
     },
     hideSpeech: hide,
@@ -351,6 +352,9 @@ function draw(now) {
 
 async function start() {
   characters = (await window.__TAURI__.core.invoke("character")).characters;
+  clickableOffArt = await window.__TAURI__.core.invoke(
+    "overlay_hit_tests_hotspots",
+  );
 
   // There is one overlay per display and each is told where every sprite is in
   // its own coordinates, so this asks for the frames addressed to this window

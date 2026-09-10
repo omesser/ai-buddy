@@ -468,6 +468,32 @@ pub fn update_input_region(
     windows::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
 }
 
+/// Whether this lane honours the off-art rectangles the renderer reports (#547).
+///
+/// macOS hit-tests them directly, so a control drawn above the head takes its
+/// own clicks. X11 and Windows carve the input region from the sprite's alpha
+/// mask in `update_input_region`, which knows nothing of these rectangles, so
+/// the press would fall through to the window behind. The renderer asks before
+/// it draws: a control that lies is worse than no control.
+///
+/// Each lane owns its own answer. Union the reported rectangles into that
+/// lane's `update_input_region` and flip its constant to `true` in the same
+/// change — the two are one fact, and splitting them is how they desync.
+#[cfg(target_os = "macos")]
+pub fn hotspots_hit_tested() -> bool {
+    true
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn hotspots_hit_tested() -> bool {
+    false
+}
+
+#[cfg(not(unix))]
+pub fn hotspots_hit_tested() -> bool {
+    false
+}
+
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
 pub fn update_input_region(
