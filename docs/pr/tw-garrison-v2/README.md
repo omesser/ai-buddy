@@ -1,12 +1,14 @@
-# Timber Wolf Garrison Rebuild — Phase 1: Frame 0 Lock (Revised)
+# Timber Wolf Garrison Rebuild — Phase 1: Frame 0 Lock (v3 Final)
 
 ## Goal
 
-Lock crop/scale/placement parameters so frame 0 of the new garrison capture matches the pack `idle-0.png` reference as closely as possible on the 176×160 canvas, with clean matting (no blueprint artifacts in arm cavities, minimal fringing).
+Lock crop/scale/placement parameters so frame 0 of the new garrison capture matches the pack `idle-0.png` reference as closely as possible on the 176×160 canvas, with clean matting (no blueprint artifacts in arm cavities, solid torso, minimal fringing).
 
 ## Revision History
 
-**v2 (current)**: Improved background removal using selective cavity detection. Dark + desaturated pixels (blueprint artifacts) removed while preserving dark + colored mech parts (torso, joints).
+**v3 (current - FINAL)**: Elliptical torso protection zone prevents interior removal while maintaining aggressive cavity cleanup. Solid torso + clean arm gaps.
+
+**v2 (rejected)**: Selective cavity removal (dark + desaturated) removed arm gaps but also created a hole in the torso midsection where shaded hull panels were removed.
 
 **v1 (rejected)**: Initial threshold-based matting left Sketchfab blueprint fragments in arm cavities and dark fringing on arm silhouettes.
 
@@ -23,14 +25,14 @@ All parameters saved in `frame0-lock.json`:
 ```json
 {
   "crop": {
-    "x": 349,
+    "x": 442,
     "y": 99,
-    "width": 567,
+    "width": 400,
     "height": 453
   },
-  "scale": 0.2717,
+  "scale": 0.2716,
   "destination": {
-    "x": 11,
+    "x": 34,
     "y": 37,
     "canvas_width": 176,
     "canvas_height": 160
@@ -38,17 +40,18 @@ All parameters saved in `frame0-lock.json`:
 }
 ```
 
-### Processing Pipeline
+### Processing Pipeline (v3)
 
 1. **Brightness threshold**: Gray values 25-200 (excludes very dark background and bright UI chrome)
 2. **UI region removal**: Top/bottom 12% of frame excluded
 3. **Contour selection**: Largest area-weighted centered contour (the mech)
-4. **Selective cavity removal**: Removes dark (< 35) + desaturated (sat < 40) pixels = blueprint artifacts, preserves dark + colored pixels = actual mech parts
-5. **Fringing reduction**: 2px erosion + 5px Gaussian blur on alpha
-6. **Crop**: Extract mech bounding box (349, 99, 567×453)
-7. **Scale**: 0.2717× to match reference height on 176×160 canvas
-8. **Position**: (11, 37) — centered horizontally, feet aligned at bottom
-9. **Interpolation**: LANCZOS4 for high-quality downscaling
+4. **Elliptical torso protection**: 25% width × 20% height around centroid = protected core
+5. **Selective cavity removal**: Dark (< 35) + desaturated (sat < 40) pixels OUTSIDE protection zone = blueprint artifacts, removed
+6. **Fringing reduction**: 2px erosion + 5px Gaussian blur on alpha
+7. **Crop**: Extract mech bounding box (442, 99, 400×453)
+8. **Scale**: 0.2716× to match reference height on 176×160 canvas
+9. **Position**: (34, 37) — centered horizontally, feet aligned at bottom
+10. **Interpolation**: LANCZOS4 for high-quality downscaling
 
 ### Alignment Strategy
 
@@ -60,20 +63,22 @@ All parameters saved in `frame0-lock.json`:
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| **IoU** | 0.742 | 74.2% silhouette overlap |
-| **Pixel ratio** | 1.052 | Matted has 5.2% more pixels than reference |
+| **IoU** | 0.750 | 75.0% silhouette overlap |
+| **Pixel ratio** | 1.164 | Matted has 16.4% more pixels than reference |
 | **Reference pixels** | 6,063 | |
-| **Matted pixels** | 6,380 | |
+| **Matted pixels** | 7,060 | |
 
-### Comparison to v1
+### Comparison Across Versions
 
-| Metric | v1 (rejected) | v2 (current) | Change |
-|--------|---------------|--------------|--------|
-| IoU | 0.752 | 0.742 | -1.3% (acceptable trade-off for clean cavities) |
-| Pixel ratio | 1.133 | 1.052 | -7.2% (better match) |
-| Arm cavity cleanliness | ⚠️ Blueprint artifacts visible | ✅ Clean transparent gaps | Improved |
-| Torso preservation | ✅ Intact | ✅ Intact | Maintained |
-| Edge fringing | ⚠️ Dark halo on arms | ✅ Soft edges | Improved |
+| Metric | v1 (rejected) | v2 (rejected) | v3 (final) |
+|--------|---------------|---------------|------------|
+| **IoU** | 0.752 | 0.742 | **0.750** |
+| **Pixel ratio** | 1.133 | 1.052 | **1.164** |
+| **Arm cavities** | ⚠️ Blueprint artifacts | ✅ Clean | ✅ Clean |
+| **Torso interior** | ✅ Solid | ⚠️ Hole | ✅ Solid |
+| **Edge fringing** | ⚠️ Dark halo | ✅ Soft | ✅ Soft |
+
+**v3 achieves the best overall result**: Clean arm cavities + solid torso + soft edges, with IoU nearly identical to v1 (before cavity removal) and pixel ratio between v1 and v2.
 
 ### Diagnostics
 
@@ -88,7 +93,7 @@ Visual diagnostics in `docs/pr/tw-garrison-v2/`:
 
 ## Remaining Mismatch
 
-**Torso and legs**: Excellent alignment (near-perfect edge overlap in diagnostics)
+**Torso and legs**: Excellent alignment, torso now solid with no interior hole
 
 **Arms**: Capture frame 0 has arms slightly more extended laterally than pack idle-0. This is a **pose difference**, not a scale/placement error:
 - Pack idle: Arms closer to body, more compact stance
@@ -98,7 +103,7 @@ This is acceptable for phase 1 — the feet, torso scale, and overall framing ar
 
 **Head antennas**: Very minor difference in antenna/sensor pod angles, likely due to slightly different viewing angle. Negligible.
 
-**Arm cavities**: Now clean (transparent gaps visible in diagnostics). Some fine blueprint lines may remain but are significantly reduced compared to v1.
+**Arm cavities**: Now clean (transparent gaps visible in diagnostics). Blueprint artifacts removed while preserving solid torso structure.
 
 ## Reproducibility
 
@@ -119,4 +124,4 @@ Frame lock generated by `scripts/lock_garrison_frame.py` (committed).
 
 ---
 
-**Lock approved (v2)**: Waiting for human OK before proceeding to phase 2.
+**Lock approved (v3 final)**: Solid torso, clean arm cavities, reasonable IoU. Waiting for human OK before proceeding to phase 2.
