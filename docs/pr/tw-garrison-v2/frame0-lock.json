@@ -7,15 +7,15 @@
     }
   },
   "crop": {
-    "x": 442,
+    "x": 349,
     "y": 99,
-    "width": 400,
+    "width": 567,
     "height": 453
   },
   "scale": 0.271523178807947,
   "scale_adjustment": 1.0,
   "destination": {
-    "x": 34,
+    "x": 11,
     "y": 37,
     "canvas_width": 176,
     "canvas_height": 160
@@ -31,7 +31,7 @@
     "bottom_margin": 0
   },
   "processing": {
-    "background_removal": "Threshold 25-200, UI exclusion, central column protection (40% width), lateral arm band cavity removal only",
+    "background_removal": "v6: v2 cavity removal (dark + desaturated) + hard torso protection mask (ellipse)",
     "interpolation": "LANCZOS4",
     "alignment_strategy": "feet at bottom, centered horizontally"
   }

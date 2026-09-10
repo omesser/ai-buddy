@@ -8,6 +8,8 @@ This script:
 3. Iteratively tunes crop, scale, and position to match the reference
 4. Saves lock parameters as JSON
 5. Generates visual diagnostics
+
+v6: Reverted to v2 cavity-removal logic + added center-torso protection mask
 """
 
 import cv2
@@ -28,8 +30,10 @@ CANVAS_HEIGHT = 160
 
 def remove_background(img):
     """
-    Remove background from capture frame using multi-stage filtering.
-    Removes Sketchfab blueprint artifacts while preserving solid torso.
+    Remove background from capture frame using multi-stage color and threshold filtering.
+    Removes Sketchfab blueprint artifacts and reduces fringing.
+    
+    v6: v2 cavity removal + hard torso protection mask
     """
     if img.shape[2] == 4:
         rgb = img[:, :, :3]
@@ -40,47 +44,47 @@ def remove_background(img):
     
     # Convert to grayscale
     gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
     
-    # Step 1: Stricter initial threshold to avoid picking up too much dark background
-    # The mech has visible detail/texture even in shaded areas
-    mask_bright_enough = gray > 30  # Slightly stricter than before
+    # Step 1: Identify the mech by brightness
+    # The mech is brighter than the very dark background (> 25)
+    # but not as bright as UI chrome (< 200)
+    mask_not_too_dark = gray > 25
+    mask_not_too_bright = gray < 200
+    mask = mask_not_too_dark & mask_not_too_bright
     
-    # Also require some texture/variation (not pure uniform dark)
-    # or some color saturation (colored parts of mech)
-    has_color = hsv[:, :, 1] > 20
-    has_texture = gray > 25  # Slightly looser for textured dark areas
-    
-    mask = mask_bright_enough | (has_texture & has_color)
-    
-    # Step 2: Remove UI regions (top and bottom 12%)
+    # Step 2: Remove UI regions (top and bottom 12% of frame)
     ui_region = np.ones_like(mask, dtype=bool)
     ui_region[int(h*0.12):int(h*0.88), :] = False
     mask[ui_region] = False
     
+    # Convert to uint8 for OpenCV
     mask_uint = mask.astype(np.uint8) * 255
     
-    # Step 3: Morphological cleanup
+    # Step 3: Morphological cleanup - CAREFULLY
+    # Close small gaps, but don't expand too much
     kernel_small = np.ones((5, 5), np.uint8)
     mask_uint = cv2.morphologyEx(mask_uint, cv2.MORPH_CLOSE, kernel_small, iterations=2)
     
-    # Step 4: Find main contour
+    # Step 4: Find and keep only the main contour (the mech)
     contours, _ = cv2.findContours(mask_uint, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     if contours and len(contours) > 0:
+        # Find the largest reasonably-centered contour
         img_center_x = w / 2
         img_center_y = h / 2
         
         def score_contour(contour):
             area = cv2.contourArea(contour)
-            if area < 1000:
+            if area < 1000:  # Too small
                 return -1
             M = cv2.moments(contour)
             if M["m00"] == 0:
                 return -1
             cx = M["m10"] / M["m00"]
             cy = M["m01"] / M["m00"]
+            # Penalize contours far from center
             dist = np.sqrt((cx - img_center_x)**2 + (cy - img_center_y)**2)
+            # Score favors large, centered contours
             return area * 1000 / (dist + 100)
         
         scored = [(score_contour(c), c) for c in contours]
@@ -88,77 +92,66 @@ def remove_background(img):
         
         if scored:
             best_contour = max(scored, key=lambda x: x[0])[1]
+            
+            # Create mask from this contour ONLY
             mask_uint = np.zeros((h, w), dtype=np.uint8)
             cv2.drawContours(mask_uint, [best_contour], -1, 255, -1)
     
-    # Step 5: Remove background-connected regions only
-    # This cleans arm cavities (connected to exterior) while preserving
-    # interior body shading (not connected to exterior background)
+    # Step 4.5: CREATE TORSO PROTECTION MASK
+    # This is a hard protect region to prevent v2 cavity removal from punching torso holes
+    # Protect the center cockpit/mid-hull area
+    protect_mask = np.zeros((h, w), dtype=bool)
     
-    # Identify potential background: very dark regions
-    very_dark = gray < 20
+    # Find the center and bounds of the current mask
+    coords = cv2.findNonZero(mask_uint)
+    if coords is not None:
+        x, y, mw, mh = cv2.boundingRect(coords)
+        center_x = x + mw // 2
+        center_y = y + mh // 2
+        
+        # Ellipse covering the torso area (cockpit + mid-hull)
+        # Width: ~50% of mech width
+        # Height: ~40% of mech height
+        # Position: slightly above center (cockpit is upper-mid)
+        ellipse_w = int(mw * 0.50)
+        ellipse_h = int(mh * 0.40)
+        ellipse_center_x = center_x
+        ellipse_center_y = center_y - int(mh * 0.05)  # Slightly up
+        
+        # Draw the protection ellipse
+        cv2.ellipse(protect_mask.astype(np.uint8), 
+                    (ellipse_center_x, ellipse_center_y),
+                    (ellipse_w // 2, ellipse_h // 2),
+                    0, 0, 360, True, -1)
     
-    # Flood fill from image borders to find background-connected regions
-    # Start with a seed mask from all four edges
-    h_img, w_img = gray.shape
-    flood_seed = np.zeros((h_img, w_img), dtype=np.uint8)
-    
-    # Seed from borders (pure background)
-    flood_seed[0, :] = 255  # Top edge
-    flood_seed[-1, :] = 255  # Bottom edge
-    flood_seed[:, 0] = 255  # Left edge
-    flood_seed[:, -1] = 255  # Right edge
-    
-    # Also seed from UI regions (already identified)
-    ui_region_mask = np.zeros_like(mask_uint, dtype=bool)
-    ui_region_mask[:int(h*0.12), :] = True
-    ui_region_mask[int(h*0.88):, :] = True
-    flood_seed[ui_region_mask] = 255
-    
-    # Create connectivity mask: regions where background can spread
-    # Background can spread through very dark areas (< 25 gray value)
-    spread_mask = (gray < 25).astype(np.uint8) * 255
-    
-    # Combine with current mask inverse: background is where mask is 0
-    spread_mask = spread_mask | (~(mask_uint > 0)).astype(np.uint8) * 255
-    
-    # Flood fill from seeds through spreadable regions
-    background_connected = np.zeros((h_img, w_img), dtype=np.uint8)
-    
-    # Use morphological reconstruction: dilate seed within spread_mask
-    kernel = np.ones((3, 3), np.uint8)
-    background_connected = flood_seed.copy()
-    
-    for _ in range(100):  # Iterate until convergence
-        prev = background_connected.copy()
-        # Dilate
-        background_connected = cv2.dilate(background_connected, kernel, iterations=1)
-        # Constrain to spread mask
-        background_connected = cv2.bitwise_and(background_connected, spread_mask)
-        # Check convergence
-        if np.array_equal(background_connected, prev):
-            break
-    
-    # Now: pixels that are (mask > 0) AND (background_connected) are arm cavities
-    # These are interior dark regions that ARE connected to exterior background
-    removable = (mask_uint > 0) & (background_connected > 0)
-    
-    # Additionally check saturation: only remove if desaturated (blueprint lines)
+    # Step 5: Remove dark internal regions (blueprint artifacts in arm cavities)
+    # v2 LOGIC: remove dark + low-saturation regions (gray blueprint lines)
+    # but keep dark + colored regions (actual dark mech parts)
+    # v6 ADDITION: do NOT remove anything inside the torso protection mask
     hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
-    low_saturation = hsv[:, :, 1] < 40
-    removable = removable & low_saturation
     
-    # Morphological cleanup
-    kernel_clean = np.ones((3, 3), np.uint8)
-    removable_clean = cv2.morphologyEx(removable.astype(np.uint8) * 255,
-                                        cv2.MORPH_OPEN, kernel_clean, iterations=1)
+    # Blueprint artifacts are dark AND desaturated (gray schematic lines)
+    internal_dark = (gray < 35) & (mask_uint > 0)
+    internal_gray = (hsv[:, :, 1] < 40) & (mask_uint > 0)  # Low saturation
     
-    # Remove these regions
-    mask_uint[removable_clean > 0] = 0
+    # Only remove pixels that are BOTH dark and gray (blueprint)
+    blueprint_artifacts = internal_dark & internal_gray
+    
+    # EXCLUDE protected torso pixels
+    blueprint_artifacts = blueprint_artifacts & (~protect_mask)
+    
+    # Only remove if they form coherent cavity regions (not just edges)
+    kernel_cavity = np.ones((5, 5), np.uint8)
+    dark_cavities = cv2.morphologyEx(blueprint_artifacts.astype(np.uint8) * 255, 
+                                      cv2.MORPH_OPEN, kernel_cavity, iterations=1)
+    
+    # Remove cavities from mask
+    mask_uint[dark_cavities > 0] = 0
     
     # Step 6: Reduce fringing
-    kernel_erode = np.ones((2, 2), np.uint8)
-    mask_uint = cv2.erode(mask_uint, kernel_erode, iterations=1)
+    # Slightly erode to remove dark outline pixels
+    kernel_tiny = np.ones((2, 2), np.uint8)
+    mask_uint = cv2.erode(mask_uint, kernel_tiny, iterations=1)
     
     # Step 7: Smooth alpha edges
     mask_float = mask_uint.astype(np.float32) / 255.0
@@ -192,7 +185,7 @@ def crop_and_scale_to_match(capture_rgba, ref_rgba, scale_adjustment=1.0):
     3. Center on the canvas, preferring foot alignment at the bottom
     
     Args:
-        scale_adjustment: Fine-tuning multiplier for the calculated scale (default 0.95)
+        scale_adjustment: Fine-tuning multiplier for the calculated scale (default 1.0)
     
     Returns: (matted_result, params_dict)
     """
@@ -289,7 +282,7 @@ def crop_and_scale_to_match(capture_rgba, ref_rgba, scale_adjustment=1.0):
             "bottom_margin": int(ref_bottom_margin)
         },
         "processing": {
-            "background_removal": "Threshold 25-200, UI exclusion, central column protection (40% width), lateral arm band cavity removal only",
+            "background_removal": "v6: v2 cavity removal (dark + desaturated) + hard torso protection mask (ellipse)",
             "interpolation": "LANCZOS4",
             "alignment_strategy": "feet at bottom, centered horizontally"
         }
@@ -347,24 +340,54 @@ def create_diagnostics(matted, reference, params):
     
     cv2.imwrite(str(OUTPUT_DIR / "diagnostic-edges.png"), edges_img)
     
-    # 3. Individual outputs for inspection
-    # Matted on checker
-    matted_viz = checker[:, :CANVAS_WIDTH].copy()
-    for i in range(3):
-        alpha = matted[:, :, 3:4] / 255.0
-        matted_viz[:, :, i] = (matted[:, :, i] * alpha[:, :, 0] + 
-                               matted_viz[:, :, i] * (1 - alpha[:, :, 0]))
-    cv2.imwrite(str(OUTPUT_DIR / "diagnostic-matted.png"), matted_viz)
+    # 3. Composite diagnostic (side-by-side + edges in a 2x2 grid)
+    composite = np.zeros((CANVAS_HEIGHT * 2 + 10, CANVAS_WIDTH * 2 + 10, 3), dtype=np.uint8)
     
-    # Reference on checker
-    ref_viz = checker[:, :CANVAS_WIDTH].copy()
+    # Top row: reference | matted (on checker)
+    checker_single = np.zeros((CANVAS_HEIGHT, CANVAS_WIDTH, 3), dtype=np.uint8)
+    for i in range(0, CANVAS_HEIGHT, checker_size):
+        for j in range(0, CANVAS_WIDTH, checker_size):
+            if ((i // checker_size) + (j // checker_size)) % 2:
+                checker_single[i:i+checker_size, j:j+checker_size] = [64, 64, 64]
+            else:
+                checker_single[i:i+checker_size, j:j+checker_size] = [32, 32, 32]
+    
+    ref_viz = checker_single.copy()
     for i in range(3):
         alpha = reference[:, :, 3:4] / 255.0
         ref_viz[:, :, i] = (reference[:, :, i] * alpha[:, :, 0] + 
                             ref_viz[:, :, i] * (1 - alpha[:, :, 0]))
+    
+    mat_viz = checker_single.copy()
+    for i in range(3):
+        alpha = matted[:, :, 3:4] / 255.0
+        mat_viz[:, :, i] = (matted[:, :, i] * alpha[:, :, 0] + 
+                            mat_viz[:, :, i] * (1 - alpha[:, :, 0]))
+    
+    composite[0:CANVAS_HEIGHT, 0:CANVAS_WIDTH] = ref_viz
+    composite[0:CANVAS_HEIGHT, CANVAS_WIDTH+10:CANVAS_WIDTH*2+10] = mat_viz
+    
+    # Bottom row: overlay | edges
+    overlay_viz = checker_single.copy()
+    for i in range(3):
+        alpha = overlay[:, :, 3:4] / 255.0
+        overlay_viz[:, :, i] = (overlay[:, :, i] * alpha[:, :, 0] + 
+                                 overlay_viz[:, :, i] * (1 - alpha[:, :, 0]))
+    
+    composite[CANVAS_HEIGHT+10:CANVAS_HEIGHT*2+10, 0:CANVAS_WIDTH] = overlay_viz
+    composite[CANVAS_HEIGHT+10:CANVAS_HEIGHT*2+10, CANVAS_WIDTH+10:CANVAS_WIDTH*2+10] = edges_img
+    
+    cv2.imwrite(str(OUTPUT_DIR / "diagnostic-composite.png"), composite)
+    
+    # 4. Individual outputs for inspection
+    # Matted on checker
+    cv2.imwrite(str(OUTPUT_DIR / "diagnostic-matted.png"), mat_viz)
+    
+    # Reference on checker
     cv2.imwrite(str(OUTPUT_DIR / "diagnostic-reference.png"), ref_viz)
     
     print("\nDiagnostics saved:")
+    print(f"  - diagnostic-composite.png (2×2 grid: ref | matted / overlay | edges)")
     print(f"  - diagnostic-sidebyside.png (ref | matted | overlay)")
     print(f"  - diagnostic-edges.png (edge overlay)")
     print(f"  - diagnostic-matted.png (matted result)")
@@ -372,7 +395,7 @@ def create_diagnostics(matted, reference, params):
 
 
 def main():
-    print("=== Timber Wolf Garrison Frame 0 Lock ===\n")
+    print("=== Timber Wolf Garrison Frame 0 Lock v6 ===\n")
     
     # Load images
     print("Loading images...")
@@ -387,7 +410,7 @@ def main():
     print(f"Reference: {reference.shape[1]}×{reference.shape[0]}\n")
     
     # Remove background
-    print("Removing background from capture...")
+    print("Removing background from capture (v6: v2 + torso protection)...")
     capture_rgba, mask = remove_background(capture)
     
     # Save the cleaned capture for inspection
@@ -430,7 +453,7 @@ def main():
     print(f"  Matted pixels: {mat_pixels}")
     print(f"  Pixel ratio: {mat_pixels/ref_pixels:.3f}")
     
-    print("\n✓ Frame 0 lock complete!")
+    print("\n✓ Frame 0 lock v6 complete!")
     print(f"  Lock params: {LOCK_JSON.name}")
     print(f"  Diagnostics: diagnostic-*.png")
     
