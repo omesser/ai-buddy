@@ -286,6 +286,7 @@ define_class!(
                 form::RowOperation::OpenMemory => self.do_memory_open(),
                 form::RowOperation::WipeMemory => self.do_memory_wipe(),
                 form::RowOperation::ClearKey => self.do_clear_key(),
+                form::RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
             }
@@ -379,6 +380,30 @@ impl SettingsController {
     /// Stage the delete rather than write it. Applying here would drop the
     /// session history before the endpoint typed beside it was ever sent, and
     /// Cancel could not take it back (#279).
+    /// The generated registration, on the clipboard.
+    ///
+    /// Copied from the view rather than regenerated, so what lands on the
+    /// clipboard is the same string the box above is showing — including the
+    /// port and token of this app run, which change at the next one.
+    ///
+    /// Lifted from #596, which built the same three arms for the token alone.
+    fn do_copy_byo_snippet(&self) {
+        use objc2_app_kit::NSPasteboard;
+
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_snippet.is_empty() {
+            return;
+        }
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        let snippet = NSString::from_str(&view.byo_snippet);
+        unsafe {
+            pasteboard.setString_forType(&snippet, objc2_app_kit::NSPasteboardTypeString);
+        }
+    }
+
     fn do_clear_key(&self) {
         self.ivars().clear_pending.set(true);
         if let Some(field) = self.ivars().api_key.borrow().clone() {

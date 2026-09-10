@@ -438,6 +438,7 @@ impl SettingsWindow {
                     RowOperation::OpenMemory => self.do_memory_open(),
                     RowOperation::WipeMemory => self.do_memory_wipe(),
                     RowOperation::ClearKey => self.do_clear_key(),
+                    RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
                     RowOperation::Apply => self.do_apply(),
                     RowOperation::Cancel => self.do_cancel(),
                 }
@@ -543,6 +544,51 @@ impl SettingsWindow {
             if let Err(why) = session.wipe_memory() {
                 eprintln!("settings: {why}");
             }
+        }
+    }
+
+    /// The generated registration, on the clipboard.
+    ///
+    /// Taken from the view rather than regenerated, so the clipboard holds the
+    /// same string the box is showing. Lifted from #596, which built this arm
+    /// for the token alone; the snippet is what a user actually pastes.
+    ///
+    /// `CF_TEXT` and a `GMEM_MOVEABLE` block, because the clipboard owns the
+    /// handle after `SetClipboardData` and would free a local buffer.
+    fn do_copy_byo_snippet(&self) {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+
+        const CF_TEXT: u32 = 1;
+
+        let Some(view) = self.session.lock().unwrap().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_snippet.is_empty() {
+            return;
+        }
+        let bytes = view.byo_snippet.as_bytes();
+
+        unsafe {
+            if OpenClipboard(self.hwnd) == 0 {
+                return;
+            }
+            EmptyClipboard();
+            let handle = GlobalAlloc(GMEM_MOVEABLE, bytes.len() + 1);
+            if !handle.is_null() {
+                let block = GlobalLock(handle);
+                if !block.is_null() {
+                    ptr::copy_nonoverlapping(bytes.as_ptr(), block as *mut u8, bytes.len());
+                    *(block.add(bytes.len()) as *mut u8) = 0;
+                    GlobalUnlock(handle);
+                    SetClipboardData(CF_TEXT, handle as _);
+                }
+            }
+            CloseClipboard();
         }
     }
 

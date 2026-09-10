@@ -786,6 +786,27 @@ impl SettingsWindow {
                                                             eprintln!("settings: {e}");
                                                         }
                                                     }
+                                                    // From the view, so the
+                                                    // clipboard holds what the
+                                                    // box shows. Lifted from
+                                                    // #596.
+                                                    RowOperation::CopyByoSnippet => {
+                                                        let snippet =
+                                                            sess.view().byo_snippet.clone();
+                                                        if !snippet.is_empty() {
+                                                            if let Some(display) =
+                                                                gtk::gdk::Display::default()
+                                                            {
+                                                                if let Some(clipboard) =
+                                                                    gtk::Clipboard::default(
+                                                                        &display,
+                                                                    )
+                                                                {
+                                                                    clipboard.set_text(&snippet);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                     _ => {}
                                                 }
                                             }
