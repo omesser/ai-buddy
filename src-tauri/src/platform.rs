@@ -14,7 +14,7 @@ use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
@@ -549,16 +549,43 @@ pub fn update_input_region(
     Ok(())
 }
 
-/// The OS double-click interval, in milliseconds, or the fallback when the OS
-/// cannot provide one.
+/// Cached double-click interval: queried from the OS once, then reused.
+static DOUBLE_CLICK_INTERVAL_MS: OnceLock<u32> = OnceLock::new();
+
+const FALLBACK_DOUBLE_CLICK_MS: u32 = 400;
+const MIN_DOUBLE_CLICK_MS: u32 = 100;
+const MAX_DOUBLE_CLICK_MS: u32 = 2000;
+
+/// Resolve and clamp the double-click interval, with fallback.
 ///
-/// Queried once at startup and injected into every Pointer. Logged when the
-/// fallback is used.
+/// Pure helper for testing; the public `double_click_interval_ms` caches this.
+fn resolve_double_click_interval(raw: Option<u32>) -> u32 {
+    match raw {
+        Some(value) if value > 0 => value.clamp(MIN_DOUBLE_CLICK_MS, MAX_DOUBLE_CLICK_MS),
+        _ => FALLBACK_DOUBLE_CLICK_MS,
+    }
+}
+
+/// The OS double-click interval, in milliseconds, clamped and with fallback.
+///
+/// Queried from the OS once, clamped to [100, 2000]ms to prevent pathological
+/// settings, and logged. Cached and reused for all Pointers.
 pub fn double_click_interval_ms() -> u32 {
-    const FALLBACK: u32 = 400;
-    os_double_click_interval_ms().unwrap_or_else(|| {
-        eprintln!("overlay: double-click interval fallback to {FALLBACK}ms");
-        FALLBACK
+    *DOUBLE_CLICK_INTERVAL_MS.get_or_init(|| {
+        let raw = os_double_click_interval_ms();
+        let resolved = resolve_double_click_interval(raw);
+        
+        if let Some(value) = raw {
+            if value > 0 && value != resolved {
+                eprintln!("overlay: double-click interval {}ms (clamped from {}ms)", resolved, value);
+            } else {
+                eprintln!("overlay: double-click interval {}ms", resolved);
+            }
+        } else {
+            eprintln!("overlay: double-click interval fallback to {}ms", FALLBACK_DOUBLE_CLICK_MS);
+        }
+        
+        resolved
     })
 }
 
@@ -1184,5 +1211,37 @@ mod tests {
             "a right-click the overlay felt must count as the button down"
         );
         set_overlay_secondary(false);
+    }
+
+    /// A normal OS setting passes through unchanged.
+    #[test]
+    fn double_click_interval_passes_normal_values() {
+        assert_eq!(resolve_double_click_interval(Some(400)), 400);
+        assert_eq!(resolve_double_click_interval(Some(500)), 500);
+        assert_eq!(resolve_double_click_interval(Some(200)), 200);
+    }
+
+    /// A pathologically small interval is clamped to prevent zero or near-zero
+    /// windows that would make double-clicks impossible.
+    #[test]
+    fn double_click_interval_clamps_too_small() {
+        assert_eq!(resolve_double_click_interval(Some(0)), FALLBACK_DOUBLE_CLICK_MS);
+        assert_eq!(resolve_double_click_interval(Some(50)), MIN_DOUBLE_CLICK_MS);
+        assert_eq!(resolve_double_click_interval(Some(99)), MIN_DOUBLE_CLICK_MS);
+    }
+
+    /// A pathologically large interval is clamped to prevent multi-day Summon
+    /// windows. Win32 caps at 5000; we want a sane shared ceiling.
+    #[test]
+    fn double_click_interval_clamps_too_large() {
+        assert_eq!(resolve_double_click_interval(Some(5000)), MAX_DOUBLE_CLICK_MS);
+        assert_eq!(resolve_double_click_interval(Some(10000)), MAX_DOUBLE_CLICK_MS);
+        assert_eq!(resolve_double_click_interval(Some(2001)), MAX_DOUBLE_CLICK_MS);
+    }
+
+    /// When the OS cannot provide an interval, the fallback is used.
+    #[test]
+    fn double_click_interval_falls_back_when_os_query_fails() {
+        assert_eq!(resolve_double_click_interval(None), FALLBACK_DOUBLE_CLICK_MS);
     }
 }

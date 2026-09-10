@@ -30,14 +30,6 @@ const DRAG_THRESHOLD: f64 = 4.0;
 /// holding is how you pick something up when you do not want to move it yet.
 const DRAG_DELAY_MS: u32 = 180;
 
-/// Fallback double-click interval when the OS cannot provide one, in
-/// milliseconds.
-///
-/// Near the macOS default. Long enough for a deliberate double-click with an
-/// ordinary hand, short enough that prodding the sprite twice because it was
-/// fun stays two Pokes.
-const FALLBACK_DOUBLE_CLICK_MS: u32 = 400;
-
 /// How fast the hand must still be moving for a release to be a Throw, in
 /// points per second.
 ///
@@ -106,7 +98,7 @@ pub struct Pointer {
 
 impl Default for Pointer {
     fn default() -> Self {
-        Self::with_double_click_ms(FALLBACK_DOUBLE_CLICK_MS)
+        Self::with_double_click_ms(400)
     }
 }
 
@@ -515,6 +507,15 @@ mod tests {
             slow.update(true, false, false, at(100.0, 100.0), TICK);
         }
         assert_eq!(click(&mut slow), vec![Verb::Summon], "1000ms is generous");
+
+        // Negative case: with a 100ms interval, a 200ms gap should produce two
+        // Pokes, not a Summon. This fails if the injected value is ignored.
+        let mut tight = Pointer::with_double_click_ms(100);
+        assert_eq!(click(&mut tight), vec![Verb::Poke]);
+        for _ in 0..13 {
+            tight.update(true, false, false, at(100.0, 100.0), TICK);
+        }
+        assert_eq!(click(&mut tight), vec![Verb::Poke], "200ms gap exceeds 100ms interval");
     }
 
     /// Once held, the cursor is free to leave the art. That is the whole point:
