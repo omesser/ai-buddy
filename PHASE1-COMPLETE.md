@@ -130,9 +130,9 @@ Not yet done:
 
 - Branch: `tw-garrison-from-capture`
 - Commits: 
-  - Previous: `903ad41` (v1), `3ecfc0e` (v1 summary)
-  - Current revision: (pending commit)
-- Status: Will push after commit
+  - v1: `903ad41`, `3ecfc0e`
+  - **v2: `13d87ea` (current)**
+- Status: **Pushed to origin**
 
 ## Files
 
