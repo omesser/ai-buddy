@@ -1,1 +1,1 @@
-file:///workspace/ai-buddy-alts/alternatives.md
+@/workspace/ai-buddy-alts/alternatives.md
