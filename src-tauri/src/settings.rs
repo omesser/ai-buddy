@@ -1576,6 +1576,7 @@ mod tests {
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
+            first_run_tour_shown: false,
         };
         settings.save(&path).expect("save");
 
@@ -1875,6 +1876,7 @@ mod tests {
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
+            first_run_tour_shown: false,
         };
         #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
         let mut view = SettingsView::from_parts(
