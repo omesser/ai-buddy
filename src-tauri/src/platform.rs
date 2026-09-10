@@ -120,6 +120,24 @@ pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
     })
 }
 
+/// The hotspot rectangles one overlay reported, in its own coordinates.
+///
+/// Used by the frame loop to union the rects into the OS input region on
+/// Windows and X11, where the alpha mask alone would leave a hole under the
+/// control and hand the click to whatever is behind the overlay.
+pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
+    OVERLAY_HOTSPOTS.lock().map_or_else(
+        |_| Vec::new(),
+        |hotspots| {
+            hotspots
+                .iter()
+                .filter(|(owner, _)| owner == label)
+                .map(|(_, rect)| *rect)
+                .collect()
+        },
+    )
+}
+
 /// The overlay heard the secondary button go down or up.
 ///
 /// Same reason as the primary: a right-click on our window is one
@@ -441,8 +459,9 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Update the input region for the overlay window based on the sprite's alpha mask.
 ///
 /// On X11, XShapeCombineMask carves the click-through region from the sprite's
-/// alpha. On macOS and other platforms, this is a no-op since Tauri's
-/// `set_ignore_cursor_events` is sufficient.
+/// alpha. On Windows, SetWindowRgn does the same. Both then union the hotspot
+/// rectangles so a control drawn outside the art still receives clicks.
+/// On macOS, Tauri's `set_ignore_cursor_events` is sufficient.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
@@ -451,8 +470,17 @@ pub fn update_input_region(
     sprite_y: i32,
     sprite_facing: i32,
     scale: i32,
+    hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
-    x11::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
+    x11::update_input_region(
+        window,
+        mask_data,
+        sprite_x,
+        sprite_y,
+        sprite_facing,
+        scale,
+        hotspot_rects,
+    )
 }
 
 /// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
@@ -464,21 +492,25 @@ pub fn update_input_region(
     sprite_y: i32,
     sprite_facing: i32,
     scale: i32,
+    hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
-    windows::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
+    windows::update_input_region(
+        window,
+        mask_data,
+        sprite_x,
+        sprite_y,
+        sprite_facing,
+        scale,
+        hotspot_rects,
+    )
 }
 
 /// Whether this lane honours the off-art rectangles the renderer reports (#547).
 ///
-/// macOS hit-tests them directly, so a control drawn above the head takes its
-/// own clicks. X11 and Windows carve the input region from the sprite's alpha
-/// mask in `update_input_region`, which knows nothing of these rectangles, so
-/// the press would fall through to the window behind. The renderer asks before
-/// it draws: a control that lies is worse than no control.
-///
-/// Each lane owns its own answer. Union the reported rectangles into that
-/// lane's `update_input_region` and flip its constant to `true` in the same
-/// change — the two are one fact, and splitting them is how they desync.
+/// macOS hit-tests them via Tauri's boolean click-through. X11 and Windows
+/// union them into the input region alongside the sprite's alpha mask in
+/// `update_input_region`, so a control drawn above the head takes its own
+/// clicks on every platform.
 #[cfg(target_os = "macos")]
 pub fn hotspots_hit_tested() -> bool {
     true
@@ -486,12 +518,12 @@ pub fn hotspots_hit_tested() -> bool {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn hotspots_hit_tested() -> bool {
-    false
+    true
 }
 
 #[cfg(not(unix))]
 pub fn hotspots_hit_tested() -> bool {
-    false
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -503,6 +535,7 @@ pub fn update_input_region(
     _sprite_y: i32,
     _sprite_facing: i32,
     _scale: i32,
+    _hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     Ok(())
 }
@@ -940,6 +973,33 @@ mod tests {
             !over_overlay_hotspot("overlay-test-a", 20, 30),
             "the bubble is gone and so is its rectangle"
         );
+    }
+
+    /// The frame loop passes an overlay's hotspot rectangles to the platform's
+    /// input-region builder so it can union them into the clickable area.
+    /// `overlay_hotspots_for` returns exactly the rectangles the named overlay
+    /// reported, and nothing from its neighbours.
+    #[test]
+    fn hotspots_for_retrieves_only_the_named_overlay() {
+        set_overlay_hotspots("overlay-for-a", vec![[1, 2, 3, 4], [5, 6, 7, 8]]);
+        set_overlay_hotspots("overlay-for-b", vec![[10, 20, 30, 40]]);
+
+        let a = overlay_hotspots_for("overlay-for-a");
+        assert_eq!(a, vec![[1, 2, 3, 4], [5, 6, 7, 8]], "both rects for a");
+
+        let b = overlay_hotspots_for("overlay-for-b");
+        assert_eq!(b, vec![[10, 20, 30, 40]], "only b's rect");
+
+        let none = overlay_hotspots_for("overlay-for-none");
+        assert!(none.is_empty(), "an overlay that reported nothing");
+
+        set_overlay_hotspots("overlay-for-a", vec![]);
+        assert!(
+            overlay_hotspots_for("overlay-for-a").is_empty(),
+            "clearing wipes all rects"
+        );
+
+        set_overlay_hotspots("overlay-for-b", vec![]);
     }
 
     /// A click can begin and end between two polls. The level alone reads

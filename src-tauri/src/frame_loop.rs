@@ -28,13 +28,14 @@ use super::{
     MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
-/// One overlay's last applied shape: the mask, then x, y, width and height.
+/// One overlay's last applied shape: the mask, then x, y, facing, scale, and
+/// hotspot rectangles the renderer reported for controls outside the art.
 ///
 /// Named because the tuple is three types deep and clippy's `type_complexity`
 /// rejects it inline. Only the X11 lane keeps one, since XShape is what has to
 /// be spared a rebuild every tick.
 #[cfg(not(target_os = "macos"))]
-type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32);
+type MaskParams = (Option<Vec<bool>>, i32, i32, i32, i32, Vec<[i32; 4]>);
 
 /// The frame loop: assemble a snapshot, tick the Engine, apply the `Frame`.
 ///
@@ -145,7 +146,10 @@ pub(crate) fn run_frame_loop(
         // here once update_input_region has accepted them.
         #[cfg(not(target_os = "macos"))]
         let last_mask: Arc<Mutex<Vec<MaskParams>>> =
-            Arc::new(Mutex::new(vec![(None, 0, 0, 1, 1); covered.len()]));
+            Arc::new(Mutex::new(vec![
+                (None, 0, 0, 1, 1, Vec::new());
+                covered.len()
+            ]));
 
         // The displays the overlays cover, as setup left them. Shared with the
         // main thread, which is the only place that can change what they cover
@@ -221,7 +225,7 @@ pub(crate) fn run_frame_loop(
             last_mask
                 .lock()
                 .unwrap()
-                .resize(displays.frames.len(), (None, 0, 0, 1, 1));
+                .resize(displays.frames.len(), (None, 0, 0, 1, 1, Vec::new()));
 
             // Wall time since the last tick that reached the Engine, not since
             // the last turn of this loop: a tick that could not read the
@@ -1578,13 +1582,9 @@ pub(crate) fn run_frame_loop(
             // `cursor_at` is in the shared point space, which is that space
             // plus the display's origin.
             //
-            // ponytail: macOS only. X11 and Windows carve the input region
-            // from the sprite's alpha mask, so the window would stop ignoring
-            // the cursor here while the region still ended at the art, and the
-            // click would fall through. src/main.js draws no control on those
-            // platforms rather than one that lies, so no rectangle arrives and
-            // this reads empty. Making it work means unioning these rectangles
-            // into `update_input_region`, in code this machine cannot compile.
+            // On X11 and Windows the hotspot rectangles are unioned into the
+            // OS input region, so the window stops passing clicks through over
+            // the control as well as over the art.
             let over_control = on_overlay.is_some_and(|index| {
                 displays.frames.get(index).is_some_and(|display| {
                     platform::over_overlay_hotspot(
@@ -1723,12 +1723,14 @@ pub(crate) fn run_frame_loop(
                         if let Some(instance) = sprite_on_overlay {
                             let local = instance.sprite.in_overlay(*display);
                             let (_width, _height, opaque) = instance.mask.raw();
+                            let hotspots = platform::overlay_hotspots_for(&label);
                             let mask_params = (
                                 Some(opaque.to_vec()),
                                 local.x,
                                 local.y,
                                 i32::from(instance.mirror),
                                 instance.sprite.scale,
+                                hotspots,
                             );
 
                             // `last_mask` exists so an unchanged sprite does not
@@ -1749,6 +1751,7 @@ pub(crate) fn run_frame_loop(
                                 let sprite_y = local.y;
                                 let sprite_mirror = i32::from(instance.mirror);
                                 let sprite_scale = instance.sprite.scale;
+                                let hotspots_clone = mask_params.5.clone();
                                 let mask_applied_clone = Arc::clone(&mask_applied);
                                 let last_mask_clone = Arc::clone(&last_mask);
                                 let mask_in_flight_clone = Arc::clone(&mask_in_flight);
@@ -1766,6 +1769,7 @@ pub(crate) fn run_frame_loop(
                                             sprite_y,
                                             sprite_mirror,
                                             sprite_scale,
+                                            &hotspots_clone,
                                         ) {
                                             Ok(()) => {
                                                 mask_applied_clone.lock().unwrap()[overlay_index] =
@@ -1807,7 +1811,7 @@ pub(crate) fn run_frame_loop(
                             }
                         } else {
                             // No sprite on this overlay, make it fully click-through
-                            let mask_params = (None, 0, 0, 1, 1);
+                            let mask_params = (None, 0, 0, 1, 1, Vec::new());
 
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                                 let handle = app.clone();
@@ -1818,8 +1822,16 @@ pub(crate) fn run_frame_loop(
 
                                 let _ = app.run_on_main_thread(move || {
                                     if let Some(window) = handle.get_webview_window(&label_clone) {
-                                        if platform::update_input_region(&window, None, 0, 0, 1, 1)
-                                            .is_ok()
+                                        if platform::update_input_region(
+                                            &window,
+                                            None,
+                                            0,
+                                            0,
+                                            1,
+                                            1,
+                                            &[],
+                                        )
+                                        .is_ok()
                                         {
                                             last_mask_clone.lock().unwrap()[overlay_index] =
                                                 mask_params_clone;
@@ -1837,7 +1849,7 @@ pub(crate) fn run_frame_loop(
                         }
                     } else {
                         // Ignoring or invisible: make the whole window click-through
-                        let mask_params = (None, 0, 0, 1, 1);
+                        let mask_params = (None, 0, 0, 1, 1, Vec::new());
 
                         if last_mask.lock().unwrap().get(index) != Some(&mask_params) {
                             let handle = app.clone();
@@ -1848,7 +1860,7 @@ pub(crate) fn run_frame_loop(
 
                             let _ = app.run_on_main_thread(move || {
                                 if let Some(window) = handle.get_webview_window(&label_clone) {
-                                    if platform::update_input_region(&window, None, 0, 0, 1, 1)
+                                    if platform::update_input_region(&window, None, 0, 0, 1, 1, &[])
                                         .is_ok()
                                     {
                                         last_mask_clone.lock().unwrap()[overlay_index] =

@@ -21,12 +21,9 @@ const stage = document.getElementById("stage");
 
 // #547: whether this overlay can take a click that is not the art. The Shell
 // answers, per platform lane, because it is the side that knows: macOS
-// hit-tests the rectangles `overlay_hotspots` reports, while X11 and Windows
-// carve the input region from the sprite's alpha mask alone, so a control
-// drawn above the head there would look clickable and hand the press to the
-// window behind it. A control that lies is worse than no control, so the
-// truncated bubble keeps its ellipsis and draws nothing. False until `start`
-// asks, which is the safe way to be wrong.
+// hit-tests the rectangles `overlay_hotspots` reports, and X11 and Windows
+// union them into the OS input region alongside the sprite's alpha mask.
+// False until `start` asks, which is the safe way to be wrong.
 let clickableOffArt = false;
 
 // Every Character's art as data: URLs, keyed by Character name and fetched
