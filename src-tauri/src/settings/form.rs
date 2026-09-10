@@ -1095,8 +1095,8 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "MCP".to_string(),
             comment: Some(
-                "For pointing a Harness you run yourself at ai-buddy. The URL \
-                 and token change on every launch."
+                "These rows are for development and testing: for pointing a Harness \
+                 you run yourself at ai-buddy. The URL and token change on every launch."
                     .to_string(),
             ),
             rows: vec![
@@ -1203,6 +1203,7 @@ mod tests {
             "Instances",
             "Last user turn",
             "Launch",
+            "MCP",
             "Memory File",
             "Traces",
             "What the buddy can see",
