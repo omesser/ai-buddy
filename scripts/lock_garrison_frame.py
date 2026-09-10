@@ -28,74 +28,107 @@ CANVAS_HEIGHT = 160
 
 def remove_background(img):
     """
-    Remove background from capture frame.
-    Uses color-based segmentation to isolate the mech from the dark background and UI.
+    Remove background from capture frame using multi-stage color and threshold filtering.
+    Removes Sketchfab blueprint artifacts and reduces fringing.
     """
     if img.shape[2] == 4:
         rgb = img[:, :, :3]
-        alpha = img[:, :, 3]
     else:
         rgb = img
-        alpha = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8) * 255
     
-    # Convert to grayscale for thresholding
+    h, w = rgb.shape[:2]
+    
+    # Convert to grayscale
     gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
     
-    # The mech has distinct colors (browns, metallics) that are brighter than pure black
-    # Use a higher threshold to exclude the very dark background
-    _, mask = cv2.threshold(gray, 30, 255, cv2.THRESH_BINARY)
+    # Step 1: Identify the mech by brightness
+    # The mech is brighter than the very dark background (> 25)
+    # but not as bright as UI chrome (< 200)
+    mask_not_too_dark = gray > 25
+    mask_not_too_bright = gray < 200
+    mask = mask_not_too_dark & mask_not_too_bright
     
-    # Additional filtering: exclude very blue/white UI elements
-    # The mech is mostly browns/grays, not bright whites or blues
+    # Step 2: Remove UI regions (top and bottom 12% of frame)
+    ui_region = np.ones_like(mask, dtype=bool)
+    ui_region[int(h*0.12):int(h*0.88), :] = False
+    mask[ui_region] = False
+    
+    # Convert to uint8 for OpenCV
+    mask_uint = mask.astype(np.uint8) * 255
+    
+    # Step 3: Morphological cleanup - CAREFULLY
+    # Close small gaps, but don't expand too much
+    kernel_small = np.ones((5, 5), np.uint8)
+    mask_uint = cv2.morphologyEx(mask_uint, cv2.MORPH_CLOSE, kernel_small, iterations=2)
+    
+    # Step 4: Find and keep only the main contour (the mech)
+    contours, _ = cv2.findContours(mask_uint, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if contours and len(contours) > 0:
+        # Find the largest reasonably-centered contour
+        img_center_x = w / 2
+        img_center_y = h / 2
+        
+        def score_contour(contour):
+            area = cv2.contourArea(contour)
+            if area < 1000:  # Too small
+                return -1
+            M = cv2.moments(contour)
+            if M["m00"] == 0:
+                return -1
+            cx = M["m10"] / M["m00"]
+            cy = M["m01"] / M["m00"]
+            # Penalize contours far from center
+            dist = np.sqrt((cx - img_center_x)**2 + (cy - img_center_y)**2)
+            # Score favors large, centered contours
+            return area * 1000 / (dist + 100)
+        
+        scored = [(score_contour(c), c) for c in contours]
+        scored = [(s, c) for s, c in scored if s > 0]
+        
+        if scored:
+            best_contour = max(scored, key=lambda x: x[0])[1]
+            
+            # Create mask from this contour ONLY
+            mask_uint = np.zeros((h, w), dtype=np.uint8)
+            cv2.drawContours(mask_uint, [best_contour], -1, 255, -1)
+    
+    # Step 5: Remove dark internal regions (blueprint artifacts in arm cavities)
+    # Be selective: remove dark + low-saturation regions (gray blueprint lines)
+    # but keep dark + colored regions (actual dark mech parts)
     hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
-    # Exclude very bright whites (UI chrome)
-    bright_mask = hsv[:, :, 2] < 220
-    mask = cv2.bitwise_and(mask, mask, mask=bright_mask.astype(np.uint8) * 255)
     
-    # Clean up with morphological operations
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=3)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
+    # Blueprint artifacts are dark AND desaturated (gray schematic lines)
+    internal_dark = (gray < 35) & (mask_uint > 0)
+    internal_gray = (hsv[:, :, 1] < 40) & (mask_uint > 0)  # Low saturation
     
-    # Find contours and keep only substantial ones (exclude small UI bits)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Only remove pixels that are BOTH dark and gray (blueprint)
+    blueprint_artifacts = internal_dark & internal_gray
     
-    if contours:
-        # Filter by area - keep only large contours
-        total_area = img.shape[0] * img.shape[1]
-        min_area = total_area * 0.02  # At least 2% of frame
-        
-        large_contours = [c for c in contours if cv2.contourArea(c) > min_area]
-        
-        if large_contours:
-            # Find the most centered contour (likely the mech)
-            img_center_x = img.shape[1] / 2
-            img_center_y = img.shape[0] / 2
-            
-            def contour_center_distance(contour):
-                M = cv2.moments(contour)
-                if M["m00"] == 0:
-                    return float('inf')
-                cx = M["m10"] / M["m00"]
-                cy = M["m01"] / M["m00"]
-                return np.sqrt((cx - img_center_x)**2 + (cy - img_center_y)**2)
-            
-            # Use the most centered large contour
-            mech_contour = min(large_contours, key=contour_center_distance)
-            
-            mask = np.zeros_like(mask)
-            cv2.drawContours(mask, [mech_contour], -1, 255, -1)
+    # Only remove if they form coherent cavity regions (not just edges)
+    kernel_cavity = np.ones((5, 5), np.uint8)
+    dark_cavities = cv2.morphologyEx(blueprint_artifacts.astype(np.uint8) * 255, 
+                                      cv2.MORPH_OPEN, kernel_cavity, iterations=1)
     
-    # Final cleanup - fill any holes in the mech
-    kernel = np.ones((7, 7), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    # Remove cavities from mask
+    mask_uint[dark_cavities > 0] = 0
     
-    # Create RGBA output
-    result = np.zeros((img.shape[0], img.shape[1], 4), dtype=np.uint8)
+    # Step 6: Reduce fringing
+    # Slightly erode to remove dark outline pixels
+    kernel_tiny = np.ones((2, 2), np.uint8)
+    mask_uint = cv2.erode(mask_uint, kernel_tiny, iterations=1)
+    
+    # Step 7: Smooth alpha edges
+    mask_float = mask_uint.astype(np.float32) / 255.0
+    mask_smooth = cv2.GaussianBlur(mask_float, (5, 5), 1.0)
+    mask_final = (mask_smooth * 255).astype(np.uint8)
+    
+    # Step 8: Create RGBA output
+    result = np.zeros((h, w, 4), dtype=np.uint8)
     result[:, :, :3] = rgb
-    result[:, :, 3] = mask
+    result[:, :, 3] = mask_final
     
-    return result, mask
+    return result, mask_final
 
 
 def find_content_bounds(mask):
@@ -214,7 +247,7 @@ def crop_and_scale_to_match(capture_rgba, ref_rgba, scale_adjustment=1.0):
             "bottom_margin": int(ref_bottom_margin)
         },
         "processing": {
-            "background_removal": "threshold at 30, HSV filtering, centroid selection, morphological cleanup",
+            "background_removal": "Color range + threshold (25-200), UI region exclusion, dark cavity removal, edge smoothing",
             "interpolation": "LANCZOS4",
             "alignment_strategy": "feet at bottom, centered horizontally"
         }

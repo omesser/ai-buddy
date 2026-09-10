@@ -7,15 +7,15 @@
     }
   },
   "crop": {
-    "x": 443,
-    "y": 101,
-    "width": 388,
-    "height": 448
+    "x": 349,
+    "y": 99,
+    "width": 567,
+    "height": 453
   },
-  "scale": 0.27455357142857145,
+  "scale": 0.271523178807947,
   "scale_adjustment": 1.0,
   "destination": {
-    "x": 35,
+    "x": 11,
     "y": 37,
     "canvas_width": 176,
     "canvas_height": 160
@@ -31,7 +31,7 @@
     "bottom_margin": 0
   },
   "processing": {
-    "background_removal": "threshold at 30, HSV filtering, centroid selection, morphological cleanup",
+    "background_removal": "Color range + threshold (25-200), UI region exclusion, dark cavity removal, edge smoothing",
     "interpolation": "LANCZOS4",
     "alignment_strategy": "feet at bottom, centered horizontally"
   }
