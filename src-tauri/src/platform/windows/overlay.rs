@@ -2,8 +2,10 @@
 //!
 //! Extended window styles (WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_EX_TOOLWINDOW,
 //! WS_EX_TRANSPARENT) float the overlay above other windows without stealing
-//! focus. SetWindowRgn carves the input region from the sprite's alpha mask.
-//! WDA_EXCLUDEFROMCAPTURE excludes the overlay from screen capture.
+//! focus. SetWindowRgn carves the input region from the sprite's alpha mask
+//! and unions any hotspot rectangles the renderer reported so a control drawn
+//! outside the art still receives clicks. WDA_EXCLUDEFROMCAPTURE excludes the
+//! overlay from screen capture.
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::Foundation::HWND;
@@ -43,8 +45,10 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// SetWindowRgn carves the click-through region from the sprite's alpha mask.
 ///
 /// `None` makes the entire window click-through by applying WS_EX_TRANSPARENT.
-/// `Some` creates a region from the opaque pixels and removes WS_EX_TRANSPARENT
-/// so clicks hit the sprite and pass through everywhere else.
+/// `Some` creates a region from the opaque pixels, unions the hotspot
+/// rectangles so a control drawn outside the art still receives clicks,
+/// and removes WS_EX_TRANSPARENT so clicks hit the combined region and
+/// pass through everywhere else.
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
     mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
@@ -52,6 +56,7 @@ pub fn update_input_region(
     sprite_y: i32,
     sprite_facing: i32,
     scale: i32,
+    hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     let raw_window_handle = match window.window_handle() {
         Ok(handle) => handle,
@@ -68,7 +73,15 @@ pub fn update_input_region(
     };
 
     if let Some(mask) = mask_data {
-        apply_input_mask(hwnd, mask, sprite_x, sprite_y, sprite_facing, scale)?;
+        apply_input_mask(
+            hwnd,
+            mask,
+            sprite_x,
+            sprite_y,
+            sprite_facing,
+            scale,
+            hotspot_rects,
+        )?;
     } else {
         clear_input_region(hwnd)?;
     }
@@ -160,7 +173,10 @@ fn apply_capture_exclusion(hwnd: HWND) -> Result<(), String> {
 ///
 /// Creates a region from the opaque pixels in the sprite's alpha mask, applying
 /// scale and facing. The region is positioned at sprite_x, sprite_y in window
-/// coordinates. Facing < 0 mirrors the mask horizontally.
+/// coordinates. Facing < 0 mirrors the mask horizontally. Hotspot rectangles
+/// (in overlay-local coordinates) are OR'd in so a control drawn outside the
+/// art still receives clicks.
+#[allow(clippy::too_many_arguments)]
 fn apply_input_mask(
     hwnd: HWND,
     mask: &ai_buddy_core::overlay::AlphaMask,
@@ -168,6 +184,7 @@ fn apply_input_mask(
     sprite_y: i32,
     sprite_facing: i32,
     scale: i32,
+    hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     let (width, height, opaque) = mask.raw();
 
@@ -238,6 +255,38 @@ fn apply_input_mask(
 
         if combined_rgn.is_null() {
             return clear_input_region(hwnd);
+        }
+
+        for &[hx, hy, hw, hh] in hotspot_rects {
+            let hotspot_rgn = CreateRectRgn(hx, hy, hx + hw, hy + hh);
+            if hotspot_rgn.is_null() {
+                DeleteObject(combined_rgn);
+                return Err("Failed to create hotspot region".to_string());
+            }
+
+            let temp_rgn = CreateRectRgn(0, 0, 0, 0);
+            if temp_rgn.is_null() {
+                DeleteObject(combined_rgn);
+                DeleteObject(hotspot_rgn);
+                return Err("Failed to create temp region for hotspot".to_string());
+            }
+
+            if windows_sys::Win32::Graphics::Gdi::CombineRgn(
+                temp_rgn,
+                combined_rgn,
+                hotspot_rgn,
+                RGN_OR,
+            ) == 0
+            {
+                DeleteObject(combined_rgn);
+                DeleteObject(hotspot_rgn);
+                DeleteObject(temp_rgn);
+                return Err("Failed to union hotspot region".to_string());
+            }
+
+            DeleteObject(combined_rgn);
+            DeleteObject(hotspot_rgn);
+            combined_rgn = temp_rgn;
         }
 
         let current_style = GetWindowLongW(hwnd, GWL_EXSTYLE);

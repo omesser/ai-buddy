@@ -2,6 +2,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   bubbleDuration,
@@ -29,25 +32,44 @@ test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
 
 test("wrap text at max width", () => {
   const short = "hi";
-  const wrapped = wrapText(short, 260, testMeasureFn);
-  assert.equal(wrapped.length, 1);
-  assert.equal(wrapped[0], "hi");
+  const { lines, truncated } = wrapText(short, 260, testMeasureFn);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0], "hi");
+  assert.equal(truncated, false, "a line that fits is not truncated");
 });
 
 test("long text wraps at word boundaries", () => {
   const text = "The quick brown fox jumps over the lazy dog";
-  const wrapped = wrapText(text, 100, testMeasureFn);
-  assert.ok(wrapped.length > 1, "text should wrap");
-  assert.ok(wrapped.every(line => line.length > 0), "no empty lines");
+  const { lines } = wrapText(text, 100, testMeasureFn);
+  assert.ok(lines.length > 1, "text should wrap");
+  assert.ok(lines.every(line => line.length > 0), "no empty lines");
 });
 
 test("text truncates with ellipsis past 6 lines", () => {
   const manyLines = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8";
-  const wrapped = wrapText(manyLines, 260, testMeasureFn);
-  assert.ok(wrapped.length <= 6, "truncated to 6 lines");
-  if (wrapped.length === 6) {
-    assert.ok(wrapped[5].endsWith("…"), "last line has ellipsis");
-  }
+  const { lines, truncated } = wrapText(manyLines, 260, testMeasureFn);
+  assert.equal(lines.length, 6, "truncated to 6 lines");
+  assert.ok(lines[5].endsWith("…"), "last line has ellipsis");
+  assert.equal(truncated, true, "and says so");
+});
+
+// #547: the flag is what puts the "Open chat" control in the bubble, so it has
+// to be true for a turn that ran off the bottom by wrapping as well as one that
+// arrived with too many paragraphs — and false for a line that merely fills the
+// last one.
+test("wrapping past the last line is truncation too", () => {
+  const oneLongParagraph = "word ".repeat(200).trim();
+  const { lines, truncated } = wrapText(oneLongParagraph, 100, testMeasureFn);
+  assert.equal(lines.length, 6);
+  assert.equal(truncated, true, "the paragraph outran the bubble");
+});
+
+test("exactly six lines is not truncation", () => {
+  const sixLines = "line1\nline2\nline3\nline4\nline5\nline6";
+  const { lines, truncated } = wrapText(sixLines, 260, testMeasureFn);
+  assert.equal(lines.length, 6);
+  assert.equal(truncated, false, "nothing was left out");
+  assert.equal(lines[5], "line6", "so no ellipsis either");
 });
 
 test("bubble placement stays above sprite by default", () => {
@@ -395,4 +417,22 @@ test("a line crossing the seam hides on the old display before it shows on the n
   b.machine.frame(forOverlay(b.placement({ bubble: true })));
   assert.equal(a.surface(), null, "the old display is already clear");
   assert.equal(b.surface(), "speech", "and the new one shows the same line");
+});
+
+// The control draws only where the Shell says a reported rectangle wins the
+// click, and it asks by name across a language boundary. A typo on either side
+// is silent: the renderer's `invoke` rejects, the flag stays false, and the
+// control simply never appears on the one platform that supports it.
+test("the capability the renderer asks for is a command the Shell registers", () => {
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
+  const shell = readFileSync(join(dir, "../src-tauri/src/main.rs"), "utf8");
+
+  const asked = renderer.match(/invoke\(\s*"(overlay_hit_tests_hotspots)"/);
+  assert.ok(asked, "the renderer asks the Shell whether it hit-tests hotspots");
+  assert.match(
+    shell,
+    new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
+    `${asked[1]} is registered in generate_handler!`,
+  );
 });

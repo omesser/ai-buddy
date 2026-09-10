@@ -92,6 +92,61 @@ pub fn set_overlay_primary(down: bool) {
     OVERLAY_PRIMARY.report(down);
 }
 
+/// Rectangles one overlay wants clicks over, besides the art: `(label, [x, y,
+/// width, height])` in that overlay's own coordinates.
+///
+/// Only ever the speech bubble's "Open chat" control (#547), and only while one
+/// is drawn — so this is empty on almost every tick. A `Vec` of pairs rather
+/// than a map because it is read once a tick and written once a line, and
+/// `Vec::new` is const where `HashMap::new` is not.
+static OVERLAY_HOTSPOTS: Mutex<Vec<(String, [i32; 4])>> = Mutex::new(Vec::new());
+
+/// Replace everything `label` asked for. An empty list is how an overlay says
+/// it wants nothing but the art again.
+pub fn set_overlay_hotspots(label: &str, rects: Vec<[i32; 4]>) {
+    let Ok(mut hotspots) = OVERLAY_HOTSPOTS.lock() else {
+        return;
+    };
+    hotspots.retain(|(owner, _)| owner != label);
+    hotspots.extend(rects.into_iter().map(|rect| (label.to_string(), rect)));
+}
+
+/// Whether `label`'s overlay wants the click at `(x, y)`, in its coordinates.
+pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
+    OVERLAY_HOTSPOTS.lock().is_ok_and(|hotspots| {
+        hotspots.iter().any(|(owner, [left, top, width, height])| {
+            owner == label && x >= *left && x < left + width && y >= *top && y < top + height
+        })
+    })
+}
+
+/// The hotspot rectangles one overlay reported, in its own coordinates.
+///
+/// Used by the frame loop to union the rects into the OS input region on
+/// Windows and X11, where the alpha mask alone would leave a hole under the
+/// control and hand the click to whatever is behind the overlay.
+///
+/// Allowed rather than `cfg`'d out on macOS, which reads the same rectangles
+/// through `over_overlay_hotspot` and never calls this: what it holds is a
+/// plain map lookup, and its test is the one that keeps a neighbour overlay's
+/// rectangles from leaking into this one. Compiling that test only on the two
+/// lanes that call the function would stop it running on the machine most of
+/// this is written on. The macOS `update_input_region` stub below is allowed
+/// for the same reason.
+#[allow(dead_code)]
+pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
+    OVERLAY_HOTSPOTS.lock().map_or_else(
+        |_| Vec::new(),
+        |hotspots| {
+            hotspots
+                .iter()
+                .filter(|(owner, _)| owner == label)
+                .map(|(_, rect)| *rect)
+                .collect()
+        },
+    )
+}
+
 /// The overlay heard the secondary button go down or up.
 ///
 /// Same reason as the primary: a right-click on our window is one
@@ -413,8 +468,9 @@ pub fn configure_overlay(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// Update the input region for the overlay window based on the sprite's alpha mask.
 ///
 /// On X11, XShapeCombineMask carves the click-through region from the sprite's
-/// alpha. On macOS and other platforms, this is a no-op since Tauri's
-/// `set_ignore_cursor_events` is sufficient.
+/// alpha. On Windows, SetWindowRgn does the same. Both then union the hotspot
+/// rectangles so a control drawn outside the art still receives clicks.
+/// On macOS, Tauri's `set_ignore_cursor_events` is sufficient.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn update_input_region(
     window: &tauri::WebviewWindow,
@@ -423,8 +479,17 @@ pub fn update_input_region(
     sprite_y: i32,
     sprite_facing: i32,
     scale: i32,
+    hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
-    x11::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
+    x11::update_input_region(
+        window,
+        mask_data,
+        sprite_x,
+        sprite_y,
+        sprite_facing,
+        scale,
+        hotspot_rects,
+    )
 }
 
 /// Windows: SetWindowRgn from the sprite's alpha mask for click-through.
@@ -436,8 +501,38 @@ pub fn update_input_region(
     sprite_y: i32,
     sprite_facing: i32,
     scale: i32,
+    hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
-    windows::update_input_region(window, mask_data, sprite_x, sprite_y, sprite_facing, scale)
+    windows::update_input_region(
+        window,
+        mask_data,
+        sprite_x,
+        sprite_y,
+        sprite_facing,
+        scale,
+        hotspot_rects,
+    )
+}
+
+/// Whether this lane honours the off-art rectangles the renderer reports (#547).
+///
+/// macOS hit-tests them via Tauri's boolean click-through. X11 and Windows
+/// union them into the input region alongside the sprite's alpha mask in
+/// `update_input_region`, so a control drawn above the head takes its own
+/// clicks on every platform.
+#[cfg(target_os = "macos")]
+pub fn hotspots_hit_tested() -> bool {
+    true
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn hotspots_hit_tested() -> bool {
+    true
+}
+
+#[cfg(not(unix))]
+pub fn hotspots_hit_tested() -> bool {
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -449,6 +544,7 @@ pub fn update_input_region(
     _sprite_y: i32,
     _sprite_facing: i32,
     _scale: i32,
+    _hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     Ok(())
 }
@@ -855,6 +951,64 @@ mod tests {
         set_overlay_primary(false);
         // The session poll may still be true if a real button is held during
         // the test; only the overlay half is under this test's control.
+    }
+
+    /// The bubble's "Open chat" control (#547) belongs to the overlay that
+    /// drew it: one display's control must not make a neighbour's overlay stop
+    /// passing clicks through at the same coordinates. And a bubble that goes
+    /// takes its rectangle with it — a stale one would leave a hole in the
+    /// desktop that swallows clicks and does nothing with them.
+    #[test]
+    fn a_hotspot_belongs_to_one_overlay_and_goes_when_it_does() {
+        set_overlay_hotspots("overlay-test-a", vec![[10, 20, 30, 40]]);
+        set_overlay_hotspots("overlay-test-b", vec![]);
+
+        assert!(over_overlay_hotspot("overlay-test-a", 10, 20), "top left");
+        assert!(
+            over_overlay_hotspot("overlay-test-a", 39, 59),
+            "bottom right"
+        );
+        assert!(
+            !over_overlay_hotspot("overlay-test-a", 40, 60),
+            "the far edges are outside, as a rectangle's are"
+        );
+        assert!(
+            !over_overlay_hotspot("overlay-test-b", 20, 30),
+            "the neighbour asked for nothing there"
+        );
+
+        set_overlay_hotspots("overlay-test-a", vec![]);
+        assert!(
+            !over_overlay_hotspot("overlay-test-a", 20, 30),
+            "the bubble is gone and so is its rectangle"
+        );
+    }
+
+    /// The frame loop passes an overlay's hotspot rectangles to the platform's
+    /// input-region builder so it can union them into the clickable area.
+    /// `overlay_hotspots_for` returns exactly the rectangles the named overlay
+    /// reported, and nothing from its neighbours.
+    #[test]
+    fn hotspots_for_retrieves_only_the_named_overlay() {
+        set_overlay_hotspots("overlay-for-a", vec![[1, 2, 3, 4], [5, 6, 7, 8]]);
+        set_overlay_hotspots("overlay-for-b", vec![[10, 20, 30, 40]]);
+
+        let a = overlay_hotspots_for("overlay-for-a");
+        assert_eq!(a, vec![[1, 2, 3, 4], [5, 6, 7, 8]], "both rects for a");
+
+        let b = overlay_hotspots_for("overlay-for-b");
+        assert_eq!(b, vec![[10, 20, 30, 40]], "only b's rect");
+
+        let none = overlay_hotspots_for("overlay-for-none");
+        assert!(none.is_empty(), "an overlay that reported nothing");
+
+        set_overlay_hotspots("overlay-for-a", vec![]);
+        assert!(
+            overlay_hotspots_for("overlay-for-a").is_empty(),
+            "clearing wipes all rects"
+        );
+
+        set_overlay_hotspots("overlay-for-b", vec![]);
     }
 
     /// A click can begin and end between two polls. The level alone reads
