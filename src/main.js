@@ -227,11 +227,11 @@ function positionBubble(view, spriteRect, displayBounds) {
 
 // Tell the Rust side where this overlay wants a click.
 //
-// The overlay passes clicks through wherever the Character is not drawn, and
-// the frame loop decides that from the sprite's alpha mask alone. "Open chat"
-// sits above the head, outside the art, so without this the click would land on
-// whatever is behind the overlay. Only the renderer knows where the control is:
-// the bubble is sized by the wrapped text, which is measured here.
+// The overlay passes clicks through wherever the Character is not drawn, which
+// the sprite's alpha mask decides. "Open chat" sits above the head, outside the
+// art, so it would give its click to whatever is behind the overlay unless the
+// Shell is told to keep that rectangle too. Only the renderer knows where the
+// control is: the bubble is sized by the wrapped text, which is measured here.
 //
 // ponytail: sent whenever the rectangle changes, which while a truncated line
 // is up and the Character is walking is once a frame. Under a hundred bytes an
