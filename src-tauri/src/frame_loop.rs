@@ -956,8 +956,7 @@ pub(crate) fn run_frame_loop(
 
                         if !already_opened {
                             if let Some(instance) = roster.get_mut(&first_live.id) {
-                                let tour_message =
-                                    "Double-click me any time to open Chat.\n\n\
+                                let tour_message = "Double-click me any time to open Chat.\n\n\
                                      Click once to Poke and get a reaction.\n\n\
                                      Right-click to open the menu.";
 
