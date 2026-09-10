@@ -1541,10 +1541,14 @@ thread_local! {
 ///
 /// ponytail: one door for every Instance, so two Instances thinking at once
 /// overwrite each other's line and the first to finish takes the strip away.
-/// The strip has no Instance to address anyway (ADR-0025 draws one line for
-/// every open surface), and a thought is worth reading only while it is being
-/// thought. The upgrade, if two buddies on the wire at once ever becomes the
-/// common case, is to name the Instance on the event and let the surface pick.
+/// The unattributed half is ADR-0025's own decision and holds on both lanes:
+/// the strip has no Instance to address. The overlap is this lane's alone —
+/// `Session::turn` holds a lock, so one Harness child serves one turn at a
+/// time (ADR-0008), while `Slots` gives every Instance its own thread and its
+/// own endpoint. A thought is worth reading only while it is being thought,
+/// which is why this is left. The upgrade, if two buddies on the wire at once
+/// ever becomes the common case, is to name the Instance on the event and let
+/// the surface pick.
 static THOUGHT: std::sync::OnceLock<Box<dyn Fn(String) + Send + Sync>> = std::sync::OnceLock::new();
 
 /// Hand the Completer lane the door to every open Chat surface. The first
