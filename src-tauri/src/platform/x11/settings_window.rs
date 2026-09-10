@@ -189,6 +189,7 @@ impl SettingsWindow {
 
         if let Some(disclosure) = &section.disclosure {
             let expander = gtk::Expander::new(Some("What is this?"));
+            expander.set_expanded(false);
             let disclosure_label = gtk::Label::new(Some(disclosure));
             disclosure_label.set_halign(Align::Start);
             disclosure_label.set_line_wrap(true);
@@ -1309,6 +1310,7 @@ fn status_line(container: &gtk::Box, text: &str) {
 /// A row's progressive disclosure: expandable help text.
 fn disclosure_line(container: &gtk::Box, text: &str) {
     let expander = gtk::Expander::new(Some("What is this?"));
+    expander.set_expanded(false);
     expander.set_margin_start(24);
     let disclosure_label = gtk::Label::new(Some(text));
     disclosure_label.set_halign(Align::Start);

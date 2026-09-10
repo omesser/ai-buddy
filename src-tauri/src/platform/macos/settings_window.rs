@@ -1353,6 +1353,7 @@ impl Cursor {
             NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
         disclosure_label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
         disclosure_label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        disclosure_label.setHidden(true);
 
         let _height = 20.0 + wrapped_height(&disclosure_label);
         self.put(&disclosure_button, 20.0, HINT_GAP);
