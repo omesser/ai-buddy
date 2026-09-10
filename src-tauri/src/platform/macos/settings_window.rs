@@ -1354,7 +1354,7 @@ impl Cursor {
         disclosure_label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
         disclosure_label.setTextColor(Some(&NSColor::secondaryLabelColor()));
 
-        let height = 20.0 + wrapped_height(&disclosure_label);
+        let _height = 20.0 + wrapped_height(&disclosure_label);
         self.put(&disclosure_button, 20.0, HINT_GAP);
         self.put(&disclosure_label, wrapped_height(&disclosure_label), 0.0);
     }
