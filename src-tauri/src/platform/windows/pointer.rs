@@ -4,8 +4,9 @@
 //! state without hooks or events, same seam as macOS CGEventSourceButtonState
 //! and X11 XQueryPointer.
 
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
-use windows_sys::Win32::UI::WindowsAndMessaging::GetDoubleClickTime;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, GetDoubleClickTime, VK_LBUTTON, VK_RBUTTON,
+};
 
 use crate::platform::ButtonsDown;
 
