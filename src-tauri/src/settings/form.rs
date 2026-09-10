@@ -1155,10 +1155,7 @@ pub fn describe() -> FormDescription {
         (CLEAR_KEY_ID.to_string(), RowOperation::ClearKey),
         (APPLY_ID.to_string(), RowOperation::Apply),
         (CANCEL_ID.to_string(), RowOperation::Cancel),
-        (
-            MCP_COPY_TOKEN_ID.to_string(),
-            RowOperation::CopyMcpToken,
-        ),
+        (MCP_COPY_TOKEN_ID.to_string(), RowOperation::CopyMcpToken),
     ]);
 
     FormDescription { tabs, operations }
