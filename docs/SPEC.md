@@ -387,7 +387,11 @@ Two implementations ship:
   Director is disabled, and as the fallback on any session error or timeout. The Shell
   may wake it often: the path is free.
 - **Session** — an attached Harness, the same conversation as chat. Proposes a Behavior
-  identifier plus optional dialogue. A reply that is not a declared Behavior plays
+  identifier plus optional dialogue. The identifier is read from the first line that is
+  a name and nothing else, so a Harness writing its own text ahead of the answer does
+  not cost the turn (#609); every other line is the spoken one, whichever side of the
+  name it falls, because nothing tells a stray sentence from a Harness's chrome. A
+  reply that is not a declared Behavior plays
   `talk` and is spoken (`say:`); #119 put that in a bubble. Until a
   Harness exists, an HTTP Completer stands in behind the same trait
   ([ADR-0008](./adr/0008-one-harness-session.md)).
