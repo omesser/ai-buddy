@@ -1,0 +1,24 @@
+---
+description: pstack per-role model choices (overrides skill defaults)
+alwaysApply: true
+---
+# pstack model configuration. One line per role. Delete a line to fall back to the skill default.
+# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.
+# Slugs remapped to confirmed entitled base models (2026-09-10); compound skill-template slugs were not in the catalog as-is.
+feature, refactoring: grok-4.6
+bug-fix: claude-fable-5-1
+perf-issue: claude-fable-5-1
+hillclimb: claude-fable-5-1
+judgment and prose: claude-fable-5-1
+hardest tasks: claude-fable-5-1
+how explorer: grok-4.6
+how explainer: claude-fable-5-1
+why investigators: grok-4.6
+why synthesizer: claude-fable-5-1
+reflect tooling: gpt-5.6-sol
+reflect judgment, divergent, synthesizer: claude-fable-5-1
+arena runners: claude-fable-5-1, gpt-5.6-sol, grok-4.6, claude-opus-5
+arena cross-judge pool: claude-fable-5-1, gpt-5.6-sol, grok-4.6, claude-opus-5
+swarm workers: grok-4.6
+architect runners: claude-fable-5-1, gpt-5.6-sol, grok-4.6, claude-opus-5
+interrogate reviewers: claude-fable-5-1, gpt-5.6-sol, grok-4.6, claude-opus-5
