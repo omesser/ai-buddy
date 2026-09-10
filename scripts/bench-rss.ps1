@@ -41,7 +41,7 @@ Set-Location (Split-Path -Parent $PSScriptRoot)
 
 $bin = "target\debug\ai-buddy.exe"
 if (-not (Test-Path $bin)) {
-    Write-Error "no $bin — run: cd src-tauri; cargo build --bin ai-buddy"
+    Write-Error "no $bin - run: cd src-tauri; cargo build --bin ai-buddy"
     exit 2
 }
 
@@ -154,16 +154,16 @@ foreach ($pid in $pids) {
         $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
         $procName = $proc.ProcessName
         $peakWS = [math]::Round($proc.PeakWorkingSet64 / 1MB)
-        
+
         # Calculate median RSS from TSV
-        $pidRss = $data | ForEach-Object { 
+        $pidRss = $data | ForEach-Object {
             $row = $_ | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name
             $colName = $row[$column + 2]  # Skip epoch and total_kb
             if ($colName) { [int]$_.$colName } else { 0 }
         }
         $pidRssSorted = $pidRss | Sort-Object
         $pidMedian = [math]::Round($pidRssSorted[[math]::Floor($pidRssSorted.Count / 2)] / 1024)
-        
+
         Write-Host ("  {0,-6} {1,-28} rss median: {2,4} MB   peak working set: {3} MB" -f $pid, $procName, $pidMedian, $peakWS)
     } catch {
         Write-Host "  $pid gone"
