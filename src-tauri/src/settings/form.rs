@@ -2272,7 +2272,7 @@ mod tests {
             ("API key", crate::model::API_KEY),
         ];
         for (label, var) in ROWS {
-            let (label, frozen, status) = http_row_parts(label, var, true, true);
+            let (_label, frozen, status) = http_row_parts(label, var, true, true);
             assert!(frozen, "a driving Harness discards an edit here");
             let status = status.expect("frozen row must have status");
             assert!(
@@ -2298,10 +2298,11 @@ mod tests {
     /// #469: the rows a dead Harness leaves live take an edit the Director
     /// does not read while the handle is set, because that handle stays the
     /// configured Completer (ADR-0008). Editable so there is a way back, and
-    /// labelled so the wait is on screen rather than discovered.
+    /// the status says so rather than the label.
     ///
-    /// #500: the wait ends with a pick rather than a relaunch, so the label
-    /// names the pick.
+    /// #500: the wait ends with a pick rather than a relaunch, so the status
+    /// names the pick. With progressive disclosure (#548), this detail lives
+    /// in status, not the label.
     #[test]
     fn a_dead_harness_leaves_the_http_rows_editable_and_names_the_way_back() {
         crate::model::tests::with_env(None, None, None, || {
@@ -2311,18 +2312,15 @@ mod tests {
                 ("API key", crate::model::API_KEY),
             ] {
                 let (label, frozen, status) = http_row_parts(label, var, false, true);
-                let label = match status {
-                    Some(s) => format!("{label} ({s})"),
-                    None => label,
-                };
                 assert!(!frozen, "the way back has to stay typeable, got {label:?}");
+                let status = status.expect("configured row must have status");
                 assert!(
-                    !label.contains("next launch"),
-                    "no edit here waits for one any more, got {label:?}"
+                    !status.contains("next launch"),
+                    "no edit here waits for one any more, got {status:?}"
                 );
                 assert!(
-                    label.contains("Off"),
-                    "the row has to name what ends the wait, not {label:?}"
+                    status.contains("Off"),
+                    "the status has to name what ends the wait, not {status:?}"
                 );
             }
         });
