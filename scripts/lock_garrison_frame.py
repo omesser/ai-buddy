@@ -9,7 +9,8 @@ This script:
 4. Saves lock parameters as JSON
 5. Generates visual diagnostics
 
-v7: v2 cavity-removal logic + enlarged torso protection mask (65%×55% ellipse, centered)
+v7b: v2 cavity-removal logic + enlarged torso protection mask (65%×55% ellipse, centered)
+     FIXED: Protection mask was not being created due to astype() copy bug
 """
 
 import cv2
@@ -33,7 +34,8 @@ def remove_background(img):
     Remove background from capture frame using multi-stage color and threshold filtering.
     Removes Sketchfab blueprint artifacts and reduces fringing.
     
-    v7: v2 cavity removal + enlarged torso protection mask (65%×55% ellipse, centered)
+    v7b: v2 cavity removal + enlarged torso protection mask (65%×55% ellipse, centered)
+         FIXED: Protection mask creation bug (astype copy issue)
     """
     if img.shape[2] == 4:
         rgb = img[:, :, :3]
@@ -99,8 +101,9 @@ def remove_background(img):
     
     # Step 4.5: CREATE TORSO PROTECTION MASK
     # This is a hard protect region to prevent v2 cavity removal from punching torso holes
-    # v7: ENLARGED to generously cover cockpit dome + torso grille + hip junction
-    protect_mask = np.zeros((h, w), dtype=bool)
+    # v7b: ENLARGED to generously cover cockpit dome + torso grille + hip junction
+    # FIX: Create mask as uint8 first so cv2.ellipse can modify it in-place
+    protect_mask_uint = np.zeros((h, w), dtype=np.uint8)
     protect_mask_params = {}
     
     # Find the center and bounds of the current mask
@@ -110,7 +113,7 @@ def remove_background(img):
         center_x = x + mw // 2
         center_y = y + mh // 2
         
-        # v7: GENEROUS ellipse covering cockpit + torso grille + hip/midsection
+        # v7b: GENEROUS ellipse covering cockpit + torso grille + hip/midsection
         # Width: ~65% of mech width (increased from 50%)
         # Height: ~55% of mech height (increased from 40%)
         # Position: centered vertically (covers from upper cockpit to hip junction)
@@ -119,11 +122,11 @@ def remove_background(img):
         ellipse_center_x = center_x
         ellipse_center_y = center_y  # Centered (no offset)
         
-        # Draw the protection ellipse
-        cv2.ellipse(protect_mask.astype(np.uint8), 
+        # Draw the protection ellipse INTO protect_mask_uint (modified in-place)
+        cv2.ellipse(protect_mask_uint, 
                     (ellipse_center_x, ellipse_center_y),
                     (ellipse_w // 2, ellipse_h // 2),
-                    0, 0, 360, True, -1)
+                    0, 0, 360, 255, -1)
         
         # Save mask parameters for diagnostics and documentation
         protect_mask_params = {
@@ -132,6 +135,9 @@ def remove_background(img):
             "radii": {"width": int(ellipse_w), "height": int(ellipse_h)},
             "coverage": {"width_pct": 65, "height_pct": 55}
         }
+    
+    # Convert to boolean for use in protection logic
+    protect_mask = protect_mask_uint > 0
     
     # Step 5: Remove dark internal regions (blueprint artifacts in arm cavities)
     # v2 LOGIC: remove dark + low-saturation regions (gray blueprint lines)
@@ -172,7 +178,7 @@ def remove_background(img):
     result[:, :, :3] = rgb
     result[:, :, 3] = mask_final
     
-    return result, mask_final, protect_mask, protect_mask_params
+    return result, mask_final, protect_mask_uint, protect_mask_params
 
 
 def find_content_bounds(mask):
@@ -291,7 +297,7 @@ def crop_and_scale_to_match(capture_rgba, ref_rgba, protect_mask_params, scale_a
             "bottom_margin": int(ref_bottom_margin)
         },
         "processing": {
-            "background_removal": "v7: v2 cavity removal (dark + desaturated) + enlarged torso protection mask (65%×55% ellipse)",
+            "background_removal": "v7b: v2 cavity removal (dark + desaturated) + enlarged torso protection mask (65%×55% ellipse) - FIXED mask creation bug",
             "torso_protection": protect_mask_params,
             "interpolation": "LANCZOS4",
             "alignment_strategy": "feet at bottom, centered horizontally"
@@ -402,11 +408,11 @@ def create_diagnostics(matted, reference, params):
     print(f"  - diagnostic-edges.png (edge overlay)")
     print(f"  - diagnostic-matted.png (matted result)")
     print(f"  - diagnostic-reference.png (pack reference)")
-    print(f"  - diagnostic-torso-mask.png (cyan overlay shows torso protection zone)")
+    print(f"  - diagnostic-torso-mask.png (yellow overlay shows torso protection zone)")
 
 
 def main():
-    print("=== Timber Wolf Garrison Frame 0 Lock v7 ===\n")
+    print("=== Timber Wolf Garrison Frame 0 Lock v7b ===\n")
     
     # Load images
     print("Loading images...")
@@ -421,8 +427,8 @@ def main():
     print(f"Reference: {reference.shape[1]}×{reference.shape[0]}\n")
     
     # Remove background
-    print("Removing background from capture (v7: v2 + enlarged torso protection)...")
-    capture_rgba, mask, protect_mask, protect_mask_params = remove_background(capture)
+    print("Removing background from capture (v7b: v2 + enlarged torso protection, FIXED)...")
+    capture_rgba, mask, protect_mask_uint, protect_mask_params = remove_background(capture)
     
     # Save the cleaned capture for inspection
     cv2.imwrite(str(OUTPUT_DIR / "diagnostic-capture-cleaned.png"), capture_rgba)
@@ -436,11 +442,15 @@ def main():
     elif mask_overlay.shape[2] == 4:
         mask_overlay = mask_overlay[:, :, :3]
     
-    # Overlay the protection mask in semi-transparent cyan
-    mask_overlay[protect_mask] = (mask_overlay[protect_mask] * 0.5 + 
-                                   np.array([255, 255, 0], dtype=np.uint8) * 0.5).astype(np.uint8)
+    # Overlay the protection mask in semi-transparent yellow (cyan was hard to see)
+    protect_pixels = protect_mask_uint > 0
+    mask_overlay[protect_pixels] = (mask_overlay[protect_pixels] * 0.5 + 
+                                     np.array([0, 255, 255], dtype=np.uint8) * 0.5).astype(np.uint8)
     cv2.imwrite(str(OUTPUT_DIR / "diagnostic-torso-mask.png"), mask_overlay)
-    print(f"Saved torso protection mask overlay to diagnostic-torso-mask.png\n")
+    
+    protected_pixel_count = np.sum(protect_mask_uint > 0)
+    print(f"Saved torso protection mask overlay to diagnostic-torso-mask.png")
+    print(f"  Protected pixels: {protected_pixel_count}\n")
     
     # Find best match
     print("Finding optimal crop/scale/position...")
@@ -478,10 +488,10 @@ def main():
     print(f"  Matted pixels: {mat_pixels}")
     print(f"  Pixel ratio: {mat_pixels/ref_pixels:.3f}")
     
-    print("\n✓ Frame 0 lock v7 complete!")
+    print("\n✓ Frame 0 lock v7b complete!")
     print(f"  Lock params: {LOCK_JSON.name}")
     print(f"  Diagnostics: diagnostic-*.png")
-    print(f"  Torso mask: diagnostic-torso-mask.png (cyan overlay shows protected region)")
+    print(f"  Torso mask: diagnostic-torso-mask.png (yellow overlay shows protected region)")
     
     return 0
 

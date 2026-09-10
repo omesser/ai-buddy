@@ -31,7 +31,7 @@
     "bottom_margin": 0
   },
   "processing": {
-    "background_removal": "v7: v2 cavity removal (dark + desaturated) + enlarged torso protection mask (65%\u00d755% ellipse)",
+    "background_removal": "v7b: v2 cavity removal (dark + desaturated) + enlarged torso protection mask (65%\u00d755% ellipse) - FIXED mask creation bug",
     "torso_protection": {
       "type": "ellipse",
       "center": {
