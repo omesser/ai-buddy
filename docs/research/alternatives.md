@@ -1,1 +1,1 @@
-PLACEHOLDER_WILL_REPLACE
+{{FILE:/workspace/ai-buddy-alts/UPLOAD_BODY.md}}
