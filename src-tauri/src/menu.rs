@@ -539,7 +539,7 @@ mod tests {
     /// The menu says what exists. Chat is in it and cannot be clicked, because
     /// the row moving later is worse than a row that cannot be clicked yet.
     #[test]
-    fn chat_is_listed_and_disabled() {
+    fn chat_is_listed_and_enabled() {
         let description = describe(snapshot(&[], "bmo", false));
 
         assert_eq!(
@@ -547,13 +547,14 @@ mod tests {
             Some(&MenuEntry::Item {
                 id: "chat".to_string(),
                 label: "Chat…".to_string(),
-                enabled: false,
+                enabled: true,
             }),
-            "Chat is present and disabled until the row is wired (#17)"
+            "Chat is present and enabled"
         );
-        assert!(
-            !description.actions.contains_key("chat"),
-            "and choosing it cannot do anything"
+        assert_eq!(
+            description.actions.get("chat"),
+            Some(&MenuAction::Summon),
+            "and choosing it Summons"
         );
     }
 
