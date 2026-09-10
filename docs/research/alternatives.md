@@ -489,4 +489,34 @@ package-authored.
   review/issue citation, vendor homepage).
 - **~** = documented not shipped (MateEngine
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
-  
+  not ballistic Perch riding) OR unverified (ai-buddy codex Harness row per #556
+  standing unverified until smoked; grok verified #587).
+- **❌** = not found in cited sources as of 2026-09-10.
+- Alternative columns are vendor claims unless a review/issue/Steam page is
+  cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
+  has Steam 974 reviews 97% + GitHub 3,532 stars.
+
+## Sources
+
+Capabilities marked ✅, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
+DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 10, 2026.
+Similar projects verified against Steam pages (Desktop Mate [App ID
+3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
+reviews Mixed 61% of 5,278; VPet-Simulator [App ID
+1920960](https://store.steampowered.com/app/1920960/VPetSimulator/) 51,678
+reviews 98% positive, SteamPulse metadata platforms `mac: false`, `linux: false`;
+MateEngine [App ID 3625270](https://store.steampowered.com/app/3625270/MateEngine/)
+974 reviews 97% positive Steambase July 2026), official sites
+([Kilkakon](https://kilkakon.com/shimeji/) for Shimeji-ee,
+[desktoppet.app](https://desktoppet.app/) for Desktop Pet), GitHub repositories
+([alvinunreal/openpets](https://github.com/alvinunreal/openpets) 1,130 stars as
+of Sep 4 2026, [LorisYounger/VPet](https://github.com/LorisYounger/VPet),
+[DalekCraft2/Shimeji-Desktop](https://github.com/DalekCraft2/Shimeji-Desktop),
+[shinyflvre/Mate-Engine](https://github.com/shinyflvre/Mate-Engine) 3,532 stars
+as of Sep 4 2026), OpenPets documentation
+([docs/architecture.md](https://github.com/alvinunreal/openpets/blob/main/docs/architecture.md),
+[docs/desktop.md](https://github.com/alvinunreal/openpets/blob/main/docs/desktop.md)),
+MateEngine unofficial Linux port
+([Marksonthegamer/Mate-Engine-Linux-Port](https://github.com/Marksonthegamer/Mate-Engine-Linux-Port)
+269 stars, issue #85 wontfix), Steam review sentiment (GameBrain, VaporLens
+analysis), and third-party coverage. No fabricated features.
