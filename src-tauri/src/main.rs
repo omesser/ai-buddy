@@ -695,21 +695,45 @@ fn overlay_hotspots(window: tauri::Window, rects: Vec<[i32; 4]>) {
     platform::set_overlay_hotspots(window.label(), rects);
 }
 
+/// The Chat window's title for an Instance: its name, or the id when the
+/// roster holds no row for it.
+///
+/// The id is a real fallback, not a defensive one: a Character switch can drop
+/// the row between the click that opens Chat and this lookup, and a window that
+/// opens titled by its id is better than one that does not open. #588.
+fn instance_title(rows: &[InstanceRow], id: &str) -> String {
+    rows.iter()
+        .find(|row| row.id == id)
+        .map_or_else(|| id.to_string(), |row| row.name.clone())
+}
+
 /// Open one Instance's Chat surface from the bubble's control.
 ///
 /// The same call a Summon makes (#17), and deliberately not a Summon: the user
 /// clicked a control, not the Character, so the Engine hears nothing and the
 /// buddy does not react. Nothing else opens a Chat surface on its own — a turn
 /// that does not fit the bubble still waits to be asked for.
+///
+/// `async` is load-bearing on Windows, not a style choice (#588). A synchronous
+/// command runs on the thread that pumps WebView2's messages, and building a
+/// second webview there is the case Tauri's own docs name as a deadlock: the
+/// new WebView2 controller spins a nested message loop that re-enters the
+/// overlay's in-flight IPC turn, and the Chat surface comes up a frozen white
+/// HWND. An `async` command is dispatched on the async runtime instead, off
+/// that pump — the same off-main origin a Summon has, where the frame-loop
+/// thread calls `open_chat`, which is why the Summon path was never blank.
 #[tauri::command]
-fn overlay_open_chat(app: tauri::AppHandle, id: String) {
+async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     let title = app
         .try_state::<SettingsState>()
-        .and_then(|state| state.instances.lock().ok().map(|rows| rows.clone()))
-        .unwrap_or_default()
-        .iter()
-        .find(|row| row.id == id)
-        .map_or_else(|| id.clone(), |row| row.name.clone());
+        .and_then(|state| {
+            state
+                .instances
+                .lock()
+                .ok()
+                .map(|rows| instance_title(&rows, &id))
+        })
+        .unwrap_or_else(|| id.clone());
     open_chat(&app, &id, title);
 }
 
@@ -988,11 +1012,7 @@ fn show_chat_for_ask(app: &tauri::AppHandle, shut: Option<String>) {
         eprintln!("harness: no Instance to ask on; the request will time out");
         return;
     };
-    let title = rows
-        .iter()
-        .find(|row| row.id == id)
-        .map(|row| row.name.clone())
-        .unwrap_or_else(|| id.clone());
+    let title = instance_title(&rows, &id);
     open_chat(app, &id, title);
 }
 
@@ -3260,5 +3280,58 @@ mod tests {
             Some("second"),
             "and it is the new line that crosses"
         );
+    }
+
+    fn instance_row(id: &str, name: &str) -> InstanceRow {
+        InstanceRow {
+            id: id.to_string(),
+            name: name.to_string(),
+            character: "bmo".to_string(),
+            prompt: String::new(),
+        }
+    }
+
+    #[test]
+    fn instance_title_is_the_roster_name() {
+        let rows = vec![instance_row("a", "Beemo"), instance_row("b", "Pip")];
+        assert_eq!(
+            instance_title(&rows, "b"),
+            "Pip",
+            "the window opens titled by the Instance the click named"
+        );
+    }
+
+    #[test]
+    fn instance_title_falls_back_to_the_id_when_the_row_is_gone() {
+        // A Character switch can drop the row between the click and this
+        // lookup; the id is a title the window can still open under. #588.
+        let rows = vec![instance_row("a", "Beemo")];
+        assert_eq!(
+            instance_title(&rows, "orphan"),
+            "orphan",
+            "an unknown id still yields a title so Chat opens"
+        );
+        assert_eq!(
+            instance_title(&[], "lonely"),
+            "lonely",
+            "an empty roster falls back to the id, not a panic"
+        );
+    }
+
+    /// `overlay_open_chat` builds the Chat webview, and on Windows a synchronous
+    /// command does that on the thread pumping WebView2 — the deadlock Tauri's
+    /// docs warn of, which came up as a frozen white Chat HWND (#588). An
+    /// `async` command is dispatched off that thread instead. This pins the
+    /// signature so a refactor cannot quietly drop `async` and revive the blank;
+    /// it is a compile-time witness, so its body only has to type-check.
+    #[test]
+    fn overlay_open_chat_is_async_so_windows_keeps_chat_off_the_webview_pump() {
+        fn takes_async<F, Fut>(_f: F)
+        where
+            F: Fn(tauri::AppHandle, String) -> Fut,
+            Fut: std::future::Future<Output = ()>,
+        {
+        }
+        takes_async(overlay_open_chat);
     }
 }
