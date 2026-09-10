@@ -28,8 +28,8 @@ CANVAS_HEIGHT = 160
 
 def remove_background(img):
     """
-    Remove background from capture frame using multi-stage color and threshold filtering.
-    Removes Sketchfab blueprint artifacts and reduces fringing.
+    Remove background from capture frame using multi-stage filtering.
+    Removes Sketchfab blueprint artifacts while preserving solid torso.
     """
     if img.shape[2] == 4:
         rgb = img[:, :, :3]
@@ -40,47 +40,47 @@ def remove_background(img):
     
     # Convert to grayscale
     gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
     
-    # Step 1: Identify the mech by brightness
-    # The mech is brighter than the very dark background (> 25)
-    # but not as bright as UI chrome (< 200)
-    mask_not_too_dark = gray > 25
-    mask_not_too_bright = gray < 200
-    mask = mask_not_too_dark & mask_not_too_bright
+    # Step 1: Stricter initial threshold to avoid picking up too much dark background
+    # The mech has visible detail/texture even in shaded areas
+    mask_bright_enough = gray > 30  # Slightly stricter than before
     
-    # Step 2: Remove UI regions (top and bottom 12% of frame)
+    # Also require some texture/variation (not pure uniform dark)
+    # or some color saturation (colored parts of mech)
+    has_color = hsv[:, :, 1] > 20
+    has_texture = gray > 25  # Slightly looser for textured dark areas
+    
+    mask = mask_bright_enough | (has_texture & has_color)
+    
+    # Step 2: Remove UI regions (top and bottom 12%)
     ui_region = np.ones_like(mask, dtype=bool)
     ui_region[int(h*0.12):int(h*0.88), :] = False
     mask[ui_region] = False
     
-    # Convert to uint8 for OpenCV
     mask_uint = mask.astype(np.uint8) * 255
     
-    # Step 3: Morphological cleanup - CAREFULLY
-    # Close small gaps, but don't expand too much
+    # Step 3: Morphological cleanup
     kernel_small = np.ones((5, 5), np.uint8)
     mask_uint = cv2.morphologyEx(mask_uint, cv2.MORPH_CLOSE, kernel_small, iterations=2)
     
-    # Step 4: Find and keep only the main contour (the mech)
+    # Step 4: Find main contour
     contours, _ = cv2.findContours(mask_uint, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
     if contours and len(contours) > 0:
-        # Find the largest reasonably-centered contour
         img_center_x = w / 2
         img_center_y = h / 2
         
         def score_contour(contour):
             area = cv2.contourArea(contour)
-            if area < 1000:  # Too small
+            if area < 1000:
                 return -1
             M = cv2.moments(contour)
             if M["m00"] == 0:
                 return -1
             cx = M["m10"] / M["m00"]
             cy = M["m01"] / M["m00"]
-            # Penalize contours far from center
             dist = np.sqrt((cx - img_center_x)**2 + (cy - img_center_y)**2)
-            # Score favors large, centered contours
             return area * 1000 / (dist + 100)
         
         scored = [(score_contour(c), c) for c in contours]
@@ -88,35 +88,37 @@ def remove_background(img):
         
         if scored:
             best_contour = max(scored, key=lambda x: x[0])[1]
-            
-            # Create mask from this contour ONLY
             mask_uint = np.zeros((h, w), dtype=np.uint8)
             cv2.drawContours(mask_uint, [best_contour], -1, 255, -1)
     
-    # Step 5: Remove dark internal regions (blueprint artifacts in arm cavities)
-    # Be selective: remove dark + low-saturation regions (gray blueprint lines)
-    # but keep dark + colored regions (actual dark mech parts)
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
+    # Step 5: Clean arm cavities while protecting torso
+    # Use distance transform to identify core (torso) vs periphery (arms)
+    dist_transform = cv2.distanceTransform(mask_uint, cv2.DIST_L2, 5)
     
-    # Blueprint artifacts are dark AND desaturated (gray schematic lines)
-    internal_dark = (gray < 35) & (mask_uint > 0)
-    internal_gray = (hsv[:, :, 1] < 40) & (mask_uint > 0)  # Low saturation
+    # Periphery: regions close to the edge (distance < 12 pixels)
+    # These are where arm gaps and blueprint artifacts appear
+    periphery = (dist_transform > 0) & (dist_transform < 12) & (mask_uint > 0)
     
-    # Only remove pixels that are BOTH dark and gray (blueprint)
-    blueprint_artifacts = internal_dark & internal_gray
+    # In periphery, remove very dark regions (likely blueprint/background)
+    very_dark_periphery = (gray < 25) & periphery
     
-    # Only remove if they form coherent cavity regions (not just edges)
-    kernel_cavity = np.ones((5, 5), np.uint8)
-    dark_cavities = cv2.morphologyEx(blueprint_artifacts.astype(np.uint8) * 255, 
-                                      cv2.MORPH_OPEN, kernel_cavity, iterations=1)
+    # Also remove dark + low saturation in periphery (blueprint lines)
+    dark_gray_periphery = (gray < 32) & (hsv[:, :, 1] < 35) & periphery
     
-    # Remove cavities from mask
-    mask_uint[dark_cavities > 0] = 0
+    # Combine removal candidates
+    to_remove = very_dark_periphery | dark_gray_periphery
+    
+    # Morphological opening to clean up
+    kernel_tiny = np.ones((3, 3), np.uint8)
+    to_remove_clean = cv2.morphologyEx(to_remove.astype(np.uint8) * 255,
+                                        cv2.MORPH_OPEN, kernel_tiny, iterations=1)
+    
+    # Remove these regions
+    mask_uint[to_remove_clean > 0] = 0
     
     # Step 6: Reduce fringing
-    # Slightly erode to remove dark outline pixels
-    kernel_tiny = np.ones((2, 2), np.uint8)
-    mask_uint = cv2.erode(mask_uint, kernel_tiny, iterations=1)
+    kernel_erode = np.ones((2, 2), np.uint8)
+    mask_uint = cv2.erode(mask_uint, kernel_erode, iterations=1)
     
     # Step 7: Smooth alpha edges
     mask_float = mask_uint.astype(np.float32) / 255.0
@@ -247,7 +249,7 @@ def crop_and_scale_to_match(capture_rgba, ref_rgba, scale_adjustment=1.0):
             "bottom_margin": int(ref_bottom_margin)
         },
         "processing": {
-            "background_removal": "Color range + threshold (25-200), UI region exclusion, dark cavity removal, edge smoothing",
+            "background_removal": "Threshold 25-200, UI exclusion, selective cavity removal with elliptical torso protection (25%×20%)",
             "interpolation": "LANCZOS4",
             "alignment_strategy": "feet at bottom, centered horizontally"
         }

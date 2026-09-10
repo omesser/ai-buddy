@@ -7,15 +7,15 @@
     }
   },
   "crop": {
-    "x": 349,
+    "x": 442,
     "y": 99,
-    "width": 567,
+    "width": 400,
     "height": 453
   },
   "scale": 0.271523178807947,
   "scale_adjustment": 1.0,
   "destination": {
-    "x": 11,
+    "x": 34,
     "y": 37,
     "canvas_width": 176,
     "canvas_height": 160
