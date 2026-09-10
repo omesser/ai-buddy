@@ -352,9 +352,17 @@ function draw(now) {
 
 async function start() {
   characters = (await window.__TAURI__.core.invoke("character")).characters;
-  clickableOffArt = await window.__TAURI__.core.invoke(
-    "overlay_hit_tests_hotspots",
-  );
+  // Caught, because the overlay is worth more than the control: an unanswered
+  // question leaves `clickableOffArt` false and the bubble keeps its ellipsis,
+  // where an uncaught reject would abort the rest of `start` and there would be
+  // no sprite at all.
+  try {
+    clickableOffArt = await window.__TAURI__.core.invoke(
+      "overlay_hit_tests_hotspots",
+    );
+  } catch (err) {
+    console.error("overlay_hit_tests_hotspots", err);
+  }
 
   // There is one overlay per display and each is told where every sprite is in
   // its own coordinates, so this asks for the frames addressed to this window
