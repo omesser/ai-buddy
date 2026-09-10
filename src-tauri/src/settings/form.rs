@@ -551,9 +551,9 @@ fn harness_env_row_parts(label: &str) -> (String, bool, Option<String>) {
 /// second mind ADR-0008 refuses.
 ///
 /// #500 narrowed the label rather than removing it. The wait is no longer a
-/// relaunch — the Session retries the child on its own backoff, and Off in the
-/// source row hands these three back at once — so the label names the pick
-/// that ends it instead of a launch.
+/// relaunch — the Session retries the child on its own backoff, and Model API
+/// in the source row hands these three back at once — so the label names the
+/// pick that ends it instead of a launch.
 fn http_row_parts(
     label: &str,
     var: &str,
@@ -571,12 +571,11 @@ fn http_row_parts(
     if configured {
         let status_text = match status {
             Some(s) => format!(
-                "{}; not in use until source is Off: a Harness is still the Completer",
+                "{}; not in use until source is Model API: a Harness is still the Completer",
                 s
             ),
-            None => {
-                "Not in use until source above is Off: a Harness is still the Completer".to_string()
-            }
+            None => "Not in use until source above is Model API: a Harness is still the Completer"
+                .to_string(),
         };
         status = Some(status_text);
     }
@@ -2360,6 +2359,10 @@ mod tests {
                 assert!(
                     status.contains("source above"),
                     "the status has to say where the source is, not {status:?}"
+                );
+                assert!(
+                    status.contains("Model API"),
+                    "the status has to name the pick that ends the wait, not {status:?}"
                 );
             }
         });
