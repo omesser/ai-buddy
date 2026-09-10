@@ -453,7 +453,9 @@ impl SettingsController {
             let pb = NSPasteboard::generalPasteboard();
             pb.clearContents();
             let token_string = NSString::from_str(&endpoint.authorization());
-            pb.setString_forType(&token_string, objc2_app_kit::NSPasteboardTypeString);
+            unsafe {
+                pb.setString_forType(&token_string, objc2_app_kit::NSPasteboardTypeString);
+            }
         }
     }
 
