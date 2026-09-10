@@ -482,7 +482,7 @@ advertises an A2A server endpoint. Don't stretch it.
 7. **Pi gets a second adapter, not a compromise.** Buddy → Pi is
    `pi --mode rpc` with `{"type":"prompt",...}` and `streamingBehavior`; Pi →
    Buddy is a Pi extension wrapping the same tool set, because Pi has no MCP.
-   Do not adopt the third-party `pi-acp` as the shipped path.
+   The shipped path is now the registry adapter; Buddy→Pi is `npx -y pi-acp@latest`; Pi→Buddy tools are still a Pi extension, not MCP. Point at #607.
 8. **Treat Claude Code `channels` as an optional enhancement behind a flag**, if
    ambient wake latency ever justifies it. It is the only way to push into a
    session the user started themselves, and it is a research preview behind an

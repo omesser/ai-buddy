@@ -95,8 +95,9 @@ pub struct Launch {
 /// mode; `grok agent stdio`, `hermes acp` and `opencode acp` are
 /// first-party. Anything else is a command line of the user's own, which is
 /// how Copilot CLI attaches until it is smoked. Google has no row: the Gemini
-/// CLI is sunset and Antigravity does not speak ACP (#603). Pi is deferred
-/// (ADR-0022).
+/// CLI is sunset and Antigravity does not speak ACP (#603). Pi is a named row
+/// through Zed's registry adapter, same shape as `claude`. Copilot still
+/// attaches via Custom until smoked.
 ///
 /// The README's Harness Support table is this table's user-facing half and is
 /// maintained by hand: a name or command changed here, or a new
@@ -131,6 +132,7 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
         "grok" => (value, vec!["grok", "agent", "stdio"]),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
+        "pi" => (value, vec!["npx", "-y", "pi-acp@latest"]),
         custom => {
             let argv: Vec<&str> = custom.split_whitespace().collect();
             (argv[0], argv)
@@ -1940,6 +1942,10 @@ mod tests {
         );
         assert_eq!(launch(Some("hermes")).unwrap().argv, ["hermes", "acp"]);
         assert_eq!(launch(Some("opencode")).unwrap().argv, ["opencode", "acp"]);
+        assert_eq!(
+            launch(Some("pi")).unwrap().argv,
+            ["npx", "-y", "pi-acp@latest"]
+        );
         let custom = launch(Some("  my-agent --acp  --quiet ")).unwrap();
         assert_eq!(custom.name, "my-agent");
         assert_eq!(custom.argv, ["my-agent", "--acp", "--quiet"]);
@@ -2011,7 +2017,7 @@ mod tests {
     /// it is, with no key set, no config dir moved, and no `--bare`.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
-        for name in ["claude", "codex", "grok", "hermes", "opencode"] {
+        for name in ["claude", "codex", "grok", "hermes", "opencode", "pi"] {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(Path::new("/tmp"));
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");

@@ -154,6 +154,7 @@ Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./do
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
 | <img src="https://cdn.simpleicons.org/hermes" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
+| `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Chat-only (no MCP). Footnote: requires a global `pi` on `PATH` — install with `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`/`node`/`pi` must resolve in the app's environment (Finder-launched builds inherit launchd's `PATH`, same as every other `npx` row). An unconfigured Pi may pick up an ambient provider key from the inherited environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins over that fallback. npm-global `pi` can shadow the keg; `npm uninstall -g @earendil-works/pi-coding-agent` then `brew link pi-coding-agent`. Startup banner on the first fresh-session bubble is #597, not this row. |
 | `grok` | `grok agent stdio` | First-party, Grok Build. `grok` alone is the interactive TUI, so the subcommand is the whole of the row. Fresh and resumed sessions both work. |
 | anything else | as typed, split on whitespace | Unnamed, and it works: any command that speaks ACP on stdio attaches. <img src="https://cdn.simpleicons.org/githubcopilot" width="14" alt="" /> GitHub Copilot CLI (`copilot --acp --stdio`) reaches ai-buddy this way today and earns a named row once smoked (#457). Google has none: the Gemini CLI is sunset, and Antigravity speaks its own protocol rather than ACP (#603), so it needs an adapter (#604). |
 
@@ -164,10 +165,11 @@ How they handle session differs, and changes what ai-buddy can do with them:
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `opencode` | yes | yes | yes | http | Login with opencode |
+| `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | `grok` | yes | yes | yes | http | three: xai.api_key, cached_token, Grok |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `opencode` and `grok` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` omits it and gets the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `opencode` and `grok` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `opencode` and `grok` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` advertises no HTTP MCP and gets nothing forwarded today. `opencode` and `grok` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP

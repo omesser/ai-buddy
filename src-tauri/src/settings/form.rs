@@ -328,7 +328,7 @@ pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0022's order. Copilot reaches the same
 /// Completer through Custom until a turn has been smoked. Antigravity cannot:
 /// it does not speak ACP, and wants an adapter first (#604).
-pub const HARNESS_PRESETS: [&str; 5] = ["claude", "codex", "grok", "hermes", "opencode"];
+pub const HARNESS_PRESETS: [&str; 6] = ["claude", "codex", "grok", "hermes", "opencode", "pi"];
 
 /// The endpoints the Base URL picker names, as (group, name, base URL).
 ///
@@ -2066,7 +2066,7 @@ mod tests {
             let (_, options, _) = popup_row(&description, HARNESS_ID);
             assert_eq!(
                 options,
-                ["Off", "claude", "codex", "grok", "hermes", "opencode", "Custom"]
+                ["Off", "claude", "codex", "grok", "hermes", "opencode", "pi", "Custom"]
             );
             assert_eq!(
                 description.text_write(HARNESS_ID),
