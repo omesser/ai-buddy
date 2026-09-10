@@ -707,9 +707,17 @@ impl SettingsWindow {
                                                         if let Some(endpoint) =
                                                             crate::mcp_http::endpoint()
                                                         {
-                                                            if let Some(display) = gtk::gdk::Display::default() {
-                                                                if let Some(clipboard) = gtk::Clipboard::default(&display) {
-                                                                    clipboard.set_text(&endpoint.authorization());
+                                                            if let Some(display) =
+                                                                gtk::gdk::Display::default()
+                                                            {
+                                                                if let Some(clipboard) =
+                                                                    gtk::Clipboard::default(
+                                                                        &display,
+                                                                    )
+                                                                {
+                                                                    clipboard.set_text(
+                                                                        &endpoint.authorization(),
+                                                                    );
                                                                 }
                                                             }
                                                         }
