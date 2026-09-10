@@ -80,3 +80,27 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 | Character DLC | ❌ | $7.49–$14.99 each | free (Workshop) + 2 paid DLC | free (community) + ~$8.90 (Shimeji Shop) | free (beta) | free (catalog) | free (VRM + Workshop) |
 | Subscription model | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Distribution | GitHub releases | Steam | Steam | web downloads, fan sites | desktoppet.app | GitHub releases | GitHub + Steam |
+
+## User-language comparison
+
+| Project | Target User | Core use case | Main strength | Main weakness | Evidence quality |
+|---|---|---|---|---|---|
+| ai-buddy | personality-driven desktop mascot fans; later attach own agent | personality-driven idle AI behavior + physics | personality-driven AI behavior via Director + authored personality.txt, plus Spatial (Perches, throw, hide, capture exclusion); Harness ACP Completer + MCP server + Summon chat shipped (2026-09-07/08) | Windows NSIS ships (some platform cells stub/degraded); eight Character Packages (black-mage, bmo, buddy-bot, cat, jotaro-kujo, nim, timber-wolf, trump); GitHub-only | high for own spec/ship split |
+| Desktop Mate | licensed 3D fans (Miku, Sanrio, VTubers) | character catalog on Steam | Steam reach + 40+ licensed DLC | Mixed reviews (61%); DLC/mod revolt; no official Linux | 2M = vendor claim; reviews real |
+| VPet | free care-sim + Workshop fans | feed/bathe/Workshop content | 51,678 reviews (98%), Workshop open | Windows-only official; Proton transparency issues | review proof strong |
+| Shimeji-ee | classic 2D fan mascots (decades of packs) | my character via folklore (Java, img/) | 1000s free packs + throw/climb prior art | Windows+Java official; forks elsewhere; no agent | Android 500K+; desktop no central count |
+| Desktop Pet | productivity + BYO OpenAI (vendor claim) | Pomodoro + AI chat | privacy-first vendor claims; free beta | no independent reviews found; unsigned / Run anyway | low (vendor-only) |
+| OpenPets | developers, local agent sidekick | MCP + plugin SDK for coding agents | shipped MCP+SDK; 1,130 stars | Electron; Wayland overlay bugs; MCP is react/say not general harness; gravity ≠ Perch riding | GitHub stars + docs verifiable |
+| MateEngine | VRM fans after Desktop Mate mod removal | my VRM on the desktop, free | 3,532 stars + 974 Steam reviews 97%; Workshop + VRM; free on GitHub | no physics; Windows-only official; no official Linux/macOS; AI is local LLM, not BYO | Steam + GitHub strong |
+
+## How others use AI
+
+Desktop pets use AI differently than ai-buddy's personality-driven idle Director:
+
+- **Desktop Mate / VPet / Shimeji-ee**: No generative model for character behavior. MateEngine's comparison table: Desktop Mate AI Chat ❌. Shimeji-ee is deterministic XML behavior graphs. VPet is care-sim + Workshop animations, no personality prompt. Community mods (OpenVPet Active Chat, ShimejiEE-AI) are chat plugins, not idle Directors.
+
+- **Desktop Pet** ([desktoppet.app](https://desktoppet.app/)): BYO OpenAI **chat/voice assistant**. User opens Assistant Mode; wake word "Hey Pet". Vendor "personality traits" = pet-type copy (cats curious, dogs loyal), not an idle Director that picks Behaviors + spoken lines from authored personality. Chat window product wearing a roaming sprite.
+
+- **OpenPets**: Three different AI uses, none is idle Director: (1) **coding agent talks THROUGH the pet** via MCP `openpets_say` / `openpets_react` — agent-initiated, not idle; (2) **plugins use `ctx.ai`** gateway (Anthropic/OpenAI/Ollama keys) for plugin logic, not idle character speech; (3) host **Pet Assistant** chat/Talk loop ([#138](https://github.com/alvinunreal/openpets/issues/138), architecture.md) that injects owner-authored **personality profile as communication preferences** into conversation turns — profile is chat tone/style, not idle Director. Agent reactions via MCP `say` use validated **speech pools** (pre-approved phrases), not generative idle lines. OpenPets has personality (the profile); it's architecture is chat assistant + agent conduit, not idle personality-driven behavior.
+
+- **MateEngine**: Built-in QWEN 2.5 1.5b LLM. Steam page ([3625270](https://store.steampowered.com/app/3625270/MateEngine/)) CHATTING section: "You can chat with your pet anytime! Just note that it's a small, local AI with 
