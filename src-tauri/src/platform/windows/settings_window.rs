@@ -1347,11 +1347,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             }
                             control_id += 1;
                         }
-                        FormRow::List {
-                            id,
-                            help,
-                            ..
-                        } => {
+                        FormRow::List { id, help, .. } => {
                             let container_hwnd = CreateWindowExA(
                                 0,
                                 INSTANCES_LIST_CLASS.as_ptr() as *const u8,
@@ -1395,11 +1391,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                         }
-                        FormRow::Composite {
-                            controls,
-                            help,
-                            ..
-                        } => {
+                        FormRow::Composite { controls, help, .. } => {
                             let mut x = display_left;
                             for control in controls {
                                 match control {
