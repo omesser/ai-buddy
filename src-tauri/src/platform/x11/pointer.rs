@@ -53,3 +53,30 @@ pub fn double_click_interval_ms() -> Option<u32> {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Our GTK reader must return the same value as an independent
+    /// gtk-double-click-time read (both None, or the same Some).
+    #[test]
+    fn double_click_interval_ms_matches_gtk_settings() {
+        // Settings::default() is None until GTK is up; production runs after
+        // Tauri has initialized GTK. Unit tests must init themselves.
+        let _ = gtk::init();
+        let independent = gtk::Settings::default().and_then(|settings| {
+            let interval = settings.gtk_double_click_time();
+            if interval > 0 {
+                Some(interval as u32)
+            } else {
+                None
+            }
+        });
+        assert_eq!(
+            double_click_interval_ms(),
+            independent,
+            "x11::double_click_interval_ms must match gtk::Settings gtk-double-click-time"
+        );
+    }
+}

@@ -1265,4 +1265,28 @@ mod tests {
             FALLBACK_DOUBLE_CLICK_MS
         );
     }
+
+    /// Public OnceLock wrapper caches a clamped/fallback value in [100, 2000]
+    /// that matches resolve(os_raw). A second call must return the same cache.
+    #[test]
+    fn public_double_click_interval_is_cached_and_resolved() {
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let _ = gtk::init();
+
+        let cached = double_click_interval_ms();
+        assert!(
+            (MIN_DOUBLE_CLICK_MS..=MAX_DOUBLE_CLICK_MS).contains(&cached),
+            "public double_click_interval_ms must be in [{MIN_DOUBLE_CLICK_MS}, {MAX_DOUBLE_CLICK_MS}], got {cached}"
+        );
+        assert_eq!(
+            double_click_interval_ms(),
+            cached,
+            "OnceLock must return the same value on a second call"
+        );
+        assert_eq!(
+            cached,
+            resolve_double_click_interval(os_double_click_interval_ms()),
+            "cached public value must equal resolve of the raw OS read"
+        );
+    }
 }

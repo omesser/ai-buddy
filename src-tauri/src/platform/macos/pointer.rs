@@ -48,3 +48,26 @@ pub fn double_click_interval_ms() -> Option<u32> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_app_kit::NSEvent;
+
+    /// Our AppKit reader must round NSEvent::doubleClickInterval the same way
+    /// as production (seconds → ms).
+    #[test]
+    fn double_click_interval_ms_matches_nsevent() {
+        let seconds = NSEvent::doubleClickInterval();
+        let expected = if seconds > 0.0 {
+            Some((seconds * 1000.0).round() as u32)
+        } else {
+            None
+        };
+        assert_eq!(
+            double_click_interval_ms(),
+            expected,
+            "macos::double_click_interval_ms must match NSEvent::doubleClickInterval()"
+        );
+    }
+}
