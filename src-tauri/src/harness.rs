@@ -1518,7 +1518,7 @@ pub fn retarget(saved: Option<&str>, spawning: bool) {
         old.shutdown();
     }
     match &opened {
-        None => eprintln!("harness: detached; HTTP Completer is the Director's mind"),
+        None => eprintln!("harness: detached; HTTP Completer is the Director's \"AI brain\""),
         Some(session) => {
             eprintln!("harness: {} is the Completer now", session.launch.line());
             if spawning {

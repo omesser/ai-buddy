@@ -625,7 +625,7 @@ fn director_sections() -> Vec<FormSection> {
         FormSection {
             heading: "AI".to_string(),
             comment: Some("Control whether the buddy improvises, and how often it starts a conversation on its own.".to_string()),
-            disclosure: Some("The buddy can run on static weights (no model calls) or with a Completer (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP Completer. An attached Harness that answers becomes the mind.".to_string()),
+            disclosure: Some("The buddy can run on static weights (no model calls) or with a Completer (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP Completer. An attached Harness that answers becomes the \"AI brain\".".to_string()),
             status: None,
             rows: vec![
                 FormRow::Checkbox {
@@ -635,7 +635,7 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: director_frozen,
                     help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
-                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP Completer (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the mind for every Instance.".to_string()),
+                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP Completer (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
                     status: director_status,
                 },
                 FormRow::Checkbox {
@@ -778,7 +778,7 @@ fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
-        comment: Some("Choose which mind answers: Model API (HTTP Completer below) or an attached Harness.".to_string()),
+        comment: Some("Choose which \"AI brain\" answers: Model API (HTTP Completer below) or an attached Harness.".to_string()),
         disclosure: Some("Model API uses the HTTP Completer below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the Completer, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP Completer, and a Harness is attached at once, answering once its child is up.".to_string()),
         status: None,
         rows: vec![
@@ -786,7 +786,7 @@ fn completer_source_section() -> FormSection {
                 id: HARNESS_ID.to_string(),
                 label: Some(source_label),
                 writes: TextField::Harness,
-                help: Some("Which mind answers for the buddy.".to_string()),
+                help: Some("Which \"AI brain\" answers for the buddy.".to_string()),
                 options: harness_options(),
                 frozen,
                 disclosure: Some("Model API: the HTTP Completer below. Harness · {name}: starts that Harness and makes it the Completer. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
@@ -1107,7 +1107,7 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Timeout budgets one turn, whichever mind serves it: an HTTP Completer request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP Completer's alone (max_tokens); a Harness decides its own reply length.".to_string()),
+            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP Completer request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP Completer's alone (max_tokens); a Harness decides its own reply length.".to_string()),
             status: None,
             rows: vec![
                 FormRow::TextField {
@@ -2075,7 +2075,7 @@ mod tests {
 
         assert!(
             disclosure.contains("Harness"),
-            "the disclosure must name the other mind it budgets, got {disclosure:?}"
+            "the disclosure must name the other \"AI brain\" it budgets, got {disclosure:?}"
         );
         assert!(
             disclosure.contains("session/prompt"),

@@ -202,7 +202,7 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 /// none (ADR-0010 rules 1 and 6).
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
-        None => "Not attached. The HTTP Completer above is the Director's mind.".to_string(),
+        None => "Not attached. The HTTP Completer above is the Director's \"AI brain\".".to_string(),
         Some(attached) => match &attached.login {
             Some(login) => format!(
                 "{} attached but not authenticated. Run `{login}` in a terminal - \
@@ -3622,7 +3622,7 @@ mod tests {
             "the line has to name the pick that ends the wait, got {line:?}"
         );
         assert!(
-            !line.contains("is the Director's mind"),
+            !line.contains("is the Director's \"AI brain\""),
             "the dead handle is still the Completer; the HTTP rows are not, got {line:?}"
         );
     }
