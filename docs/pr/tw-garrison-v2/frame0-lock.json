@@ -31,7 +31,7 @@
     "bottom_margin": 0
   },
   "processing": {
-    "background_removal": "Color range + threshold (25-200), UI region exclusion, dark cavity removal, edge smoothing",
+    "background_removal": "Threshold 25-200, UI exclusion, selective cavity removal with elliptical torso protection (25%\u00d720%)",
     "interpolation": "LANCZOS4",
     "alignment_strategy": "feet at bottom, centered horizontally"
   }

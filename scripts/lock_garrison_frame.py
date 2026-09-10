@@ -91,30 +91,59 @@ def remove_background(img):
             mask_uint = np.zeros((h, w), dtype=np.uint8)
             cv2.drawContours(mask_uint, [best_contour], -1, 255, -1)
     
-    # Step 5: Clean arm cavities while protecting torso
-    # Use distance transform to identify core (torso) vs periphery (arms)
-    dist_transform = cv2.distanceTransform(mask_uint, cv2.DIST_L2, 5)
+    # Step 5: Clean arm cavities ONLY in lateral regions
+    # Protect entire central body column (cockpit → torso → hips → legs)
     
-    # Periphery: regions close to the edge (distance < 12 pixels)
-    # These are where arm gaps and blueprint artifacts appear
-    periphery = (dist_transform > 0) & (dist_transform < 12) & (mask_uint > 0)
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_BGR2HSV)
     
-    # In periphery, remove very dark regions (likely blueprint/background)
-    very_dark_periphery = (gray < 25) & periphery
+    # Find mech center and bounds
+    M = cv2.moments(mask_uint)
+    if M["m00"] > 0:
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+    else:
+        cx, cy = w // 2, h // 2
     
-    # Also remove dark + low saturation in periphery (blueprint lines)
-    dark_gray_periphery = (gray < 32) & (hsv[:, :, 1] < 35) & periphery
+    mech_pixels = mask_uint > 0
+    if np.any(mech_pixels):
+        mech_y, mech_x = np.where(mech_pixels)
+        mech_x_min, mech_x_max = mech_x.min(), mech_x.max()
+        mech_y_min, mech_y_max = mech_y.min(), mech_y.max()
+        mech_w = mech_x_max - mech_x_min
+        mech_h = mech_y_max - mech_y_min
+        
+        # Define central body column (vertical strip) - FULLY PROTECTED
+        # This includes cockpit, torso, hips, and legs
+        # Use 40% of mech width as the central column
+        y_coords, x_coords = np.ogrid[:h, :w]
+        x_from_center = np.abs(x_coords - cx)
+        central_column = x_from_center < (mech_w * 0.40)
+        
+        # Arm lateral bands: left and right sides ONLY
+        # These are where blueprint artifacts appear (between arm and body)
+        left_arm_band = (x_coords < cx - mech_w * 0.20) & (x_coords > mech_x_min)
+        right_arm_band = (x_coords > cx + mech_w * 0.20) & (x_coords < mech_x_max)
+        arm_regions = left_arm_band | right_arm_band
+        
+        # Only allow cavity removal in arm regions, NEVER in central column
+        removable_region = arm_regions & (~central_column) & (mask_uint > 0)
+    else:
+        removable_region = np.zeros((h, w), dtype=bool)
     
-    # Combine removal candidates
-    to_remove = very_dark_periphery | dark_gray_periphery
+    # Identify blueprint artifacts: dark + desaturated
+    internal_dark = (gray < 35) & removable_region
+    internal_gray = (hsv[:, :, 1] < 40) & removable_region
     
-    # Morphological opening to clean up
-    kernel_tiny = np.ones((3, 3), np.uint8)
-    to_remove_clean = cv2.morphologyEx(to_remove.astype(np.uint8) * 255,
-                                        cv2.MORPH_OPEN, kernel_tiny, iterations=1)
+    # Candidate artifacts (ONLY in removable arm regions)
+    blueprint_artifacts = internal_dark & internal_gray
     
-    # Remove these regions
-    mask_uint[to_remove_clean > 0] = 0
+    # Morphological cleanup: keep coherent cavity regions
+    kernel_cavity = np.ones((5, 5), np.uint8)
+    dark_cavities = cv2.morphologyEx(blueprint_artifacts.astype(np.uint8) * 255, 
+                                      cv2.MORPH_OPEN, kernel_cavity, iterations=1)
+    
+    # Remove cavities (only in arm bands, central column untouched)
+    mask_uint[dark_cavities > 0] = 0
     
     # Step 6: Reduce fringing
     kernel_erode = np.ones((2, 2), np.uint8)
