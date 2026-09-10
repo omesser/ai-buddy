@@ -1350,7 +1350,9 @@ fn read_stream(
     let ended = read_frames(reader, abandoned, &thought, &mut thinking);
     // The Chat surface keeps no thought of its own, so the last line stays on
     // screen until it is told the turn that wrote it has ended (ADR-0025).
-    if !thinking.is_empty() {
+    // Asked the same way the draw was, so a stream whose thinking was all
+    // whitespace takes away nothing, having drawn nothing.
+    if crate::acp_wire::thinking_line(&thinking).is_some() {
         thought("");
     }
     ended
@@ -1475,11 +1477,15 @@ fn read_event(payload: &str) -> Event {
         // Studio for R1, `reasoning` on vLLM since its rename, Ollama and LM
         // Studio for gpt-oss. Reading one name misses the other
         // (`docs/research/reasoning-versus-the-final-answer.md` §2.4).
+        //
+        // Responses types its reasoning apart from its answer, and the summary
+        // is the half a client is meant to read: the raw
+        // `response.reasoning_text.delta` is a second stream, and reading both
+        // into one line would interleave two texts (§2.2).
         thought: chunk["reasoning_content"]
             .as_str()
             .or_else(|| chunk["reasoning"].as_str())
             .or_else(|| typed("response.reasoning_summary_text.delta"))
-            .or_else(|| typed("response.reasoning_text.delta"))
             .map(str::to_string),
         finished: choice["finish_reason"].is_string() || kind == Some("response.completed"),
     }
@@ -1541,7 +1547,9 @@ thread_local! {
 /// common case, is to name the Instance on the event and let the surface pick.
 static THOUGHT: std::sync::OnceLock<Box<dyn Fn(String) + Send + Sync>> = std::sync::OnceLock::new();
 
-/// Hand the Completer lane the door to every open Chat surface.
+/// Hand the Completer lane the door to every open Chat surface. The first
+/// door wins and a later one is dropped: the Shell opens exactly one, and a
+/// second caller would be a test racing the app it is testing.
 pub fn on_thought(door: Box<dyn Fn(String) + Send + Sync>) {
     let _ = THOUGHT.set(door);
 }
@@ -2227,14 +2235,14 @@ pub(crate) mod tests {
             .collect()
     }
 
-    /// A whole stream, with nobody listening for thoughts: the shapes that
-    /// carry none, and the ones whose thoughts `thinking_aloud` reads instead.
+    /// How a whole stream ended, for the shapes whose thoughts are not what
+    /// is being asserted.
     fn streamed(sse: &str) -> Streamed {
-        read_stream(std::io::Cursor::new(sse), || false, |_| {}).unwrap()
+        streamed_with_thoughts(sse).0
     }
 
-    /// The same stream, and every line the thought strip was told to draw.
-    fn thinking_aloud(sse: &str) -> (Streamed, Vec<String>) {
+    /// The same, and every line the thought strip was told to draw.
+    fn streamed_with_thoughts(sse: &str) -> (Streamed, Vec<String>) {
         let drawn = std::cell::RefCell::new(Vec::new());
         let ended = read_stream(
             std::io::Cursor::new(sse),
@@ -2320,7 +2328,7 @@ pub(crate) mod tests {
             "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n",
             "data: [DONE]\n\n",
         );
-        let (ended, drawn) = thinking_aloud(spent);
+        let (ended, drawn) = streamed_with_thoughts(spent);
         assert_eq!(
             ended,
             Streamed::Complete(String::new()),
@@ -2389,7 +2397,7 @@ pub(crate) mod tests {
             "data: [DONE]\n\n",
         );
         assert_eq!(
-            thinking_aloud(sse),
+            streamed_with_thoughts(sse),
             (
                 Streamed::Complete("wave\nhey".to_string()),
                 ["the user", "so", "so wave back", ""]

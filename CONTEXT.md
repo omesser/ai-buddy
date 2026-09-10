@@ -284,9 +284,8 @@ The line of a Completer's streamed reasoning the Chat surface shows while a turn
 runs: one line above the composer, replaced by the next and cleared when the
 turn ends. Never a line of the log or of the Action Log. Not the Thinking
 ellipsis, which masks latency and says nothing about what a model is doing.
-Either fill can write it: a Harness's `agent_thought_chunk`, or the HTTP fill's
-`reasoning_content`, `reasoning` and `response.reasoning_*` deltas. #483, #611,
-ADR-0025.
+Either fill can write it: an attached Harness, or a model on the HTTP fill
+whose server marks its reasoning apart from its reply. #483, #611, ADR-0025.
 _Avoid_: Reasoning pane, thoughts, chain of thought, transcript
 
 **Chat surface**:
