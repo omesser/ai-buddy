@@ -506,34 +506,6 @@ fn owned_row_parts(label: &str, var: &str, owned: bool) -> (String, bool, Option
     }
 }
 
-/// Legacy interface: returns (label, frozen) with status baked into label.
-/// Used by existing code until fully migrated to status strips.
-fn env_row(label: &str, var: &str) -> (String, bool) {
-    let (label, frozen, status) = env_row_parts(label, var);
-    match status {
-        Some(s) => (format!("{label} ({s})"), frozen),
-        None => (label, frozen),
-    }
-}
-
-/// Legacy interface for switch rows.
-fn switch_row(label: &str, var: &str) -> (String, bool) {
-    let (label, frozen, status) = switch_row_parts(label, var);
-    match status {
-        Some(s) => (format!("{label} ({s})"), frozen),
-        None => (label, frozen),
-    }
-}
-
-/// Legacy interface for owned rows.
-fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
-    let (label, frozen, status) = owned_row_parts(label, var, owned);
-    match status {
-        Some(s) => (format!("{label} ({s})"), frozen),
-        None => (label, frozen),
-    }
-}
-
 /// The Completer source rows' ownership question, returning (label, frozen, status).
 ///
 /// Exported at all owns them, empty included, because
@@ -545,15 +517,6 @@ fn harness_env_row_parts(label: &str) -> (String, bool, Option<String>) {
     let var = crate::harness::VAR;
     let owned = std::env::var_os(var).is_some();
     owned_row_parts(label, var, owned)
-}
-
-/// Legacy interface for harness env row.
-fn harness_env_row(label: &str) -> (String, bool) {
-    let (label, frozen, status) = harness_env_row_parts(label);
-    match status {
-        Some(s) => (format!("{label} ({s})"), frozen),
-        None => (label, frozen),
-    }
 }
 
 /// One of the three HTTP rows, which answer to an attachment as well as to a
@@ -608,15 +571,6 @@ fn http_row_parts(
         status = Some(status_text);
     }
     (label, frozen, status)
-}
-
-/// Legacy interface for http row.
-fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String, bool) {
-    let (label, frozen, status) = http_row_parts(label, var, driving, configured);
-    match status {
-        Some(s) => (format!("{label} ({s})"), frozen),
-        None => (label, frozen),
-    }
 }
 
 /// A checkbox for one development switch.
