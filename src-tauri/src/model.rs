@@ -76,6 +76,13 @@ const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 /// the cap is the portable half of that fix: `reasoning_effort` is not a
 /// field every one of these servers accepts, and a strict one rejects the
 /// whole request over it.
+///
+/// 512 is not enough for every one of them. Measured against a Character
+/// Prompt carrying the shipped cat personality, `gpt-oss-20b-MXFP4-Q8`
+/// spends the whole budget thinking on about 40% of wakes and returns empty
+/// content — see `measure_the_reply_contract_failure_rate`, which found the
+/// same 40% end to end. Raising it costs latency on every wake, so the
+/// number wants its own measurement rather than a guess.
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
 
@@ -3465,6 +3472,19 @@ pub(crate) mod tests {
     /// than any gap between the framings. Quoting is real and rare; #230's
     /// two-in-four was a small sample. The breaks are invented names, so
     /// #144's schema is still the thing that would fix them.
+    ///
+    /// A second model reached the same verdict by a different road. Over
+    /// 1200 wakes of `gpt-oss-20b-MXFP4-Q8` (three framings, two runs of 200
+    /// each) no reply quoted a sample line at all, and the widest spread
+    /// between runs of one framing — 9pp — still covers the 8pp span between
+    /// the framings' means, so again no wording can be called better. But
+    /// its breaks are not choices about wording: it is a reasoning model, and
+    /// on 40% of wakes the thinking trace spends `LOCAL_MAX_TOKENS` before
+    /// any content is written, so the reply arrives empty. No phrasing of the
+    /// personality reaches a token budget. Read it as widening the "sample
+    /// lines are not the cause" finding to two models, and as leaving
+    /// invented names measured on `gemma-4-e2b-it-4bit` alone — gpt-oss
+    /// rarely got far enough to invent one.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {
