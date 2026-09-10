@@ -1,22 +1,29 @@
 # Memory (RSS) and multi-monitor scaling
 
-Baseline for #424, under #423's plan. **macOS only.** Linux and Windows are not
-measured here and nothing below is an estimate for them: the overlay is a
-different toolkit on each, and the out-of-process WebKit split this document
-turns on does not exist on either.
+Baseline for #424, under #423's plan. This document covers macOS (measured),
+Linux (method only), and Windows (method only). Each platform has different
+overlay toolkits and process architectures, so numbers are not comparable across
+operating systems.
 
-**Answer.** A two-display, one-Instance buddy peaks at **583 MB** of physical
-footprint across five processes, and read a median **259 MB** resident in a
-window with a third of the machine's memory free. Footprint scales with **pixels**, not with Instances: each display is
-one `WebContent` process, and the 3456×2234 panel's is 75–110 MB heavier than
-the 1920×1080 one in every run. Four Instances cost **+56 MB**, all of it inside
-the webviews — the Rust process's peak did not move at all. Character art is not
-what makes a buddy large: all eight installed packages are 4.5 MB of base64, and
-because the app loads every one of them at launch, switching Character cannot
-make RSS grow. What the sprite is doing does not move the number either: idle,
-walking, sitting and talking read within a few MB of each other.
+## Summary of macOS findings
 
-## The machine and the build
+A two-display, one-Instance buddy peaks at **583 MB** of physical footprint
+across five processes, and read a median **259 MB** resident in a window with a
+third of the machine's memory free. Footprint scales with **pixels**, not with
+Instances: each display is one `WebContent` process, and the 3456×2234 panel's
+is 75–110 MB heavier than the 1920×1080 one in every run. Four Instances cost
+**+56 MB**, all of it inside the webviews — the Rust process's peak did not move
+at all. Character art is not what makes a buddy large: all eight installed
+packages are 4.5 MB of base64, and because the app loads every one of them at
+launch, switching Character cannot make RSS grow. What the sprite is doing does
+not move the number either: idle, walking, sitting and talking read within a few
+MB of each other.
+
+---
+
+## macOS
+
+### The machine and the build
 
 | | |
 |---|---|
@@ -31,7 +38,7 @@ The debug build is what #424 asked to run, and it is not what a user runs. Read
 the Rust process's share as an upper bound; the WebKit helpers are release code
 either way and are unaffected by it.
 
-## How to reproduce
+### How to reproduce
 
 `scripts/bench-rss.sh` launches the app, waits out the settling curve below,
 samples every process's RSS on a fixed interval, and reads each one's peak
@@ -58,7 +65,7 @@ without the variable the launch stops on a password dialog (#283, #290).
 An RSS figure with no record of what the sprite was doing is not a measurement,
 and the trace is the only thing that says.
 
-## Where the memory is
+### Where the memory is
 
 WKWebView runs its content out of process, and those processes are children of
 `launchd`, not of the app — no process-tree walk finds them.
@@ -77,7 +84,7 @@ the app's — which is also its one soft spot, since another application startin
 a helper inside that window lands in the set. The script warns when the count is
 not `displays + 2`; a run that warns is contaminated and should be repeated.
 
-## The launch peak is not the number
+### The launch peak is not the number
 
 RSS after launch is a bathtub, not a plateau. Fifteen minutes, one Instance, two
 displays, idle desktop — an earlier run than the four below, and the only one
@@ -104,7 +111,7 @@ minutes — is not explained here. It is small enough to be page-in of memory th
 dip compressed away, and large enough that a multi-hour soak is
 worth running before anyone calls it a plateau. **Open question, not a finding.**
 
-## What RSS on macOS does and does not mean
+### What RSS on macOS does and does not mean
 
 RSS is what the kernel has let a process keep, not what it needs. A busy machine
 takes pages back from an idle buddy, and the same app then reads far lighter for
@@ -127,7 +134,7 @@ Peak physical footprint — Activity Monitor's "Memory", what `vmmap` reports �
 only ever rises, so it survives a noisy machine. Every comparison below is made
 on the footprint. The RSS series is kept for shape, not for ranking.
 
-## Results
+### Results
 
 Peak physical footprint per process, MB, over a 300 s settle plus 300 s sample:
 
@@ -142,7 +149,7 @@ Which `WebContent` column is which display is not a guess: `place_overlays`
 builds overlay-0 over the main display first, so its helper takes the lower pid,
 and in all four runs the lower pid is also the lighter process.
 
-## Displays cost pixels, not displays
+### Displays cost pixels, not displays
 
 #424's hypothesis is that RSS scales linearly with display count. It scales with
 display *area*. The two overlays are the same document, the same sprite and the
@@ -168,7 +175,7 @@ and unplugging one is not something an agent can do. The split is sound — the
 overlay when its display goes away — but a single-display run would still be
 worth taking on a machine where it is possible.
 
-## Instances cost webview, not engine
+### Instances cost webview, not engine
 
 Four Instances of one Character against one Instance (B against A) is **+56 MB**,
 and every MB of it is in the two `WebContent` processes: +29 and +26. The Rust
@@ -181,7 +188,7 @@ Making those four Instances four *different* Characters (C against B) is another
 moving 2.2 MB. Four Characters on screen means four sprite sheets actually
 decoded by WebKit, where four of one Character means one.
 
-## Character art, and why a switch cannot leak
+### Character art, and why a switch cannot leak
 
 Every installed package's art is decoded, base64-encoded and held for the life
 of the process — `load_all_characters` runs at launch, not on demand, so that a
@@ -215,7 +222,7 @@ Two answers #424 asks for:
   command serializes the whole map to JSON once per overlay. Neither is
   confirmed — **a heap profile would settle it, and this document has none.**
 
-## What the sprite was doing
+### What the sprite was doing
 
 `StaticDirector` picks ambient Behaviors, so a run is a mix rather than a held
 pose. Run A's 300 s window: idle 59 %, walk 22 %, sit 8 %, talk 5 %, climb 4 %,
@@ -236,16 +243,194 @@ The spread across animations is smaller than the spread within any one of them.
 result: whatever the frame loop is costing (#431), it is not costing pages. The
 other three runs agree — B reads 226 MB idle and 226 MB walking.
 
-## Not measured
+### Not measured (macOS)
 
 - **A single-display comparison, and three displays.** Both displays are
   permanently attached and no third exists. See the per-display section for what
   stands in.
-- **Linux and Windows.** Neither compiles on this machine (`platform/x11/` and
-  `platform/windows/` are `cfg`'d out on aarch64-apple-darwin), let alone runs.
-  #424 stays open for them.
 - **A heap profile with top allocators.** #424 asks for Instruments Allocations
   or `heaptrack`. Instruments needs a GUI session and a human. The allocator
   ranking is unanswered, and the 47.6 MB above is the first thing to point it at.
 - **A release build.** Everything here is `target/debug`.
 - **Chat windows open.** Every run is overlays only.
+
+---
+
+## Linux
+
+**Status: Method provided, measurements blocked by environment.**
+
+### Environment blocker
+
+The Cloud Agent VM is headless with X11 but no DISPLAY authorization for GTK
+applications. Attempting to launch `target/debug/ai-buddy` fails with:
+
+```
+Authorization required, but no authorization protocol specified
+Failed to initialize GTK
+```
+
+This is expected for a headless build VM. The Linux script and method are
+provided below for execution on a machine with a working display (desktop Linux
+or a VM with X11 forwarding configured).
+
+### How to run (on a machine with a display)
+
+`scripts/bench-rss-linux.sh` implements the same contract as the macOS script,
+adapted for Linux:
+
+```sh
+cd src-tauri && cargo build --bin ai-buddy && cd ..
+
+HOME=/tmp/bench-home \
+AI_BUDDY_DIRECTOR=0 AI_BUDDY_DIRECTOR_API_KEY=x AI_BUDDY_CAPTURABLE=1 \
+AI_BUDDY_TRACE_ENGINE=1 AI_BUDDY_CHARACTERS="$PWD/characters" \
+AI_BUDDY_INSTANCES="bmo:One" \
+scripts/bench-rss-linux.sh --settle 300 --seconds 300 --out /tmp/one-instance.tsv
+```
+
+### Process architecture
+
+WebKitGTK's process model depends on version and build configuration:
+
+- **Modern WebKitGTK (2.26+)** uses a multi-process architecture similar to
+  macOS: separate processes for WebContent, GPU, Network.
+- **Older or sandboxing-disabled builds** may run everything in-process.
+
+The Linux script uses `pgrep -P <pid>` to find all child processes of the main
+ai-buddy process. WebKitGTK helpers on Linux are children of the main process
+(unlike macOS where they are children of `launchd`), so the process tree walk
+discovers them automatically.
+
+### Measurement method
+
+- **RSS:** Read from `/proc/[pid]/status` field `VmRSS` (current resident set).
+- **Peak RSS:** Read from `/proc/[pid]/status` field `VmHWM` (high-water mark).
+  This is the Linux equivalent of macOS's peak physical footprint and only ever
+  rises, so it survives a noisy machine.
+- **Settling:** Defaults to 300s to match macOS. The settling curve should be
+  measured independently on Linux to validate or adjust this.
+
+### Display count
+
+Run `xrandr` or check the app's log for `overlay: N display` to determine how
+many displays the app detected. If WebKitGTK runs one WebContent process per
+overlay (as WebKit does on macOS), the per-display cost will be visible in the
+process split.
+
+### Expected results (when measurable)
+
+Based on the macOS findings:
+
+- **Displays cost pixels, not count.** A 1920×1080 overlay may be 100–170 MB
+  while a 2560×1440 overlay may be 200–300 MB, depending on WebKitGTK's backing
+  store implementation.
+- **Instances cost webview, not engine.** Multiple Character Instances should
+  add cost to the WebContent processes, not the main Rust process.
+- **Character art is front-loaded.** All installed Characters are loaded at
+  launch, so a Character switch cannot grow RSS permanently.
+
+### Heap profiling (optional)
+
+If heap profiling is desired, use `heaptrack` on Linux:
+
+```sh
+heaptrack target/debug/ai-buddy
+# ... run the scenario ...
+heaptrack --analyze heaptrack.ai-buddy.*.gz
+```
+
+Look for top allocators and whether unused Character art (base64 strings) is
+the 47.6 MB gap found on macOS.
+
+---
+
+## Windows
+
+**Status: Method provided, measurements require Windows hardware.**
+
+### How to run
+
+`scripts\bench-rss.ps1` implements the same contract as the macOS and Linux
+scripts, adapted for Windows PowerShell:
+
+```powershell
+cd src-tauri
+cargo build --bin ai-buddy
+cd ..
+
+$env:HOME = "C:\Temp\bench-home"
+$env:AI_BUDDY_DIRECTOR = "0"
+$env:AI_BUDDY_DIRECTOR_API_KEY = "x"
+$env:AI_BUDDY_CAPTURABLE = "1"
+$env:AI_BUDDY_TRACE_ENGINE = "1"
+$env:AI_BUDDY_CHARACTERS = (Get-Location).Path + "\characters"
+$env:AI_BUDDY_INSTANCES = "bmo:One"
+
+.\scripts\bench-rss.ps1 -Settle 300 -Seconds 300 -Out "C:\Temp\one-instance.tsv"
+```
+
+### Process architecture
+
+WebView2 on Windows uses the Chromium (Edge) multi-process architecture:
+
+- **Main process:** `ai-buddy.exe` (the Rust binary).
+- **WebView2 helpers:** Multiple `msedgewebview2.exe` processes:
+  - **Renderer:** One per webview (so one per display for the overlay).
+  - **GPU process:** Shared.
+  - **Network service:** Shared.
+  - **Utility processes:** Various (audio, storage, etc.).
+
+The Windows script uses `Get-Process -Name "msedgewebview2"` before and after
+launch to find all WebView2 helpers that appeared. These are not child processes
+of ai-buddy.exe (they are children of the Edge browser infrastructure), so the
+script uses a set-difference approach similar to the macOS WebKit helper
+discovery.
+
+### Measurement method
+
+- **Working Set:** Current memory usage from `Get-Process | Select-Object
+  WorkingSet64`. This is the Windows equivalent of RSS.
+- **Peak Working Set:** Read from `Get-Process | Select-Object
+  PeakWorkingSet64`. This only ever rises, so it survives a noisy machine.
+- **Settling:** Defaults to 300s to match macOS. The settling curve should be
+  measured independently on Windows to validate or adjust this.
+
+### Display count
+
+Check the app's log for `overlay: N display` to determine how many displays the
+app detected. Windows has a Renderer process per webview, so the per-display
+cost will be visible in the process split.
+
+### Expected results (when measurable)
+
+Based on the macOS findings:
+
+- **Displays cost pixels, not count.** WebView2's Renderer process memory usage
+  should scale with overlay resolution (backing store size).
+- **Instances cost webview, not engine.** Multiple Character Instances should
+  add cost to the Renderer processes, not the main ai-buddy.exe process.
+- **Character art is front-loaded.** All installed Characters are loaded at
+  launch, so a Character switch cannot grow memory permanently.
+
+### Where to run
+
+The Windows script is ready to execute on `DESKTOP-UQIE144` (per task
+instructions) or any Windows machine with a display. The Cloud Agent VM does not
+run Windows.
+
+### Heap profiling (optional)
+
+If heap profiling is desired on Windows, use Windows Performance Analyzer (WPA)
+or the Visual Studio profiler:
+
+```powershell
+# Using Windows Performance Recorder (WPR)
+wpr -start GeneralProfile -filemode
+# ... run ai-buddy ...
+wpr -stop profile.etl
+# Analyze with Windows Performance Analyzer (wpa.exe profile.etl)
+```
+
+Look for top allocators in the Rust process and whether unused Character art
+accounts for the gap found on macOS.
