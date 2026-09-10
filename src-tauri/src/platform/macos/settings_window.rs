@@ -450,8 +450,7 @@ impl SettingsController {
         use objc2_app_kit::NSPasteboard;
 
         if let Some(endpoint) = crate::mcp_http::endpoint() {
-            let mtm = self.mtm();
-            let pb = NSPasteboard::generalPasteboard(mtm);
+            let pb = NSPasteboard::generalPasteboard();
             pb.clearContents();
             let token_string = NSString::from_str(&endpoint.authorization());
             pb.setString_forType(&token_string, objc2_app_kit::NSPasteboardTypeString);
