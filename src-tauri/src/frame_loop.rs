@@ -1734,7 +1734,11 @@ pub(crate) fn run_frame_loop(
                             );
 
                             // `last_mask` exists so an unchanged sprite does not
-                            // rebuild the pixmap every 16ms.
+                            // rebuild the pixmap every 16ms. Note: `local.x` and
+                            // `local.y` change every frame while the sprite walks,
+                            // so the comparison fires at sprite-motion rate regardless
+                            // of whether hotspots changed. Including hotspots in the
+                            // tuple does not worsen this rate vs the mask-only path.
                             if last_mask.lock().unwrap().get(index) != Some(&mask_params)
                                 && !mask_in_flight
                                     .lock()
