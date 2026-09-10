@@ -906,7 +906,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                     }
-                    FormRow::InspectBlock { id, label, help } => {
+                    FormRow::InspectBlock { id, label, help, .. } => {
                         if let Some(label_text) = label {
                             let lbl =
                                 NSTextField::labelWithString(&NSString::from_str(label_text), mtm);

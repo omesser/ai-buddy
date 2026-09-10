@@ -330,7 +330,7 @@ impl SettingsWindow {
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
             }
-            FormRow::InspectBlock { id, label, help } => {
+            FormRow::InspectBlock { id, label, help, .. } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
