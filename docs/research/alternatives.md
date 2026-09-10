@@ -200,3 +200,54 @@ ai-buddy's personality-driven idle life + physics.
 ### Shimeji-ee ecosystem
 
 **What it is.** Windows-first Java desktop mascot, originally by Yuki Yamada /
+Group Finity (2009, zlib/libpng), forked and maintained as Shimeji-ee by
+Kilkakon and others (New BSD). Distributed via
+[kilkakon.com](https://kilkakon.com/shimeji/),
+[SourceForge](https://sourceforge.net/app/shimeji-ee/), and fan sites. Android
+port has 500K+ downloads. Character packs are community-created and shared on
+DeviantArt, Tumblr, dedicated archives.
+
+**Verified present.** Overlay (always-on-top sprite). Click-through. Window
+edge awareness (sprites sit on window tops, similar to ai-buddy Perches).
+Multi-instance (many Shimeji at once; Image Set Chooser lets users select which
+character types to spawn). Multi-monitor support with toggle ("Move Between
+Screens" setting). Character packages via community (1000s of free fan-made
+image sets). Idle life (wander, fall, climb). Reacts to user (throw, interact).
+"Boss mode" in DalekCraft2's fork (double middle-click tray icon to quickly hide
+all Shimeji). Standard sprite set required (shime1.png - shime46.png). **Physics
+(kind matters).** Required Fall/Thrown actions; gravity integrator in the Java
+lineage (sprite kinematics + throw/climb; see DalekCraft2 Fall.java, kilkakon
+required actions). Not the same as ai-buddy's ballistic integrator with
+window-top Perches and acceleration gate.
+
+**Absent.** No ballistic Perch riding model (ai-buddy's gravity/throw arcs with
+Perch acceleration gate). No capture exclusion. No hide rules in base version
+(no auto-hide on fullscreen); Boss mode is manual toggle. No agent integrations,
+MCP, or chat. No Memory. Behavior system is XML graphs, not TOML declarative
+Behaviors.
+
+**Onboarding reality.** Folklore (Java, img/ folders, not in Downloads).
+
+**Differences.** Shimeji-ee's community character ecosystem (1000s of free
+packs) offers direct distribution; ai-buddy imports from Shimeji-ee via
+`scripts/import-pet.py` adapter plus petdex / Pets Codex, translating into
+Character Packages once (authoring-time, not live bridge). Shimeji-ee has
+Fall/gravity (sprite kinematics) but not ai-buddy's ballistic Perch model; no
+window awareness beyond edges; no agent integrations or AI capabilities.
+ai-buddy adds ballistic physics (gravity arcs, throw, Perches under acceleration
+gate), window app name tracking, shipped Harness ACP Completer (#433 2026-09-07)
++ MCP server (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08), Memory,
+and BYO model. Shimeji-ee's XML graph behavior system versus ai-buddy's Director
++ declarative Behaviors is a design difference in how liveliness is authored.
+
+### Desktop Pet
+
+**What it is.** Free beta desktop companion by independent developer, available
+at desktoppet.app. Windows 10/11 (~150MB zip, v1.1.1, Oct 19, 2025) and macOS
+10.15+ (~191MB dmg). Homepage (as of 2026-09-04): "0 Downloads / Free (Beta) / 1
+Pet Type +2 Coming Soon."
+([desktoppet.app](https://desktoppet.app/))
+
+**Verified present (vendor claims only).** Overlay (desktop floater).
+Click/drag to move pet, right-click menu, double-click interact, Tab key to
+place. Idle l
