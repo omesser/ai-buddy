@@ -224,6 +224,7 @@ impl SettingsWindow {
                             self.rebuild_instances_list(*hwnd, &view);
                         }
                     }
+                    Control::Disclosure(_, _, _) => {}
                 }
             }
         }
@@ -507,24 +508,36 @@ impl SettingsWindow {
     fn update_tab_visibility(&self) {
         let current_tab = *self.current_tab.borrow();
         let controls = self.controls.borrow();
+        let expanded = self.disclosure_expanded.borrow();
         unsafe {
-            for control in controls.values() {
-                let (hwnd, tab_index) = match control {
-                    Control::Checkbox(hwnd, tab_index) => (hwnd, tab_index),
-                    Control::Edit(hwnd, tab_index) => (hwnd, tab_index),
-                    Control::Label(hwnd, tab_index) => (hwnd, tab_index),
-                    Control::Button(hwnd, tab_index) => (hwnd, tab_index),
-                    Control::ComboBox(hwnd, tab_index, _) => (hwnd, tab_index),
-                    Control::InstancesList(hwnd, tab_index) => (hwnd, tab_index),
-                };
-                ShowWindow(
-                    *hwnd,
-                    if *tab_index == current_tab {
-                        SW_SHOW
-                    } else {
-                        SW_HIDE
-                    },
-                );
+            for (form_id, control) in controls.iter() {
+                match control {
+                    Control::Checkbox(hwnd, tab_index)
+                    | Control::Edit(hwnd, tab_index)
+                    | Control::Label(hwnd, tab_index)
+                    | Control::Button(hwnd, tab_index)
+                    | Control::ComboBox(hwnd, tab_index, _)
+                    | Control::InstancesList(hwnd, tab_index) => {
+                        ShowWindow(
+                            *hwnd,
+                            if *tab_index == current_tab {
+                                SW_SHOW
+                            } else {
+                                SW_HIDE
+                            },
+                        );
+                    }
+                    Control::Disclosure(button, label, tab_index) => {
+                        if *tab_index == current_tab {
+                            ShowWindow(*button, SW_SHOW);
+                            let is_expanded = expanded.get(form_id).copied().unwrap_or(false);
+                            ShowWindow(*label, if is_expanded { SW_SHOW } else { SW_HIDE });
+                        } else {
+                            ShowWindow(*button, SW_HIDE);
+                            ShowWindow(*label, SW_HIDE);
+                        }
+                    }
+                }
             }
         }
     }
