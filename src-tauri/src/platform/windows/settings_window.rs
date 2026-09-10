@@ -1230,7 +1230,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             frozen,
                             status,
-                            disclosure,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -1304,30 +1303,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.controls.borrow_mut().insert(
                                     format!("{}_status", id),
                                     Control::Label(status_hwnd, tab_index),
-                                );
-                                y += LABEL_HEIGHT + HINT_GAP;
-                            }
-                            if let Some(disclosure_text) = disclosure {
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let disclosure_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    LABEL_HEIGHT,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(disclosure_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                window.controls.borrow_mut().insert(
-                                    format!("{}_disclosure", id),
-                                    Control::Label(disclosure_hwnd, tab_index),
                                 );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
@@ -1474,7 +1449,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::List {
                             id,
                             help,
-                            status,
                             disclosure,
                             ..
                         } => {
@@ -1497,29 +1471,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 Control::InstancesList(container_hwnd, tab_index),
                             );
                             y += MULTILINE_HEIGHT + ROW_GAP;
-                            if let Some(status_text) = status {
-                                let status_cstr = CString::new(status_text.as_str()).unwrap();
-                                let status_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    status_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    LABEL_HEIGHT,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(status_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                window.controls.borrow_mut().insert(
-                                    format!("{}_status", id),
-                                    Control::Label(status_hwnd, tab_index),
-                                );
-                                y += LABEL_HEIGHT + HINT_GAP;
-                            }
                             if let Some(disclosure_text) = disclosure {
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
@@ -1571,7 +1522,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::Composite {
                             controls,
                             help,
-                            status,
                             disclosure,
                             ..
                         } => {
@@ -1698,29 +1648,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 }
                             }
                             y += ROW_HEIGHT + ROW_GAP;
-                            if let Some(status_text) = status {
-                                let status_cstr = CString::new(status_text.as_str()).unwrap();
-                                let status_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    status_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    LABEL_HEIGHT,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(status_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                window.controls.borrow_mut().insert(
-                                    format!("composite_status_{}", control_id),
-                                    Control::Label(status_hwnd, tab_index),
-                                );
-                                y += LABEL_HEIGHT + HINT_GAP;
-                            }
                             if let Some(disclosure_text) = disclosure {
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
@@ -1774,7 +1701,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             help,
                             editable,
-                            status,
                             disclosure,
                             ..
                         } => {
@@ -1844,29 +1770,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
                             y += MULTILINE_HEIGHT + ROW_GAP;
-                            if let Some(status_text) = status {
-                                let status_cstr = CString::new(status_text.as_str()).unwrap();
-                                let status_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    status_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    LABEL_HEIGHT,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(status_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                window.controls.borrow_mut().insert(
-                                    format!("{}_status", id),
-                                    Control::Label(status_hwnd, tab_index),
-                                );
-                                y += LABEL_HEIGHT + HINT_GAP;
-                            }
                             if let Some(disclosure_text) = disclosure {
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
