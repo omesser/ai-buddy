@@ -963,7 +963,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             help,
                             status,
-                            disclosure: _,
                             ..
                         } => {
                             let label_cstr = CString::new(label.as_str()).unwrap();
@@ -1046,7 +1045,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             frozen,
                             help,
                             status,
-                            disclosure: _,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -1243,7 +1241,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             options,
                             frozen,
                             status,
-                            disclosure: _,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -1353,7 +1350,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::List {
                             id,
                             help,
-                            disclosure: _,
                             ..
                         } => {
                             let container_hwnd = CreateWindowExA(
@@ -1402,7 +1398,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         FormRow::Composite {
                             controls,
                             help,
-                            disclosure: _,
                             ..
                         } => {
                             let mut x = display_left;
@@ -1557,7 +1552,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             help,
                             editable,
-                            disclosure: _,
                             ..
                         } => {
                             if let Some(label_text) = label {
@@ -1656,7 +1650,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             label,
                             help,
                             status,
-                            disclosure: _,
                             ..
                         } => {
                             if let Some(label_text) = label {
