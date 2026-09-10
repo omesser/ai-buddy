@@ -125,6 +125,15 @@ pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
 /// Used by the frame loop to union the rects into the OS input region on
 /// Windows and X11, where the alpha mask alone would leave a hole under the
 /// control and hand the click to whatever is behind the overlay.
+///
+/// Allowed rather than `cfg`'d out on macOS, which reads the same rectangles
+/// through `over_overlay_hotspot` and never calls this: what it holds is a
+/// plain map lookup, and its test is the one that keeps a neighbour overlay's
+/// rectangles from leaking into this one. Compiling that test only on the two
+/// lanes that call the function would stop it running on the machine most of
+/// this is written on. The macOS `update_input_region` stub below is allowed
+/// for the same reason.
+#[allow(dead_code)]
 pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
     OVERLAY_HOTSPOTS.lock().map_or_else(
         |_| Vec::new(),
