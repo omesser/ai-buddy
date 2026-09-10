@@ -1,0 +1,38 @@
+{
+  "source": {
+    "file": "/workspace/docs/pr/tw-garrison-v2/capture-frame0.png",
+    "dimensions": {
+      "width": 1280,
+      "height": 672
+    }
+  },
+  "crop": {
+    "x": 443,
+    "y": 101,
+    "width": 388,
+    "height": 448
+  },
+  "scale": 0.27455357142857145,
+  "scale_adjustment": 1.0,
+  "destination": {
+    "x": 35,
+    "y": 37,
+    "canvas_width": 176,
+    "canvas_height": 160
+  },
+  "reference": {
+    "file": "/workspace/characters/timber-wolf/frames/idle-0.png",
+    "content_bounds": {
+      "x": 36,
+      "y": 37,
+      "width": 104,
+      "height": 123
+    },
+    "bottom_margin": 0
+  },
+  "processing": {
+    "background_removal": "threshold at 30, HSV filtering, centroid selection, morphological cleanup",
+    "interpolation": "LANCZOS4",
+    "alignment_strategy": "feet at bottom, centered horizontally"
+  }
+}
