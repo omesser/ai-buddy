@@ -12,7 +12,7 @@
 # does instead:
 #   - The buddy strolls. Sampling once and then pausing before the click lands
 #     where it *was*. Here every click re-samples the newest `sprite(x,y)` the
-#     frame loop traced and fires within tens of milliseconds — no pre-click
+#     frame loop traced and fires within tens of milliseconds -- no pre-click
 #     pause.
 #   - Hunting a teal pixel across the desktop matches YouTube's cyan. Here the
 #     Character is found from the trace and the OS window region, never colour.
@@ -113,7 +113,7 @@ public class Smoke {
   public delegate bool MonitorEnumProc(IntPtr h, IntPtr hdc, ref RECT r, IntPtr d);
   [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr h, ref MONITORINFO mi);
   [DllImport("user32.dll")] public static extern int GetWindowRgn(IntPtr hWnd, IntPtr hRgn);
-  [DllImport("user32.dll")] public static extern bool PtInRegion(IntPtr hRgn, int x, int y);
+  [DllImport("gdi32.dll")] public static extern bool PtInRegion(IntPtr hRgn, int x, int y);
   [DllImport("gdi32.dll")] public static extern IntPtr CreateRectRgn(int l, int t, int r, int b);
   [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr o);
   [DllImport("gdi32.dll")] public static extern int GetRegionData(IntPtr hRgn, int count, IntPtr data);
@@ -489,7 +489,7 @@ while ((Get-Date) -lt $deadline -and -not $opened) {
   $hot = OpenChat-Point $overlay $sprite
   if ($null -ne $hot -and -not $openChatTried) {
     # The truncated bubble is up. Photograph it, then track-and-click the
-    # control immediately — the click re-samples the newest frame itself. This
+    # control immediately -- the click re-samples the newest frame itself. This
     # is the one Open-chat click in the budget; on to Summon if it cannot land.
     if (-not $shotBubble) { $shotBubble = Screenshot "588-win-watch-$Stamp-bubble.png" $overlay.Rect }
     $openChatTried = $true
