@@ -88,6 +88,9 @@ struct Ivars {
     character: RefCell<Option<Retained<NSPopUpButton>>>,
     harness: RefCell<Option<Retained<NSPopUpButton>>>,
     harness_state: RefCell<Option<Retained<NSTextField>>>,
+    byo_harness: RefCell<Option<Retained<NSPopUpButton>>>,
+    byo_snippet: RefCell<Option<Retained<NSTextField>>>,
+    byo_steps: RefCell<Option<Retained<NSTextField>>>,
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
@@ -225,7 +228,15 @@ define_class!(
             if !patch.set_text(writes, &title) {
                 return;
             }
-            self.apply(patch);
+            // Redrawn here rather than left to the frame loop, which only
+            // comes back around for a pick that raises a `SettingsOp`. The
+            // Character and source popups both do; the registration picker
+            // writes a view preference and raises none, so without this the
+            // popup moved and the box under it still held the last Harness's
+            // snippet (#577).
+            if self.apply(patch) {
+                self.refresh();
+            }
         }
 
         /// The Base URL shortcut, which stages rather than saves.
@@ -649,6 +660,12 @@ impl SettingsController {
         if let Some(field) = self.ivars().harness_state.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.harness_state));
         }
+        if let Some(field) = self.ivars().byo_snippet.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.byo_snippet));
+        }
+        if let Some(field) = self.ivars().byo_steps.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.byo_steps));
+        }
         fill_popup(&self.ivars().character, &view.installed, &view.character);
         // Left alone while the field holds a staged edit, for the same reason
         // the field itself is: the pick is what the field says (#279).
@@ -664,6 +681,11 @@ impl SettingsController {
             &self.ivars().harness,
             &form::harness_options(),
             &view.harness,
+        );
+        fill_popup(
+            &self.ivars().byo_harness,
+            &form::HARNESS_PRESETS.map(str::to_string),
+            &view.byo_harness,
         );
         fill_popup(
             &self.ivars().new_character,
@@ -782,6 +804,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut character_popup = None;
     let mut harness_popup = None;
     let mut harness_state_field = None;
+    let mut byo_harness_popup = None;
+    let mut byo_snippet_field = None;
+    let mut byo_steps_field = None;
     let mut new_character_popup = None;
     let mut new_name_field = None;
     let mut instances_view = None;
@@ -1020,6 +1045,24 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 cursor.place(&field, 44.0);
                                 harness_state_field = Some(field);
                             }
+                            // ponytail: one height for all five, sized to
+                            // opencode's eleven-line JSON because a clipped
+                            // snippet is one pasted with a line missing. The
+                            // ceiling is the dead space under claude's two
+                            // lines; sizing per Harness needs the picked one
+                            // at `describe()` time, which reads the
+                            // environment and not the file, so it would cost
+                            // a relayout on every pick.
+                            form::BYO_SNIPPET_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 172.0);
+                                byo_snippet_field = Some(field);
+                            }
+                            form::BYO_STEPS_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 66.0);
+                                byo_steps_field = Some(field);
+                            }
                             _ => {}
                         }
 
@@ -1062,6 +1105,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         match id.as_str() {
                             form::CHARACTER_ID => character_popup = Some(pop),
                             form::HARNESS_ID => harness_popup = Some(pop),
+                            form::BYO_HARNESS_ID => byo_harness_popup = Some(pop),
                             _ => {}
                         }
 
@@ -1270,6 +1314,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().character.borrow_mut() = character_popup;
     *controller.ivars().harness.borrow_mut() = harness_popup;
     *controller.ivars().harness_state.borrow_mut() = harness_state_field;
+    *controller.ivars().byo_harness.borrow_mut() = byo_harness_popup;
+    *controller.ivars().byo_snippet.borrow_mut() = byo_snippet_field;
+    *controller.ivars().byo_steps.borrow_mut() = byo_steps_field;
     *controller.ivars().new_character.borrow_mut() = new_character_popup;
     *controller.ivars().new_name.borrow_mut() = new_name_field;
     *controller.ivars().instances.borrow_mut() = instances_view;

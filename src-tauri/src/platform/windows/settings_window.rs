@@ -231,6 +231,8 @@ impl SettingsWindow {
                                 .clone()
                                 .unwrap_or_else(|| "Nothing sent yet.".to_string()),
                             form::HARNESS_STATE_ID => view.harness_state.clone(),
+                            form::BYO_SNIPPET_ID => view.byo_snippet.clone(),
+                            form::BYO_STEPS_ID => view.byo_steps.clone(),
                             _ => String::new(),
                         };
                         set_window_text(*hwnd, &text);
@@ -798,6 +800,8 @@ fn should_update_label_text(id: &str) -> bool {
         || id == form::HOTKEY_ID
         || id == form::PAYLOAD_ID
         || id == form::HARNESS_STATE_ID
+        || id == form::BYO_SNIPPET_ID
+        || id == form::BYO_STEPS_ID
     {
         return true;
     }

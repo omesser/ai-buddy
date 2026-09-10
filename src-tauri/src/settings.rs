@@ -69,6 +69,12 @@ pub struct SettingsView {
     pub harness: String,
     /// What the attachment is doing, in the three states ADR-0010 names.
     pub harness_state: String,
+    /// The registration box's Harness picker, snippet and instructions (#577).
+    /// The picker is the file's alone - no variable owns it, because nothing
+    /// but this box reads it.
+    pub byo_harness: String,
+    pub byo_snippet: String,
+    pub byo_steps: String,
     /// The Development rows, by form row id: the value in force, which is the
     /// exported variable's where it owns the row and the file's otherwise.
     ///
@@ -236,6 +242,142 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     }
 }
 
+/// What to paste to point a Harness the user runs themselves at this app's
+/// MCP server, and what to do with it, as (snippet, instructions).
+///
+/// Pure, because the five registration shapes are the whole of what can be
+/// wrong here: each was checked against the installed CLI in #580, and a typo
+/// in one fails at the Harness rather than anywhere this code can see.
+///
+/// The token goes in raw, without `Bearer `. Three of the five templates add
+/// that prefix themselves, so a pre-prefixed token reads `Bearer Bearer` in
+/// the other two.
+///
+/// A name the popup cannot offer - blank, `custom`, a hand-edited file - gets
+/// the pair on its own, because the pair is all any of the five templates is
+/// made of.
+fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
+    match harness {
+        // The remove is not optional and is the reason this is two lines:
+        // Claude Code answers a re-add of an existing name by keeping the old
+        // URL and token and exiting 0 (#580), and both of ours change every
+        // launch. `-s project` is deliberately absent - it writes a
+        // checked-in `.mcp.json`, which would commit the token.
+        "claude" => (
+            format!(
+                "claude mcp remove -s user ai-buddy 2>/dev/null\n\
+                 claude mcp add -s user --transport http ai-buddy \"{url}\" \
+                 --header \"Authorization: Bearer {token}\""
+            ),
+            "Run both lines in a terminal, then restart claude. The remove is not \
+             optional: re-adding a name Claude Code already knows keeps the old URL \
+             and token and reports success. `claude mcp list` says whether it connected."
+                .to_string(),
+        ),
+        // The launch flags rather than `config.toml`, because they write
+        // nothing: there is no stale entry to clean up next launch.
+        "codex" => (
+            format!(
+                "codex -c 'mcp_servers.ai_buddy.url=\"{url}\"' \
+                 -c 'mcp_servers.ai_buddy.http_headers.Authorization=\"Bearer {token}\"'"
+            ),
+            "Starts codex with the server attached and writes nothing to disk. The \
+             `~/.codex/config.toml` equivalent is `url` plus `http_headers` under \
+             `[mcp_servers.ai_buddy]`; `bearer_token` is rejected there. `codex mcp get \
+             ai_buddy` reports. This is the one shape #580 could not run, so it is \
+             documentation rather than a verified command."
+                .to_string(),
+        ),
+        "grok" => (
+            format!(
+                "grok mcp add ai-buddy \"{url}\" --transport http \
+                 --header \"Authorization: Bearer {token}\""
+            ),
+            "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
+             after a relaunch is enough. A live session picks it up from `/mcps` then \
+             `r`. `grok mcp doctor ai-buddy` reports."
+                .to_string(),
+        ),
+        "hermes" => (
+            format!(
+                "mcp_servers:\n\
+                 \x20 ai-buddy:\n\
+                 \x20   url: \"{url}\"\n\
+                 \x20   headers:\n\
+                 \x20     Authorization: \"Bearer {token}\""
+            ),
+            "A fragment for `config.yaml`, not a command. If it already has \
+             `mcp_servers:`, paste only the indented `ai-buddy:` block under it, and keep \
+             the indentation exactly. hermes reloads within five seconds, so no restart. \
+             `hermes mcp test ai-buddy` reports."
+                .to_string(),
+        ),
+        // `"oauth": false` is why this is the JSON and not the one-line
+        // `opencode mcp add`, which cannot express it: `mcp_http` answers a
+        // bad token with a bare 401 and no `WWW-Authenticate`, and opencode's
+        // SDK only starts OAuth discovery when that header is there (#580).
+        "opencode" => (
+            format!(
+                "{{\n\
+                 \x20 \"$schema\": \"https://opencode.ai/config.json\",\n\
+                 \x20 \"mcp\": {{\n\
+                 \x20   \"ai-buddy\": {{\n\
+                 \x20     \"type\": \"remote\",\n\
+                 \x20     \"url\": \"{url}\",\n\
+                 \x20     \"enabled\": true,\n\
+                 \x20     \"oauth\": false,\n\
+                 \x20     \"headers\": {{ \"Authorization\": \"Bearer {token}\" }}\n\
+                 \x20   }}\n\
+                 \x20 }}\n\
+                 }}"
+            ),
+            "A fragment for `opencode.json`, not a command. With a file already there, \
+             merge the `mcp` key rather than replacing it - an unknown top-level key is a \
+             refused startup, not a degraded config. Then restart opencode; `opencode mcp \
+             list` reports."
+                .to_string(),
+        ),
+        _ => (
+            format!("URL:   {url}\nToken: {token}"),
+            format!(
+                "No generated snippet for {harness:?}. Point the Harness at that URL over \
+                 Streamable HTTP and have it send `Authorization: Bearer <token>`."
+            ),
+        ),
+    }
+}
+
+/// The Advanced box's two rows for the Harness the user picked, as
+/// (snippet, instructions).
+///
+/// Empty when the loopback server did not bind this run, which is the only
+/// way there is nothing to show: `main` serves it before anything can open
+/// this window and regardless of whether a Harness is attached, so a BYO user
+/// with none has an endpoint like everyone else.
+/// The registration box's Harness, resting on the first name the picker
+/// offers so the box is never blank on a first visit.
+fn byo_harness_in_force(settings: &Settings) -> String {
+    match settings.byo_harness.trim() {
+        "" => form::HARNESS_PRESETS[0].to_string(),
+        picked => picked.to_string(),
+    }
+}
+
+fn byo_rows(harness: &str) -> (String, String) {
+    match crate::mcp_http::endpoint() {
+        Some(endpoint) => {
+            let (url, token) = endpoint.registration();
+            byo_registration(harness, &url, &token)
+        }
+        None => (
+            String::new(),
+            "The loopback MCP server did not start this run, so there is nothing to \
+             register. Restarting ai-buddy is the fix; stderr says why it failed."
+                .to_string(),
+        ),
+    }
+}
+
 impl SettingsView {
     pub fn from_parts(
         settings: &Settings,
@@ -247,6 +389,7 @@ impl SettingsView {
         harness: Option<crate::harness::HarnessInspect>,
     ) -> Self {
         let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
+        let (byo_snippet, byo_steps) = byo_rows(&byo_harness_in_force(settings));
         Self {
             // The value in force, as the Development rows show theirs: an
             // exported switch reads as it exported, however the file has it.
@@ -273,6 +416,9 @@ impl SettingsView {
             api_key_error,
             harness: harness_in_force(settings).0,
             harness_state: harness_state(harness.as_ref()),
+            byo_harness: byo_harness_in_force(settings),
+            byo_snippet,
+            byo_steps,
             development_switches: development_switches(settings),
             development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
@@ -339,6 +485,7 @@ impl SettingsView {
         match id {
             form::CHARACTER_ID => Some(&self.character),
             form::HARNESS_ID => Some(&self.harness),
+            form::BYO_HARNESS_ID => Some(&self.byo_harness),
             _ => None,
         }
     }
@@ -892,6 +1039,7 @@ pub struct SettingsPatch {
     pub harness: Option<String>,
     pub harness_command: Option<String>,
     pub harness_auth_retry_secs: Option<String>,
+    pub byo_harness: Option<String>,
     pub mcp_bin: Option<String>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
@@ -957,6 +1105,9 @@ pub enum TextField {
     Harness,
     HarnessCommand,
     HarnessAuthRetrySecs,
+    /// Which Harness the registration box is written for. A view preference
+    /// and nothing else: no launch reads it (#577).
+    ByoHarness,
     McpBin,
     ExcludedApplications,
 }
@@ -1012,6 +1163,7 @@ impl SettingsPatch {
             }
             // Trimmed like the command line beside it: a path pasted out of a
             // terminal carries the space that follows it.
+            TextField::ByoHarness => self.byo_harness = Some(value.trim().to_string()),
             TextField::McpBin => self.mcp_bin = Some(value.trim().to_string()),
             TextField::DirectorApiKey if key_was_typed(value) => {
                 self.director_api_key = Some(value.to_string())
@@ -1051,6 +1203,7 @@ impl fmt::Debug for SettingsPatch {
                 &self.harness_command.as_deref().map(command_line_debug),
             )
             .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
+            .field("byo_harness", &self.byo_harness)
             .field("mcp_bin", &self.mcp_bin)
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
@@ -1154,6 +1307,9 @@ impl Settings {
         }
         if let Some(value) = patch.harness_auth_retry_secs {
             self.harness_auth_retry_secs = value;
+        }
+        if let Some(value) = patch.byo_harness {
+            self.byo_harness = value;
         }
         if let Some(value) = patch.mcp_bin {
             self.mcp_bin = value;
@@ -1274,6 +1430,11 @@ pub struct Settings {
     /// `harness::AUTH_RETRY`. Read when a Session is built, so a change lands
     /// on the next attach (#447).
     pub harness_auth_retry_secs: String,
+    /// Which Harness the registration box on the AI tab is written for. A
+    /// view preference: the box is something a BYO user comes back to every
+    /// launch, so the pick is worth keeping. Blank rests on the first name
+    /// `form::HARNESS_PRESETS` lists, and nothing else reads it (#577).
+    pub byo_harness: String,
     /// Where the stdio MCP server binary is. Empty means beside the app, then
     /// the app binary's own `--mcp-stdio` (#166). For power users and CI,
     /// which is why it is a Development row and not a Director one.
@@ -1320,6 +1481,7 @@ impl Default for Settings {
             harness: String::new(),
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
+            byo_harness: String::new(),
             mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
@@ -1569,6 +1731,7 @@ mod tests {
             harness: "custom".into(),
             harness_command: "opencode acp".into(),
             harness_auth_retry_secs: "5".into(),
+            byo_harness: "hermes".into(),
             mcp_bin: "/opt/ai-buddy-mcp".into(),
             trace_frames: true,
             trace_hittest: true,
@@ -1869,6 +2032,7 @@ mod tests {
             harness: String::new(),
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
+            byo_harness: String::new(),
             mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
@@ -3719,5 +3883,71 @@ mod tests {
         );
         assert_eq!(command_line_debug("my-agent acp"), "my-agent +1 arg(s)");
         assert_eq!(command_line_debug("   "), "");
+    }
+
+    /// Every registration shape #580 verified against the installed CLI, and
+    /// the one precondition a user cannot see: Claude Code answers a re-add of
+    /// an existing name by keeping the old URL and token and exiting 0, so a
+    /// snippet without the remove installs a stale entry that cannot connect.
+    #[test]
+    fn every_byo_snippet_carries_the_url_and_the_raw_token() {
+        for harness in form::HARNESS_PRESETS {
+            let (snippet, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+            assert!(
+                snippet.contains("http://127.0.0.1:5051/mcp"),
+                "{harness} must carry the URL, got {snippet:?}"
+            );
+            assert!(
+                snippet.contains("Bearer beef"),
+                "{harness} must carry the token once, prefixed here and not in the value"
+            );
+            assert!(
+                !snippet.contains("Bearer Bearer"),
+                "{harness} double-prefixed the token"
+            );
+            assert!(!steps.is_empty(), "{harness} needs its instructions");
+        }
+    }
+
+    #[test]
+    fn the_claude_snippet_removes_before_it_adds() {
+        let (snippet, _) = byo_registration("claude", "http://127.0.0.1:5051/mcp", "beef");
+        let remove = snippet
+            .find("claude mcp remove")
+            .expect("the remove line is what makes the snippet re-runnable");
+        let add = snippet.find("claude mcp add").expect("the add line");
+        assert!(remove < add, "the remove must come first, got {snippet:?}");
+        assert!(
+            !snippet.contains("-s project"),
+            "project scope writes a checked-in .mcp.json and would commit the token"
+        );
+    }
+
+    /// hermes and opencode paste into a file that may already exist, so their
+    /// box holds a fragment and the words beside it have to say so.
+    #[test]
+    fn the_file_fragment_harnesses_say_they_are_fragments() {
+        for (harness, file) in [("hermes", "config.yaml"), ("opencode", "opencode.json")] {
+            let (_, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+            assert!(
+                steps.contains(file),
+                "{harness} must name the file it merges into, got {steps:?}"
+            );
+            assert!(
+                steps.to_lowercase().contains("merge") || steps.to_lowercase().contains("paste"),
+                "{harness} must say it is a fragment, got {steps:?}"
+            );
+        }
+    }
+
+    /// A harness name the popup cannot offer - blank, `custom`, or a
+    /// hand-edited file - still gets the pair, because that is all any of the
+    /// five templates is made of.
+    #[test]
+    fn an_unknown_harness_still_gets_the_url_and_the_token() {
+        let (snippet, steps) = byo_registration("custom", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(snippet.contains("http://127.0.0.1:5051/mcp"));
+        assert!(snippet.contains("beef"));
+        assert!(!steps.is_empty());
     }
 }

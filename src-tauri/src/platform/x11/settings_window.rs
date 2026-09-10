@@ -863,16 +863,31 @@ impl SettingsWindow {
                             if refreshing.get() || !radio.is_active() {
                                 return;
                             }
-                            if let Ok(guard) = session.lock() {
-                                if let Some(sess) = guard.as_ref() {
-                                    let mut patch = SettingsPatch::default();
-                                    if !patch.set_text(writes, &title) {
-                                        return;
-                                    }
-                                    if let Err(e) = sess.apply(patch) {
-                                        eprintln!("settings: {e}");
-                                    }
-                                }
+                            let mut patch = SettingsPatch::default();
+                            if !patch.set_text(writes, &title) {
+                                return;
+                            }
+                            let applied = match session.lock() {
+                                Ok(guard) => match guard.as_ref() {
+                                    Some(sess) => match sess.apply(patch) {
+                                        Ok(()) => true,
+                                        Err(e) => {
+                                            eprintln!("settings: {e}");
+                                            false
+                                        }
+                                    },
+                                    None => false,
+                                },
+                                Err(_) => false,
+                            };
+                            // Below the lock, not inside it: `refresh` reads
+                            // the session for itself and this mutex is not
+                            // reentrant. Needed at all because only a pick
+                            // that raises a `SettingsOp` comes back through
+                            // the frame loop, and the registration picker
+                            // writes a view preference and raises none (#577).
+                            if applied {
+                                refresh_if_showing();
                             }
                         });
                     }
@@ -1075,6 +1090,12 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::HARNESS_STATE_ID) {
             label.set_text(&view.harness_state);
         }
+        if let Some(Control::Label(label)) = controls.get(form::BYO_SNIPPET_ID) {
+            label.set_text(&view.byo_snippet);
+        }
+        if let Some(Control::Label(label)) = controls.get(form::BYO_STEPS_ID) {
+            label.set_text(&view.byo_steps);
+        }
         // The rows the view carries by id: every Development switch and limit.
         // Bound here rather than one named lookup each, so a row added to
         // `form.rs` is drawn from the value in force with no edit to this file.
@@ -1213,6 +1234,18 @@ impl SettingsWindow {
                 if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
                     if let Some(label) = radio.label() {
                         if label == view.harness {
+                            radio.set_active(true);
+                        }
+                    }
+                }
+            }
+        }
+        // The registration picker, for the same reason and the same way (#577).
+        if let Some(Control::CharacterPicker(radio_box, _)) = controls.get(form::BYO_HARNESS_ID) {
+            for child in radio_box.children() {
+                if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
+                    if let Some(label) = radio.label() {
+                        if label == view.byo_harness {
                             radio.set_active(true);
                         }
                     }

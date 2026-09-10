@@ -343,6 +343,13 @@ pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
 pub const HARNESS_STATE_ID: &str = "harness_state";
+/// The registration box's three rows. #577.
+pub const BYO_HARNESS_ID: &str = "byo_harness";
+pub const BYO_SNIPPET_ID: &str = "byo_snippet";
+pub const BYO_STEPS_ID: &str = "byo_steps";
+/// The heading the three sit under, spelled once so the tests and the section
+/// cannot disagree about it.
+pub const BYO_HEADING: &str = "Attach a Harness you run yourself";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 
@@ -662,6 +669,7 @@ fn director_sections() -> Vec<FormSection> {
             ],
         },
         completer_source_section(),
+        byo_section(),
         FormSection {
             heading: "Model / API".to_string(),
             comment: None,
@@ -809,6 +817,69 @@ fn completer_source_section() -> FormSection {
                 help: Some("Harness signs itself in - ai-buddy never asks for credentials.".to_string()),
                 disclosure: Some("ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
                 status: None,
+            },
+        ],
+    }
+}
+
+/// How to point a Harness the user starts themselves at this app's MCP server.
+///
+/// Neither half of that registration can be written down ahead of time: the
+/// port is the OS's and the token is 32 fresh bytes per run (ADR-0026), so the
+/// only place the command can come from is the running app. That is the whole
+/// reason this section exists rather than a README section (#166, #577).
+///
+/// The URL and the token are shown in plain text. @omesser decided that on
+/// #577: the token authorises loopback access to an app already on the user's
+/// screen, and what ADR-0010 protects against is a credential reaching a log,
+/// a trace, or a file another local user can read - none of which a Settings
+/// row is.
+///
+/// Separate from the "AI source" picker above, which chooses the mind that
+/// answers a wake. This one changes nothing about the app: a BYO user has no
+/// Harness attached at all, and the endpoint is served either way.
+///
+/// ponytail: no copy button. Nothing in this tree touches a clipboard, and one
+/// would be three implementations - two of them written without a compiler -
+/// to save a keystroke over the select-and-copy every one of these three
+/// toolkits already gives an inspect row. Add it when a user asks, starting
+/// with `NSPasteboard` on the platform that can be tested.
+fn byo_section() -> FormSection {
+    FormSection {
+        heading: BYO_HEADING.to_string(),
+        comment: Some(
+            "For a Harness you start in your own terminal. Registering ai-buddy as \
+             an MCP server there lets it speak, move and emote the buddy on your \
+             screen. Nothing here changes which mind the Director uses."
+                .to_string(),
+        ),
+        rows: vec![
+            FormRow::Popup {
+                id: BYO_HARNESS_ID.to_string(),
+                label: Some("Harness".to_string()),
+                writes: TextField::ByoHarness,
+                help: Some("Which Harness the box below is written for.".to_string()),
+                options: HARNESS_PRESETS.map(str::to_string).to_vec(),
+                frozen: false,
+            },
+            FormRow::InspectBlock {
+                id: BYO_SNIPPET_ID.to_string(),
+                label: None,
+                help: Some(
+                    "Good for this app run only: the port and the token are both new \
+                     every launch, so a paste from yesterday stops connecting. Come \
+                     back here and copy it again."
+                        .to_string(),
+                ),
+            },
+            FormRow::InspectBlock {
+                id: BYO_STEPS_ID.to_string(),
+                label: None,
+                help: Some(
+                    "This token reaches ai-buddy and nothing else. The Harness \
+                     signs itself in."
+                        .to_string(),
+                ),
             },
         ],
     }
@@ -1240,6 +1311,7 @@ mod tests {
             "HTTP limits",
             "AI source",
             "AI",
+            "Attach a Harness you run yourself",
             "Do Not Disturb",
             "Excluded applications",
             "Harness attachment",
@@ -1685,6 +1757,8 @@ mod tests {
         assert!(has_help("AI", DIRECTOR_ID));
         assert!(has_help("AI", AMBIENT_ID));
         assert!(has_help("AI source", HARNESS_STATE_ID));
+        assert!(has_help(BYO_HEADING, BYO_SNIPPET_ID));
+        assert!(has_help(BYO_HEADING, BYO_STEPS_ID));
         assert!(has_help("Last user turn", PAYLOAD_ID));
         assert!(has_help("Do Not Disturb", DND_ID));
         assert!(has_help("Do Not Disturb", SOUND_ID));
@@ -2419,5 +2493,69 @@ mod tests {
                 "Model API should not be described as static weights; that is AI on off. Got: {copy:?}"
             );
         });
+    }
+
+    /// The Advanced rows, in the order a user reads them: pick the Harness,
+    /// copy what the box holds, do what the words under it say. #577.
+    #[test]
+    fn the_byo_section_picks_a_harness_then_shows_the_snippet() {
+        let description = describe();
+        let section = description
+            .sections()
+            .find(|s| s.heading == BYO_HEADING)
+            .expect("the Harness registration section");
+
+        assert_eq!(section.rows.len(), 3);
+        assert!(matches!(
+            section.rows[0],
+            FormRow::Popup { ref id, ref options, frozen: false, .. }
+                if id == BYO_HARNESS_ID && options.len() == HARNESS_PRESETS.len()
+        ));
+        assert!(matches!(
+            section.rows[1],
+            FormRow::InspectBlock { ref id, .. } if id == BYO_SNIPPET_ID
+        ));
+        assert!(matches!(
+            section.rows[2],
+            FormRow::InspectBlock { ref id, .. } if id == BYO_STEPS_ID
+        ));
+    }
+
+    /// The one thing a user cannot work out from the box: yesterday's paste
+    /// stopped working because both halves of it are new every launch (#577).
+    #[test]
+    fn the_byo_box_says_the_token_changes_every_launch() {
+        let description = describe();
+        let help = description
+            .sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::InspectBlock { id, help, .. } if id == BYO_SNIPPET_ID => help.clone(),
+                _ => None,
+            })
+            .unwrap_or_default();
+        assert!(
+            help.contains("launch"),
+            "the snippet's help must date the snippet, got {help:?}"
+        );
+    }
+
+    /// Off and Custom are the attach popup's grammar, not this one's: this box
+    /// registers ai-buddy with a Harness the user starts themselves, and
+    /// neither of those names one.
+    #[test]
+    fn the_byo_picker_offers_only_the_named_harnesses() {
+        let description = describe();
+        let options = description
+            .sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::Popup { id, options, .. } if id == BYO_HARNESS_ID => Some(options.clone()),
+                _ => None,
+            })
+            .expect("the picker");
+        assert_eq!(options, HARNESS_PRESETS.map(str::to_string).to_vec());
+        assert!(!options.contains(&HARNESS_OFF.to_string()));
+        assert!(!options.contains(&HARNESS_CUSTOM.to_string()));
     }
 }
