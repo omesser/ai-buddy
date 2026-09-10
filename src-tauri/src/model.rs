@@ -710,7 +710,7 @@ impl Endpoint {
         // Bounded by the count of those fields rather than by trusting the
         // body to stop naming one, because the cost of being wrong is a
         // worker thread posting for ever.
-        for _ in 0..2 {
+        for _ in 0..Field::ALL.len() {
             let Err(unsent) = &reply else { break };
             let Some((field, settles)) = unsent.retry_settles() else {
                 break;
@@ -1098,7 +1098,7 @@ fn refused_field(code: u16, body: &str) -> Option<Field> {
         return None;
     }
     let body = body.to_ascii_lowercase();
-    [Field::Effort, Field::Stream]
+    Field::ALL
         .into_iter()
         .find(|field| names(&body, field.name()))
 }
@@ -1420,6 +1420,11 @@ enum Field {
 }
 
 impl Field {
+    /// Every guarded field, in the order a retry gives them up. One list, so
+    /// the rejection reader and the retry bound cannot disagree about how
+    /// many there are.
+    const ALL: [Field; 2] = [Field::Effort, Field::Stream];
+
     /// The name in the body, which is also the name a rejection uses.
     fn name(self) -> &'static str {
         match self {
