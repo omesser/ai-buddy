@@ -777,8 +777,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         label,
                         frozen,
                         help,
-                        writes: _,
-                        comment: _,
+                        ..
                     } => {
                         let tag = next_tag;
                         next_tag += 1;
@@ -823,7 +822,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         frozen,
                         batched,
                         help,
-                        writes: _,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -852,10 +851,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         }
                     }
                     FormRow::SecureField {
-                        id,
-                        label,
-                        frozen,
-                        writes: _,
+                        id, label, frozen, ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -891,6 +887,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         id,
                         dismiss_label: _,
                         help,
+                        ..
                     } => {
                         let view = NSView::initWithFrame(
                             NSView::alloc(mtm),
@@ -906,7 +903,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                     }
-                    FormRow::InspectBlock { id, label, help, .. } => {
+                    FormRow::InspectBlock {
+                        id, label, help, ..
+                    } => {
                         if let Some(label_text) = label {
                             let lbl =
                                 NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
@@ -940,8 +939,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         label,
                         help,
                         frozen,
-                        writes: _,
-                        options: _,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =

@@ -1501,7 +1501,9 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             }
                             control_id += 1;
                         }
-                        FormRow::InspectBlock { id, label, help, .. } => {
+                        FormRow::InspectBlock {
+                            id, label, help, ..
+                        } => {
                             if let Some(label_text) = label {
                                 let label_hwnd = CreateWindowExA(
                                     0,

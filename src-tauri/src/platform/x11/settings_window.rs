@@ -195,7 +195,7 @@ impl SettingsWindow {
                 writes,
                 frozen,
                 help,
-                comment: _,
+                ..
             } => {
                 let check = gtk::CheckButton::with_label(label);
                 check.set_sensitive(!frozen);
@@ -242,6 +242,7 @@ impl SettingsWindow {
                 frozen,
                 batched,
                 help,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -307,6 +308,7 @@ impl SettingsWindow {
                 label,
                 writes: _,
                 frozen,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -330,7 +332,9 @@ impl SettingsWindow {
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
             }
-            FormRow::InspectBlock { id, label, help, .. } => {
+            FormRow::InspectBlock {
+                id, label, help, ..
+            } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
@@ -373,6 +377,7 @@ impl SettingsWindow {
                 id,
                 dismiss_label,
                 help,
+                ..
             } => {
                 let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 list_box.set_size_request(-1, 80);
@@ -732,6 +737,7 @@ impl SettingsWindow {
                 help,
                 options,
                 frozen,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
