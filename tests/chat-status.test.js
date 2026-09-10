@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { mindLine, statusCells, untilWake } from "../src/chat-status.js";
+import { mindLine, plainStatus, statusCells, untilWake } from "../src/chat-status.js";
 
 // One push, as the Shell serializes it.
 const push = {
@@ -192,4 +192,25 @@ test("the header says nothing before the first opening arrives", () => {
 // The Shell sends empty strings only when it could not read its own inspect.
 test("an endpoint the Shell could not read draws nothing, not a separator", () => {
   assert.equal(mindLine({ ...http, model: "", host: "" }), "");
+});
+
+// Plain-language status for first-time readers, without the technical ladder.
+test("plain status says Thinking when a turn is on the wire", () => {
+  assert.equal(plainStatus({ ...push, asking: true }, 12_000), "Thinking…");
+});
+
+test("plain status says Idle with next wake when not thinking", () => {
+  assert.equal(plainStatus(push, 24_000), "Idle · next thought in 24s");
+  assert.equal(plainStatus(push, 90_000), "Idle · next thought in 2m");
+  assert.equal(plainStatus(push, 7_200_000), "Idle · next thought in 2h");
+});
+
+test("plain status says Idle without a wake when the countdown is due or unknown", () => {
+  assert.equal(plainStatus(push, 0), "Idle");
+  assert.equal(plainStatus(push, -3000), "Idle");
+  assert.equal(plainStatus(push, null), "Idle");
+});
+
+test("plain status says Starting up before the first push", () => {
+  assert.equal(plainStatus(null, null), "Starting up…");
 });

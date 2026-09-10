@@ -192,20 +192,23 @@
       <button type="submit" id="send">Send</button>
     </form>
 
-    <!-- The same status bar the overlay draws. Behaviour and pose, as the
-         Director saw them, which is a few frames behind the screen when the
-         overlay has changed and is still transitioning to wherever the Spatial
-         Layer said. The rest is the Spatial Layer's own state, on which a snap
-         would draw the same sprite the frame loop is holding. Own tab because
-         Prompt has to rise over it, like the menu. -->
+    <!-- The status bar: plain-language by default, with technical details behind
+         a disclosure. The plain line says what the buddy is doing without
+         Primitive/State vocabulary; the ladder is kept for authors. -->
     <footer class="bar">
-      <span id="s-behavior"></span>
-      <span id="s-primitive"></span>
-      <span id="s-animation"></span>
-      <span id="s-state"></span>
-      <span id="s-facing"></span>
-      <span id="s-director"></span>
-      <span id="s-happened"></span>
+      <span class="plain" id="s-plain"></span>
+      <details class="advanced">
+        <summary>Advanced</summary>
+        <div class="ladder">
+          <span id="s-behavior"></span>
+          <span id="s-primitive"></span>
+          <span id="s-animation"></span>
+          <span id="s-state"></span>
+          <span id="s-facing"></span>
+          <span id="s-director"></span>
+          <span id="s-happened"></span>
+        </div>
+      </details>
     </footer>
 
     <script type="module" src="chat.js"></script>

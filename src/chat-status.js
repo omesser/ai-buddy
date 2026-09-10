@@ -46,6 +46,23 @@ export function statusCells(status, msLeft) {
   };
 }
 
+// Plain-language status for first-time readers: what the buddy is doing right
+// now, without Primitive/State vocabulary. Three states the user can understand
+// without the ladder.
+export function plainStatus(status, msLeft) {
+  if (!status) {
+    return "Starting up…";
+  }
+  if (status.asking) {
+    return "Thinking…";
+  }
+  const wake = untilWake(msLeft);
+  if (wake === "due" || wake === NONE) {
+    return "Idle";
+  }
+  return `Idle · next thought in ${wake}`;
+}
+
 // Which mind answers this window, for the header beside who you are talking
 // to (#474). A statement and never a control: ADR-0010 leaves the bar for what
 // our own layers are doing right now, and this is neither that nor something
