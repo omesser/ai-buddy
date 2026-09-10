@@ -250,4 +250,53 @@ Pet Type +2 Coming Soon."
 
 **Verified present (vendor claims only).** Overlay (desktop floater).
 Click/drag to move pet, right-click menu, double-click interact, Tab key to
-place. Idle l
+place. Idle life (pet roams screen). Reacts to user (responds to clicks, drag).
+Pomodoro focus timer. Break and hydration reminders. Sound effects. AI Assistant
+Mode (voice or text chat) with user's own OpenAI API key; wake word default "Hey
+Pet"; key stored locally. Voice commands: wake word detection, timer, reminders,
+weather. Privacy claims: data on device, no collection; conversations not saved
+permanently. Multi-monitor inferred (desktop app). Windows 10/11 and macOS 10.15+
+(Catalina) supported. Free beta. DirectX 11 / Metal graphics. Unsigned builds
+(vendor copy: "More info" → "Run anyway"). Character packages (1 type shipped,
++2 coming soon per homepage).
+
+**Absent.** No ballistic physics (gravity, throw). No Perches (window top
+edges). No hide rules (fullscreen auto-hide). No capture exclusion. No
+multi-instance verified (homepage shows singular "pet"). No agent runtime beyond
+OpenAI chat (no MCP, no Harness). No MCP server. No Memory system
+(conversations not saved permanently per privacy policy). No Ambient or
+On-Demand Capture. No Linux version. No animation set requirement
+(procedural/model-driven, not sprite sequences). No declarative Behaviors or
+Director.
+
+**Evidence quality.** Low. No independent reviews found (no Steam page, no
+GitHub community, no public user feedback). Vendor-only homepage and feature
+list.
+
+**Differences.** Desktop Pet targets productivity (Pomodoro, reminders) with AI
+chat via user's OpenAI key, while ai-buddy ships Director + authored
+personality-driven idle speech (Character talks in-character while living on
+windows, not a chat window). Desktop Pet is beta with limited character selection
+(1 shipped, +2 soon) and no public validation; ai-buddy has eight Character Packages,
+internal package format, and import adapters for petdex / Pets Codex
+and Shimeji-ee. Desktop Pet has no ballistic physics, no Perches, no window
+awareness. Desktop Pet's AI is an OpenAI chat window; ai-buddy's Director drives
+idle speech from personality, plus a Summon chat surface shipped. ai-buddy's Harness ACP Completer (#433 2026-09-07)
++ MCP server (loopback HTTP + stdio fallback, #117/#491/#497 2026-09-08) + Summon chat are
+shipped; #17 tracks polish/bugs.
+
+### OpenPets
+
+**What it is.** Open source (MIT) desktop companion platform by Boring Dystopia
+Development, launched May 2026. 1,130 GitHub stars as of September 4, 2026.
+Electron app: macOS arm64/x64 dmg, Windows signed exe, Linux AppImage. Animated
+pets idle/wander/react out of the box; no agent required. Plugin SDK v3 for
+extending functionality.
+([GitHub](https://github.com/alvinunreal/openpets);
+[openpets.dev](https://openpets.dev/))
+
+**Verified present.** Overlay (transparent, always-on-top pet windows).
+Click-through (per-pixel transparency). Multi-instance (multiple pet windows;
+agent pets routed by lease). Multi-monitor (display geometry helpers, pets roam
+across displays). Character packages via catalog (openpets.dev serves versioned
+pet catalog; pets are ZIP downloads with sprites
