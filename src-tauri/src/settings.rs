@@ -3265,8 +3265,8 @@ mod tests {
     fn the_completer_source_maps_a_title_to_what_launch_reads() {
         let cases = [
             (form::HARNESS_OFF, "", None),
-            ("hermes", "hermes", Some("hermes")),
-            ("claude", "claude", Some("claude")),
+            ("Harness · hermes", "hermes", Some("hermes")),
+            ("Harness · claude", "claude", Some("claude")),
             (form::HARNESS_CUSTOM, "custom", Some("opencode acp")),
         ];
         for (title, stored, source) in cases {
@@ -3325,7 +3325,7 @@ mod tests {
             // The typed command line outlives a swing through a preset, so
             // coming back to Custom does not ask for it again.
             let mut patch = SettingsPatch::default();
-            patch.set_text(TextField::Harness, "hermes");
+            patch.set_text(TextField::Harness, "Harness · hermes");
             let mut read = read;
             read.apply(patch);
             assert_eq!(read.harness_source().as_deref(), Some("hermes"));
@@ -3364,7 +3364,7 @@ mod tests {
         });
         crate::model::tests::with_harness(None, || {
             let view = endpoint_view(&saved);
-            assert_eq!(view.harness, "hermes");
+            assert_eq!(view.harness, "Harness · hermes");
             assert_eq!(
                 view.development_texts
                     .get(form::HARNESS_COMMAND_ID)
@@ -3422,7 +3422,7 @@ mod tests {
                 ..Settings::default()
             };
             let mut patch = SettingsPatch::default();
-            patch.set_text(TextField::Harness, "opencode");
+            patch.set_text(TextField::Harness, "Harness · opencode");
             assert!(harness_retargets(&settings, &patch));
             assert!(completer_retargets(&settings, &patch));
         });
