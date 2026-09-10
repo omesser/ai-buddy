@@ -175,6 +175,32 @@ impl SettingsWindow {
             pack(container, &comment_label, HINT_GAP);
         }
 
+        if let Some(status) = &section.status {
+            let status_label = gtk::Label::new(Some(status));
+            status_label.set_halign(Align::Start);
+            status_label.set_line_wrap(true);
+            status_label.set_xalign(0.0);
+            status_label.set_markup(&format!(
+                "<span size='small' foreground='#999999' style='italic'>{}</span>",
+                gtk::glib::markup_escape_text(status)
+            ));
+            pack(container, &status_label, HINT_GAP);
+        }
+
+        if let Some(disclosure) = &section.disclosure {
+            let expander = gtk::Expander::new(Some("What is this?"));
+            let disclosure_label = gtk::Label::new(Some(disclosure));
+            disclosure_label.set_halign(Align::Start);
+            disclosure_label.set_line_wrap(true);
+            disclosure_label.set_xalign(0.0);
+            disclosure_label.set_markup(&format!(
+                "<span size='small' foreground='#888888'>{}</span>",
+                gtk::glib::markup_escape_text(disclosure)
+            ));
+            expander.add(&disclosure_label);
+            pack(container, &expander, HINT_GAP);
+        }
+
         for row in &section.rows {
             self.build_row(container, row, operations);
         }
@@ -195,16 +221,24 @@ impl SettingsWindow {
                 writes,
                 frozen,
                 help,
+                disclosure,
+                status,
                 ..
             } => {
                 let check = gtk::CheckButton::with_label(label);
                 check.set_sensitive(!frozen);
+                pack(container, &check, ROW_GAP);
 
                 if let Some(help_text) = help {
-                    pack(container, &check, ROW_GAP);
                     help_line(container, help_text);
-                } else {
-                    pack(container, &check, ROW_GAP);
+                }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
                 }
 
                 // Frozen like the field arms below, so refresh's `set_active`
@@ -242,6 +276,8 @@ impl SettingsWindow {
                 frozen,
                 batched,
                 help,
+                disclosure,
+                status,
                 ..
             } => {
                 if let Some(label_text) = label {
@@ -302,12 +338,21 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::SecureField {
                 id,
                 label,
                 writes: _,
                 frozen,
+                status,
                 ..
             } => {
                 if let Some(label_text) = label {
@@ -331,9 +376,18 @@ impl SettingsWindow {
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
             }
             FormRow::InspectBlock {
-                id, label, help, ..
+                id,
+                label,
+                help,
+                disclosure,
+                status,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -360,6 +414,14 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::InspectPath { id } => {
                 let label = gtk::Label::new(None);
@@ -377,6 +439,7 @@ impl SettingsWindow {
                 id,
                 dismiss_label,
                 help,
+                disclosure,
                 ..
             } => {
                 let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -390,12 +453,17 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::Multiline {
                 id,
                 writes,
                 help,
                 editable,
+                disclosure,
                 ..
             } => {
                 let scrolled =
@@ -444,8 +512,17 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
-            FormRow::Composite { controls, help, .. } => {
+            FormRow::Composite {
+                controls,
+                help,
+                disclosure,
+                ..
+            } => {
                 let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
 
                 for control in controls {
@@ -729,6 +806,10 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::Popup {
                 id,
@@ -737,6 +818,8 @@ impl SettingsWindow {
                 help,
                 options,
                 frozen,
+                disclosure,
+                status,
                 ..
             } => {
                 if let Some(label_text) = label {
@@ -804,6 +887,14 @@ impl SettingsWindow {
 
                 if let Some(help_text) = help {
                     help_line(container, help_text);
+                }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
                 }
             }
         }
@@ -1199,6 +1290,36 @@ fn help_line(container: &gtk::Box, text: &str) {
         gtk::glib::markup_escape_text(text)
     ));
     pack(container, &label, HINT_GAP);
+}
+
+/// A row's status strip: muted, read-only, italic text showing state info.
+fn status_line(container: &gtk::Box, text: &str) {
+    let label = gtk::Label::new(Some(text));
+    label.set_halign(Align::Start);
+    label.set_line_wrap(true);
+    label.set_xalign(0.0);
+    label.set_margin_start(24);
+    label.set_markup(&format!(
+        "<span size='small' foreground='#999999' style='italic'>{}</span>",
+        gtk::glib::markup_escape_text(text)
+    ));
+    pack(container, &label, HINT_GAP);
+}
+
+/// A row's progressive disclosure: expandable help text.
+fn disclosure_line(container: &gtk::Box, text: &str) {
+    let expander = gtk::Expander::new(Some("What is this?"));
+    expander.set_margin_start(24);
+    let disclosure_label = gtk::Label::new(Some(text));
+    disclosure_label.set_halign(Align::Start);
+    disclosure_label.set_line_wrap(true);
+    disclosure_label.set_xalign(0.0);
+    disclosure_label.set_markup(&format!(
+        "<span size='small' foreground='#888888'>{}</span>",
+        gtk::glib::markup_escape_text(text)
+    ));
+    expander.add(&disclosure_label);
+    pack(container, &expander, HINT_GAP);
 }
 
 /// Add a widget to a page with `gap` of space above it.

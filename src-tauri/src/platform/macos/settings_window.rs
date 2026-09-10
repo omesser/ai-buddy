@@ -770,6 +770,14 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                 }
             }
 
+            if let Some(status) = &section.status {
+                cursor.status_strip(status);
+            }
+
+            if let Some(disclosure) = &section.disclosure {
+                cursor.disclosure(disclosure);
+            }
+
             for row in &section.rows {
                 match row {
                     FormRow::Checkbox {
@@ -777,6 +785,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         label,
                         frozen,
                         help,
+                        disclosure,
+                        status,
                         ..
                     } => {
                         let tag = next_tag;
@@ -794,6 +804,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         cursor.place(&btn, 22.0);
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
+                        }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
                         }
 
                         controller
@@ -822,6 +838,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         frozen,
                         batched,
                         help,
+                        disclosure,
+                        status,
                         ..
                     } => {
                         if let Some(label_text) = label {
@@ -849,9 +867,19 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::SecureField {
-                        id, label, frozen, ..
+                        id,
+                        label,
+                        frozen,
+                        status,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -868,6 +896,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         // other mode.
                         freeze_or_bind(&field, *frozen, true, &controller);
                         cursor.place(&field, 24.0);
+
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
 
                         if id == form::DIRECTOR_API_KEY_ID {
                             api_key_field = Some(field);
@@ -887,6 +919,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         id,
                         dismiss_label: _,
                         help,
+                        disclosure,
                         ..
                     } => {
                         let view = NSView::initWithFrame(
@@ -902,9 +935,17 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::InspectBlock {
-                        id, label, help, ..
+                        id,
+                        label,
+                        help,
+                        disclosure,
+                        status,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -933,12 +974,20 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::Popup {
                         id,
                         label,
                         help,
                         frozen,
+                        disclosure,
+                        status,
                         ..
                     } => {
                         if let Some(label_text) = label {
@@ -967,9 +1016,19 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::Multiline {
-                        id, help, editable, ..
+                        id,
+                        help,
+                        editable,
+                        disclosure,
+                        ..
                     } => {
                         if *editable {
                             let text = editable_block(&controller, mtm);
@@ -984,8 +1043,16 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
-                    FormRow::Composite { controls, help, .. } => {
+                    FormRow::Composite {
+                        controls,
+                        help,
+                        disclosure,
+                        ..
+                    } => {
                         cursor.y -= 24.0 + ROW_GAP;
                         let mut x = MARGIN;
 
@@ -1096,6 +1163,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
 
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
                         }
                     }
                 }
@@ -1263,6 +1333,30 @@ impl Cursor {
         let height = wrapped_height(&label);
         self.put(&label, height, HINT_GAP);
         label
+    }
+
+    fn status_strip(&mut self, text: &str) {
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        label.setTextColor(Some(&NSColor::tertiaryLabelColor()));
+        label.setFont(Some(&NSFont::systemFontOfSize(10.0)));
+        let height = wrapped_height(&label);
+        self.put(&label, height, HINT_GAP);
+    }
+
+    fn disclosure(&mut self, text: &str) {
+        let disclosure_button = NSButton::new(self.mtm);
+        disclosure_button.setTitle(&NSString::from_str("What is this?"));
+        disclosure_button.setButtonType(objc2_app_kit::NSButtonType::OnOff);
+        disclosure_button.setBezelStyle(objc2_app_kit::NSBezelStyle::Disclosure);
+
+        let disclosure_label =
+            NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        disclosure_label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        disclosure_label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+
+        let height = 20.0 + wrapped_height(&disclosure_label);
+        self.put(&disclosure_button, 20.0, HINT_GAP);
+        self.put(&disclosure_label, wrapped_height(&disclosure_label), 0.0);
     }
 
     fn hint(&mut self, text: &str) {
