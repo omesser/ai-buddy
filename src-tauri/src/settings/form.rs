@@ -663,7 +663,7 @@ fn director_sections() -> Vec<FormSection> {
         },
         completer_source_section(),
         FormSection {
-            heading: "HTTP Completer".to_string(),
+            heading: "Model / API".to_string(),
             comment: None,
             disclosure: None,
             status: None,
@@ -1236,7 +1236,7 @@ mod tests {
 
         let mut expected = vec![
             "Character",
-            "HTTP Completer",
+            "Model / API",
             "HTTP limits",
             "AI source",
             "AI",
@@ -1476,8 +1476,8 @@ mod tests {
         let description = describe();
         let http_section = description
             .sections()
-            .find(|s| s.heading == "HTTP Completer")
-            .expect("HTTP Completer section");
+            .find(|s| s.heading == "Model / API")
+            .expect("Model / API section");
 
         assert_eq!(http_section.rows.len(), 6);
         // The picker stands above the field it fills, so the shortcut is read
