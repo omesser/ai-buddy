@@ -2273,29 +2273,24 @@ mod tests {
         ];
         for (label, var) in ROWS {
             let (label, frozen, status) = http_row_parts(label, var, true, true);
-            let label = match status {
-                Some(s) => format!("{label} ({s})"),
-                None => label,
-            };
             assert!(frozen, "a driving Harness discards an edit here");
+            let status = status.expect("frozen row must have status");
             assert!(
-                label.contains("not in use"),
-                "the row has to say why it is dead, not {label:?}"
+                status.contains("not in use"),
+                "the status has to say why it is dead, not {status:?}"
             );
         }
         crate::model::tests::with_env(None, None, None, || {
             for (label, var) in ROWS {
                 let (label, frozen, status) = http_row_parts(label, var, false, false);
-                let label = match status {
-                    Some(s) => format!("{label} ({s})"),
-                    None => label,
-                };
                 assert!(
                     !frozen,
                     "with nothing driving, {label:?} is the only Completer left"
                 );
-                assert!(!label.contains("not in use"));
-                assert!(!label.contains("next launch"));
+                if let Some(status) = status {
+                    assert!(!status.contains("not in use"));
+                    assert!(!status.contains("next launch"));
+                }
             }
         });
     }
