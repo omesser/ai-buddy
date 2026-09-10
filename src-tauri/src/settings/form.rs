@@ -1315,27 +1315,28 @@ mod tests {
         for exported in ["off", "on"] {
             crate::model::tests::with_env_switch(exported, || {
                 let description = describe();
-                let (label, frozen) = description
+                let (label, frozen, status) = description
                     .sections()
                     .flat_map(|section| &section.rows)
                     .find_map(|row| match row {
                         FormRow::Checkbox {
-                            id, label, frozen, ..
-                        } if id == DIRECTOR_ID => Some((label.clone(), *frozen)),
+                            id, label, frozen, status, ..
+                        } if id == DIRECTOR_ID => Some((label.clone(), *frozen, status.clone())),
                         _ => None,
                     })
                     .expect("the Director row exists");
 
                 assert!(frozen, "a switch the env owns takes no edit, {exported:?}");
+                let status = status.expect("frozen row must have status");
                 assert!(
-                    label.contains(crate::model::ENABLED),
-                    "the row must name the variable, not {label:?}"
+                    status.contains(crate::model::ENABLED),
+                    "the row status must name the variable, not {status:?}"
                 );
             });
         }
     }
 
-    fn described_row(description: &FormDescription, id: &str) -> (String, bool) {
+    fn described_row(description: &FormDescription, id: &str) -> (String, bool, Option<String>) {
         description
             .sections()
             .flat_map(|section| &section.rows)
@@ -1344,14 +1345,16 @@ mod tests {
                     id: row_id,
                     label,
                     frozen,
+                    status,
                     ..
-                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
+                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen, status.clone())),
                 FormRow::SecureField {
                     id: row_id,
                     label,
                     frozen,
+                    status,
                     ..
-                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
+                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen, status.clone())),
                 _ => None,
             })
             .expect("the endpoint row exists")
@@ -1375,17 +1378,19 @@ mod tests {
             || {
                 let description = describe();
                 for (id, var) in ENDPOINT_ROWS {
-                    let (label, frozen) = described_row(&description, id);
+                    let (label, frozen, status) = described_row(&description, id);
                     assert!(frozen, "{id} must not accept an edit the env discards");
                     assert!(
                         description.frozen(id),
                         "{id} is what a renderer asks before it reads the field"
                     );
+                    // With progressive disclosure, env override status is separate from label
+                    let status = status.expect(&format!("{id} must have status when frozen"));
                     assert!(
-                        label.contains("(overridden by env"),
-                        "{id} must say it is overridden, not {label:?}"
+                        status.contains("Overridden by env"),
+                        "{id} status must say it is overridden, not {status:?}"
                     );
-                    assert!(label.contains(var), "{id} must name {var}, not {label:?}");
+                    assert!(status.contains(var), "{id} status must name {var}, not {status:?}");
                 }
             },
         );
@@ -1396,10 +1401,11 @@ mod tests {
         crate::model::tests::with_env(None, None, None, || {
             let description = describe();
             for (id, var) in ENDPOINT_ROWS {
-                let (label, frozen) = described_row(&description, id);
+                let (label, frozen, status) = described_row(&description, id);
                 assert!(!frozen, "{id} is the user's to edit when the env is unset");
                 assert!(!description.frozen(id));
-                assert!(!label.contains(var), "{id} must not mention {var}");
+                assert!(!label.contains(var), "{id} label must not mention {var}");
+                assert!(status.is_none(), "{id} should have no status when not frozen");
             }
             assert!(
                 !description.frozen(CLEAR_KEY_ID),
@@ -1885,12 +1891,12 @@ mod tests {
                     .expect("the trace-frames row exists");
 
                 match row {
-                    FormRow::Checkbox { label, frozen, .. } => {
+                    FormRow::Checkbox { label, frozen, status, .. } => {
                         assert_eq!(*frozen, owned, "exported {exported:?} decides the click");
                         assert_eq!(
-                            label.contains(var),
+                            status.is_some() && status.as_ref().unwrap().contains(var),
                             owned,
-                            "exported {exported:?} decides the label, got {label:?}"
+                            "exported {exported:?} decides the status, got label={label:?}, status={status:?}"
                         );
                     }
                     _ => panic!("the trace-frames row is a checkbox"),
@@ -1981,11 +1987,15 @@ mod tests {
 
     /// #447: one timeout budgets both minds. A user who reads the row as the
     /// HTTP Completer's alone cannot explain a Harness turn that was cancelled
-    /// halfway, and the row is where that has to be said.
+    /// halfway. With progressive disclosure (#548), the detailed explanation is
+    /// in the section's disclosure field, while the row's help stays short.
     #[test]
     fn the_timeout_row_says_it_budgets_a_harness_turn() {
         let description = describe();
-        let help = development_tab(&description)
+        let dev_tab = development_tab(&description);
+        
+        // Check that the row help is short and mentions cancellation
+        let help = dev_tab
             .sections
             .iter()
             .flat_map(|section| &section.rows)
@@ -1998,16 +2008,33 @@ mod tests {
             .expect("the timeout row carries help");
 
         assert!(
-            help.contains("Harness"),
-            "the help has to name the other mind it budgets, got {help:?}"
-        );
-        assert!(
-            help.contains("session/prompt"),
-            "the help has to name the call it budgets, got {help:?}"
-        );
-        assert!(
             help.contains("cancel"),
             "the help has to say what expiry does, got {help:?}"
+        );
+
+        // Check that the section disclosure has the detailed Harness explanation
+        let disclosure = dev_tab
+            .sections
+            .iter()
+            .find_map(|section| {
+                if section.rows.iter().any(|row| match row {
+                    FormRow::TextField { id, .. } if id == DIRECTOR_TIMEOUT_SECS_ID => true,
+                    _ => false,
+                }) {
+                    section.disclosure.clone()
+                } else {
+                    None
+                }
+            })
+            .expect("the timeout section carries disclosure");
+
+        assert!(
+            disclosure.contains("Harness"),
+            "the disclosure must name the other mind it budgets, got {disclosure:?}"
+        );
+        assert!(
+            disclosure.contains("session/prompt"),
+            "the disclosure must name the call it budgets, got {disclosure:?}"
         );
     }
 
@@ -2065,10 +2092,11 @@ mod tests {
                 help.contains("Off"),
                 "the help must say the picker is off, not {help:?}"
             );
-            let (label, _) = described_row(&description, DIRECTOR_BASE_URL_ID);
+            let (label, _, status) = described_row(&description, DIRECTOR_BASE_URL_ID);
+            let status = status.expect("frozen row must have status");
             assert!(
-                label.contains(model::BASE_URL),
-                "the field above still names the variable, not {label:?}"
+                status.contains(model::BASE_URL),
+                "the field above still names the variable, not {status:?}"
             );
         });
     }
@@ -2095,7 +2123,7 @@ mod tests {
             .expect("the AI source section exists")
     }
 
-    fn popup_row(description: &FormDescription, id: &str) -> (String, Vec<String>, bool) {
+    fn popup_row(description: &FormDescription, id: &str) -> (String, Vec<String>, bool, Option<String>) {
         source_section(description)
             .rows
             .iter()
@@ -2105,9 +2133,10 @@ mod tests {
                     label,
                     options,
                     frozen,
+                    status,
                     ..
                 } if row_id == id => {
-                    Some((label.clone().unwrap_or_default(), options.clone(), *frozen))
+                    Some((label.clone().unwrap_or_default(), options.clone(), *frozen, status.clone()))
                 }
                 _ => None,
             })
@@ -2120,7 +2149,7 @@ mod tests {
     fn the_completer_source_offers_off_the_presets_and_custom() {
         crate::model::tests::with_harness(None, || {
             let description = describe();
-            let (_, options, _) = popup_row(&description, HARNESS_ID);
+            let (_, options, _, _) = popup_row(&description, HARNESS_ID);
             assert_eq!(
                 options,
                 ["Off", "claude", "codex", "grok", "hermes", "opencode", "pi", "Custom"]
@@ -2162,11 +2191,12 @@ mod tests {
         for exported in ["hermes", "opencode acp"] {
             crate::model::tests::with_harness(Some(exported), || {
                 let description = describe();
-                let (label, _, frozen) = popup_row(&description, HARNESS_ID);
+                let (label, _, frozen, status) = popup_row(&description, HARNESS_ID);
                 assert!(frozen, "{exported:?} owns the source row");
+                let status = status.expect("frozen row must have status");
                 assert!(
-                    label.contains(crate::harness::VAR),
-                    "the row must name the variable, not {label:?}"
+                    status.contains(crate::harness::VAR),
+                    "the row status must name the variable, not {status:?}"
                 );
                 assert!(description.frozen(HARNESS_ID));
                 assert!(
@@ -2181,9 +2211,10 @@ mod tests {
     fn the_source_rows_are_the_users_when_no_variable_is_exported() {
         crate::model::tests::with_harness(None, || {
             let description = describe();
-            let (label, _, frozen) = popup_row(&description, HARNESS_ID);
+            let (label, _, frozen, status) = popup_row(&description, HARNESS_ID);
             assert!(!frozen);
             assert!(!label.contains(crate::harness::VAR));
+            assert!(status.is_none(), "unfrozen row should have no status");
             assert!(!description.frozen(HARNESS_COMMAND_ID));
         });
     }
