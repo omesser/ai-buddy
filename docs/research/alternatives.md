@@ -105,4 +105,47 @@ Desktop pets use AI differently than ai-buddy's personality-driven idle Director
 
 - **MateEngine**: Built-in QWEN 2.5 1.5b LLM. Steam page ([3625270](https://store.steampowered.com/app/3625270/MateEngine/)) CHATTING section: "You can chat with your pet anytime! Just note that it's a small, local AI with simple messages." README comparison table: AI Chat ✅. Steam-exclusive event-based "cute messages" on drag/dance/sit = interaction-triggered responses, not idle personality Director (unknown if those messages are LLM-generated or canned, vendor does not specify).
 
-**Related projects** (not in the six-alternative comparison): **AI Desktop Pet** ([Steam 4227700](https://store.steampowered.com/app/4227700/AI_Desktop_Pet/)) is a **different product** targeting long-term RP/VN companion use case (wholly out of scope for ai-buddy). It has many capabilities ai-buddy does not: persona cards, world books, VN mode, voice clone, screen vision, idle-started conversations, Workshop cards. Built-in local LLM, GGUF import, plus optional ~30 cloud provider accounts. Phase Pal ([Steam 3655450](https://store.steampowered.com/app/3655450/Phase_Pal/)) AIGC disclosure = "real-time chatbot within a floating interface… guided by customizable prompts"; Pal Engine ([Steam 3868880](https://store.steampowered.com
+**Related projects** (not in the six-alternative comparison): **AI Desktop Pet** ([Steam 4227700](https://store.steampowered.com/app/4227700/AI_Desktop_Pet/)) is a **different product** targeting long-term RP/VN companion use case (wholly out of scope for ai-buddy). It has many capabilities ai-buddy does not: persona cards, world books, VN mode, voice clone, screen vision, idle-started conversations, Workshop cards. Built-in local LLM, GGUF import, plus optional ~30 cloud provider accounts. Phase Pal ([Steam 3655450](https://store.steampowered.com/app/3655450/Phase_Pal/)) AIGC disclosure = "real-time chatbot within a floating interface… guided by customizable prompts"; Pal Engine ([Steam 3868880](https://store.steampowered.com/app/3868880/Pal_Engine/)) = "The AI model is an agentic assistant" with personality+memory for chat, plus separate ambient animation behavior layer. Same pattern: chat assistant wearing a mascot overlay.
+
+**ai-buddy's difference**: Authored `personality.txt` (who they are, fixations, sample lines) drives Director that picks idle Behaviors + spoken lines non-deterministically, in-character. The Character talks while living on your windows (idle personality-driven speech is the primary differentiator), plus a Summon chat surface for direct interaction. Not a chat-first app — the idle AI is the product center.
+
+## Per-project notes
+
+### Desktop Mate
+
+**What it is.** Free-to-play Steam app (App ID 3301060, launched Jan 7, 2025)
+with 2M+ downloads claim by vendor Infinite Loop (June 2026 PR). 3D character
+mascots that sit on windows, react to mouse, include voice lines.
+([Steam](https://store.steampowered.com/app/3301060/Desktop_Mate/))
+
+**Verified present.** Overlay with click-through. Character sits on window top
+edges (same as ai-buddy Perches). Licensed characters (Hatsune Miku, Hello
+Kitty, Sanrio, VTuber personas, Touhou Project). Multi-Character Mode officially
+released (display up to two characters simultaneously, with special combo actions
+for certain pairs). Built-in alarm feature; some DLC include mascot characters
+that appear during alarms. Mac version (Apple Silicon, open beta) launched June
+24, 2026. Multi-instance (via third-party methods or native multi-character
+feature).
+
+**Absent.** No ballistic throw / gravity integrator found in cited sources (sits
+on windows Perch-like without documented physics model). No hide rules verified
+(fullscreen, screen sharing). No capture exclusion verified. No agent
+integrations, no MCP, no chat. Characters are 3D models purchased as DLC, not
+user-authorable 2D sprite packages. Mod support removed Feb 2025; anti-modding
+measures in place. No Steam Workshop. No animation set requirement (3D models,
+not sprites). **Linux:** ❌ official (Steam `platforms.linux=false`); Proton /
+community ports exist ("doesn't work on linux / black desktop" review cluster).
+
+**Review sentiment.** Steam English reviews: Mixed, 61% positive of 5,278 (all
+languages: 6,202 positive / 9,262 total as of 2026-09-04). Recurring complaints:
+DLC pricing ($7.49–$14.99 per character, 40+ SKUs); mod removal. Verified
+quotes: Kiraz!! 2026-08-29: customizability / $15 DLC / no Workshop
+(https://steamcommunity.com/id/nyatoi/recommended/3301060/); pyonpyonbun
+2025-03-13 attached character stripped after update; GameBrain cluster: "obvious
+cash grab," "removed mod support to make you purchase the overpriced DLC,"
+"exploitative"; Steam discussion: "I've just uninstalled Desktop Mate because of
+this" (594014141938699644); VaporLens sentiment: 22% recommend MateEngine.
+
+**Differences.** Desktop Mate is commercial DLC-driven (40+ licensed character
+packs at $7.49–$14.99 each); ai-buddy has eight Character Packages, internal
+package format (und
