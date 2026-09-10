@@ -12,8 +12,8 @@
 //! reports the press that landed on it: this query has been seen to stay
 //! false for a click our own window swallowed.
 
+use objc2_app_kit::NSEvent;
 use objc2_core_graphics::{CGEventSource, CGEventSourceStateID, CGMouseButton};
-use objc2_foundation::NSEvent;
 
 /// Whether the primary mouse button is down.
 ///

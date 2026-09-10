@@ -15,7 +15,7 @@ mod settings_window;
 mod window_source;
 
 pub use overlay::{configure_overlay, update_input_region};
-pub use pointer::buttons_down;
+pub use pointer::{buttons_down, double_click_interval_ms};
 pub use sensing::X11ActivitySource;
 pub use settings_window::{refresh_if_showing as refresh_settings, show as show_settings};
 

@@ -557,7 +557,7 @@ pub fn update_input_region(
 pub fn double_click_interval_ms() -> u32 {
     const FALLBACK: u32 = 400;
     os_double_click_interval_ms().unwrap_or_else(|| {
-        log::info!("overlay: double-click interval fallback to {FALLBACK}ms");
+        eprintln!("overlay: double-click interval fallback to {FALLBACK}ms");
         FALLBACK
     })
 }
