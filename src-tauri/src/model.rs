@@ -1388,10 +1388,10 @@ enum Streamed {
     Complete(String),
     /// The server marked the end *and* said the token cap is why:
     /// `finish_reason: "length"` on chat-completions, `response.incomplete`
-    /// on Responses. Whatever text arrived is kept, not because it will be
-    /// spoken — it will not — but because empty means the budget went on
-    /// thinking and half a sentence means it ran out writing, and the log
-    /// says which (#610).
+    /// on Responses. Whatever text arrived is kept, because it is still what
+    /// the model said and is still shown: empty means the budget went on
+    /// thinking and there is nothing to show, and half a sentence means it
+    /// ran out writing and that sentence is the reply (#610).
     Truncated(String),
     /// The body ended with the server never saying it was finished, so
     /// whatever arrived is half a sentence.
@@ -1625,9 +1625,9 @@ fn content_from_body(body: &str) -> Result<String, String> {
 
 /// Did this whole body end at the token cap? The same two markers the stream
 /// carries, in the shape a non-streamed reply puts them: `finish_reason` on
-/// chat-completions, `incomplete_details.reason` on Responses. Only asked
-/// once no text was found, so a truncation that still wrote a first line
-/// stays a reply (#610).
+/// chat-completions, `incomplete_details.reason` on Responses. Asked of every
+/// whole body, because the answer decides both halves: with text it marks the
+/// reply, and with none it names the cap instead of "no text content" (#610).
 fn truncated_body(body: &str) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
         return false;
