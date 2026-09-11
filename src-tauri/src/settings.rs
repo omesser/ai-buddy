@@ -224,7 +224,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // the user rather than by a relaunch.
             None if !attached.alive => format!(
                 "{} is set but not running, so the AI runs on static weights until it \
-                 answers. It stays the AI brain while it is set; Model API below hands the HTTP \
+                 answers. It stays the AI brain while it is set; Model API above hands the HTTP \
                  endpoint back, and takes effect at once.",
                 attached.name
             ),
@@ -3618,7 +3618,7 @@ mod tests {
             "nothing waits for one any more, got {line:?}"
         );
         assert!(
-            line.contains("Model API below"),
+            line.contains("Model API above"),
             "the line has to name the pick that ends the wait, got {line:?}"
         );
         assert!(
