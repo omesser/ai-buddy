@@ -202,7 +202,7 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 /// none (ADR-0010 rules 1 and 6).
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
-        None => "Not attached. The HTTP Completer above is the Director's mind.".to_string(),
+        None => "Not attached. The HTTP endpoint below is the AI brain.".to_string(),
         Some(attached) => match &attached.login {
             Some(login) => format!(
                 "{} attached but not authenticated. Run `{login}` in a terminal - \
@@ -212,7 +212,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // Configured and not answering is its own state, and the one that
             // must not read as attached: a Harness this machine has not got
             // leaves the handle in place while the Director runs on Static,
-            // and the HTTP rows above are live because of it (#452).
+            // and the HTTP rows below are live because of it (#452).
             //
             // Live is not the same as in force, which is what this line used
             // to imply and #469 corrected. `completer_from` hands the Director
@@ -223,9 +223,9 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // now rather than at the next launch, so the wait is bounded by
             // the user rather than by a relaunch.
             None if !attached.alive => format!(
-                "{} is set but not running, so the Director is on static weights until it \
-                 answers. It stays the Completer while it is set; Off above hands the HTTP \
-                 rows back, and takes effect at once.",
+                "{} is set but not running, so the AI runs on static weights until it \
+                 answers. It stays the AI brain while it is set; Model API above hands the HTTP \
+                 endpoint back, and takes effect at once.",
                 attached.name
             ),
             None => match &attached.session_id {
@@ -3265,8 +3265,8 @@ mod tests {
     fn the_completer_source_maps_a_title_to_what_launch_reads() {
         let cases = [
             (form::HARNESS_OFF, "", None),
-            ("hermes", "hermes", Some("hermes")),
-            ("claude", "claude", Some("claude")),
+            ("Harness · hermes", "hermes", Some("hermes")),
+            ("Harness · claude", "claude", Some("claude")),
             (form::HARNESS_CUSTOM, "custom", Some("opencode acp")),
         ];
         for (title, stored, source) in cases {
@@ -3325,7 +3325,7 @@ mod tests {
             // The typed command line outlives a swing through a preset, so
             // coming back to Custom does not ask for it again.
             let mut patch = SettingsPatch::default();
-            patch.set_text(TextField::Harness, "hermes");
+            patch.set_text(TextField::Harness, "Harness · hermes");
             let mut read = read;
             read.apply(patch);
             assert_eq!(read.harness_source().as_deref(), Some("hermes"));
@@ -3364,7 +3364,7 @@ mod tests {
         });
         crate::model::tests::with_harness(None, || {
             let view = endpoint_view(&saved);
-            assert_eq!(view.harness, "hermes");
+            assert_eq!(view.harness, "Harness · hermes");
             assert_eq!(
                 view.development_texts
                     .get(form::HARNESS_COMMAND_ID)
@@ -3422,7 +3422,7 @@ mod tests {
                 ..Settings::default()
             };
             let mut patch = SettingsPatch::default();
-            patch.set_text(TextField::Harness, "opencode");
+            patch.set_text(TextField::Harness, "Harness · opencode");
             assert!(harness_retargets(&settings, &patch));
             assert!(completer_retargets(&settings, &patch));
         });
@@ -3618,12 +3618,12 @@ mod tests {
             "nothing waits for one any more, got {line:?}"
         );
         assert!(
-            line.contains("Off above"),
+            line.contains("Model API above"),
             "the line has to name the pick that ends the wait, got {line:?}"
         );
         assert!(
-            !line.contains("is the Director's mind"),
-            "the dead handle is still the Completer; the HTTP rows are not, got {line:?}"
+            !line.contains("is the AI brain"),
+            "the dead handle is still the AI brain; the HTTP rows are not, got {line:?}"
         );
     }
 

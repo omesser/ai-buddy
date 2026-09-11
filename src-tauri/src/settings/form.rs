@@ -30,7 +30,12 @@ pub enum RowOperation {
 pub struct FormSection {
     pub heading: String,
     pub rows: Vec<FormRow>,
+    /// Short introductory text, always visible.
     pub comment: Option<String>,
+    /// Extended explanation behind progressive disclosure ("What is this?").
+    pub disclosure: Option<String>,
+    /// Status information shown in a muted strip (env overrides, session state).
+    pub status: Option<String>,
 }
 
 /// One row of the settings form, as data.
@@ -48,12 +53,20 @@ pub enum FormRow {
         frozen: bool,
         help: Option<String>,
         comment: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info (e.g., env override) shown in a muted strip.
+        status: Option<String>,
     },
     /// An inspect-only text block showing current state.
     InspectBlock {
         id: String,
         label: Option<String>,
         help: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// An inspect-only wrapping label showing a path.
     InspectPath { id: String },
@@ -69,6 +82,10 @@ pub enum FormRow {
         options: Vec<String>,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// A multiline text field that writes to Settings.
     Multiline {
@@ -77,6 +94,8 @@ pub enum FormRow {
         writes: TextField,
         help: Option<String>,
         editable: bool,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
     },
     /// An editable text field that writes a string to Settings.
     TextField {
@@ -103,6 +122,10 @@ pub enum FormRow {
         /// never meant to go together, and every commit drops the in-flight
         /// session history with it (#279).
         batched: bool,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// A secure text field for passwords/keys.
     ///
@@ -117,18 +140,24 @@ pub enum FormRow {
         writes: TextField,
         /// Read-only, for the same reason as `TextField::frozen`.
         frozen: bool,
+        /// Status info shown in a muted strip.
+        status: Option<String>,
     },
     /// A scrollable list of items with dismiss buttons.
     List {
         id: String,
         dismiss_label: String,
         help: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
     },
     /// A row of multiple controls (e.g., new instance spawn row).
     Composite {
         id: String,
         controls: Vec<CompositeControl>,
         help: Option<String>,
+        /// Extended explanation behind progressive disclosure.
+        disclosure: Option<String>,
     },
 }
 
@@ -317,11 +346,11 @@ pub const HARNESS_STATE_ID: &str = "harness_state";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 
-/// The two Completer-source titles the file does not spell the same way: Off
-/// is the empty string and Custom is `custom`, which defers to the command
-/// line beside it.
-pub const HARNESS_OFF: &str = "Off";
-pub const HARNESS_CUSTOM: &str = "Custom";
+/// The two Completer-source titles the file does not spell the same way: Model
+/// API (wire: empty string) and Harness · Custom (wire: `custom`), which
+/// defers to the command line beside it.
+pub const HARNESS_OFF: &str = "Model API";
+pub const HARNESS_CUSTOM: &str = "Harness · Custom";
 /// What `harness_choice` writes for Custom. Not a value `AI_BUDDY_HARNESS`
 /// can take, so it cannot collide with a Harness of that name.
 pub const HARNESS_CUSTOM_VALUE: &str = "custom";
@@ -405,7 +434,11 @@ pub fn endpoint_title(base_url: &str) -> String {
 /// The Completer-source popup's choices, in the order it draws them.
 pub fn harness_options() -> Vec<String> {
     let mut options = vec![HARNESS_OFF.to_string()];
-    options.extend(HARNESS_PRESETS.iter().map(|name| name.to_string()));
+    options.extend(
+        HARNESS_PRESETS
+            .iter()
+            .map(|name| format!("Harness · {}", name)),
+    );
     options.push(HARNESS_CUSTOM.to_string());
     options
 }
@@ -421,7 +454,9 @@ pub fn harness_rows(value: &str, command: &str) -> (String, String) {
     match value.trim() {
         "" => (HARNESS_OFF.to_string(), command.to_string()),
         HARNESS_CUSTOM_VALUE => (HARNESS_CUSTOM.to_string(), command.to_string()),
-        preset if HARNESS_PRESETS.contains(&preset) => (preset.to_string(), command.to_string()),
+        preset if HARNESS_PRESETS.contains(&preset) => {
+            (format!("Harness · {}", preset), command.to_string())
+        }
         line => (HARNESS_CUSTOM.to_string(), line.to_string()),
     }
 }
@@ -444,52 +479,58 @@ pub fn harness_choice(title: &str) -> String {
     match title {
         HARNESS_OFF => String::new(),
         HARNESS_CUSTOM => HARNESS_CUSTOM_VALUE.to_string(),
+        title if title.starts_with("Harness · ") => title
+            .strip_prefix("Harness · ")
+            .unwrap_or(title)
+            .to_string(),
         preset => preset.to_string(),
     }
 }
 
-/// The label of a row an environment variable can own, and whether it does.
+/// The label of a row an environment variable can own, whether it owns it, and
+/// status information for rendering.
 ///
-/// A frozen row says it is overridden and names the variable doing it, so both
-/// the reason it takes no edit and the export to drop are on screen beside it.
-/// The ownership question for a row holding text: the Director endpoint and
-/// the Completer limits, which take any value the process exports.
-fn env_row(label: &str, var: &str) -> (String, bool) {
-    owned_row(label, var, model::env_override(var).is_some())
+/// A frozen row says it is overridden in a status strip, not inline in the
+/// label. The ownership question for a row holding text: the Director endpoint
+/// and the Completer limits, which take any value the process exports.
+fn env_row_parts(label: &str, var: &str) -> (String, bool, Option<String>) {
+    owned_row_parts(label, var, model::env_override(var).is_some())
 }
 
 /// The same question for a row holding a switch, which answers to a narrower
 /// set of values: one `model::env_switch` cannot read owns nothing, so the row
 /// stays the user's rather than freezing over a value nobody obeyed.
-fn switch_row(label: &str, var: &str) -> (String, bool) {
-    owned_row(label, var, model::env_switch(var).is_some())
+fn switch_row_parts(label: &str, var: &str) -> (String, bool, Option<String>) {
+    owned_row_parts(label, var, model::env_switch(var).is_some())
 }
 
-/// One wording for both, so a frozen row reads the same wherever it is drawn.
-fn owned_row(label: &str, var: &str, owned: bool) -> (String, bool) {
+/// Returns (label, frozen, status) for a row that may be owned by the environment.
+fn owned_row_parts(label: &str, var: &str, owned: bool) -> (String, bool, Option<String>) {
     match owned {
-        true => (format!("{label} (overridden by env: {var})"), true),
-        false => (label.to_string(), false),
+        true => (
+            label.to_string(),
+            true,
+            Some(format!("Overridden by env: {var}")),
+        ),
+        false => (label.to_string(), false, None),
     }
 }
 
-/// The Completer source rows' ownership question.
+/// The Completer source rows' ownership question, returning (label, frozen, status).
 ///
 /// Exported at all owns them, empty included, because
 /// `harness::from_settings` reads an empty value as Off rather than falling
 /// through to the file — so a row left editable there would take an edit the
 /// launch discards (#452). `env_row`'s emptiness rule belongs to the endpoint
 /// rows and does not carry over.
-fn harness_env_row(label: &str) -> (String, bool) {
-    owned_row(
-        label,
-        crate::harness::VAR,
-        std::env::var_os(crate::harness::VAR).is_some(),
-    )
+fn harness_env_row_parts(label: &str) -> (String, bool, Option<String>) {
+    let var = crate::harness::VAR;
+    let owned = std::env::var_os(var).is_some();
+    owned_row_parts(label, var, owned)
 }
 
 /// One of the three HTTP rows, which answer to an attachment as well as to a
-/// variable.
+/// variable. Returns (label, frozen, status).
 ///
 /// A Harness that *answers* is the Completer (ADR-0008), so these three drive
 /// nothing while one is up, and #272's rule applies for the same reason it
@@ -510,24 +551,35 @@ fn harness_env_row(label: &str) -> (String, bool) {
 /// second mind ADR-0008 refuses.
 ///
 /// #500 narrowed the label rather than removing it. The wait is no longer a
-/// relaunch — the Session retries the child on its own backoff, and Off in the
-/// source row hands these three back at once — so the label names the pick
-/// that ends it instead of a launch.
-fn http_row(label: &str, var: &str, driving: bool, configured: bool) -> (String, bool) {
+/// relaunch — the Session retries the child on its own backoff, and Model API
+/// in the source row hands these three back at once — so the label names the
+/// pick that ends it instead of a launch.
+fn http_row_parts(
+    label: &str,
+    var: &str,
+    driving: bool,
+    configured: bool,
+) -> (String, bool, Option<String>) {
     if driving {
         return (
-            format!("{label} (not in use: a Harness is the Completer)"),
+            label.to_string(),
             true,
+            Some("Not in use: a Harness is the Model API".to_string()),
         );
     }
-    let (label, frozen) = env_row(label, var);
-    match configured {
-        true => (
-            format!("{label} (not in use until the source below is Off: a Harness is still the Completer)"),
-            frozen,
-        ),
-        false => (label, frozen),
+    let (label, frozen, mut status) = env_row_parts(label, var);
+    if configured {
+        let status_text = match status {
+            Some(s) => format!(
+                "{}; not in use until source is Model API: a Harness is still the AI brain",
+                s
+            ),
+            None => "Not in use until source above is Model API: a Harness is still the AI brain"
+                .to_string(),
+        };
+        status = Some(status_text);
     }
+    (label, frozen, status)
 }
 
 /// A checkbox for one development switch.
@@ -541,7 +593,7 @@ fn flag_row(
     label: &str,
     help: &str,
 ) -> FormRow {
-    let (label, frozen) = switch_row(label, flag.var());
+    let (label, frozen, status) = switch_row_parts(label, flag.var());
     FormRow::Checkbox {
         id: id.to_string(),
         label,
@@ -549,6 +601,8 @@ fn flag_row(
         frozen,
         help: Some(help.to_string()),
         comment: None,
+        disclosure: None,
+        status,
     }
 }
 
@@ -556,25 +610,33 @@ fn director_sections() -> Vec<FormSection> {
     let driving = crate::harness::driving();
     // Configured, not driving: the handle still shadows these three (#469).
     let configured = crate::harness::attached().is_some();
-    let (base_url_label, base_url_frozen) =
-        http_row("Base URL", model::BASE_URL, driving, configured);
-    let (model_label, model_frozen) = http_row("Model", model::MODEL, driving, configured);
-    let (api_key_label, api_key_frozen) = http_row("API key", model::API_KEY, driving, configured);
-    let (director_label, director_frozen) = switch_row("AI on", model::ENABLED);
-    let (wake_label, wake_frozen) = env_row("First wake, in seconds", model::WAKE_SECS);
+    let (base_url_label, base_url_frozen, base_url_status) =
+        http_row_parts("Base URL", model::BASE_URL, driving, configured);
+    let (model_label, model_frozen, model_status) =
+        http_row_parts("Model", model::MODEL, driving, configured);
+    let (api_key_label, api_key_frozen, api_key_status) =
+        http_row_parts("API key", model::API_KEY, driving, configured);
+    let (director_label, director_frozen, director_status) =
+        switch_row_parts("AI on", model::ENABLED);
+    let (wake_label, wake_frozen, wake_status) =
+        env_row_parts("First wake, in seconds", model::WAKE_SECS);
 
     vec![
         FormSection {
             heading: "AI".to_string(),
-            comment: None,
+            comment: Some("Control whether the buddy improvises, and how often it starts a conversation on its own.".to_string()),
+            disclosure: Some("The buddy can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
+            status: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: DIRECTOR_ID.to_string(),
                     label: director_label,
                     writes: BoolField::DirectorEnabled,
                     frozen: director_frozen,
-                    help: Some("The model picks what happens next.".to_string()),
+                    help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
+                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
+                    status: director_status,
                 },
                 FormRow::Checkbox {
                     id: AMBIENT_ID.to_string(),
@@ -583,11 +645,9 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Acts on its own, not only when asked.".to_string()),
                     comment: None,
+                    disclosure: Some("Ambient wakes are proactive model calls: the buddy addresses you after being idle long enough, on an exponential backoff. With this off, wakes are reactive only — you have to address it first. The switch below sets how long the first ambient wake waits.".to_string()),
+                    status: None,
                 },
-                // Not batched, and above the Apply the three endpoint rows
-                // answer to: this one is a number the user turns to watch the
-                // buddy get chattier or quieter, and a button between the
-                // change and its effect would undo that (#262).
                 FormRow::TextField {
                     id: DIRECTOR_WAKE_SECS_ID.to_string(),
                     label: Some(wake_label),
@@ -596,25 +656,25 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: wake_frozen,
                     batched: false,
                     help: None,
+                    disclosure: None,
+                    status: wake_status,
                 },
-                // A shortcut above the field, not a replacement for it: almost
-                // every endpoint typed here is one of a dozen well-known
-                // strings, and a typo in one of those fails silently several
-                // layers down (#465). Anything off the list stays typeable.
-                //
-                // It writes to the field rather than to the file, which is why
-                // it is a composite control and carries no `writes` of its
-                // own: the four Director rows only mean anything together, and
-                // a pick that saved on its own would point the Completer at a
-                // host and model that were never meant to go together (#279).
+            ],
+        },
+        completer_source_section(),
+        FormSection {
+            heading: "Model / API".to_string(),
+            comment: None,
+            disclosure: None,
+            status: None,
+            rows: vec![
                 FormRow::Composite {
                     id: "base_url_pick".to_string(),
                     help: Some(match base_url_frozen {
                         true => "Off, for the same reason the Base URL below is.".to_string(),
-                        false => "Fills in the Base URL below. Any other \
-                                  OpenAI-compatible endpoint can be typed there."
-                            .to_string(),
+                        false => "Fills in the Base URL below. Any other OpenAI-compatible endpoint can be typed there.".to_string(),
                     }),
+                    disclosure: None,
                     controls: vec![CompositeControl::Popup {
                         id: DIRECTOR_BASE_URL_PICK_ID.to_string(),
                         options: endpoint_options(),
@@ -629,6 +689,8 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: base_url_frozen,
                     batched: true,
                     help: None,
+                    disclosure: None,
+                    status: base_url_status,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MODEL_ID.to_string(),
@@ -638,34 +700,30 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: model_frozen,
                     batched: true,
                     help: None,
+                    disclosure: None,
+                    status: model_status,
                 },
                 FormRow::SecureField {
                     id: DIRECTOR_API_KEY_ID.to_string(),
                     label: Some(api_key_label),
                     writes: TextField::DirectorApiKey,
                     frozen: api_key_frozen,
+                    status: api_key_status,
                 },
                 FormRow::Composite {
                     id: "api_key_actions".to_string(),
                     help: None,
-                    // Clearing the store while a variable supplies the key
-                    // would change nothing the Director can see (#272).
+                    disclosure: None,
                     controls: vec![CompositeControl::Button {
                         id: CLEAR_KEY_ID.to_string(),
                         label: "Clear key".to_string(),
                         frozen: api_key_frozen,
                     }],
                 },
-                // A row of their own rather than beside Clear key: these two
-                // answer for the four rows above, and Clear key is one of the
-                // four. Never frozen, because Cancel has to stay reachable
-                // even when a variable owns every field it would restore.
-                //
-                // The help says which rows, now that the wake interval sits
-                // above them and commits on its own.
                 FormRow::Composite {
                     id: "director_actions".to_string(),
                     help: Some("The endpoint rows take effect on Apply.".to_string()),
+                    disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
                             id: APPLY_ID.to_string(),
@@ -681,14 +739,17 @@ fn director_sections() -> Vec<FormSection> {
                 },
             ],
         },
-        completer_source_section(),
         FormSection {
             heading: "Last user turn".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::InspectBlock {
                 id: PAYLOAD_ID.to_string(),
                 label: None,
                 help: Some("The last thing sent to the model.".to_string()),
+                disclosure: Some("This is the Character Prompt (opening turn) or the short follow-up (later wakes), inspectable so you can see exactly what context leaves your machine.".to_string()),
+                status: None,
             }],
         },
     ]
@@ -714,33 +775,23 @@ fn director_sections() -> Vec<FormSection> {
 /// landed from. The file field is the setting either way, so a hand-edit
 /// works everywhere today.
 fn completer_source_section() -> FormSection {
-    let (source_label, frozen) = harness_env_row("Harness");
+    let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
-        comment: Some(
-            "Director off runs on static weights. Director on with no Harness is the \
-             HTTP Completer above. Director on with a Harness that answers makes \
-             that Harness the mind for every Instance, and the HTTP rows stop \
-             driving it."
-                .to_string(),
-        ),
+        comment: Some("Choose which \"AI brain\" answers: Model API or an attached Harness.".to_string()),
+        disclosure: Some("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.".to_string()),
+        status: None,
         rows: vec![
             FormRow::Popup {
                 id: HARNESS_ID.to_string(),
                 label: Some(source_label),
                 writes: TextField::Harness,
-                help: Some(
-                    "Every pick takes effect now: Off leaves the HTTP Completer, \
-                     and a Harness is attached at once, answering once its \
-                     child is up. The line below says what is attached."
-                        .to_string(),
-                ),
+                help: Some("Which \"AI brain\" answers for the buddy.".to_string()),
                 options: harness_options(),
                 frozen,
+                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
+                status: source_status,
             },
-            // Not batched: the blur that writes the row is what re-opens the
-            // attachment since #500, so a button between the typing and the
-            // file would only be one more thing to click.
             FormRow::TextField {
                 id: HARNESS_COMMAND_ID.to_string(),
                 label: Some("Custom command line".to_string()),
@@ -749,14 +800,15 @@ fn completer_source_section() -> FormSection {
                 frozen,
                 batched: false,
                 help: None,
+                disclosure: Some("The command ai-buddy runs when Custom is picked above. Blur commits it and re-opens the attachment.".to_string()),
+                status: None,
             },
             FormRow::InspectBlock {
                 id: HARNESS_STATE_ID.to_string(),
                 label: None,
-                help: Some(
-                    "ai-buddy never asks for the Harness's credential - it signs itself in."
-                        .to_string(),
-                ),
+                help: Some("Harness signs itself in - ai-buddy never asks for credentials.".to_string()),
+                disclosure: Some("ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
+                status: None,
             },
         ],
     }
@@ -767,6 +819,8 @@ fn character_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Character".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::Popup {
                 id: CHARACTER_ID.to_string(),
                 label: None,
@@ -774,20 +828,26 @@ fn character_sections() -> Vec<FormSection> {
                 help: Some("The character your buddy wears.".to_string()),
                 options: Vec::new(),
                 frozen: false,
+                disclosure: Some("Characters are packages: art, personality, and behaviors bundled together. Two ship with the app.".to_string()),
+                status: None,
             }],
         },
         FormSection {
             heading: "Instances".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![
                 FormRow::List {
                     id: INSTANCES_ID.to_string(),
                     dismiss_label: "Dismiss".to_string(),
                     help: Some("Buddies on screen now.".to_string()),
+                    disclosure: Some("An Instance is one spawned buddy: a Character plus a user-given name and a stable id. Instances share Memory, and differ in personality (Instance Prompt) and behavior, never in what they know.".to_string()),
                 },
                 FormRow::Composite {
                     id: "new_instance".to_string(),
                     help: Some("Adds another buddy.".to_string()),
+                    disclosure: None,
                     controls: vec![
                         CompositeControl::TextField {
                             id: NEW_NAME_ID.to_string(),
@@ -813,21 +873,20 @@ fn character_sections() -> Vec<FormSection> {
 fn presence_sections() -> Vec<FormSection> {
     vec![
         FormSection {
-            // Named for quiet rather than for hiding: Do Not Disturb leaves the
-            // buddy on screen, and a Hide heading would teach the opposite.
             heading: "Do Not Disturb".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: DND_ID.to_string(),
                     label: "Do Not Disturb".to_string(),
                     writes: BoolField::DoNotDisturb,
                     frozen: false,
-                    help: Some(
-                        "Stays on screen. Silences sounds and stops initiating actions."
-                            .to_string(),
-                    ),
+                    help: Some("Stays on screen, silences sounds, stops initiating actions.".to_string()),
                     comment: None,
+                    disclosure: Some("Do Not Disturb leaves the buddy visible but quiet: proposals are refused and unprompted dialogue is not spoken. Poke, Grab, and Throw still work. The Cue (visual + sound) acknowledges each interaction. This switch silences the sound and keeps the visual.".to_string()),
+                    status: None,
                 },
                 FormRow::Checkbox {
                     id: SOUND_ID.to_string(),
@@ -836,12 +895,16 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Off silences audio cues.".to_string()),
                     comment: None,
+                    disclosure: Some("A synthesized sound accompanies each Cue. This switch silences them. Do Not Disturb (above) takes the sound with it.".to_string()),
+                    status: None,
                 },
             ],
         },
         FormSection {
             heading: "Hide".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![
                 FormRow::Checkbox {
                     id: HIDDEN_ID.to_string(),
@@ -850,6 +913,8 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Go off screen. But still exist.".to_string()),
                     comment: None,
+                    disclosure: None,
+                    status: None,
                 },
                 FormRow::Checkbox {
                     id: FULLSCREEN_ID.to_string(),
@@ -858,6 +923,8 @@ fn presence_sections() -> Vec<FormSection> {
                     frozen: false,
                     help: Some("Steps aside for fullscreen apps.".to_string()),
                     comment: None,
+                    disclosure: None,
+                    status: None,
                 },
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 FormRow::Checkbox {
@@ -865,29 +932,34 @@ fn presence_sections() -> Vec<FormSection> {
                     label: "Appear in screenshots and screen shares".to_string(),
                     writes: BoolField::Capturable,
                     frozen: false,
-                    help: Some("Checked: buddy is visible in screen captures (default). Unchecked: excluded. Needs a restart.".to_string()),
+                    help: Some("Checked: visible in captures. Unchecked: excluded. Needs restart.".to_string()),
                     comment: None,
+                    disclosure: None,
+                    status: None,
                 },
                 FormRow::InspectBlock {
                     id: HOTKEY_ID.to_string(),
                     label: Some("Hide/Show Toggle".to_string()),
                     help: Some("Hides or shows from any app.".to_string()),
+                    disclosure: None,
+                    status: None,
                 },
             ],
         },
         FormSection {
             heading: "Launch".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::Checkbox {
                 id: LAUNCH_ID.to_string(),
                 label: "Launch at login (unimplemented)".to_string(),
                 writes: BoolField::LaunchAtLogin,
                 frozen: true,
-                // No installed app on any OS yet, so there is nothing for the
-                // system to start: a Launch Agent pointing at `cargo run` is
-                // not launch-at-login.
                 help: Some("Not available yet.".to_string()),
                 comment: None,
+                disclosure: None,
+                status: None,
             }],
         },
     ]
@@ -903,8 +975,6 @@ fn privacy_sections() -> Vec<FormSection> {
     #[cfg(target_os = "linux")]
     let consent_comment = Some(consent::linux_pane_intro());
 
-    // Linux sensing asks the user for nothing, so it has no grant to offer a
-    // row for. #250. Windows keeps its rows; that platform is its own ticket.
     #[cfg(not(target_os = "linux"))]
     let consent_rows = vec![
         FormRow::Checkbox {
@@ -914,6 +984,8 @@ fn privacy_sections() -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads the Dock's position.".to_string()),
             comment: None,
+            disclosure: Some("Accessibility permission lets ai-buddy read the Dock's position and height, so the sprite never disappears behind it. Window metadata (bounds, owning app) requires no grant on macOS.".to_string()),
+            status: None,
         },
         FormRow::Checkbox {
             id: CONSENT_SCREEN_RECORDING_ID.to_string(),
@@ -922,6 +994,8 @@ fn privacy_sections() -> Vec<FormSection> {
             frozen: false,
             help: Some("Reads window titles.".to_string()),
             comment: None,
+            disclosure: Some("Screen Recording permission lets ai-buddy read window titles. Window metadata (bounds, owning app) requires no grant on macOS, so the sprite can land on windows either way. Titles would reach MCP sensing tools; not used in v1.".to_string()),
+            status: None,
         },
     ];
 
@@ -932,22 +1006,29 @@ fn privacy_sections() -> Vec<FormSection> {
         FormSection {
             heading: "What the buddy can see".to_string(),
             comment: consent_comment,
+            disclosure: None,
+            status: None,
             rows: consent_rows,
         },
         FormSection {
             heading: "Excluded applications".to_string(),
             comment: None,
+            disclosure: None,
+            status: None,
             rows: vec![FormRow::Multiline {
                 id: EXCLUDED_ID.to_string(),
                 label: None,
                 writes: TextField::ExcludedApplications,
-                help: Some("One application name per line. Those windows stay out of MCP sensing. The buddy can still sit on them.".to_string()),
+                help: Some("One app name per line. Those windows stay out of MCP sensing.".to_string()),
                 editable: true,
+                disclosure: Some("Applications on this list never appear in MCP sensing tool results (window metadata, eventual Capture). The buddy can still sit on their windows. Password fields are excluded everywhere, regardless of this list.".to_string()),
             }],
         },
         FormSection {
             heading: "Memory File".to_string(),
             comment: Some("What your buddy remembers between runs.".to_string()),
+            disclosure: Some("Memory is one Markdown file, append-structured under stable headings. Shared by every Character Instance. Every recall reads the file, so an edit made outside ai-buddy is visible to the next recall. A single timestamped backup is written before a wipe.".to_string()),
+            status: None,
             rows: vec![
                 FormRow::InspectPath {
                     id: MEMORY_PATH_ID.to_string(),
@@ -955,6 +1036,7 @@ fn privacy_sections() -> Vec<FormSection> {
                 FormRow::Composite {
                     id: "memory_actions".to_string(),
                     help: None,
+                    disclosure: None,
                     controls: vec![
                         CompositeControl::Button {
                             id: MEMORY_OPEN_ID.to_string(),
@@ -993,7 +1075,7 @@ fn development_sections() -> Vec<FormSection> {
             TRACE_DIRECTOR_ID,
             &dev_flags::TRACE_DIRECTOR,
             BoolField::TraceDirector,
-            "Trace Director",
+            "Trace AI",
             "Prints each model call.",
         ),
         flag_row(
@@ -1005,21 +1087,28 @@ fn development_sections() -> Vec<FormSection> {
         ),
     ];
 
-    let (timeout_label, timeout_frozen) = env_row("Timeout, in seconds", model::TIMEOUT_SECS);
-    let (max_tokens_label, max_tokens_frozen) = env_row("Reply cap, in tokens", model::MAX_TOKENS);
-    let (auth_retry_label, auth_retry_frozen) =
-        env_row("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
-    let (mcp_bin_label, mcp_bin_frozen) = env_row("MCP server binary", crate::harness::MCP_BIN);
+    let (timeout_label, timeout_frozen, timeout_status) =
+        env_row_parts("Timeout, in seconds", model::TIMEOUT_SECS);
+    let (max_tokens_label, max_tokens_frozen, max_tokens_status) =
+        env_row_parts("Reply cap, in tokens", model::MAX_TOKENS);
+    let (auth_retry_label, auth_retry_frozen, auth_retry_status) =
+        env_row_parts("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
+    let (mcp_bin_label, mcp_bin_frozen, mcp_bin_status) =
+        env_row_parts("MCP server binary", crate::harness::MCP_BIN);
 
     vec![
         FormSection {
             heading: "Traces".to_string(),
             comment: Some("Switches for development and testing.".to_string()),
+            disclosure: Some("Development switches print to stderr. Trace frames prints each frame the Engine produces. Trace hit-test prints where each click went (the sprite or click-through). Trace AI prints each model call with its context. Trace Engine prints each change of Behavior or Animation.".to_string()),
+            status: None,
             rows,
         },
         FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
+            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length.".to_string()),
+            status: None,
             rows: vec![
                 FormRow::TextField {
                     id: DIRECTOR_TIMEOUT_SECS_ID.to_string(),
@@ -1028,12 +1117,9 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
-                    help: Some(
-                        "One turn's budget, whichever mind serves it: an HTTP \
-                         Completer request or a Harness session/prompt. Expiry \
-                         cancels the turn, and the buddy stays as it was."
-                            .to_string(),
-                    ),
+                    help: Some("One turn's budget. Expiry cancels the turn.".to_string()),
+                    disclosure: None,
+                    status: timeout_status,
                 },
                 FormRow::TextField {
                     id: DIRECTOR_MAX_TOKENS_ID.to_string(),
@@ -1042,25 +1128,17 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
-                    help: Some(
-                        "The HTTP Completer's alone. A Harness decides its own \
-                         reply length."
-                            .to_string(),
-                    ),
+                    help: Some("HTTP endpoint only. Harness decides its own.".to_string()),
+                    disclosure: None,
+                    status: max_tokens_status,
                 },
             ],
         },
-        // Development rather than the Director tab, which is where a user
-        // picks a Harness: neither row is a choice anyone makes to get a
-        // buddy working, and both exist so a test or a CI job can be told
-        // where to look and how long to wait (#447).
         FormSection {
             heading: "Harness attachment".to_string(),
-            comment: Some(
-                "Also for development and testing. Blank uses the default, and \
-                 both take effect on the next attach."
-                    .to_string(),
-            ),
+            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
+            disclosure: Some("Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).".to_string()),
+            status: None,
             rows: vec![
                 FormRow::TextField {
                     id: HARNESS_AUTH_RETRY_SECS_ID.to_string(),
@@ -1069,24 +1147,20 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::HarnessAuthRetrySecs,
                     frozen: auth_retry_frozen,
                     batched: false,
-                    help: Some(
-                        "How long a Harness that has not signed in is left \
-                         alone before session/new is tried again."
-                            .to_string(),
-                    ),
+                    help: Some("How long before retrying session/new.".to_string()),
+                    disclosure: None,
+                    status: auth_retry_status,
                 },
                 FormRow::TextField {
                     id: MCP_BIN_ID.to_string(),
                     label: Some(mcp_bin_label),
-                    placeholder: "beside the app, else this app on --mcp-stdio".to_string(),
+                    placeholder: "beside the app, or this app as its own MCP server".to_string(),
                     writes: TextField::McpBin,
                     frozen: mcp_bin_frozen,
                     batched: false,
-                    help: Some(
-                        "The stdio MCP server handed to the Harness session. A \
-                         path that is not a file falls back to the default."
-                            .to_string(),
-                    ),
+                    help: Some("The stdio MCP server for the Harness.".to_string()),
+                    disclosure: None,
+                    status: mcp_bin_status,
                 },
             ],
         },
@@ -1162,6 +1236,7 @@ mod tests {
 
         let mut expected = vec![
             "Character",
+            "Model / API",
             "HTTP limits",
             "AI source",
             "AI",
@@ -1258,27 +1333,32 @@ mod tests {
         for exported in ["off", "on"] {
             crate::model::tests::with_env_switch(exported, || {
                 let description = describe();
-                let (label, frozen) = description
+                let (_label, frozen, status) = description
                     .sections()
                     .flat_map(|section| &section.rows)
                     .find_map(|row| match row {
                         FormRow::Checkbox {
-                            id, label, frozen, ..
-                        } if id == DIRECTOR_ID => Some((label.clone(), *frozen)),
+                            id,
+                            label,
+                            frozen,
+                            status,
+                            ..
+                        } if id == DIRECTOR_ID => Some((label.clone(), *frozen, status.clone())),
                         _ => None,
                     })
                     .expect("the Director row exists");
 
                 assert!(frozen, "a switch the env owns takes no edit, {exported:?}");
+                let status = status.expect("frozen row must have status");
                 assert!(
-                    label.contains(crate::model::ENABLED),
-                    "the row must name the variable, not {label:?}"
+                    status.contains(crate::model::ENABLED),
+                    "the row status must name the variable, not {status:?}"
                 );
             });
         }
     }
 
-    fn described_row(description: &FormDescription, id: &str) -> (String, bool) {
+    fn described_row(description: &FormDescription, id: &str) -> (String, bool, Option<String>) {
         description
             .sections()
             .flat_map(|section| &section.rows)
@@ -1287,14 +1367,20 @@ mod tests {
                     id: row_id,
                     label,
                     frozen,
+                    status,
                     ..
-                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
+                } if row_id == id => {
+                    Some((label.clone().unwrap_or_default(), *frozen, status.clone()))
+                }
                 FormRow::SecureField {
                     id: row_id,
                     label,
                     frozen,
+                    status,
                     ..
-                } if row_id == id => Some((label.clone().unwrap_or_default(), *frozen)),
+                } if row_id == id => {
+                    Some((label.clone().unwrap_or_default(), *frozen, status.clone()))
+                }
                 _ => None,
             })
             .expect("the endpoint row exists")
@@ -1318,17 +1404,22 @@ mod tests {
             || {
                 let description = describe();
                 for (id, var) in ENDPOINT_ROWS {
-                    let (label, frozen) = described_row(&description, id);
+                    let (_label, frozen, status) = described_row(&description, id);
                     assert!(frozen, "{id} must not accept an edit the env discards");
                     assert!(
                         description.frozen(id),
                         "{id} is what a renderer asks before it reads the field"
                     );
+                    let status =
+                        status.unwrap_or_else(|| panic!("{id} must have status when frozen"));
                     assert!(
-                        label.contains("(overridden by env"),
-                        "{id} must say it is overridden, not {label:?}"
+                        status.contains("Overridden by env"),
+                        "{id} status must say it is overridden, not {status:?}"
                     );
-                    assert!(label.contains(var), "{id} must name {var}, not {label:?}");
+                    assert!(
+                        status.contains(var),
+                        "{id} status must name {var}, not {status:?}"
+                    );
                 }
             },
         );
@@ -1339,10 +1430,14 @@ mod tests {
         crate::model::tests::with_env(None, None, None, || {
             let description = describe();
             for (id, var) in ENDPOINT_ROWS {
-                let (label, frozen) = described_row(&description, id);
+                let (label, frozen, status) = described_row(&description, id);
                 assert!(!frozen, "{id} is the user's to edit when the env is unset");
                 assert!(!description.frozen(id));
-                assert!(!label.contains(var), "{id} must not mention {var}");
+                assert!(!label.contains(var), "{id} label must not mention {var}");
+                assert!(
+                    status.is_none(),
+                    "{id} should have no status when not frozen"
+                );
             }
             assert!(
                 !description.frozen(CLEAR_KEY_ID),
@@ -1359,7 +1454,7 @@ mod tests {
             .find(|s| s.heading == "AI")
             .expect("AI section");
 
-        assert_eq!(director.rows.len(), 9);
+        assert_eq!(director.rows.len(), 3);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -1374,30 +1469,41 @@ mod tests {
             director.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_WAKE_SECS_ID
         ));
+    }
+
+    #[test]
+    fn http_completer_section_has_endpoint_rows() {
+        let description = describe();
+        let http_section = description
+            .sections()
+            .find(|s| s.heading == "Model / API")
+            .expect("Model / API section");
+
+        assert_eq!(http_section.rows.len(), 6);
         // The picker stands above the field it fills, so the shortcut is read
         // before the typing starts (#465).
         assert!(matches!(
-            director.rows[3],
+            http_section.rows[0],
             FormRow::Composite { ref id, .. } if id == "base_url_pick"
         ));
         assert!(matches!(
-            director.rows[4],
+            http_section.rows[1],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_BASE_URL_ID
         ));
         assert!(matches!(
-            director.rows[5],
+            http_section.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_MODEL_ID
         ));
         assert!(matches!(
-            director.rows[6],
+            http_section.rows[3],
             FormRow::SecureField { ref id, .. } if id == DIRECTOR_API_KEY_ID
         ));
         assert!(matches!(
-            director.rows[7],
+            http_section.rows[4],
             FormRow::Composite { ref id, .. } if id == "api_key_actions"
         ));
         assert!(matches!(
-            director.rows[8],
+            http_section.rows[5],
             FormRow::Composite { ref id, .. } if id == "director_actions"
         ));
     }
@@ -1828,12 +1934,17 @@ mod tests {
                     .expect("the trace-frames row exists");
 
                 match row {
-                    FormRow::Checkbox { label, frozen, .. } => {
+                    FormRow::Checkbox {
+                        label,
+                        frozen,
+                        status,
+                        ..
+                    } => {
                         assert_eq!(*frozen, owned, "exported {exported:?} decides the click");
                         assert_eq!(
-                            label.contains(var),
+                            status.is_some() && status.as_ref().unwrap().contains(var),
                             owned,
-                            "exported {exported:?} decides the label, got {label:?}"
+                            "exported {exported:?} decides the status, got label={label:?}, status={status:?}"
                         );
                     }
                     _ => panic!("the trace-frames row is a checkbox"),
@@ -1924,11 +2035,15 @@ mod tests {
 
     /// #447: one timeout budgets both minds. A user who reads the row as the
     /// HTTP Completer's alone cannot explain a Harness turn that was cancelled
-    /// halfway, and the row is where that has to be said.
+    /// halfway. With progressive disclosure (#548), the detailed explanation is
+    /// in the section's disclosure field, while the row's help stays short.
     #[test]
     fn the_timeout_row_says_it_budgets_a_harness_turn() {
         let description = describe();
-        let help = development_tab(&description)
+        let dev_tab = development_tab(&description);
+
+        // Check that the row help is short and mentions cancellation
+        let help = dev_tab
             .sections
             .iter()
             .flat_map(|section| &section.rows)
@@ -1941,16 +2056,30 @@ mod tests {
             .expect("the timeout row carries help");
 
         assert!(
-            help.contains("Harness"),
-            "the help has to name the other mind it budgets, got {help:?}"
-        );
-        assert!(
-            help.contains("session/prompt"),
-            "the help has to name the call it budgets, got {help:?}"
-        );
-        assert!(
             help.contains("cancel"),
             "the help has to say what expiry does, got {help:?}"
+        );
+
+        // Check that the section disclosure has the detailed Harness explanation
+        let disclosure = dev_tab
+            .sections
+            .iter()
+            .find_map(|section| {
+                if section.rows.iter().any(|row| matches!(row, FormRow::TextField { id, .. } if id == DIRECTOR_TIMEOUT_SECS_ID)) {
+                    section.disclosure.clone()
+                } else {
+                    None
+                }
+            })
+            .expect("the timeout section carries disclosure");
+
+        assert!(
+            disclosure.contains("Harness"),
+            "the disclosure must name the other \"AI brain\" it budgets, got {disclosure:?}"
+        );
+        assert!(
+            disclosure.contains("session/prompt"),
+            "the disclosure must name the call it budgets, got {disclosure:?}"
         );
     }
 
@@ -2008,10 +2137,11 @@ mod tests {
                 help.contains("Off"),
                 "the help must say the picker is off, not {help:?}"
             );
-            let (label, _) = described_row(&description, DIRECTOR_BASE_URL_ID);
+            let (_label, _, status) = described_row(&description, DIRECTOR_BASE_URL_ID);
+            let status = status.expect("frozen row must have status");
             assert!(
-                label.contains(model::BASE_URL),
-                "the field above still names the variable, not {label:?}"
+                status.contains(model::BASE_URL),
+                "the field above still names the variable, not {status:?}"
             );
         });
     }
@@ -2038,7 +2168,10 @@ mod tests {
             .expect("the AI source section exists")
     }
 
-    fn popup_row(description: &FormDescription, id: &str) -> (String, Vec<String>, bool) {
+    fn popup_row(
+        description: &FormDescription,
+        id: &str,
+    ) -> (String, Vec<String>, bool, Option<String>) {
         source_section(description)
             .rows
             .iter()
@@ -2048,25 +2181,38 @@ mod tests {
                     label,
                     options,
                     frozen,
+                    status,
                     ..
-                } if row_id == id => {
-                    Some((label.clone().unwrap_or_default(), options.clone(), *frozen))
-                }
+                } if row_id == id => Some((
+                    label.clone().unwrap_or_default(),
+                    options.clone(),
+                    *frozen,
+                    status.clone(),
+                )),
                 _ => None,
             })
             .expect("the source popup exists")
     }
 
-    /// Off, the named launch rows, and the escape hatch — ADR-0022's table,
+    /// Model API, the named launch rows, and the escape hatch — ADR-0022's table,
     /// and nothing for Copilot until it is smoked.
     #[test]
     fn the_completer_source_offers_off_the_presets_and_custom() {
         crate::model::tests::with_harness(None, || {
             let description = describe();
-            let (_, options, _) = popup_row(&description, HARNESS_ID);
+            let (_, options, _, _) = popup_row(&description, HARNESS_ID);
             assert_eq!(
                 options,
-                ["Off", "claude", "codex", "grok", "hermes", "opencode", "pi", "Custom"]
+                [
+                    "Model API",
+                    "Harness · claude",
+                    "Harness · codex",
+                    "Harness · grok",
+                    "Harness · hermes",
+                    "Harness · opencode",
+                    "Harness · pi",
+                    "Harness · Custom"
+                ]
             );
             assert_eq!(
                 description.text_write(HARNESS_ID),
@@ -2105,11 +2251,12 @@ mod tests {
         for exported in ["hermes", "opencode acp"] {
             crate::model::tests::with_harness(Some(exported), || {
                 let description = describe();
-                let (label, _, frozen) = popup_row(&description, HARNESS_ID);
+                let (_label, _, frozen, status) = popup_row(&description, HARNESS_ID);
                 assert!(frozen, "{exported:?} owns the source row");
+                let status = status.expect("frozen row must have status");
                 assert!(
-                    label.contains(crate::harness::VAR),
-                    "the row must name the variable, not {label:?}"
+                    status.contains(crate::harness::VAR),
+                    "the row status must name the variable, not {status:?}"
                 );
                 assert!(description.frozen(HARNESS_ID));
                 assert!(
@@ -2124,9 +2271,10 @@ mod tests {
     fn the_source_rows_are_the_users_when_no_variable_is_exported() {
         crate::model::tests::with_harness(None, || {
             let description = describe();
-            let (label, _, frozen) = popup_row(&description, HARNESS_ID);
+            let (label, _, frozen, status) = popup_row(&description, HARNESS_ID);
             assert!(!frozen);
             assert!(!label.contains(crate::harness::VAR));
+            assert!(status.is_none(), "unfrozen row should have no status");
             assert!(!description.frozen(HARNESS_COMMAND_ID));
         });
     }
@@ -2162,22 +2310,25 @@ mod tests {
             ("API key", crate::model::API_KEY),
         ];
         for (label, var) in ROWS {
-            let (label, frozen) = http_row(label, var, true, true);
+            let (_label, frozen, status) = http_row_parts(label, var, true, true);
             assert!(frozen, "a driving Harness discards an edit here");
+            let status = status.expect("frozen row must have status");
             assert!(
-                label.contains("not in use"),
-                "the row has to say why it is dead, not {label:?}"
+                status.to_lowercase().contains("not in use"),
+                "the status has to say why it is dead, not {status:?}"
             );
         }
         crate::model::tests::with_env(None, None, None, || {
             for (label, var) in ROWS {
-                let (label, frozen) = http_row(label, var, false, false);
+                let (label, frozen, status) = http_row_parts(label, var, false, false);
                 assert!(
                     !frozen,
-                    "with nothing driving, {label:?} is the only Completer left"
+                    "with nothing driving, {label:?} is the only Model API left"
                 );
-                assert!(!label.contains("not in use"));
-                assert!(!label.contains("next launch"));
+                if let Some(status) = status {
+                    assert!(!status.contains("not in use"));
+                    assert!(!status.contains("next launch"));
+                }
             }
         });
     }
@@ -2185,10 +2336,11 @@ mod tests {
     /// #469: the rows a dead Harness leaves live take an edit the Director
     /// does not read while the handle is set, because that handle stays the
     /// configured Completer (ADR-0008). Editable so there is a way back, and
-    /// labelled so the wait is on screen rather than discovered.
+    /// the status says so rather than the label.
     ///
-    /// #500: the wait ends with a pick rather than a relaunch, so the label
-    /// names the pick.
+    /// #500: the wait ends with a pick rather than a relaunch, so the status
+    /// names the pick. With progressive disclosure (#548), this detail lives
+    /// in status, not the label.
     #[test]
     fn a_dead_harness_leaves_the_http_rows_editable_and_names_the_way_back() {
         crate::model::tests::with_env(None, None, None, || {
@@ -2197,15 +2349,20 @@ mod tests {
                 ("Model", crate::model::MODEL),
                 ("API key", crate::model::API_KEY),
             ] {
-                let (label, frozen) = http_row(label, var, false, true);
+                let (label, frozen, status) = http_row_parts(label, var, false, true);
                 assert!(!frozen, "the way back has to stay typeable, got {label:?}");
+                let status = status.expect("configured row must have status");
                 assert!(
-                    !label.contains("next launch"),
-                    "no edit here waits for one any more, got {label:?}"
+                    !status.contains("next launch"),
+                    "no edit here waits for one any more, got {status:?}"
                 );
                 assert!(
-                    label.contains("Off"),
-                    "the row has to name what ends the wait, not {label:?}"
+                    status.contains("source above"),
+                    "the status has to say where the source is, not {status:?}"
+                );
+                assert!(
+                    status.contains("Model API"),
+                    "the status has to name the pick that ends the wait, not {status:?}"
                 );
             }
         });
@@ -2230,6 +2387,36 @@ mod tests {
                 !copy.to_lowercase().contains("next launch")
                     && !copy.to_lowercase().contains("restart"),
                 "got {copy:?}"
+            );
+        });
+    }
+
+    /// Model API (the Off choice) means HTTP Completer, not static weights.
+    /// Static weights is AI on off (the DIRECTOR_ENABLED switch).
+    #[test]
+    fn completer_source_does_not_equate_model_api_with_static_weights() {
+        crate::model::tests::with_harness(None, || {
+            let section = completer_source_section();
+            let mut copy = section.comment.clone().unwrap_or_default();
+            copy.push(' ');
+            copy.push_str(&section.disclosure.clone().unwrap_or_default());
+            for row in &section.rows {
+                if let FormRow::Popup {
+                    help, disclosure, ..
+                } = row
+                {
+                    copy.push(' ');
+                    copy.push_str(help.as_deref().unwrap_or_default());
+                    copy.push(' ');
+                    copy.push_str(disclosure.as_deref().unwrap_or_default());
+                }
+            }
+            let lower = copy.to_lowercase();
+            assert!(
+                !lower.contains("off: static weights")
+                    && !lower.contains("off (static weights)")
+                    && !(lower.contains("off") && lower.contains("static weights only")),
+                "Model API should not be described as static weights; that is AI on off. Got: {copy:?}"
             );
         });
     }

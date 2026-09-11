@@ -175,6 +175,33 @@ impl SettingsWindow {
             pack(container, &comment_label, HINT_GAP);
         }
 
+        if let Some(status) = &section.status {
+            let status_label = gtk::Label::new(Some(status));
+            status_label.set_halign(Align::Start);
+            status_label.set_line_wrap(true);
+            status_label.set_xalign(0.0);
+            status_label.set_markup(&format!(
+                "<span size='small' foreground='#999999' style='italic'>{}</span>",
+                gtk::glib::markup_escape_text(status)
+            ));
+            pack(container, &status_label, HINT_GAP);
+        }
+
+        if let Some(disclosure) = &section.disclosure {
+            let expander = gtk::Expander::new(Some("What is this?"));
+            expander.set_expanded(false);
+            let disclosure_label = gtk::Label::new(Some(disclosure));
+            disclosure_label.set_halign(Align::Start);
+            disclosure_label.set_line_wrap(true);
+            disclosure_label.set_xalign(0.0);
+            disclosure_label.set_markup(&format!(
+                "<span size='small' foreground='#888888'>{}</span>",
+                gtk::glib::markup_escape_text(disclosure)
+            ));
+            expander.add(&disclosure_label);
+            pack(container, &expander, HINT_GAP);
+        }
+
         for row in &section.rows {
             self.build_row(container, row, operations);
         }
@@ -195,16 +222,24 @@ impl SettingsWindow {
                 writes,
                 frozen,
                 help,
-                comment: _,
+                disclosure,
+                status,
+                ..
             } => {
                 let check = gtk::CheckButton::with_label(label);
                 check.set_sensitive(!frozen);
+                pack(container, &check, ROW_GAP);
 
                 if let Some(help_text) = help {
-                    pack(container, &check, ROW_GAP);
                     help_line(container, help_text);
-                } else {
-                    pack(container, &check, ROW_GAP);
+                }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
                 }
 
                 // Frozen like the field arms below, so refresh's `set_active`
@@ -242,6 +277,9 @@ impl SettingsWindow {
                 frozen,
                 batched,
                 help,
+                disclosure,
+                status,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -301,12 +339,22 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::SecureField {
                 id,
                 label,
                 writes: _,
                 frozen,
+                status,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -329,8 +377,19 @@ impl SettingsWindow {
                 self.controls
                     .borrow_mut()
                     .insert(id.clone(), Control::Entry(entry));
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
             }
-            FormRow::InspectBlock { id, label, help } => {
+            FormRow::InspectBlock {
+                id,
+                label,
+                help,
+                disclosure,
+                status,
+                ..
+            } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
                     label_widget.set_halign(Align::Start);
@@ -356,6 +415,14 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::InspectPath { id } => {
                 let label = gtk::Label::new(None);
@@ -373,6 +440,8 @@ impl SettingsWindow {
                 id,
                 dismiss_label,
                 help,
+                disclosure,
+                ..
             } => {
                 let list_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 list_box.set_size_request(-1, 80);
@@ -385,12 +454,17 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::Multiline {
                 id,
                 writes,
                 help,
                 editable,
+                disclosure,
                 ..
             } => {
                 let scrolled =
@@ -439,8 +513,17 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
-            FormRow::Composite { controls, help, .. } => {
+            FormRow::Composite {
+                controls,
+                help,
+                disclosure,
+                ..
+            } => {
                 let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
 
                 for control in controls {
@@ -724,6 +807,10 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
             FormRow::Popup {
                 id,
@@ -732,6 +819,9 @@ impl SettingsWindow {
                 help,
                 options,
                 frozen,
+                disclosure,
+                status,
+                ..
             } => {
                 if let Some(label_text) = label {
                     let label_widget = gtk::Label::new(Some(label_text));
@@ -799,6 +889,14 @@ impl SettingsWindow {
                 if let Some(help_text) = help {
                     help_line(container, help_text);
                 }
+
+                if let Some(status_text) = status {
+                    status_line(container, status_text);
+                }
+
+                if let Some(disclosure_text) = disclosure {
+                    disclosure_line(container, disclosure_text);
+                }
             }
         }
     }
@@ -849,6 +947,32 @@ impl SettingsWindow {
         self.draw(false);
     }
 
+    /// Re-apply enabled/frozen state from the form description.
+    ///
+    /// Called on every draw/refresh so runtime changes (e.g. switching AI
+    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    fn apply_enabled_states(&self, description: &form::FormDescription) {
+        let controls = self.controls.borrow();
+
+        for (id, control) in controls.iter() {
+            let frozen = row_frozen(description, id);
+            if let Some(frozen) = frozen {
+                match control {
+                    Control::CheckButton(check) => {
+                        check.set_sensitive(!frozen);
+                    }
+                    Control::Entry(entry) => {
+                        entry.set_editable(!frozen);
+                    }
+                    Control::Button(button) => {
+                        button.set_sensitive(!frozen);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// `reset_director` is Apply and Cancel: the two callers that mean to take
     /// the staged fields back to live state.
     fn draw(&self, reset_director: bool) {
@@ -864,6 +988,11 @@ impl SettingsWindow {
         };
 
         self.refreshing.set(true);
+
+        // Re-apply enabled/frozen state from the fresh form description so
+        // runtime source switches unfreeze rows immediately (#593).
+        let description = form::describe();
+        self.apply_enabled_states(&description);
 
         let mut controls = self.controls.borrow_mut();
         // Read before any setter, so this is what the entries held on entry.
@@ -1138,6 +1267,43 @@ fn view_of(session: &Arc<Mutex<Option<SettingsSession>>>) -> Option<SettingsView
     guard.as_ref().map(|session| session.view())
 }
 
+/// Look up a row's frozen state in the form description.
+fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+    description
+        .sections()
+        .flat_map(|s| &s.rows)
+        .find_map(|row| match row {
+            form::FormRow::Checkbox {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::TextField {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::SecureField {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::Popup {
+                id: row_id, frozen, ..
+            } if row_id == id => Some(*frozen),
+            form::FormRow::Composite { controls, .. } => {
+                controls.iter().find_map(|control| match control {
+                    form::CompositeControl::Popup {
+                        id: control_id,
+                        frozen,
+                        ..
+                    }
+                    | form::CompositeControl::Button {
+                        id: control_id,
+                        frozen,
+                        ..
+                    } if control_id == id => Some(*frozen),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+}
+
 /// The Director tab as the window holds it right now.
 ///
 /// The fields are read back out of the widgets rather than mirrored in a
@@ -1193,6 +1359,37 @@ fn help_line(container: &gtk::Box, text: &str) {
         gtk::glib::markup_escape_text(text)
     ));
     pack(container, &label, HINT_GAP);
+}
+
+/// A row's status strip: muted, read-only, italic text showing state info.
+fn status_line(container: &gtk::Box, text: &str) {
+    let label = gtk::Label::new(Some(text));
+    label.set_halign(Align::Start);
+    label.set_line_wrap(true);
+    label.set_xalign(0.0);
+    label.set_margin_start(24);
+    label.set_markup(&format!(
+        "<span size='small' foreground='#999999' style='italic'>{}</span>",
+        gtk::glib::markup_escape_text(text)
+    ));
+    pack(container, &label, HINT_GAP);
+}
+
+/// A row's progressive disclosure: expandable help text.
+fn disclosure_line(container: &gtk::Box, text: &str) {
+    let expander = gtk::Expander::new(Some("What is this?"));
+    expander.set_expanded(false);
+    expander.set_margin_start(24);
+    let disclosure_label = gtk::Label::new(Some(text));
+    disclosure_label.set_halign(Align::Start);
+    disclosure_label.set_line_wrap(true);
+    disclosure_label.set_xalign(0.0);
+    disclosure_label.set_markup(&format!(
+        "<span size='small' foreground='#888888'>{}</span>",
+        gtk::glib::markup_escape_text(text)
+    ));
+    expander.add(&disclosure_label);
+    pack(container, &expander, HINT_GAP);
 }
 
 /// Add a widget to a page with `gap` of space above it.

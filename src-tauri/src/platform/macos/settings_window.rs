@@ -500,6 +500,54 @@ impl SettingsController {
         self.draw(false);
     }
 
+    /// Re-apply enabled/frozen state from the form description.
+    ///
+    /// Called on every draw/refresh so runtime changes (e.g. switching AI
+    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    fn apply_enabled_states(&self, description: &form::FormDescription) {
+        let ivars = self.ivars();
+
+        // Checkboxes
+        for (id, button) in ivars.checkboxes.borrow().iter() {
+            if let Some(frozen) = row_frozen(description, id) {
+                button.setEnabled(!frozen);
+            }
+        }
+
+        // Text fields
+        for (id, field) in ivars.fields.borrow().iter() {
+            if let Some(frozen) = row_frozen(description, id) {
+                field.setEditable(!frozen);
+            }
+        }
+
+        // Secure fields (API key)
+        if let Some(field) = ivars.api_key.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::DIRECTOR_API_KEY_ID) {
+                field.setEditable(!frozen);
+            }
+        }
+
+        // Popups
+        if let Some(popup) = ivars.harness.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::HARNESS_ID) {
+                popup.setEnabled(!frozen);
+            }
+        }
+        if let Some(popup) = ivars.base_url_pick.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::DIRECTOR_BASE_URL_PICK_ID) {
+                popup.setEnabled(!frozen);
+            }
+        }
+
+        // Composite buttons
+        if let Some(button) = ivars.clear_key.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::CLEAR_KEY_ID) {
+                button.setEnabled(!frozen);
+            }
+        }
+    }
+
     /// `reset_director` is Apply and Cancel: the two callers that mean to take
     /// the staged fields back to live state.
     fn draw(&self, reset_director: bool) {
@@ -526,6 +574,10 @@ impl SettingsController {
                 })
             })
             .unwrap_or("Dismiss");
+
+        // Re-apply enabled/frozen state from the fresh form description so
+        // runtime source switches unfreeze rows immediately (#593).
+        self.apply_enabled_states(&description);
 
         fill_checkbox(&self.ivars().director, view.director_enabled);
         fill_checkbox(&self.ivars().ambient, view.ambient_wakes);
@@ -770,6 +822,14 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                 }
             }
 
+            if let Some(status) = &section.status {
+                cursor.status_strip(status);
+            }
+
+            if let Some(disclosure) = &section.disclosure {
+                cursor.disclosure(disclosure);
+            }
+
             for row in &section.rows {
                 match row {
                     FormRow::Checkbox {
@@ -777,8 +837,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         label,
                         frozen,
                         help,
-                        writes: _,
-                        comment: _,
+                        disclosure,
+                        status,
+                        ..
                     } => {
                         let tag = next_tag;
                         next_tag += 1;
@@ -795,6 +856,12 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         cursor.place(&btn, 22.0);
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
+                        }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
                         }
 
                         controller
@@ -823,7 +890,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         frozen,
                         batched,
                         help,
-                        writes: _,
+                        disclosure,
+                        status,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -850,12 +919,19 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::SecureField {
                         id,
                         label,
                         frozen,
-                        writes: _,
+                        status,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -872,6 +948,10 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         // other mode.
                         freeze_or_bind(&field, *frozen, true, &controller);
                         cursor.place(&field, 24.0);
+
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
 
                         if id == form::DIRECTOR_API_KEY_ID {
                             api_key_field = Some(field);
@@ -891,6 +971,8 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         id,
                         dismiss_label: _,
                         help,
+                        disclosure,
+                        ..
                     } => {
                         let view = NSView::initWithFrame(
                             NSView::alloc(mtm),
@@ -905,8 +987,18 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
-                    FormRow::InspectBlock { id, label, help } => {
+                    FormRow::InspectBlock {
+                        id,
+                        label,
+                        help,
+                        disclosure,
+                        status,
+                        ..
+                    } => {
                         if let Some(label_text) = label {
                             let lbl =
                                 NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
@@ -934,14 +1026,21 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::Popup {
                         id,
                         label,
                         help,
                         frozen,
-                        writes: _,
-                        options: _,
+                        disclosure,
+                        status,
+                        ..
                     } => {
                         if let Some(label_text) = label {
                             let lbl =
@@ -969,9 +1068,19 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(status_text) = status {
+                            cursor.status_strip(status_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
                     FormRow::Multiline {
-                        id, help, editable, ..
+                        id,
+                        help,
+                        editable,
+                        disclosure,
+                        ..
                     } => {
                         if *editable {
                             let text = editable_block(&controller, mtm);
@@ -986,8 +1095,16 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
                         }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
+                        }
                     }
-                    FormRow::Composite { controls, help, .. } => {
+                    FormRow::Composite {
+                        controls,
+                        help,
+                        disclosure,
+                        ..
+                    } => {
                         cursor.y -= 24.0 + ROW_GAP;
                         let mut x = MARGIN;
 
@@ -1098,6 +1215,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
 
                         if let Some(help_text) = help {
                             cursor.hint(help_text);
+                        }
+                        if let Some(disclosure_text) = disclosure {
+                            cursor.disclosure(disclosure_text);
                         }
                     }
                 }
@@ -1265,6 +1385,31 @@ impl Cursor {
         let height = wrapped_height(&label);
         self.put(&label, height, HINT_GAP);
         label
+    }
+
+    fn status_strip(&mut self, text: &str) {
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        label.setTextColor(Some(&NSColor::tertiaryLabelColor()));
+        label.setFont(Some(&NSFont::systemFontOfSize(10.0)));
+        let height = wrapped_height(&label);
+        self.put(&label, height, HINT_GAP);
+    }
+
+    fn disclosure(&mut self, text: &str) {
+        let disclosure_button = NSButton::new(self.mtm);
+        disclosure_button.setTitle(&NSString::from_str("What is this?"));
+        disclosure_button.setButtonType(objc2_app_kit::NSButtonType::OnOff);
+        disclosure_button.setBezelStyle(objc2_app_kit::NSBezelStyle::Disclosure);
+
+        let disclosure_label =
+            NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        disclosure_label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        disclosure_label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        disclosure_label.setHidden(true);
+
+        let _height = 20.0 + wrapped_height(&disclosure_label);
+        self.put(&disclosure_button, 20.0, HINT_GAP);
+        self.put(&disclosure_label, wrapped_height(&disclosure_label), 0.0);
     }
 
     fn hint(&mut self, text: &str) {
@@ -1435,6 +1580,43 @@ fn popup_plain(mtm: MainThreadMarker) -> Retained<NSPopUpButton> {
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(180.0, 24.0)),
         false,
     )
+}
+
+/// Look up a row's frozen state in the form description.
+fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+    description
+        .sections()
+        .flat_map(|s| &s.rows)
+        .find_map(|row| match row {
+            form::FormRow::Checkbox {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::TextField {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::SecureField {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::Popup {
+                id: row_id, frozen, ..
+            } if row_id == id => Some(*frozen),
+            form::FormRow::Composite { controls, .. } => {
+                controls.iter().find_map(|control| match control {
+                    form::CompositeControl::Popup {
+                        id: control_id,
+                        frozen,
+                        ..
+                    }
+                    | form::CompositeControl::Button {
+                        id: control_id,
+                        frozen,
+                        ..
+                    } if control_id == id => Some(*frozen),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
 }
 
 fn fill_checkbox(cell: &RefCell<Option<Retained<NSButton>>>, value: bool) {
