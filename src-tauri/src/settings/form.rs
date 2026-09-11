@@ -851,6 +851,8 @@ fn byo_section() -> FormSection {
              screen. Nothing here changes which mind the Director uses."
                 .to_string(),
         ),
+        disclosure: None,
+        status: None,
         rows: vec![
             FormRow::Popup {
                 id: BYO_HARNESS_ID.to_string(),
@@ -859,6 +861,8 @@ fn byo_section() -> FormSection {
                 help: Some("Which Harness the box below is written for.".to_string()),
                 options: HARNESS_PRESETS.map(str::to_string).to_vec(),
                 frozen: false,
+                disclosure: None,
+                status: None,
             },
             FormRow::InspectBlock {
                 id: BYO_SNIPPET_ID.to_string(),
@@ -869,10 +873,13 @@ fn byo_section() -> FormSection {
                      back here and copy it again."
                         .to_string(),
                 ),
+                disclosure: None,
+                status: None,
             },
             FormRow::Composite {
                 id: "byo_actions".to_string(),
                 help: None,
+                disclosure: None,
                 // Beneath the box rather than beside it: the box is the thing
                 // being copied, and a button to its right would read as acting
                 // on the picker above instead.
@@ -892,6 +899,8 @@ fn byo_section() -> FormSection {
                      signs itself in."
                         .to_string(),
                 ),
+                disclosure: None,
+                status: None,
             },
         ],
     }
