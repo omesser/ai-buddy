@@ -85,6 +85,10 @@ export function createBubbleMachine(io) {
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
 
   let pendingDialogue = null;
+  // Latched with the line it belongs to, never folded into it: a mark inside
+  // the string would be spoken as the model's own words and pushed back into
+  // the session as its last turn (#610).
+  let pendingTruncated = false;
   let speechTimer = null;
   let speechShowing = false;
   let graceTimer = null;
@@ -123,13 +127,18 @@ export function createBubbleMachine(io) {
   return {
     // Every delivered placement, straight from the event listener.
     event(placement) {
-      if (placement.dialogue) pendingDialogue = placement.dialogue;
+      if (placement.dialogue) {
+        pendingDialogue = placement.dialogue;
+        pendingTruncated = Boolean(placement.truncated);
+      }
     },
 
     // The newest placement, once per drawn frame.
     frame(placement) {
       const dialogue = pendingDialogue;
+      const truncated = pendingTruncated;
       pendingDialogue = null;
+      pendingTruncated = false;
 
       // A hidden sprite speaks to nobody; the pulse is consumed, not queued,
       // or the line would pop up whenever the sprite next fades in.
@@ -137,7 +146,7 @@ export function createBubbleMachine(io) {
         hideThinkingNow();
         if (speechTimer !== null) cancel(speechTimer);
         speechShowing = true;
-        io.showSpeech(dialogue);
+        io.showSpeech(dialogue, truncated);
         speechTimer = schedule(() => {
           speechTimer = null;
           speechShowing = false;
@@ -169,6 +178,7 @@ export function createBubbleMachine(io) {
       }
       speechShowing = false;
       pendingDialogue = null;
+      pendingTruncated = false;
       io.hideSpeech();
     },
   };
@@ -210,5 +220,11 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds) {
 // display the sprite touches and — worse — heard once per display.
 export function forOverlay(placement) {
   if (placement.bubble) return placement;
-  return { ...placement, dialogue: null, thinking: false, cue: null };
+  return { ...placement, dialogue: null, truncated: false, thinking: false, cue: null };
 }
+
+// What a reply that ran out of room is marked with, in both surfaces. Drawn
+// under the line rather than appended to it, and deliberately not the bubble's
+// own `…`: that one means "there is more, in Chat" (#547), where this means
+// there is no more (#610).
+export const TRUNCATED_MARK = "[response truncated]";

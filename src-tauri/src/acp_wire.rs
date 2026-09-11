@@ -27,6 +27,7 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
+use ai_buddy_core::director::Reply;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
@@ -189,7 +190,7 @@ enum Msg {
     Prompt {
         session_id: String,
         text: String,
-        reply: sync_mpsc::Sender<Result<String, TurnError>>,
+        reply: sync_mpsc::Sender<Result<Reply, TurnError>>,
     },
     Cancel,
     Answer {
@@ -293,7 +294,7 @@ impl Wire {
         session_id: &str,
         text: &str,
         timeout: Duration,
-    ) -> Result<String, TurnError> {
+    ) -> Result<Reply, TurnError> {
         let (reply, rx) = sync_mpsc::channel();
         self.tx
             .send(Msg::Prompt {
@@ -630,7 +631,7 @@ async fn turn(
     incoming: &mut mpsc::UnboundedReceiver<Incoming>,
     text: &str,
     on_event: &OnEvent,
-) -> Result<String, TurnError> {
+) -> Result<Reply, TurnError> {
     let sent = cx.send_request(PromptRequest::new(
         session.clone(),
         vec![ContentBlock::Text(TextContent::new(text.to_string()))],
@@ -665,10 +666,7 @@ async fn turn(
             response = &mut finished => {
                 end_turn(&mut asks, &mut thought, on_event);
                 return match response {
-                    Ok(response) => match response.stop_reason {
-                        StopReason::EndTurn => Ok(said),
-                        other => Err(TurnError::Stopped(name_of(&other))),
-                    },
+                    Ok(response) => outcome(response.stop_reason, said),
                     Err(_) if cx.is_incoming_closed() => Err(TurnError::Lost),
                     Err(error) => Err(TurnError::Failed(error.message)),
                 };
@@ -837,6 +835,23 @@ fn auth_hint(method: &AuthMethod) -> AuthHint {
     }
 }
 
+/// What a finished turn is worth, from the reason it stopped and the words it
+/// streamed.
+///
+/// A cap-ended turn is shown as far as it got and marked, which is what the
+/// Completer lane does with `finish_reason: "length"` — before this, one event
+/// gave a user half a sentence on an HTTP endpoint and silence on a Harness,
+/// decided by a setting they were not thinking about (#610). With nothing said
+/// there is nothing to show, so it errors like any other stop and the Static
+/// Director takes the turn. Every other stop reason is unchanged.
+fn outcome(stop: StopReason, said: String) -> Result<Reply, TurnError> {
+    match stop {
+        StopReason::EndTurn => Ok(Reply::whole(said)),
+        StopReason::MaxTokens if !said.trim().is_empty() => Ok(Reply::truncated(said)),
+        other => Err(TurnError::Stopped(name_of(&other))),
+    }
+}
+
 /// The wire spelling of a schema enum (`end_turn`, `execute`, `allow_once`).
 fn name_of<T: Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
@@ -890,6 +905,42 @@ mod tests {
                 other => panic!("expected a thought, got {other:?}"),
             })
             .collect()
+    }
+
+    /// #610: a cap-ended turn is best effort on both fills. What the agent
+    /// managed to say is shown and marked; with nothing said the turn errors
+    /// and the Static Director takes it, which is what the empty half of the
+    /// Completer lane does. No other stop reason changes.
+    #[test]
+    fn a_max_tokens_stop_shows_what_it_said_and_errors_when_it_said_nothing() {
+        assert_eq!(
+            outcome(
+                StopReason::MaxTokens,
+                "prowl\nMine now, and the".to_string()
+            ),
+            Ok(Reply::truncated("prowl\nMine now, and the"))
+        );
+        assert_eq!(
+            outcome(StopReason::MaxTokens, "   ".to_string()),
+            Err(TurnError::Stopped("max_tokens".to_string())),
+            "nothing to show is silence, as it is on the Completer lane"
+        );
+        assert_eq!(
+            outcome(StopReason::EndTurn, "prowl".to_string()),
+            Ok(Reply::whole("prowl")),
+            "a turn the agent ended is not marked"
+        );
+        for stop in [
+            StopReason::Refusal,
+            StopReason::Cancelled,
+            StopReason::MaxTurnRequests,
+        ] {
+            assert_eq!(
+                outcome(stop, "half a sentence".to_string()),
+                Err(TurnError::Stopped(name_of(&stop))),
+                "only the cap is best effort; every other stop errors as before"
+            );
+        }
     }
 
     /// The names the Action Log and the Chat surface see are the wire's own

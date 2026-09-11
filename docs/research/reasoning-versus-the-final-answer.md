@@ -516,6 +516,13 @@ spike's to decide, and the recommendation above stands without it.
   is not spoken. §6.3 measured that at two in ten under an 80-token cap with
   `low` effort, and zero in ten at 512. #302 already refused a cut stream for
   the same half-sentence reason; this makes the two ends of the wire agree.
+
+  **Overruled when it shipped (#610, #614).** A `length` finish that wrote
+  text is refused as a *turn* — never a success, never retried, the cap named
+  in the Action Log — and still shown: the Behavior is played, the words are
+  said, and both surfaces mark the reply `[response truncated]`. We are the
+  ones who cut the model off, so what it managed to write is not thrown away.
+  The empty case is unchanged, and is silence.
 - Any server that marks a completed reply with a `finish_reason` other than
   `stop` or `length` (`tool_calls`, `content_filter`) is unchanged, since
   only `length` is refused.

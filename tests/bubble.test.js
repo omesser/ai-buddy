@@ -172,9 +172,9 @@ function machineHarness() {
   // which reads here as a surface that went blank.
   let surface = null;
   const machine = createBubbleMachine({
-    showSpeech(text) {
+    showSpeech(text, truncated) {
       surface = "speech";
-      calls.push(`showSpeech:${text}`);
+      calls.push(`showSpeech:${text}${truncated ? " [truncated]" : ""}`);
     },
     hideSpeech() {
       surface = null;
@@ -435,4 +435,32 @@ test("the capability the renderer asks for is a command the Shell registers", ()
     new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
     `${asked[1]} is registered in generate_handler!`,
   );
+});
+// #610: a reply the token cap ended is still spoken, and the bubble says
+// there is no more of it. The mark rides beside the line and never inside it:
+// a mark in the string is spoken as the model's own words and pushed back
+// into the session as its last turn.
+test("the truncation mark rides with the line it belongs to", () => {
+  const { machine, calls, placement } = machineHarness();
+
+  machine.event(placement({ dialogue: "Mine now, and the desk is", truncated: true }));
+  machine.frame(placement({}));
+  assert.deepEqual(calls, ["showSpeech:Mine now, and the desk is [truncated]"]);
+
+  machine.event(placement({ dialogue: "all mine" }));
+  machine.frame(placement({}));
+  assert.deepEqual(
+    calls,
+    ["showSpeech:Mine now, and the desk is [truncated]", "showSpeech:all mine"],
+    "the next whole line is not marked with the last one's mark",
+  );
+});
+
+// A losing overlay draws no bubble, so it must not be handed the mark either
+// — it would arm nothing and mean nothing there (#178).
+test("an overlay that does not own the bubble is told no mark", () => {
+  const stripped = forOverlay({ dialogue: "hi", truncated: true, bubble: false });
+
+  assert.equal(stripped.dialogue, null);
+  assert.equal(stripped.truncated, false);
 });

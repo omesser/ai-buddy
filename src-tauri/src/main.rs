@@ -379,6 +379,11 @@ struct SpritePlacement<'a> {
     /// A line to speak on this tick only. Dialogue is an event, not a state.
     /// #119: the webview latches it and owns display duration.
     dialogue: Option<String>,
+    /// The cap ended the turn this line came from, so it stops where the
+    /// model was stopped. Drawn as a mark under the words and never written
+    /// into them: a mark inside the string is spoken as the model's own words
+    /// and pushed back into the session as its last turn (#610).
+    truncated: bool,
     /// Whether to show the thinking ellipsis. Derived from what the Instance
     /// has on the wire. #119: grace and min-hold are in the webview so the
     /// Engine stays tick-pure.
@@ -428,6 +433,10 @@ struct Spoken {
     line: String,
     at: Instant,
     owner: Option<usize>,
+    /// The cap ended the turn this line came from. Carried with the line,
+    /// because an overlay that picks the line up late draws the same bubble
+    /// the first one drew (#610).
+    truncated: bool,
 }
 
 /// The longest the renderer keeps a line up — `bubbleDuration`'s clamp in
@@ -447,23 +456,25 @@ const CARRY_WINDOW: Duration = Duration::from_secs(8);
 fn carry_line(
     spoken: &mut Option<Spoken>,
     said: Option<&str>,
+    truncated: bool,
     owner: Option<usize>,
     now: Instant,
-) -> Option<String> {
+) -> Option<(String, bool)> {
     if let Some(line) = said {
         *spoken = Some(Spoken {
             line: line.to_string(),
             at: now,
             owner,
+            truncated,
         });
-        return Some(line.to_string());
+        return Some((line.to_string(), truncated));
     }
     let carried = spoken.as_mut()?;
     if carried.owner == owner || now.duration_since(carried.at) > CARRY_WINDOW {
         return None;
     }
     carried.owner = owner;
-    Some(carried.line.clone())
+    Some((carried.line.clone(), carried.truncated))
 }
 
 /// What one Instance's tick decided to draw, in the space every display shares.
@@ -483,6 +494,9 @@ struct Placed {
     frame_index: usize,
     mirror: i8,
     dialogue: Option<String>,
+    /// The line is as far as the model got before the cap. Drawn as a mark
+    /// under the words, never written into them (#610).
+    truncated: bool,
     thinking: bool,
     cue: Option<Cue>,
     /// The overlay that draws the bubble, decided once from the feet
@@ -1377,6 +1391,12 @@ struct ChatReply {
     /// it named a version this CLI will not serve (#514). Not replayed: the
     /// session log keeps the line said, and there was none.
     error: Option<String>,
+    /// The cap ended the turn, so `said` is as far as the model got. The
+    /// surface marks it rather than writing anything into the line: a mark
+    /// inside the words would be spoken as the model's own and fed back to it
+    /// as its last turn (#610).
+    #[serde(default)]
+    truncated: bool,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
@@ -1457,6 +1477,7 @@ fn chat_ready(
                     reacting_to: turn.reacting_to,
                     you: turn.you,
                     error: None,
+                    truncated: turn.truncated,
                     at: Some(
                         turn.at
                             .duration_since(UNIX_EPOCH)
@@ -3247,22 +3268,44 @@ mod tests {
         let mut spoken = None;
 
         assert_eq!(
-            carry_line(&mut spoken, Some("Yare yare daze."), Some(0), t0).as_deref(),
+            carry_line(&mut spoken, Some("Yare yare daze."), false, Some(0), t0)
+                .map(|(line, _)| line)
+                .as_deref(),
             Some("Yare yare daze."),
             "the pulse itself goes to the owner of the tick"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(0), t0 + Duration::from_secs(1)),
+            carry_line(
+                &mut spoken,
+                None,
+                false,
+                Some(0),
+                t0 + Duration::from_secs(1)
+            ),
             None,
             "the same owner is not told twice"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
+            carry_line(
+                &mut spoken,
+                None,
+                false,
+                Some(1),
+                t0 + Duration::from_secs(2)
+            )
+            .map(|(line, _)| line)
+            .as_deref(),
             Some("Yare yare daze."),
             "mid-reading, the new owner is told the line"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(3)),
+            carry_line(
+                &mut spoken,
+                None,
+                false,
+                Some(1),
+                t0 + Duration::from_secs(3)
+            ),
             None,
             "and then not again while it stays there"
         );
@@ -3270,6 +3313,7 @@ mod tests {
             carry_line(
                 &mut spoken,
                 None,
+                false,
                 Some(0),
                 t0 + CARRY_WINDOW + Duration::from_secs(1)
             ),
@@ -3278,20 +3322,30 @@ mod tests {
         );
 
         let mut spoken = None;
-        carry_line(&mut spoken, Some("first"), Some(0), t0);
+        carry_line(&mut spoken, Some("first"), false, Some(0), t0);
         assert_eq!(
             carry_line(
                 &mut spoken,
                 Some("second"),
+                false,
                 Some(0),
                 t0 + Duration::from_secs(1)
             )
+            .map(|(line, _)| line)
             .as_deref(),
             Some("second"),
             "a new line replaces the remembered one"
         );
         assert_eq!(
-            carry_line(&mut spoken, None, Some(1), t0 + Duration::from_secs(2)).as_deref(),
+            carry_line(
+                &mut spoken,
+                None,
+                false,
+                Some(1),
+                t0 + Duration::from_secs(2)
+            )
+            .map(|(line, _)| line)
+            .as_deref(),
             Some("second"),
             "and it is the new line that crosses"
         );

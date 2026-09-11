@@ -14,6 +14,7 @@ import {
   forOverlay,
   wrapText,
   placeBubble,
+  TRUNCATED_MARK,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
@@ -55,6 +56,13 @@ function createView(id) {
   bubble.dataset.instance = id;
   const bubbleContent = document.createElement("div");
   bubbleContent.className = "bubble-content";
+  // Its own element under the words, so the mark is never part of what the
+  // buddy said — not in the bubble, not in the session the next turn is built
+  // from (#610).
+  const bubbleMark = document.createElement("div");
+  bubbleMark.className = "bubble-mark";
+  bubbleMark.textContent = TRUNCATED_MARK;
+  bubbleMark.hidden = true;
   const dots = document.createElement("div");
   dots.className = "thinking-dots";
   for (let i = 0; i < 3; i += 1) {
@@ -81,7 +89,7 @@ function createView(id) {
     });
   });
 
-  bubble.append(bubbleContent, dots, more);
+  bubble.append(bubbleContent, bubbleMark, dots, more);
 
   // The Instance's cues, in a layer of their own so a dismissed buddy takes
   // any still playing with it. Last of the three, so a cue sharing the sprite's
@@ -102,6 +110,7 @@ function createView(id) {
     bubble,
     bubbleContent,
     more,
+    bubbleMark,
     cueLayer,
     // Where "Open chat" is, in this overlay's coordinates, or null when it is
     // not drawn. `reportHotspots` sends the set across; see there for why the
@@ -173,7 +182,7 @@ function createView(id) {
   view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
 
   view.bubbles = createBubbleMachine({
-    showSpeech(text) {
+    showSpeech(text, cutOff) {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = "14px system-ui, sans-serif";
@@ -182,9 +191,16 @@ function createView(id) {
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
+      // The opposite meaning to the control above it: "Open chat" says the
+      // rest of this line is in Chat, and the mark says the model never got
+      // to write the rest (#610).
+      view.bubbleMark.hidden = !cutOff;
       show("speech");
     },
-    hideSpeech: hide,
+    hideSpeech() {
+      view.bubbleMark.hidden = true;
+      hide();
+    },
     showThinking() {
       // The same box in the other mode. main.css hides the control outside
       // speech, so the attribute left over from the last line draws nothing.

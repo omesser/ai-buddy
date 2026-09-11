@@ -168,7 +168,70 @@ pub fn reactive(happened: &Happened) -> bool {
 /// The attached Harness, or the HTTP stand-in in the shell when none is
 /// attached. Tests put a double here.
 pub trait Completer {
-    fn complete(&self, request: &WakeRequest) -> Result<String, String>;
+    fn complete(&self, request: &WakeRequest) -> Result<Reply, String>;
+}
+
+/// One completed turn: what the model said, and whether it was still saying it
+/// when the cap stopped it.
+///
+/// `truncated` travels beside the text rather than in it for the reason
+/// `near_miss` does: the parser cannot infer it, and a mark written into the
+/// string would be spoken as the model's own words and fed back as its last
+/// turn. A truncated turn is never a successful one on the wire — it is never
+/// retried and the Action Log names the cap — but what it managed to write is
+/// still parsed and still shown, because we are the ones who cut it off (#610).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reply {
+    pub text: String,
+    pub truncated: bool,
+}
+
+impl Reply {
+    /// A whole reply: the model stopped because it was done.
+    pub fn whole(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            truncated: false,
+        }
+    }
+
+    /// As far as the model got before the cap ended the turn.
+    pub fn truncated(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            truncated: true,
+        }
+    }
+}
+
+impl From<String> for Reply {
+    fn from(text: String) -> Self {
+        Self::whole(text)
+    }
+}
+
+impl From<&str> for Reply {
+    fn from(text: &str) -> Self {
+        Self::whole(text)
+    }
+}
+
+/// One wake, parsed, with the two facts about the reply the parse result
+/// cannot carry.
+///
+/// Both are about the turn rather than about the animation, and neither can be
+/// recovered from the `Wake`: a near miss is speech that named something, and
+/// a truncation is words that stop early. The Shell reports them; the Engine
+/// never sees them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Woken {
+    pub wake: Wake,
+    /// The Behavior name the reply proposed that this Character declares none
+    /// of. `None` on every other reply.
+    pub near_miss: Option<String>,
+    /// The cap ended this turn, so what is in `wake` is as far as the model
+    /// got. Marked where it is drawn, never spoken (#610).
+    pub truncated: bool,
 }
 
 /// Result of one model call.
@@ -233,7 +296,7 @@ impl<C: Completer> ModelDirector<C> {
     }
 
     pub fn wake(&self, context: &Context) -> Wake {
-        self.wake_and_near_miss(context).0
+        self.wake_and_near_miss(context).wake
     }
 
     /// The wake, and the Behavior name the reply proposed that this Character
@@ -243,13 +306,36 @@ impl<C: Completer> ModelDirector<C> {
     /// as speech exactly like a model that chose to talk — so without this it
     /// is invisible, trace flag or not. Reported, never corrected; guessing
     /// a correction is what #231 ruled out (#243).
-    pub fn wake_and_near_miss(&self, context: &Context) -> (Wake, Option<String>) {
+    pub fn wake_and_near_miss(&self, context: &Context) -> Woken {
         match self.completer.complete(&self.request(context)) {
+            // Parsed exactly as a whole reply is. The cap ended the turn, not
+            // the contract: a Behavior the model named before it ran out is
+            // still the Behavior it chose, and the words after it are still
+            // what it said. The fact that it was cut off rides out beside
+            // them (#610).
             Ok(reply) => {
+                let (wake, near_miss) = self.parsed(&reply.text);
+                Woken {
+                    wake,
+                    near_miss,
+                    truncated: reply.truncated,
+                }
+            }
+            Err(_) => Woken {
+                wake: Wake::Failed,
+                near_miss: None,
+                truncated: false,
+            },
+        }
+    }
+
+    fn parsed(&self, reply: &str) -> (Wake, Option<String>) {
+        {
+            {
                 // The Completer has the opening; later turns stay short
                 // even if this reply failed to parse.
                 self.opened.store(true, Ordering::SeqCst);
-                match parse_proposal(&reply) {
+                match parse_proposal(reply) {
                     // The declared spelling, not the model's: a name written
                     // at the start of a line comes back capitalised, and the
                     // Engine looks a Behavior up by the name its Character
@@ -276,12 +362,11 @@ impl<C: Completer> ModelDirector<C> {
                         }
                         // `parse_proposal` has already ruled the name a single
                         // token, so this is the near miss and not prose.
-                        None => (spoken_or_failed(&reply), Some(proposal.behavior)),
+                        None => (spoken_or_failed(reply), Some(proposal.behavior)),
                     },
-                    Err(_) => (spoken_or_failed(&reply), None),
+                    Err(_) => (spoken_or_failed(reply), None),
                 }
             }
-            Err(_) => (Wake::Failed, None),
         }
     }
 
@@ -1191,14 +1276,22 @@ mod tests {
     /// Completer that returns a fixed reply and records the request it
     /// received.
     struct Scripted {
-        reply: Result<String, String>,
+        reply: Result<Reply, String>,
         seen: std::sync::Mutex<Option<WakeRequest>>,
     }
 
     impl Scripted {
         fn says(reply: &str) -> Self {
             Self {
-                reply: Ok(reply.to_string()),
+                reply: Ok(Reply::whole(reply)),
+                seen: std::sync::Mutex::new(None),
+            }
+        }
+
+        /// Said this much, and was cut off by the cap saying it.
+        fn says_as_far_as(reply: &str) -> Self {
+            Self {
+                reply: Ok(Reply::truncated(reply)),
                 seen: std::sync::Mutex::new(None),
             }
         }
@@ -1220,7 +1313,7 @@ mod tests {
     }
 
     impl Completer for Scripted {
-        fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+        fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
             *self.seen.lock().expect("the lock is not poisoned") = Some(request.clone());
             self.reply.clone()
         }
@@ -1322,7 +1415,8 @@ mod tests {
     fn an_undeclared_name_is_handed_back_as_a_near_miss() {
         let director = directing(Scripted::says("prowll\nMine now."), ["prowl", "wave"]);
 
-        let (wake, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
+        let woken = director.wake_and_near_miss(&context(working(), &[]));
+        let (wake, near_miss) = (woken.wake, woken.near_miss);
 
         assert_eq!(near_miss.as_deref(), Some("prowll"));
         match wake {
@@ -1339,10 +1433,51 @@ mod tests {
         for reply in ["prowl", "Prowl.", "PROWL:", "Prowl | hunting"] {
             let director = directing(Scripted::says(reply), ["prowl", "wave"]);
 
-            let (_, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
+            let near_miss = director
+                .wake_and_near_miss(&context(working(), &[]))
+                .near_miss;
 
             assert_eq!(near_miss, None, "{reply:?} names something declared");
         }
+    }
+
+    /// We are the ones who cut the model off, so what it wrote before the cap
+    /// is acted on: the Behavior plays and the words are said. The fact that
+    /// it stopped early rides out beside them, for the surfaces to mark, and
+    /// is nowhere in the text (#610).
+    #[test]
+    fn a_truncated_reply_is_parsed_and_carries_its_mark() {
+        let director = directing(
+            Scripted::says_as_far_as("prowl\nMine now, and the desk is"),
+            ["prowl", "wave"],
+        );
+
+        let woken = director.wake_and_near_miss(&context(working(), &[]));
+
+        assert!(woken.truncated, "the mark travels beside the reply");
+        match woken.wake {
+            Wake::Proposed(proposal) => {
+                assert_eq!(proposal.behavior, "prowl");
+                assert_eq!(
+                    proposal.dialogue.as_deref(),
+                    Some("Mine now, and the desk is"),
+                    "the words are the model's own, with no mark written into them"
+                );
+            }
+            other => panic!("a truncated reply is still a reply, not {other:?}"),
+        }
+    }
+
+    /// A whole reply says so, or every turn would be drawn as half of one.
+    #[test]
+    fn a_whole_reply_is_not_marked() {
+        let director = directing(Scripted::says("prowl\nMine now."), ["prowl", "wave"]);
+
+        assert!(
+            !director
+                .wake_and_near_miss(&context(working(), &[]))
+                .truncated
+        );
     }
 
     /// `say` is the keyword every Character gets, not one it declares, so it
@@ -1351,7 +1486,9 @@ mod tests {
     fn the_say_keyword_is_no_near_miss() {
         let director = directing(Scripted::says("say | hello"), ["prowl", "wave"]);
 
-        let (_, near_miss) = director.wake_and_near_miss(&context(working(), &[]));
+        let near_miss = director
+            .wake_and_near_miss(&context(working(), &[]))
+            .near_miss;
 
         assert_eq!(near_miss, None);
     }
