@@ -115,19 +115,27 @@ dump_ai_tab() {
   app_pid=""
 }
 
-# Whether the control after a label is live, which is how a labelled row is
-# addressed here: the tree is in render order, so the control for "Base URL" is
-# the next control after the static text that says it.
+# Whether the control right after a label is live, which is how a labelled row
+# is addressed here: the tree is in render order, so the control for "Base URL"
+# is the line straight after the static text that says it.
 #
-# Two different flags mean "live", because the renderer freezes two ways: a
-# popup or a button gets setEnabled(false), a text field gets
-# setEditable(false). Only the second is visible in AXValue's settability.
+# The role is not fixed, which is the trap. AppKit demotes a non-editable
+# NSTextField from AXTextField to plain AXStaticText, so a frozen row and its
+# label look alike and a matcher that waits for AXTextField walks straight past
+# it into the next row. Take the next line whatever its role, and read the
+# column that means "live" for that role: settability for a field, enabled for
+# a popup or a button, and nothing at all for the demoted static text, which is
+# frozen by definition.
 row_live() {
   awk -F'|' -v want="$2" '
-		found && $1 ~ /AXTextField|AXStaticText:AXSecureTextField/ { print $6; exit }
-		found && $1 ~ /AXPopUpButton|AXButton/ { print $5; exit }
-		$3 == want { found = 1 }
-	' "$1"
+    found {
+      if ($1 ~ /AXTextField/) { print $6 }
+      else if ($1 ~ /AXPopUpButton|AXButton/) { print $5 }
+      else { print "false" }
+      exit
+    }
+    $3 == want { found = 1 }
+  ' "$1"
 }
 
 has_line() { grep -Fq "$2" "$1"; }

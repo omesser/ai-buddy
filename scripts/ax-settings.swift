@@ -33,7 +33,7 @@ func die(_ message: String) -> Never {
 }
 
 guard args.count >= 2, let pid = pid_t(args[1]) else {
-    die("usage: ax-settings <open|tab|dump|frame> <pid> [tab-title]")
+    die("usage: ax-settings <open|tab|pick|dump|frame> <pid> [args]")
 }
 
 guard AXIsProcessTrusted() else {
@@ -195,6 +195,37 @@ case "tab":
     else {
         die("no tab titled \(args[2])")
     }
+
+case "pick":
+    // Changing a popup in place, which is the only way to reach the states
+    // that exist between two launches - a source switched while the window is
+    // open. The popup is addressed by the label above it, because the tree is
+    // in render order and a label is stabler than an index.
+    guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
+    guard let window = settingsWindow() else { die("Settings is not open") }
+    var lastLabel = ""
+    var popup: AXUIElement?
+    func scan(_ element: AXUIElement, depth: Int) {
+        guard depth < 30, popup == nil else { return }
+        let role = string(element, kAXRoleAttribute) ?? ""
+        if role == "AXStaticText" { lastLabel = string(element, kAXValueAttribute) ?? "" }
+        if role == "AXPopUpButton", lastLabel == args[2] {
+            popup = element
+            return
+        }
+        for child in children(element) { scan(child, depth: depth + 1) }
+    }
+    scan(window, depth: 0)
+    guard let target = popup else { die("no popup labelled \(args[2])") }
+    // Setting AXValue is refused by NSPopUpButton, so open it and press the
+    // row: the same path a person takes, and the only one that fires the
+    // action the renderer listens for.
+    guard press(target) else { die("could not open the \(args[2]) popup") }
+    guard let option = waitFor(5, { find(target) { string($0, kAXTitleAttribute) == args[3] } })
+    else {
+        die("the \(args[2]) popup has no option \(args[3])")
+    }
+    guard press(option) else { die("could not pick \(args[3])") }
 
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
