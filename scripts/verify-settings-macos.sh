@@ -90,10 +90,9 @@ dump_ai_tab() {
   env HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf "$@" \
     "$bin" > "$log" 2>&1 &
   app_pid=$!
-  # Wait for the attachment on the app's own stream before opening Settings.
-  # The window builds its rows once and never re-freezes them (#625), so a
-  # window opened first would report the Completer that was in force a
-  # second ago rather than the one in force now.
+  # Wait for the attachment before opening Settings. draw() re-applies freeze
+  # (#593), but a background attach does not draw, so a window opened first
+  # would still dump the Completer from launch.
   if [ -n "$expect" ]; then
     local waited=0
     while ! grep -Fq "harness: $harness attached" "$log" && [ "$waited" -lt 90 ]; do
@@ -167,7 +166,7 @@ for label in "Base URL" "Model"; do
   fi
 done
 
-if has_line "$plain" 'the Director'"'"'s "AI brain"'; then
+if has_line "$plain" "The HTTP endpoint below is the AI brain."; then
   pass 'the state line says "AI brain"'
 else
   fail 'the state line no longer says "AI brain"'
