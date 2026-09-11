@@ -778,7 +778,7 @@ fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
         heading: "AI source".to_string(),
-        comment: Some("Choose which \"AI brain\" answers: Model API (HTTP Completer below) or an attached Harness.".to_string()),
+        comment: Some("Choose which \"AI brain\" answers: Model API or an attached Harness.".to_string()),
         disclosure: Some("Model API uses the HTTP Completer below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the Completer, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP Completer, and a Harness is attached at once, answering once its child is up.".to_string()),
         status: None,
         rows: vec![

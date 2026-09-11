@@ -203,7 +203,7 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
         None => {
-            "Not attached. The HTTP Completer above is the Director's \"AI brain\".".to_string()
+            "Not attached. The HTTP Completer below is the Director's \"AI brain\".".to_string()
         }
         Some(attached) => match &attached.login {
             Some(login) => format!(
@@ -214,7 +214,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // Configured and not answering is its own state, and the one that
             // must not read as attached: a Harness this machine has not got
             // leaves the handle in place while the Director runs on Static,
-            // and the HTTP rows above are live because of it (#452).
+            // and the HTTP rows below are live because of it (#452).
             //
             // Live is not the same as in force, which is what this line used
             // to imply and #469 corrected. `completer_from` hands the Director
@@ -226,7 +226,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // the user rather than by a relaunch.
             None if !attached.alive => format!(
                 "{} is set but not running, so the Director is on static weights until it \
-                 answers. It stays the Completer while it is set; Off above hands the HTTP \
+                 answers. It stays the Completer while it is set; Model API below hands the HTTP \
                  rows back, and takes effect at once.",
                 attached.name
             ),
@@ -3620,7 +3620,7 @@ mod tests {
             "nothing waits for one any more, got {line:?}"
         );
         assert!(
-            line.contains("Off above"),
+            line.contains("Model API below"),
             "the line has to name the pick that ends the wait, got {line:?}"
         );
         assert!(
