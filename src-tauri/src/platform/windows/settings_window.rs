@@ -141,7 +141,7 @@ impl SettingsWindow {
                     };
                     // Send WM_ENABLE message to enable/disable the control.
                     // WM_ENABLE: wParam = TRUE to enable, FALSE to disable.
-                    SendMessageA(*hwnd, WM_ENABLE, if frozen { 0 } else { 1 }, 0);
+                    SendMessageA(hwnd, WM_ENABLE, if frozen { 0 } else { 1 }, 0);
                 }
             }
         }
