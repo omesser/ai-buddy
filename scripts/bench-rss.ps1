@@ -63,8 +63,8 @@ $log = "$Out.app.log"
 # Note WebView2 processes before launch. msedgewebview2.exe is the helper.
 $beforeEdge = Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
 
-# Launch the app
-$process = Start-Process -FilePath ".\$bin" -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err" -WindowStyle Hidden
+# Launch the app, merging stderr into stdout (overlay signal is on stderr)
+$process = Start-Process -FilePath ".\$bin" -PassThru -RedirectStandardOutput $log -RedirectStandardError $log -WindowStyle Hidden
 $app = $process.Id
 
 # Cleanup function
@@ -76,7 +76,7 @@ function Stop-App {
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Stop-App } | Out-Null
 trap { Stop-App; throw }
 
-# Wait for overlay initialization
+# Wait for overlay initialization (signal is on stderr, now merged into $log)
 $overlayReported = $false
 $displays = 0
 for ($i = 0; $i -lt 30; $i++) {
@@ -117,10 +117,10 @@ Write-Host "pids: $($pids -join ' ')"
 Write-Host "settling ${Settle}s, then sampling ${Seconds}s every ${Interval}s -> $Out"
 
 # Log process tree for forensics
-foreach ($pid in $pids) {
+foreach ($procId in $pids) {
     try {
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
-        Write-Host "  $pid $($proc.ProcessName) $($proc.WorkingSet64 / 1MB) MB"
+        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+        Write-Host "  $procId $($proc.ProcessName) $($proc.WorkingSet64 / 1MB) MB"
     } catch {}
 }
 
@@ -133,9 +133,9 @@ $header | Out-File -FilePath $Out -Encoding UTF8
 $endTime = (Get-Date).AddSeconds($Seconds)
 while ((Get-Date) -lt $endTime) {
     $rss = @()
-    foreach ($pid in $pids) {
+    foreach ($procId in $pids) {
         try {
-            $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+            $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
             $rss += [math]::Round($proc.WorkingSet64 / 1KB)
         } catch {
             $rss += 0
@@ -159,9 +159,9 @@ Write-Host "`ntotal   samples: $($sorted.Count)   min: $min MB   median: $median
 
 # Per-process statistics
 $column = 0
-foreach ($pid in $pids) {
+foreach ($procId in $pids) {
     try {
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
         $procName = $proc.ProcessName
         $peakWS = [math]::Round($proc.PeakWorkingSet64 / 1MB)
 
@@ -174,9 +174,9 @@ foreach ($pid in $pids) {
         $pidRssSorted = $pidRss | Sort-Object
         $pidMedian = [math]::Round($pidRssSorted[[math]::Floor($pidRssSorted.Count / 2)] / 1024)
 
-        Write-Host ("  {0,-6} {1,-28} rss median: {2,4} MB   peak working set: {3} MB" -f $pid, $procName, $pidMedian, $peakWS)
+        Write-Host ("  {0,-6} {1,-28} rss median: {2,4} MB   peak working set: {3} MB" -f $procId, $procName, $pidMedian, $peakWS)
     } catch {
-        Write-Host "  $pid gone"
+        Write-Host "  $procId gone"
     }
     $column++
 }
