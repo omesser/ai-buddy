@@ -26,16 +26,16 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, EnableWindow,
-    GetClassNameA, GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA,
-    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
-    SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
-    BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL,
-    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT,
-    HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE,
-    WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
+    GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowTextA,
+    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
+    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
+    CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD,
+    ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES,
+    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA,
+    WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+    WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -139,7 +139,9 @@ impl SettingsWindow {
                         | Control::ComboBox(hwnd, _, _) => *hwnd,
                         _ => continue,
                     };
-                    EnableWindow(hwnd, if frozen { 0 } else { 1 });
+                    // Send WM_ENABLE message to enable/disable the control.
+                    // WM_ENABLE: wParam = TRUE to enable, FALSE to disable.
+                    SendMessageA(*hwnd, WM_ENABLE, if frozen { 0 } else { 1 }, 0);
                 }
             }
         }
