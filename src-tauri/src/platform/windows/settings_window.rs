@@ -644,8 +644,8 @@ fn set_window_text(hwnd: HWND, text: &str) {
 /// wrapping that a STATIC control will perform.
 fn measure_wrapped_text_height(text: &str, width: i32) -> i32 {
     unsafe {
-        let hdc = CreateCompatibleDC(0);
-        if hdc == 0 {
+        let hdc = CreateCompatibleDC(ptr::null_mut());
+        if hdc.is_null() {
             return LABEL_HEIGHT * 2; // Fallback
         }
         let hfont = GetStockObject(DEFAULT_GUI_FONT) as HGDIOBJ;
