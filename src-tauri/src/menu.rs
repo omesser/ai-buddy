@@ -37,6 +37,8 @@ pub enum MenuAction {
     OpenMemory,
     /// Open the settings window. Tray and sprite both reach it this way.
     OpenSettings,
+    /// Open the Chat surface. The same action a Summon performs.
+    Summon,
     /// Leave. Ours, not `PredefinedMenuItem::quit`: that calls `terminate:`
     /// from inside the tray menu and deadlocks the overlay webviews.
     Quit,
@@ -161,15 +163,12 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
     let mut entries = Vec::new();
     let mut actions = HashMap::new();
 
-    // Chat… — present and disabled: Summon is the only way into the Chat
-    // surface today, and an absent row would move everything under it on the
-    // day this one is wired (#17). No action is registered, so a click cannot
-    // do anything.
     entries.push(MenuEntry::Item {
         id: CHAT_ID.to_string(),
         label: "Chat…".to_string(),
-        enabled: false,
+        enabled: true,
     });
+    actions.insert(CHAT_ID.to_string(), MenuAction::Summon);
 
     // Character ▸ — one row per installed package, current check-marked.
     //
@@ -540,7 +539,7 @@ mod tests {
     /// The menu says what exists. Chat is in it and cannot be clicked, because
     /// the row moving later is worse than a row that cannot be clicked yet.
     #[test]
-    fn chat_is_listed_and_disabled() {
+    fn chat_is_listed_and_enabled() {
         let description = describe(snapshot(&[], "bmo", false));
 
         assert_eq!(
@@ -548,13 +547,14 @@ mod tests {
             Some(&MenuEntry::Item {
                 id: "chat".to_string(),
                 label: "Chat…".to_string(),
-                enabled: false,
+                enabled: true,
             }),
-            "Chat is present and disabled until the row is wired (#17)"
+            "Chat is present and enabled"
         );
-        assert!(
-            !description.actions.contains_key("chat"),
-            "and choosing it cannot do anything"
+        assert_eq!(
+            description.actions.get("chat"),
+            Some(&MenuAction::Summon),
+            "and choosing it Summons"
         );
     }
 

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ai_buddy_core::director::{self, Context, Happened, Wake};
 use ai_buddy_core::dispatch::{dispatch, DenyList, DispatchContext, InstanceInfo};
-use ai_buddy_core::engine::{Cue, State, Verb};
+use ai_buddy_core::engine::{BehaviorProposal, Cue, State, Verb};
 use ai_buddy_core::input::press_target;
 use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use ai_buddy_core::roster::{InstanceId, Roster};
@@ -160,6 +160,8 @@ pub(crate) fn run_frame_loop(
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
+        let mut time_since_launch = Duration::ZERO;
+        let mut tour_triggered = false;
 
         loop {
             thread::sleep(ENGINE_TICK);
@@ -937,6 +939,47 @@ pub(crate) fn run_frame_loop(
             // most of a tick.
             let elapsed = Duration::from_millis(u64::from(elapsed_ms));
             since_sense += elapsed;
+            time_since_launch += elapsed;
+
+            // First-run tour: 25 seconds after launch, show a Speech bubble on the
+            // first Instance teaching the three gestures. Only once, only if
+            // the user has not already Summoned, and only if Do Not Disturb is off.
+            if !tour_triggered && time_since_launch.as_secs() >= 25 && !lives.is_empty() {
+                let should_show_tour = {
+                    let settings_guard = settings.lock();
+                    settings_guard
+                        .as_ref()
+                        .is_ok_and(|s| !s.first_run_tour_shown && !s.do_not_disturb)
+                };
+
+                if should_show_tour {
+                    if let Some(first_live) = lives.first() {
+                        let already_opened = app
+                            .get_webview_window(&chat_label(&first_live.id))
+                            .is_some();
+
+                        if !already_opened {
+                            if let Some(instance) = roster.get_mut(&first_live.id) {
+                                let tour_message = "Double-click me any time to open Chat.\n\n\
+                                     Click once to Poke and get a reaction.\n\n\
+                                     Right-click to open the menu.";
+
+                                instance.enqueue(BehaviorProposal {
+                                    behavior: String::new(),
+                                    dialogue: Some(tour_message.to_string()),
+                                });
+                            }
+
+                            if let Ok(mut settings_guard) = settings.lock() {
+                                settings_guard.first_run_tour_shown = true;
+                                let _ = settings_guard.save(&settings_path);
+                            }
+                            eprintln!("tour: first-run gesture tour shown as Speech bubble");
+                        }
+                    }
+                }
+                tour_triggered = true;
+            }
 
             // One reading of the user for every Instance, taken before any of
             // them is ticked so that they all wake against the same desktop. A
