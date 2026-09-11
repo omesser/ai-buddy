@@ -337,6 +337,15 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
              list` reports."
                 .to_string(),
         ),
+        "pi" => (
+            format!(
+                "URL:   {url}\nToken: Bearer {token}"
+            ),
+            "Point Pi at that URL over Streamable HTTP and send the token as \
+             `Authorization: Bearer <token>`. Configuration depends on which Pi client you're \
+             using; check its documentation for MCP server registration."
+                .to_string(),
+        ),
         _ => (
             format!("URL:   {url}\nToken: {token}"),
             format!(
