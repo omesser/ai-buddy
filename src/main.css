@@ -122,22 +122,6 @@ body {
   white-space: pre-wrap;
 }
 
-/* The mark for a reply the token cap ended: its own line under the words, in
-   the bubble but not of the sentence. Never appended to the text, because the
-   line the bubble draws is the line the session keeps and the model reads back
-   as its own last turn (#610). Not the wrap's `…` either — that one means
-   "there is more, in Chat", and this one means there is no more. */
-.bubble-mark {
-  margin-top: 4px;
-  font-size: calc(var(--shared-type-size) * 0.8);
-  opacity: 0.65;
-}
-
-.bubble:not([data-mode="speech"]) .bubble-mark,
-.bubble-mark[hidden] {
-  display: none;
-}
-
 /* The tail is the same sandwich as the box: a ring triangle with a fill
    triangle over it. A lone --bubble-panel spike would vanish on exactly the
    grounds the ring exists for. 10px tall, which is the gap placeBubble leaves

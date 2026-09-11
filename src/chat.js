@@ -529,8 +529,7 @@ async function start() {
         said("You", payload.said ?? "", "you", payload.at);
         return;
       }
-      // #610: the truncation mark rides in the remembered text (session + Chat
-      // history), not in the strip. The strip is for thinking only (ADR-0025).
+      // #610: The strip is for thinking only (ADR-0025).
       if (payload.busy) {
         const refused = waiting.pop();
         if (refused) {

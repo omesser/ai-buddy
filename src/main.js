@@ -56,13 +56,6 @@ function createView(id) {
   bubble.dataset.instance = id;
   const bubbleContent = document.createElement("div");
   bubbleContent.className = "bubble-content";
-  // Its own element under the words, so the mark is never part of what the
-  // buddy said — not in the bubble, not in the session the next turn is built
-  // from (#610).
-  const bubbleMark = document.createElement("div");
-  bubbleMark.className = "bubble-mark";
-  bubbleMark.textContent = TRUNCATED_MARK;
-  bubbleMark.hidden = true;
   const dots = document.createElement("div");
   dots.className = "thinking-dots";
   for (let i = 0; i < 3; i += 1) {
@@ -89,7 +82,7 @@ function createView(id) {
     });
   });
 
-  bubble.append(bubbleContent, bubbleMark, dots, more);
+  bubble.append(bubbleContent, dots, more);
 
   // The Instance's cues, in a layer of their own so a dismissed buddy takes
   // any still playing with it. Last of the three, so a cue sharing the sprite's
@@ -110,7 +103,6 @@ function createView(id) {
     bubble,
     bubbleContent,
     more,
-    bubbleMark,
     cueLayer,
     // Where "Open chat" is, in this overlay's coordinates, or null when it is
     // not drawn. `reportHotspots` sends the set across; see there for why the
@@ -191,14 +183,9 @@ function createView(id) {
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
-      // #610: the truncation mark rides in the remembered text (session + Chat
-      // history), not under the bubble. The bubble mark was removed; `cutOff`
-      // is now unused but kept in the signature for now.
-      view.bubbleMark.hidden = true;
       show("speech");
     },
     hideSpeech() {
-      view.bubbleMark.hidden = true;
       hide();
     },
     showThinking() {
