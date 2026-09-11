@@ -782,7 +782,10 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
 /// its own reads as nonsense. `None` while nothing but whitespace has come —
 /// an adapter streams signature-only thinking blocks whose text is empty, and
 /// a strip that opens on one says the Harness is thinking about nothing.
-fn thinking_line(thought: &str) -> Option<&str> {
+///
+/// Shared with the Completer lane, whose reasoning deltas arrive in the same
+/// mid-sentence chunks and are drawn on the same strip (#611).
+pub(crate) fn thinking_line(thought: &str) -> Option<&str> {
     thought
         .lines()
         .rev()

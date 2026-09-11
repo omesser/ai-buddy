@@ -46,9 +46,11 @@ A thought reaches every open Chat surface, like a forwarded permission request
 and for the same reason: one session serves every Instance and the wire does not
 say whose turn is on it. Two surfaces open during one turn both show it.
 
-Nothing appears until a Harness is configured for visible thinking. Adapters
-default to omitting it, so the common case is a strip that never opens — which
-is also what an attached Harness that reasons in silence should look like.
+Nothing appears until a Completer's wire marks reasoning, which either fill can
+do: a Harness configured for visible thinking, or an HTTP endpoint whose server
+separates a model's reasoning from its reply. Adapters and servers default to
+omitting it, so the common case is a strip that never opens — which is also what
+a Completer that reasons in silence should look like.
 
 Reversing this means deciding a thought is worth keeping, which is a widening of
 what the log draws and a fifth kind of line in it.

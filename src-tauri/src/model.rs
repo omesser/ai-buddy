@@ -827,7 +827,7 @@ impl Endpoint {
                     .into_with_config()
                     .limit(STREAM_LIMIT)
                     .reader();
-                match read_stream(reader, abandoned) {
+                match read_stream(reader, abandoned, think) {
                     Ok(Streamed::Complete(content)) if !content.trim().is_empty() => Ok(content),
                     Ok(Streamed::Complete(_)) => Err(Unsent::Failed(format!(
                         "{url}: streamed reply had no text content"
@@ -1334,14 +1334,38 @@ enum Streamed {
 }
 
 /// Assemble an SSE reply, giving up as soon as `abandoned` says the call is
-/// no longer wanted.
+/// no longer wanted, and handing every marked thought to `thought` on the way.
 ///
 /// Takes a `Read` rather than a response so the shapes below are checked
 /// against canned bytes: this repo has no HTTP double, and a parser only a
-/// live server can reach is a parser nobody checks.
+/// live server can reach is a parser nobody checks. `thought` is a parameter
+/// for the same reason: the Shell's door is a process global, and a routing
+/// only the app can reach is a routing nobody checks.
 fn read_stream(
     reader: impl std::io::Read,
     abandoned: impl Fn() -> bool,
+    thought: impl Fn(&str),
+) -> Result<Streamed, String> {
+    let mut thinking = String::new();
+    let ended = read_frames(reader, abandoned, &thought, &mut thinking);
+    // The Chat surface keeps no thought of its own, so the last line stays on
+    // screen until it is told the turn that wrote it has ended (ADR-0025).
+    // Asked the same way the draw was, so a stream whose thinking was all
+    // whitespace takes away nothing, having drawn nothing.
+    if crate::acp_wire::thinking_line(&thinking).is_some() {
+        thought("");
+    }
+    ended
+}
+
+/// The frame loop itself, split out so that every way it can end — a marker,
+/// a cut body, an abandon, an I/O error — leaves through the one line above
+/// that takes the strip away.
+fn read_frames(
+    reader: impl std::io::Read,
+    abandoned: impl Fn() -> bool,
+    thought: &impl Fn(&str),
+    thinking: &mut String,
 ) -> Result<Streamed, String> {
     use std::io::BufRead;
 
@@ -1382,6 +1406,15 @@ fn read_stream(
         }
         let event = read_event(payload);
         finished |= event.finished;
+        if let Some(chunk) = event.thought {
+            thinking.push_str(&chunk);
+            // The line being written now, by the same rule the ACP lane
+            // draws: a chunk lands mid-sentence, and half a sentence on its
+            // own reads as nonsense.
+            if let Some(line) = crate::acp_wire::thinking_line(thinking) {
+                thought(line);
+            }
+        }
         if let Some(delta) = event.delta {
             if content.is_empty() && !delta.is_empty() && tracing() {
                 // The whole point of streaming, and the one moment worth a
@@ -1399,8 +1432,12 @@ fn read_stream(
 #[derive(Default)]
 struct Event {
     /// Text it adds, if it adds any. Events that carry none — a role
-    /// announcement, usage, a reasoning trace — are not errors.
+    /// announcement, usage, an end marker — are not errors.
     delta: Option<String>,
+    /// Thinking it adds, if the server marked any as thinking. Never `delta`:
+    /// that is the reply, whose first line has to parse as a Behavior name and
+    /// whose rest the buddy says out loud (ADR-0025).
+    thought: Option<String>,
     /// It says the server is done, so an end of body after it is a whole
     /// reply rather than a connection cut.
     finished: bool,
@@ -1419,25 +1456,38 @@ fn read_event(payload: &str) -> Event {
         return Event::default();
     };
     let choice = &value["choices"][0];
-    if let Some(text) = choice["delta"]["content"].as_str() {
-        return Event {
-            delta: Some(text.to_string()),
-            finished: choice["finish_reason"].is_string(),
-        };
-    }
-    match value["type"].as_str() {
-        Some("response.output_text.delta") => Event {
-            delta: value["delta"].as_str().map(str::to_string),
-            finished: false,
-        },
-        Some("response.completed") => Event {
-            delta: None,
-            finished: true,
-        },
-        _ => Event {
-            delta: None,
-            finished: choice["finish_reason"].is_string(),
-        },
+    let chunk = &choice["delta"];
+    let kind = value["type"].as_str();
+    // A Responses event's `delta` *is* the text, so its `type` is the only
+    // thing that says which text it is.
+    let typed = |name| {
+        if kind == Some(name) {
+            value["delta"].as_str()
+        } else {
+            None
+        }
+    };
+    Event {
+        delta: chunk["content"]
+            .as_str()
+            .or_else(|| typed("response.output_text.delta"))
+            .map(str::to_string),
+        // Two names for one field, both in use and neither in OpenAI's
+        // schema: `reasoning_content` on llama.cpp, oMLX, SGLang and LM
+        // Studio for R1, `reasoning` on vLLM since its rename, Ollama and LM
+        // Studio for gpt-oss. Reading one name misses the other
+        // (`docs/research/reasoning-versus-the-final-answer.md` §2.4).
+        //
+        // Responses types its reasoning apart from its answer, and the summary
+        // is the half a client is meant to read: the raw
+        // `response.reasoning_text.delta` is a second stream, and reading both
+        // into one line would interleave two texts (§2.2).
+        thought: chunk["reasoning_content"]
+            .as_str()
+            .or_else(|| chunk["reasoning"].as_str())
+            .or_else(|| typed("response.reasoning_summary_text.delta"))
+            .map(str::to_string),
+        finished: choice["finish_reason"].is_string() || kind == Some("response.completed"),
     }
 }
 
@@ -1477,6 +1527,43 @@ thread_local! {
     /// Shell holds.
     static ABANDONED: std::cell::RefCell<Option<Arc<AtomicBool>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// The Shell's thought door, set once at startup.
+///
+/// The Harness lane reaches the Chat surface through `Forwarded::Thought`,
+/// which it is handed when it is attached. The HTTP lane is built from
+/// settings and holds no window handle, so it is given the door instead of a
+/// route to it — and a `OnceLock` rather than a field on `Endpoint`, because a
+/// Retarget rebuilds the Completer and would drop a field (#611).
+///
+/// Unset in the probe and the tests, which have no Chat surface to draw on.
+///
+/// ponytail: one door for every Instance, so two Instances thinking at once
+/// overwrite each other's line and the first to finish takes the strip away.
+/// The unattributed half is ADR-0025's own decision and holds on both lanes:
+/// the strip has no Instance to address. The overlap is this lane's alone —
+/// `Session::turn` holds a lock, so one Harness child serves one turn at a
+/// time (ADR-0008), while `Slots` gives every Instance its own thread and its
+/// own endpoint. A thought is worth reading only while it is being thought,
+/// which is why this is left. The upgrade, if two buddies on the wire at once
+/// ever becomes the common case, is to name the Instance on the event and let
+/// the surface pick.
+static THOUGHT: std::sync::OnceLock<Box<dyn Fn(String) + Send + Sync>> = std::sync::OnceLock::new();
+
+/// Hand the Completer lane the door to every open Chat surface. The first
+/// door wins and a later one is dropped: the Shell opens exactly one, and a
+/// second caller would be a test racing the app it is testing.
+pub fn on_thought(door: Box<dyn Fn(String) + Send + Sync>) {
+    let _ = THOUGHT.set(door);
+}
+
+/// Draw `line` as what the Completer is thinking right now, or take the strip
+/// away when it is empty. Nothing keeps it (ADR-0025).
+fn think(line: &str) {
+    if let Some(door) = THOUGHT.get() {
+        door(line.to_string());
+    }
 }
 
 /// Has the call running on this thread been dropped by the frame loop?
@@ -2152,6 +2239,24 @@ pub(crate) mod tests {
             .collect()
     }
 
+    /// How a whole stream ended, for the shapes whose thoughts are not what
+    /// is being asserted.
+    fn streamed(sse: &str) -> Streamed {
+        streamed_with_thoughts(sse).0
+    }
+
+    /// The same, and every line the thought strip was told to draw.
+    fn streamed_with_thoughts(sse: &str) -> (Streamed, Vec<String>) {
+        let drawn = std::cell::RefCell::new(Vec::new());
+        let ended = read_stream(
+            std::io::Cursor::new(sse),
+            || false,
+            |line| drawn.borrow_mut().push(line.to_string()),
+        )
+        .unwrap();
+        (ended, drawn.into_inner())
+    }
+
     #[test]
     fn a_streamed_chat_completion_assembles_its_deltas() {
         let sse = concat!(
@@ -2161,10 +2266,7 @@ pub(crate) mod tests {
             "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
             "data: [DONE]\n\n",
         );
-        assert_eq!(
-            read_stream(std::io::Cursor::new(sse), || false).unwrap(),
-            Streamed::Complete("stroll\nhey".to_string())
-        );
+        assert_eq!(streamed(sse), Streamed::Complete("stroll\nhey".to_string()));
     }
 
     #[test]
@@ -2177,10 +2279,7 @@ pub(crate) mod tests {
             "data: {\"type\":\"response.completed\"}\n\n",
             "data: [DONE]\n\n",
         );
-        assert_eq!(
-            read_stream(std::io::Cursor::new(sse), || false).unwrap(),
-            Streamed::Complete("stroll\nhey".to_string())
-        );
+        assert_eq!(streamed(sse), Streamed::Complete("stroll\nhey".to_string()));
     }
 
     /// A frame arrives in as many TCP reads as the network feels like, and
@@ -2214,7 +2313,7 @@ pub(crate) mod tests {
             sent: 0,
         };
         assert_eq!(
-            read_stream(dribble, || false).unwrap(),
+            read_stream(dribble, || false, |_| {}).unwrap(),
             Streamed::Complete("stroll\nhey".to_string())
         );
     }
@@ -2227,19 +2326,88 @@ pub(crate) mod tests {
     #[test]
     fn a_body_with_no_frames_in_it_was_never_a_stream() {
         let whole = r#"{"choices":[{"message":{"content":"stroll\nhey"}}]}"#;
-        assert_eq!(
-            read_stream(std::io::Cursor::new(whole), || false).unwrap(),
-            Streamed::NotEventStream
-        );
+        assert_eq!(streamed(whole), Streamed::NotEventStream);
 
         let spent = concat!(
             "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n",
             "data: [DONE]\n\n",
         );
+        let (ended, drawn) = streamed_with_thoughts(spent);
         assert_eq!(
-            read_stream(std::io::Cursor::new(spent), || false).unwrap(),
+            ended,
             Streamed::Complete(String::new()),
             "a model that thought its whole budget away did stream"
+        );
+        assert_eq!(
+            drawn,
+            ["hmm", ""],
+            "and the thought it spent it on was drawn and then taken away"
+        );
+    }
+
+    /// Which half of the wire a delta is, one shape at a time. Every field
+    /// name here is one `docs/research/reasoning-versus-the-final-answer.md`
+    /// found a server in scope sending (§2.2, §2.4).
+    #[test]
+    fn a_marked_reasoning_delta_is_a_thought_and_content_is_still_speech() {
+        let read = |payload| {
+            let event = read_event(payload);
+            (event.thought, event.delta)
+        };
+
+        // llama.cpp, oMLX, SGLang, LM Studio for R1.
+        assert_eq!(
+            read(r#"{"choices":[{"delta":{"reasoning_content":"hmm"}}]}"#),
+            (Some("hmm".to_string()), None)
+        );
+        // vLLM as of its rename, Ollama, LM Studio for gpt-oss.
+        assert_eq!(
+            read(r#"{"choices":[{"delta":{"reasoning":"hmm"}}]}"#),
+            (Some("hmm".to_string()), None)
+        );
+        // Responses types its reasoning apart from its answer.
+        assert_eq!(
+            read(r#"{"type":"response.reasoning_summary_text.delta","delta":"hmm"}"#),
+            (Some("hmm".to_string()), None)
+        );
+        assert_eq!(
+            read(r#"{"choices":[{"delta":{"content":"stroll"}}]}"#),
+            (None, Some("stroll".to_string())),
+            "an unmarked delta is the reply, and nothing here second-guesses it"
+        );
+        assert_eq!(
+            read(r#"{"type":"response.output_text.delta","delta":"stroll"}"#),
+            (None, Some("stroll".to_string()))
+        );
+        assert_eq!(
+            read(r#"{"choices":[{"delta":{"reasoning":"hmm","content":"stroll"}}]}"#),
+            (Some("hmm".to_string()), Some("stroll".to_string())),
+            "a server that marks both in one frame is read for both"
+        );
+    }
+
+    /// The whole point: a reasoning model's thinking reaches the strip and
+    /// never the reply, so nothing the buddy says out loud was thought at it
+    /// (ADR-0025). The strip draws the line being written now, not the chunk
+    /// it arrived in, and the end of the turn takes it away.
+    #[test]
+    fn thinking_is_drawn_while_a_turn_runs_and_never_joins_the_reply() {
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"the user\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" waved\\nso\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" wave back\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"wave\\nhey\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed_with_thoughts(sse),
+            (
+                Streamed::Complete("wave\nhey".to_string()),
+                ["the user", "so", "so wave back", ""]
+                    .map(str::to_string)
+                    .to_vec()
+            )
         );
     }
 
@@ -2254,7 +2422,7 @@ pub(crate) mod tests {
             "data: {\"type\":\"response.completed\"}\n\n",
         );
         assert_eq!(
-            read_stream(std::io::Cursor::new(responses), || false).unwrap(),
+            streamed(responses),
             Streamed::Complete("stroll".to_string())
         );
 
@@ -2263,15 +2431,12 @@ pub(crate) mod tests {
             "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
         );
         assert_eq!(
-            read_stream(std::io::Cursor::new(completions), || false).unwrap(),
+            streamed(completions),
             Streamed::Complete("stroll".to_string())
         );
 
         let cut = "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\\nhey th\"}}]}\n\n";
-        assert_eq!(
-            read_stream(std::io::Cursor::new(cut), || false).unwrap(),
-            Streamed::Cut
-        );
+        assert_eq!(streamed(cut), Streamed::Cut);
     }
 
     /// The load win. An endless stream is the only honest test of it: a
@@ -2295,7 +2460,7 @@ pub(crate) mod tests {
             asked.get() > 3
         };
         assert_eq!(
-            read_stream(Endless, abandoned).unwrap(),
+            read_stream(Endless, abandoned, |_| {}).unwrap(),
             Streamed::Abandoned
         );
     }
