@@ -6,16 +6,19 @@
 # processes if WebKitGTK runs content out-of-process. This script discovers
 # the process tree at launch and attributes all children to the app.
 #
-# Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE]
+# Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
 #   Launches target/debug/ai-buddy, waits `settle` seconds, then samples every
 #   interval for `seconds`, writes one TSV row per sample, prints min/median/max
 #   over the sampled window and each process's peak RSS (VmHWM), then stops the
 #   app.
 #
-#   Settling is not politeness. The macOS script found a launch peak near twice
-#   its steady state, taking ~5 minutes to settle. Linux may differ; this
-#   script defaults to 300s to match, but the settling curve should be measured
-#   independently to validate or adjust this.
+#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) — enough for fast
+#   verification in a test matrix. Not a research soak.
+#
+#   --research: Long research mode (settle 300s, sample 300s) for bathtub
+#   curve analysis. The macOS script found a launch peak near twice steady
+#   state, settling by ~5 minutes. Use this for measurement studies, not for
+#   everyday verification.
 #
 #   Environment reaches the app unchanged, which is how a scenario is chosen:
 #   AI_BUDDY_INSTANCES picks the roster, AI_BUDDY_CHARACTERS the packages.
@@ -34,9 +37,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-settle=300
-seconds=300
-interval=5
+settle=3
+seconds=10
+interval=2
 out=""
 bin="target/debug/ai-buddy"
 
@@ -46,6 +49,7 @@ while [ $# -gt 0 ]; do
     --seconds) seconds="$2" && shift 2 ;;
     --interval) interval="$2" && shift 2 ;;
     --out) out="$2" && shift 2 ;;
+    --research) settle=300 && seconds=300 && interval=5 && shift ;;
     *) echo "unknown argument: $1" >&2 && exit 2 ;;
   esac
 done

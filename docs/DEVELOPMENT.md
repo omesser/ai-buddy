@@ -121,8 +121,11 @@ Grant Accessibility to the terminal or IDE that runs the script (System Settings
 PASS means the AI tab order is `AI > AI source > Model / API > Last user turn`, the HTTP rows are live on Model API, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
 
 The bench-rss scripts measure rather than check: they sample the app and its
-webview helpers and print RSS and peak memory. What the numbers came out as, and
-what they mean, is [docs/research/memory-rss-and-multi-monitor.md](research/memory-rss-and-multi-monitor.md).
+webview helpers and print RSS and peak memory. Brief by default (settle ~3s,
+sample ~10s) for fast smoke tests; pass `--research` (bash) or `-Research`
+(PowerShell) for the long research soak (settle 300s, sample 300s) used in
+measurement studies. What the numbers came out as, and what they mean, is
+[docs/research/memory-rss-and-multi-monitor.md](research/memory-rss-and-multi-monitor.md).
 
 ### Manual Verification Checklist
 

@@ -44,6 +44,12 @@ either way and are unaffected by it.
 samples every process's RSS on a fixed interval, and reads each one's peak
 physical footprint before it stops the app.
 
+**Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
+matrix with many scenarios. Not a research soak.
+
+**Research mode: `--research`** restores the long settle + sample (300s each)
+for bathtub curve analysis and measurement studies.
+
 ```sh
 cd src-tauri && cargo build --bin ai-buddy && cd ..
 
@@ -51,7 +57,10 @@ HOME=/tmp/bench-home \
 AI_BUDDY_DIRECTOR=0 AI_BUDDY_DIRECTOR_API_KEY=x AI_BUDDY_CAPTURABLE=1 \
 AI_BUDDY_TRACE_ENGINE=1 AI_BUDDY_CHARACTERS="$PWD/characters" \
 AI_BUDDY_INSTANCES="bmo:One" \
-scripts/bench-rss.sh --settle 300 --seconds 300 --out /tmp/one-instance.tsv
+scripts/bench-rss.sh --out /tmp/one-instance.tsv
+
+# Research mode (300s settle + 300s sample) for measurement studies:
+scripts/bench-rss.sh --research --out /tmp/research-run.tsv
 ```
 
 Five variables carry the run. `AI_BUDDY_INSTANCES` is the roster,
@@ -279,6 +288,12 @@ or a VM with X11 forwarding configured).
 `scripts/bench-rss-linux.sh` implements the same contract as the macOS script,
 adapted for Linux:
 
+**Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
+matrix with many scenarios. Not a research soak.
+
+**Research mode: `--research`** restores the long settle + sample (300s each)
+for bathtub curve analysis and measurement studies.
+
 ```sh
 cd src-tauri && cargo build --bin ai-buddy && cd ..
 
@@ -286,7 +301,10 @@ HOME=/tmp/bench-home \
 AI_BUDDY_DIRECTOR=0 AI_BUDDY_DIRECTOR_API_KEY=x AI_BUDDY_CAPTURABLE=1 \
 AI_BUDDY_TRACE_ENGINE=1 AI_BUDDY_CHARACTERS="$PWD/characters" \
 AI_BUDDY_INSTANCES="bmo:One" \
-scripts/bench-rss-linux.sh --settle 300 --seconds 300 --out /tmp/one-instance.tsv
+scripts/bench-rss-linux.sh --out /tmp/one-instance.tsv
+
+# Research mode (300s settle + 300s sample) for measurement studies:
+scripts/bench-rss-linux.sh --research --out /tmp/research-run.tsv
 ```
 
 ### Process architecture
@@ -308,8 +326,10 @@ discovers them automatically.
 - **Peak RSS:** Read from `/proc/[pid]/status` field `VmHWM` (high-water mark).
   This is the Linux equivalent of macOS's peak physical footprint and only ever
   rises, so it survives a noisy machine.
-- **Settling:** Defaults to 300s to match macOS. The settling curve should be
-  measured independently on Linux to validate or adjust this.
+- **Settling:** Defaults to 3s for brief smoke tests. Use `--research` (or
+  explicit `--settle 300 --seconds 300`) for the full settling curve measured
+  on macOS. The settling curve should be measured independently on Linux to
+  validate or adjust this.
 
 ### Display count
 
@@ -354,6 +374,12 @@ the 47.6 MB gap found on macOS.
 `scripts\bench-rss.ps1` implements the same contract as the macOS and Linux
 scripts, adapted for Windows PowerShell:
 
+**Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
+matrix with many scenarios. Not a research soak.
+
+**Research mode: `-Research`** restores the long settle + sample (300s each) for
+bathtub curve analysis and measurement studies.
+
 ```powershell
 cd src-tauri
 cargo build --bin ai-buddy
@@ -367,7 +393,10 @@ $env:AI_BUDDY_TRACE_ENGINE = "1"
 $env:AI_BUDDY_CHARACTERS = (Get-Location).Path + "\characters"
 $env:AI_BUDDY_INSTANCES = "bmo:One"
 
-.\scripts\bench-rss.ps1 -Settle 300 -Seconds 300 -Out "C:\Temp\one-instance.tsv"
+.\scripts\bench-rss.ps1 -Out "C:\Temp\one-instance.tsv"
+
+# Research mode (300s settle + 300s sample) for measurement studies:
+.\scripts\bench-rss.ps1 -Research -Out "C:\Temp\research-run.tsv"
 ```
 
 ### Process architecture
@@ -393,8 +422,10 @@ discovery.
   WorkingSet64`. This is the Windows equivalent of RSS.
 - **Peak Working Set:** Read from `Get-Process | Select-Object
   PeakWorkingSet64`. This only ever rises, so it survives a noisy machine.
-- **Settling:** Defaults to 300s to match macOS. The settling curve should be
-  measured independently on Windows to validate or adjust this.
+- **Settling:** Defaults to 3s for brief smoke tests. Use `-Research` (or
+  explicit `-Settle 300 -Seconds 300`) for the full settling curve measured on
+  macOS. The settling curve should be measured independently on Windows to
+  validate or adjust this.
 
 ### Display count
 

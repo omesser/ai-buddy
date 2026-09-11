@@ -5,16 +5,19 @@
 # Network, Renderer (one per webview), etc. This script discovers all
 # msedgewebview2.exe processes after launch and attributes them to the app.
 #
-# Usage: scripts\bench-rss.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE]
+# Usage: scripts\bench-rss.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]
 #   Launches target\debug\ai-buddy.exe, waits Settle seconds, then samples every
 #   Interval for Seconds, writes one TSV row per sample, prints min/median/max
 #   over the sampled window and each process's peak working set, then stops the
 #   app.
 #
-#   Settling is not politeness. The macOS script found a launch peak near twice
-#   its steady state, taking ~5 minutes to settle. Windows may differ; this
-#   script defaults to 300s to match, but the settling curve should be measured
-#   independently to validate or adjust this.
+#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) — enough for fast
+#   verification in a test matrix. Not a research soak.
+#
+#   -Research: Long research mode (settle 300s, sample 300s) for bathtub
+#   curve analysis. The macOS script found a launch peak near twice steady
+#   state, settling by ~5 minutes. Use this for measurement studies, not for
+#   everyday verification.
 #
 #   Environment reaches the app unchanged, which is how a scenario is chosen:
 #   AI_BUDDY_INSTANCES picks the roster, AI_BUDDY_CHARACTERS the packages.
@@ -30,11 +33,18 @@
 # beside the number.
 
 param(
-    [int]$Settle = 300,
-    [int]$Seconds = 300,
-    [int]$Interval = 5,
-    [string]$Out = ""
+    [int]$Settle = 3,
+    [int]$Seconds = 10,
+    [int]$Interval = 2,
+    [string]$Out = "",
+    [switch]$Research
 )
+
+if ($Research) {
+    $Settle = 300
+    $Seconds = 300
+    $Interval = 5
+}
 
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)

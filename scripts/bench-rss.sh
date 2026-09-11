@@ -8,16 +8,20 @@
 # not of the app, so no process-tree walk finds them. This takes the set of
 # WebKit helpers before launch and after, and calls the difference ours.
 #
-# Usage: scripts/bench-rss.sh [--settle N] [--seconds N] [--interval N] [--out FILE]
+# Usage: scripts/bench-rss.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
 #   Launches target/debug/ai-buddy, waits `settle` seconds, then samples every
 #   interval for `seconds`, writes one TSV row per sample, prints min/median/max
 #   over the sampled window and each process's peak physical footprint, then
 #   stops the app.
 #
-#   Settling is not politeness. A launch peaks near twice its steady state and
-#   takes about five minutes to come down: 396 MB at launch, 176 MB at 150 s,
-#   back near 225 MB by 300 s and only drifting after that. Sample the first
-#   minute and the number you publish is the loader's, not the app's.
+#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) — enough for fast
+#   verification in a test matrix. Not a research soak.
+#
+#   --research: Long research mode (settle 300s, sample 300s) for bathtub
+#   curve analysis. A launch peaks near twice its steady state and takes about
+#   five minutes to come down: 396 MB at launch, 176 MB at 150 s, back near
+#   225 MB by 300 s and only drifting after that. Use this for measurement
+#   studies, not for everyday verification.
 #
 #   Environment reaches the app unchanged, which is how a scenario is chosen:
 #   AI_BUDDY_INSTANCES picks the roster, AI_BUDDY_CHARACTERS the packages.
@@ -40,9 +44,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-settle=300
-seconds=300
-interval=5
+settle=3
+seconds=10
+interval=2
 out=""
 bin="target/debug/ai-buddy"
 
@@ -52,6 +56,7 @@ while [ $# -gt 0 ]; do
     --seconds) seconds="$2" && shift 2 ;;
     --interval) interval="$2" && shift 2 ;;
     --out) out="$2" && shift 2 ;;
+    --research) settle=300 && seconds=300 && interval=5 && shift ;;
     *) echo "unknown argument: $1" >&2 && exit 2 ;;
   esac
 done
