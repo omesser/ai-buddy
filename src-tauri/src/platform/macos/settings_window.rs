@@ -660,11 +660,8 @@ impl SettingsController {
             );
         }
         // Static choices, so they come from the form rather than the view.
-        fill_popup(
-            &self.ivars().harness,
-            &form::harness_options(),
-            &view.harness,
-        );
+        let (harness_options, harness_title) = harness_popup_fill(&view.harness);
+        fill_popup(&self.ivars().harness, &harness_options, &harness_title);
         fill_popup(
             &self.ivars().new_character,
             &view.installed,
@@ -1795,5 +1792,79 @@ mod tests {
             !release_window_when_closed(),
             "the next tray Settings raises this same Retained window"
         );
+    }
+
+    /// Ids `apply_enabled_states` re-reads from a fresh `describe()`.
+    /// `test_mtm` is unsound for `setEditable`; the live lock is AX (#629).
+    const HTTP_FREEZE_IDS: &[&str] = &[
+        form::DIRECTOR_BASE_URL_ID,
+        form::DIRECTOR_MODEL_ID,
+        form::DIRECTOR_API_KEY_ID,
+        form::DIRECTOR_BASE_URL_PICK_ID,
+        form::CLEAR_KEY_ID,
+    ];
+
+    /// `harness::driving` is a process global one test must not set (#629).
+    #[test]
+    fn http_row_freeze_follows_a_fresh_describe() {
+        for (name, owned) in [("env-owned", true), ("user-owned", false)] {
+            let run = || {
+                let description = form::describe();
+                for id in HTTP_FREEZE_IDS {
+                    assert_eq!(
+                        description.frozen(id),
+                        owned,
+                        "{name}: {id} must follow a fresh describe()"
+                    );
+                }
+            };
+            if owned {
+                crate::model::tests::with_env(
+                    Some("sk-env-key"),
+                    Some("https://api.x.ai"),
+                    Some("grok-4.6"),
+                    run,
+                );
+            } else {
+                crate::model::tests::with_env(None, None, None, run);
+            }
+        }
+    }
+
+    #[test]
+    fn env_owned_http_rows_stay_frozen_on_a_second_describe() {
+        crate::model::tests::with_env(
+            Some("sk-env-key"),
+            Some("https://api.x.ai"),
+            Some("grok-4.6"),
+            || {
+                let first = form::describe();
+                let second = form::describe();
+                for id in HTTP_FREEZE_IDS {
+                    assert!(first.frozen(id), "{id} frozen on the first describe");
+                    assert!(
+                        second.frozen(id),
+                        "{id} must stay frozen on the second describe"
+                    );
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn ai_tab_section_headings_match_director_sections() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = form::describe();
+            let headings: Vec<&str> = description
+                .tabs
+                .iter()
+                .find(|tab| tab.title == "AI")
+                .map(|tab| tab.sections.iter().map(|s| s.heading.as_str()).collect())
+                .unwrap_or_default();
+            assert_eq!(
+                headings,
+                ["AI", "AI source", "Model / API", "Last user turn"]
+            );
+        });
     }
 }
