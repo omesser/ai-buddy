@@ -663,8 +663,11 @@ impl SettingsController {
             );
         }
         // Static choices, so they come from the form rather than the view.
-        let (harness_options, harness_title) = harness_popup_fill(&view.harness);
-        fill_popup(&self.ivars().harness, &harness_options, &harness_title);
+        fill_popup(
+            &self.ivars().harness,
+            &form::harness_options(),
+            &view.harness,
+        );
         fill_popup(
             &self.ivars().new_character,
             &view.installed,
@@ -672,44 +675,6 @@ impl SettingsController {
         );
         self.fill_instances(&view, dismiss_label);
         self.set_director_buttons(&view);
-    }
-
-    /// Freeze from this `describe()`, not from whatever `build` first painted.
-    /// Text stays enabled so the value stays copyable; `setEditable` is the
-    /// freeze (#629).
-    fn apply_enabled_states(&self, description: &form::FormDescription) {
-        let ivars = self.ivars();
-        for (id, frozen) in freeze_intents(description) {
-            match id {
-                form::DIRECTOR_API_KEY_ID => {
-                    if let Some(field) = ivars.api_key.borrow().clone() {
-                        field.setEditable(!frozen);
-                    }
-                }
-                form::DIRECTOR_BASE_URL_PICK_ID => {
-                    if let Some(popup) = ivars.base_url_pick.borrow().clone() {
-                        popup.setEnabled(!frozen);
-                    }
-                }
-                form::CLEAR_KEY_ID => {
-                    if let Some(button) = ivars.clear_key.borrow().clone() {
-                        button.setEnabled(!frozen);
-                    }
-                }
-                form::HARNESS_ID => {
-                    if let Some(popup) = ivars.harness.borrow().clone() {
-                        popup.setEnabled(!frozen);
-                    }
-                }
-                _ => {}
-            }
-        }
-        for (id, field) in ivars.fields.borrow().iter() {
-            field.setEditable(!description.frozen(id));
-        }
-        for (id, button) in ivars.checkboxes.borrow().iter() {
-            button.setEnabled(!description.frozen(id));
-        }
     }
 
     fn fit_to_window(&self) {
