@@ -1,0 +1,35 @@
+pi v0.85.1
+---
+
+## Skills
+- /Users/example/.agents/skills/writing-and-editing/SKILL.md
+- /Users/example/.agents/skills/wayfinding/SKILL.md
+- /Users/example/.agents/skills/version-bump/SKILL.md
+- /Users/example/.agents/skills/triage/SKILL.md
+- /Users/example/.agents/skills/tickets/SKILL.md
+- /Users/example/.agents/skills/testing/SKILL.md
+- /Users/example/.agents/skills/teaching/SKILL.md
+- /Users/example/.agents/skills/summarising/SKILL.md
+- /Users/example/.agents/skills/spec-writing/SKILL.md
+- /Users/example/.agents/skills/security-review/SKILL.md
+- /Users/example/.agents/skills/scheduling/SKILL.md
+- /Users/example/.agents/skills/review-checklist/SKILL.md
+- /Users/example/.agents/skills/research/SKILL.md
+- /Users/example/.agents/skills/refactor-planning/SKILL.md
+- /Users/example/.agents/skills/prototyping/SKILL.md
+- /Users/example/.agents/skills/profiling/SKILL.md
+- /Users/example/.agents/skills/note-taking/SKILL.md
+- /Users/example/.agents/skills/merge-conflicts/SKILL.md
+- /Users/example/.agents/skills/implementing/SKILL.md
+- /Users/example/.agents/skills/handoff/SKILL.md
+- /Users/example/.agents/skills/gardening/SKILL.md
+- /Users/example/.agents/skills/formatting/SKILL.md
+- /Users/example/.agents/skills/explaining/SKILL.md
+- /Users/example/.agents/skills/estimating/SKILL.md
+- /Users/example/.agents/skills/documenting/SKILL.md
+- /Users/example/.agents/skills/domain-modelling/SKILL.md
+- /Users/example/.agents/skills/diagramming/SKILL.md
+- /Users/example/.agents/skills/design-review/SKILL.md
+- /Users/example/.agents/skills/debugging/SKILL.md
+- /Users/example/.agents/skills/code-review/SKILL.md
+- /Users/example/.agents/skills/brainstorming/SKILL.md

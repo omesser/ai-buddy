@@ -316,6 +316,10 @@ fn spoken_or_failed(reply: &str) -> Wake {
 
 /// A reply that is not a declared Behavior. Empty name: the Engine plays
 /// `talk` and speaks. #119 shows this in a bubble.
+///
+/// Length is not judged here. A reply too long for the bubble is drawn to six
+/// wrapped lines with a way into Chat for the rest (#588), so refusing to
+/// speak one would be a second, stricter ceiling on the same situation.
 fn as_speech(reply: &str) -> Option<BehaviorProposal> {
     let text = reply.trim();
     let text = text
@@ -460,41 +464,78 @@ pub fn session_due(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseError;
 
-/// Parse a reply as a Behavior name on the first line and optional dialogue
-/// after. Anything else is `ParseError`.
+/// Parse a reply as a Behavior name on a line of its own, and everything
+/// else as the spoken line. Anything else is `ParseError`.
+///
+/// The name is looked for on the first line that is the contract's shape and
+/// nothing else, not on line one, because a Harness may put its own text
+/// ahead of the model's answer: Pi writes a version banner and a list of the
+/// user's skill files as the turn's first `agent_message_chunk`, and nothing
+/// on the ACP wire marks it as not the answer (#609).
+///
+/// Scanning is safe because a candidate must be the *whole* line. A Behavior
+/// named inside a sentence never matches; only a line that is nothing but
+/// that one word does, and a word no Character declared falls through to
+/// speech exactly as it does today.
+///
+/// Every other non-empty line is dialogue, in the order it was written and
+/// whichever side of the name it falls. Keeping beats dropping while nothing
+/// tells the two apart: a model that writes `I'll rest now.` above `nap` is
+/// answering, and dropping that line to spare a banner would lose the answer
+/// far more often than it spares one.
+///
+/// The cost is named rather than filtered. Pi's banner sits before the name,
+/// so a turn that proposes a Behavior can still speak it — the bubble draws
+/// six wrapped lines of it and offers Chat for the rest (#588). Telling a
+/// Harness's chrome from its model's words is the follow-up; nothing here
+/// guesses at it.
 ///
 /// Public for `harness probe`, which reports whether a live session obeys the
 /// one-line format. The rest of the model path is crate-private.
 pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
-    let mut lines = reply.lines().map(str::trim).filter(|line| !line.is_empty());
-    let first = lines.next().ok_or(ParseError)?;
-    let (name, inline) = match first.split_once('|') {
-        Some((name, line)) => (name.trim(), Some(line.trim())),
-        None => (first, None),
-    };
-    let name = name.trim_end_matches(['.', ':']);
-    if name.is_empty() || !identifier(name) {
-        return Err(ParseError);
-    }
+    let lines: Vec<&str> = reply
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let (at, (name, inline)) = lines
+        .iter()
+        .enumerate()
+        .find_map(|(at, line)| contract_line(line).map(|found| (at, found)))
+        .ok_or(ParseError)?;
 
-    let dialogue = match inline {
-        Some(line) if !line.is_empty() => Some(line.to_string()),
-        _ => {
-            let rest: Vec<&str> = lines.collect();
-            (!rest.is_empty()).then(|| rest.join(" "))
-        }
-    };
+    // Everything that is not the action line, in the order it was written.
+    let mut said: Vec<&str> = lines[..at].to_vec();
+    said.extend(inline.filter(|line| !line.is_empty()));
+    said.extend_from_slice(&lines[at + 1..]);
 
     Ok(BehaviorProposal {
         behavior: name.to_string(),
-        dialogue,
+        dialogue: (!said.is_empty()).then(|| said.join(" ")),
     })
 }
 
+/// `line` read as the contract's one line: a Behavior name on its own, or a
+/// name and its spoken line either side of a `|`. `None` when the whole line
+/// is not that shape.
+fn contract_line(line: &str) -> Option<(&str, Option<&str>)> {
+    let (name, inline) = match line.split_once('|') {
+        Some((name, said)) => (name.trim(), Some(said.trim())),
+        None => (line, None),
+    };
+    let name = name.trim_end_matches(['.', ':']);
+    identifier(name).then_some((name, inline))
+}
+
 /// True if `name` is a single token. The Engine still rejects unknown names.
+///
+/// One alphanumeric at least, so punctuation alone is not a name: `---` is a
+/// line of Pi's banner and is otherwise all characters a name may contain.
 fn identifier(name: &str) -> bool {
-    name.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    name.chars().any(|c| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Weighted selection over a Character's declared Behaviors. No model, no
@@ -1369,6 +1410,60 @@ mod tests {
             parse_proposal("***").is_err(),
             "punctuation is not an identifier"
         );
+        assert!(
+            parse_proposal("---").is_err(),
+            "a horizontal rule is punctuation too, and it is a line of Pi's banner"
+        );
+    }
+
+    /// A model that writes its line above the name is still answering. The
+    /// contract asks for the name first, but nothing tells a stray sentence
+    /// from a Harness's chrome, so both are kept.
+    #[test]
+    fn a_line_written_above_the_name_is_still_spoken() {
+        let proposal = parse_proposal("I'll rest now.\nnap").expect("the name is on line two");
+
+        assert_eq!(proposal.behavior, "nap");
+        assert_eq!(proposal.dialogue.as_deref(), Some("I'll rest now."));
+    }
+
+    /// Pi's startup banner, captured from pi v0.85.1 through `pi-acp` 0.0.33
+    /// on a fresh session: 1.6 KB the model never wrote, delivered as the
+    /// turn's first `agent_message_chunk`. Its paths are replaced with
+    /// neutral ones — the fixture's README says what was and was not.
+    const PI_BANNER: &str = include_str!("../tests/fixtures/pi-acp-banner.txt");
+
+    /// #609: a Harness may put its own text ahead of the model's answer, and
+    /// nothing on the ACP wire marks it. The name is read past it, in both of
+    /// the shapes the contract allows, and no line of it is promoted.
+    ///
+    /// The banner still reaches the dialogue, because nothing here filters a
+    /// Harness's chrome and dropping what precedes the name would lose real
+    /// answers. That cost is asserted, not hidden.
+    ///
+    /// Production change that would fail this: reading the Behavior name from
+    /// line one again, or letting `---` stand as a name.
+    #[test]
+    fn a_behavior_name_is_read_past_a_harness_banner() {
+        for reply in [
+            format!("{PI_BANNER}\nwave | Hello!"),
+            format!("{PI_BANNER}\nwave\nHello!"),
+        ] {
+            let proposal = parse_proposal(&reply).expect("the name is found past the banner");
+            assert_eq!(
+                proposal.behavior, "wave",
+                "no line of the banner is promoted, `---` included"
+            );
+            let dialogue = proposal.dialogue.expect("the rest of the reply is spoken");
+            assert!(
+                dialogue.ends_with("Hello!"),
+                "the answer is kept: {dialogue}"
+            );
+            assert!(
+                dialogue.starts_with("pi v0.85.1"),
+                "and so is the banner, until something can tell the two apart"
+            );
+        }
     }
 
     #[test]
