@@ -20,7 +20,8 @@ TCP and TLS handshake every wake. Streaming is the one change that buys
 perceived latency, real cancellation, and a sprite that moves on the first
 line. Prompt caching buys nearly nothing at this prompt size.
 
-- `file:line` citations are against `c3cb15f9`.
+- Citations name a symbol wherever one exists, because a name outlives a refactor and a line number does not. The line numbers that remain are against `c3cb15f9`.
+- Three of the recommendations below have since shipped, so some of what §1 and §2.6 describe is no longer on `main`: `model::InFlight` is now `model::Slots` (item 2), `Endpoint` holds one pooled `ureq::Agent` (item 1), and the request streams (item 3). Those passages name the symbol as it stood at the anchor.
 - Date of the research half: **September 4, 2026**. Where a source looks dated, it is called out.
 - Claims are marked **[vendor]**, **[community]** or **[inference]** throughout.
 
@@ -32,9 +33,9 @@ Vocabulary is `CONTEXT.md`: Director, Character Prompt, Completer, Harness, Char
 
 ### 1.0 What the pieces actually are
 
-The thing behind `live.pending` is `model::InFlight` (`src-tauri/src/model.rs:888-943`), and it is small enough to quote whole in the mind: an `mpsc` channel plus an `AtomicBool`.
+The thing behind `live.pending` is `model::InFlight` (`src-tauri/src/model.rs`), and it is small enough to quote whole in the mind: an `mpsc` channel plus an `AtomicBool`.
 
-```888:943:src-tauri/src/model.rs
+```rust
 /// One model call in flight. The frame loop starts it and polls `try_take`.
 pub struct InFlight {
     tx: Sender<Wake>,
@@ -44,12 +45,12 @@ pub struct InFlight {
 // ready() == !busy;  start() sets busy and spawns a thread;  try_take() clears busy
 ```
 
-- `ready()` (`model.rs:905-907`) is `!busy`.
-- `start()` (`model.rs:917-932`) sets `busy`, then `thread::spawn`s a plain OS thread that calls `ModelDirector::wake` and sends the `Wake` down the channel. The `catch_unwind` is there so a panic cannot leave `busy` stuck.
-- `try_take()` (`model.rs:934-942`) is a non-blocking `try_recv` that clears `busy` on success.
-- `cancel()` (`model.rs:909-915`) is `*self = Self::new()` — a fresh channel. Its own doc comment is honest about what that does and does not do: *"The worker still finishes; its Wake lands on a channel nobody reads. ureq cannot abort a POST already on the wire."*
+- `InFlight::ready` is `!busy`.
+- `InFlight::start` sets `busy`, then `thread::spawn`s a plain OS thread that calls `ModelDirector::wake` and sends the `Wake` down the channel. The `catch_unwind` is there so a panic cannot leave `busy` stuck.
+- `InFlight::try_take` is a non-blocking `try_recv` that clears `busy` on success.
+- `InFlight::cancel` is `*self = Self::new()` — a fresh channel. Its own doc comment is honest about what that does and does not do: *"The worker still finishes; its Wake lands on a channel nobody reads. ureq cannot abort a POST already on the wire."*
 
-The Completer is `model::Endpoint` (`model.rs:432-441`), a **blocking** OpenAI-compatible HTTP client built on `ureq` 3.4 (`src-tauri/Cargo.toml:40-42` — *"Sync HTTP for the model Director. A worker thread posts; the frame loop does not wait. ureq instead of reqwest: no tokio."*). It carries the conversation itself in `session: Mutex<Vec<Message>>`, which is what makes ADR-0008's "one session" real and, as §1.1 shows, is also what makes a second concurrent call actively dangerous.
+The Completer is `model::Endpoint`, a **blocking** OpenAI-compatible HTTP client built on `ureq` 3.4 (the comment on the `ureq` dependency in `src-tauri/Cargo.toml` — *"Sync HTTP for the model Director. A worker thread posts; the frame loop does not wait. ureq instead of reqwest: no tokio."*). It carries the conversation itself in `session: Mutex<Vec<Message>>`, which is what makes ADR-0008's "one session" real and, as §1.1 shows, is also what makes a second concurrent call actively dangerous.
 
 Per-Instance state lives in `main::InstanceState` (`src-tauri/src/main.rs:131-147`), one per buddy, each with its own `model` (`main.rs:138`), its own `pending: model::InFlight` (`main.rs:139`), and its own `in_flight: Option<Context>` (`main.rs:140`).
 
@@ -80,9 +81,9 @@ live.pending.start(Arc::clone(model), context.clone()); // no check, compiles fi
 live.pending.start(Arc::clone(model), context.clone()); // second thread, also fine
 ```
 
-`start()` takes `&self`, not `&mut self` (`model.rs:917-919`), so it does not even need unique access. Two `start` calls set `busy` twice and spawn two threads; both send into the same channel; `try_take` reads one `Wake` per tick and clears `busy` on the first, so the second reply is delivered on a later tick as a phantom proposal whose `live.in_flight` context has already been `take`n — and `frame_loop.rs:767-769` is `.expect("a started call still has its context")`, which would **panic the frame loop**.
+`InFlight::start` takes `&self`, not `&mut self`, so it does not even need unique access. Two `start` calls set `busy` twice and spawn two threads; both send into the same channel; `try_take` reads one `Wake` per tick and clears `busy` on the first, so the second reply is delivered on a later tick as a phantom proposal whose `live.in_flight` context has already been `take`n — and `frame_loop.rs:767-769` is `.expect("a started call still has its context")`, which would **panic the frame loop**.
 
-Worse, both threads would be inside `Endpoint::post` on the same `Endpoint`, mutating `session` under a `Mutex` (`model.rs:490-535`). The push-snapshot-clone-then-pop-on-error dance is not atomic across the HTTP hop, so two concurrent calls would interleave user turns into one conversation and, on error, pop each other's messages. The session would silently corrupt.
+Worse, both threads would be inside `Endpoint::post` on the same `Endpoint`, mutating `session` under a `Mutex`. The push-snapshot-clone-then-pop-on-error dance is not atomic across the HTTP hop, so two concurrent calls would interleave user turns into one conversation and, on error, pop each other's messages. The session would silently corrupt.
 
 So the current code is correct, and it is correct by inspection of one call site rather than by construction. It is a `pending.ready()` check that a future caller could forget or bypass. The one mitigating fact is that today there is exactly one caller and it is 40 lines long; the risk is entirely about #16 (Harness) and #17 (chat) adding a second and third path to the same session.
 
@@ -110,7 +111,7 @@ One real consequence today: a Poke on buddy A and a Poke on buddy B in the same 
 1. The pointer loop marks the verb. `frame_loop.rs:654-679` sets `live.addressed = true` and overwrites `live.happened` with a single value, priority-ordered within the tick: `Throw` > `Grab` (first held tick only) > `Poke`/`Menu` > `Summon`. Becoming Perched does the same at `frame_loop.rs:860-866`, and the Engine's own `frame.addressed` re-latches at `frame_loop.rs:856-858`.
 2. So `live.addressed` is a **latch bit** and `live.happened` is a **one-slot, last-write-wins register**. A Poke followed by a Throw during the same flight leaves `happened == Throw`; the Poke is gone. Three pokes are one poke. This is coalescing, and for the ambient case it is the right shape.
 3. The session-wake block runs, `session_due` says yes, but `live.pending.ready()` is false, so the whole `if` is skipped (`frame_loop.rs:885`). `live.addressed` and `live.happened` are **not** consumed — they are only cleared inside the taken branch (`frame_loop.rs:902-903`). The event therefore survives and fires on the first tick after the reply lands.
-4. The wait is bounded by the Completer timeout, not by anything responsive: `TIMEOUT = 20s` for hosted (`model.rs:19-23`) and `LOCAL_TIMEOUT = 120s` for a local server (`model.rs:60-63`), applied as `timeout_global` (`model.rs:505`). **A Poke arriving one millisecond after an ambient wake starts can wait up to 20 seconds (hosted) or 2 minutes (local) before its prompt is even sent.** That is the responsiveness bug, and it is squarely past Nielsen's 10-second attention limit (§2.7).
+4. The wait is bounded by the Completer timeout, not by anything responsive: `model::TIMEOUT = 20s` for hosted and `model::LOCAL_TIMEOUT = 120s` for a local server, chosen by `timeout_for` and applied as `ureq`'s `timeout_global`. **A Poke arriving one millisecond after an ambient wake starts can wait up to 20 seconds (hosted) or 2 minutes (local) before its prompt is even sent.** That is the responsiveness bug, and it is squarely past Nielsen's 10-second attention limit (§2.7).
 
 **Is the reply applied against a world that has moved on? Yes, and there is no staleness check.**
 
@@ -121,19 +122,19 @@ The Engine absorbs part of the damage but not all of it:
 - **Motion is protected.** A proposal is advisory (`crates/core/src/engine.rs:177-179`), and `permitted` requires `on_feet` — `Grounded` or `Perched` — for anything that moves (`engine.rs:1346-1348`). A reply computed for "picked up" that lands while the sprite is `Falling` has its Behavior refused, and the refusal interrupts nothing (`engine.rs:876-893`). `frame_loop.rs:964-968` then remembers only what actually *played*, so the Static Director's suppression list stays honest.
 - **Dialogue is not protected.** The frame's `dialogue` is read straight off `snapshot.proposal` with no reference to whether the Behavior played (`engine.rs:975-983`); only Do Not Disturb suppresses it. So this is live today: Grab → ambient/reactive wake sends `what just happened: picked up` → user throws the sprite, it flies, lands, settles → 15 seconds later the reply arrives and the buddy says *"hey, put me down!"* from the floor. The Behavior is refused; the line is spoken.
 
-There is one adjacent place that already reasons about staleness correctly, and it is worth naming as prior art: `SettingsOp::Retarget` (`frame_loop.rs:440-468`) calls `model::retarget_model` (`model.rs:946-965`), whose comment is *"Completer target changed, not Character. A Wake still on the wire would propose against the old host and session; drop it and open a new turn."* So the repo already has the concept "a reply from before an event is invalid" — it is just applied to settings changes and not to world events.
+There is one adjacent place that already reasons about staleness correctly, and it is worth naming as prior art: `SettingsOp::Retarget` (`frame_loop.rs:440-468`) calls `model::retarget_model`, whose comment is *"Completer target changed, not Character. A Wake still on the wire would propose against the old host and session; drop it and open a new turn."* So the repo already has the concept "a reply from before an event is invalid" — it is just applied to settings changes and not to world events.
 
 ### 1.3 Is there any cancellation at all?
 
 **No. There is discard, and the code says so in as many words.**
 
-`InFlight::cancel` (`model.rs:909-915`) replaces the channel. The worker thread keeps running, keeps blocking in `ureq`, keeps holding the server's slot, completes the generation, and sends its `Wake` into a `Sender` whose `Receiver` has been dropped — `let _ = tx.send(wake)` at `model.rs:930` swallows the error. Both `InFlight::cancel` and `retarget_model` carry the same doc line: *"ureq cannot abort a POST already on the wire."*
+`InFlight::cancel` replaces the channel. The worker thread keeps running, keeps blocking in `ureq`, keeps holding the server's slot, completes the generation, and sends its `Wake` into a `Sender` whose `Receiver` has been dropped — the `let _ = tx.send(wake)` closing `InFlight::start` swallows the error. Both `InFlight::cancel` and `retarget_model` carry the same doc line: *"ureq cannot abort a POST already on the wire."*
 
 Concretely, the Completer is:
 
 - **not** a Tauri async task, **not** a future, **not** tokio-driven;
-- a bare `std::thread::spawn` (`model.rs:924`) running a **blocking** `ureq` call (`model.rs:500-507`);
-- non-streaming: `send_json(body)` then `read_response` reads the whole body to a `String` (`model.rs:640`), so the thread is parked inside a single blocking read for the entire generation.
+- a bare `std::thread::spawn` inside `InFlight::start` running a **blocking** `ureq` call in `Endpoint::post`;
+- non-streaming: `send_json(body)` then `model::read_response` reads the whole body to a `String`, so the thread is parked inside a single blocking read for the entire generation.
 
 Dropping anything on the shell side cannot reach that thread. `std::thread` has no cancellation, `ureq` has no per-request abort handle, and there is no `Drop` on the guard that could close the socket, because the socket is owned by the stack frame of a thread nobody holds a handle to. The `timeout_global` (20s / 120s) is the only thing that ever ends it early.
 
@@ -215,11 +216,11 @@ Note the deliberate asymmetry in the sketch: **per-Instance newest-wins, global 
 
 **(a) Fold `InFlight` into a shell-owned `Slots` with newest-wins and epoch-tagged replies.** This is the one change that converts a convention into a structure. It is small — `InFlight` is ~55 lines and `Slots` is not much more — it deletes state from `InstanceState` rather than adding it, it removes two terms from a five-term condition in the frame loop, and it removes a live `expect` panic path. This is the deep-module shape the repo prefers: one type, three methods, an invariant the caller cannot express its way around. **Cost:** one afternoon; touches `model.rs`, `frame_loop.rs`, `main.rs`; no new dependency; no core change; no ADR needed. *Note:* with cancellation absent (until (b)), "newest wins" means the loser's thread still runs to completion and its reply is discarded. That is strictly better than today — today the loser's reply is *applied* — but it does not yet reduce load, which is the stated motivation. So (a) alone is a correctness win, not a load win.
 
-**(b) Make the request streaming, and cancel by dropping the reader.** This is the load win, and it is the same change as the biggest responsiveness win in §2, which is why it is worth doing as one piece of work rather than two. The worker reads SSE incrementally through `Body::into_reader()`, checks its epoch between chunks, and drops the reader when superseded — closing the connection, which the vendors document as the way to stop a synchronous generation and stop paying for output (§2.2). It also lets the sprite start moving on the first line (§2.1), which the repo's own reply protocol was already shaped for. **Cost:** an SSE line parser (~40 lines, `data: ` prefix, `[DONE]` sentinel, JSON delta extraction) plus a `stream: true` flag on the request body (`model.rs:820-861`) and a non-streaming fallback for servers that refuse it. No new dependency. Local endpoints (llama.cpp, Ollama, LM Studio, vLLM) all speak the same SSE shape.
+**(b) Make the request streaming, and cancel by dropping the reader.** This is the load win, and it is the same change as the biggest responsiveness win in §2, which is why it is worth doing as one piece of work rather than two. The worker reads SSE incrementally through `Body::into_reader()`, checks its epoch between chunks, and drops the reader when superseded — closing the connection, which the vendors document as the way to stop a synchronous generation and stop paying for output (§2.2). It also lets the sprite start moving on the first line (§2.1), which the repo's own reply protocol was already shaped for. **Cost:** an SSE line parser (~40 lines, `data: ` prefix, `[DONE]` sentinel, JSON delta extraction) plus a `stream: true` flag on the request body (`model::request_body`) and a non-streaming fallback for servers that refuse it. No new dependency. Local endpoints (llama.cpp, Ollama, LM Studio, vLLM) all speak the same SSE shape.
 
 **(c) Only then consider a global concurrency cap.** With (a) in place this is a constant in one file. Leave it at "no cap" until #18 has a panel to show the spend on, exactly as `main.rs:1167-1171` argues.
 
-**What to leave alone.** Do not add a staleness *check* at the apply site — the epoch in (a) makes the class of bug unreachable, and a comparison the caller performs is the defensive shape this codebase avoids. Do not queue events; the one-slot latch at `frame_loop.rs:654-679` is right, and a queue would let the buddy work through a backlog of pokes the user has forgotten making. Do not reach for `tokio`/`reqwest`; they are in the lock file but the whole point of `model.rs:40-42` is that this path stays synchronous, and (b) needs neither.
+**What to leave alone.** Do not add a staleness *check* at the apply site — the epoch in (a) makes the class of bug unreachable, and a comparison the caller performs is the defensive shape this codebase avoids. Do not queue events; the one-slot latch at `frame_loop.rs:654-679` is right, and a queue would let the buddy work through a backlog of pokes the user has forgotten making. Do not reach for `tokio`/`reqwest`; they are in the lock file but the whole point of the `ureq` comment in `src-tauri/Cargo.toml` is that this path stays synchronous, and (b) needs neither.
 
 **ADR impact.**
 
@@ -247,7 +248,7 @@ Excluding "run a local model", which is understood. Every external claim is cite
 
 That is the difference between "sprite reacts in ~0.5 s and talks at ~1.5 s" and "sprite does nothing for 1.5 s". Given Nielsen's thresholds (§2.7), it is the difference between two bands.
 
-**[inference] Cost.** An SSE parser in the worker, a `stream: true` flag in `request_body` (`src-tauri/src/model.rs:820-861`), and a fallback for endpoints that refuse it. No new dependency: `ureq`'s `Body::into_reader()` is a blocking `Read`. It also complicates `Endpoint::post`'s session bookkeeping slightly (`model.rs:490-535`), since the assistant turn can only be appended once the stream completes — which is the same place a partial-stream cancellation must decide whether to keep or discard the partial turn. Worth being deliberate about: a cancelled stream should pop the user turn just as an error does today (`model.rs:513`, `model.rs:518`, `model.rs:531`), or the session accumulates half-answers.
+**[inference] Cost.** An SSE parser in the worker, a `stream: true` flag in `request_body` (`src-tauri/src/model.rs`), and a fallback for endpoints that refuse it. No new dependency: `ureq`'s `Body::into_reader()` is a blocking `Read`. It also complicates `Endpoint::post`'s session bookkeeping slightly, since the assistant turn can only be appended once the stream completes — which is the same place a partial-stream cancellation must decide whether to keep or discard the partial turn. Worth being deliberate about: a cancelled stream should pop the user turn just as an error does today (the `session…pop()` on every error arm of `Endpoint::post`), or the session accumulates half-answers.
 
 **[inference] Two-stage application is the more interesting half, and the riskier one.** Applying the Behavior on the first line and the dialogue later means the Engine sees two proposals from one wake. The current `Frame` already separates `behavior` from `dialogue` (`engine.rs:205-212`), so the shape exists — but it is a behavioural change to the Director contract and would want its own issue rather than riding along with the plumbing.
 
@@ -261,7 +262,7 @@ This is the load question, and the answer is **yes for streaming, no for non-str
 
 **[vendor] vLLM** is the clearest primary source that a disconnect frees real capacity, because you can read the code. Its serving layer wraps route handlers in a `with_cancellation` decorator that races the handler against an HTTP-disconnect listener and cancels the loser (https://docs.vllm.ai/en/latest/api/vllm/entrypoints/serve/utils/api_utils/), and the engine's documented pattern is to `engine.abort(request_id)` when `request.is_disconnected()` (https://docs.vllm.ai/en/v0.6.3.post1/_modules/vllm/engine/async_llm_engine.html). The v1 output processor produces a terminal `FinishReason.ABORT` and releases request state (https://github.com/vllm-project/vllm/blob/17d87168/vllm/v1/engine/output_processor.py). **[community]** The vLLM forum adds the caveat that a *running* request may only abort after the current execution step completes, so the release is prompt but not instantaneous (https://discuss.vllm.ai/t/how-is-vllm-handling-internal-queue-requests/2615). There is no server-side abort-by-id endpoint; closing the connection is the intended client-side cancel.
 
-**[inference] Direct consequence for this repo.** Today's Completer is non-streaming (`model.rs:507`, `model.rs:640`), so *no* cancellation can free anything — the request runs to completion no matter what the shell does. **Streaming is the prerequisite for cancellation, not an independent feature.** That is the single most important finding connecting the two halves of this report: §1.5(b) is one change that buys both the load control §1 asks for and the biggest responsiveness win §2 has to offer.
+**[inference] Direct consequence for this repo.** Today's Completer is non-streaming (`Endpoint::post` sends with `send_json`, and `read_response` reads the whole body), so *no* cancellation can free anything — the request runs to completion no matter what the shell does. **Streaming is the prerequisite for cancellation, not an independent feature.** That is the single most important finding connecting the two halves of this report: §1.5(b) is one change that buys both the load control §1 asks for and the biggest responsiveness win §2 has to offer.
 
 ### 2.3 Prompt caching: does this design benefit? Mostly not, today.
 
@@ -275,7 +276,7 @@ This is the load question, and the answer is **yes for streaming, no for non-str
 
 1. **The prompt is far below every cache floor.** `character_prompt` (`crates/core/src/director/prompt.rs:7-49`) is a personality line, a Behavior roster, four instruction lines, one voice-rules paragraph, and a six-line `follow_up`. That is on the order of **200–300 tokens** (my estimate from the template text, not measured) — under OpenAI's strict 1,024 and under even Anthropic's most permissive 512. And `follow_up` alone, which is what every wake after the first sends (`crates/core/src/director.rs:125-133`), is ~60 tokens. The repo's stated virtue — "the Personality Prompt is not paid for again" (`prompt.rs:5-6`) — is *why* there is nothing to cache: it optimised the prefix away.
 2. **`Pace` outruns every TTL.** `Pace::FIRST` is 2 minutes and each ambient wake multiplies the wait up to a 2-hour cap (`crates/core/src/director.rs:232-278`). Anthropic's default cache dies after 5 minutes of inactivity; OpenAI's after 30. **[inference]** So by the third or fourth ambient wake the cache is guaranteed cold, and on Anthropic you would be paying the 1.25× write surcharge on nearly every call for a read that never comes.
-3. **The one thing that *does* grow is the session.** `Endpoint` accumulates every user and assistant turn and re-sends the whole snapshot each call (`model.rs:440`, `model.rs:491-499`). **[inference]** After enough turns that history crosses 1,024 tokens and becomes a genuinely stable, genuinely cacheable prefix — the accidental beneficiary. This also means the *input* cost per wake grows without bound over a long session, which is a separate concern worth its own issue: nothing trims the conversation.
+3. **The one thing that *does* grow is the session.** `Endpoint` accumulates every user and assistant turn and re-sends the whole snapshot each call (`Endpoint::session`, pushed to and cloned at the top of `Endpoint::post`). **[inference]** After enough turns that history crosses 1,024 tokens and becomes a genuinely stable, genuinely cacheable prefix — the accidental beneficiary. This also means the *input* cost per wake grows without bound over a long session, which is a separate concern worth its own issue: nothing trims the conversation.
 
 **[inference] Verdict.** Caching is a poor first move here. If it is pursued, the honest framing is "spend tokens to save latency": pad the opening turn past the floor with something genuinely useful (the full Behavior roster with descriptions, richer personality, memory excerpts), put an explicit breakpoint at its end, and accept that on Anthropic you need ≥1 read within 5 minutes per write to break even. Given `Pace`, that arithmetic only works for reactive bursts — a user poking a buddy repeatedly — not for ambient life.
 
@@ -301,8 +302,8 @@ This is the load question, and the answer is **yes for streaming, no for non-str
 
 **[inference] What this says about this repo, which is mostly "you already did it".** The current settings are close to right and the reasoning is already in the comments:
 
-- `HOSTED_MAX_TOKENS = 80` (`model.rs:72`) is a tight cap in the right spirit. `LOCAL_MAX_TOKENS = 512` (`model.rs:71`) is raised deliberately for local reasoning models, with the reason recorded (`model.rs:65-70`).
-- `"reasoning": { "effort": "low" }` on the xAI Responses path (`model.rs:850-852`) with the comment *"grok-4.6 defaults to high: 16s and hundreds of think tokens for a two-line Behavior pick"* is exactly Anthropic's documented advice, arrived at independently. **[inference] A reasoning model is the wrong tool for a Director wake**, and the codebase already concluded that at one endpoint; the finding is that this is only applied to xAI and there is no equivalent lever on the chat-completions branch (`model.rs:855-859`).
+- `model::HOSTED_MAX_TOKENS = 80` is a tight cap in the right spirit. `model::LOCAL_MAX_TOKENS = 512` is raised deliberately for local reasoning models, with the reason recorded in the doc comment above it.
+- `"reasoning": { "effort": "low" }` on the xAI Responses path (the Responses arm of `request_body`) with the comment *"grok-4.6 defaults to high: 16s and hundreds of think tokens for a two-line Behavior pick"* is exactly Anthropic's documented advice, arrived at independently. **[inference] A reasoning model is the wrong tool for a Director wake**, and the codebase already concluded that at one endpoint; the finding is that this is only applied to xAI and there is no equivalent lever on `request_body`'s chat-completions arm.
 - **No `stop` sequence is sent.** With the reply protocol being "name, then optional dialogue", `stop: ["\n\n"]` would cap the tail cheaply. **[inference]** Small win, and it interacts well with streaming: the client can stop reading once it has what it needs, which is the same drop-the-reader mechanism as cancellation.
 - **Do not adopt structured output for this.** The 10 s–1 min first-call grammar compile is disqualifying for a path whose entire budget is a couple of seconds, and the existing line-based parser with its `spoken_or_failed` fallback (`crates/core/src/director.rs:184-190`) already degrades gracefully in a way a strict schema would not. The `#231` case-insensitive matching (`director.rs:176-180`) shows the parser is already tolerant of real model behaviour.
 - **Temperature** is not sent at all. **[inference]** Leave it: the variety the Character wants comes from the "Vary" instruction (`prompt.rs:40-42`) and the Static Director's suppression list, and lowering temperature for latency is not a documented lever on any vendor page I found.
@@ -311,9 +312,9 @@ This is the load question, and the answer is **yes for streaming, no for non-str
 
 **This is the cheapest real latency on the table, and the current code gives it all away.**
 
-**[vendor, verified against `ureq` 3.4.0 source]** `Endpoint::post` calls `ureq::post(url)` (`model.rs:501`) and `Endpoint::get` calls `ureq::get(url)` (`model.rs:477`). `ureq`'s top-level verb functions are documented as **"Run on a use-once `Agent`"** and construct `Agent::new_with_defaults()` per call:
+**[vendor, verified against `ureq` 3.4.0 source]** `Endpoint::post` calls `ureq::post(url)` and `Endpoint::get` calls `ureq::get(url)`. `ureq`'s top-level verb functions are documented as **"Run on a use-once `Agent`"** and construct `Agent::new_with_defaults()` per call:
 
-```627:634:~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ureq-3.4.0/src/lib.rs
+```623:633:~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ureq-3.4.0/src/lib.rs
 /// Make a POST request.
 ///
 /// Run on a use-once [`Agent`].
@@ -341,7 +342,7 @@ The connection pool lives on the `Agent` (`ureq` exposes `max_idle_connections`,
 
 **[vendor, verified by absence in source]** `ureq` 3.4 is **HTTP/1.1 only** — its `Request` docs reference `HTTP_10` and `HTTP_11` and there is no h2 machinery in the crate. So the repo is on 1.1 against h2-capable servers. **[inference]** For a single small request that costs almost nothing: HTTP/2's wins are multiplexing and header compression, and this workload is one small request at a time with tiny headers. **Do not switch HTTP clients for HTTP/2.** The keep-alive win in the paragraph above is the part that actually matters, and it is available without leaving `ureq`.
 
-**[inference] Region/endpoint selection** is not actionable here: the base URL is the user's (`model.rs:46`, `model.rs:217`), and nothing in the app should second-guess it.
+**[inference] Region/endpoint selection** is not actionable here: the base URL is the user's (`model::BASE_URL`, carried into the `Endpoint` by `endpoint_from`), and nothing in the app should second-guess it.
 
 ### 2.7 De-duplicating across Instances, and latency budgets
 
@@ -374,17 +375,17 @@ The connection pool lives on the `Agent` (`ureq` exposes `max_idle_connections`,
 
 Highest value per unit of cost first.
 
-1. **Hold one `ureq::Agent` on `Endpoint` instead of calling `ureq::post`/`ureq::get`.** *Done — #303.* Removes a full TCP+TLS handshake from every wake. ~10 lines, no dependency, no behaviour change, no ADR. Verified cause: `ureq`'s free verb functions are "use-once Agent" (`model.rs:477`, `model.rs:501`; `ureq-3.4.0/src/lib.rs:615-634`). Measured against a loopback server counting inbound connections: six requests opened six connections before, one after.
+1. **Hold one `ureq::Agent` on `Endpoint` instead of calling `ureq::post`/`ureq::get`.** *Done — #303.* Removes a full TCP+TLS handshake from every wake. ~10 lines, no dependency, no behaviour change, no ADR. Verified cause: `ureq`'s free verb functions are "use-once Agent" (`Endpoint::get`, `Endpoint::post`; `ureq-3.4.0/src/lib.rs:615-633`). Measured against a loopback server counting inbound connections: six requests opened six connections before, one after.
 
 2. **Fold `InFlight` into a shell-owned `Slots`: one slot per Instance, newest wins, replies epoch-tagged and returned with their `Context`.** Converts single-in-flight from a checked convention into an unreachable-otherwise structure, kills the "put me down" stale-dialogue bug (`engine.rs:975-983`), removes `InstanceState::in_flight` and a live `expect` panic path (`frame_loop.rs:769`), and shrinks the five-term wake condition to three. One afternoon; `model.rs` + `frame_loop.rs` + `main.rs`; no dependency; no core change. **Wants a new ADR** (draft in §1.5).
 
 3. **Make the request streaming and cancel by dropping the reader.** *Filed as #302.* The single highest-value item, and deliberately third only because (2) gives it the epoch to check against. Buys three things at once: OpenAI's own "single most effective approach" to perceived latency; *actual* cancellation that frees the endpoint — non-streaming requests cannot be cancelled at all, per the OpenAI Background-mode guide's "To cancel a synchronous response, terminate the connection"; and the sprite moving on the first line, which this repo's reply protocol was already shaped for. Cost: ~40-line SSE parser, a `stream: true` flag, a non-streaming fallback, and care with the session bookkeeping on a cancelled partial. **No new dependency** — `ureq`'s `Body::into_reader()` is a blocking `Read`.
 
-4. **Send a `stop` sequence (`["\n\n"]`) and extend the low-reasoning-effort lever beyond the xAI branch.** Caps the tail on a reply that only ever needs two lines. The reasoning-effort case is already argued in the repo's own comment at `model.rs:850-852`; it is simply not applied on the chat-completions path (`model.rs:855-859`). Handful of lines, but per-endpoint compatibility testing is the real cost, since a strict server rejects an unknown field outright — a hazard the repo has already been bitten by (`model.rs:65-70`).
+4. **Send a `stop` sequence (`["\n\n"]`) and extend the low-reasoning-effort lever beyond the xAI branch.** Caps the tail on a reply that only ever needs two lines. The reasoning-effort case is already argued in the repo's own comment in the Responses arm of `request_body`; it is simply not applied on its chat-completions arm. Handful of lines, but per-endpoint compatibility testing is the real cost, since a strict server rejects an unknown field outright — a hazard the repo has already been bitten by (the `LOCAL_MAX_TOKENS` doc comment).
 
 5. **Re-key the Thinking ellipsis off "no first line yet" once streaming lands.** Turns the existing 250 ms-grace / 600 ms-hold flag from "the model is busy" into "the buddy has not decided yet", so the sprite's own Animation takes over the instant it starts moving. Small, and it is the part the user actually perceives. Do it with (3), not before.
 
-6. **Guard the growing session.** `Endpoint::session` accumulates every turn and re-sends the lot (`model.rs:440`, `model.rs:491-499`) with nothing trimming it. Input cost and prefill time per wake grow without bound over a long run. Not strictly a latency *fix* — it is a latency *regression* that gets worse the longer the app is open. Deserves its own issue; the fix (a turn cap, mirroring `REMEMBERED` at `crates/core/src/director.rs:49`) is small, but "which turns are safe to drop" is a Director-behaviour question, not a plumbing one.
+6. **Guard the growing session.** `Endpoint::session` accumulates every turn and re-sends the lot, cloned at the top of `Endpoint::post`, with nothing trimming it. Input cost and prefill time per wake grow without bound over a long run. Not strictly a latency *fix* — it is a latency *regression* that gets worse the longer the app is open. Deserves its own issue; the fix (a turn cap, mirroring `REMEMBERED` at `crates/core/src/director.rs:49`) is small, but "which turns are safe to drop" is a Director-behaviour question, not a plumbing one.
 
 7. **Consider a global concurrency cap in `Slots` — but not yet.** Free to add once (2) exists, and `main.rs:1167-1171` already argues the right sequencing: it wants somewhere to show the spend, which is #18's panel. Leave the default at today's behaviour (no cap) so (2) is a pure refactor.
 
