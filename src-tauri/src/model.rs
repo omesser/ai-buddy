@@ -73,16 +73,18 @@ const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 /// Hosted replies are two lines. A local reasoning model (Qwen3, gpt-oss)
 /// thinks in the same budget on chat-completions, so 80 tokens can be spent
 /// before it writes anything, and the empty reply parses as garbage. Raising
-/// the cap is the portable half of that fix: `reasoning_effort` is not a
-/// field every one of these servers accepts, and a strict one rejects the
-/// whole request over it.
+/// the cap was the portable half of that fix; the other half is
+/// `reasoning_effort`, which #612 now sends and `Field::Effort` guards for
+/// the strict server this comment used to warn about.
 ///
-/// 512 is not enough for every one of them. Measured against a Character
-/// Prompt carrying the shipped cat personality, `gpt-oss-20b-MXFP4-Q8`
-/// spends the whole budget thinking on about 40% of wakes and returns empty
-/// content — see `measure_the_reply_contract_failure_rate`, which found the
-/// same 40% end to end. Raising it costs latency on every wake, so the
-/// number wants its own measurement rather than a guess.
+/// 512 was not enough for every one of them at the model's default effort.
+/// Measured against a Character Prompt carrying the shipped cat personality,
+/// `gpt-oss-20b-MXFP4-Q8` spent the whole budget thinking on about 40% of
+/// wakes and returned empty content — see
+/// `measure_the_reply_contract_failure_rate`, which found the same 40% end
+/// to end. With `reasoning_effort: "low"` the same model thinks about a
+/// tenth as much, so the cap is no longer the number under pressure and is
+/// left where it is.
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
 
@@ -303,6 +305,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         max_tokens: max_tokens_for(local),
         session: Mutex::new(Session::default()),
         streams: AtomicBool::new(true),
+        takes_effort: AtomicBool::new(true),
         agent: ureq::agent(),
     })
 }
@@ -624,6 +627,10 @@ pub struct Endpoint {
     /// the two paths and not the other would lose streaming on both. No such
     /// host is known, and the cost if one exists is latency, not a failure.
     streams: AtomicBool,
+    /// Does this host take `reasoning_effort`? Same shape as `streams`, and
+    /// same reason: it starts optimistic, and only a server that names the
+    /// field in a rejection ever turns it off (#612).
+    takes_effort: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
     /// use-once [Agent]", so each wake would throw away the pooled connection
     /// and pay another TCP and TLS handshake to the model host.
@@ -681,41 +688,67 @@ impl Endpoint {
     /// on `/v1/responses` next to a 200 on chat-completions, and so
     /// `complete` can retry the other xAI path.
     ///
-    /// Streams, and falls back to a whole reply for a server that will not.
-    /// The fallback retries the same session snapshot, so both attempts ask
-    /// the same question and only one answer is ever recorded — and once a
-    /// whole reply has succeeded where a stream did not, this endpoint stops
-    /// asking, rather than paying two POSTs on every wake for the rest of
-    /// the session.
+    /// Asks for a stream and for low reasoning effort, and gives up either
+    /// one for a server that names it in a rejection. A fallback retries the
+    /// same session snapshot, so every attempt asks the same question and
+    /// only one answer is ever recorded — and once a request without the
+    /// field has succeeded where the request with it did not, this endpoint
+    /// stops asking, rather than paying two POSTs on every wake for the rest
+    /// of the session.
     pub fn post(&self, url: &str, prompt: &str) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
-        let wire = if self.streams.load(Ordering::SeqCst) {
+        let mut wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
         } else {
             Wire::Whole
         };
-        let mut reply = self.send(url, &snapshot, wire);
-        if let Err(unsent) = &reply {
-            if let Some(settles) = unsent.retry_settles() {
-                if tracing() {
-                    eprintln!("director: {}; retrying without stream", unsent.why());
+        let mut effort = self.takes_effort.load(Ordering::SeqCst);
+        let mut reply = self.send(url, &snapshot, wire, effort);
+        // A loop rather than one retry: there are two optional fields now,
+        // and a validator strict enough to refuse both would otherwise lose
+        // the wake. Each pass drops exactly the field the rejection named.
+        // Bounded by the count of those fields rather than by trusting the
+        // body to stop naming one, because the cost of being wrong is a
+        // worker thread posting for ever.
+        for _ in 0..Field::ALL.len() {
+            let Err(unsent) = &reply else { break };
+            let Some((field, settles)) = unsent.retry_settles() else {
+                break;
+            };
+            let sent = match field {
+                Field::Stream => wire == Wire::Stream,
+                Field::Effort => effort,
+            };
+            if !sent {
+                break;
+            }
+            if tracing() {
+                eprintln!(
+                    "director: {}; retrying without {}",
+                    unsent.why(),
+                    field.name()
+                );
+            }
+            // A call dropped between two attempts must not become a fresh
+            // request the frame loop can no longer reach.
+            if abandoned() {
+                reply = Err(Unsent::Abandoned);
+                break;
+            }
+            match field {
+                Field::Stream => wire = Wire::Whole,
+                Field::Effort => effort = false,
+            }
+            reply = self.send(url, &snapshot, wire, effort);
+            // Evidence, not a guess: the server rejected the field and the
+            // request without it worked, so this host does not take it. A
+            // refusal misread from some unrelated 400 fails twice and settles
+            // nothing, and neither does a stream that merely broke.
+            if reply.is_ok() && settles {
+                match field {
+                    Field::Stream => self.streams.store(false, Ordering::SeqCst),
+                    Field::Effort => self.takes_effort.store(false, Ordering::SeqCst),
                 }
-                // A call dropped between the two attempts must not become a
-                // fresh request the frame loop can no longer reach.
-                reply = if abandoned() {
-                    Err(Unsent::Abandoned)
-                } else {
-                    let whole = self.send(url, &snapshot, Wire::Whole);
-                    // Evidence, not a guess: the server rejected the field
-                    // and a whole reply worked, so this host does not stream.
-                    // A refusal misread from some unrelated 400 fails twice
-                    // and settles nothing, and neither does a stream that
-                    // merely broke.
-                    if whole.is_ok() && settles {
-                        self.streams.store(false, Ordering::SeqCst);
-                    }
-                    whole
-                };
             }
         }
         self.close_turn(turn, reply.map_err(Unsent::into_error))
@@ -789,7 +822,13 @@ impl Endpoint {
 
     /// One POST. Both attempts come through here, so the fallback differs
     /// from the first try in exactly one field.
-    fn send(&self, url: &str, session: &[Message], wire: Wire) -> Result<Reply, Unsent> {
+    fn send(
+        &self,
+        url: &str,
+        session: &[Message],
+        wire: Wire,
+        effort: bool,
+    ) -> Result<Reply, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
             Wire::Whole => "application/json",
@@ -800,6 +839,7 @@ impl Endpoint {
             uses_responses(url),
             self.max_tokens,
             wire,
+            effort,
         );
         let request = self
             .headers(self.agent.post(url), accept)
@@ -816,10 +856,16 @@ impl Endpoint {
         if !(200..300).contains(&code) {
             let (_, text) = read_response(response).map_err(Unsent::Failed)?;
             let error = status_error(url, code, &text);
-            return Err(if wire == Wire::Stream && refused_stream(code, &text) {
-                Unsent::NotStreamable(error)
-            } else {
-                Unsent::Failed(error)
+            // Only a field this request actually sent: a body that names one
+            // we left out is talking about something else, and dropping it
+            // again would send the identical request.
+            let refused = refused_field(code, &text).filter(|field| match field {
+                Field::Stream => wire == Wire::Stream,
+                Field::Effort => effort,
+            });
+            return Err(match refused {
+                Some(field) => Unsent::Refused(field, error),
+                None => Unsent::Failed(error),
             });
         }
 
@@ -872,9 +918,10 @@ impl Endpoint {
             // takes the turn, as it does for any wake with no words.
             Streamed::Truncated(_) => Err(Unsent::Truncated(self.out_of_budget(url, true))),
             Streamed::Cut => Err(Unsent::Cut(format!("{url}: the stream ended mid-reply"))),
-            Streamed::NotEventStream => Err(Unsent::NotStreamable(format!(
-                "{url}: answered 200 with no event stream in it"
-            ))),
+            Streamed::NotEventStream => Err(Unsent::Refused(
+                Field::Stream,
+                format!("{url}: answered 200 with no event stream in it"),
+            )),
             Streamed::Abandoned => Err(Unsent::Abandoned),
         }
     }
@@ -1035,21 +1082,31 @@ fn alternate_url(url: &str) -> Option<String> {
     }
 }
 
-/// Did the server reject the request *for* asking to stream?
+/// Which optional field, if any, did the server reject the request *for*?
 ///
 /// 400 and 422 are the codes that mean "your body is wrong", and a strict
 /// OpenAI-compatible server names the field it did not recognise. Nothing
 /// else counts: a 401 or 403 would fail the same way without the field, and
 /// on the xAI paths 403 already means something `fallback_url` handles. The
 /// cost of reading this too narrowly is one turn of `StaticDirector`.
-fn refused_stream(code: u16, body: &str) -> bool {
-    matches!(code, 400 | 422) && names_stream(&body.to_ascii_lowercase())
+///
+/// `Effort` before `Stream`, because a validator that lists every unknown
+/// key names both while the caller drops one field per attempt: the field
+/// #612 added is the one to give up first.
+fn refused_field(code: u16, body: &str) -> Option<Field> {
+    if !matches!(code, 400 | 422) {
+        return None;
+    }
+    let body = body.to_ascii_lowercase();
+    Field::ALL
+        .into_iter()
+        .find(|field| names(&body, field.name()))
 }
 
-/// `stream` as a word, so a gateway's "upstream connect error" is not read
-/// as a refusal and charged a second POST.
-fn names_stream(body: &str) -> bool {
-    body.match_indices("stream").any(|(at, _)| {
+/// The field as a word, so a gateway's "upstream connect error" is not read
+/// as a refusal of `stream` and charged a second POST.
+fn names(body: &str, field: &str) -> bool {
+    body.match_indices(field).any(|(at, _)| {
         !body[..at]
             .chars()
             .next_back()
@@ -1286,6 +1343,7 @@ fn request_body(
     responses: bool,
     max_tokens: u32,
     wire: Wire,
+    effort: bool,
 ) -> serde_json::Value {
     let input = if responses && session.len() == 1 {
         // xAI's first-request example is `input` as a string. Later turns
@@ -1316,11 +1374,21 @@ fn request_body(
             "reasoning": { "effort": "low" },
         })
     } else {
-        serde_json::json!({
+        let mut chat = serde_json::json!({
             "model": model,
             "messages": input,
             "max_tokens": max_tokens,
-        })
+        });
+        // The Responses branch above has asked for low effort since #302,
+        // for the same reason: a two-line Behavior pick is not worth a long
+        // think. Measured on chat-completions in #597 — gpt-oss-20b under
+        // the real Character Prompt returned 7 empty `length` finishes in 20
+        // runs at a 512-token cap, and 0 in 20 with this field. It is not a
+        // field every server accepts, which is what `Field::Effort` guards.
+        if effort {
+            chat["reasoning_effort"] = serde_json::Value::String("low".to_string());
+        }
+        chat
     };
     if wire == Wire::Stream {
         body["stream"] = serde_json::Value::Bool(true);
@@ -1336,13 +1404,42 @@ fn request_body(
 /// sends; it is here to bound a broken one.
 const STREAM_LIMIT: u64 = 1024 * 1024;
 
+/// An optional request field a server may refuse the whole request over.
+///
+/// Both are the same bet: worth sending where it works, never worth losing a
+/// wake to. One `Endpoint` flag apiece remembers the answer, so a host that
+/// refuses one pays the extra POST once per session and not once per wake.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Field {
+    /// `stream` (#302).
+    Stream,
+    /// `reasoning_effort` on chat-completions (#612). The Responses branch
+    /// spells the same ask as `reasoning.effort` and is not guarded here:
+    /// xAI is the only host that takes that path, and it accepts it.
+    Effort,
+}
+
+impl Field {
+    /// Every guarded field, in the order a retry gives them up. One list, so
+    /// the rejection reader and the retry bound cannot disagree about how
+    /// many there are.
+    const ALL: [Field; 2] = [Field::Effort, Field::Stream];
+
+    /// The name in the body, which is also the name a rejection uses.
+    fn name(self) -> &'static str {
+        match self {
+            Field::Stream => "stream",
+            Field::Effort => "reasoning_effort",
+        }
+    }
+}
+
 /// Why one attempt produced no reply.
 enum Unsent {
-    /// The server rejected the request for asking to stream, so the same
-    /// question is worth one more send without the field — and because the
-    /// answer is about the server rather than this call, it is worth
-    /// remembering.
-    NotStreamable(String),
+    /// The server rejected the request for naming this field, so the same
+    /// question is worth one more send without it — and because the answer
+    /// is about the server rather than this call, it is worth remembering.
+    Refused(Field, String),
     /// The stream broke before the server marked its end. Worth the same one
     /// retry, but a broken connection says nothing about whether the next
     /// stream will work, so it settles nothing.
@@ -1365,7 +1462,7 @@ impl Unsent {
     /// anything.
     fn why(&self) -> &str {
         match self {
-            Unsent::NotStreamable(why)
+            Unsent::Refused(_, why)
             | Unsent::Cut(why)
             | Unsent::Truncated(why)
             | Unsent::Failed(why) => why,
@@ -1373,12 +1470,16 @@ impl Unsent {
         }
     }
 
-    /// Is the same question worth one send without the `stream` field, and
-    /// does an answer settle whether this host streams at all?
-    fn retry_settles(&self) -> Option<bool> {
+    /// Which field is the same question worth one more send without, and
+    /// does an answer settle whether this host takes that field at all?
+    fn retry_settles(&self) -> Option<(Field, bool)> {
         match self {
-            Unsent::NotStreamable(_) => Some(true),
-            Unsent::Cut(_) => Some(false),
+            Unsent::Refused(field, _) => Some((*field, true)),
+            // A broken connection says nothing about whether the next stream
+            // will work, so the retry is owed and the verdict is not.
+            Unsent::Cut(_) => Some((Field::Stream, false)),
+            // The same question at the same cap gets the same nothing, so a
+            // truncation is not worth a second POST with any field dropped.
             Unsent::Abandoned | Unsent::Truncated(_) | Unsent::Failed(_) => None,
         }
     }
@@ -2285,16 +2386,123 @@ pub(crate) mod tests {
     }
 
     fn local_endpoint() -> Endpoint {
+        endpoint_at("http://localhost:11434/v1/chat/completions")
+    }
+
+    fn endpoint_at(url: &str) -> Endpoint {
         Endpoint {
             api_key: String::new(),
-            url: "http://localhost:11434/v1/chat/completions".to_string(),
+            url: url.to_string(),
             model: "gemma4".to_string(),
             timeout: TIMEOUT,
             max_tokens: HOSTED_MAX_TOKENS,
             session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
+            takes_effort: AtomicBool::new(true),
             agent: ureq::agent(),
         }
+    }
+
+    /// A loopback server that refuses any request naming `field`, and hands
+    /// back every body it was sent.
+    ///
+    /// A stub rather than a product, because none of the local servers in
+    /// scope rejects an unknown field: oMLX answers 200 and ignores it
+    /// (`docs/research/reasoning-versus-the-final-answer.md` §6.1). The
+    /// strict server the guard exists for is real — the wording here is
+    /// OpenAI's — but it is not one that can be run on this machine, so the
+    /// path is exercised against its contract instead.
+    fn server_refusing(field: Field) -> (String, Receiver<String>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("the bound port").port();
+        let (sent, seen) = mpsc::channel();
+        thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut reader = BufReader::new(stream.try_clone().expect("the same socket"));
+                let mut length = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; length];
+                if reader.read_exact(&mut body).is_err() {
+                    return;
+                }
+                let body = String::from_utf8_lossy(&body).to_string();
+                let (status, payload) = if body.contains(field.name()) {
+                    (
+                        "400 Bad Request",
+                        format!(
+                            r#"{{"error":{{"message":"Unrecognized request argument supplied: {}"}}}}"#,
+                            field.name()
+                        ),
+                    )
+                } else {
+                    (
+                        "200 OK",
+                        r#"{"choices":[{"message":{"content":"stroll\nhey"},"finish_reason":"stop"}]}"#
+                            .to_string(),
+                    )
+                };
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                    payload.len()
+                );
+                let _ = stream.flush();
+                if sent.send(body).is_err() {
+                    return;
+                }
+            }
+        });
+        (format!("http://127.0.0.1:{port}/v1/chat/completions"), seen)
+    }
+
+    /// #612's whole contract, end to end: the field goes out, a server that
+    /// names it in a rejection gets one more request without it, and the
+    /// next wake does not ask again.
+    #[test]
+    fn a_server_that_refuses_the_effort_field_is_asked_once_and_never_again() {
+        let (url, seen) = server_refusing(Field::Effort);
+        let endpoint = endpoint_at(&url);
+        // Whole-body, so the stub can answer in one JSON object. The stream
+        // field has its own retry and #302's tests.
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        assert_eq!(
+            endpoint.post(&url, "hello").unwrap().text,
+            "stroll\nhey",
+            "the refusal costs a second POST, not the wake"
+        );
+        let asked = seen.recv().expect("the first request");
+        assert!(asked.contains("reasoning_effort"), "sent optimistically");
+        let retried = seen.recv().expect("the retry");
+        assert!(
+            !retried.contains("reasoning_effort"),
+            "the retry drops the field the server just named"
+        );
+
+        endpoint.post(&url, "what just happened: poked").unwrap();
+        let next_wake = seen.recv().expect("the next wake");
+        assert!(
+            !next_wake.contains("reasoning_effort"),
+            "a host that refused it once is not asked again"
+        );
+        assert!(
+            seen.try_recv().is_err(),
+            "and the second wake pays one POST, not two"
+        );
     }
 
     /// A streamed turn can end with no reply in more ways than a whole one
@@ -2776,9 +2984,17 @@ pub(crate) mod tests {
             false,
             HOSTED_MAX_TOKENS,
             Wire::Stream,
+            false,
         );
         assert_eq!(streamed["stream"], true);
-        let responses = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS, Wire::Stream);
+        let responses = request_body(
+            "grok-4.6",
+            &session,
+            true,
+            HOSTED_MAX_TOKENS,
+            Wire::Stream,
+            false,
+        );
         assert_eq!(responses["stream"], true, "the Responses path streams too");
 
         let whole = request_body(
@@ -2787,11 +3003,58 @@ pub(crate) mod tests {
             false,
             HOSTED_MAX_TOKENS,
             Wire::Whole,
+            false,
         );
         assert!(
             whole.get("stream").is_none(),
             "a retry must not name the field the server just refused"
         );
+    }
+
+    /// #612: the field is the one lever measured to change the empty-reply
+    /// rate, and the retry is only honest if the second body drops it.
+    #[test]
+    fn a_chat_request_asks_for_low_effort_and_the_fallback_does_not() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        let asked = request_body(
+            "gpt-oss-20b",
+            &session,
+            false,
+            LOCAL_MAX_TOKENS,
+            Wire::Stream,
+            true,
+        );
+        assert_eq!(asked["reasoning_effort"], "low");
+
+        let dropped = request_body(
+            "gpt-oss-20b",
+            &session,
+            false,
+            LOCAL_MAX_TOKENS,
+            Wire::Stream,
+            false,
+        );
+        assert!(
+            dropped.get("reasoning_effort").is_none(),
+            "a retry must not name the field the server just refused"
+        );
+
+        let responses = request_body(
+            "grok-4.6",
+            &session,
+            true,
+            HOSTED_MAX_TOKENS,
+            Wire::Whole,
+            true,
+        );
+        assert!(
+            responses.get("reasoning_effort").is_none(),
+            "the Responses path spells its effort under `reasoning`"
+        );
+        assert_eq!(responses["reasoning"]["effort"], "low");
     }
 
     #[test]
@@ -2800,7 +3063,14 @@ pub(crate) mod tests {
             role: "user",
             content: "wave".to_string(),
         }];
-        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS, Wire::Whole);
+        let body = request_body(
+            "grok-4.6",
+            &session,
+            true,
+            HOSTED_MAX_TOKENS,
+            Wire::Whole,
+            false,
+        );
         assert_eq!(body["input"], "wave");
         assert_eq!(body["max_output_tokens"], 80);
         assert_eq!(body["store"], false);
@@ -2824,7 +3094,14 @@ pub(crate) mod tests {
                 content: "what just happened: thrown".to_string(),
             },
         ];
-        let body = request_body("grok-4.6", &session, true, HOSTED_MAX_TOKENS, Wire::Whole);
+        let body = request_body(
+            "grok-4.6",
+            &session,
+            true,
+            HOSTED_MAX_TOKENS,
+            Wire::Whole,
+            false,
+        );
         assert_eq!(body["input"][2]["content"], "what just happened: thrown");
         assert!(body["input"].is_array());
     }
@@ -2953,45 +3230,106 @@ pub(crate) mod tests {
 
     #[test]
     fn a_server_that_rejects_the_stream_field_earns_one_whole_retry() {
-        assert!(refused_stream(
-            400,
-            r#"{"error":{"message":"Unrecognized request argument supplied: stream"}}"#
-        ));
-        assert!(
-            refused_stream(
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"Unrecognized request argument supplied: stream"}}"#
+            ),
+            Some(Field::Stream)
+        );
+        assert_eq!(
+            refused_field(
                 422,
                 r#"{"detail":[{"loc":["body","stream"],"msg":"extra fields not permitted"}]}"#
             ),
+            Some(Field::Stream),
             "a strict server validates the body rather than the field"
         );
-        assert!(
-            !refused_stream(400, r#"{"error":{"message":"model gpt-9 does not exist"}}"#),
+        assert_eq!(
+            refused_field(400, r#"{"error":{"message":"model gpt-9 does not exist"}}"#),
+            None,
             "a 400 about anything else would fail the same way twice"
         );
-        assert!(
-            !refused_stream(403, "streaming is not available"),
+        assert_eq!(
+            refused_field(403, "streaming is not available"),
+            None,
             "403 is the key, the credits, or a path ACL; fallback_url owns that"
         );
-        assert!(
-            !refused_stream(400, "upstream connect error or disconnect/reset"),
+        assert_eq!(
+            refused_field(400, "upstream connect error or disconnect/reset"),
+            None,
             "a gateway saying upstream is not a server naming the stream field"
         );
-        assert!(
-            refused_stream(400, r#"{"error":"streaming is not supported here"}"#),
+        assert_eq!(
+            refused_field(400, r#"{"error":"streaming is not supported here"}"#),
+            Some(Field::Stream),
             "the word can still be inflected, it just cannot be a suffix"
+        );
+    }
+
+    /// #612: the same read as the stream field, on the field #597 measured.
+    /// A body that names it is the only thing that drops it, because the
+    /// cost of reading a plain 400 as a refusal is a second POST that fails
+    /// the same way.
+    #[test]
+    fn a_server_that_rejects_the_effort_field_earns_one_retry_without_it() {
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"Unrecognized request argument supplied: reasoning_effort"}}"#
+            ),
+            Some(Field::Effort)
+        );
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"Unsupported parameter: 'reasoning_effort' is not supported with this model."}}"#
+            ),
+            Some(Field::Effort),
+            "OpenAI's wording for a field a non-reasoning model will not take"
+        );
+        assert_eq!(
+            refused_field(
+                422,
+                r#"{"detail":[{"loc":["body","reasoning_effort"],"msg":"extra fields not permitted"}]}"#
+            ),
+            Some(Field::Effort)
+        );
+        assert_eq!(
+            refused_field(400, r#"{"error":{"message":"model gpt-9 does not exist"}}"#),
+            None,
+            "a 400 about anything else would fail the same way twice"
+        );
+        assert_eq!(
+            refused_field(403, "reasoning_effort is not available"),
+            None,
+            "403 is the key, the credits, or a path ACL; fallback_url owns that"
+        );
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"unknown fields: reasoning_effort, stream"}}"#
+            ),
+            Some(Field::Effort),
+            "a validator listing both drops the field this request added first"
         );
     }
 
     #[test]
     fn a_broken_stream_is_worth_a_retry_but_teaches_nothing() {
         assert_eq!(
-            Unsent::NotStreamable("names the field".to_string()).retry_settles(),
-            Some(true),
+            Unsent::Refused(Field::Stream, "names the field".to_string()).retry_settles(),
+            Some((Field::Stream, true)),
             "a host that rejected the field will reject it on the next wake too"
         );
         assert_eq!(
+            Unsent::Refused(Field::Effort, "names the field".to_string()).retry_settles(),
+            Some((Field::Effort, true)),
+            "and the effort field is remembered the same way"
+        );
+        assert_eq!(
             Unsent::Cut("ended mid-reply".to_string()).retry_settles(),
-            Some(false),
+            Some((Field::Stream, false)),
             "the answer is still owed, but one dropped body is no verdict on the host"
         );
         assert_eq!(
