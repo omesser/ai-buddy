@@ -15,7 +15,8 @@ use std::thread;
 use std::time::Duration;
 
 use ai_buddy_core::director::{
-    self, Completer, Context, ModelDirector, Pace, Reply, Wake, WakeRequest, WAKE_EVERY,
+    self, Completer, Context, ModelDirector, Pace, Reply, Wake, WakeRequest, TRUNCATED_MARK,
+    WAKE_EVERY,
 };
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
@@ -765,10 +766,21 @@ impl Endpoint {
         match reply {
             Ok(reply) => {
                 // What arrived, truncated or not: the user heard these words,
-                // so the next turn is built on the same ones they heard.
+                // so the next turn is built on the same ones they heard — and
+                // when the cap ended it, the session says so, so the model
+                // reading its own last turn back sees where it was stopped
+                // rather than a sentence it appears to have abandoned (#610).
+                //
+                // Appended here and nowhere earlier: `parse_proposal` reads
+                // the first line that is a whole Behavior name and says the
+                // rest, so a mark in the text the parser sees would be spoken
+                // as the buddy's own line.
                 session.messages.push(Message {
                     role: "assistant",
-                    content: reply.text.clone(),
+                    content: match reply.truncated {
+                        true => format!("{}\n{TRUNCATED_MARK}", reply.text),
+                        false => reply.text.clone(),
+                    },
                 });
                 Ok(reply)
             }
@@ -2314,6 +2326,45 @@ pub(crate) mod tests {
                 ("assistant", "stroll"),
                 ("user", "what just happened: thrown"),
             ]
+        );
+    }
+
+    /// The session is what the model reads its own last turn back from, so a
+    /// turn the cap ended says so there: otherwise the next reply is written
+    /// against a sentence the model appears to have simply abandoned (#610).
+    ///
+    /// The mark reaches the session and not the reply the Director parses.
+    /// `parse_proposal` reads the first whole-Behavior-name line and speaks
+    /// the rest, so a mark in the parsed text is a mark the buddy says out
+    /// loud — which is the failure `bubble.js` wrote down for the bubble and
+    /// which this ordering is what prevents.
+    #[test]
+    fn the_session_keeps_the_mark_and_the_parser_never_sees_it() {
+        let endpoint = local_endpoint();
+
+        let (opening, _) = endpoint.open_turn("what now?");
+        let handed = endpoint
+            .close_turn(opening, Ok(Reply::truncated("prowl")))
+            .unwrap();
+
+        assert_eq!(
+            handed.text, "prowl",
+            "the Director parses the model's own words, with no mark in them"
+        );
+        assert_eq!(
+            ai_buddy_core::director::parse_proposal(&handed.text)
+                .unwrap()
+                .dialogue,
+            None,
+            "a marked text would be parsed as a Behavior with the mark as its line"
+        );
+        assert_eq!(
+            spoken(&endpoint.session.lock().unwrap().messages),
+            [
+                ("user", "what now?"),
+                ("assistant", "prowl\n[response truncated]")
+            ],
+            "the session says where the model was stopped"
         );
     }
 

@@ -171,6 +171,17 @@ pub trait Completer {
     fn complete(&self, request: &WakeRequest) -> Result<Reply, String>;
 }
 
+/// What a reply the token cap ended is marked with, wherever it is written
+/// down: the session the next turn is built from, the Chat history, and the
+/// bubble's own line under the words. One string, so the surfaces and the
+/// session cannot drift apart — `src/bubble.js` keeps the copy the webview
+/// draws and `tests/bubble.test.js` holds the two together.
+///
+/// Never added before `parse_proposal` sees the reply: it reads the first
+/// line that is a whole Behavior name and says the rest, so a mark in the
+/// parsed text is a mark the buddy speaks (#610).
+pub const TRUNCATED_MARK: &str = "[response truncated]";
+
 /// One completed turn: what the model said, and whether it was still saying it
 /// when the cap stopped it.
 ///

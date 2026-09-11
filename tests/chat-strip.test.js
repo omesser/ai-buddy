@@ -5,7 +5,10 @@
 // line, and the orderings below are the ones a window will actually deliver.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { TRUNCATED_MARK } from "../src/bubble.js";
 import { createStrip } from "../src/chat-strip.js";
@@ -89,8 +92,15 @@ test("the user's next line clears the mark", () => {
   assert.equal(showing(), "");
 });
 
-// The bubble draws the same glyph, so there is one string and not two that
-// drift apart.
-test("the mark is the one the bubble draws", () => {
+// Three places write this string — the bubble, the Chat strip, and the Rust
+// side that puts it in the session the next turn is built from. A copy that
+// drifts is a session marked with words no surface draws.
+test("the mark is the one the bubble and the Shell use", () => {
   assert.equal(TRUNCATED_MARK, "[response truncated]");
+
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const core = readFileSync(join(dir, "../crates/core/src/director.rs"), "utf8");
+  const declared = core.match(/pub const TRUNCATED_MARK: &str = "([^"]*)";/);
+  assert.ok(declared, "the Shell declares the mark once");
+  assert.equal(declared[1], TRUNCATED_MARK);
 });
