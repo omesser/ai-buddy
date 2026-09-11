@@ -500,51 +500,38 @@ impl SettingsController {
         self.draw(false);
     }
 
-    /// Re-apply enabled/frozen state from the form description.
-    ///
-    /// Called on every draw/refresh so runtime changes (e.g. switching AI
-    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    /// Close does not rebuild the window. A field built frozen has no
+    /// commit delegate, so `setEditable(true)` would look live and stay mute
+    /// (#629). Called on every draw so a source switch unfreezes at once (#593).
     fn apply_enabled_states(&self, description: &form::FormDescription) {
         let ivars = self.ivars();
-
-        // Checkboxes
-        for (id, button) in ivars.checkboxes.borrow().iter() {
-            if let Some(frozen) = row_frozen(description, id) {
-                button.setEnabled(!frozen);
-            }
-        }
-
-        // Text fields
         for (id, field) in ivars.fields.borrow().iter() {
-            if let Some(frozen) = row_frozen(description, id) {
-                field.setEditable(!frozen);
-            }
+            freeze_or_bind(
+                field,
+                description.frozen(id),
+                text_row_batched(description, id),
+                self,
+            );
         }
-
-        // Secure fields (API key)
         if let Some(field) = ivars.api_key.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::DIRECTOR_API_KEY_ID) {
-                field.setEditable(!frozen);
-            }
-        }
-
-        // Popups
-        if let Some(popup) = ivars.harness.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::HARNESS_ID) {
-                popup.setEnabled(!frozen);
-            }
+            freeze_or_bind(
+                &field,
+                description.frozen(form::DIRECTOR_API_KEY_ID),
+                true,
+                self,
+            );
         }
         if let Some(popup) = ivars.base_url_pick.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::DIRECTOR_BASE_URL_PICK_ID) {
-                popup.setEnabled(!frozen);
-            }
+            popup.setEnabled(!description.frozen(form::DIRECTOR_BASE_URL_PICK_ID));
         }
-
-        // Composite buttons
         if let Some(button) = ivars.clear_key.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::CLEAR_KEY_ID) {
-                button.setEnabled(!frozen);
-            }
+            button.setEnabled(!description.frozen(form::CLEAR_KEY_ID));
+        }
+        if let Some(popup) = ivars.harness.borrow().clone() {
+            popup.setEnabled(!description.frozen(form::HARNESS_ID));
+        }
+        for (id, button) in ivars.checkboxes.borrow().iter() {
+            button.setEnabled(!description.frozen(id));
         }
     }
 
@@ -1585,41 +1572,22 @@ fn popup_plain(mtm: MainThreadMarker) -> Retained<NSPopUpButton> {
     )
 }
 
-/// Look up a row's frozen state in the form description.
-fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+/// Whether a text row commits on Apply. Secure fields are always batched
+/// (`FormRow::SecureField`); ids that are not text rows stay false.
+fn text_row_batched(description: &form::FormDescription, id: &str) -> bool {
     description
         .sections()
-        .flat_map(|s| &s.rows)
+        .flat_map(|section| &section.rows)
         .find_map(|row| match row {
-            form::FormRow::Checkbox {
-                id: row_id, frozen, ..
-            }
-            | form::FormRow::TextField {
-                id: row_id, frozen, ..
-            }
-            | form::FormRow::SecureField {
-                id: row_id, frozen, ..
-            }
-            | form::FormRow::Popup {
-                id: row_id, frozen, ..
-            } if row_id == id => Some(*frozen),
-            form::FormRow::Composite { controls, .. } => {
-                controls.iter().find_map(|control| match control {
-                    form::CompositeControl::Popup {
-                        id: control_id,
-                        frozen,
-                        ..
-                    }
-                    | form::CompositeControl::Button {
-                        id: control_id,
-                        frozen,
-                        ..
-                    } if control_id == id => Some(*frozen),
-                    _ => None,
-                })
-            }
+            form::FormRow::TextField {
+                id: row_id,
+                batched,
+                ..
+            } if row_id == id => Some(*batched),
+            form::FormRow::SecureField { id: row_id, .. } if row_id == id => Some(true),
             _ => None,
         })
+        .unwrap_or(false)
 }
 
 fn fill_checkbox(cell: &RefCell<Option<Retained<NSButton>>>, value: bool) {

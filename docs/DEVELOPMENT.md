@@ -116,7 +116,7 @@ The script looks for `target/debug/ai-buddy`. Set `AI_BUDDY_VERIFY_BIN` to use a
 
 Grant Accessibility to the terminal or IDE that runs the script (System Settings > Privacy & Security > Accessibility). Without that grant the helper exits before it dumps the window.
 
-PASS means the AI tab order is `AI > AI source > Last user turn`, the HTTP rows are live on Off, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
+PASS means the AI tab order is `AI > AI source > Model / API > Last user turn`, the HTTP rows are live on Model API, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
 
 `bench-rss.sh` measures rather than checks: it samples the app and its WebKit
 helpers and prints RSS and peak footprint. What the numbers came out as, and
