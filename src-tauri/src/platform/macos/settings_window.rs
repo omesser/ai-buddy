@@ -500,51 +500,38 @@ impl SettingsController {
         self.draw(false);
     }
 
-    /// Re-apply enabled/frozen state from the form description.
-    ///
-    /// Called on every draw/refresh so runtime changes (e.g. switching AI
-    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    /// Close does not rebuild the window. A field built frozen has no
+    /// commit delegate, so `setEditable(true)` would look live and stay mute
+    /// (#629). Called on every draw so a source switch unfreezes at once (#593).
     fn apply_enabled_states(&self, description: &form::FormDescription) {
         let ivars = self.ivars();
-
-        // Checkboxes
-        for (id, button) in ivars.checkboxes.borrow().iter() {
-            if let Some(frozen) = row_frozen(description, id) {
-                button.setEnabled(!frozen);
-            }
-        }
-
-        // Text fields
         for (id, field) in ivars.fields.borrow().iter() {
-            if let Some(frozen) = row_frozen(description, id) {
-                field.setEditable(!frozen);
-            }
+            freeze_or_bind(
+                field,
+                description.frozen(id),
+                text_row_batched(description, id),
+                self,
+            );
         }
-
-        // Secure fields (API key)
         if let Some(field) = ivars.api_key.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::DIRECTOR_API_KEY_ID) {
-                field.setEditable(!frozen);
-            }
-        }
-
-        // Popups
-        if let Some(popup) = ivars.harness.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::HARNESS_ID) {
-                popup.setEnabled(!frozen);
-            }
+            freeze_or_bind(
+                &field,
+                description.frozen(form::DIRECTOR_API_KEY_ID),
+                true,
+                self,
+            );
         }
         if let Some(popup) = ivars.base_url_pick.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::DIRECTOR_BASE_URL_PICK_ID) {
-                popup.setEnabled(!frozen);
-            }
+            popup.setEnabled(!description.frozen(form::DIRECTOR_BASE_URL_PICK_ID));
         }
-
-        // Composite buttons
         if let Some(button) = ivars.clear_key.borrow().clone() {
-            if let Some(frozen) = row_frozen(description, form::CLEAR_KEY_ID) {
-                button.setEnabled(!frozen);
-            }
+            button.setEnabled(!description.frozen(form::CLEAR_KEY_ID));
+        }
+        if let Some(popup) = ivars.harness.borrow().clone() {
+            popup.setEnabled(!description.frozen(form::HARNESS_ID));
+        }
+        for (id, button) in ivars.checkboxes.borrow().iter() {
+            button.setEnabled(!description.frozen(id));
         }
     }
 
@@ -1504,7 +1491,12 @@ fn freeze_or_bind(
 ) {
     if frozen {
         field.setEditable(false);
-    } else if batched {
+        return;
+    }
+    // Build-time default is editable. A later draw can unfreeze a field that
+    // was built frozen, and that field is still not editable (#629).
+    field.setEditable(true);
+    if batched {
         // SAFETY: setDelegate: does not retain, so the delegate must outlive
         // the field. The `CONTROLLER` thread-local holds the controller for the
         // life of the process and is never cleared, so it does.
@@ -1582,41 +1574,22 @@ fn popup_plain(mtm: MainThreadMarker) -> Retained<NSPopUpButton> {
     )
 }
 
-/// Look up a row's frozen state in the form description.
-fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+/// Whether a text row commits on Apply. Secure fields are always batched
+/// (`FormRow::SecureField`); ids that are not text rows stay false.
+fn text_row_batched(description: &form::FormDescription, id: &str) -> bool {
     description
         .sections()
-        .flat_map(|s| &s.rows)
+        .flat_map(|section| &section.rows)
         .find_map(|row| match row {
-            form::FormRow::Checkbox {
-                id: row_id, frozen, ..
-            }
-            | form::FormRow::TextField {
-                id: row_id, frozen, ..
-            }
-            | form::FormRow::SecureField {
-                id: row_id, frozen, ..
-            }
-            | form::FormRow::Popup {
-                id: row_id, frozen, ..
-            } if row_id == id => Some(*frozen),
-            form::FormRow::Composite { controls, .. } => {
-                controls.iter().find_map(|control| match control {
-                    form::CompositeControl::Popup {
-                        id: control_id,
-                        frozen,
-                        ..
-                    }
-                    | form::CompositeControl::Button {
-                        id: control_id,
-                        frozen,
-                        ..
-                    } if control_id == id => Some(*frozen),
-                    _ => None,
-                })
-            }
+            form::FormRow::TextField {
+                id: row_id,
+                batched,
+                ..
+            } if row_id == id => Some(*batched),
+            form::FormRow::SecureField { id: row_id, .. } if row_id == id => Some(true),
             _ => None,
         })
+        .unwrap_or(false)
 }
 
 fn fill_checkbox(cell: &RefCell<Option<Retained<NSButton>>>, value: bool) {
@@ -1795,5 +1768,79 @@ mod tests {
             !release_window_when_closed(),
             "the next tray Settings raises this same Retained window"
         );
+    }
+
+    /// Ids `apply_enabled_states` re-reads from a fresh `describe()`.
+    /// `test_mtm` is unsound for `setEditable`; the live lock is AX (#629).
+    const HTTP_FREEZE_IDS: &[&str] = &[
+        form::DIRECTOR_BASE_URL_ID,
+        form::DIRECTOR_MODEL_ID,
+        form::DIRECTOR_API_KEY_ID,
+        form::DIRECTOR_BASE_URL_PICK_ID,
+        form::CLEAR_KEY_ID,
+    ];
+
+    /// `harness::driving` is a process global one test must not set (#629).
+    #[test]
+    fn http_row_freeze_follows_a_fresh_describe() {
+        for (name, owned) in [("env-owned", true), ("user-owned", false)] {
+            let run = || {
+                let description = form::describe();
+                for id in HTTP_FREEZE_IDS {
+                    assert_eq!(
+                        description.frozen(id),
+                        owned,
+                        "{name}: {id} must follow a fresh describe()"
+                    );
+                }
+            };
+            if owned {
+                crate::model::tests::with_env(
+                    Some("sk-env-key"),
+                    Some("https://api.x.ai"),
+                    Some("grok-4.6"),
+                    run,
+                );
+            } else {
+                crate::model::tests::with_env(None, None, None, run);
+            }
+        }
+    }
+
+    #[test]
+    fn env_owned_http_rows_stay_frozen_on_a_second_describe() {
+        crate::model::tests::with_env(
+            Some("sk-env-key"),
+            Some("https://api.x.ai"),
+            Some("grok-4.6"),
+            || {
+                let first = form::describe();
+                let second = form::describe();
+                for id in HTTP_FREEZE_IDS {
+                    assert!(first.frozen(id), "{id} frozen on the first describe");
+                    assert!(
+                        second.frozen(id),
+                        "{id} must stay frozen on the second describe"
+                    );
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn ai_tab_section_headings_match_director_sections() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = form::describe();
+            let headings: Vec<&str> = description
+                .tabs
+                .iter()
+                .find(|tab| tab.title == "AI")
+                .map(|tab| tab.sections.iter().map(|s| s.heading.as_str()).collect())
+                .unwrap_or_default();
+            assert_eq!(
+                headings,
+                ["AI", "AI source", "Model / API", "Last user turn"]
+            );
+        });
     }
 }
