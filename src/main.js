@@ -191,10 +191,10 @@ function createView(id) {
       // Set before `show`, which measures the bubble to place it: the control
       // is part of what it measures.
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
-      // The opposite meaning to the control above it: "Open chat" says the
-      // rest of this line is in Chat, and the mark says the model never got
-      // to write the rest (#610).
-      view.bubbleMark.hidden = !cutOff;
+      // #610: the truncation mark rides in the remembered text (session + Chat
+      // history), not under the bubble. The bubble mark was removed; `cutOff`
+      // is now unused but kept in the signature for now.
+      view.bubbleMark.hidden = true;
       show("speech");
     },
     hideSpeech() {

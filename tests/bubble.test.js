@@ -174,7 +174,9 @@ function machineHarness() {
   const machine = createBubbleMachine({
     showSpeech(text, truncated) {
       surface = "speech";
-      calls.push(`showSpeech:${text}${truncated ? " [truncated]" : ""}`);
+      // #610: the truncation mark rides in the remembered text (session + Chat
+      // history), not displayed in the bubble UI.
+      calls.push(`showSpeech:${text}`);
     },
     hideSpeech() {
       surface = null;
@@ -436,22 +438,20 @@ test("the capability the renderer asks for is a command the Shell registers", ()
     `${asked[1]} is registered in generate_handler!`,
   );
 });
-// #610: a reply the token cap ended is still spoken, and the bubble says
-// there is no more of it. The mark rides beside the line and never inside it:
-// a mark in the string is spoken as the model's own words and pushed back
-// into the session as its last turn.
-test("the truncation mark rides with the line it belongs to", () => {
+// #610: a reply the token cap ended is still spoken. The mark rides in the
+// remembered text (session + Chat history), not displayed in the bubble.
+test("a truncated reply is spoken without the mark visible", () => {
   const { machine, calls, placement } = machineHarness();
 
   machine.event(placement({ dialogue: "Mine now, and the desk is", truncated: true }));
   machine.frame(placement({}));
-  assert.deepEqual(calls, ["showSpeech:Mine now, and the desk is [truncated]"]);
+  assert.deepEqual(calls, ["showSpeech:Mine now, and the desk is"]);
 
   machine.event(placement({ dialogue: "all mine" }));
   machine.frame(placement({}));
   assert.deepEqual(
     calls,
-    ["showSpeech:Mine now, and the desk is [truncated]", "showSpeech:all mine"],
+    ["showSpeech:Mine now, and the desk is", "showSpeech:all mine"],
     "the next whole line is not marked with the last one's mark",
   );
 });

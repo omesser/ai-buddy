@@ -529,13 +529,8 @@ async function start() {
         said("You", payload.said ?? "", "you", payload.at);
         return;
       }
-      // Before the row is drawn, so one turn's mark is never read against the
-      // next turn's words. Live turns only: a replayed line carries the
-      // moment it was said, and its row already reads `[response truncated]`
-      // — the strip is about the turn that just happened (#610).
-      if (payload.said && payload.at == null) {
-        strip.answered(payload.truncated);
-      }
+      // #610: the truncation mark rides in the remembered text (session + Chat
+      // history), not in the strip. The strip is for thinking only (ADR-0025).
       if (payload.busy) {
         const refused = waiting.pop();
         if (refused) {

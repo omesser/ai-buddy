@@ -52,10 +52,5 @@ separates a model's reasoning from its reply. Adapters and servers default to
 omitting it, so the common case is a strip that never opens — which is also what
 a Completer that reasons in silence should look like.
 
-The strip also draws the mark for a reply the token cap ended (#610), which
-widens it from "what the model is thinking" to "status about the turn" — a call
-@omesser took knowingly and called provisional, and the mark survives the
-end-of-turn clear above rather than racing it.
-
 Reversing this means deciding a thought is worth keeping, which is a widening of
 what the log draws and a fifth kind of line in it.
