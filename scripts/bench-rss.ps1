@@ -11,7 +11,7 @@
 #   over the sampled window and each process's peak working set, then stops the
 #   app.
 #
-#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) — enough for fast
+#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) - enough for fast
 #   verification in a test matrix. Not a research soak.
 #
 #   -Research: Long research mode (settle 300s, sample 300s) for bathtub
