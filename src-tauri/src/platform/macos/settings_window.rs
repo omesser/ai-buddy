@@ -564,6 +564,9 @@ impl SettingsController {
         } else {
             self.director_staged(&view)
         };
+        // Close does not rebuild the window, so freeze from `build` would
+        // stick after a source switch. Re-apply from this describe (#629).
+        self.apply_enabled_states(&description);
         let dismiss_label = description
             .sections()
             .find(|s| s.heading == "Instances")
@@ -669,6 +672,44 @@ impl SettingsController {
         );
         self.fill_instances(&view, dismiss_label);
         self.set_director_buttons(&view);
+    }
+
+    /// Freeze from this `describe()`, not from whatever `build` first painted.
+    /// Text stays enabled so the value stays copyable; `setEditable` is the
+    /// freeze (#629).
+    fn apply_enabled_states(&self, description: &form::FormDescription) {
+        let ivars = self.ivars();
+        for (id, frozen) in freeze_intents(description) {
+            match id {
+                form::DIRECTOR_API_KEY_ID => {
+                    if let Some(field) = ivars.api_key.borrow().clone() {
+                        field.setEditable(!frozen);
+                    }
+                }
+                form::DIRECTOR_BASE_URL_PICK_ID => {
+                    if let Some(popup) = ivars.base_url_pick.borrow().clone() {
+                        popup.setEnabled(!frozen);
+                    }
+                }
+                form::CLEAR_KEY_ID => {
+                    if let Some(button) = ivars.clear_key.borrow().clone() {
+                        button.setEnabled(!frozen);
+                    }
+                }
+                form::HARNESS_ID => {
+                    if let Some(popup) = ivars.harness.borrow().clone() {
+                        popup.setEnabled(!frozen);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (id, field) in ivars.fields.borrow().iter() {
+            field.setEditable(!description.frozen(id));
+        }
+        for (id, button) in ivars.checkboxes.borrow().iter() {
+            button.setEnabled(!description.frozen(id));
+        }
     }
 
     fn fit_to_window(&self) {
