@@ -500,6 +500,54 @@ impl SettingsController {
         self.draw(false);
     }
 
+    /// Re-apply enabled/frozen state from the form description.
+    ///
+    /// Called on every draw/refresh so runtime changes (e.g. switching AI
+    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    fn apply_enabled_states(&self, description: &form::FormDescription) {
+        let ivars = self.ivars();
+
+        // Checkboxes
+        for (id, button) in ivars.checkboxes.borrow().iter() {
+            if let Some(frozen) = row_frozen(description, id) {
+                button.setEnabled(!frozen);
+            }
+        }
+
+        // Text fields
+        for (id, field) in ivars.fields.borrow().iter() {
+            if let Some(frozen) = row_frozen(description, id) {
+                field.setEditable(!frozen);
+            }
+        }
+
+        // Secure fields (API key)
+        if let Some(field) = ivars.api_key.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::DIRECTOR_API_KEY_ID) {
+                field.setEditable(!frozen);
+            }
+        }
+
+        // Popups
+        if let Some(popup) = ivars.harness.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::HARNESS_ID) {
+                popup.setEnabled(!frozen);
+            }
+        }
+        if let Some(popup) = ivars.base_url_pick.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::DIRECTOR_BASE_URL_PICK_ID) {
+                popup.setEnabled(!frozen);
+            }
+        }
+
+        // Composite buttons
+        if let Some(button) = ivars.clear_key.borrow().clone() {
+            if let Some(frozen) = row_frozen(description, form::CLEAR_KEY_ID) {
+                button.setEnabled(!frozen);
+            }
+        }
+    }
+
     /// `reset_director` is Apply and Cancel: the two callers that mean to take
     /// the staged fields back to live state.
     fn draw(&self, reset_director: bool) {
@@ -526,6 +574,10 @@ impl SettingsController {
                 })
             })
             .unwrap_or("Dismiss");
+
+        // Re-apply enabled/frozen state from the fresh form description so
+        // runtime source switches unfreeze rows immediately (#593).
+        self.apply_enabled_states(&description);
 
         fill_checkbox(&self.ivars().director, view.director_enabled);
         fill_checkbox(&self.ivars().ambient, view.ambient_wakes);
@@ -1528,6 +1580,30 @@ fn popup_plain(mtm: MainThreadMarker) -> Retained<NSPopUpButton> {
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(180.0, 24.0)),
         false,
     )
+}
+
+/// Look up a row's frozen state in the form description.
+fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+    description.sections().flat_map(|s| &s.rows).find_map(|row| {
+        match row {
+            form::FormRow::Checkbox { id: row_id, frozen, .. }
+            | form::FormRow::TextField { id: row_id, frozen, .. }
+            | form::FormRow::SecureField { id: row_id, frozen, .. }
+            | form::FormRow::Popup { id: row_id, frozen, .. } if row_id == id => Some(*frozen),
+            form::FormRow::Composite { controls, .. } => {
+                controls.iter().find_map(|control| match control {
+                    form::CompositeControl::Popup { id: control_id, frozen, .. }
+                    | form::CompositeControl::Button { id: control_id, frozen, .. }
+                        if control_id == id =>
+                    {
+                        Some(*frozen)
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        }
+    })
 }
 
 fn fill_checkbox(cell: &RefCell<Option<Retained<NSButton>>>, value: bool) {

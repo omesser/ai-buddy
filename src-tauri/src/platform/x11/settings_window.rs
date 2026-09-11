@@ -947,6 +947,32 @@ impl SettingsWindow {
         self.draw(false);
     }
 
+    /// Re-apply enabled/frozen state from the form description.
+    ///
+    /// Called on every draw/refresh so runtime changes (e.g. switching AI
+    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    fn apply_enabled_states(&self, description: &form::FormDescription) {
+        let controls = self.controls.borrow();
+
+        for (id, control) in controls.iter() {
+            let frozen = row_frozen(description, id);
+            if let Some(frozen) = frozen {
+                match control {
+                    Control::CheckButton(check) => {
+                        check.set_sensitive(!frozen);
+                    }
+                    Control::Entry(entry) => {
+                        entry.set_editable(!frozen);
+                    }
+                    Control::Button(button) => {
+                        button.set_sensitive(!frozen);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// `reset_director` is Apply and Cancel: the two callers that mean to take
     /// the staged fields back to live state.
     fn draw(&self, reset_director: bool) {
@@ -962,6 +988,11 @@ impl SettingsWindow {
         };
 
         self.refreshing.set(true);
+
+        // Re-apply enabled/frozen state from the fresh form description so
+        // runtime source switches unfreeze rows immediately (#593).
+        let description = form::describe();
+        self.apply_enabled_states(&description);
 
         let mut controls = self.controls.borrow_mut();
         // Read before any setter, so this is what the entries held on entry.
@@ -1234,6 +1265,30 @@ impl SettingsWindow {
 fn view_of(session: &Arc<Mutex<Option<SettingsSession>>>) -> Option<SettingsView> {
     let guard = session.lock().ok()?;
     guard.as_ref().map(|session| session.view())
+}
+
+/// Look up a row's frozen state in the form description.
+fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+    description.sections().flat_map(|s| &s.rows).find_map(|row| {
+        match row {
+            form::FormRow::Checkbox { id: row_id, frozen, .. }
+            | form::FormRow::TextField { id: row_id, frozen, .. }
+            | form::FormRow::SecureField { id: row_id, frozen, .. }
+            | form::FormRow::Popup { id: row_id, frozen, .. } if row_id == id => Some(*frozen),
+            form::FormRow::Composite { controls, .. } => {
+                controls.iter().find_map(|control| match control {
+                    form::CompositeControl::Popup { id: control_id, frozen, .. }
+                    | form::CompositeControl::Button { id: control_id, frozen, .. }
+                        if control_id == id =>
+                    {
+                        Some(*frozen)
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        }
+    })
 }
 
 /// The Director tab as the window holds it right now.

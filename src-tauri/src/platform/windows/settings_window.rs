@@ -26,16 +26,16 @@ use windows_sys::Win32::UI::Controls::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
-    GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowTextA,
-    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
-    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
-    CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD,
-    ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES,
-    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORSTATIC, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER,
-    WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, EnableWindow,
+    GetClassNameA, GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA,
+    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
+    SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
+    BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL,
+    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT,
+    HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE,
+    WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -121,6 +121,30 @@ impl SettingsWindow {
         self.draw(false);
     }
 
+    /// Re-apply enabled/frozen state from the form description.
+    ///
+    /// Called on every draw/refresh so runtime changes (e.g. switching AI
+    /// source from Harness → Model API) unfreeze rows immediately (#593).
+    fn apply_enabled_states(&self, description: &form::FormDescription) {
+        let controls = self.controls.borrow();
+
+        unsafe {
+            for (id, control) in controls.iter() {
+                let frozen = row_frozen(description, id);
+                if let Some(frozen) = frozen {
+                    let hwnd = match control {
+                        Control::Checkbox(hwnd, _)
+                        | Control::Edit(hwnd, _)
+                        | Control::Button(hwnd, _)
+                        | Control::ComboBox(hwnd, _, _) => *hwnd,
+                        _ => continue,
+                    };
+                    EnableWindow(hwnd, if frozen { 0 } else { 1 });
+                }
+            }
+        }
+    }
+
     fn draw(&self, reset_director: bool) {
         let view = {
             let guard = self.session.lock().unwrap();
@@ -131,6 +155,11 @@ impl SettingsWindow {
         };
 
         *self.refreshing.borrow_mut() = true;
+
+        // Re-apply enabled/frozen state from the fresh form description so
+        // runtime source switches unfreeze rows immediately (#593).
+        let description = form::describe();
+        self.apply_enabled_states(&description);
 
         let staged = if reset_director {
             *self.clear_pending.borrow_mut() = false;
@@ -608,6 +637,30 @@ impl SettingsWindow {
             }
         }
     }
+}
+
+/// Look up a row's frozen state in the form description.
+fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
+    description.sections().flat_map(|s| &s.rows).find_map(|row| {
+        match row {
+            form::FormRow::Checkbox { id: row_id, frozen, .. }
+            | form::FormRow::TextField { id: row_id, frozen, .. }
+            | form::FormRow::SecureField { id: row_id, frozen, .. }
+            | form::FormRow::Popup { id: row_id, frozen, .. } if row_id == id => Some(*frozen),
+            form::FormRow::Composite { controls, .. } => {
+                controls.iter().find_map(|control| match control {
+                    form::CompositeControl::Popup { id: control_id, frozen, .. }
+                    | form::CompositeControl::Button { id: control_id, frozen, .. }
+                        if control_id == id =>
+                    {
+                        Some(*frozen)
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        }
+    })
 }
 
 fn get_control_text(controls: &HashMap<String, Control>, id: &str) -> String {
