@@ -244,7 +244,6 @@ body {
 }
 
 .prompt textarea {
-  /* Grid stretch on a replaced textarea overrides `rows` and collapses an empty field. */
   width: 100%;
   min-width: 0;
   box-sizing: border-box;

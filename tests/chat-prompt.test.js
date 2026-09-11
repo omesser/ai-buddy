@@ -13,12 +13,10 @@ const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
 const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
 
-// The `.prompt textarea` block only — not `::placeholder` / `:focus-visible`,
-// and not a comment that happens to name the same properties.
 function promptTextareaRule(source) {
   const match = source.match(/\.prompt textarea\s*\{([^}]+)\}/);
   assert.ok(match, "the Prompt tab's textarea has no rule of its own");
-  return match[1].replace(/\/\*[\s\S]*?\*\//g, "");
+  return match[1];
 }
 
 // Every event this window listens for, in the order it wires them.
