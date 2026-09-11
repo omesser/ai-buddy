@@ -148,8 +148,8 @@ function settled(row) {
 // sends an empty one when the turn ends, so this window never has to work out
 // whether a Harness is still thinking.
 //
-// It also carries the mark for a reply the token cap ended, and `chat-strip.js`
-// holds the precedence between the two (#610).
+// The mark for a reply the token cap ended is not drawn here: it rides in the
+// remembered line, which the row below already shows (#610).
 const strip = createStrip((line) => {
   thought.textContent = line;
   thought.hidden = !line;

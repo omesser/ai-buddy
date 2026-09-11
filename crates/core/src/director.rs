@@ -171,11 +171,11 @@ pub trait Completer {
     fn complete(&self, request: &WakeRequest) -> Result<Reply, String>;
 }
 
-/// What a reply the token cap ended is marked with, wherever it is written
-/// down: the session the next turn is built from, the Chat history, and the
-/// bubble's own line under the words. One string, so the surfaces and the
-/// session cannot drift apart — `src/bubble.js` keeps the copy the webview
-/// draws and `tests/bubble.test.js` holds the two together.
+/// What a reply the token cap ended is marked with, in the one place it is
+/// written down: the remembered reply — the session the next turn is built
+/// from, and the Chat history row a reader sees. Exactly once, so neither can
+/// be marked twice, and nowhere else: not in what the buddy speaks, and not
+/// as a glyph a surface paints beside the words.
 ///
 /// Never added before `parse_proposal` sees the reply: it reads the first
 /// line that is a whole Behavior name and says the rest, so a mark in the
@@ -254,7 +254,8 @@ pub struct Woken {
     /// of. `None` on every other reply.
     pub near_miss: Option<String>,
     /// The cap ended this turn, so what is in `wake` is as far as the model
-    /// got. Marked where it is drawn, never spoken (#610).
+    /// got. Written into the remembered reply by `marked`, never spoken and
+    /// never parsed (#610).
     pub truncated: bool,
 }
 
@@ -1484,8 +1485,8 @@ mod tests {
 
     /// We are the ones who cut the model off, so what it wrote before the cap
     /// is acted on: the Behavior plays and the words are said. The fact that
-    /// it stopped early rides out beside them, for the surfaces to mark, and
-    /// is nowhere in the text (#610).
+    /// it stopped early rides out beside them, for `marked` to write into the
+    /// remembered copy, and is nowhere in what is parsed or spoken (#610).
     #[test]
     fn a_truncated_reply_is_parsed_and_carries_its_mark() {
         let director = directing(
