@@ -551,9 +551,6 @@ impl SettingsController {
         } else {
             self.director_staged(&view)
         };
-        // Close does not rebuild the window, so freeze from `build` would
-        // stick after a source switch. Re-apply from this describe (#629).
-        self.apply_enabled_states(&description);
         let dismiss_label = description
             .sections()
             .find(|s| s.heading == "Instances")
