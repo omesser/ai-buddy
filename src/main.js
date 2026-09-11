@@ -14,6 +14,7 @@ import {
   forOverlay,
   wrapText,
   placeBubble,
+  TRUNCATED_MARK,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
@@ -173,7 +174,7 @@ function createView(id) {
   view.cues = createCueMachine(cueIo(cueLayer, () => cueAnchor(spriteRect())));
 
   view.bubbles = createBubbleMachine({
-    showSpeech(text) {
+    showSpeech(text, cutOff) {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
       ctx.font = "14px system-ui, sans-serif";
@@ -184,7 +185,9 @@ function createView(id) {
       bubble.toggleAttribute("data-more", truncated && clickableOffArt);
       show("speech");
     },
-    hideSpeech: hide,
+    hideSpeech() {
+      hide();
+    },
     showThinking() {
       // The same box in the other mode. main.css hides the control outside
       // speech, so the attribute left over from the last line draws nothing.

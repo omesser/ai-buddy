@@ -12,6 +12,7 @@
 // ADR-0025 says why it is a strip above the composer instead.
 
 import { composerPlaceholder } from "./chat-placeholder.js";
+import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
 
@@ -146,10 +147,13 @@ function settled(row) {
 // The Shell sends the line to draw rather than the chunk it arrived in, and
 // sends an empty one when the turn ends, so this window never has to work out
 // whether a Harness is still thinking.
-function thinking(latest) {
-  thought.textContent = latest ?? "";
-  thought.hidden = !latest;
-}
+//
+// It also carries the mark for a reply the token cap ended, and `chat-strip.js`
+// holds the precedence between the two (#610).
+const strip = createStrip((line) => {
+  thought.textContent = line;
+  thought.hidden = !line;
+});
 
 function note(text) {
   const row = el("note");
@@ -460,6 +464,8 @@ composer.addEventListener("submit", (event) => {
         return;
       }
       line.value = "";
+      // The last turn's mark has been read; this is the next question.
+      strip.asked();
       const turn = { you: said("You", text, "you"), them: opening_answer() };
       waiting.push(turn);
       return invoke("chat_send", { instance, text }).catch((why) => {
@@ -501,7 +507,7 @@ function newSession(why) {
   // log, and `attached()` reaches into it by id on every opening. Sweeping it
   // out with the rows leaves that lookup dereferencing null.
   log.replaceChildren(empty);
-  thinking(null);
+  strip.asked();
   waiting.length = 0;
   asks.clear();
   // A boundary is where a stamp should say the hour again rather than count
@@ -523,6 +529,7 @@ async function start() {
         said("You", payload.said ?? "", "you", payload.at);
         return;
       }
+      // #610: The strip is for thinking only (ADR-0025).
       if (payload.busy) {
         const refused = waiting.pop();
         if (refused) {
@@ -578,7 +585,7 @@ async function start() {
   await listen(
     "chat-thought",
     ({ payload }) => {
-      thinking(payload);
+      strip.thinking(payload);
     },
     { target: chat.label },
   );

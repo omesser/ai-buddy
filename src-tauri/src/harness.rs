@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ai_buddy_core::director::{Completer, Wake, WakeRequest};
+use ai_buddy_core::director::{Completer, Reply, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -539,7 +539,7 @@ impl Session {
     }
 
     /// One turn. The whole of `Completer::complete`, minus the trace.
-    fn turn(&self, request: &WakeRequest) -> Result<String, String> {
+    fn turn(&self, request: &WakeRequest) -> Result<Reply, String> {
         let _turn = match self.turn.try_lock() {
             Ok(turn) => turn,
             Err(_) => match self.supersede(request) {
@@ -571,9 +571,18 @@ impl Session {
         };
         let mut withdrawn = false;
         let answer = match outcome {
-            Ok(text) => {
-                action_log::append(&self.dir, "turn", json!({"text": text}));
-                Ok(text)
+            Ok(reply) => {
+                // A cap-ended turn is logged as what was shown and why there
+                // was no more of it, the same pair the HTTP lane writes.
+                action_log::append(
+                    &self.dir,
+                    "turn",
+                    match reply.truncated {
+                        true => json!({"text": reply.text, "stop": "max_tokens"}),
+                        false => json!({"text": reply.text}),
+                    },
+                );
+                Ok(reply)
             }
             Err(TurnError::Lost) => Err(LOST.to_string()),
             Err(TurnError::Timeout) => {
@@ -626,10 +635,7 @@ impl Session {
     /// Split out of `turn` for #448's one retry, which has to pay the same
     /// bookkeeping the first attempt did rather than have the caller remember
     /// to. `Err` is a wake that never reached the wire, already refused.
-    fn attempt(
-        &self,
-        request: &WakeRequest,
-    ) -> Result<(String, Result<String, TurnError>), String> {
+    fn attempt(&self, request: &WakeRequest) -> Result<(String, Result<Reply, TurnError>), String> {
         let (wire, session_id) = self
             .attach(Some(&SessionKey::from_request(request)))
             .map_err(|why| self.refused(request, &why))?;
@@ -970,14 +976,17 @@ impl Session {
 }
 
 impl Completer for Session {
-    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
         if crate::model::tracing() {
             eprintln!("harness: prompt to {}", self.launch.name);
         }
         let reply = self.turn(request);
         if crate::model::tracing() {
             match &reply {
-                Ok(text) => eprintln!("harness: reply {text}"),
+                Ok(reply) if reply.truncated => {
+                    eprintln!("harness: reply cut off at the cap {}", reply.text)
+                }
+                Ok(reply) => eprintln!("harness: reply {}", reply.text),
                 Err(why) => eprintln!("harness: {why}"),
             }
         }
@@ -1135,8 +1144,16 @@ fn probe(session: &Session) -> i32 {
         character: "probe".to_string(),
         reactive: true,
     }) {
-        Ok(text) => {
-            println!("  stop         end_turn");
+        Ok(reply) => {
+            let text = reply.text;
+            println!(
+                "  stop         {}",
+                if reply.truncated {
+                    "max_tokens"
+                } else {
+                    "end_turn"
+                }
+            );
             println!("  reply        {text}");
             // Reported, not part of the verdict: whether a model obeys a
             // one-line format is the Director's problem, and a turn that
@@ -2228,7 +2245,7 @@ mod tests {
     #[test]
     fn happy_path_concatenates_chunks_and_records_the_session() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let saved: SavedSession =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
@@ -2250,7 +2267,7 @@ mod tests {
     #[test]
     fn the_session_file_keys_the_id_by_instance_and_character() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let saved: Value =
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
@@ -2271,11 +2288,11 @@ mod tests {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
             session.complete(&asking_as("buddy-1", "bmo", "hi")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         assert_eq!(
             session.complete(&asking_as("buddy-2", "bmo", "hi")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         session.shutdown();
 
@@ -2299,15 +2316,15 @@ mod tests {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
             session.complete(&asking_as("buddy-1", "bmo", "a")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         assert_eq!(
             session.complete(&asking_as("buddy-2", "bmo", "b")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         assert_eq!(
             session.complete(&asking_as("buddy-1", "bmo", "c")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         session.shutdown();
 
@@ -2332,15 +2349,15 @@ mod tests {
         let (fx, session) = Fixture::new("happy");
         assert_eq!(
             session.complete(&asking_as("buddy-1", "bmo", "a")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         assert_eq!(
             session.complete(&asking_as("buddy-1", "timber-wolf", "b")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         assert_eq!(
             session.complete(&asking_as("buddy-1", "bmo", "c")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         session.shutdown();
 
@@ -2365,11 +2382,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             session.complete(&asking_as("buddy-1", "bmo", "again")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         assert_eq!(
             session.complete(&asking_as("buddy-2", "bmo", "again")),
-            Ok("Hello".to_string())
+            Ok(Reply::whole("Hello"))
         );
         session.shutdown();
         let prompts = fx.events("prompt");
@@ -2389,7 +2406,7 @@ mod tests {
             r#"{"session_id":"saved-ok","harness":"fake"}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("load"), 0, "the leftover id was applied");
         assert_eq!(fx.count("new"), 1);
         session.shutdown();
@@ -2400,7 +2417,7 @@ mod tests {
     #[test]
     fn shutdown_refuses_a_later_turn() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         session.shutdown();
         assert_eq!(
             session.complete(&asking("again")),
@@ -2415,12 +2432,12 @@ mod tests {
     #[test]
     fn the_prompt_event_names_the_instance_and_the_wake_kind() {
         let (fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let proactive = WakeRequest {
             reactive: false,
             ..asking("nobody asked")
         };
-        assert_eq!(session.complete(&proactive), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&proactive), Ok(Reply::whole("Hello")));
         session.shutdown();
 
         let prompts = fx.events("prompt");
@@ -2546,7 +2563,7 @@ mod tests {
     #[test]
     fn garbage_between_messages_is_skipped() {
         let (_fx, session) = Fixture::new("garbage");
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         session.shutdown();
     }
 
@@ -2563,7 +2580,7 @@ mod tests {
         assert_eq!(ask.kind.as_deref(), Some("execute"));
         assert_eq!(ask.options.len(), 2);
         session.answer_permission(&ask.request, "allow");
-        assert_eq!(worker.join().unwrap(), Ok("ok:allow".to_string()));
+        assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:allow")));
         assert!(fx.wait_for("perm:selected", 1));
         // Every other open window has to retire the row this one answered,
         // and draw the option that actually won rather than its own click.
@@ -2596,7 +2613,10 @@ mod tests {
             "{reply:?}"
         );
         assert!(fx.wait_for("cancel", 1));
-        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("spawn"), 1, "cancel is not a respawn");
         session.shutdown();
     }
@@ -2612,7 +2632,10 @@ mod tests {
             Err("harness exited".to_string())
         );
         assert!(!session.inspect().alive);
-        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(fx.count("spawn"), 2);
         assert!(session.inspect().alive);
         session.shutdown();
@@ -2663,7 +2686,10 @@ mod tests {
             session.complete(&asking("hi")),
             Err("harness exited".to_string())
         );
-        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
         let state = session.state.lock().unwrap();
         assert_eq!(state.spawn_failures, 0, "the death is still counted");
         assert!(
@@ -2688,7 +2714,7 @@ mod tests {
         let (fx, session) = Fixture::new("auth");
         let session = session.with_auth_retry(Duration::ZERO);
         assert!(session.complete(&asking("hi")).is_err());
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("new"), 2);
         assert_eq!(session.inspect().login, None);
         session.shutdown();
@@ -2702,7 +2728,7 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 0);
         assert_eq!(session.inspect().session_id.as_deref(), Some("saved-ok"));
@@ -2714,7 +2740,7 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"stale"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 1);
         let saved = std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap();
@@ -2728,7 +2754,7 @@ mod tests {
             r#"{"harness":"other","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("load"), 0);
         session.shutdown();
     }
@@ -2744,7 +2770,7 @@ mod tests {
             r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
         )
         .unwrap();
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         assert_eq!(fx.count("load"), 1);
         assert_eq!(fx.count("new"), 1, "the dead id was kept");
         assert_eq!(fx.count("prompt"), 2);
@@ -2807,7 +2833,10 @@ mod tests {
         // The first prompt is on the wire, so the turn lock is held and the
         // wake below is the one that has to displace it.
         assert!(fx.wait_for("prompt", 1), "the first turn never went out");
-        assert_eq!(session.complete(&asking("again")), Ok("Hello".to_string()));
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
         assert_eq!(
             fx.count("cancel"),
             1,
@@ -2845,7 +2874,7 @@ mod tests {
             instance: "buddy-2".to_string(),
             ..asking("again")
         };
-        assert_eq!(session.complete(&poke), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&poke), Ok(Reply::whole("Hello")));
         assert!(worker.join().unwrap().is_err(), "the turn was not taken");
 
         // The loser's own line, written while it still held the lock, so it
@@ -2983,7 +3012,7 @@ mod tests {
     #[test]
     fn the_probe_waits_for_the_child_to_be_reaped() {
         let (_fx, session) = Fixture::new("happy");
-        assert_eq!(session.complete(&asking("hi")), Ok("Hello".to_string()));
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
         let wire = session.current_wire().expect("attached");
         session.shutdown();
         assert!(

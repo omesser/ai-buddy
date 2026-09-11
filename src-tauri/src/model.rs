@@ -15,7 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 use ai_buddy_core::director::{
-    self, Completer, Context, ModelDirector, Pace, Wake, WakeRequest, WAKE_EVERY,
+    self, Completer, Context, ModelDirector, Pace, Reply, Wake, WakeRequest, WAKE_EVERY,
 };
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
@@ -265,7 +265,7 @@ pub enum AnyCompleter {
 }
 
 impl Completer for AnyCompleter {
-    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
         match self {
             AnyCompleter::Http(endpoint) => endpoint.complete(request),
             AnyCompleter::Harness(session) => session.complete(request),
@@ -687,7 +687,7 @@ impl Endpoint {
     /// whole reply has succeeded where a stream did not, this endpoint stops
     /// asking, rather than paying two POSTs on every wake for the rest of
     /// the session.
-    pub fn post(&self, url: &str, prompt: &str) -> Result<String, String> {
+    pub fn post(&self, url: &str, prompt: &str) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
         let wire = if self.streams.load(Ordering::SeqCst) {
             Wire::Stream
@@ -757,18 +757,28 @@ impl Endpoint {
     /// superseded it, so popping would take the winner's question out and
     /// pushing would answer it with the loser's reply — a reply `Slots::take`
     /// will never hand out anyway.
-    fn close_turn(&self, turn: u64, reply: Result<String, String>) -> Result<String, String> {
+    fn close_turn(&self, turn: u64, reply: Result<Reply, String>) -> Result<Reply, String> {
         let mut session = self.session.lock().expect("session lock");
         if session.opened != turn {
             return reply;
         }
         match reply {
-            Ok(content) => {
+            Ok(reply) => {
+                // What arrived, truncated or not: the user heard these words,
+                // so the next turn is built on the same ones they heard — and
+                // when the cap ended it, the session says so, so the model
+                // reading its own last turn back sees where it was stopped
+                // rather than a sentence it appears to have abandoned (#610).
+                //
+                // Appended here and nowhere earlier: `parse_proposal` reads
+                // the first line that is a whole Behavior name and says the
+                // rest, so a mark in the text the parser sees would be spoken
+                // as the buddy's own line.
                 session.messages.push(Message {
                     role: "assistant",
-                    content: content.clone(),
+                    content: director::marked(&reply.text, reply.truncated),
                 });
-                Ok(content)
+                Ok(reply)
             }
             Err(error) => {
                 session.messages.pop();
@@ -779,7 +789,7 @@ impl Endpoint {
 
     /// One POST. Both attempts come through here, so the fallback differs
     /// from the first try in exactly one field.
-    fn send(&self, url: &str, session: &[Message], wire: Wire) -> Result<String, Unsent> {
+    fn send(&self, url: &str, session: &[Message], wire: Wire) -> Result<Reply, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
             Wire::Whole => "application/json",
@@ -816,7 +826,15 @@ impl Endpoint {
         match wire {
             Wire::Whole => {
                 let (_, text) = read_response(response).map_err(Unsent::Failed)?;
-                content_from_body(&text).map_err(|error| Unsent::Failed(format!("{url}: {error}")))
+                // The same three endings as a stream, in the shape a server
+                // that will not stream sends them.
+                let said = content_from_body(&text);
+                match (said, truncated_body(&text)) {
+                    (Ok(said), true) if !said.trim().is_empty() => Ok(Reply::truncated(said)),
+                    (Ok(said), false) => Ok(Reply::whole(said)),
+                    (_, true) => Err(Unsent::Truncated(self.out_of_budget(url, true))),
+                    (Err(error), false) => Err(Unsent::Failed(format!("{url}: {error}"))),
+                }
             }
             Wire::Stream => {
                 // Capped like the whole-body read. `into_reader` is unlimited
@@ -828,21 +846,58 @@ impl Endpoint {
                     .limit(STREAM_LIMIT)
                     .reader();
                 match read_stream(reader, abandoned, think) {
-                    Ok(Streamed::Complete(content)) if !content.trim().is_empty() => Ok(content),
-                    Ok(Streamed::Complete(_)) => Err(Unsent::Failed(format!(
-                        "{url}: streamed reply had no text content"
-                    ))),
-                    Ok(Streamed::Cut) => {
-                        Err(Unsent::Cut(format!("{url}: the stream ended mid-reply")))
-                    }
-                    Ok(Streamed::NotEventStream) => Err(Unsent::NotStreamable(format!(
-                        "{url}: answered 200 with no event stream in it"
-                    ))),
-                    Ok(Streamed::Abandoned) => Err(Unsent::Abandoned),
+                    Ok(streamed) => self.reply_from(url, streamed),
                     Err(error) => Err(Unsent::Failed(format!("{url}: {error}"))),
                 }
             }
         }
+    }
+
+    /// What a finished stream is worth. Apart from the socket, so all five
+    /// endings are checked without one.
+    fn reply_from(&self, url: &str, streamed: Streamed) -> Result<Reply, Unsent> {
+        match streamed {
+            Streamed::Complete(content) if !content.trim().is_empty() => Ok(Reply::whole(content)),
+            Streamed::Complete(_) => Err(Unsent::Failed(format!(
+                "{url}: streamed reply had no text content"
+            ))),
+            // Best effort, because we are the ones who cut it off: whatever
+            // the model wrote before the cap is parsed and shown, marked as
+            // truncated where it is drawn. The turn is still a failure on the
+            // wire — never retried, and the Action Log names the cap (#610).
+            Streamed::Truncated(content) if !content.trim().is_empty() => {
+                Ok(Reply::truncated(content))
+            }
+            // Best effort with nothing in hand is silence. `StaticDirector`
+            // takes the turn, as it does for any wake with no words.
+            Streamed::Truncated(_) => Err(Unsent::Truncated(self.out_of_budget(url, true))),
+            Streamed::Cut => Err(Unsent::Cut(format!("{url}: the stream ended mid-reply"))),
+            Streamed::NotEventStream => Err(Unsent::NotStreamable(format!(
+                "{url}: answered 200 with no event stream in it"
+            ))),
+            Streamed::Abandoned => Err(Unsent::Abandoned),
+        }
+    }
+
+    /// Why the turn produced nothing, in the words that name the knob. The
+    /// Action Log writes this line, so it has to answer "why did the buddy go
+    /// quiet" on its own: the model, the cap it hit, and the setting that
+    /// moves it (#610).
+    ///
+    /// Both halves of a truncation are refused, and both are worth telling
+    /// apart when reading the log: a model that thought its budget away and
+    /// one that ran out mid-sentence call for different settings.
+    fn out_of_budget(&self, url: &str, silent: bool) -> String {
+        let cap = self.max_tokens;
+        let what = if silent {
+            format!("spent all {cap} tokens thinking and wrote no reply")
+        } else {
+            format!("was cut off mid-reply by the {cap}-token cap")
+        };
+        format!(
+            "{url}: {} {what}; raise {MAX_TOKENS} or lower the model's reasoning effort",
+            self.model
+        )
     }
 
     fn headers<B>(
@@ -875,7 +930,10 @@ impl Endpoint {
 pub(crate) fn note_http_call(
     dir: &std::path::Path,
     request: &WakeRequest,
-    result: Result<&str, &str>,
+    result: Result<&Reply, &str>,
+    // `truncated`: why a turn that hit the cap stopped, in the same words the
+    // refusal uses. Read only when the reply is marked.
+    truncated: &str,
 ) {
     crate::action_log::append(
         dir,
@@ -887,13 +945,23 @@ pub(crate) fn note_http_call(
         }),
     );
     match result {
-        Ok(text) => crate::action_log::append(dir, "turn", serde_json::json!({ "text": text })),
+        // A truncated turn is a failure of the wire that still produced words:
+        // the line carries both, so the log says what was shown and why there
+        // was no more of it (#610).
+        Ok(reply) if reply.truncated => crate::action_log::append(
+            dir,
+            "turn",
+            serde_json::json!({ "text": reply.text, "truncated": truncated }),
+        ),
+        Ok(reply) => {
+            crate::action_log::append(dir, "turn", serde_json::json!({ "text": reply.text }))
+        }
         Err(why) => crate::action_log::append(dir, "turn", serde_json::json!({ "error": why })),
     }
 }
 
 impl Completer for Endpoint {
-    fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+    fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
         let prompt = &request.prompt;
         if tracing() {
             eprintln!("director: sending POST {} model={}", self.url, self.model);
@@ -901,11 +969,11 @@ impl Completer for Endpoint {
             eprintln!("director: waiting for model");
         }
         let result = match self.post(&self.url, prompt) {
-            Ok(content) => {
+            Ok(reply) => {
                 if tracing() {
-                    trace_block("model", &content);
+                    trace_block("model", &reply.text);
                 }
-                Ok(content)
+                Ok(reply)
             }
             Err(error) => {
                 if tracing() {
@@ -916,11 +984,11 @@ impl Completer for Endpoint {
                         eprintln!("director: trying {alt}");
                     }
                     match self.post(&alt, prompt) {
-                        Ok(content) => {
+                        Ok(reply) => {
                             if tracing() {
-                                trace_block("model", &content);
+                                trace_block("model", &reply.text);
                             }
-                            Ok(content)
+                            Ok(reply)
                         }
                         Err(alt_error) => {
                             if tracing() {
@@ -935,10 +1003,15 @@ impl Completer for Endpoint {
             }
         };
         let noted = match &result {
-            Ok(text) => Ok(text.as_str()),
+            Ok(reply) => Ok(reply),
             Err(why) => Err(why.as_str()),
         };
-        note_http_call(&ai_buddy_core::memory::data_dir(), request, noted);
+        note_http_call(
+            &ai_buddy_core::memory::data_dir(),
+            request,
+            noted,
+            &self.out_of_budget(&self.url, false),
+        );
         result
     }
 }
@@ -1177,8 +1250,8 @@ fn probe_result(url: &str, answer: &Result<(u16, String), String>) {
 fn probe_post(endpoint: &Endpoint, url: &str) -> bool {
     println!("POST {url}");
     match endpoint.post(url, PING) {
-        Ok(text) => {
-            println!("  ok {}", clip_body(&text));
+        Ok(reply) => {
+            println!("  ok {}", clip_body(&reply.text));
             println!();
             true
         }
@@ -1274,6 +1347,12 @@ enum Unsent {
     /// retry, but a broken connection says nothing about whether the next
     /// stream will work, so it settles nothing.
     Cut(String),
+    /// The model reached the token cap, so the turn ran out of budget rather
+    /// than failing. Never a reply and never worth a retry: the same question
+    /// at the same cap gets the same nothing. The text names the cap and the
+    /// model, because the cap is the only knob that changes the answer, and
+    /// says whether the budget went on thinking or on half a sentence (#610).
+    Truncated(String),
     /// Superseded while the tokens were arriving. Nobody is waiting for this
     /// answer, so there is no error worth composing.
     Abandoned,
@@ -1286,7 +1365,10 @@ impl Unsent {
     /// anything.
     fn why(&self) -> &str {
         match self {
-            Unsent::NotStreamable(why) | Unsent::Cut(why) | Unsent::Failed(why) => why,
+            Unsent::NotStreamable(why)
+            | Unsent::Cut(why)
+            | Unsent::Truncated(why)
+            | Unsent::Failed(why) => why,
             Unsent::Abandoned => "abandoned",
         }
     }
@@ -1297,7 +1379,7 @@ impl Unsent {
         match self {
             Unsent::NotStreamable(_) => Some(true),
             Unsent::Cut(_) => Some(false),
-            Unsent::Abandoned | Unsent::Failed(_) => None,
+            Unsent::Abandoned | Unsent::Truncated(_) | Unsent::Failed(_) => None,
         }
     }
 
@@ -1312,6 +1394,13 @@ enum Streamed {
     /// The server marked the end. Empty when the model spent its whole
     /// budget without writing anything.
     Complete(String),
+    /// The server marked the end *and* said the token cap is why:
+    /// `finish_reason: "length"` on chat-completions, `response.incomplete`
+    /// on Responses. Whatever text arrived is kept, because it is still what
+    /// the model said and is still shown: empty means the budget went on
+    /// thinking and there is nothing to show, and half a sentence means it
+    /// ran out writing and that sentence is the reply (#610).
+    Truncated(String),
     /// The body ended with the server never saying it was finished, so
     /// whatever arrived is half a sentence.
     ///
@@ -1374,6 +1463,14 @@ fn read_frames(
     let mut line = String::new();
     let mut framed = false;
     let mut finished = false;
+    let mut truncated = false;
+    let ended = |content: String, truncated: bool| {
+        if truncated {
+            Streamed::Truncated(content)
+        } else {
+            Streamed::Complete(content)
+        }
+    };
     loop {
         // Between frames, not between bytes: `read_line` parks until the
         // server says something, so a cancel lands one frame late — tens of
@@ -1390,7 +1487,7 @@ fn read_frames(
         {
             return Ok(match (framed, finished) {
                 (false, _) => Streamed::NotEventStream,
-                (true, true) => Streamed::Complete(content),
+                (true, true) => ended(content, truncated),
                 (true, false) => Streamed::Cut,
             });
         }
@@ -1402,10 +1499,11 @@ fn read_frames(
         framed = true;
         let payload = payload.trim();
         if payload == "[DONE]" {
-            return Ok(Streamed::Complete(content));
+            return Ok(ended(content, truncated));
         }
         let event = read_event(payload);
         finished |= event.finished;
+        truncated |= event.truncated;
         if let Some(chunk) = event.thought {
             thinking.push_str(&chunk);
             // The line being written now, by the same rule the ACP lane
@@ -1441,6 +1539,9 @@ struct Event {
     /// It says the server is done, so an end of body after it is a whole
     /// reply rather than a connection cut.
     finished: bool,
+    /// The reason it is done is the token cap, not the model having said
+    /// what it had to say.
+    truncated: bool,
 }
 
 /// Read one event in whichever of the two shapes `completions_url` chose.
@@ -1451,6 +1552,11 @@ struct Event {
 /// as the text: `/v1/responses` ends the body without `[DONE]`, measured
 /// against xAI, so the marker is the only thing that tells a finished reply
 /// from a truncated one.
+///
+/// The *value* of the marker matters too. `length` and `response.incomplete`
+/// both mean the token cap ended the turn rather than the model, which is a
+/// different thing from a reply, and only these two fields say which happened
+/// (#610).
 fn read_event(payload: &str) -> Event {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
         return Event::default();
@@ -1458,6 +1564,7 @@ fn read_event(payload: &str) -> Event {
     let choice = &value["choices"][0];
     let chunk = &choice["delta"];
     let kind = value["type"].as_str();
+    let finish = choice["finish_reason"].as_str();
     // A Responses event's `delta` *is* the text, so its `type` is the only
     // thing that says which text it is.
     let typed = |name| {
@@ -1487,7 +1594,15 @@ fn read_event(payload: &str) -> Event {
             .or_else(|| chunk["reasoning"].as_str())
             .or_else(|| typed("response.reasoning_summary_text.delta"))
             .map(str::to_string),
-        finished: choice["finish_reason"].is_string() || kind == Some("response.completed"),
+        // Responses ends a capped reply with `response.incomplete` and no
+        // `[DONE]` after it, so without that name the body simply stopped and
+        // the turn was re-asked whole.
+        finished: finish.is_some()
+            || matches!(kind, Some("response.completed" | "response.incomplete")),
+        // `length` is the only reason the spec gives for a cap; every other
+        // value — `stop`, `tool_calls`, `content_filter` — is a reply the
+        // server chose to end, and is left alone.
+        truncated: finish == Some("length") || kind == Some("response.incomplete"),
     }
 }
 
@@ -1514,6 +1629,19 @@ fn content_from_body(body: &str) -> Result<String, String> {
         }
     }
     Err("model reply had no text content".to_string())
+}
+
+/// Did this whole body end at the token cap? The same two markers the stream
+/// carries, in the shape a non-streamed reply puts them: `finish_reason` on
+/// chat-completions, `incomplete_details.reason` on Responses. Asked of every
+/// whole body, because the answer decides both halves: with text it marks the
+/// reply, and with none it names the cap instead of "no text content" (#610).
+fn truncated_body(body: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    value["choices"][0]["finish_reason"] == "length"
+        || value["incomplete_details"]["reason"] == "max_output_tokens"
 }
 
 thread_local! {
@@ -1623,6 +1751,9 @@ pub struct Answered {
     /// The Behavior name the reply proposed that this Character declares none
     /// of. `None` on every other reply.
     pub near_miss: Option<String>,
+    /// The cap ended this turn, so what was said is as far as the model got.
+    /// Marked where the turn is drawn (#610).
+    pub truncated: bool,
 }
 
 impl Default for Slot {
@@ -1697,25 +1828,30 @@ impl Slots {
             ABANDONED.with_borrow_mut(|flag| *flag = Some(abandoned));
             // Always send. A panic here would leave the slot waiting forever
             // and skip StaticDirector on every later tick.
-            let (wake, near_miss) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let (wake, near_miss) = director.wake_and_near_miss(&context);
+            let woken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let woken = director.wake_and_near_miss(&context);
                 // Traced here, beside the reply it came from. The Action Log
                 // takes it from `take` instead, where a superseded reply has
                 // already been dropped.
                 if tracing() {
-                    if let Some(name) = &near_miss {
+                    if let Some(name) = &woken.near_miss {
                         eprintln!("{}", near_miss_line(&traced, name, director.behaviors()));
                     }
                 }
-                (wake, near_miss)
+                woken
             }))
-            .unwrap_or((Wake::Failed, None));
+            .unwrap_or(director::Woken {
+                wake: Wake::Failed,
+                near_miss: None,
+                truncated: false,
+            });
             let _ = tx.send(Delivered {
                 epoch,
                 answered: Answered {
-                    wake,
+                    wake: woken.wake,
                     context,
-                    near_miss,
+                    near_miss: woken.near_miss,
+                    truncated: woken.truncated,
                 },
             });
         });
@@ -2129,6 +2265,25 @@ pub(crate) mod tests {
         assert!(content_from_body("not json").is_err());
     }
 
+    /// The server that will not stream sends the same failure whole: no
+    /// `content` key, and the cap named in `finish_reason` or in
+    /// `incomplete_details`. Measured on oMLX with `gpt-oss-20b` (#597).
+    #[test]
+    fn a_whole_body_that_hit_the_cap_says_so() {
+        let spent = r#"{"choices":[{"message":{"role":"assistant","reasoning_content":"hmm"},
+            "finish_reason":"length"}]}"#;
+        assert!(content_from_body(spent).is_err());
+        assert!(truncated_body(spent));
+
+        let incomplete = r#"{"status":"incomplete",
+            "incomplete_details":{"reason":"max_output_tokens"},"output":[]}"#;
+        assert!(truncated_body(incomplete));
+
+        let done = r#"{"choices":[{"message":{"content":"stroll"},"finish_reason":"stop"}]}"#;
+        assert!(!truncated_body(done), "a natural stop is not a truncation");
+        assert!(!truncated_body("not json"));
+    }
+
     fn local_endpoint() -> Endpoint {
         Endpoint {
             api_key: String::new(),
@@ -2152,7 +2307,7 @@ pub(crate) mod tests {
         let (opening, asked) = endpoint.open_turn("hello");
         assert_eq!(asked.len(), 1, "the opening turn is the prompt alone");
         endpoint
-            .close_turn(opening, Ok("stroll".to_string()))
+            .close_turn(opening, Ok(Reply::whole("stroll")))
             .unwrap();
 
         let (poked, _) = endpoint.open_turn("what just happened: poked");
@@ -2170,6 +2325,45 @@ pub(crate) mod tests {
         );
     }
 
+    /// The session is what the model reads its own last turn back from, so a
+    /// turn the cap ended says so there: otherwise the next reply is written
+    /// against a sentence the model appears to have simply abandoned (#610).
+    ///
+    /// The mark reaches the session and not the reply the Director parses.
+    /// `parse_proposal` reads the first whole-Behavior-name line and speaks
+    /// the rest, so a mark in the parsed text is a mark the buddy says out
+    /// loud — which is the failure `bubble.js` wrote down for the bubble and
+    /// which this ordering is what prevents.
+    #[test]
+    fn the_session_keeps_the_mark_and_the_parser_never_sees_it() {
+        let endpoint = local_endpoint();
+
+        let (opening, _) = endpoint.open_turn("what now?");
+        let handed = endpoint
+            .close_turn(opening, Ok(Reply::truncated("prowl")))
+            .unwrap();
+
+        assert_eq!(
+            handed.text, "prowl",
+            "the Director parses the model's own words, with no mark in them"
+        );
+        assert_eq!(
+            ai_buddy_core::director::parse_proposal(&handed.text)
+                .unwrap()
+                .dialogue,
+            None,
+            "a marked text would be parsed as a Behavior with the mark as its line"
+        );
+        assert_eq!(
+            spoken(&endpoint.session.lock().unwrap().messages),
+            [
+                ("user", "what now?"),
+                ("assistant", "prowl\n[response truncated]")
+            ],
+            "the session says where the model was stopped"
+        );
+    }
+
     /// #312: a superseded call is still inside `post` when the wake that
     /// replaced it opens a turn on the same `Endpoint`. The loser must neither
     /// leave its question in the session nor take the winner's out.
@@ -2178,7 +2372,7 @@ pub(crate) mod tests {
         let endpoint = local_endpoint();
         let (opening, _) = endpoint.open_turn("hello");
         endpoint
-            .close_turn(opening, Ok("stroll".to_string()))
+            .close_turn(opening, Ok(Reply::whole("stroll")))
             .unwrap();
 
         let (ambient, _) = endpoint.open_turn("what just happened: nothing");
@@ -2196,7 +2390,7 @@ pub(crate) mod tests {
         endpoint
             .close_turn(ambient, Err("abandoned".to_string()))
             .unwrap_err();
-        endpoint.close_turn(poked, Ok("nap".to_string())).unwrap();
+        endpoint.close_turn(poked, Ok(Reply::whole("nap"))).unwrap();
 
         assert_eq!(
             spoken(&endpoint.open_turn("what just happened: thrown").1),
@@ -2220,7 +2414,7 @@ pub(crate) mod tests {
         let (poked, _) = endpoint.open_turn("what just happened: poked");
         let (ambient, _) = endpoint.open_turn("what just happened: nothing");
 
-        endpoint.close_turn(poked, Ok("nap".to_string())).unwrap();
+        endpoint.close_turn(poked, Ok(Reply::whole("nap"))).unwrap();
         endpoint
             .close_turn(ambient, Err("abandoned".to_string()))
             .unwrap_err();
@@ -2437,6 +2631,111 @@ pub(crate) mod tests {
 
         let cut = "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\\nhey th\"}}]}\n\n";
         assert_eq!(streamed(cut), Streamed::Cut);
+    }
+
+    /// A model that spends its whole budget thinking ends with
+    /// `finish_reason: "length"` and no content — measured on `gpt-oss-20b`
+    /// at 512 tokens on about 40% of wakes (#597). That is not a reply, and
+    /// the value of the field is the only thing that says so: `stop` and
+    /// `length` are both strings.
+    #[test]
+    fn an_empty_length_finish_is_a_truncation_and_a_stop_finish_is_a_reply() {
+        let spent = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hmm\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed(spent),
+            Streamed::Truncated(String::new()),
+            "the budget ran out before any text, which is not an empty reply"
+        );
+
+        let done = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed(done),
+            Streamed::Complete("stroll".to_string()),
+            "a natural stop is untouched by reading the value"
+        );
+    }
+
+    /// A cap reached after the model started writing is a truncation too, and
+    /// is refused for the reason #302 refuses a cut stream: what arrived is
+    /// half a sentence. The text is kept only so the log can say the budget
+    /// ran out writing rather than thinking.
+    #[test]
+    fn a_length_finish_that_wrote_text_is_a_truncation_too() {
+        let clipped = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"stroll\\nhey th\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        assert_eq!(
+            streamed(clipped),
+            Streamed::Truncated("stroll\nhey th".to_string())
+        );
+    }
+
+    /// Best effort, because we are the ones who cut the model off: what it
+    /// wrote is handed on, marked. With nothing written there is nothing to
+    /// show, and the Action Log line names the cap and the knob either way.
+    #[test]
+    fn a_truncation_shows_what_it_wrote_and_silence_when_it_wrote_nothing() {
+        let endpoint = Endpoint {
+            max_tokens: LOCAL_MAX_TOKENS,
+            ..local_endpoint()
+        };
+        let url = "http://127.0.0.1:1234/v1/chat/completions";
+
+        let thinking = endpoint.reply_from(url, Streamed::Truncated(String::new()));
+        let Err(Unsent::Truncated(why)) = thinking else {
+            panic!("a budget spent entirely on thinking has nothing to show");
+        };
+        assert!(
+            why.contains("spent all 512 tokens thinking") && why.contains(MAX_TOKENS),
+            "the log line names the cap and the knob: {why}"
+        );
+
+        assert_eq!(
+            endpoint
+                .reply_from(url, Streamed::Truncated("stroll\nhey th".to_string()))
+                .ok(),
+            Some(Reply::truncated("stroll\nhey th")),
+            "the Behavior is acted on and the words are said, with the mark beside them"
+        );
+
+        assert_eq!(
+            endpoint
+                .reply_from(url, Streamed::Complete("stroll".to_string()))
+                .ok(),
+            Some(Reply::whole("stroll")),
+            "a whole reply is not marked"
+        );
+
+        assert!(
+            endpoint
+                .out_of_budget(url, false)
+                .contains("cut off mid-reply"),
+            "the log tells a budget spent thinking from a line that ran out"
+        );
+    }
+
+    /// Responses ends a truncated reply with `response.incomplete` rather
+    /// than `response.completed`, and sends no `[DONE]` after it. With no arm
+    /// for that event the body ended unmarked, so a truncation read as a cut
+    /// connection and was re-asked whole.
+    #[test]
+    fn a_responses_incomplete_is_a_truncation_not_a_cut() {
+        let sse = concat!(
+            "data: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hmm\"}\n\n",
+            "data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\
+             \"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n",
+        );
+        assert_eq!(streamed(sse), Streamed::Truncated(String::new()));
     }
 
     /// The load win. An endless stream is the only honest test of it: a
@@ -2704,6 +3003,11 @@ pub(crate) mod tests {
             Unsent::Abandoned.retry_settles(),
             None,
             "nobody is waiting for a second attempt at a superseded call"
+        );
+        assert_eq!(
+            Unsent::Truncated("512 tokens".to_string()).retry_settles(),
+            None,
+            "the same question at the same cap gets the same nothing"
         );
     }
 
@@ -3182,7 +3486,7 @@ pub(crate) mod tests {
     }
 
     impl Completer for Watchful {
-        fn complete(&self, _: &WakeRequest) -> Result<String, String> {
+        fn complete(&self, _: &WakeRequest) -> Result<Reply, String> {
             for _ in 0..400 {
                 if abandoned() {
                     self.saw.store(true, Ordering::SeqCst);
@@ -3190,7 +3494,7 @@ pub(crate) mod tests {
                 }
                 thread::sleep(Duration::from_millis(5));
             }
-            Ok("idle".to_string())
+            Ok(Reply::whole("idle"))
         }
     }
 
@@ -3212,9 +3516,9 @@ pub(crate) mod tests {
     }
 
     impl Completer for Answers {
-        fn complete(&self, _: &WakeRequest) -> Result<String, String> {
+        fn complete(&self, _: &WakeRequest) -> Result<Reply, String> {
             thread::sleep(self.delay);
-            Ok(self.behavior.to_string())
+            Ok(Reply::whole(self.behavior))
         }
     }
 
@@ -3473,7 +3777,7 @@ pub(crate) mod tests {
     }
 
     impl<C: Completer> Completer for Reframing<C> {
-        fn complete(&self, request: &WakeRequest) -> Result<String, String> {
+        fn complete(&self, request: &WakeRequest) -> Result<Reply, String> {
             let mut sent = request.clone();
             sent.prompt = reframed(&sent.prompt, &self.personality, self.framing);
             self.inner.complete(&sent)
@@ -3485,7 +3789,7 @@ pub(crate) mod tests {
     struct Silent;
 
     impl Completer for Silent {
-        fn complete(&self, _request: &WakeRequest) -> Result<String, String> {
+        fn complete(&self, _request: &WakeRequest) -> Result<Reply, String> {
             Err("no server here".to_string())
         }
     }
@@ -3863,7 +4167,12 @@ pub(crate) mod tests {
             character: "bmo".into(),
             reactive: true,
         };
-        note_http_call(dir.path(), &request, Ok("the desktop floor"));
+        note_http_call(
+            dir.path(),
+            &request,
+            Ok(&Reply::whole("the desktop floor")),
+            "unused here",
+        );
 
         let body = std::fs::read_to_string(dir.path().join(crate::action_log::FILE)).unwrap();
         let lines: Vec<&str> = body.lines().collect();
@@ -3878,6 +4187,41 @@ pub(crate) mod tests {
         assert_eq!(turn["text"], "the desktop floor");
     }
 
+    /// A turn the cap ended is both: words that were shown, and a reason
+    /// there were no more of them. The line carries the pair, so the reader
+    /// asking why the buddy stopped mid-sentence is told the cap and the
+    /// model rather than reading a reply that just ends (#610).
+    #[test]
+    fn a_truncated_http_call_writes_the_words_and_the_cap() {
+        let dir = TempDir::new("http-session-cut");
+        let request = WakeRequest {
+            prompt: "hi".into(),
+            instance: "buddy-1".into(),
+            character: "bmo".into(),
+            reactive: true,
+        };
+        let endpoint = Endpoint {
+            max_tokens: LOCAL_MAX_TOKENS,
+            ..local_endpoint()
+        };
+
+        note_http_call(
+            dir.path(),
+            &request,
+            Ok(&Reply::truncated("prowl\nMine now, and the")),
+            &endpoint.out_of_budget(&endpoint.url, false),
+        );
+
+        let body = std::fs::read_to_string(dir.path().join(crate::action_log::FILE)).unwrap();
+        let turn: serde_json::Value = serde_json::from_str(body.lines().nth(1).unwrap()).unwrap();
+        assert_eq!(turn["text"], "prowl\nMine now, and the");
+        let why = turn["truncated"].as_str().unwrap_or_default();
+        assert!(
+            why.contains("gemma4") && why.contains("512") && why.contains(MAX_TOKENS),
+            "the line names the model, the cap and the knob: {why}"
+        );
+    }
+
     /// Plan-seam change that would fail this: `note_http_call` writing no
     /// turn line on a failed HTTP wake, so a later parsed/failed cannot be joined.
     #[test]
@@ -3889,7 +4233,12 @@ pub(crate) mod tests {
             character: "bmo".into(),
             reactive: false,
         };
-        note_http_call(dir.path(), &request, Err("connection refused"));
+        note_http_call(
+            dir.path(),
+            &request,
+            Err("connection refused"),
+            "unused here",
+        );
 
         let body = std::fs::read_to_string(dir.path().join(crate::action_log::FILE)).unwrap();
         let turn: serde_json::Value = serde_json::from_str(body.lines().nth(1).unwrap()).unwrap();

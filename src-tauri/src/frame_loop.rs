@@ -653,6 +653,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
+                            truncated: false,
                         },
                     );
                     continue;
@@ -679,6 +680,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
+                            truncated: false,
                         },
                     );
                     continue;
@@ -701,6 +703,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
+                            truncated: false,
                         },
                     );
                     continue;
@@ -1072,12 +1075,18 @@ pub(crate) fn run_frame_loop(
                     .as_ref()
                     .map(|answered| director::reacting_to(&answered.context.happened));
 
+                // Beside the words rather than in them: a mark written into
+                // the line would be spoken as the model's own and pushed back
+                // into the session as its last turn (#610, `bubble.js`).
+                let mut truncated = false;
                 if let Some(model::Answered {
                     wake,
                     context,
                     near_miss,
+                    truncated: cut_off,
                 }) = arrived
                 {
+                    truncated = cut_off;
                     // Here rather than in the worker: this is where core's
                     // parse result first reaches something that may do I/O,
                     // and a reply this Instance has moved past never arrives
@@ -1202,23 +1211,35 @@ pub(crate) fn run_frame_loop(
                 let error = (applied && !responded).then(harness::last_error).flatten();
                 if answering_chat || unasked {
                     let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
+                    // The mark goes into the remembered line, once, here:
+                    // what the Chat surface draws is the record of the turn,
+                    // and a reader of it sees where the model was stopped.
+                    // The bubble's own copy stays the model's words with the
+                    // mark drawn under them, and the Behavior parser has
+                    // already read the text by now (#610).
+                    let remembered = frame
+                        .dialogue
+                        .as_deref()
+                        .map(|line| director::marked(line, truncated));
                     session_log::remember_them(
                         &app,
                         &live.id,
-                        frame.dialogue.clone(),
+                        remembered.clone(),
                         reacting_to.clone(),
                         SystemTime::now(),
+                        truncated,
                     );
                     let _ = app.emit_to(
                         chat_label(&live.id),
                         CHAT_EVENT,
                         ChatReply {
-                            said: frame.dialogue.clone(),
+                            said: remembered,
                             busy: false,
                             reacting_to,
                             you: false,
                             at: None,
                             error,
+                            truncated,
                         },
                     );
                 }
@@ -1299,6 +1320,7 @@ pub(crate) fn run_frame_loop(
                                         you: false,
                                         at: None,
                                         error: None,
+                                        truncated: false,
                                     },
                                 );
                             }
@@ -1531,12 +1553,17 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
-                let dialogue = super::carry_line(
+                let carried = super::carry_line(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),
+                    truncated,
                     owner,
                     Instant::now(),
                 );
+                let (dialogue, cut_off) = match carried {
+                    Some((line, cut_off)) => (Some(line), cut_off),
+                    None => (None, false),
+                };
 
                 placed.push(Placed {
                     id: live.id.clone(),
@@ -1548,6 +1575,7 @@ pub(crate) fn run_frame_loop(
                     frame_index: drawn.index,
                     mirror: if drawn.mirrored { -1 } else { 1 },
                     dialogue,
+                    truncated: cut_off,
                     thinking,
                     cue: frame.cue,
                     owner,
@@ -1720,6 +1748,7 @@ pub(crate) fn run_frame_loop(
                             frame_index: instance.frame_index,
                             mirror: instance.mirror,
                             dialogue: instance.dialogue.clone(),
+                            truncated: instance.truncated,
                             thinking: instance.thinking,
                             // Every overlay draws the art; one draws the
                             // bubble (#178, `bubble_owner`), and `forOverlay`

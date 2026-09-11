@@ -172,8 +172,10 @@ function machineHarness() {
   // which reads here as a surface that went blank.
   let surface = null;
   const machine = createBubbleMachine({
-    showSpeech(text) {
+    showSpeech(text, truncated) {
       surface = "speech";
+      // #610: the truncation mark rides in the remembered text (session + Chat
+      // history), not displayed in the bubble UI.
       calls.push(`showSpeech:${text}`);
     },
     hideSpeech() {
@@ -435,4 +437,30 @@ test("the capability the renderer asks for is a command the Shell registers", ()
     new RegExp(`generate_handler!\\[[^\\]]*\\b${asked[1]}\\b`, "s"),
     `${asked[1]} is registered in generate_handler!`,
   );
+});
+// #610: a reply the token cap ended is still spoken. The mark rides in the
+// remembered text (session + Chat history), not displayed in the bubble.
+test("a truncated reply is spoken without the mark visible", () => {
+  const { machine, calls, placement } = machineHarness();
+
+  machine.event(placement({ dialogue: "Mine now, and the desk is", truncated: true }));
+  machine.frame(placement({}));
+  assert.deepEqual(calls, ["showSpeech:Mine now, and the desk is"]);
+
+  machine.event(placement({ dialogue: "all mine" }));
+  machine.frame(placement({}));
+  assert.deepEqual(
+    calls,
+    ["showSpeech:Mine now, and the desk is", "showSpeech:all mine"],
+    "the next whole line is not marked with the last one's mark",
+  );
+});
+
+// A losing overlay draws no bubble, so it must not be handed the mark either
+// — it would arm nothing and mean nothing there (#178).
+test("an overlay that does not own the bubble is told no mark", () => {
+  const stripped = forOverlay({ dialogue: "hi", truncated: true, bubble: false });
+
+  assert.equal(stripped.dialogue, null);
+  assert.equal(stripped.truncated, false);
 });

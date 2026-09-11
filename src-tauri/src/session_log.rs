@@ -14,6 +14,10 @@ pub struct Turn {
     pub you: bool,
     pub said: Option<String>,
     pub reacting_to: Option<String>,
+    /// The cap ended this turn, so the line is as far as the model got. Kept
+    /// with the line because a surface that opens later draws the same mark a
+    /// surface that was open drew (#610).
+    pub truncated: bool,
     /// When the line was said, not when Chat later opened. Replay stamps from this.
     pub at: SystemTime,
 }
@@ -36,6 +40,7 @@ impl Log {
                 you: true,
                 said: Some(text.into()),
                 reacting_to: None,
+                truncated: false,
                 at,
             });
     }
@@ -47,6 +52,7 @@ impl Log {
         said: Option<String>,
         reacting_to: Option<String>,
         at: SystemTime,
+        truncated: bool,
     ) {
         let Some(said) = said else {
             return;
@@ -58,6 +64,7 @@ impl Log {
                 you: false,
                 said: Some(said),
                 reacting_to,
+                truncated,
                 at,
             });
     }
@@ -99,9 +106,10 @@ pub fn remember_them(
     said: Option<String>,
     reacting_to: Option<String>,
     at: SystemTime,
+    truncated: bool,
 ) {
     with_log(app, |log| {
-        log.remember_them(instance, said, reacting_to, at)
+        log.remember_them(instance, said, reacting_to, at, truncated)
     });
 }
 
@@ -154,6 +162,7 @@ mod tests {
             Some("hello from the bubble".into()),
             Some("when poked".into()),
             UNIX_EPOCH,
+            false,
         );
 
         let turns = log.replay("buddy-1");
@@ -173,12 +182,14 @@ mod tests {
             Some("from A".into()),
             Some("unprompted".into()),
             UNIX_EPOCH,
+            false,
         );
         log.remember_them(
             "b",
             Some("from B".into()),
             Some("when summoned".into()),
             UNIX_EPOCH,
+            false,
         );
 
         let a = log.replay("a");
@@ -192,7 +203,7 @@ mod tests {
     #[test]
     fn a_wake_with_no_speech_is_not_held() {
         let mut log = Log::new();
-        log.remember_them("buddy-1", None, None, UNIX_EPOCH);
+        log.remember_them("buddy-1", None, None, UNIX_EPOCH, false);
         assert!(log.replay("buddy-1").is_empty());
     }
 
@@ -206,6 +217,7 @@ mod tests {
             Some("unprompted hi".into()),
             Some("unprompted".into()),
             UNIX_EPOCH,
+            false,
         );
         log.remember_you("buddy-1", "what are you standing on?", UNIX_EPOCH);
         log.remember_them(
@@ -213,6 +225,7 @@ mod tests {
             Some("the desktop floor".into()),
             None,
             UNIX_EPOCH,
+            false,
         );
 
         let turns = log.replay("buddy-1");
@@ -273,7 +286,13 @@ mod tests {
         let first = UNIX_EPOCH + Duration::from_secs(1_000);
         let second = first + Duration::from_secs(20 * 60);
         log.remember_you("buddy-1", "typed twenty minutes ago", first);
-        log.remember_them("buddy-1", Some("answered later".into()), None, second);
+        log.remember_them(
+            "buddy-1",
+            Some("answered later".into()),
+            None,
+            second,
+            false,
+        );
 
         let turns = log.replay("buddy-1");
         assert_eq!(turns.len(), 2);
