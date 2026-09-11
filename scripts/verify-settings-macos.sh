@@ -157,6 +157,11 @@ fi
 plain="$out/no-harness.txt"
 
 info "Section order: $(section_order "$plain")"
+if [ "$(section_order "$plain")" = "AI > AI source > Model / API > Last user turn" ]; then
+  pass "AI tab section order matches director_sections"
+else
+  fail "AI tab section order was $(section_order "$plain")"
+fi
 
 for label in "Base URL" "Model"; do
   if [ "$(row_live "$plain" "$label")" = "true" ]; then
