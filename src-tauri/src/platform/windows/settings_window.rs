@@ -398,7 +398,12 @@ impl SettingsWindow {
                         return;
                     }
                     let mut buffer = vec![0u8; (len + 1) as usize];
-                    SendMessageA(*hwnd, CB_GETLBTEXT, index as WPARAM, buffer.as_mut_ptr() as LPARAM);
+                    SendMessageA(
+                        *hwnd,
+                        CB_GETLBTEXT,
+                        index as WPARAM,
+                        buffer.as_mut_ptr() as LPARAM,
+                    );
                     CString::from_vec_with_nul(buffer)
                         .ok()
                         .and_then(|cs| cs.to_str().ok())
