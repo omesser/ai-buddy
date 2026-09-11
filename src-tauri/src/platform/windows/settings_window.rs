@@ -13,8 +13,9 @@ use std::sync::{Arc, Mutex};
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    ClientToScreen, EnumDisplayMonitors, GetMonitorInfoA, GetStockObject, ScreenToClient,
-    UpdateWindow, DEFAULT_GUI_FONT, HGDIOBJ, HMONITOR, MONITORINFO,
+    ClientToScreen, CreateCompatibleDC, DeleteDC, DrawTextW, EnumDisplayMonitors, GetMonitorInfoA,
+    GetStockObject, ScreenToClient, SelectObject, UpdateWindow, DEFAULT_GUI_FONT, DT_CALCRECT,
+    DT_WORDBREAK, HGDIOBJ, HMONITOR, MONITORINFO,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Controls::NMHDR;
@@ -635,6 +636,45 @@ fn set_window_text(hwnd: HWND, text: &str) {
     }
 }
 
+/// Measure the height text would occupy when wrapped to a given width using
+/// the default GUI font.
+///
+/// Returns the height in pixels required to display `text` wrapped at `width`
+/// pixels, using DrawTextW with DT_CALCRECT | DT_WORDBREAK to simulate the
+/// wrapping that a STATIC control will perform.
+fn measure_wrapped_text_height(text: &str, width: i32) -> i32 {
+    unsafe {
+        let hdc = CreateCompatibleDC(0);
+        if hdc == 0 {
+            return LABEL_HEIGHT * 2; // Fallback
+        }
+        let hfont = GetStockObject(DEFAULT_GUI_FONT) as HGDIOBJ;
+        let old_font = SelectObject(hdc, hfont);
+
+        let wide_text: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: width,
+            bottom: 0,
+        };
+
+        DrawTextW(
+            hdc,
+            wide_text.as_ptr(),
+            wide_text.len() as i32 - 1,
+            &mut rect,
+            DT_CALCRECT | DT_WORDBREAK,
+        );
+
+        SelectObject(hdc, old_font);
+        DeleteDC(hdc);
+
+        let height = rect.bottom - rect.top;
+        height.max(LABEL_HEIGHT)
+    }
+}
+
 /// Decides whether a label id should have its text updated from the view.
 ///
 /// Returns `true` when the label displays dynamic state (memory path, hotkey,
@@ -1010,6 +1050,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                     y += ROW_HEIGHT + HINT_GAP;
 
                     let disclosure_cstr = CString::new(disclosure_text.as_str()).unwrap();
+                    let label_height = measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                     let label_hwnd = CreateWindowExA(
                         0,
                         c"STATIC".as_ptr() as *const u8,
@@ -1018,7 +1059,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         display_left,
                         y,
                         FIELD_WIDTH,
-                        LABEL_HEIGHT,
+                        label_height,
                         parent,
                         ptr::null_mut(),
                         GetModuleHandleA(ptr::null()),
@@ -1036,7 +1077,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                         disclosure_id,
                         Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                     );
-                    y += LABEL_HEIGHT + HINT_GAP;
+                    y += label_height + HINT_GAP;
                     control_id += 1;
                 }
 
@@ -1119,6 +1160,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -1127,7 +1170,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -1144,7 +1187,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -1279,6 +1322,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -1287,7 +1332,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -1304,7 +1349,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             // The `_help` suffix is what keeps a refresh from
@@ -1528,6 +1573,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -1536,7 +1583,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -1553,7 +1600,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -1627,6 +1674,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -1635,7 +1684,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -1652,7 +1701,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -1829,6 +1878,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -1837,7 +1888,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -1854,7 +1905,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -1976,6 +2027,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -1984,7 +2037,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -2001,7 +2054,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -2131,6 +2184,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
 
                                 let disclosure_cstr =
                                     CString::new(disclosure_text.as_str()).unwrap();
+                                let label_height =
+                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
                                 let label_hwnd = CreateWindowExA(
                                     0,
                                     c"STATIC".as_ptr() as *const u8,
@@ -2139,7 +2194,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     display_left,
                                     y,
                                     FIELD_WIDTH,
-                                    LABEL_HEIGHT,
+                                    label_height,
                                     parent,
                                     ptr::null_mut(),
                                     GetModuleHandleA(ptr::null()),
@@ -2156,7 +2211,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     disclosure_id,
                                     Control::Disclosure(button_hwnd, label_hwnd, tab_index),
                                 );
-                                y += LABEL_HEIGHT + HINT_GAP;
+                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
