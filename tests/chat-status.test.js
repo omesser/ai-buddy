@@ -203,47 +203,47 @@ test("plain status says Thinking when a turn is on the wire", () => {
 test("plain status reflects behavior as human-readable activity", () => {
   assert.equal(
     plainStatus({ ...push, behavior: "prowl", happened: null }, 24_000),
-    "Prowling · next thought in 24s",
+    "Prowl · next thought in 24s",
   );
-  assert.equal(plainStatus({ ...push, behavior: "nap", happened: null }, 60_000), "Napping · next thought in 1m");
-  assert.equal(plainStatus({ ...push, behavior: "supervise", happened: null }, 0), "Supervising");
+  assert.equal(plainStatus({ ...push, behavior: "nap", happened: null }, 60_000), "Nap · next thought in 1m");
+  assert.equal(plainStatus({ ...push, behavior: "supervise", happened: null }, 0), "Supervise");
 });
 
 test("plain status falls back to animation when behavior is null", () => {
   assert.equal(
     plainStatus({ ...push, behavior: null, animation: "walk", happened: null }, 30_000),
-    "Walking · next thought in 30s",
+    "Walk · next thought in 30s",
   );
   assert.equal(
     plainStatus({ ...push, behavior: null, animation: "fall", happened: null }, 5000),
-    "Falling · next thought in 5s",
+    "Fall · next thought in 5s",
   );
-  assert.equal(plainStatus({ ...push, behavior: null, animation: "sit", happened: null }, null), "Sitting");
+  assert.equal(plainStatus({ ...push, behavior: null, animation: "sit", happened: null }, null), "Sit");
 });
 
 test("plain status falls back to primitive when behavior and animation are null", () => {
   assert.equal(
     plainStatus({ ...push, behavior: null, animation: null, primitive: "Sleep", happened: null }, 120_000),
-    "Sleeping · next thought in 2m",
+    "Sleep · next thought in 2m",
   );
   assert.equal(
     plainStatus({ ...push, behavior: null, animation: null, primitive: "Walk", happened: null }, 0),
-    "Walking",
+    "Walk",
   );
 });
 
 test("plain status appends happened cue when present", () => {
-  assert.equal(plainStatus({ ...push, behavior: "sit", happened: "poked" }, 30_000), "Sitting · just poked");
+  assert.equal(plainStatus({ ...push, behavior: "sit", happened: "poked" }, 30_000), "Sit · just poked");
   assert.equal(
     plainStatus({ ...push, behavior: "prowl", happened: "spoken to" }, 60_000),
-    "Prowling · just spoken to",
+    "Prowl · just spoken to",
   );
-  assert.equal(plainStatus({ ...push, behavior: "greet", happened: "summoned" }, null), "Greeting · just summoned");
+  assert.equal(plainStatus({ ...push, behavior: "greet", happened: "summoned" }, null), "Greet · just summoned");
 });
 
 test("plain status omits wake countdown when happened cue is present", () => {
-  assert.equal(plainStatus({ ...push, behavior: "walk", happened: "thrown" }, 24_000), "Walking · just thrown");
-  assert.equal(plainStatus({ ...push, behavior: "inspect", happened: "poked" }, 90_000), "Inspecting · just poked");
+  assert.equal(plainStatus({ ...push, behavior: "walk", happened: "thrown" }, 24_000), "Walk · just thrown");
+  assert.equal(plainStatus({ ...push, behavior: "inspect", happened: "poked" }, 90_000), "Inspect · just poked");
 });
 
 test("plain status humanizes unknown behaviors by cleaning the name", () => {
@@ -254,18 +254,18 @@ test("plain status humanizes unknown behaviors by cleaning the name", () => {
   assert.equal(plainStatus({ ...push, behavior: "test-name", happened: null }, 0), "Test name");
 });
 
-test("plain status maps common behaviors to readable gerunds", () => {
+test("plain status cleans behavior names generically", () => {
   assert.equal(
     plainStatus({ ...push, behavior: "fidget", happened: null }, 15_000),
-    "Fidgeting · next thought in 15s",
+    "Fidget · next thought in 15s",
   );
   assert.equal(
     plainStatus({ ...push, behavior: "meditate", happened: null }, 120_000),
-    "Meditating · next thought in 2m",
+    "Meditate · next thought in 2m",
   );
   assert.equal(
     plainStatus({ ...push, behavior: "power_down", happened: null }, 60_000),
-    "Powering down · next thought in 1m",
+    "Power down · next thought in 1m",
   );
 });
 

@@ -104,99 +104,31 @@ function humanizeActivity(status) {
   return null;
 }
 
-// Turn behavior package names into readable gerunds/phrases.
+// Turn behavior package names into readable text.
 function humanizeBehavior(behavior) {
   if (!behavior || behavior === NONE) {
     return null;
   }
 
-  const map = {
-    prowl: "Prowling",
-    greet: "Greeting",
-    inspect: "Inspecting",
-    remark: "Remarking",
-    groom: "Grooming",
-    supervise: "Supervising",
-    nap: "Napping",
-    "play-with-cursor": "Playing",
-    jump: "Jumping",
-    walk: "Walking",
-    doze: "Dozing",
-    amble: "Ambling",
-    stretch: "Stretching",
-    mumble: "Mumbling",
-    patrol: "Patrolling",
-    report: "Reporting",
-    fidget: "Fidgeting",
-    settle: "Settling in",
-    ponder: "Pondering",
-    meditate: "Meditating",
-    stand: "Standing",
-    mutter: "Muttering",
-    watch: "Watching",
-    rest: "Resting",
-    help: "Helping",
-    stroll: "Strolling",
-    engage: "Engaging",
-    standby: "Standing by",
-    power_down: "Powering down",
-    pursue: "Pursuing",
-    sit: "Sitting",
-  };
-
-  if (map[behavior]) {
-    return map[behavior];
-  }
-
   return cleanName(behavior);
 }
 
-// Turn animation names into readable phrases.
+// Turn animation names into readable text.
 function humanizeAnimation(animation) {
   if (!animation || animation === NONE) {
     return null;
   }
 
-  const map = {
-    idle: "Idle",
-    waiting: "Waiting",
-    walk: "Walking",
-    talk: "Talking",
-    fall: "Falling",
-    land: "Landing",
-    hold: "Holding on",
-    react: "Reacting",
-    sit: "Sitting",
-    sleep: "Sleeping",
-    jump: "Jumping",
-    chase: "Chasing",
-    climb: "Climbing",
-    grab: "Grabbed",
-  };
-
-  return map[animation] || cleanName(animation);
+  return cleanName(animation);
 }
 
-// Turn primitive names into readable phrases.
+// Turn primitive names into readable text.
 function humanizePrimitive(primitive) {
   if (!primitive || primitive === NONE) {
     return null;
   }
 
-  const map = {
-    Idle: "Idle",
-    Walk: "Walking",
-    Land: "Landing",
-    Sit: "Sitting",
-    Sleep: "Sleeping",
-    React: "Reacting",
-    Talk: "Talking",
-    Hold: "Holding on",
-    Chase: "Chasing",
-    Jump: "Jumping",
-  };
-
-  return map[primitive] || cleanName(primitive);
+  return cleanName(primitive);
 }
 
 // Turn happened cues into readable phrases.
