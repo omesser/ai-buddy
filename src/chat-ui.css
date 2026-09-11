@@ -244,6 +244,12 @@ body {
 }
 
 .prompt textarea {
+  /* Grid stretch on a replaced textarea overrides `rows` and collapses an empty field. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  align-self: start;
+  min-height: calc(1.5em * 3 + 20px);
   padding: 10px 12px;
   border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-control);
