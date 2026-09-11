@@ -280,6 +280,7 @@ function attached(opening) {
         grok: "Grok",
         opencode: "OpenCode",
         hermes: "Hermes",
+        pi: "Pi",
       };
       const harnessName = displayNames[opening.harness_name] || opening.harness_name || "The Harness";
       title.textContent = `${harnessName} needs login`;
