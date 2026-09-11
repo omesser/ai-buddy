@@ -60,11 +60,16 @@ const ID_BASE: i32 = 2000;
 const INSTANCES_LIST_CLASS: &std::ffi::CStr = c"AiBuddySettingsList";
 const TCN_SELCHANGE_CODE: u32 = 0xFFFFFDDA_u32.wrapping_sub(1);
 const EM_SETCUEBANNER: u32 = 0x1501;
+const EM_SETREADONLY: u32 = 0x00CF;
 const SS_LEFT: u32 = 0x0;
 const CBS_DROPDOWNLIST: u32 = 0x0003;
 const CB_ADDSTRING: u32 = 0x0143;
 const CB_RESETCONTENT: u32 = 0x014B;
 const CB_SETCURSEL: u32 = 0x014E;
+const CB_GETCURSEL: u32 = 0x0147;
+const CB_GETLBTEXT: u32 = 0x0148;
+const CB_GETLBTEXTLEN: u32 = 0x0149;
+const CBN_SELCHANGE: u16 = 1;
 
 thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
@@ -132,16 +137,22 @@ impl SettingsWindow {
             for (id, control) in controls.iter() {
                 let frozen = row_frozen(description, id);
                 if let Some(frozen) = frozen {
-                    let hwnd = match control {
+                    match control {
+                        Control::Edit(hwnd, _) => {
+                            // Use EM_SETREADONLY for Edit controls so freeze/unfreeze
+                            // matches AppKit setEditable / GTK set_editable.
+                            // EM_SETREADONLY: wParam = TRUE for read-only, FALSE for editable.
+                            SendMessageA(*hwnd, EM_SETREADONLY, if frozen { 1 } else { 0 }, 0);
+                        }
                         Control::Checkbox(hwnd, _)
-                        | Control::Edit(hwnd, _)
                         | Control::Button(hwnd, _)
-                        | Control::ComboBox(hwnd, _, _) => *hwnd,
+                        | Control::ComboBox(hwnd, _, _) => {
+                            // For other control types, use WM_ENABLE.
+                            // WM_ENABLE: wParam = TRUE to enable, FALSE to disable.
+                            SendMessageA(*hwnd, WM_ENABLE, if frozen { 0 } else { 1 }, 0);
+                        }
                         _ => continue,
-                    };
-                    // Send WM_ENABLE message to enable/disable the control.
-                    // WM_ENABLE: wParam = TRUE to enable, FALSE to disable.
-                    SendMessageA(hwnd, WM_ENABLE, if frozen { 0 } else { 1 }, 0);
+                    }
                 }
             }
         }
@@ -316,6 +327,8 @@ impl SettingsWindow {
             self.handle_button_click(control_id);
         } else if notification == EN_CHANGE as u16 {
             self.handle_text_change(control_id);
+        } else if notification == CBN_SELCHANGE {
+            self.handle_combobox_change(control_id);
         }
     }
 
@@ -361,6 +374,44 @@ impl SettingsWindow {
                     patch.set_bool(field, checked);
                     drop(controls);
                     self.apply(patch);
+                }
+            }
+        }
+    }
+
+    fn handle_combobox_change(&self, control_id: i32) {
+        let form_id = self
+            .control_id_to_form_id
+            .borrow()
+            .get(&control_id)
+            .cloned();
+        if let Some(form_id) = form_id {
+            let controls = self.controls.borrow();
+            if let Some(Control::ComboBox(hwnd, _, _)) = controls.get(&form_id) {
+                let selected_text = unsafe {
+                    let index = SendMessageA(*hwnd, CB_GETCURSEL, 0, 0);
+                    if index < 0 {
+                        return;
+                    }
+                    let len = SendMessageA(*hwnd, CB_GETLBTEXTLEN, index as WPARAM, 0);
+                    if len <= 0 {
+                        return;
+                    }
+                    let mut buffer = vec![0u8; (len + 1) as usize];
+                    SendMessageA(*hwnd, CB_GETLBTEXT, index as WPARAM, buffer.as_mut_ptr() as LPARAM);
+                    CString::from_vec_with_nul(buffer)
+                        .ok()
+                        .and_then(|cs| cs.to_str().ok())
+                        .map(|s| s.to_string())
+                };
+
+                if let Some(text) = selected_text {
+                    if let Some(field) = form::describe().text_write(&form_id) {
+                        let mut patch = SettingsPatch::default();
+                        patch.set_text(field, &text);
+                        drop(controls);
+                        self.apply(patch);
+                    }
                 }
             }
         }
