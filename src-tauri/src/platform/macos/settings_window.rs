@@ -1491,7 +1491,12 @@ fn freeze_or_bind(
 ) {
     if frozen {
         field.setEditable(false);
-    } else if batched {
+        return;
+    }
+    // Build-time default is editable. A later draw can unfreeze a field that
+    // was built frozen, and that field is still not editable (#629).
+    field.setEditable(true);
+    if batched {
         // SAFETY: setDelegate: does not retain, so the delegate must outlive
         // the field. The `CONTROLLER` thread-local holds the controller for the
         // life of the process and is never cleared, so it does.
