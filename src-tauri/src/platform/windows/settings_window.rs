@@ -1388,6 +1388,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .controls
                                 .borrow_mut()
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
+                            control_id += 1;
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(status_text) = status {
                                 let status_cstr = CString::new(status_text.as_str()).unwrap();
@@ -1489,7 +1490,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
-                            control_id += 1;
                         }
                         FormRow::SecureField {
                             id,
@@ -1639,6 +1639,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 id.clone(),
                                 Control::ComboBox(hwnd, tab_index, options.clone()),
                             );
+                            control_id += 1;
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(status_text) = status {
                                 let status_cstr = CString::new(status_text.as_str()).unwrap();
@@ -1737,7 +1738,6 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 );
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
-                            control_id += 1;
                         }
                         FormRow::List {
                             id,
