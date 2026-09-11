@@ -16,7 +16,7 @@ mod window_source;
 
 pub use dock::dock_bounds;
 pub use overlay_panel::configure_overlay;
-pub use pointer::{primary_button_down, secondary_button_down};
+pub use pointer::{double_click_interval_ms, primary_button_down, secondary_button_down};
 pub use sensing::MacosActivitySource;
 pub use settings_window::refresh_if_showing as refresh_settings;
 pub use settings_window::show as show_settings;

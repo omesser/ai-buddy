@@ -4,6 +4,7 @@
 //! reads the current button state without needing XI2 events or grabs.
 //! This is the interim X11 fallback; #183 may make pointer events portable.
 
+use gtk::prelude::*;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{self, ButtonMask};
 
@@ -36,4 +37,59 @@ fn button_state_mask() -> Option<u16> {
         .reply()
         .ok()?;
     Some(reply.mask.into())
+}
+
+/// The OS double-click interval, in milliseconds.
+///
+/// Reads GtkSettings gtk-double-click-time. Returns None if GTK is not
+/// initialized or the query fails.
+pub fn double_click_interval_ms() -> Option<u32> {
+    if !gtk::is_initialized() {
+        return None;
+    }
+    gtk::Settings::default().and_then(|settings| {
+        let interval = settings.gtk_double_click_time();
+        if interval > 0 {
+            Some(interval as u32)
+        } else {
+            None
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Our GTK reader must return the same value as an independent
+    /// gtk-double-click-time read (both None, or the same Some).
+    #[test]
+    fn double_click_interval_ms_matches_gtk_settings() {
+        // Settings::default() is None until GTK is up; production runs after
+        // Tauri has initialized GTK. Unit tests must init themselves.
+        // Without a display, gtk::init fails and Settings props panic — so only
+        // read gtk-double-click-time when GTK is actually initialized.
+        let _ = gtk::init();
+        if !gtk::is_initialized() {
+            assert_eq!(
+                double_click_interval_ms(),
+                None,
+                "without GTK init, x11::double_click_interval_ms must return None"
+            );
+            return;
+        }
+        let independent = gtk::Settings::default().and_then(|settings| {
+            let interval = settings.gtk_double_click_time();
+            if interval > 0 {
+                Some(interval as u32)
+            } else {
+                None
+            }
+        });
+        assert_eq!(
+            double_click_interval_ms(),
+            independent,
+            "x11::double_click_interval_ms must match gtk::Settings gtk-double-click-time"
+        );
+    }
 }

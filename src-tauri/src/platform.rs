@@ -14,7 +14,7 @@ use std::path::Path;
 #[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
@@ -547,6 +547,70 @@ pub fn update_input_region(
     _hotspot_rects: &[[i32; 4]],
 ) -> Result<(), String> {
     Ok(())
+}
+
+/// Cached double-click interval: queried from the OS once, then reused.
+static DOUBLE_CLICK_INTERVAL_MS: OnceLock<u32> = OnceLock::new();
+
+const FALLBACK_DOUBLE_CLICK_MS: u32 = 400;
+const MIN_DOUBLE_CLICK_MS: u32 = 100;
+const MAX_DOUBLE_CLICK_MS: u32 = 2000;
+
+/// Resolve and clamp the double-click interval, with fallback.
+///
+/// Pure helper for testing; the public `double_click_interval_ms` caches this.
+fn resolve_double_click_interval(raw: Option<u32>) -> u32 {
+    match raw {
+        Some(value) if value > 0 => value.clamp(MIN_DOUBLE_CLICK_MS, MAX_DOUBLE_CLICK_MS),
+        _ => FALLBACK_DOUBLE_CLICK_MS,
+    }
+}
+
+/// The OS double-click interval, in milliseconds, clamped and with fallback.
+///
+/// Queried from the OS once, clamped to [100, 2000]ms to prevent pathological
+/// settings, and logged. Cached and reused for all Pointers.
+pub fn double_click_interval_ms() -> u32 {
+    *DOUBLE_CLICK_INTERVAL_MS.get_or_init(|| {
+        let raw = os_double_click_interval_ms();
+        let resolved = resolve_double_click_interval(raw);
+
+        if let Some(value) = raw {
+            if value > 0 && value != resolved {
+                eprintln!(
+                    "overlay: double-click interval {}ms (clamped from {}ms)",
+                    resolved, value
+                );
+            } else {
+                eprintln!("overlay: double-click interval {}ms", resolved);
+            }
+        } else {
+            eprintln!(
+                "overlay: double-click interval fallback to {}ms",
+                FALLBACK_DOUBLE_CLICK_MS
+            );
+        }
+
+        resolved
+    })
+}
+
+/// The OS double-click interval, in milliseconds, from the platform layer.
+///
+/// Returns None when the query fails or the platform has nothing to offer.
+#[cfg(target_os = "macos")]
+fn os_double_click_interval_ms() -> Option<u32> {
+    macos::double_click_interval_ms()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn os_double_click_interval_ms() -> Option<u32> {
+    x11::double_click_interval_ms()
+}
+
+#[cfg(not(unix))]
+fn os_double_click_interval_ms() -> Option<u32> {
+    windows::double_click_interval_ms()
 }
 
 /// Which mouse buttons are down, or were pressed since the last call.
@@ -1153,5 +1217,93 @@ mod tests {
             "a right-click the overlay felt must count as the button down"
         );
         set_overlay_secondary(false);
+    }
+
+    /// A normal OS setting passes through unchanged.
+    #[test]
+    fn double_click_interval_passes_normal_values() {
+        assert_eq!(resolve_double_click_interval(Some(400)), 400);
+        assert_eq!(resolve_double_click_interval(Some(500)), 500);
+        assert_eq!(resolve_double_click_interval(Some(200)), 200);
+    }
+
+    /// A pathologically small interval is clamped to prevent zero or near-zero
+    /// windows that would make double-clicks impossible.
+    #[test]
+    fn double_click_interval_clamps_too_small() {
+        assert_eq!(
+            resolve_double_click_interval(Some(0)),
+            FALLBACK_DOUBLE_CLICK_MS
+        );
+        assert_eq!(resolve_double_click_interval(Some(50)), MIN_DOUBLE_CLICK_MS);
+        assert_eq!(resolve_double_click_interval(Some(99)), MIN_DOUBLE_CLICK_MS);
+    }
+
+    /// A pathologically large interval is clamped to prevent multi-day Summon
+    /// windows. Win32 caps at 5000; we want a sane shared ceiling.
+    #[test]
+    fn double_click_interval_clamps_too_large() {
+        assert_eq!(
+            resolve_double_click_interval(Some(5000)),
+            MAX_DOUBLE_CLICK_MS
+        );
+        assert_eq!(
+            resolve_double_click_interval(Some(10000)),
+            MAX_DOUBLE_CLICK_MS
+        );
+        assert_eq!(
+            resolve_double_click_interval(Some(2001)),
+            MAX_DOUBLE_CLICK_MS
+        );
+    }
+
+    /// When the OS cannot provide an interval, the fallback is used.
+    #[test]
+    fn double_click_interval_falls_back_when_os_query_fails() {
+        assert_eq!(
+            resolve_double_click_interval(None),
+            FALLBACK_DOUBLE_CLICK_MS
+        );
+    }
+
+    /// Public OnceLock wrapper caches a clamped/fallback value in [100, 2000]
+    /// that matches resolve(os_raw). A second call must return the same cache.
+    #[test]
+    fn public_double_click_interval_is_cached_and_resolved() {
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let _ = gtk::init();
+
+        let cached = double_click_interval_ms();
+        assert!(
+            (MIN_DOUBLE_CLICK_MS..=MAX_DOUBLE_CLICK_MS).contains(&cached),
+            "public double_click_interval_ms must be in [{MIN_DOUBLE_CLICK_MS}, {MAX_DOUBLE_CLICK_MS}], got {cached}"
+        );
+        assert_eq!(
+            double_click_interval_ms(),
+            cached,
+            "OnceLock must return the same value on a second call"
+        );
+
+        // Without a display, GTK init fails; do not touch Settings properties.
+        // The OS reader returns None and the public API resolves to FALLBACK.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        if !gtk::is_initialized() {
+            assert_eq!(
+                cached, FALLBACK_DOUBLE_CLICK_MS,
+                "without GTK init, public double_click_interval_ms must use FALLBACK"
+            );
+            assert_eq!(
+                cached,
+                resolve_double_click_interval(None),
+                "cached public value must equal resolve(None) when OS returns None"
+            );
+            return;
+        }
+
+        assert_eq!(
+            cached,
+            resolve_double_click_interval(os_double_click_interval_ms()),
+            "cached public value must equal resolve of the raw OS read"
+        );
     }
 }

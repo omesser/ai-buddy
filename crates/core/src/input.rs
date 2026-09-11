@@ -30,14 +30,6 @@ const DRAG_THRESHOLD: f64 = 4.0;
 /// holding is how you pick something up when you do not want to move it yet.
 const DRAG_DELAY_MS: u32 = 180;
 
-/// How close together two clicks must be to count as one double-click, in
-/// milliseconds.
-///
-/// A tuning knob, near the macOS default. Long enough for a deliberate
-/// double-click with an ordinary hand, short enough that prodding the sprite
-/// twice because it was fun stays two Pokes.
-const DOUBLE_CLICK_MS: u32 = 400;
-
 /// How fast the hand must still be moving for a release to be a Throw, in
 /// points per second.
 ///
@@ -98,10 +90,24 @@ pub struct Pointer {
     /// alone would only re-arm it on the click after, so drumming on the
     /// sprite would open a chat surface every second click.
     summoned: bool,
+    /// How close together two clicks must be to count as one double-click, in
+    /// milliseconds. Injected from the OS double-click setting, or the
+    /// fallback when that is not available.
+    double_click_ms: u32,
 }
 
 impl Default for Pointer {
     fn default() -> Self {
+        Self::with_double_click_ms(400)
+    }
+}
+
+impl Pointer {
+    /// Create a pointer with an explicit double-click interval.
+    ///
+    /// The platform layer injects the OS setting here, keeping core
+    /// platform-neutral and tests deterministic.
+    pub fn with_double_click_ms(double_click_ms: u32) -> Self {
         Self {
             phase: Phase::Idle,
             was_held: false,
@@ -115,6 +121,7 @@ impl Default for Pointer {
             prior_ms: 0,
             since_click_ms: u32::MAX,
             summoned: false,
+            double_click_ms,
         }
     }
 }
@@ -194,11 +201,11 @@ impl Pointer {
             // a Poke gets, so nothing is lost on screen, and a cue keyed on
             // the verb stream (#277) hears one gesture rather than two. The
             // first click has already gone out as a Poke by then: holding it
-            // back for DOUBLE_CLICK_MS to see whether a partner arrives would
-            // make every single click feel broken.
+            // back to see whether a partner arrives would make every single
+            // click feel broken.
             (Phase::Pressed, false) => {
                 self.phase = Phase::Idle;
-                let paired = self.since_click_ms <= DOUBLE_CLICK_MS;
+                let paired = self.since_click_ms <= self.double_click_ms;
                 self.since_click_ms = 0;
                 // A gap ends the run, and the next pair may summon again.
                 self.summoned &= paired;
@@ -334,7 +341,7 @@ mod tests {
 
     /// Waits out the double-click interval with the button up.
     fn pause(pointer: &mut Pointer) {
-        for _ in 0..DOUBLE_CLICK_MS / TICK + 2 {
+        for _ in 0..pointer.double_click_ms / TICK + 2 {
             pointer.update(true, false, false, at(100.0, 100.0), TICK);
         }
     }
@@ -483,6 +490,36 @@ mod tests {
 
         assert_eq!(held, Some(vec![Verb::Grab]));
         assert!(pointer.grabbing());
+    }
+
+    /// The double-click interval is injected from the platform layer, so tests
+    /// can set it explicitly rather than depending on a constant.
+    #[test]
+    fn double_click_interval_is_injected() {
+        let mut fast = Pointer::with_double_click_ms(100);
+        let mut slow = Pointer::with_double_click_ms(1000);
+
+        assert_eq!(click(&mut fast), vec![Verb::Poke]);
+        assert_eq!(click(&mut fast), vec![Verb::Summon], "100ms is fast");
+
+        assert_eq!(click(&mut slow), vec![Verb::Poke]);
+        for _ in 0..5 {
+            slow.update(true, false, false, at(100.0, 100.0), TICK);
+        }
+        assert_eq!(click(&mut slow), vec![Verb::Summon], "1000ms is generous");
+
+        // Negative case: with a 100ms interval, a 200ms gap should produce two
+        // Pokes, not a Summon. This fails if the injected value is ignored.
+        let mut tight = Pointer::with_double_click_ms(100);
+        assert_eq!(click(&mut tight), vec![Verb::Poke]);
+        for _ in 0..13 {
+            tight.update(true, false, false, at(100.0, 100.0), TICK);
+        }
+        assert_eq!(
+            click(&mut tight),
+            vec![Verb::Poke],
+            "200ms gap exceeds 100ms interval"
+        );
     }
 
     /// Once held, the cursor is free to leave the art. That is the whole point:
