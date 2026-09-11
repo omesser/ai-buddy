@@ -40,7 +40,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::settings::form::{self, FormRow, RowOperation};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
@@ -387,32 +387,22 @@ impl SettingsWindow {
             .cloned();
         if let Some(form_id) = form_id {
             let controls = self.controls.borrow();
-            if let Some(Control::ComboBox(hwnd, _, _)) = controls.get(&form_id) {
-                let selected_text = unsafe {
-                    let index = SendMessageA(*hwnd, CB_GETCURSEL, 0, 0);
-                    if index < 0 {
-                        return;
-                    }
-                    let len = SendMessageA(*hwnd, CB_GETLBTEXTLEN, index as WPARAM, 0);
-                    if len <= 0 {
-                        return;
-                    }
-                    let mut buffer = vec![0u8; (len + 1) as usize];
-                    SendMessageA(
-                        *hwnd,
-                        CB_GETLBTEXT,
-                        index as WPARAM,
-                        buffer.as_mut_ptr() as LPARAM,
-                    );
-                    CString::from_vec_with_nul(buffer)
-                        .ok()
-                        .and_then(|cs| cs.into_string().ok())
-                };
-
-                if let Some(text) = selected_text {
+            if let Some(Control::ComboBox(hwnd, _, options)) = controls.get(&form_id) {
+                let index = unsafe { SendMessageA(*hwnd, CB_GETCURSEL, 0, 0) };
+                if index < 0 {
+                    return;
+                }
+                
+                let selected_title = options.get(index as usize).cloned();
+                
+                if let Some(title) = selected_title {
                     if let Some(field) = form::describe().text_write(&form_id) {
+                        let value = match field {
+                            TextField::Harness => form::harness_choice(&title),
+                            _ => title,
+                        };
                         let mut patch = SettingsPatch::default();
-                        patch.set_text(field, &text);
+                        patch.set_text(field, &value);
                         drop(controls);
                         self.apply(patch);
                     }
