@@ -97,10 +97,26 @@ node --test tests/*.test.js     # Renderer interpolation
 scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
 scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
+scripts/verify-settings-macos.sh  # macOS: Settings via Accessibility, not CI
 scripts/bench-rss.sh            # macOS: resident set over a run, per process
 ```
 
-Each checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
+Each overlay script checks platform-specific overlay configuration, frame loop physics, and click-through. Needs real desktop.
+
+`verify-settings-macos.sh` drives the AppKit Settings window through Accessibility. CI does not run it.
+
+Build the debug binary, then run the script from the repo root:
+
+```sh
+cargo build -p ai-buddy
+./scripts/verify-settings-macos.sh
+```
+
+The script looks for `target/debug/ai-buddy`. Set `AI_BUDDY_VERIFY_BIN` to use another binary. Set `AI_BUDDY_VERIFY_HARNESS` to pick a Harness other than `claude`.
+
+Grant Accessibility to the terminal or IDE that runs the script (System Settings > Privacy & Security > Accessibility). Without that grant the helper exits before it dumps the window.
+
+PASS means the AI tab order is `AI > AI source > Last user turn`, the HTTP rows are live on Off, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
 
 `bench-rss.sh` measures rather than checks: it samples the app and its WebKit
 helpers and prints RSS and peak footprint. What the numbers came out as, and
