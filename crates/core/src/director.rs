@@ -182,6 +182,19 @@ pub trait Completer {
 /// parsed text is a mark the buddy speaks (#610).
 pub const TRUNCATED_MARK: &str = "[response truncated]";
 
+/// `text` as it is written down: with the mark under it when the cap ended
+/// the turn, and untouched when it did not.
+///
+/// One place, so the session and the Chat history carry the same string and
+/// neither can be marked twice. Never applied to what the buddy speaks or to
+/// what `parse_proposal` reads (#610).
+pub fn marked(text: &str, truncated: bool) -> String {
+    match truncated {
+        true => format!("{text}\n{TRUNCATED_MARK}"),
+        false => text.to_string(),
+    }
+}
+
 /// One completed turn: what the model said, and whether it was still saying it
 /// when the cap stopped it.
 ///
@@ -1450,6 +1463,23 @@ mod tests {
 
             assert_eq!(near_miss, None, "{reply:?} names something declared");
         }
+    }
+
+    /// Written down once and only where a reader is meant to see it: the mark
+    /// is under the words, never spliced into them, and a line that was not
+    /// cut off is returned exactly as the model wrote it (#610).
+    #[test]
+    fn a_written_down_reply_carries_the_mark_under_it() {
+        assert_eq!(
+            marked("Mine now, and the desk is", true),
+            "Mine now, and the desk is\n[response truncated]"
+        );
+        assert_eq!(marked("Mine now.", false), "Mine now.");
+        assert_eq!(
+            marked(&marked("half a line", true), false),
+            marked("half a line", true),
+            "a line already written down is not marked a second time"
+        );
     }
 
     /// We are the ones who cut the model off, so what it wrote before the cap

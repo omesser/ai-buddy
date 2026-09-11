@@ -15,8 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 use ai_buddy_core::director::{
-    self, Completer, Context, ModelDirector, Pace, Reply, Wake, WakeRequest, TRUNCATED_MARK,
-    WAKE_EVERY,
+    self, Completer, Context, ModelDirector, Pace, Reply, Wake, WakeRequest, WAKE_EVERY,
 };
 use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
@@ -777,10 +776,7 @@ impl Endpoint {
                 // as the buddy's own line.
                 session.messages.push(Message {
                     role: "assistant",
-                    content: match reply.truncated {
-                        true => format!("{}\n{TRUNCATED_MARK}", reply.text),
-                        false => reply.text.clone(),
-                    },
+                    content: director::marked(&reply.text, reply.truncated),
                 });
                 Ok(reply)
             }

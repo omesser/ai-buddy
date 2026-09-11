@@ -530,8 +530,10 @@ async function start() {
         return;
       }
       // Before the row is drawn, so one turn's mark is never read against the
-      // next turn's words.
-      if (payload.said) {
+      // next turn's words. Live turns only: a replayed line carries the
+      // moment it was said, and its row already reads `[response truncated]`
+      // — the strip is about the turn that just happened (#610).
+      if (payload.said && payload.at == null) {
         strip.answered(payload.truncated);
       }
       if (payload.busy) {

@@ -1211,10 +1211,20 @@ pub(crate) fn run_frame_loop(
                 let error = (applied && !responded).then(harness::last_error).flatten();
                 if answering_chat || unasked {
                     let reacting_to = unasked.then(|| reacting_to.clone()).flatten();
+                    // The mark goes into the remembered line, once, here:
+                    // what the Chat surface draws is the record of the turn,
+                    // and a reader of it sees where the model was stopped.
+                    // The bubble's own copy stays the model's words with the
+                    // mark drawn under them, and the Behavior parser has
+                    // already read the text by now (#610).
+                    let remembered = frame
+                        .dialogue
+                        .as_deref()
+                        .map(|line| director::marked(line, truncated));
                     session_log::remember_them(
                         &app,
                         &live.id,
-                        frame.dialogue.clone(),
+                        remembered.clone(),
                         reacting_to.clone(),
                         SystemTime::now(),
                         truncated,
@@ -1223,7 +1233,7 @@ pub(crate) fn run_frame_loop(
                         chat_label(&live.id),
                         CHAT_EVENT,
                         ChatReply {
-                            said: frame.dialogue.clone(),
+                            said: remembered,
                             busy: false,
                             reacting_to,
                             you: false,
