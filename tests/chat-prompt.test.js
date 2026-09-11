@@ -11,6 +11,15 @@ import { test } from "node:test";
 
 const js = readFileSync(new URL("../src/chat.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../src/chat.html", import.meta.url), "utf8");
+const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
+
+// The `.prompt textarea` block only — not `::placeholder` / `:focus-visible`,
+// and not a comment that happens to name the same properties.
+function promptTextareaRule(source) {
+  const match = source.match(/\.prompt textarea\s*\{([^}]+)\}/);
+  assert.ok(match, "the Prompt tab's textarea has no rule of its own");
+  return match[1].replace(/\/\*[\s\S]*?\*\//g, "");
+}
 
 // Every event this window listens for, in the order it wires them.
 const LISTENED = [...js.matchAll(/addEventListener\(\s*"([a-z-]+)"/g)].map(([, name]) => name);
@@ -57,5 +66,22 @@ test("the tab shows the two authored layers and not the assembled payload", () =
     html,
     /You may propose one of these behaviors/,
     "the assembled Character Prompt stays inspectable in settings, not here",
+  );
+});
+
+test("an empty Instance Prompt field keeps rows and matches the Personality block", () => {
+  const rule = promptTextareaRule(css);
+
+  assert.match(
+    rule,
+    /align-self:\s*start/,
+    "grid stretch otherwise zeros rows on an empty replaced textarea",
+  );
+  assert.match(rule, /width:\s*100%/, "as wide as the frozen Personality block");
+  assert.match(rule, /min-width:\s*0/, "so the grid item can shrink to that column");
+  assert.match(
+    rule,
+    /min-height:\s*calc\(\s*1\.5em\s*\*\s*3\s*\+\s*20px\s*\)/,
+    "empty field cannot collapse below about three lines of copy",
   );
 });
