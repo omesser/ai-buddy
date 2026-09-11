@@ -1269,26 +1269,39 @@ fn view_of(session: &Arc<Mutex<Option<SettingsSession>>>) -> Option<SettingsView
 
 /// Look up a row's frozen state in the form description.
 fn row_frozen(description: &form::FormDescription, id: &str) -> Option<bool> {
-    description.sections().flat_map(|s| &s.rows).find_map(|row| {
-        match row {
-            form::FormRow::Checkbox { id: row_id, frozen, .. }
-            | form::FormRow::TextField { id: row_id, frozen, .. }
-            | form::FormRow::SecureField { id: row_id, frozen, .. }
-            | form::FormRow::Popup { id: row_id, frozen, .. } if row_id == id => Some(*frozen),
+    description
+        .sections()
+        .flat_map(|s| &s.rows)
+        .find_map(|row| match row {
+            form::FormRow::Checkbox {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::TextField {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::SecureField {
+                id: row_id, frozen, ..
+            }
+            | form::FormRow::Popup {
+                id: row_id, frozen, ..
+            } if row_id == id => Some(*frozen),
             form::FormRow::Composite { controls, .. } => {
                 controls.iter().find_map(|control| match control {
-                    form::CompositeControl::Popup { id: control_id, frozen, .. }
-                    | form::CompositeControl::Button { id: control_id, frozen, .. }
-                        if control_id == id =>
-                    {
-                        Some(*frozen)
+                    form::CompositeControl::Popup {
+                        id: control_id,
+                        frozen,
+                        ..
                     }
+                    | form::CompositeControl::Button {
+                        id: control_id,
+                        frozen,
+                        ..
+                    } if control_id == id => Some(*frozen),
                     _ => None,
                 })
             }
             _ => None,
-        }
-    })
+        })
 }
 
 /// The Director tab as the window holds it right now.
