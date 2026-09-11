@@ -67,8 +67,6 @@ const CB_ADDSTRING: u32 = 0x0143;
 const CB_RESETCONTENT: u32 = 0x014B;
 const CB_SETCURSEL: u32 = 0x014E;
 const CB_GETCURSEL: u32 = 0x0147;
-const CB_GETLBTEXT: u32 = 0x0148;
-const CB_GETLBTEXTLEN: u32 = 0x0149;
 const CBN_SELCHANGE: u16 = 1;
 
 thread_local! {
@@ -392,9 +390,9 @@ impl SettingsWindow {
                 if index < 0 {
                     return;
                 }
-                
+
                 let selected_title = options.get(index as usize).cloned();
-                
+
                 if let Some(title) = selected_title {
                     if let Some(field) = form::describe().text_write(&form_id) {
                         let value = match field {
