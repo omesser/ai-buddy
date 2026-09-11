@@ -1752,7 +1752,7 @@ pub struct Answered {
     /// of. `None` on every other reply.
     pub near_miss: Option<String>,
     /// The cap ended this turn, so what was said is as far as the model got.
-    /// Marked where the turn is drawn (#610).
+    /// The line the Chat surface remembers is marked with it (#610).
     pub truncated: bool,
 }
 

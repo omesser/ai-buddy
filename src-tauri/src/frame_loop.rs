@@ -653,7 +653,6 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
-                            truncated: false,
                         },
                     );
                     continue;
@@ -680,7 +679,6 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
-                            truncated: false,
                         },
                     );
                     continue;
@@ -703,7 +701,6 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
-                            truncated: false,
                         },
                     );
                     continue;
@@ -1227,7 +1224,6 @@ pub(crate) fn run_frame_loop(
                         remembered.clone(),
                         reacting_to.clone(),
                         SystemTime::now(),
-                        truncated,
                     );
                     let _ = app.emit_to(
                         chat_label(&live.id),
@@ -1239,7 +1235,6 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error,
-                            truncated,
                         },
                     );
                 }
@@ -1320,7 +1315,6 @@ pub(crate) fn run_frame_loop(
                                         you: false,
                                         at: None,
                                         error: None,
-                                        truncated: false,
                                     },
                                 );
                             }
@@ -1553,17 +1547,12 @@ pub(crate) fn run_frame_loop(
                 });
 
                 let owner = bubble_owner((frame.position.x, frame.position.y), &displays.frames);
-                let carried = super::carry_line(
+                let dialogue = super::carry_line(
                     &mut live.spoken,
                     frame.dialogue.as_deref(),
-                    truncated,
                     owner,
                     Instant::now(),
                 );
-                let (dialogue, cut_off) = match carried {
-                    Some((line, cut_off)) => (Some(line), cut_off),
-                    None => (None, false),
-                };
 
                 placed.push(Placed {
                     id: live.id.clone(),
@@ -1575,7 +1564,6 @@ pub(crate) fn run_frame_loop(
                     frame_index: drawn.index,
                     mirror: if drawn.mirrored { -1 } else { 1 },
                     dialogue,
-                    truncated: cut_off,
                     thinking,
                     cue: frame.cue,
                     owner,
@@ -1748,7 +1736,6 @@ pub(crate) fn run_frame_loop(
                             frame_index: instance.frame_index,
                             mirror: instance.mirror,
                             dialogue: instance.dialogue.clone(),
-                            truncated: instance.truncated,
                             thinking: instance.thinking,
                             // Every overlay draws the art; one draws the
                             // bubble (#178, `bubble_owner`), and `forOverlay`

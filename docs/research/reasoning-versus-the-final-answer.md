@@ -519,10 +519,13 @@ spike's to decide, and the recommendation above stands without it.
 
   **Overruled when it shipped (#610, #614).** A `length` finish that wrote
   text is refused as a *turn* — never a success, never retried, the cap named
-  in the Action Log — and still shown: the Behavior is played, the words are
-  said, and both surfaces mark the reply `[response truncated]`. We are the
-  ones who cut the model off, so what it managed to write is not thrown away.
-  The empty case is unchanged, and is silence.
+  in the Action Log — and still shown: the Behavior is played and the words
+  are said. We are the ones who cut the model off, so what it managed to write
+  is not thrown away. The reply is written down as `[response truncated]`
+  under the words, in the session the next turn is built from and in the Chat
+  history, so a reader and the model both see where it stopped; what the buddy
+  speaks stays the model's own words. The empty case is unchanged, and is
+  silence.
 - Any server that marks a completed reply with a `finish_reason` other than
   `stop` or `length` (`tool_calls`, `content_filter`) is unchanged, since
   only `length` is refused.

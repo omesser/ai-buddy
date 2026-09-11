@@ -455,12 +455,3 @@ test("a truncated reply is spoken without the mark visible", () => {
     "the next whole line is not marked with the last one's mark",
   );
 });
-
-// A losing overlay draws no bubble, so it must not be handed the mark either
-// — it would arm nothing and mean nothing there (#178).
-test("an overlay that does not own the bubble is told no mark", () => {
-  const stripped = forOverlay({ dialogue: "hi", truncated: true, bubble: false });
-
-  assert.equal(stripped.dialogue, null);
-  assert.equal(stripped.truncated, false);
-});
