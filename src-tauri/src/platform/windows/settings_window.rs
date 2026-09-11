@@ -406,8 +406,7 @@ impl SettingsWindow {
                     );
                     CString::from_vec_with_nul(buffer)
                         .ok()
-                        .and_then(|cs| cs.to_str().ok())
-                        .map(|s| s.to_string())
+                        .and_then(|cs| cs.into_string().ok())
                 };
 
                 if let Some(text) = selected_text {
