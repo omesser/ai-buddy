@@ -564,17 +564,17 @@ fn http_row_parts(
         return (
             label.to_string(),
             true,
-            Some("Not in use: a Harness is the Completer".to_string()),
+            Some("Not in use: a Harness is the Model API".to_string()),
         );
     }
     let (label, frozen, mut status) = env_row_parts(label, var);
     if configured {
         let status_text = match status {
             Some(s) => format!(
-                "{}; not in use until source is Model API: a Harness is still the Completer",
+                "{}; not in use until source is Model API: a Harness is still the AI brain",
                 s
             ),
-            None => "Not in use until source above is Model API: a Harness is still the Completer"
+            None => "Not in use until source above is Model API: a Harness is still the AI brain"
                 .to_string(),
         };
         status = Some(status_text);
@@ -625,7 +625,7 @@ fn director_sections() -> Vec<FormSection> {
         FormSection {
             heading: "AI".to_string(),
             comment: Some("Control whether the buddy improvises, and how often it starts a conversation on its own.".to_string()),
-            disclosure: Some("The buddy can run on static weights (no model calls) or with a Completer (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP Completer. An attached Harness that answers becomes the \"AI brain\".".to_string()),
+            disclosure: Some("The buddy can run on static weights (no model calls) or with a Model API (the HTTP endpoint below, or an attached Harness). AI on with no Harness uses the HTTP endpoint. An attached Harness that answers becomes the \"AI brain\".".to_string()),
             status: None,
             rows: vec![
                 FormRow::Checkbox {
@@ -635,7 +635,7 @@ fn director_sections() -> Vec<FormSection> {
                     frozen: director_frozen,
                     help: Some("Lets the model pick what happens next.".to_string()),
                     comment: None,
-                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP Completer (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
+                    disclosure: Some("With this off, the buddy runs on static weights: predefined behaviors chosen by their declared weights, no model involved. With it on and no Harness attached, the HTTP endpoint (base URL, model, and key below) proposes behaviors and short lines. With it on and a Harness attached that answers, that Harness is the \"AI brain\" for every Instance.".to_string()),
                     status: director_status,
                 },
                 FormRow::Checkbox {
@@ -779,7 +779,7 @@ fn completer_source_section() -> FormSection {
     FormSection {
         heading: "AI source".to_string(),
         comment: Some("Choose which \"AI brain\" answers: Model API or an attached Harness.".to_string()),
-        disclosure: Some("Model API uses the HTTP Completer below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the Completer, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP Completer, and a Harness is attached at once, answering once its child is up.".to_string()),
+        disclosure: Some("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.".to_string()),
         status: None,
         rows: vec![
             FormRow::Popup {
@@ -789,7 +789,7 @@ fn completer_source_section() -> FormSection {
                 help: Some("Which \"AI brain\" answers for the buddy.".to_string()),
                 options: harness_options(),
                 frozen,
-                disclosure: Some("Model API: the HTTP Completer below. Harness · {name}: starts that Harness and makes it the Completer. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
+                disclosure: Some("Model API: the HTTP endpoint below. Harness · {name}: starts that Harness and makes it the AI brain. Harness · Custom: the command line below. The line below this row shows what is attached and whether it is signed in.".to_string()),
                 status: source_status,
             },
             FormRow::TextField {
@@ -807,7 +807,7 @@ fn completer_source_section() -> FormSection {
                 id: HARNESS_STATE_ID.to_string(),
                 label: None,
                 help: Some("Harness signs itself in - ai-buddy never asks for credentials.".to_string()),
-                disclosure: Some("ADR-0010: ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
+                disclosure: Some("ai-buddy holds no credential for the Harness. The Harness authenticates itself, and the login command this line may show is text: nothing here runs it for you. This line shows three states: not attached, attached but not signed in (with the login command), or attached and answering (with a session UUID).".to_string()),
                 status: None,
             },
         ],
@@ -1107,7 +1107,7 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP Completer request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP Completer's alone (max_tokens); a Harness decides its own reply length.".to_string()),
+            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length.".to_string()),
             status: None,
             rows: vec![
                 FormRow::TextField {
@@ -1128,7 +1128,7 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorMaxTokens,
                     frozen: max_tokens_frozen,
                     batched: false,
-                    help: Some("HTTP Completer only. Harness decides its own.".to_string()),
+                    help: Some("HTTP endpoint only. Harness decides its own.".to_string()),
                     disclosure: None,
                     status: max_tokens_status,
                 },
@@ -1137,7 +1137,7 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Harness attachment".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, else this app on --mcp-stdio).".to_string()),
+            disclosure: Some("Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).".to_string()),
             status: None,
             rows: vec![
                 FormRow::TextField {
@@ -1154,7 +1154,7 @@ fn development_sections() -> Vec<FormSection> {
                 FormRow::TextField {
                     id: MCP_BIN_ID.to_string(),
                     label: Some(mcp_bin_label),
-                    placeholder: "beside the app, else this app on --mcp-stdio".to_string(),
+                    placeholder: "beside the app, or this app as its own MCP server".to_string(),
                     writes: TextField::McpBin,
                     frozen: mcp_bin_frozen,
                     batched: false,
@@ -2323,7 +2323,7 @@ mod tests {
                 let (label, frozen, status) = http_row_parts(label, var, false, false);
                 assert!(
                     !frozen,
-                    "with nothing driving, {label:?} is the only Completer left"
+                    "with nothing driving, {label:?} is the only Model API left"
                 );
                 if let Some(status) = status {
                     assert!(!status.contains("not in use"));

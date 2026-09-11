@@ -203,7 +203,7 @@ fn harness_in_force(settings: &Settings) -> (String, String) {
 fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
     match harness {
         None => {
-            "Not attached. The HTTP Completer below is the Director's \"AI brain\".".to_string()
+            "Not attached. The HTTP endpoint below is the AI brain.".to_string()
         }
         Some(attached) => match &attached.login {
             Some(login) => format!(
@@ -225,9 +225,9 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // now rather than at the next launch, so the wait is bounded by
             // the user rather than by a relaunch.
             None if !attached.alive => format!(
-                "{} is set but not running, so the Director is on static weights until it \
-                 answers. It stays the Completer while it is set; Model API below hands the HTTP \
-                 rows back, and takes effect at once.",
+                "{} is set but not running, so the AI runs on static weights until it \
+                 answers. It stays the AI brain while it is set; Model API below hands the HTTP \
+                 endpoint back, and takes effect at once.",
                 attached.name
             ),
             None => match &attached.session_id {
@@ -3624,8 +3624,8 @@ mod tests {
             "the line has to name the pick that ends the wait, got {line:?}"
         );
         assert!(
-            !line.contains("is the Director's \"AI brain\""),
-            "the dead handle is still the Completer; the HTTP rows are not, got {line:?}"
+            !line.contains("is the AI brain"),
+            "the dead handle is still the AI brain; the HTTP rows are not, got {line:?}"
         );
     }
 
