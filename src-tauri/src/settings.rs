@@ -338,9 +338,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
                 .to_string(),
         ),
         "pi" => (
-            format!(
-                "URL:   {url}\nToken: Bearer {token}"
-            ),
+            format!("URL:   {url}\nToken: Bearer {token}"),
             "Point Pi at that URL over Streamable HTTP and send the token as \
              `Authorization: Bearer <token>`. Configuration depends on which Pi client you're \
              using; check its documentation for MCP server registration."
