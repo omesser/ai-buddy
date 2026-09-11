@@ -679,21 +679,13 @@ body {
   outline-offset: 2px;
 }
 
-/* The status bar: instrument panel, not conversation. Monospaced and dim so
-   the eye passes over it on the way to the log, and one line whatever it is
-   asked to draw — it sits under a log that scrolls, and a bar that reflowed
-   would move the conversation every time a Behavior with a longer name
-   started. Truncation is the whole of the overflow story: nowrap here, an
-   ellipsis on the values, and the Behavior name is the one that ever needs
-   it. */
+/* The status bar: plain-language by default, with technical details behind a
+   disclosure. Instrument panel, not conversation. One line whatever it draws. */
 .bar {
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;
-  /* Eleven of these between twelve cells, so a point here is most of a
-     character there. Four buys the fixed vocabulary its margin at the 320
-     points the window may be dragged down to. */
-  gap: 4px;
+  gap: 8px;
   padding: 7px 16px 9px;
   border-top: 1px solid var(--chat-rule);
   background: var(--chat-fill-dim);
@@ -704,26 +696,73 @@ body {
   overflow: hidden;
 }
 
-.bar .v {
+/* Plain-language status: what the buddy is doing, without Primitive/State
+   vocabulary. The default reading for first-time users. */
+.bar .plain {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Advanced disclosure: the technical ladder demoted but not removed. Authors
+   can still see the full telemetry without hunting another window. */
+.bar .advanced {
+  flex: 0 0 auto;
+}
+
+.bar .advanced summary {
+  display: inline;
+  cursor: pointer;
+  color: var(--chat-ink-4);
+  list-style: none;
+  user-select: none;
+}
+
+.bar .advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.bar .advanced summary::before {
+  content: "▸ ";
+  display: inline-block;
+  width: 1ch;
+  transition: transform 0.1s;
+}
+
+.bar .advanced[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.bar .advanced summary:hover {
+  color: var(--chat-ink-2);
+}
+
+/* The ladder: Behavior › Primitive › Animation · State · facing · director ·
+   happened. Drawn only when the disclosure is open. */
+.bar .ladder {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.bar .ladder .v {
   flex: 0 0 auto;
 }
 
 /* The two values a Character Package names, and so the two that can be any
-   length. The only cells allowed to shrink: everything else on the line is
-   `flex: 0 0 auto` above and holds a closed vocabulary that `chat-status.js`
-   measures against the window, so what a long Behavior name costs is taken
-   from these two and never from the cell at the end of the line. A cap in
-   characters was the earlier answer and was wrong twice over — it cannot know
-   the width the user dragged the window to, and it left the fixed vocabulary
-   past it to be clipped by the window edge with no ellipsis to say so. */
-.bar .elide {
+   length. The only cells allowed to shrink: everything else is `flex: 0 0 auto`
+   above and holds a closed vocabulary that `chat-status.js` measures against
+   the window. */
+.bar .ladder .elide {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.bar .sep {
+.bar .ladder .sep {
   flex: 0 0 auto;
   color: var(--chat-ink-4);
 }

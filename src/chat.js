@@ -13,7 +13,7 @@
 
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { stampWhen } from "./chat-stamp.js";
-import { mindLine, statusCells } from "./chat-status.js";
+import { mindLine, plainStatus, statusCells } from "./chat-status.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -47,6 +47,9 @@ const cells = Object.fromEntries(
   ),
 );
 
+// The plain-language status element.
+const plainEl = document.getElementById("s-plain");
+
 // The WHO label on the Instance's own turns, filled in once the Shell says who
 // this window belongs to.
 let them = "";
@@ -68,6 +71,7 @@ function paint() {
   for (const [name, node] of Object.entries(cells)) {
     node.textContent = drawn[name];
   }
+  plainEl.textContent = plainStatus(status, left);
 }
 
 // Turns waiting on an answer, oldest first. The Shell answers them in the

@@ -46,6 +46,119 @@ export function statusCells(status, msLeft) {
   };
 }
 
+// Plain-language status for first-time readers: what the buddy is doing right
+// now, without Primitive/State vocabulary. Connects to the visual character's
+// behavior and actions rather than only chat state.
+export function plainStatus(status, msLeft) {
+  if (!status) {
+    return "Starting up…";
+  }
+  if (status.asking) {
+    return "Thinking…";
+  }
+
+  let parts = [];
+  const activity = humanizeActivity(status);
+  if (activity) {
+    parts.push(activity);
+  } else {
+    parts.push("Idle");
+  }
+
+  const cue = humanizeHappened(status.happened);
+  if (cue) {
+    parts.push(cue);
+  }
+
+  const wake = untilWake(msLeft);
+  if (wake !== "due" && wake !== NONE && !cue) {
+    parts.push(`next thought in ${wake}`);
+  }
+
+  return parts.join(" · ");
+}
+
+// Map behavior/animation/primitive to a human-readable activity phrase.
+function humanizeActivity(status) {
+  if (status.behavior) {
+    const readable = humanizeBehavior(status.behavior);
+    if (readable) {
+      return readable;
+    }
+  }
+
+  if (status.animation) {
+    const readable = humanizeAnimation(status.animation);
+    if (readable) {
+      return readable;
+    }
+  }
+
+  if (status.primitive && status.primitive !== NONE) {
+    const readable = humanizePrimitive(status.primitive);
+    if (readable) {
+      return readable;
+    }
+  }
+
+  return null;
+}
+
+// Turn behavior package names into readable text.
+function humanizeBehavior(behavior) {
+  if (!behavior || behavior === NONE) {
+    return null;
+  }
+
+  return cleanName(behavior);
+}
+
+// Turn animation names into readable text.
+function humanizeAnimation(animation) {
+  if (!animation || animation === NONE) {
+    return null;
+  }
+
+  return cleanName(animation);
+}
+
+// Turn primitive names into readable text.
+function humanizePrimitive(primitive) {
+  if (!primitive || primitive === NONE) {
+    return null;
+  }
+
+  return cleanName(primitive);
+}
+
+// Turn happened cues into readable phrases.
+function humanizeHappened(happened) {
+  if (!happened || happened === NONE) {
+    return null;
+  }
+
+  const map = {
+    poked: "just poked",
+    summoned: "just summoned",
+    thrown: "just thrown",
+    grabbed: "just grabbed",
+    dropped: "just dropped",
+    "spoken to": "just spoken to",
+  };
+
+  return map[happened] || `just ${happened}`;
+}
+
+// Clean a raw package name into something readable: underscores to spaces,
+// title case the first word.
+function cleanName(raw) {
+  if (!raw) {
+    return null;
+  }
+  const cleaned = raw.replace(/_/g, " ").replace(/-/g, " ");
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 // Which mind answers this window, for the header beside who you are talking
 // to (#474). A statement and never a control: ADR-0010 leaves the bar for what
 // our own layers are doing right now, and this is neither that nor something
