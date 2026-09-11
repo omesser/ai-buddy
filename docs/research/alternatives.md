@@ -48,7 +48,7 @@ CONTEXT.md vocabulary. ai-buddy column is honest about what is and is not built.
 
 | Capability | ai-buddy | Desktop Mate | VPet | Shimeji-ee | Desktop Pet | OpenPets | MateEngine |
 |---|---|---|---|---|---|---|---|
-| Harness integrations (ACP Completer) | ✅ (claude/hermes/opencode/grok named+verified; codex named unverified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Harness integrations (ACP Completer) | ✅ (claude/hermes/opencode/grok/pi named+verified; codex named unverified; + custom) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | MCP server (buddy-side tools) | ✅ (loopback HTTP + stdio fallback) | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | AI chat integration | ✅ (Summon chat surface shipped; #17 tracks polish/bugs) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (plugin + ctx.ai) | ✅ (built-in LLM) |
 | BYO model / API key | ✅ (Settings + env vars) | ❌ | ❌ | ❌ | ✅ (OpenAI) | ✅ (Anthropic/OpenAI/Ollama) | ❌ |
@@ -424,8 +424,8 @@ abilities, no promising actions). Not a chat-first app — Summon chat exists
 Director proposes a Behavior name and
 optional spoken line; Static weights when no Completer is configured, HTTP
 Completer stand-in with API key/local server, Harness ACP Completer shipped
-(#433 2026-09-07, named claude/hermes/opencode/codex/grok rows + custom ACP command
-per #556 2026-09-08; grok verified #587 2026-09-09; codex unverified). Each Instance has its own Director and
+(#433 2026-09-07, named claude/hermes/opencode/codex/grok/pi rows + custom ACP command
+per #556 2026-09-08; grok verified #587 2026-09-09; pi verified #628 2026-09-11; codex unverified). Each Instance has its own Director and
 seed — two of the same Character don't move or speak in lockstep. Each Instance
 has its own user-authored Instance Prompt layer (#531 2026-09-08, ADR-0012)
 strengthening multi-instance personality differentiation; personality.txt remains
@@ -441,8 +441,8 @@ package-authored.
    wake falls back to Static. Engine keeps the sprite alive while the model
    thinks. Static weights when no Completer configured; HTTP Completer stand-in
    with API key/local server; Harness ACP Completer shipped (#433 2026-09-07,
-   named claude/hermes/opencode/codex/grok rows + custom ACP command per #556
-   2026-09-08; grok verified #587 2026-09-09; codex unverified). No other desktop pet ships authored personality
+   named claude/hermes/opencode/codex/grok/pi rows + custom ACP command per #556
+   2026-09-08; grok verified #587 2026-09-09; pi verified #628 2026-09-11; codex unverified). No other desktop pet ships authored personality
    + Director-driven non-deterministic idle speech.
 
 2. **Spatial differentiators (shipped).** Ballistic physics (gravity arcs, throw,
@@ -451,8 +451,8 @@ package-authored.
 
 3. **Agent integrations (shipped).** Harness ACP Completer (#433 2026-09-07)
    speaks to a spawned Harness as the session Completer; named claude/hermes/
-   opencode/codex/grok rows + custom ACP command (#556 2026-09-08; grok verified
-   #587 2026-09-09; codex unverified
+   opencode/codex/grok/pi rows + custom ACP command (#556 2026-09-08; grok verified
+   #587 2026-09-09; pi verified #628 2026-09-11, Chat-only / no MCP forward; codex unverified
    until smoked, same bar as opencode). MCP server shipped (#117/#497 era +
    #491 2026-09-08) serving loopback HTTP so Harness `speak` lands on screen;
    `ai-buddy-mcp` stdio remains fallback. Summon chat surface shipped; #17 tracks polish/bugs. OpenPets
@@ -490,8 +490,8 @@ package-authored.
 - **~** = documented not shipped (MateEngine
   macOS PR #551 open) OR partial (Shimeji-ee/OpenPets physics kind: gravity but
   not ballistic Perch riding) OR unverified (ai-buddy codex Harness row per #556
-  standing unverified until smoked; grok verified #587).
-- **❌** = not found in cited sources as of 2026-09-10.
+  standing unverified until smoked; grok verified #587; pi verified #628).
+- **❌** = not found in cited sources as of 2026-09-11.
 - Alternative columns are vendor claims unless a review/issue/Steam page is
   cited. Desktop Pet has vendor-only evidence (no independent reviews). MateEngine
   has Steam 974 reviews 97% + GitHub 3,532 stars.
@@ -499,7 +499,7 @@ package-authored.
 ## Sources
 
 Capabilities marked ✅, ~, or ❌ for ai-buddy are verified against docs/SPEC.md,
-DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 10, 2026.
+DESIGN.md, README.md, ADR-0008, and `git log` on main as of September 11, 2026 (Harness `pi` named+verified per #628).
 Similar projects verified against Steam pages (Desktop Mate [App ID
 3301060](https://store.steampowered.com/app/3301060/Desktop_Mate/) English
 reviews Mixed 61% of 5,278; VPet-Simulator [App ID
