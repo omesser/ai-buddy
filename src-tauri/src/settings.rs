@@ -258,34 +258,36 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 /// made of.
 fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
     match harness {
-        // The remove is not optional and is the reason this is two lines:
-        // Claude Code answers a re-add of an existing name by keeping the old
-        // URL and token and exiting 0 (#580), and both of ours change every
-        // launch. `-s project` is deliberately absent - it writes a
-        // checked-in `.mcp.json`, which would commit the token.
+        // The remove is not optional: Claude Code answers a re-add of an
+        // existing name by keeping the old URL and token and exiting 0 (#580,
+        // #644), and both of ours change every launch. `-s project` is
+        // deliberately absent - it writes a checked-in `.mcp.json`, which would
+        // commit the token.
         "claude" => (
             format!(
                 "claude mcp remove -s user ai-buddy 2>/dev/null\n\
                  claude mcp add -s user --transport http ai-buddy \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
-            "Run both lines in a terminal, then restart claude. The remove is not \
-             optional: re-adding a name Claude Code already knows keeps the old URL \
-             and token and reports success. `claude mcp list` says whether it connected."
+            "Run both lines in a terminal, then exit your Claude session and start a \
+             new one with `claude`. The remove is not optional: re-adding a name Claude \
+             Code already knows keeps the old URL and token and reports success. `claude \
+             mcp list` says whether it connected."
                 .to_string(),
         ),
-        // The launch flags rather than `config.toml`, because they write
-        // nothing: there is no stale entry to clean up next launch.
+        // Config fragment rather than launch flags: the URL and token are new
+        // every launch, so reconfiguration is always required. mcpServer/refresh
+        // picks up config changes mid-session (#644).
         "codex" => (
             format!(
-                "codex -c 'mcp_servers.ai_buddy.url=\"{url}\"' \
-                 -c 'mcp_servers.ai_buddy.http_headers.Authorization=\"Bearer {token}\"'"
+                "[mcp_servers.ai-buddy]\n\
+                 url = \"{url}\"\n\
+                 headers = {{ \"Authorization\" = \"Bearer {token}\" }}"
             ),
-            "Starts codex with the server attached and writes nothing to disk. The \
-             `~/.codex/config.toml` equivalent is `url` plus `http_headers` under \
-             `[mcp_servers.ai_buddy]`; `bearer_token` is rejected there. `codex mcp get \
-             ai_buddy` reports. This is the one shape #580 could not run, so it is \
-             documentation rather than a verified command."
+            "A fragment for `~/.codex/config.toml`, not a command. Add or update the \
+             `[mcp_servers.ai-buddy]` entry, then run `mcpServer/refresh` from your \
+             Codex session to pick up the change. If `mcpServer/refresh` is unavailable, \
+             restart your Codex session."
                 .to_string(),
         ),
         "grok" => (
@@ -294,8 +296,8 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
-             after a relaunch is enough. A live session picks it up from `/mcps` then \
-             `r`. `grok mcp doctor ai-buddy` reports."
+             after a relaunch is enough. Then in your live Grok session, run `/mcps` and \
+             press `r` to reload. `grok mcp doctor ai-buddy` reports."
                 .to_string(),
         ),
         "hermes" => (
@@ -306,42 +308,51 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
                  \x20   headers:\n\
                  \x20     Authorization: \"Bearer {token}\""
             ),
-            "A fragment for `config.yaml`, not a command. If it already has \
+            "A fragment for `~/.hermes/config.yaml`, not a command. If it already has \
              `mcp_servers:`, paste only the indented `ai-buddy:` block under it, and keep \
-             the indentation exactly. hermes reloads within five seconds, so no restart. \
+             the indentation exactly. Then run `/reload-mcp` in your Hermes session. \
              `hermes mcp test ai-buddy` reports."
                 .to_string(),
         ),
-        // `"oauth": false` is why this is the JSON and not the one-line
-        // `opencode mcp add`, which cannot express it: `mcp_http` answers a
-        // bad token with a bare 401 and no `WWW-Authenticate`, and opencode's
-        // SDK only starts OAuth discovery when that header is there (#580).
+        // V2 config uses mcp.servers.<name>, not top-level mcp.<name>, and
+        // type: http rather than type: remote. `disabled` replaces `enabled`.
         "opencode" => (
             format!(
                 "{{\n\
-                 \x20 \"$schema\": \"https://opencode.ai/config.json\",\n\
                  \x20 \"mcp\": {{\n\
-                 \x20   \"ai-buddy\": {{\n\
-                 \x20     \"type\": \"remote\",\n\
-                 \x20     \"url\": \"{url}\",\n\
-                 \x20     \"enabled\": true,\n\
-                 \x20     \"oauth\": false,\n\
-                 \x20     \"headers\": {{ \"Authorization\": \"Bearer {token}\" }}\n\
+                 \x20   \"servers\": {{\n\
+                 \x20     \"ai-buddy\": {{\n\
+                 \x20       \"type\": \"http\",\n\
+                 \x20       \"url\": \"{url}\",\n\
+                 \x20       \"headers\": {{\n\
+                 \x20         \"Authorization\": \"Bearer {token}\"\n\
+                 \x20       }}\n\
+                 \x20     }}\n\
                  \x20   }}\n\
                  \x20 }}\n\
                  }}"
             ),
-            "A fragment for `opencode.json`, not a command. With a file already there, \
-             merge the `mcp` key rather than replacing it - an unknown top-level key is a \
-             refused startup, not a degraded config. Then restart opencode; `opencode mcp \
-             list` reports."
+            "A fragment for `opencode.jsonc`, not a command. With a file already there, \
+             merge the `mcp.servers` content rather than replacing the entire config. Then \
+             run `/reload` in your OpenCode session. `opencode mcp list` reports."
                 .to_string(),
         ),
         "pi" => (
-            format!("URL:   {url}\nToken: Bearer {token}"),
-            "Point Pi at that URL over Streamable HTTP and send the token as \
-             `Authorization: Bearer <token>`. Configuration depends on which Pi client you're \
-             using; check its documentation for MCP server registration."
+            format!(
+                "{{\n\
+                 \x20 \"mcpServers\": {{\n\
+                 \x20   \"ai-buddy\": {{\n\
+                 \x20     \"url\": \"{url}\",\n\
+                 \x20     \"headers\": {{\n\
+                 \x20       \"Authorization\": \"Bearer {token}\"\n\
+                 \x20     }}\n\
+                 \x20   }}\n\
+                 \x20 }}\n\
+                 }}"
+            ),
+            "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
+             command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
+             `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
                 .to_string(),
         ),
         _ => (
@@ -3906,7 +3917,7 @@ mod tests {
             );
             assert!(
                 snippet.contains("Bearer beef"),
-                "{harness} must carry the token once, prefixed here and not in the value"
+                "{harness} must carry Bearer and the token"
             );
             assert!(
                 !snippet.contains("Bearer Bearer"),
@@ -3930,19 +3941,34 @@ mod tests {
         );
     }
 
-    /// hermes and opencode paste into a file that may already exist, so their
-    /// box holds a fragment and the words beside it have to say so.
+    /// Codex, hermes, opencode, and pi paste into a file that may already
+    /// exist, so their box holds a fragment and the words beside it have to say
+    /// so. None should say they "start" or "launch" the harness.
     #[test]
     fn the_file_fragment_harnesses_say_they_are_fragments() {
-        for (harness, file) in [("hermes", "config.yaml"), ("opencode", "opencode.json")] {
-            let (_, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+        for (harness, file) in [
+            ("codex", "config.toml"),
+            ("hermes", "config.yaml"),
+            ("opencode", "opencode.jsonc"),
+            ("pi", ".mcp.json"),
+        ] {
+            let (snippet, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
             assert!(
                 steps.contains(file),
                 "{harness} must name the file it merges into, got {steps:?}"
             );
             assert!(
-                steps.to_lowercase().contains("merge") || steps.to_lowercase().contains("paste"),
+                steps.to_lowercase().contains("fragment")
+                    || steps.to_lowercase().contains("merge")
+                    || steps.to_lowercase().contains("add or update"),
                 "{harness} must say it is a fragment, got {steps:?}"
+            );
+            assert!(
+                !steps.to_lowercase().contains("starts ")
+                    && !steps.to_lowercase().contains("start ")
+                    && !snippet.to_lowercase().contains("start ")
+                    && !steps.to_lowercase().contains("launch"),
+                "{harness} must not say it starts/launches the harness, got snippet: {snippet:?}, steps: {steps:?}"
             );
         }
     }
