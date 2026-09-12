@@ -1823,7 +1823,18 @@ mod tests {
         let shaped = character_prompt(&moment, ["wave"], false);
         let blank = character_prompt(&moment, ["wave"], true);
 
-        for layer in ["a shy robot.", "Answer in haiku.", "always in character"] {
+        // Every sentence of the rules paragraph, not just its first: a later
+        // edit that leaves one of them behind has to fail here.
+        for layer in [
+            "a shy robot.",
+            "Answer in haiku.",
+            "always in character",
+            "model or an assistant",
+            "five short sentences",
+            "Vary",
+            "React to this moment",
+            "never promise",
+        ] {
             assert!(shaped.contains(layer), "the shaped opening: {shaped}");
             assert!(
                 !blank.contains(layer),

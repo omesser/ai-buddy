@@ -1304,9 +1304,7 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
-    /// Blank-AI mode: the Director sends no Character Prompt (#657). Off is
-    /// the shipped answer, and the only one a normal user wants — a buddy in
-    /// this mode has no personality, which is the product.
+    /// Blank-AI mode: the Director sends no Character Prompt (#657).
     pub director_blank: bool,
     /// Appear in screenshots and screen shares. True (default) means the buddy
     /// is capturable; false excludes it. macOS and Windows read it; the field

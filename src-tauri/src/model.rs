@@ -35,11 +35,8 @@ pub fn tracing() -> bool {
 }
 
 /// Blank-AI mode in force: the opening turn carries no Personality Prompt, no
-/// Instance prompt and no voice rules (#657).
-///
-/// Read where a `ModelDirector` is built, not where the prompt is assembled:
-/// the mode is fixed for a Director's life, and a toggle reaches a running one
-/// by rebuilding it, the way the timeout and the reply cap do.
+/// Instance prompt and no voice rules (#657). Read where a `ModelDirector` is
+/// built, for the reason `ModelDirector::blank` gives.
 pub fn blank() -> bool {
     crate::dev_flags::DIRECTOR_BLANK.is_on()
 }

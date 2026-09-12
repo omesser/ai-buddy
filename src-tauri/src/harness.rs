@@ -270,6 +270,19 @@ struct SavedSession {
     session_id: Option<String>,
 }
 
+impl SavedSlot {
+    /// The identity half of a remembered slot. One place, so the three sites
+    /// that match a slot against a key cannot drift apart when the key gains
+    /// a field — which is what it just did (#657).
+    fn key(&self) -> SessionKey {
+        SessionKey {
+            instance: self.instance.clone(),
+            character: self.character.clone(),
+            blank: self.blank,
+        }
+    }
+}
+
 /// Instance plus Character: two Instances of one Character do not share, and
 /// a retarget on one Instance is a different Character Prompt (ADR-0012).
 ///
@@ -942,23 +955,17 @@ impl Session {
         if saved.harness != self.launch.name {
             return None;
         }
-        saved.sessions.into_iter().find_map(|slot| {
-            (slot.instance == key.instance
-                && slot.character == key.character
-                && slot.blank == key.blank)
-                .then_some(slot.session_id)
-        })
+        saved
+            .sessions
+            .into_iter()
+            .find_map(|slot| (slot.key() == *key).then_some(slot.session_id))
     }
 
     fn drop_saved(&self, key: &SessionKey) {
         let Some(mut record) = self.read_saved() else {
             return;
         };
-        record.sessions.retain(|slot| {
-            slot.instance != key.instance
-                || slot.character != key.character
-                || slot.blank != key.blank
-        });
+        record.sessions.retain(|slot| slot.key() != *key);
         if let Ok(text) = serde_json::to_string(&record) {
             let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
         }
@@ -974,11 +981,7 @@ impl Session {
         record.harness = self.launch.name.clone();
         record.agent = self.inspect().agent;
         record.session_id = None;
-        match record.sessions.iter_mut().find(|slot| {
-            slot.instance == key.instance
-                && slot.character == key.character
-                && slot.blank == key.blank
-        }) {
+        match record.sessions.iter_mut().find(|slot| slot.key() == *key) {
             Some(slot) => slot.session_id = id.to_string(),
             None => record.sessions.push(SavedSlot {
                 instance: key.instance.clone(),

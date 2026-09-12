@@ -238,7 +238,7 @@ Every variable that names a switch reads the same words: `1`, `on`, `true` or `y
 
 ### Settings and Keyring
 
-Settings → AI persists base URL, model, and the first wake interval, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Completer timeout and reply cap, blank-AI mode, and — under Harness — the auth-retry interval and the MCP server binary. Editing any of the six retargets the running Director: the next wake reaches the new host on the new interval, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
+Settings → AI persists base URL, model, and the first wake interval, and stores the API key in the OS secret store (Keychain on macOS; Secret Service/keyutils on Linux). Settings → Development persists the Completer timeout and reply cap, blank-AI mode, and — under Harness — the auth-retry interval and the MCP server binary. Editing any of the seven retargets the running Director: the next wake reaches the new host on the new interval, and the session in flight is dropped rather than answered against the old one — a streaming call closes its connection, so the old host stops generating too. No restart.
 
 `cargo run` with those env vars unset uses the saved Completer. The env vars remain a one-process override, and the window says so: a field one of them owns shows that value, names the variable, and takes no edit, because the Director would ignore one. An exported `AI_BUDDY_DIRECTOR_API_KEY` also keeps the Keychain out of the launch entirely — the env has already decided the key, so nothing reads the store.
 
