@@ -14,7 +14,6 @@ import {
   forOverlay,
   wrapText,
   placeBubble,
-  TRUNCATED_MARK,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
 
