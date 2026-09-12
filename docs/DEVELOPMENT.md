@@ -72,7 +72,7 @@ Node tests the webview arithmetic that runs between Engine ticks. Any Node with 
 pre-commit install
 ```
 
-Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, `cargo clippy -D warnings`. Toolchain pinned in `rust-toolchain.toml`.
+Covers whitespace, YAML/JSON/TOML, spelling, shell (shfmt + shellcheck), `cargo fmt`, and one workspace `cargo clippy --workspace --all-targets -- -D warnings` (same shape as the Windows CI job). Toolchain pinned in `rust-toolchain.toml`.
 
 ## Trace Variables
 

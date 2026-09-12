@@ -109,15 +109,6 @@ repos:
         types: [rust]
         pass_filenames: false
 
-      # One hook per crate, so a failure names the crate it came from.
-      - id: cargo-clippy-core
-        name: cargo clippy (core)
-        entry: cargo clippy -p ai-buddy-core --all-targets --
-        args: [-D, warnings]
-        language: system
-        types: [rust]
-        pass_filenames: false
-
       # An ADR's number is how one decision cites another — `docs/agents/domain.md`
       # asks for "Contradicts ADR-0007", and source comments cite bare numbers
       # too. Two files sharing one made that string ambiguous twice before
@@ -130,36 +121,19 @@ repos:
         files: ^docs/adr/
         pass_filenames: false
 
-      - id: cargo-clippy-mcp-server
-        name: cargo clippy (mcp-server)
-        entry: cargo clippy -p ai-buddy-mcp-server --all-targets --
-        args: [-D, warnings]
-        language: system
-        types: [rust]
-        pass_filenames: false
-
-      - id: cargo-clippy-verify
-        name: cargo clippy (verify)
-        entry: cargo clippy -p ai-buddy-verify --all-targets --
-        args: [-D, warnings]
-        language: system
-        types: [rust]
-        pass_filenames: false
-
-      # Ungated, and that is the point: the shell builds on Linux too — the
-      # Tauri headers go in beside it in tests.yml — and while this hook
-      # skipped itself off Darwin, nothing denied warnings over
-      # `platform/x11/` or any `target_os = "linux"` arm. The Windows job
-      # denies them and never compiles those arms; Ubuntu compiled them under
-      # `cargo test`, which does not fail on a warning. #321.
+      # One workspace clippy — same shape as the Windows CI job. A single
+      # invocation is harder to forget a new member on, and cargo names the
+      # crate in diagnostics. Split per-package hooks used to exist so a
+      # failure named the crate in the pre-commit UI; that tax grew with every
+      # member (core / mcp-server / verify / shell) and a docs-only SKIP list.
       #
-      # A machine whose window layer the shell cannot link now fails here
-      # instead of printing "skipped". That is the honest answer: the error
-      # names the missing library, where a skip claimed the crate had been
-      # checked.
-      - id: cargo-clippy-shell
-        name: cargo clippy (shell)
-        entry: cargo clippy -p ai-buddy --all-targets --
+      # Still ungated for the shell on purpose (#321): workspace clippy must
+      # link `ai-buddy` on this machine so `platform/x11` / linux arms get
+      # `-D warnings`. A missing window-layer library fails here instead of a
+      # skip claiming the crate was checked.
+      - id: cargo-clippy
+        name: cargo clippy (workspace)
+        entry: cargo clippy --workspace --all-targets --
         args: [-D, warnings]
         language: system
         types: [rust]
