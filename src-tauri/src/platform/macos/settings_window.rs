@@ -2112,7 +2112,13 @@ mod tests {
                 .unwrap_or_default();
             assert_eq!(
                 headings,
-                ["AI", "AI source", "Model / API", "Last user turn"]
+                [
+                    "AI",
+                    "AI source",
+                    form::BYO_HEADING,
+                    "Model / API",
+                    "Last user turn"
+                ]
             );
         });
     }
