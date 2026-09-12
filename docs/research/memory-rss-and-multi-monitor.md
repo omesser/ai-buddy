@@ -267,21 +267,31 @@ other three runs agree — B reads 226 MB idle and 226 MB walking.
 
 ## Linux
 
-**Status: Method provided, measurements blocked by environment.**
+**Status: Method provided, measurement completed on Grok Bot box.**
 
-### Environment blocker
+### Results
 
-The Cloud Agent VM is headless with X11 but no DISPLAY authorization for GTK
-applications. Attempting to launch `target/debug/ai-buddy` fails with:
+One successful unattended run on Grok Bot box after the stderr-file fix
+(commit f27703b):
 
-```
-Authorization required, but no authorization protocol specified
-Failed to initialize GTK
-```
+| | |
+|---|---|
+| Machine | Grok Bot box |
+| Display | 1 (DISPLAY=:3) |
+| Scenario | 1 Instance, `bmo:One` |
+| Settle | 5s |
+| Sample duration | 30s |
+| Sample interval | 2s |
+| Samples | 15 |
+| **Total RSS** | **min 821 MB / median 823 MB / max 933 MB** |
+| Process count | 4 (ai-buddy + WebKitNetworkProcess + 2× WebKitWebProcess) |
+| Exit code | 0 |
 
-This is expected for a headless build VM. The Linux script and method are
-provided below for execution on a machine with a working display (desktop Linux
-or a VM with X11 forwarding configured).
+Per-process medians and peak RSS (VmHWM): ai-buddy 237/250 MB,
+WebKitNetworkProcess 61/60.5 MB, WebKitWebProcess 238/238 MB,
+WebKitWebProcess 287/396 MB.
+
+Total RSS includes the main ai-buddy process plus all WebKitGTK helper processes.
 
 ### How to run (on a machine with a display)
 
@@ -338,9 +348,9 @@ many displays the app detected. If WebKitGTK runs one WebContent process per
 overlay (as WebKit does on macOS), the per-display cost will be visible in the
 process split.
 
-### Expected results (when measurable)
+### Expected behavior (based on macOS findings)
 
-Based on the macOS findings:
+Based on the macOS findings (not yet validated at scale on Linux):
 
 - **Displays cost pixels, not count.** A 1920×1080 overlay may be 100–170 MB
   while a 2560×1440 overlay may be 200–300 MB, depending on WebKitGTK's backing
