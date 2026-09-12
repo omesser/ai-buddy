@@ -74,6 +74,17 @@ impl Endpoint {
         format!("Bearer {}", self.token)
     }
 
+    /// The URL and the raw token, for the Settings box that shows a user how
+    /// to register this endpoint with a Harness they run themselves (#577).
+    ///
+    /// A method for the same reason `authorization` is one: the token leaves
+    /// this type only where it is being handed to whoever will present it.
+    /// Raw rather than `Bearer `-prefixed because three of the five
+    /// registration templates add that prefix themselves.
+    pub fn registration(&self) -> (String, String) {
+        (self.url.clone(), self.token.clone())
+    }
+
     /// What a stdio shim needs to dial this endpoint, as environment
     /// variables for the child the Harness spawns (ADR-0026).
     ///
