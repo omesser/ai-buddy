@@ -62,6 +62,12 @@ pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
 pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
 
+/// How hard the model is asked to think. Owns the Development row the same
+/// way the two above own theirs, and takes any string: what a value means is
+/// the host's business, and on llama.cpp and oMLX the model's chat template's
+/// (#638).
+pub(crate) const REASONING_EFFORT: &str = "AI_BUDDY_DIRECTOR_REASONING_EFFORT";
+
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 
@@ -87,6 +93,13 @@ const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 /// left where it is.
 const LOCAL_MAX_TOKENS: u32 = 512;
 const HOSTED_MAX_TOKENS: u32 = 80;
+
+/// What an unset reasoning-effort row sends. Not "send nothing": #617
+/// measured `low` down from 7 empty `length` finishes in 40 wakes to 0, and
+/// from 10.9 to 3.8 seconds a wake, against `gpt-oss-20b-MXFP4-Q8` at the
+/// 512-token cap above. Omitting the field is still reachable without a
+/// control — a server that refuses it gets it dropped for the session.
+const DEFAULT_EFFORT: &str = "low";
 
 /// Last user turn and the config that produced it. #18 displays this.
 #[derive(Clone, Debug, Serialize)]
@@ -262,7 +275,10 @@ pub fn config_from(settings: &DirectorSettings) -> DirectorConfig {
 /// An enum rather than `Box<dyn Completer>` so `Endpoint`'s inherent methods
 /// (`url`, `origin`, the probe) keep their type.
 pub enum AnyCompleter {
-    Http(Endpoint),
+    // Boxed: an `Endpoint` carries the whole session and the agent, and the
+    // Harness arm is one `Arc`, so the enum would otherwise be moved around at
+    // the size of the larger arm.
+    Http(Box<Endpoint>),
     Harness(Arc<crate::harness::Session>),
 }
 
@@ -280,7 +296,9 @@ impl Completer for AnyCompleter {
 pub fn completer_from(settings: &DirectorSettings) -> Option<AnyCompleter> {
     match crate::harness::attached() {
         Some(session) => Some(AnyCompleter::Harness(session)),
-        None => endpoint_from(settings).map(AnyCompleter::Http),
+        None => endpoint_from(settings)
+            .map(Box::new)
+            .map(AnyCompleter::Http),
     }
 }
 
@@ -303,6 +321,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         model: settings.model.clone(),
         timeout: timeout_for(local),
         max_tokens: max_tokens_for(local),
+        effort: effort_for(),
         session: Mutex::new(Session::default()),
         streams: AtomicBool::new(true),
         takes_effort: AtomicBool::new(true),
@@ -524,6 +543,12 @@ fn max_tokens_for(local: bool) -> u32 {
     }
 }
 
+/// The reasoning effort in force. Decided in `dev_flags::seed`, as the
+/// timeout and the cap are; blank there is unset, and unset is `low`.
+fn effort_for() -> String {
+    crate::dev_flags::director_reasoning_effort().unwrap_or_else(|| DEFAULT_EFFORT.to_string())
+}
+
 /// What an empty Completer-timeout field means, in seconds.
 ///
 /// Both defaults, because `describe` builds the form without settings and so
@@ -540,6 +565,12 @@ pub(crate) fn timeout_placeholder() -> String {
 /// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
 pub(crate) fn max_tokens_placeholder() -> String {
     format!("{HOSTED_MAX_TOKENS} ({LOCAL_MAX_TOKENS} for a local server)")
+}
+
+/// What an empty reasoning-effort field means. One default here: the ask does
+/// not depend on where the Completer runs.
+pub(crate) fn effort_placeholder() -> String {
+    DEFAULT_EFFORT.to_string()
 }
 
 /// What an empty wake-interval field means, in seconds. One default here:
@@ -618,6 +649,12 @@ pub struct Endpoint {
     model: String,
     timeout: Duration,
     max_tokens: u32,
+    /// How hard to ask this host to think, verbatim. Baked in here rather
+    /// than read per call, like the timeout and the cap, so a settings change
+    /// reaches a running Director through `completer_retargets` (#638).
+    ///
+    /// Never empty: `effort_for` has already turned unset into `low`.
+    effort: String,
     /// Opening + replies, so a follow-up can be short. ADR-0008.
     session: Mutex<Session>,
     /// Does this host stream? Starts optimistic and only ever falls, once a
@@ -630,6 +667,11 @@ pub struct Endpoint {
     /// Does this host take `reasoning_effort`? Same shape as `streams`, and
     /// same reason: it starts optimistic, and only a server that names the
     /// field in a rejection ever turns it off (#612).
+    ///
+    /// About the field, never about the value, so a new `effort` does not
+    /// invalidate it — and it needs no reset path of its own: every Director
+    /// settings change that matters runs `completer_retargets`, which builds a
+    /// fresh `Endpoint` with this optimistic again (#638).
     takes_effort: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
     /// use-once [Agent]", so each wake would throw away the pooled connection
@@ -723,10 +765,14 @@ impl Endpoint {
                 break;
             }
             if tracing() {
+                // The value, not just the name: a host that takes `low` and
+                // refuses `high` latches the field off for the session, and
+                // this line is the only place that says which value cost it
+                // (#638).
                 eprintln!(
                     "director: {}; retrying without {}",
                     unsent.why(),
-                    field.name()
+                    dropped_field(field, &self.effort)
                 );
             }
             // A call dropped between two attempts must not become a fresh
@@ -840,6 +886,7 @@ impl Endpoint {
             self.max_tokens,
             wire,
             effort,
+            &self.effort,
         );
         let request = self
             .headers(self.agent.post(url), accept)
@@ -1344,6 +1391,7 @@ fn request_body(
     max_tokens: u32,
     wire: Wire,
     effort: bool,
+    level: &str,
 ) -> serde_json::Value {
     let input = if responses && session.len() == 1 {
         // xAI's first-request example is `input` as a string. Later turns
@@ -1370,8 +1418,12 @@ fn request_body(
             "max_output_tokens": max_tokens,
             "store": false,
             // grok-4.6 defaults to high: 16s and hundreds of think tokens
-            // for a two-line Behavior pick.
-            "reasoning": { "effort": "low" },
+            // for a two-line Behavior pick. The same setting drives both
+            // paths verbatim; only the spelling differs (#638). Unguarded by
+            // `Field::Effort`, whose reader looks for the chat-completions
+            // name — a value xAI refuses fails the wake to `StaticDirector`,
+            // as any other bad request on this path does.
+            "reasoning": { "effort": level },
         })
     } else {
         let mut chat = serde_json::json!({
@@ -1386,7 +1438,7 @@ fn request_body(
         // runs at a 512-token cap, and 0 in 20 with this field. It is not a
         // field every server accepts, which is what `Field::Effort` guards.
         if effort {
-            chat["reasoning_effort"] = serde_json::Value::String("low".to_string());
+            chat["reasoning_effort"] = serde_json::Value::String(level.to_string());
         }
         chat
     };
@@ -1394,6 +1446,20 @@ fn request_body(
         body["stream"] = serde_json::Value::Bool(true);
     }
     body
+}
+
+/// What a retry says it gave up, for `trace_director`.
+///
+/// The effort field names the value it carried. A host that takes `low` and
+/// refuses `high` latches `takes_effort` off for the session, `low` included,
+/// and this line is the only place that records which value cost it. The
+/// alternative — remembering which values a host takes — is a cache of a
+/// server's validation rules, and being wrong about that costs a wake (#638).
+fn dropped_field(field: Field, effort: &str) -> String {
+    match field {
+        Field::Stream => field.name().to_string(),
+        Field::Effort => format!("{}={effort}", field.name()),
+    }
 }
 
 /// Ceiling on a streamed reply, in bytes.
@@ -2396,6 +2462,7 @@ pub(crate) mod tests {
             model: "gemma4".to_string(),
             timeout: TIMEOUT,
             max_tokens: HOSTED_MAX_TOKENS,
+            effort: DEFAULT_EFFORT.to_string(),
             session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
             takes_effort: AtomicBool::new(true),
@@ -2502,6 +2569,31 @@ pub(crate) mod tests {
         assert!(
             seen.try_recv().is_err(),
             "and the second wake pays one POST, not two"
+        );
+    }
+
+    /// The row's value reaches the wire, not only `request_body`: the level
+    /// is baked into the `Endpoint` and `send` is what carries it (#638).
+    ///
+    /// `max` rather than a picker level, because the field is the setting and
+    /// nothing validates what is typed there.
+    #[test]
+    fn the_configured_effort_reaches_the_request_the_endpoint_sends() {
+        // Refusing `stream` and answering everything else: this endpoint is
+        // whole-body, so the stub sees no field it objects to.
+        let (url, seen) = server_refusing(Field::Stream);
+        let endpoint = Endpoint {
+            effort: "max".to_string(),
+            ..endpoint_at(&url)
+        };
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        endpoint.post(&url, "hello").expect("the stub answers");
+        let asked: serde_json::Value =
+            serde_json::from_str(&seen.recv().expect("the request")).expect("the request is JSON");
+        assert_eq!(
+            asked["reasoning_effort"], "max",
+            "the typed level goes out verbatim"
         );
     }
 
@@ -2985,6 +3077,7 @@ pub(crate) mod tests {
             HOSTED_MAX_TOKENS,
             Wire::Stream,
             false,
+            DEFAULT_EFFORT,
         );
         assert_eq!(streamed["stream"], true);
         let responses = request_body(
@@ -2994,6 +3087,7 @@ pub(crate) mod tests {
             HOSTED_MAX_TOKENS,
             Wire::Stream,
             false,
+            DEFAULT_EFFORT,
         );
         assert_eq!(responses["stream"], true, "the Responses path streams too");
 
@@ -3004,6 +3098,7 @@ pub(crate) mod tests {
             HOSTED_MAX_TOKENS,
             Wire::Whole,
             false,
+            DEFAULT_EFFORT,
         );
         assert!(
             whole.get("stream").is_none(),
@@ -3014,7 +3109,7 @@ pub(crate) mod tests {
     /// #612: the field is the one lever measured to change the empty-reply
     /// rate, and the retry is only honest if the second body drops it.
     #[test]
-    fn a_chat_request_asks_for_low_effort_and_the_fallback_does_not() {
+    fn a_chat_request_asks_for_the_effort_it_is_given_and_the_fallback_does_not() {
         let session = [Message {
             role: "user",
             content: "wave".to_string(),
@@ -3026,6 +3121,7 @@ pub(crate) mod tests {
             LOCAL_MAX_TOKENS,
             Wire::Stream,
             true,
+            DEFAULT_EFFORT,
         );
         assert_eq!(asked["reasoning_effort"], "low");
 
@@ -3036,6 +3132,7 @@ pub(crate) mod tests {
             LOCAL_MAX_TOKENS,
             Wire::Stream,
             false,
+            DEFAULT_EFFORT,
         );
         assert!(
             dropped.get("reasoning_effort").is_none(),
@@ -3049,12 +3146,88 @@ pub(crate) mod tests {
             HOSTED_MAX_TOKENS,
             Wire::Whole,
             true,
+            DEFAULT_EFFORT,
         );
         assert!(
             responses.get("reasoning_effort").is_none(),
             "the Responses path spells its effort under `reasoning`"
         );
         assert_eq!(responses["reasoning"]["effort"], "low");
+    }
+
+    /// One setting named "reasoning effort" that moved one of the two paths
+    /// would be the surprise, so the typed value goes out verbatim on both —
+    /// spelled `reasoning_effort` on chat-completions and `reasoning.effort`
+    /// on Responses. Nothing checks it against a list: llama.cpp and oMLX
+    /// hand the string to the model's chat template, so what is valid belongs
+    /// to the model file (#638).
+    #[test]
+    fn a_typed_effort_reaches_both_request_shapes_verbatim() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        for level in ["medium", "high", "max", "whatever-the-template-takes"] {
+            let chat = request_body(
+                "gpt-oss-20b",
+                &session,
+                false,
+                LOCAL_MAX_TOKENS,
+                Wire::Stream,
+                true,
+                level,
+            );
+            assert_eq!(chat["reasoning_effort"], level);
+
+            let responses = request_body(
+                "grok-4.6",
+                &session,
+                true,
+                HOSTED_MAX_TOKENS,
+                Wire::Whole,
+                true,
+                level,
+            );
+            assert_eq!(responses["reasoning"]["effort"], level);
+        }
+    }
+
+    /// Trap 2 of #638: the drop is left as it is, and made legible instead.
+    #[test]
+    fn the_retry_line_names_the_effort_value_it_gave_up() {
+        assert_eq!(
+            dropped_field(Field::Effort, "high"),
+            "reasoning_effort=high",
+            "the reader has to see which value cost them the field"
+        );
+        assert_eq!(
+            dropped_field(Field::Stream, "high"),
+            "stream",
+            "the stream field carries no effort value"
+        );
+    }
+
+    /// Unset is `low`, not "send nothing": omitting the field would give back
+    /// the 17.5% lost-wake rate #617 measured away.
+    #[test]
+    fn an_unset_effort_row_still_sends_low() {
+        tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(effort_for(), "low");
+
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_reasoning_effort: "   ".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(effort_for(), "low", "whitespace is blank is unset");
+
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_reasoning_effort: "high".to_string(),
+                ..crate::settings::Settings::default()
+            });
+            assert_eq!(effort_for(), "high");
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+        });
     }
 
     #[test]
@@ -3070,6 +3243,7 @@ pub(crate) mod tests {
             HOSTED_MAX_TOKENS,
             Wire::Whole,
             false,
+            DEFAULT_EFFORT,
         );
         assert_eq!(body["input"], "wave");
         assert_eq!(body["max_output_tokens"], 80);
@@ -3101,6 +3275,7 @@ pub(crate) mod tests {
             HOSTED_MAX_TOKENS,
             Wire::Whole,
             false,
+            DEFAULT_EFFORT,
         );
         assert_eq!(body["input"][2]["content"], "what just happened: thrown");
         assert!(body["input"].is_array());

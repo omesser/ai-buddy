@@ -87,6 +87,14 @@ static MAX_TOKENS: AtomicU32 = AtomicU32::new(0);
 static WAKE_SECS: AtomicU64 = AtomicU64::new(0);
 static AUTH_RETRY_SECS: AtomicU64 = AtomicU64::new(0);
 
+/// How hard the Completer is asked to think, as the variable or the file
+/// gives it. A `Mutex<String>` for the reason `MCP_BIN` is one: the value is
+/// any string a host or a chat template takes, not a number (#638).
+///
+/// Blank is unset, and `model::effort_for` turns unset into `low`. Storing
+/// the default here instead would make the row's placeholder a lie.
+static REASONING_EFFORT: Mutex<String> = Mutex::new(String::new());
+
 /// Where the stdio MCP server is, as the variable or the file gives it.
 ///
 /// A `Mutex` rather than an atomic because a path is not a number. Locked only
@@ -118,6 +126,14 @@ pub fn director_wake_secs() -> Option<u64> {
 pub fn harness_auth_retry_secs() -> Option<u64> {
     let secs = AUTH_RETRY_SECS.load(Ordering::Relaxed);
     (secs > 0).then_some(secs)
+}
+
+/// The reasoning effort in force, if one is set.
+pub fn director_reasoning_effort() -> Option<String> {
+    let effort = REASONING_EFFORT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    (!effort.is_empty()).then(|| effort.clone())
 }
 
 /// The stdio MCP server path in force, if one is set.
@@ -160,6 +176,7 @@ pub(crate) fn test_vars() -> Vec<&'static str> {
         .chain([
             model::TIMEOUT_SECS,
             model::MAX_TOKENS,
+            model::REASONING_EFFORT,
             model::WAKE_SECS,
             harness::AUTH_RETRY_SECS,
             harness::MCP_BIN,
@@ -207,6 +224,12 @@ pub fn seed(settings: &Settings) {
             .unwrap_or(0),
         Ordering::Relaxed,
     );
+    *REASONING_EFFORT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+        model::env_or_file(model::REASONING_EFFORT, &settings.director_reasoning_effort)
+            .trim()
+            .to_string();
     *MCP_BIN
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) =
@@ -305,6 +328,49 @@ mod tests {
             });
             assert_eq!(director_timeout_secs(), Some(45));
             assert_eq!(director_max_tokens(), Some(300));
+        });
+    }
+
+    /// The effort is a string, so blank is the only unset there is: no parse
+    /// can reject it, and nothing validates it against a list of levels.
+    #[test]
+    fn a_blank_effort_is_unset_and_anything_else_is_kept() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert_eq!(director_reasoning_effort(), None);
+
+            seed(&Settings {
+                director_reasoning_effort: "  ".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(director_reasoning_effort(), None, "whitespace is blank");
+
+            for typed in ["high", "max", "banana"] {
+                seed(&Settings {
+                    director_reasoning_effort: format!(" {typed} "),
+                    ..Settings::default()
+                });
+                assert_eq!(director_reasoning_effort(), Some(typed.to_string()));
+            }
+            seed(&Settings::default());
+        });
+    }
+
+    #[test]
+    fn an_exported_effort_outranks_the_file() {
+        model::tests::with_env(None, None, None, || {
+            let file = Settings {
+                director_reasoning_effort: "medium".to_string(),
+                ..Settings::default()
+            };
+            std::env::set_var(model::REASONING_EFFORT, "xhigh");
+            seed(&file);
+            std::env::remove_var(model::REASONING_EFFORT);
+            assert_eq!(director_reasoning_effort(), Some("xhigh".to_string()));
+
+            seed(&file);
+            assert_eq!(director_reasoning_effort(), Some("medium".to_string()));
+            seed(&Settings::default());
         });
     }
 

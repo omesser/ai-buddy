@@ -144,6 +144,12 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
                 &settings.harness_auth_retry_secs,
             ),
         ),
+        // Not a limit either: the app cannot know which values the user's
+        // host takes, so whatever was typed is shown back (#638).
+        (
+            form::DIRECTOR_REASONING_EFFORT_ID.to_string(),
+            model::env_or_file(model::REASONING_EFFORT, &settings.director_reasoning_effort),
+        ),
         // Not a limit: any path the user typed is shown back verbatim, because
         // a path this machine has not got yet is still the one to keep.
         (
@@ -488,6 +494,13 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
+        // So is the reasoning effort, and the rebuild is also what puts
+        // `Endpoint::takes_effort` back to optimistic, which is the whole of
+        // that flag's reset path (#638).
+        || patch
+            .director_reasoning_effort
+            .as_ref()
+            .is_some_and(|effort| effort != &settings.director_reasoning_effort)
         // Every Completer source change retargets since #500, Off and a
         // different Harness alike: `harness::retarget` has moved the handle by
         // the time the payload is built, and `completer_from` reads it.
@@ -888,6 +901,7 @@ pub struct SettingsPatch {
     pub director_model: Option<String>,
     pub director_timeout_secs: Option<String>,
     pub director_max_tokens: Option<String>,
+    pub director_reasoning_effort: Option<String>,
     pub director_wake_secs: Option<String>,
     pub harness: Option<String>,
     pub harness_command: Option<String>,
@@ -949,6 +963,7 @@ pub enum TextField {
     DirectorModel,
     DirectorTimeoutSecs,
     DirectorMaxTokens,
+    DirectorReasoningEffort,
     DirectorWakeSecs,
     DirectorApiKey,
     /// The Completer source popup. Written as a title and stored as the value
@@ -1002,6 +1017,11 @@ impl SettingsPatch {
             TextField::DirectorModel => self.director_model = Some(value.to_string()),
             TextField::DirectorTimeoutSecs => self.director_timeout_secs = Some(value.to_string()),
             TextField::DirectorMaxTokens => self.director_max_tokens = Some(value.to_string()),
+            // Trimmed, not validated: a stray space around `high` is a typo,
+            // but `high` itself is only the user's host's business (#638).
+            TextField::DirectorReasoningEffort => {
+                self.director_reasoning_effort = Some(value.trim().to_string())
+            }
             TextField::DirectorWakeSecs => self.director_wake_secs = Some(value.to_string()),
             // The popup hands over its title; the file keeps the value
             // `harness::launch` reads, so Off is blank and Custom is `custom`.
@@ -1044,6 +1064,7 @@ impl fmt::Debug for SettingsPatch {
             .field("director_model", &self.director_model)
             .field("director_timeout_secs", &self.director_timeout_secs)
             .field("director_max_tokens", &self.director_max_tokens)
+            .field("director_reasoning_effort", &self.director_reasoning_effort)
             .field("director_wake_secs", &self.director_wake_secs)
             .field("harness", &self.harness)
             .field(
@@ -1132,6 +1153,9 @@ impl Settings {
         }
         if let Some(value) = patch.director_max_tokens {
             self.director_max_tokens = value;
+        }
+        if let Some(value) = patch.director_reasoning_effort {
+            self.director_reasoning_effort = value;
         }
         if let Some(value) = patch.director_wake_secs {
             self.director_wake_secs = value;
@@ -1255,6 +1279,10 @@ pub struct Settings {
     pub director_timeout_secs: String,
     /// Reply cap, in tokens. Empty means unset, as on the two above.
     pub director_max_tokens: String,
+    /// How hard to ask the model to think, sent verbatim on both inference
+    /// paths. Empty means unset, and unset sends `low` — not nothing, which
+    /// would give back the lost wakes #617 measured away (#638).
+    pub director_reasoning_effort: String,
     /// First ambient wait, in seconds. Empty means unset, and leaves
     /// `Pace::FIRST`. The Character's `model_base` and `model_power` grow the
     /// wait from here; this is only where it starts (#262).
@@ -1316,6 +1344,7 @@ impl Default for Settings {
             director_model: String::new(),
             director_timeout_secs: String::new(),
             director_max_tokens: String::new(),
+            director_reasoning_effort: String::new(),
             director_wake_secs: String::new(),
             harness: String::new(),
             harness_command: String::new(),
@@ -1565,6 +1594,7 @@ mod tests {
             director_model: "grok-4.6".into(),
             director_timeout_secs: "45".into(),
             director_max_tokens: "300".into(),
+            director_reasoning_effort: "high".into(),
             director_wake_secs: "300".into(),
             harness: "custom".into(),
             harness_command: "opencode acp".into(),
@@ -1865,6 +1895,7 @@ mod tests {
             director_model: String::new(),
             director_timeout_secs: String::new(),
             director_max_tokens: String::new(),
+            director_reasoning_effort: String::new(),
             director_wake_secs: String::new(),
             harness: String::new(),
             harness_command: String::new(),
@@ -2593,6 +2624,34 @@ mod tests {
         assert!(
             !completer_retargets(&settings, &patch),
             "presence of the same URL and model must not reset session history"
+        );
+    }
+
+    /// Trap 1 of #638: the level is baked into the `Endpoint`, so without a
+    /// clause here an Apply changes the file and never reaches the running
+    /// Director.
+    #[test]
+    fn a_changed_reasoning_effort_retargets() {
+        let settings = Settings {
+            director_reasoning_effort: "low".into(),
+            ..endpoint_settings()
+        };
+        let changed = SettingsPatch {
+            director_reasoning_effort: Some("high".into()),
+            ..SettingsPatch::default()
+        };
+        assert!(
+            completer_retargets(&settings, &changed),
+            "a new level only reaches the Director through a rebuild"
+        );
+
+        let same = SettingsPatch {
+            director_reasoning_effort: Some("low".into()),
+            ..SettingsPatch::default()
+        };
+        assert!(
+            !completer_retargets(&settings, &same),
+            "both windows commit on blur, so the same value is not an edit"
         );
     }
 

@@ -1897,7 +1897,8 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                     // `view.installed`", which would offer
                                     // Character packages as endpoints.
                                     form::CompositeControl::Popup { id, .. }
-                                        if id == form::DIRECTOR_BASE_URL_PICK_ID => {}
+                                        if id == form::DIRECTOR_BASE_URL_PICK_ID
+                                            || id == form::DIRECTOR_REASONING_EFFORT_PICK_ID => {}
                                     form::CompositeControl::Popup { id, frozen, .. } => {
                                         let combo_width = 100;
                                         // Disabled at creation for the same

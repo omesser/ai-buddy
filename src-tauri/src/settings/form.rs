@@ -339,6 +339,8 @@ pub const TRACE_ENGINE_ID: &str = "trace_engine";
 pub const CAPTURABLE_ID: &str = "capturable";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
 pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
+pub const DIRECTOR_REASONING_EFFORT_ID: &str = "director_reasoning_effort";
+pub const DIRECTOR_REASONING_EFFORT_PICK_ID: &str = "director_reasoning_effort_pick";
 pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
 pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
@@ -379,9 +381,10 @@ const ENDPOINTS: &[(&str, &str, &str)] = &[
     ("Hosted", "xAI", "https://api.x.ai"),
 ];
 
-/// The title the picker rests on for an endpoint it does not name. Picking it
-/// writes nothing: the field beside it is what a custom endpoint is.
-pub const ENDPOINT_CUSTOM: &str = "Custom";
+/// The title a fill-in-the-field picker rests on for a value it does not name
+/// — a base URL off the list, or a reasoning effort off it. Picking it writes
+/// nothing: the field beside it is what the custom value is.
+pub const PICKER_CUSTOM: &str = "Custom";
 
 fn endpoint_title_of(_group: &str, name: &str, url: &str) -> String {
     format!("{name} ({url})")
@@ -395,7 +398,7 @@ fn endpoint_title_of(_group: &str, name: &str, url: &str) -> String {
 /// first, the hosted ones after — because `localhost` in the URL beside the
 /// name already says which is which.
 pub fn endpoint_options() -> Vec<String> {
-    let mut options = vec![ENDPOINT_CUSTOM.to_string()];
+    let mut options = vec![PICKER_CUSTOM.to_string()];
     options.extend(
         ENDPOINTS
             .iter()
@@ -428,7 +431,45 @@ pub fn endpoint_title(base_url: &str) -> String {
         .iter()
         .find(|(_, _, url)| *url == base_url)
         .map(|(group, name, url)| endpoint_title_of(group, name, url))
-        .unwrap_or_else(|| ENDPOINT_CUSTOM.to_string())
+        .unwrap_or_else(|| PICKER_CUSTOM.to_string())
+}
+
+/// The three reasoning-effort levels every documented host takes.
+///
+/// Only three because only three are portable. OpenAI adds `none`,
+/// `minimal`, `xhigh` and `max`; xAI has `xhigh` but no `max`; Ollama has
+/// `max` but no `xhigh`; and llama.cpp and oMLX hand the string to the
+/// model's chat template, where the valid set belongs to the model file
+/// rather than to any spec. The field beside the picker is what covers all of
+/// that, and nothing validates what is typed there (#638).
+const EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
+
+/// The reasoning-effort picker's choices, Custom first, exactly as the Base
+/// URL picker is shaped: the field below is the setting, and the picker only
+/// fills it in.
+pub fn effort_options() -> Vec<String> {
+    let mut options = vec![PICKER_CUSTOM.to_string()];
+    options.extend(EFFORT_LEVELS.iter().map(|level| level.to_string()));
+    options
+}
+
+/// The level a picked title means, or `None` for Custom — which writes
+/// nothing, because the field is what a level off this list is.
+// Win32 draws no composite pick yet; the same dead-code note as `endpoint_url`.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+pub fn effort_value(title: &str) -> Option<&'static str> {
+    EFFORT_LEVELS.iter().find(|level| **level == title).copied()
+}
+
+/// The title to rest on for the level in force. Custom for anything the
+/// picker does not name, blank included: blank is `low` by default, not by a
+/// pick, and resting on `low` would offer to un-set it as an edit.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
+pub fn effort_title(effort: &str) -> String {
+    match effort_value(effort.trim()) {
+        Some(level) => level.to_string(),
+        None => PICKER_CUSTOM.to_string(),
+    }
 }
 
 /// The Completer-source popup's choices, in the order it draws them.
@@ -1091,6 +1132,8 @@ fn development_sections() -> Vec<FormSection> {
         env_row_parts("Timeout, in seconds", model::TIMEOUT_SECS);
     let (max_tokens_label, max_tokens_frozen, max_tokens_status) =
         env_row_parts("Reply cap, in tokens", model::MAX_TOKENS);
+    let (effort_label, effort_frozen, effort_status) =
+        env_row_parts("Reasoning effort", model::REASONING_EFFORT);
     let (auth_retry_label, auth_retry_frozen, auth_retry_status) =
         env_row_parts("Auth retry, in seconds", crate::harness::AUTH_RETRY_SECS);
     let (mcp_bin_label, mcp_bin_frozen, mcp_bin_status) =
@@ -1107,7 +1150,7 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length.".to_string()),
+            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.".to_string()),
             status: None,
             rows: vec![
                 FormRow::TextField {
@@ -1131,6 +1174,30 @@ fn development_sections() -> Vec<FormSection> {
                     help: Some("HTTP endpoint only. Harness decides its own.".to_string()),
                     disclosure: None,
                     status: max_tokens_status,
+                },
+                FormRow::Composite {
+                    id: "reasoning_effort_pick".to_string(),
+                    help: Some(match effort_frozen {
+                        true => "Off, for the same reason the field below is.".to_string(),
+                        false => "Fills in the field below. Any value the server takes can be typed there.".to_string(),
+                    }),
+                    disclosure: None,
+                    controls: vec![CompositeControl::Popup {
+                        id: DIRECTOR_REASONING_EFFORT_PICK_ID.to_string(),
+                        options: effort_options(),
+                        frozen: effort_frozen,
+                    }],
+                },
+                FormRow::TextField {
+                    id: DIRECTOR_REASONING_EFFORT_ID.to_string(),
+                    label: Some(effort_label),
+                    placeholder: model::effort_placeholder(),
+                    writes: TextField::DirectorReasoningEffort,
+                    frozen: effort_frozen,
+                    batched: false,
+                    help: Some("HTTP endpoint only. Sent verbatim.".to_string()),
+                    disclosure: None,
+                    status: effort_status,
                 },
             ],
         },
@@ -1874,7 +1941,9 @@ mod tests {
 
     fn row_id(row: &FormRow) -> Option<&str> {
         match row {
-            FormRow::Checkbox { id, .. } | FormRow::TextField { id, .. } => Some(id.as_str()),
+            FormRow::Checkbox { id, .. }
+            | FormRow::TextField { id, .. }
+            | FormRow::Composite { id, .. } => Some(id.as_str()),
             _ => None,
         }
     }
@@ -2017,7 +2086,7 @@ mod tests {
 
         assert_eq!(
             options.first().map(String::as_str),
-            Some(ENDPOINT_CUSTOM),
+            Some(PICKER_CUSTOM),
             "Custom rests first, so the picker opens on what the field holds"
         );
         for (name, url) in [
@@ -2108,6 +2177,96 @@ mod tests {
         }
     }
 
+    /// #638: nobody picks a thinking budget for a two-line Behavior pick, so
+    /// the row sits on Development beside the HTTP limits rather than on AI.
+    #[test]
+    fn the_reasoning_effort_row_is_a_development_row_beside_the_http_limits() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe();
+            let section = development_tab(&description)
+                .sections
+                .iter()
+                .find(|section| section.heading == "HTTP limits")
+                .expect("the HTTP limits section exists");
+            let ids: Vec<&str> = section.rows.iter().filter_map(row_id).collect();
+            assert!(
+                ids.contains(&DIRECTOR_REASONING_EFFORT_ID),
+                "the field belongs beside the cap it trades against, got {ids:?}"
+            );
+            assert_eq!(
+                description.text_write(DIRECTOR_REASONING_EFFORT_ID),
+                Some(TextField::DirectorReasoningEffort),
+            );
+
+            let row = section
+                .rows
+                .iter()
+                .find(|row| row_id(row) == Some(DIRECTOR_REASONING_EFFORT_ID))
+                .expect("the reasoning-effort row exists");
+            match row {
+                FormRow::TextField { placeholder, .. } => assert_eq!(
+                    placeholder, "low",
+                    "blank has to read as the default that is in force"
+                ),
+                _ => panic!("the reasoning effort is a text field"),
+            }
+        });
+    }
+
+    /// The picker fills the field in; the field is the setting. Custom is the
+    /// title a value the picker cannot spell rests on, and it writes nothing.
+    #[test]
+    fn every_effort_title_comes_back_as_the_level_it_names() {
+        for title in effort_options() {
+            match effort_value(&title) {
+                Some(level) => assert_eq!(
+                    effort_title(level),
+                    title,
+                    "a picked level has to rest on the title that was picked"
+                ),
+                None => assert_eq!(title, PICKER_CUSTOM, "only Custom writes nothing"),
+            }
+        }
+        assert_eq!(
+            effort_options(),
+            vec!["Custom", "low", "medium", "high"],
+            "only the three levels every documented host takes (#638)"
+        );
+        for off_list in ["", "max", "xhigh", "banana"] {
+            assert_eq!(
+                effort_title(off_list),
+                PICKER_CUSTOM,
+                "a level the picker cannot spell rests on Custom"
+            );
+            assert_eq!(effort_value(off_list), None);
+        }
+    }
+
+    /// #272's rule, for the row and the shortcut above it alike.
+    #[test]
+    fn an_exported_effort_freezes_the_row_and_its_picker() {
+        crate::model::tests::with_env(None, None, None, || {
+            for (exported, owned) in [(Some("xhigh"), true), (None, false)] {
+                match exported {
+                    Some(value) => std::env::set_var(model::REASONING_EFFORT, value),
+                    None => std::env::remove_var(model::REASONING_EFFORT),
+                }
+                let description = describe();
+                for id in [
+                    DIRECTOR_REASONING_EFFORT_ID,
+                    DIRECTOR_REASONING_EFFORT_PICK_ID,
+                ] {
+                    assert_eq!(
+                        description.frozen(id),
+                        owned,
+                        "exported {exported:?} decides whether {id} takes an edit"
+                    );
+                }
+            }
+            std::env::remove_var(model::REASONING_EFFORT);
+        });
+    }
+
     /// Every title the picker offers is one `endpoint_url` can spend, and
     /// the value it names comes back as the title that was picked. Custom is
     /// the one that writes nothing, because the field is what Custom means.
@@ -2116,10 +2275,10 @@ mod tests {
         for title in endpoint_options() {
             match endpoint_url(&title) {
                 Some(url) => assert_eq!(endpoint_title(url), title),
-                None => assert_eq!(title, ENDPOINT_CUSTOM, "only Custom picks nothing"),
+                None => assert_eq!(title, PICKER_CUSTOM, "only Custom picks nothing"),
             }
         }
-        assert_eq!(endpoint_title("https://example.invalid"), ENDPOINT_CUSTOM);
+        assert_eq!(endpoint_title("https://example.invalid"), PICKER_CUSTOM);
     }
 
     /// A picker that looks live while a variable owns the value invites a

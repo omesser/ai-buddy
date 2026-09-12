@@ -26,7 +26,7 @@ use objc2_foundation::{
 
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
@@ -58,6 +58,9 @@ struct Ivars {
     /// static list and selected from the live value, the same pair the Harness
     /// popup needs (#465).
     base_url_pick: RefCell<Option<Retained<NSPopUpButton>>>,
+    /// The reasoning-effort shortcut, for the same reason as the one above
+    /// (#638).
+    effort_pick: RefCell<Option<Retained<NSPopUpButton>>>,
     model: RefCell<Option<Retained<NSTextField>>>,
     api_key: RefCell<Option<Retained<NSTextField>>>,
     clear_key: RefCell<Option<Retained<NSButton>>>,
@@ -251,6 +254,43 @@ define_class!(
             };
             field.setStringValue(&NSString::from_str(url));
             self.update_director_buttons();
+        }
+
+        /// The reasoning-effort shortcut, which saves rather than stages.
+        ///
+        /// Unlike the Base URL shortcut beside it: the Development rows apply
+        /// one at a time, so there is no Apply button here to reach the file
+        /// (#638). The field below is what refresh then redraws.
+        #[unsafe(method(effortPicked:))]
+        fn effort_picked(&self, sender: Option<&AnyObject>) {
+            let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
+                return;
+            };
+            let Some(title) = popup.titleOfSelectedItem() else {
+                return;
+            };
+            // Custom names no level to write: the field below is what a level
+            // this picker cannot spell is.
+            let Some(level) = form::effort_value(&title.to_string()) else {
+                return;
+            };
+            // AppKit sends the action for a click on the item already
+            // selected, and that is a save and a redraw for nothing.
+            let unchanged = self
+                .ivars()
+                .fields
+                .borrow()
+                .iter()
+                .find(|(id, _)| id == form::DIRECTOR_REASONING_EFFORT_ID)
+                .is_some_and(|(_, field)| field.stringValue().to_string() == level);
+            if unchanged {
+                return;
+            }
+            let mut patch = SettingsPatch::default();
+            if !patch.set_text(TextField::DirectorReasoningEffort, level) {
+                return;
+            }
+            self.apply(patch);
         }
 
         #[unsafe(method(handleAction:))]
@@ -524,6 +564,9 @@ impl SettingsController {
         if let Some(popup) = ivars.base_url_pick.borrow().clone() {
             popup.setEnabled(!description.frozen(form::DIRECTOR_BASE_URL_PICK_ID));
         }
+        if let Some(popup) = ivars.effort_pick.borrow().clone() {
+            popup.setEnabled(!description.frozen(form::DIRECTOR_REASONING_EFFORT_PICK_ID));
+        }
         if let Some(button) = ivars.clear_key.borrow().clone() {
             button.setEnabled(!description.frozen(form::CLEAR_KEY_ID));
         }
@@ -646,6 +689,17 @@ impl SettingsController {
                 &form::endpoint_title(&view.director_base_url),
             );
         }
+        // The shortcut rests on whatever the field holds, so it moves with it.
+        fill_popup(
+            &self.ivars().effort_pick,
+            &form::effort_options(),
+            &form::effort_title(
+                view.development_texts
+                    .get(form::DIRECTOR_REASONING_EFFORT_ID)
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+            ),
+        );
         // Static choices, so they come from the form rather than the view.
         fill_popup(
             &self.ivars().harness,
@@ -751,6 +805,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut ambient_button = None;
     let mut base_url_field = None;
     let mut base_url_pick_popup = None;
+    let mut effort_pick_popup = None;
     let mut model_field = None;
     let mut api_key_field = None;
     let mut clear_key_button = None;
@@ -1127,6 +1182,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         form::DIRECTOR_BASE_URL_PICK_ID => {
                                             popup(&controller, sel!(endpointPicked:), mtm)
                                         }
+                                        form::DIRECTOR_REASONING_EFFORT_PICK_ID => {
+                                            popup(&controller, sel!(effortPicked:), mtm)
+                                        }
                                         _ => popup_plain(mtm),
                                     };
                                     pop.setEnabled(!frozen);
@@ -1150,6 +1208,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         form::NEW_CHARACTER_ID => new_character_popup = Some(pop),
                                         form::DIRECTOR_BASE_URL_PICK_ID => {
                                             base_url_pick_popup = Some(pop)
+                                        }
+                                        form::DIRECTOR_REASONING_EFFORT_PICK_ID => {
+                                            effort_pick_popup = Some(pop)
                                         }
                                         _ => {}
                                     }
@@ -1239,6 +1300,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().ambient.borrow_mut() = ambient_button;
     *controller.ivars().base_url.borrow_mut() = base_url_field;
     *controller.ivars().base_url_pick.borrow_mut() = base_url_pick_popup;
+    *controller.ivars().effort_pick.borrow_mut() = effort_pick_popup;
     *controller.ivars().model.borrow_mut() = model_field;
     *controller.ivars().api_key.borrow_mut() = api_key_field;
     *controller.ivars().clear_key.borrow_mut() = clear_key_button;
