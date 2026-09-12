@@ -16,7 +16,7 @@ use objc2_app_kit::{
     NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControl, NSControlStateValueOff,
     NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventMask,
     NSEventModifierFlags, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
-    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
+    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextAlignment, NSTextDelegate, NSTextField,
     NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
     NSWindowLevel, NSWindowStyleMask,
 };
@@ -91,6 +91,10 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
+    /// Every "What is this?" copy and the tab document it hangs in, indexed
+    /// by the tag its button carries. `toggleDisclosure:` has only the button
+    /// AppKit hands it, and the copy is not a subview of it (#642).
+    disclosures: RefCell<Vec<(Retained<NSTextField>, Retained<NSView>)>>,
     /// Keeps the local mouse-down monitor alive for the window's life. #460
     move_monitor: RefCell<Option<Retained<AnyObject>>>,
 }
@@ -278,6 +282,27 @@ define_class!(
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
             }
+        }
+
+        /// Open or close the copy this button's tag points at.
+        ///
+        /// The button carries no state of its own: the copy's own hidden flag
+        /// is the state, so the two cannot drift apart.
+        #[unsafe(method(toggleDisclosure:))]
+        fn toggle_disclosure(&self, sender: Option<&AnyObject>) {
+            let Some(button) = sender.and_then(|s| s.downcast_ref::<NSButton>()) else {
+                return;
+            };
+            let pair = self
+                .ivars()
+                .disclosures
+                .borrow()
+                .get(button.tag() as usize)
+                .cloned();
+            let Some((copy, document)) = pair else {
+                return;
+            };
+            self.disclose(button, &copy, &document, copy.isHidden());
         }
 
         #[unsafe(method(dismiss:))]
@@ -697,6 +722,44 @@ impl SettingsController {
         }
     }
 
+    /// Show or hide a disclosure's copy and reflow the tab around it.
+    ///
+    /// The copy hangs from a top edge `Cursor::disclosure` fixed and is
+    /// zero-height while closed, so a closed disclosure reserves no space —
+    /// the rows under it move by exactly what the copy takes.
+    fn disclose(&self, button: &NSButton, copy: &NSTextField, document: &NSView, open: bool) {
+        let frame = copy.frame();
+        let target = if open { wrapped_height(copy) } else { 0.0 };
+        let (bottom, grow) = hang(frame.origin.y, frame.size.height, target);
+        for row in document.subviews() {
+            let origin = row.frame().origin;
+            if origin.y < frame.origin.y {
+                row.setFrameOrigin(NSPoint::new(origin.x, origin.y - grow));
+            }
+        }
+        copy.setFrame(NSRect::new(
+            NSPoint::new(frame.origin.x, bottom),
+            NSSize::new(frame.size.width, target),
+        ));
+        copy.setHidden(!open);
+        button.setTitle(&NSString::from_str(disclosure_title(open)));
+
+        {
+            let mut panes = self.ivars().panes.borrow_mut();
+            for (scroll, needed) in panes.iter_mut() {
+                if scroll
+                    .documentView()
+                    .is_some_and(|view| view.isEqual(Some(document)))
+                {
+                    *needed += grow;
+                }
+            }
+        }
+        // The document is anchored at its bottom, so the pane has to be
+        // re-sized for the rows to keep their distance from the top.
+        self.fit_to_window();
+    }
+
     fn fill_instances(&self, view: &SettingsView, dismiss_label: &str) {
         let Some(box_view) = self.ivars().instances.borrow().clone() else {
             return;
@@ -814,7 +877,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
             }
 
             if let Some(disclosure) = &section.disclosure {
-                cursor.disclosure(disclosure);
+                cursor.disclosure(disclosure, &controller);
             }
 
             for row in &section.rows {
@@ -848,7 +911,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
 
                         controller
@@ -910,7 +973,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::SecureField {
@@ -975,7 +1038,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::InspectBlock {
@@ -1017,7 +1080,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::Popup {
@@ -1059,7 +1122,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::Multiline {
@@ -1083,7 +1146,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::Composite {
@@ -1204,7 +1267,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                 }
@@ -1382,21 +1445,43 @@ impl Cursor {
         self.put(&label, height, HINT_GAP);
     }
 
-    fn disclosure(&mut self, text: &str) {
-        let disclosure_button = NSButton::new(self.mtm);
-        disclosure_button.setTitle(&NSString::from_str("What is this?"));
-        disclosure_button.setButtonType(objc2_app_kit::NSButtonType::OnOff);
-        disclosure_button.setBezelStyle(objc2_app_kit::NSBezelStyle::Disclosure);
+    /// "What is this?" over the copy it opens.
+    ///
+    /// The triangle is drawn in the title rather than by the bezel.
+    /// `NSBezelStyle::Disclosure` is a ~13pt triangle that carries no title,
+    /// so stretching it to `FIELD_WIDTH` painted the clipped first letter of
+    /// the label — a stray "W" beside every help line (#642).
+    fn disclosure(&mut self, text: &str, controller: &SettingsController) {
+        // SAFETY: buttonWithTitle_target_action does not retain its target, so
+        // the controller must outlive the button. The `CONTROLLER`
+        // thread-local holds it for the life of the process, and it
+        // implements toggleDisclosure:.
+        let button = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                &NSString::from_str(disclosure_title(false)),
+                Some(controller),
+                Some(sel!(toggleDisclosure:)),
+                self.mtm,
+            )
+        };
+        button.setBordered(false);
+        button.setAlignment(NSTextAlignment::Left);
+        button.setFont(Some(&NSFont::systemFontOfSize(11.0)));
 
-        let disclosure_label =
-            NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
-        disclosure_label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
-        disclosure_label.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        disclosure_label.setHidden(true);
+        let copy = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        copy.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        copy.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        copy.setHidden(true);
 
-        let _height = 20.0 + wrapped_height(&disclosure_label);
-        self.put(&disclosure_button, 20.0, HINT_GAP);
-        self.put(&disclosure_label, wrapped_height(&disclosure_label), 0.0);
+        let mut disclosures = controller.ivars().disclosures.borrow_mut();
+        button.setTag(disclosures.len() as isize);
+        disclosures.push((copy.clone(), self.parent.clone()));
+        drop(disclosures);
+
+        self.put(&button, 20.0, HINT_GAP);
+        // Zero-height, so the cursor does not advance past it: `disclose`
+        // hangs the copy off this top edge when the button is clicked.
+        self.put(&copy, 0.0, 0.0);
     }
 
     fn hint(&mut self, text: &str) {
@@ -1442,6 +1527,25 @@ fn checkbox(
 /// which aborts the process off the main thread, and `cargo test` runs on a
 /// worker. `Cursor` carries a `MainThreadMarker`, so a caller cannot reach here
 /// from anywhere else.
+/// The label on a "What is this?" toggle, closed or open.
+fn disclosure_title(open: bool) -> &'static str {
+    if open {
+        "▾ What is this?"
+    } else {
+        "▸ What is this?"
+    }
+}
+
+/// Where a disclosure's copy sits at `target` height, and how much taller its
+/// tab becomes. AppKit's y grows upward, so pinning the top edge means the
+/// bottom moves and everything under it follows by the same `grow`.
+///
+/// A closed copy is `target` zero and therefore reserves nothing, which is the
+/// whole of "a collapsed disclosure leaves no gap" (#642).
+fn hang(bottom: f64, height: f64, target: f64) -> (f64, f64) {
+    (bottom + height - target, target - height)
+}
+
 fn wrapped_height(label: &NSTextField) -> f64 {
     label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
     label.fittingSize().height.ceil()
@@ -1767,6 +1871,38 @@ mod tests {
         assert!(
             !release_window_when_closed(),
             "the next tray Settings raises this same Retained window"
+        );
+    }
+
+    /// #642: the copy used to be laid out at its full height and merely
+    /// hidden, which left a blank band under every "What is this?".
+    #[test]
+    fn a_closed_disclosure_reserves_no_space() {
+        let top = 400.0;
+        let (bottom, grow) = hang(top, 0.0, 30.0);
+        assert_eq!((bottom, grow), (370.0, 30.0), "opening hangs off the top");
+
+        let (bottom, grow) = hang(bottom, 30.0, 0.0);
+        assert_eq!(
+            (bottom, grow),
+            (top, -30.0),
+            "closing gives every inch back"
+        );
+    }
+
+    /// The bug was the bezel eating the title down to its first letter.
+    #[test]
+    fn a_disclosure_toggle_says_what_it_opens() {
+        for open in [false, true] {
+            assert!(
+                disclosure_title(open).ends_with("What is this?"),
+                "the label has to survive whatever marks the state"
+            );
+        }
+        assert_ne!(
+            disclosure_title(false),
+            disclosure_title(true),
+            "open and closed have to look different"
         );
     }
 
