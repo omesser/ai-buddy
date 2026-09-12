@@ -59,12 +59,13 @@ if ($Out -eq "") {
     $Out = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.tsv'
 }
 $log = "$Out.app.log"
+$errLog = "$Out.app.err.log"
 
 # Note WebView2 processes before launch. msedgewebview2.exe is the helper.
 $beforeEdge = Get-Process -Name "msedgewebview2" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
 
-# Launch the app, merging stderr into stdout (overlay signal is on stderr)
-$process = Start-Process -FilePath ".\$bin" -PassThru -RedirectStandardOutput $log -RedirectStandardError $log -WindowStyle Hidden
+# Launch the app; overlay signal is on stderr, so capture both logs separately
+$process = Start-Process -FilePath ".\$bin" -PassThru -RedirectStandardOutput $log -RedirectStandardError $errLog -WindowStyle Hidden
 $app = $process.Id
 
 # Cleanup function
@@ -74,32 +75,39 @@ function Stop-App {
     } catch {}
 }
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Stop-App } | Out-Null
-trap { Stop-App; throw }
+trap { Stop-App; break }
 
-# Wait for overlay initialization (signal is on stderr, now merged into $log)
+# Wait for overlay initialization (signal is on stderr)
 $overlayReported = $false
 $displays = 0
 for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
-    if (Test-Path $log) {
-        $content = Get-Content $log -ErrorAction SilentlyContinue
-        $match = $content | Select-String -Pattern 'overlay: (\d+) display'
+    # Check stderr for overlay signal
+    if (Test-Path $errLog) {
+        $errContent = Get-Content $errLog -ErrorAction SilentlyContinue
+        $match = $errContent | Select-String -Pattern 'overlay: (\d+) display'
         if ($match) {
             $displays = [int]$match.Matches[0].Groups[1].Value
             $overlayReported = $true
             break
         }
-        # Check for startup failures
-        if ($content -match "error|failed|cannot") {
-            Write-Error "app failed to start; see $log"
-            Get-Content $log
-            exit 1
+    }
+    # Check both logs for startup failures
+    foreach ($logFile in @($log, $errLog)) {
+        if (Test-Path $logFile) {
+            $content = Get-Content $logFile -ErrorAction SilentlyContinue
+            if ($content -match "error|failed|cannot") {
+                Write-Error "app failed to start; see $log and $errLog"
+                Get-Content $log
+                Get-Content $errLog
+                exit 1
+            }
         }
     }
 }
 
 if (-not $overlayReported) {
-    Write-Error "the app never reported its overlays; see $log"
+    Write-Error "the app never reported its overlays; see $log and $errLog"
     exit 1
 }
 
@@ -158,18 +166,17 @@ $max = [math]::Round($sorted[-1] / 1024)
 Write-Host "`ntotal   samples: $($sorted.Count)   min: $min MB   median: $median MB   max: $max MB"
 
 # Per-process statistics
-$column = 0
 foreach ($procId in $pids) {
     try {
         $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
         $procName = $proc.ProcessName
         $peakWS = [math]::Round($proc.PeakWorkingSet64 / 1MB)
 
-        # Calculate median RSS from TSV
+        # Calculate median RSS from TSV (column name is the pid)
         $pidRss = $data | ForEach-Object {
-            $row = $_ | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name
-            $colName = $row[$column + 2]  # Skip epoch and total_kb
-            if ($colName) { [int]$_.$colName } else { 0 }
+            if ($_.PSObject.Properties.Name -contains $procId.ToString()) {
+                [int]$_.$($procId.ToString())
+            } else { 0 }
         }
         $pidRssSorted = $pidRss | Sort-Object
         $pidMedian = [math]::Round($pidRssSorted[[math]::Floor($pidRssSorted.Count / 2)] / 1024)
@@ -178,10 +185,9 @@ foreach ($procId in $pids) {
     } catch {
         Write-Host "  $procId gone"
     }
-    $column++
 }
 
 Stop-App
 
-Write-Host "`nLog written to: $log"
+Write-Host "`nLogs written to: $log (stdout), $errLog (stderr)"
 Write-Host "TSV written to: $Out"
