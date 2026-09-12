@@ -10,6 +10,11 @@ Issues live in GitHub Issues on `omesser/ai-buddy`, via the `gh` CLI. See `docs/
 
 The five canonical triage roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
 
+### Picking work
+
+`👷 Todo` on the AI Buddy project board, highest priority first, matching the OS
+you can build. See `docs/agents/picking-work.md`.
+
 ### Domain docs
 
 Single-context. Vocabulary is `CONTEXT.md`. v1 scope and requirements are
