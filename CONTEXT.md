@@ -45,6 +45,14 @@ empty by default. Follows the Personality Prompt as a second voice layer, bound
 by the same rule: demeanour only, never capability. ADR-0012.
 _Avoid_: System prompt, custom instructions, jailbreak
 
+**Blank AI**:
+The Director mode that sends no Character Prompt: the Behaviors it may propose,
+the reply contract, and this moment, and nothing about who the buddy is. Off by
+default. A buddy in it has no character, which is what makes it the control run
+for telling a model's misbehaviour apart from the prompt's. #657.
+_Avoid_: Empty personality — that is a Character with an empty file, which
+still gets the voice rules
+
 **Animation**:
 A named frame sequence belonging to a Character. Pure art with no logic.
 _Avoid_: Clip, sprite, sequence
