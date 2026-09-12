@@ -157,13 +157,17 @@
         <span class="i-name"></span> comes across on this machine. Up to
         <span id="prompt-limit"></span> characters.
       </p>
-      <textarea
-        id="prompt-text"
-        rows="7"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="Empty. Write who this one is."
-      ></textarea>
+      <!-- #641: wrap so the textarea is not a grid item. WebView2 otherwise
+           paints the field over `.warn`. -->
+      <div class="prompt-field">
+        <textarea
+          id="prompt-text"
+          rows="7"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Empty. Write who this one is."
+        ></textarea>
+      </div>
 
       <p class="warn">
         <b>Saving starts a new conversation.</b> The Character Prompt is the opening turn, so a new

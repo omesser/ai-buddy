@@ -243,7 +243,19 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The grid item is this box, not the textarea. A replaced textarea as a
+   direct child sizes its track from min-content and paints past it (issue 641). */
+.prompt-field {
+  width: 100%;
+  min-width: 0;
+}
+
 .prompt textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: calc(1.5em * 3 + 20px);
   padding: 10px 12px;
   border: 1px solid var(--chat-line);
   border-radius: var(--chat-radius-control);
