@@ -367,7 +367,26 @@ the 47.6 MB gap found on macOS.
 
 ## Windows
 
-**Status: Method provided, measurements require Windows hardware.**
+**Status: Method provided, measurement completed on DESKTOP-UQIE144.**
+
+### Results
+
+One successful unattended run on DESKTOP-UQIE144 after the stderr-file fix
+(commit f27703b):
+
+| | |
+|---|---|
+| Machine | DESKTOP-UQIE144 |
+| Displays | 2 (3440×1440 + 1200×1920) |
+| Scenario | 1 Instance, `bmo:One` |
+| Settle | 5s |
+| Sample duration | 30s |
+| Sample interval | 2s |
+| **Total working set** | **min 607 MB / median 612 MB / max 620 MB** |
+| Exit code | 0 |
+
+Total working set includes ai-buddy.exe plus all msedgewebview2.exe helper
+processes.
 
 ### How to run
 
@@ -424,8 +443,8 @@ discovery.
   PeakWorkingSet64`. This only ever rises, so it survives a noisy machine.
 - **Settling:** Defaults to 3s for brief smoke tests. Use `-Research` (or
   explicit `-Settle 300 -Seconds 300`) for the full settling curve measured on
-  macOS. The settling curve should be measured independently on Windows to
-  validate or adjust this.
+  macOS. The Windows measurement above used 5s settle / 30s sample for a quick
+  validation run.
 
 ### Display count
 
@@ -433,9 +452,9 @@ Check the app's log for `overlay: N display` to determine how many displays the
 app detected. Windows has a Renderer process per webview, so the per-display
 cost will be visible in the process split.
 
-### Expected results (when measurable)
+### Expected behavior (based on macOS findings)
 
-Based on the macOS findings:
+Based on the macOS findings (not yet validated at scale on Windows):
 
 - **Displays cost pixels, not count.** WebView2's Renderer process memory usage
   should scale with overlay resolution (backing store size).
@@ -444,11 +463,10 @@ Based on the macOS findings:
 - **Character art is front-loaded.** All installed Characters are loaded at
   launch, so a Character switch cannot grow memory permanently.
 
-### Where to run
+### Machine details
 
-The Windows script is ready to execute on `DESKTOP-UQIE144` (per task
-instructions) or any Windows machine with a display. The Cloud Agent VM does not
-run Windows.
+The successful measurement above ran on DESKTOP-UQIE144 after commit f27703b (the
+stderr-file fix). The script completed unattended with exit code 0.
 
 ### Heap profiling (optional)
 
