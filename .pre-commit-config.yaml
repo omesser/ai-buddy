@@ -138,6 +138,14 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      - id: cargo-clippy-verify
+        name: cargo clippy (verify)
+        entry: cargo clippy -p ai-buddy-verify --all-targets --
+        args: [-D, warnings]
+        language: system
+        types: [rust]
+        pass_filenames: false
+
       # Ungated, and that is the point: the shell builds on Linux too — the
       # Tauri headers go in beside it in tests.yml — and while this hook
       # skipped itself off Darwin, nothing denied warnings over
