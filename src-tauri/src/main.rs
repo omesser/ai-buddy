@@ -1874,6 +1874,7 @@ fn spawn_live(
                 character.behaviors.keys().cloned(),
                 id.clone(),
                 character.name.clone(),
+                model::blank(),
             ))
         }),
         recent: Vec::new(),
@@ -2165,6 +2166,7 @@ fn spawn_instances(
                     character.behaviors.keys().cloned(),
                     id.clone(),
                     character.name.clone(),
+                    model::blank(),
                 ))
             }),
             recent: Vec::new(),
