@@ -287,7 +287,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
             "A fragment for `~/.codex/config.toml`, not a command. Add or update the \
              `[mcp_servers.ai-buddy]` entry, then run `mcpServer/refresh` from your \
              Codex session to pick up the change. If `mcpServer/refresh` is unavailable, \
-             restart your Codex session."
+             exit your Codex session and open a new one."
                 .to_string(),
         ),
         "grok" => (
@@ -3963,11 +3963,15 @@ mod tests {
                     || steps.to_lowercase().contains("add or update"),
                 "{harness} must say it is a fragment, got {steps:?}"
             );
+            let lower_steps = steps.to_lowercase();
+            let lower_snippet = snippet.to_lowercase();
             assert!(
-                !steps.to_lowercase().contains("starts ")
-                    && !steps.to_lowercase().contains("start ")
-                    && !snippet.to_lowercase().contains("start ")
-                    && !steps.to_lowercase().contains("launch"),
+                !lower_steps.contains("starts ")
+                    && !lower_steps.contains(" start ")
+                    && !lower_steps.starts_with("start ")
+                    && !lower_snippet.contains(" start ")
+                    && !lower_snippet.starts_with("start ")
+                    && !lower_steps.contains("launch"),
                 "{harness} must not say it starts/launches the harness, got snippet: {snippet:?}, steps: {steps:?}"
             );
         }
