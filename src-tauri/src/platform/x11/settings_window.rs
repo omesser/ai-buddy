@@ -16,7 +16,7 @@ use gtk::{
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
@@ -573,6 +573,12 @@ impl SettingsWindow {
                                     let title = option.clone();
                                     let controls = self.controls.clone();
                                     let refreshing = self.refreshing.clone();
+                                    let session = Arc::clone(&self.session);
+                                    // The reasoning-effort shortcut saves
+                                    // rather than staging: the Development
+                                    // rows apply one at a time, so there is no
+                                    // Apply beside it to reach the file (#638).
+                                    let effort = id == form::DIRECTOR_REASONING_EFFORT_PICK_ID;
                                     radio.connect_toggled(move |radio| {
                                         // The refreshing guard must stay above
                                         // the `controls` borrow below: `refresh`
@@ -581,6 +587,26 @@ impl SettingsWindow {
                                         // the borrow during a redraw is a
                                         // `BorrowMutError` panic, not a no-op.
                                         if refreshing.get() || !radio.is_active() {
+                                            return;
+                                        }
+                                        if effort {
+                                            let Some(level) = form::effort_value(&title) else {
+                                                return;
+                                            };
+                                            if let Ok(guard) = session.lock() {
+                                                if let Some(sess) = guard.as_ref() {
+                                                    let mut patch = SettingsPatch::default();
+                                                    if !patch.set_text(
+                                                        TextField::DirectorReasoningEffort,
+                                                        level,
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    if let Err(e) = sess.apply(patch) {
+                                                        eprintln!("settings: {e}");
+                                                    }
+                                                }
+                                            }
                                             return;
                                         }
                                         let Some(url) = form::endpoint_url(&title) else {
@@ -1086,6 +1112,25 @@ impl SettingsWindow {
         for (id, text) in &view.development_texts {
             if let Some(Control::Entry(entry)) = controls.get(id) {
                 entry.set_text(text);
+            }
+        }
+        // The reasoning-effort shortcut rests on whatever the field holds, so
+        // it moves with it (#638).
+        if let Some(Control::CharacterPicker(radio_box, _)) =
+            controls.get(form::DIRECTOR_REASONING_EFFORT_PICK_ID)
+        {
+            let title = form::effort_title(
+                view.development_texts
+                    .get(form::DIRECTOR_REASONING_EFFORT_ID)
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+            );
+            for child in radio_box.children() {
+                if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
+                    if radio.label().is_some_and(|label| label == title) {
+                        radio.set_active(true);
+                    }
+                }
             }
         }
         // The picker's own row declares the field, so the radio buttons built
