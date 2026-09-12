@@ -315,21 +315,28 @@ function attached(opening) {
   return ready;
 }
 
-// Connect button clicks: spawn the login command for that Harness.
-// The Harness authenticates itself; ai-buddy never collects a credential.
+// Connect button clicks: make that Harness the Completer source and say how
+// to sign it in. The click never starts the sign-in — #654: a login started
+// from here raced the attached child for the loopback port the browser
+// redirects to, and neither attempt finished. The Harness authenticates
+// itself, in a terminal of the user's own, and ai-buddy holds no credential.
 for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
     const label = btn.querySelector(".connect-label").textContent;
 
-    // First, select the Harness as the Completer source (persists to Settings)
     invoke("select_harness", { harness })
-      .then(() => {
-        // Then spawn the login command
-        return invoke("harness_login", { harness });
+      .then((login) => {
+        note(
+          `${label} is the AI brain now. Run \`${login}\` in a terminal to sign in — ai-buddy never asks for it.`,
+        );
+        // The pick has already been applied, so this reads the attachment it
+        // opened rather than the one that was there before the click.
+        return invoke("chat_opening", { instance });
       })
-      .then(() => {
-        note(`Starting ${label} login. Sign in through the ${label} window.`);
+      .then((opening) => {
+        showWho(opening);
+        attached(opening);
       })
       .catch((why) => {
         console.error(`connect failed:`, why);

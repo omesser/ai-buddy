@@ -1345,10 +1345,11 @@ fn not_authenticated(command: &str) -> String {
 }
 
 /// The command that logs the user in, in the Harness's own words where it
-/// has any. Claude Code's adapter reports the method but not the command.
+/// has any. Claude Code's adapter reports the method but not the command, so
+/// the table below outranks the handshake for it and only for it.
 fn login_command(name: &str, handshake: &Handshake) -> String {
     if name == "claude" {
-        return "claude /login".to_string();
+        return login_hint(name);
     }
     handshake
         .auth_methods
@@ -1359,7 +1360,34 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
                 .clone()
                 .unwrap_or_else(|| method.name.clone())
         })
-        .unwrap_or_else(|| format!("{name} (run it once in a terminal and sign in)"))
+        .unwrap_or_else(|| login_hint(name))
+}
+
+/// The documented sign-in line for a named Harness, before any handshake has
+/// had the chance to name its own.
+///
+/// The one table. Settings reads it through `HarnessInspect::login` once
+/// `session/new` has answered `-32000` (ADR-0022), and Chat's Connect button
+/// reads it through `select_harness` before that, because it has nothing else
+/// to offer at the moment of the pick.
+///
+/// ai-buddy never runs it. #654: Chat spawned `codex login` from a GUI process
+/// with no terminal of its own while the attached child was opening a loopback
+/// listener of its own, so two PKCE challenges raced for `localhost:1455` and
+/// neither redirect reached the process that would keep the token. Naming the
+/// command is the whole of what we can do — ADR-0018 has the Harness
+/// authenticate itself.
+pub(crate) fn login_hint(name: &str) -> String {
+    match name {
+        "claude" => "claude /login",
+        "codex" => "codex login",
+        "grok" => "grok login",
+        "hermes" => "hermes login",
+        "opencode" => "opencode login",
+        "pi" => "npx -y pi-acp@latest --terminal-login",
+        unnamed => return format!("{unnamed} (run it once in a terminal and sign in)"),
+    }
+    .to_string()
 }
 
 /// The MCP server to hand this session, in the transport the Harness takes.
@@ -3107,6 +3135,22 @@ mod tests {
             login_command("x", &Handshake::default()),
             "x (run it once in a terminal and sign in)"
         );
+    }
+
+    /// #654: Chat's Connect button answers with this line instead of spawning
+    /// the login itself, and it answers at the moment of the pick — before any
+    /// handshake. A named row without one would leave that answer a shrug.
+    #[test]
+    fn every_named_harness_documents_a_login_for_the_users_own_terminal() {
+        for name in ["claude", "codex", "grok", "hermes", "opencode", "pi"] {
+            assert!(launch(Some(name)).is_some(), "{name} is not a named row");
+            let hint = login_hint(name);
+            assert!(
+                !hint.contains("run it once"),
+                "{name} falls through to the unnamed hint: {hint}"
+            );
+            assert_eq!(hint, login_command(name, &Handshake::default()));
+        }
     }
 
     fn mcp_tmp(label: &str) -> PathBuf {
