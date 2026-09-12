@@ -34,6 +34,16 @@ pub fn tracing() -> bool {
     crate::dev_flags::TRACE_DIRECTOR.is_on()
 }
 
+/// Blank-AI mode in force: the opening turn carries no Personality Prompt, no
+/// Instance prompt and no voice rules (#657).
+///
+/// Read where a `ModelDirector` is built, not where the prompt is assembled:
+/// the mode is fixed for a Director's life, and a toggle reaches a running one
+/// by rebuilding it, the way the timeout and the reply cap do.
+pub fn blank() -> bool {
+    crate::dev_flags::DIRECTOR_BLANK.is_on()
+}
+
 fn trace_block(which: &str, text: &str) {
     eprintln!("director: --- {which} ---");
     eprint!("{text}");
@@ -61,6 +71,11 @@ pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 /// names the variable that owns a frozen row.
 pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
 pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
+
+/// Blank-AI mode: send the contract and the moment, and nothing about who the
+/// buddy is meant to be (#657). A switch, so it reads the same words every
+/// other switch does, and it owns its Development row the same way.
+pub(crate) const BLANK: &str = "AI_BUDDY_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
@@ -2025,6 +2040,7 @@ pub fn retarget_model(
             behaviors,
             id.clone(),
             character,
+            blank(),
         ))
     });
 }
@@ -3685,6 +3701,7 @@ pub(crate) mod tests {
                     ["stroll"],
                     id.clone(),
                     "cat",
+                    false,
                 )),
                 wake_context(),
             );
@@ -3869,6 +3886,7 @@ pub(crate) mod tests {
             ["stroll", "nap"],
             "buddy",
             "cat",
+            false,
         ))
     }
 
@@ -3996,6 +4014,7 @@ pub(crate) mod tests {
                 ["stroll"],
                 id.clone(),
                 "cat",
+                false,
             )),
             wake_context(),
         );
@@ -4214,7 +4233,7 @@ pub(crate) mod tests {
     fn framing_moves_the_personality_and_leaves_the_rest_alone() {
         let personality =
             "Cat claimed the desktop. It has been heard to say: \"Show me that one.\"";
-        let director = ModelDirector::new(Silent, ["stroll", "nap"], "buddy", "Cat");
+        let director = ModelDirector::new(Silent, ["stroll", "nap"], "buddy", "Cat", false);
         let today = director.prompt(&Context {
             personality: personality.to_string(),
             happened: Happened::Poke,
@@ -4342,6 +4361,7 @@ pub(crate) mod tests {
             behaviors.clone(),
             "buddy",
             cat.name.clone(),
+            false,
         );
 
         // Vary the wake so the prompts differ: the reactive verbs plus ambient.
@@ -4504,6 +4524,7 @@ pub(crate) mod tests {
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: true,
+            blank: false,
         };
         note_http_call(
             dir.path(),
@@ -4537,6 +4558,7 @@ pub(crate) mod tests {
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: true,
+            blank: false,
         };
         let endpoint = Endpoint {
             max_tokens: LOCAL_MAX_TOKENS,
@@ -4570,6 +4592,7 @@ pub(crate) mod tests {
             instance: "buddy-1".into(),
             character: "bmo".into(),
             reactive: false,
+            blank: false,
         };
         note_http_call(
             dir.path(),

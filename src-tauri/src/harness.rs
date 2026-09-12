@@ -248,6 +248,11 @@ pub struct HarnessInspect {
 struct SavedSlot {
     instance: String,
     character: String,
+    /// Blank-AI mode's slot, kept apart from the shaped one (#657). Defaulted
+    /// so a file written before the mode existed loads as what it was: a
+    /// session opened with a Character Prompt in it.
+    #[serde(default)]
+    blank: bool,
     session_id: String,
 }
 
@@ -267,10 +272,17 @@ struct SavedSession {
 
 /// Instance plus Character: two Instances of one Character do not share, and
 /// a retarget on one Instance is a different Character Prompt (ADR-0012).
+///
+/// Blank-AI mode joins them for the same reason (#657). The agent holds this
+/// lane's history, so a session opened with a Character Prompt in it would
+/// keep shaping replies after the mode was switched on, and the mode would
+/// measure a prompt it claims not to have sent. Two keys, two sessions: the
+/// switch cannot mix them, and nothing has to remember to drop one.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SessionKey {
     instance: String,
     character: String,
+    blank: bool,
 }
 
 impl SessionKey {
@@ -278,6 +290,7 @@ impl SessionKey {
         Self {
             instance: request.instance.clone(),
             character: request.character.clone(),
+            blank: request.blank,
         }
     }
 }
@@ -930,7 +943,9 @@ impl Session {
             return None;
         }
         saved.sessions.into_iter().find_map(|slot| {
-            (slot.instance == key.instance && slot.character == key.character)
+            (slot.instance == key.instance
+                && slot.character == key.character
+                && slot.blank == key.blank)
                 .then_some(slot.session_id)
         })
     }
@@ -939,9 +954,11 @@ impl Session {
         let Some(mut record) = self.read_saved() else {
             return;
         };
-        record
-            .sessions
-            .retain(|slot| slot.instance != key.instance || slot.character != key.character);
+        record.sessions.retain(|slot| {
+            slot.instance != key.instance
+                || slot.character != key.character
+                || slot.blank != key.blank
+        });
         if let Ok(text) = serde_json::to_string(&record) {
             let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
         }
@@ -957,15 +974,16 @@ impl Session {
         record.harness = self.launch.name.clone();
         record.agent = self.inspect().agent;
         record.session_id = None;
-        match record
-            .sessions
-            .iter_mut()
-            .find(|slot| slot.instance == key.instance && slot.character == key.character)
-        {
+        match record.sessions.iter_mut().find(|slot| {
+            slot.instance == key.instance
+                && slot.character == key.character
+                && slot.blank == key.blank
+        }) {
             Some(slot) => slot.session_id = id.to_string(),
             None => record.sessions.push(SavedSlot {
                 instance: key.instance.clone(),
                 character: key.character.clone(),
+                blank: key.blank,
                 session_id: id.to_string(),
             }),
         }
@@ -1088,6 +1106,7 @@ fn probe(session: &Session) -> i32 {
     let session_id = match session.attach(Some(&SessionKey {
         instance: "probe".to_string(),
         character: "probe".to_string(),
+        blank: false,
     })) {
         Ok((_, id)) => id,
         // Nothing was asked, so this is configuration and not a turn: a
@@ -1143,6 +1162,9 @@ fn probe(session: &Session) -> i32 {
         instance: "probe".to_string(),
         character: "probe".to_string(),
         reactive: true,
+        // The probe sends its own fixed prompt, not a Character's, so the mode
+        // it would have been assembled under decides nothing here.
+        blank: false,
     }) {
         Ok(reply) => {
             let text = reply.text;
@@ -1920,6 +1942,7 @@ mod tests {
             instance: instance.to_string(),
             character: character.to_string(),
             reactive: true,
+            blank: false,
         }
     }
 
@@ -2307,6 +2330,44 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
         assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
+    }
+
+    /// #657: blank-AI mode is a different conversation, not a different turn
+    /// in the same one. The agent holds this lane's history, so one session
+    /// serving both modes would answer a blank prompt out of a Character it
+    /// was told to forget — and the mode would measure the prompt it claims
+    /// not to have sent.
+    #[test]
+    fn a_blank_wake_does_not_continue_the_shaped_session() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "hi")),
+            Ok(Reply::whole("Hello"))
+        );
+        let blank = WakeRequest {
+            blank: true,
+            ..asking_as("buddy-1", "bmo", "hi")
+        };
+        assert_eq!(session.complete(&blank), Ok(Reply::whole("Hello")));
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 2, "{prompts:?}");
+        assert_ne!(
+            prompts[0]["session_id"], prompts[1]["session_id"],
+            "the blank wake continued the Character's session: {prompts:?}"
+        );
+        // Remembered apart too, so a restart resumes each mode where it was
+        // rather than loading one into the other.
+        let saved: SavedSession =
+            serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
+        assert!(
+            saved.sessions.iter().any(|slot| slot.blank),
+            "the blank session is marked as one: {:?}",
+            saved.sessions
+        );
     }
 
     /// #558: switching away and back resumes the first Instance's session;

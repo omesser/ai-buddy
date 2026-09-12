@@ -7,9 +7,15 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 ///
 /// Later wakes send `follow_up` only. The Completer holds the conversation
 /// so the Personality Prompt is not paid for again.
+///
+/// `blank` is the blank-AI mode of #657: the model is sent what it may
+/// propose, how to answer, and what just happened, and nothing about who it is
+/// supposed to be. It is the control run — a misbehaviour under it is the
+/// model's, because no Character Prompt shaped the reply.
 pub(crate) fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
+    blank: bool,
 ) -> String {
     let names: Vec<String> = behaviors
         .into_iter()
@@ -20,6 +26,22 @@ pub(crate) fn character_prompt(
     } else {
         names.join(", ")
     };
+    // The roster and the format contract. Blank-AI mode keeps these and the
+    // moment below and nothing else: a reply with no contract cannot be
+    // parsed, and a turn with no moment asks nothing, so a mode short of
+    // either would measure nothing (#657).
+    let contract = format!(
+        "You may propose one of these behaviors: {declared}\n\
+         \n\
+         Reply with the behavior name on the first line.\n\
+         An optional spoken line may follow on the next line.\n\
+         Propose nothing else."
+    );
+    let moment = follow_up(context);
+    if blank {
+        return format!("{contract}\n\n{moment}");
+    }
+
     let personality = if context.personality.is_empty() {
         "(no personality)"
     } else {
@@ -43,11 +65,7 @@ pub(crate) fn character_prompt(
     format!(
         "{authored}\n\
          \n\
-         You may propose one of these behaviors: {declared}\n\
-         \n\
-         Reply with the behavior name on the first line.\n\
-         An optional spoken line may follow on the next line.\n\
-         Propose nothing else.\n\
+         {contract}\n\
          \n\
          Speak in this character's voice, always in character: never mention \
          being a model or an assistant. A spoken line fits a small speech \
@@ -59,8 +77,7 @@ pub(crate) fn character_prompt(
          demeanour, never capability: never promise an action on the machine \
          or claim an ability.\n\
          \n\
-         {}",
-        follow_up(context)
+         {moment}"
     )
 }
 

@@ -999,6 +999,7 @@ mod tests {
                 standing: String::new(),
             },
             wolf.behaviors.keys(),
+            false,
         );
 
         assert!(

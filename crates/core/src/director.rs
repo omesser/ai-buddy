@@ -153,6 +153,12 @@ pub struct WakeRequest {
     /// Whether the user addressed the buddy, as against a proactive wake.
     /// ADR-0008's wake policy names the two.
     pub reactive: bool,
+    /// Whether this wake is blank-AI mode's: a prompt with no Character in it
+    /// (#657). On the wire rather than read off a switch where the session is
+    /// kept, because it is what this conversation is — a Completer that
+    /// remembers a session must not serve one mode's opening into the other's
+    /// history.
+    pub blank: bool,
 }
 
 /// Whether this wake answers something the user did.
@@ -281,6 +287,15 @@ pub struct ModelDirector<C> {
     /// The Character Prompt is the opening turn only. After a successful
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
+    /// Blank-AI mode: no Personality Prompt, no Instance prompt, no voice
+    /// rules (#657).
+    ///
+    /// Fixed for this Director's life, the way the Endpoint bakes in the
+    /// timeout and the reply cap: the mode decides the opening turn, and
+    /// `opened` has no way back to one. A toggle reaches a running buddy by
+    /// rebuilding the Director, which is what every other Completer change
+    /// already does.
+    blank: bool,
 }
 
 impl<C> ModelDirector<C> {
@@ -289,6 +304,7 @@ impl<C> ModelDirector<C> {
         behaviors: impl IntoIterator<Item = impl Into<String>>,
         instance: impl Into<InstanceId>,
         character: impl Into<String>,
+        blank: bool,
     ) -> Self {
         Self {
             completer,
@@ -296,6 +312,7 @@ impl<C> ModelDirector<C> {
             instance: instance.into(),
             character: character.into(),
             opened: AtomicBool::new(false),
+            blank,
         }
     }
 }
@@ -306,7 +323,7 @@ impl<C: Completer> ModelDirector<C> {
         if self.opened.load(Ordering::SeqCst) {
             follow_up(context)
         } else {
-            character_prompt(context, self.behaviors.iter())
+            character_prompt(context, self.behaviors.iter(), self.blank)
         }
     }
 
@@ -317,6 +334,7 @@ impl<C: Completer> ModelDirector<C> {
             instance: self.instance.clone(),
             character: self.character.clone(),
             reactive: reactive(&context.happened),
+            blank: self.blank,
         }
     }
 
@@ -1349,7 +1367,7 @@ mod tests {
         completer: C,
         behaviors: impl IntoIterator<Item = impl Into<String>>,
     ) -> ModelDirector<C> {
-        ModelDirector::new(completer, behaviors, "buddy-1", "bmo")
+        ModelDirector::new(completer, behaviors, "buddy-1", "bmo", false)
     }
 
     #[test]
@@ -1539,7 +1557,7 @@ mod tests {
     fn the_completer_is_sent_the_character_prompt() {
         let director = directing(Scripted::says("wave"), ["wave"]);
         let moment = context(working(), &["nap"]);
-        let expected = character_prompt(&moment, ["wave"]);
+        let expected = character_prompt(&moment, ["wave"], false);
 
         director.wake(&moment);
 
@@ -1717,7 +1735,7 @@ mod tests {
             standing: "the display floor, above the Dock".to_string(),
         };
 
-        let payload = character_prompt(&moment, ["greet", "stroll", "wave"]);
+        let payload = character_prompt(&moment, ["greet", "stroll", "wave"], false);
 
         assert!(
             payload.contains("Blip is cheerful."),
@@ -1760,7 +1778,7 @@ mod tests {
     fn an_empty_instance_prompt_assembles_the_payload_it_always_did() {
         let moment = context(working(), &["nap"]);
 
-        let payload = character_prompt(&moment, ["wave"]);
+        let payload = character_prompt(&moment, ["wave"], false);
 
         assert!(
             payload.starts_with("a shy robot.\n\nYou may propose one of these behaviors: wave"),
@@ -1778,7 +1796,7 @@ mod tests {
             ..context(working(), &["nap"])
         };
 
-        let payload = character_prompt(&moment, ["wave"]);
+        let payload = character_prompt(&moment, ["wave"], false);
 
         let personality = payload.find("a shy robot.").expect("the author's layer");
         let instance = payload.find("Answer in haiku.").expect("the user's layer");
@@ -1792,12 +1810,53 @@ mod tests {
         );
     }
 
+    /// #657: the blank-AI opening is the contract and the moment, and nothing
+    /// about who the buddy is. Both modes in one test, so an edit that puts a
+    /// layer back has to say so here.
+    #[test]
+    fn blank_mode_drops_the_authored_layers_and_the_voice_rules() {
+        let moment = Context {
+            instance_prompt: "Answer in haiku.".to_string(),
+            ..context(working(), &["nap"])
+        };
+
+        let shaped = character_prompt(&moment, ["wave"], false);
+        let blank = character_prompt(&moment, ["wave"], true);
+
+        for layer in ["a shy robot.", "Answer in haiku.", "always in character"] {
+            assert!(shaped.contains(layer), "the shaped opening: {shaped}");
+            assert!(
+                !blank.contains(layer),
+                "blank carries no {layer:?}: {blank}"
+            );
+        }
+        // The placeholder is a Character with an empty personality file, which
+        // still gets the rules above. Blank mode is not that.
+        assert!(
+            !blank.contains("(no personality)"),
+            "a missing layer is left out, not stood in for: {blank}"
+        );
+
+        for kept in [
+            "You may propose one of these behaviors: wave",
+            "Reply with the behavior name on the first line.",
+            "Propose nothing else.",
+            "what just happened: poked",
+        ] {
+            assert!(blank.contains(kept), "blank keeps {kept:?}: {blank}");
+        }
+        assert!(
+            blank.ends_with(&follow_up(&moment)),
+            "the moment is the question being asked, and it comes last: {blank}"
+        );
+    }
+
     /// Each rule the opening turn must carry, and that later wakes do not
     /// repeat them.
     #[test]
     fn the_character_prompt_carries_the_voice_rules_once() {
         let moment = context(working(), &["nap"]);
-        let payload = character_prompt(&moment, ["wave"]);
+        let payload = character_prompt(&moment, ["wave"], false);
 
         assert!(
             payload.contains("always in character"),
