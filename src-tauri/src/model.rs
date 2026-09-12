@@ -337,6 +337,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         session: Mutex::new(Session::default()),
         streams: AtomicBool::new(true),
         takes_effort: AtomicBool::new(true),
+        takes_max_tokens: AtomicBool::new(true),
         agent: ureq::agent(),
     })
 }
@@ -685,6 +686,12 @@ pub struct Endpoint {
     /// settings change that matters runs `completer_retargets`, which builds a
     /// fresh `Endpoint` with this optimistic again (#638).
     takes_effort: AtomicBool,
+    /// Does this host take `max_tokens`? Same shape again, and the only one
+    /// here whose fallback renames rather than drops: a host that refuses it
+    /// is asked again with `max_completion_tokens`, which the spec prefers
+    /// and o-series models require. Optimistic because Ollama has no such
+    /// field and would silently answer with no cap at all (#619).
+    takes_max_tokens: AtomicBool,
     /// Held rather than built per call: `ureq::get`/`ureq::post` are "Run on a
     /// use-once [Agent]", so each wake would throw away the pooled connection
     /// and pay another TCP and TLS handshake to the model host.
@@ -742,13 +749,13 @@ impl Endpoint {
     /// on `/v1/responses` next to a 200 on chat-completions, and so
     /// `complete` can retry the other xAI path.
     ///
-    /// Asks for a stream and for low reasoning effort, and gives up either
-    /// one for a server that names it in a rejection. A fallback retries the
-    /// same session snapshot, so every attempt asks the same question and
-    /// only one answer is ever recorded — and once a request without the
-    /// field has succeeded where the request with it did not, this endpoint
-    /// stops asking, rather than paying two POSTs on every wake for the rest
-    /// of the session.
+    /// Asks for a stream, for low reasoning effort, and for the cap under
+    /// its legacy name, and gives up any one of them for a server that names
+    /// it in a rejection. A fallback retries the same session snapshot, so
+    /// every attempt asks the same question and only one answer is ever
+    /// recorded — and once a request without the field has succeeded where
+    /// the request with it did not, this endpoint stops asking, rather than
+    /// paying two POSTs on every wake for the rest of the session.
     pub fn post(&self, url: &str, prompt: &str) -> Result<Reply, String> {
         let (turn, snapshot) = self.open_turn(prompt);
         let mut wire = if self.streams.load(Ordering::SeqCst) {
@@ -757,9 +764,10 @@ impl Endpoint {
             Wire::Whole
         };
         let mut effort = self.takes_effort.load(Ordering::SeqCst);
-        let mut reply = self.send(url, &snapshot, wire, effort);
-        // A loop rather than one retry: there are two optional fields now,
-        // and a validator strict enough to refuse both would otherwise lose
+        let mut cap = self.takes_max_tokens.load(Ordering::SeqCst);
+        let mut reply = self.send(url, &snapshot, wire, effort, cap);
+        // A loop rather than one retry: there are three guarded fields now,
+        // and a validator strict enough to refuse two would otherwise lose
         // the wake. Each pass drops exactly the field the rejection named.
         // Bounded by the count of those fields rather than by trusting the
         // body to stop naming one, because the cost of being wrong is a
@@ -772,6 +780,10 @@ impl Endpoint {
             let sent = match field {
                 Field::Stream => wire == Wire::Stream,
                 Field::Effort => effort,
+                // The Responses path spells the cap `max_output_tokens`, so
+                // a body naming `max_tokens` there is about something this
+                // request never sent.
+                Field::Cap => cap && !uses_responses(url),
             };
             if !sent {
                 break;
@@ -796,8 +808,9 @@ impl Endpoint {
             match field {
                 Field::Stream => wire = Wire::Whole,
                 Field::Effort => effort = false,
+                Field::Cap => cap = false,
             }
-            reply = self.send(url, &snapshot, wire, effort);
+            reply = self.send(url, &snapshot, wire, effort, cap);
             // Evidence, not a guess: the server rejected the field and the
             // request without it worked, so this host does not take it. A
             // refusal misread from some unrelated 400 fails twice and settles
@@ -806,6 +819,7 @@ impl Endpoint {
                 match field {
                     Field::Stream => self.streams.store(false, Ordering::SeqCst),
                     Field::Effort => self.takes_effort.store(false, Ordering::SeqCst),
+                    Field::Cap => self.takes_max_tokens.store(false, Ordering::SeqCst),
                 }
             }
         }
@@ -886,19 +900,22 @@ impl Endpoint {
         session: &[Message],
         wire: Wire,
         effort: bool,
+        cap: bool,
     ) -> Result<Reply, Unsent> {
         let accept = match wire {
             Wire::Stream => "text/event-stream",
             Wire::Whole => "application/json",
         };
+        let responses = uses_responses(url);
         let body = request_body(
             &self.model,
             session,
-            uses_responses(url),
+            responses,
             self.max_tokens,
             wire,
             effort,
             &self.effort,
+            cap,
         );
         let request = self
             .headers(self.agent.post(url), accept)
@@ -921,6 +938,7 @@ impl Endpoint {
             let refused = refused_field(code, &text).filter(|field| match field {
                 Field::Stream => wire == Wire::Stream,
                 Field::Effort => effort,
+                Field::Cap => cap && !responses,
             });
             return Err(match refused {
                 Some(field) => Unsent::Refused(field, error),
@@ -1149,9 +1167,11 @@ fn alternate_url(url: &str) -> Option<String> {
 /// on the xAI paths 403 already means something `fallback_url` handles. The
 /// cost of reading this too narrowly is one turn of `StaticDirector`.
 ///
-/// `Effort` before `Stream`, because a validator that lists every unknown
-/// key names both while the caller drops one field per attempt: the field
-/// #612 added is the one to give up first.
+/// `Cap` first, then `Effort` before `Stream`, because a validator that
+/// lists every unknown key names several while the caller gives up one per
+/// attempt. The cap concedes nothing — the retry still carries one, under
+/// the name the spec prefers — and the field #612 added costs less than the
+/// stream.
 fn refused_field(code: u16, body: &str) -> Option<Field> {
     if !matches!(code, 400 | 422) {
         return None;
@@ -1396,6 +1416,10 @@ enum Wire {
     Whole,
 }
 
+// One over the clippy cap: #638 added the effort value and #619 the cap
+// flag, each landing on a seven-argument function. Folding them would pair a
+// guard with the value it guards or a cap's name with its number.
+#[allow(clippy::too_many_arguments)]
 fn request_body(
     model: &str,
     session: &[Message],
@@ -1404,6 +1428,7 @@ fn request_body(
     wire: Wire,
     effort: bool,
     level: &str,
+    cap: bool,
 ) -> serde_json::Value {
     let input = if responses && session.len() == 1 {
         // xAI's first-request example is `input` as a string. Later turns
@@ -1441,8 +1466,15 @@ fn request_body(
         let mut chat = serde_json::json!({
             "model": model,
             "messages": input,
-            "max_tokens": max_tokens,
         });
+        // The spec deprecated `max_tokens` in favour of
+        // `max_completion_tokens` and o-series models answer 400 to it, but
+        // it is still the name every local server in `docs/DEVELOPMENT.md`
+        // reads — and Ollama has no `max_completion_tokens` field at all, so
+        // leading with the new name would silently leave a local reply
+        // uncapped. The old name goes out first and `Field::Cap` swaps it
+        // for the host that refuses (#619).
+        chat[if cap { "max_tokens" } else { NEW_CAP }] = max_tokens.into();
         // The Responses branch above has asked for low effort since #302,
         // for the same reason: a two-line Behavior pick is not worth a long
         // think. Measured on chat-completions in #597 — gpt-oss-20b under
@@ -1467,12 +1499,21 @@ fn request_body(
 /// and this line is the only place that records which value cost it. The
 /// alternative — remembering which values a host takes — is a cache of a
 /// server's validation rules, and being wrong about that costs a wake (#638).
+///
+/// The cap is the one field the retry renames rather than drops, so it says
+/// so: the caller's line reads "retrying without max_tokens, under
+/// max_completion_tokens", and a reader who saw only the field name would
+/// otherwise go looking for an uncapped reply that never happened (#619).
 fn dropped_field(field: Field, effort: &str) -> String {
     match field {
         Field::Stream => field.name().to_string(),
         Field::Effort => format!("{}={effort}", field.name()),
+        Field::Cap => format!("{}, under {NEW_CAP}", field.name()),
     }
 }
+
+/// What the cap is spelled once a host has refused `max_tokens` (#619).
+const NEW_CAP: &str = "max_completion_tokens";
 
 /// Ceiling on a streamed reply, in bytes.
 ///
@@ -1482,9 +1523,9 @@ fn dropped_field(field: Field, effort: &str) -> String {
 /// sends; it is here to bound a broken one.
 const STREAM_LIMIT: u64 = 1024 * 1024;
 
-/// An optional request field a server may refuse the whole request over.
+/// A request field a server may refuse the whole request over.
 ///
-/// Both are the same bet: worth sending where it works, never worth losing a
+/// Each is the same bet: worth sending where it works, never worth losing a
 /// wake to. One `Endpoint` flag apiece remembers the answer, so a host that
 /// refuses one pays the extra POST once per session and not once per wake.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1495,19 +1536,24 @@ enum Field {
     /// spells the same ask as `reasoning.effort` and is not guarded here:
     /// xAI is the only host that takes that path, and it accepts it.
     Effort,
+    /// `max_tokens` on chat-completions (#619). The one field here that is
+    /// renamed rather than dropped: the retry still carries a cap, spelled
+    /// `max_completion_tokens`.
+    Cap,
 }
 
 impl Field {
     /// Every guarded field, in the order a retry gives them up. One list, so
     /// the rejection reader and the retry bound cannot disagree about how
     /// many there are.
-    const ALL: [Field; 2] = [Field::Effort, Field::Stream];
+    const ALL: [Field; 3] = [Field::Cap, Field::Effort, Field::Stream];
 
     /// The name in the body, which is also the name a rejection uses.
     fn name(self) -> &'static str {
         match self {
             Field::Stream => "stream",
             Field::Effort => "reasoning_effort",
+            Field::Cap => "max_tokens",
         }
     }
 }
@@ -2479,6 +2525,7 @@ pub(crate) mod tests {
             session: Mutex::new(Session::default()),
             streams: AtomicBool::new(true),
             takes_effort: AtomicBool::new(true),
+            takes_max_tokens: AtomicBool::new(true),
             agent: ureq::agent(),
         }
     }
@@ -2607,6 +2654,43 @@ pub(crate) mod tests {
         assert_eq!(
             asked["reasoning_effort"], "max",
             "the typed level goes out verbatim"
+        );
+    }
+
+    /// #619's whole contract, end to end. The cap is the one guarded field
+    /// that is never given up: a host that refuses `max_tokens` is asked
+    /// again under the name the spec prefers, and every later wake opens
+    /// there. Losing it instead would uncap the reply on the host least able
+    /// to afford it.
+    #[test]
+    fn a_server_that_refuses_max_tokens_is_asked_again_under_the_new_name() {
+        let (url, seen) = server_refusing(Field::Cap);
+        let endpoint = endpoint_at(&url);
+        // Whole-body, so the stub can answer in one JSON object.
+        endpoint.streams.store(false, Ordering::SeqCst);
+
+        assert_eq!(
+            endpoint.post(&url, "hello").unwrap().text,
+            "stroll\nhey",
+            "the refusal costs a second POST, not the wake"
+        );
+        let asked = seen.recv().expect("the first request");
+        assert!(asked.contains(r#""max_tokens""#), "sent optimistically");
+        let retried = seen.recv().expect("the retry");
+        assert!(
+            retried.contains(r#""max_completion_tokens""#),
+            "the retry renames the cap rather than dropping it"
+        );
+
+        endpoint.post(&url, "what just happened: poked").unwrap();
+        let next_wake = seen.recv().expect("the next wake");
+        assert!(
+            next_wake.contains(r#""max_completion_tokens""#),
+            "a host that refused the old name is not asked under it again"
+        );
+        assert!(
+            seen.try_recv().is_err(),
+            "and the second wake pays one POST, not two"
         );
     }
 
@@ -3091,6 +3175,7 @@ pub(crate) mod tests {
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
+            true,
         );
         assert_eq!(streamed["stream"], true);
         let responses = request_body(
@@ -3101,6 +3186,7 @@ pub(crate) mod tests {
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
+            true,
         );
         assert_eq!(responses["stream"], true, "the Responses path streams too");
 
@@ -3112,6 +3198,7 @@ pub(crate) mod tests {
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
+            true,
         );
         assert!(
             whole.get("stream").is_none(),
@@ -3135,6 +3222,7 @@ pub(crate) mod tests {
             Wire::Stream,
             true,
             DEFAULT_EFFORT,
+            true,
         );
         assert_eq!(asked["reasoning_effort"], "low");
 
@@ -3146,6 +3234,7 @@ pub(crate) mod tests {
             Wire::Stream,
             false,
             DEFAULT_EFFORT,
+            true,
         );
         assert!(
             dropped.get("reasoning_effort").is_none(),
@@ -3160,6 +3249,7 @@ pub(crate) mod tests {
             Wire::Whole,
             true,
             DEFAULT_EFFORT,
+            true,
         );
         assert!(
             responses.get("reasoning_effort").is_none(),
@@ -3189,6 +3279,7 @@ pub(crate) mod tests {
                 Wire::Stream,
                 true,
                 level,
+                true,
             );
             assert_eq!(chat["reasoning_effort"], level);
 
@@ -3200,6 +3291,7 @@ pub(crate) mod tests {
                 Wire::Whole,
                 true,
                 level,
+                true,
             );
             assert_eq!(responses["reasoning"]["effort"], level);
         }
@@ -3217,6 +3309,18 @@ pub(crate) mod tests {
             dropped_field(Field::Stream, "high"),
             "stream",
             "the stream field carries no effort value"
+        );
+    }
+
+    /// #619: the cap is renamed, not dropped, and the retry line has to say
+    /// so — "retrying without max_tokens" alone would send a reader looking
+    /// for an uncapped reply that never went out.
+    #[test]
+    fn the_retry_line_says_the_cap_is_renamed_rather_than_given_up() {
+        assert_eq!(
+            dropped_field(Field::Cap, "high"),
+            "max_tokens, under max_completion_tokens",
+            "the only field here whose retry still carries one"
         );
     }
 
@@ -3243,6 +3347,63 @@ pub(crate) mod tests {
         });
     }
 
+    /// #619: the spec deprecated `max_tokens` and o-series models refuse it,
+    /// but it is the only name Ollama reads. So the rename is what a refusal
+    /// buys, not the shape every request opens with.
+    #[test]
+    fn a_chat_request_names_the_cap_the_old_way_until_a_host_refuses_it() {
+        let session = [Message {
+            role: "user",
+            content: "wave".to_string(),
+        }];
+        let asked = request_body(
+            "gpt-4o-mini",
+            &session,
+            false,
+            HOSTED_MAX_TOKENS,
+            Wire::Stream,
+            false,
+            DEFAULT_EFFORT,
+            true,
+        );
+        assert_eq!(asked["max_tokens"], 80);
+        assert!(asked.get("max_completion_tokens").is_none());
+
+        let renamed = request_body(
+            "o3-mini",
+            &session,
+            false,
+            HOSTED_MAX_TOKENS,
+            Wire::Stream,
+            false,
+            DEFAULT_EFFORT,
+            false,
+        );
+        assert_eq!(
+            renamed["max_completion_tokens"], 80,
+            "the retry still carries a cap, under the name the spec prefers"
+        );
+        assert!(
+            renamed.get("max_tokens").is_none(),
+            "a retry must not name the field the server just refused"
+        );
+
+        let responses = request_body(
+            "grok-4.6",
+            &session,
+            true,
+            HOSTED_MAX_TOKENS,
+            Wire::Whole,
+            false,
+            DEFAULT_EFFORT,
+            true,
+        );
+        assert_eq!(
+            responses["max_output_tokens"], 80,
+            "the Responses path spells the cap its own way and is not guarded"
+        );
+    }
+
     #[test]
     fn a_responses_request_uses_input_and_does_not_store() {
         let session = [Message {
@@ -3257,6 +3418,7 @@ pub(crate) mod tests {
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
+            true,
         );
         assert_eq!(body["input"], "wave");
         assert_eq!(body["max_output_tokens"], 80);
@@ -3289,6 +3451,7 @@ pub(crate) mod tests {
             Wire::Whole,
             false,
             DEFAULT_EFFORT,
+            true,
         );
         assert_eq!(body["input"][2]["content"], "what just happened: thrown");
         assert!(body["input"].is_array());
@@ -3503,6 +3666,50 @@ pub(crate) mod tests {
         );
     }
 
+    /// #619: the o-series refusal names the field it will not take *and* the
+    /// field it wants instead, so the reader has to tell two names apart that
+    /// differ by an infix. Reading the new name as the old one would rename a
+    /// body that is already renamed, and the wake would be spent on it.
+    #[test]
+    fn a_server_that_rejects_max_tokens_earns_one_retry_under_the_new_name() {
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.","param":"max_tokens","code":"unsupported_parameter"}}"#
+            ),
+            Some(Field::Cap),
+            "OpenAI's wording for an o-series model, verbatim"
+        );
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"Unsupported parameter: 'max_completion_tokens' is not supported."}}"#
+            ),
+            None,
+            "the new name is not the old one wearing a prefix"
+        );
+        assert_eq!(
+            refused_field(
+                422,
+                r#"{"detail":[{"loc":["body","max_tokens"],"msg":"extra fields not permitted"}]}"#
+            ),
+            Some(Field::Cap)
+        );
+        assert_eq!(
+            refused_field(400, r#"{"error":{"message":"model gpt-9 does not exist"}}"#),
+            None,
+            "a 400 about anything else would fail the same way twice"
+        );
+        assert_eq!(
+            refused_field(
+                400,
+                r#"{"error":{"message":"unknown fields: max_tokens, reasoning_effort"}}"#
+            ),
+            Some(Field::Cap),
+            "a validator listing several concedes the cap first: the retry still has one"
+        );
+    }
+
     #[test]
     fn a_broken_stream_is_worth_a_retry_but_teaches_nothing() {
         assert_eq!(
@@ -3514,6 +3721,11 @@ pub(crate) mod tests {
             Unsent::Refused(Field::Effort, "names the field".to_string()).retry_settles(),
             Some((Field::Effort, true)),
             "and the effort field is remembered the same way"
+        );
+        assert_eq!(
+            Unsent::Refused(Field::Cap, "names the field".to_string()).retry_settles(),
+            Some((Field::Cap, true)),
+            "and so is the name a host will take its cap under"
         );
         assert_eq!(
             Unsent::Cut("ended mid-reply".to_string()).retry_settles(),
