@@ -1557,7 +1557,15 @@ pub fn retarget(saved: Option<&str>, spawning: bool) {
     let old = std::mem::replace(&mut slot.session, opened.clone());
     drop(slot);
     if let Some(old) = old {
-        old.shutdown();
+        // Reaped on a thread of its own: `shutdown` waits out `REAP` for a
+        // child that does not go at once, and the only caller of this is a
+        // Settings row committing on the UI thread — so picking Model API
+        // froze the window for two seconds, and the menu the pick came from
+        // was still down when the next one arrived (#634). Nothing waits on
+        // the old session: the slot already holds what replaced it, which is
+        // what `attached` answers with. The kill still leaves at once; only
+        // the wait for the child to go moves off this thread.
+        std::thread::spawn(move || old.shutdown());
     }
     match &opened {
         None => eprintln!("harness: detached; HTTP Completer is the Director's \"AI brain\""),

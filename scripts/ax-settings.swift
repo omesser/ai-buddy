@@ -226,6 +226,26 @@ case "pick":
         die("the \(args[2]) popup has no option \(args[3])")
     }
     guard press(option) else { die("could not pick \(args[3])") }
+    // The row commits on the app's own thread, and the window redraws the line
+    // under it from what was saved, so neither is true the instant the press
+    // returns. Waiting for the new title with the menu already gone is what
+    // makes `pick` mean "the row took it": a caller that dumped straight after
+    // the press read the popup from before the click, and the state line from
+    // before the redraw, and blamed the window for both (#634).
+    guard
+        waitFor(
+            10,
+            {
+                guard string(target, kAXValueAttribute) == args[3],
+                    find(target, where: { string($0, kAXRoleAttribute) == "AXMenu" }) == nil
+                else { return nil }
+                return target
+            }) != nil
+    else {
+        die(
+            "the \(args[2]) popup still reads "
+                + "\(string(target, kAXValueAttribute) ?? "nothing") after picking \(args[3])")
+    }
 
 case "frame":
     // For `screencapture -R`, so the still is the window and not the desktop.
