@@ -381,9 +381,10 @@ const ENDPOINTS: &[(&str, &str, &str)] = &[
     ("Hosted", "xAI", "https://api.x.ai"),
 ];
 
-/// The title the picker rests on for an endpoint it does not name. Picking it
-/// writes nothing: the field beside it is what a custom endpoint is.
-pub const ENDPOINT_CUSTOM: &str = "Custom";
+/// The title a fill-in-the-field picker rests on for a value it does not name
+/// — a base URL off the list, or a reasoning effort off it. Picking it writes
+/// nothing: the field beside it is what the custom value is.
+pub const PICKER_CUSTOM: &str = "Custom";
 
 fn endpoint_title_of(_group: &str, name: &str, url: &str) -> String {
     format!("{name} ({url})")
@@ -397,7 +398,7 @@ fn endpoint_title_of(_group: &str, name: &str, url: &str) -> String {
 /// first, the hosted ones after — because `localhost` in the URL beside the
 /// name already says which is which.
 pub fn endpoint_options() -> Vec<String> {
-    let mut options = vec![ENDPOINT_CUSTOM.to_string()];
+    let mut options = vec![PICKER_CUSTOM.to_string()];
     options.extend(
         ENDPOINTS
             .iter()
@@ -430,7 +431,7 @@ pub fn endpoint_title(base_url: &str) -> String {
         .iter()
         .find(|(_, _, url)| *url == base_url)
         .map(|(group, name, url)| endpoint_title_of(group, name, url))
-        .unwrap_or_else(|| ENDPOINT_CUSTOM.to_string())
+        .unwrap_or_else(|| PICKER_CUSTOM.to_string())
 }
 
 /// The three reasoning-effort levels every documented host takes.
@@ -447,7 +448,7 @@ const EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 /// URL picker is shaped: the field below is the setting, and the picker only
 /// fills it in.
 pub fn effort_options() -> Vec<String> {
-    let mut options = vec![ENDPOINT_CUSTOM.to_string()];
+    let mut options = vec![PICKER_CUSTOM.to_string()];
     options.extend(EFFORT_LEVELS.iter().map(|level| level.to_string()));
     options
 }
@@ -467,7 +468,7 @@ pub fn effort_value(title: &str) -> Option<&'static str> {
 pub fn effort_title(effort: &str) -> String {
     match effort_value(effort.trim()) {
         Some(level) => level.to_string(),
-        None => ENDPOINT_CUSTOM.to_string(),
+        None => PICKER_CUSTOM.to_string(),
     }
 }
 
@@ -2085,7 +2086,7 @@ mod tests {
 
         assert_eq!(
             options.first().map(String::as_str),
-            Some(ENDPOINT_CUSTOM),
+            Some(PICKER_CUSTOM),
             "Custom rests first, so the picker opens on what the field holds"
         );
         for (name, url) in [
@@ -2223,7 +2224,7 @@ mod tests {
                     title,
                     "a picked level has to rest on the title that was picked"
                 ),
-                None => assert_eq!(title, ENDPOINT_CUSTOM, "only Custom writes nothing"),
+                None => assert_eq!(title, PICKER_CUSTOM, "only Custom writes nothing"),
             }
         }
         assert_eq!(
@@ -2234,7 +2235,7 @@ mod tests {
         for off_list in ["", "max", "xhigh", "banana"] {
             assert_eq!(
                 effort_title(off_list),
-                ENDPOINT_CUSTOM,
+                PICKER_CUSTOM,
                 "a level the picker cannot spell rests on Custom"
             );
             assert_eq!(effort_value(off_list), None);
@@ -2274,10 +2275,10 @@ mod tests {
         for title in endpoint_options() {
             match endpoint_url(&title) {
                 Some(url) => assert_eq!(endpoint_title(url), title),
-                None => assert_eq!(title, ENDPOINT_CUSTOM, "only Custom picks nothing"),
+                None => assert_eq!(title, PICKER_CUSTOM, "only Custom picks nothing"),
             }
         }
-        assert_eq!(endpoint_title("https://example.invalid"), ENDPOINT_CUSTOM);
+        assert_eq!(endpoint_title("https://example.invalid"), PICKER_CUSTOM);
     }
 
     /// A picker that looks live while a variable owns the value invites a
