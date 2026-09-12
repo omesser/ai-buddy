@@ -439,7 +439,7 @@ pub const BYO_STEPS_ID: &str = "byo_steps";
 pub const BYO_COPY_ID: &str = "byo_copy";
 /// The heading the three sit under, spelled once so the tests and the section
 /// cannot disagree about it.
-pub const BYO_HEADING: &str = "Attach a Harness you run yourself";
+pub const BYO_HEADING: &str = "Point a Harness you run yourself at ai-buddy";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
 pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
@@ -1526,7 +1526,7 @@ mod tests {
             "HTTP limits",
             "AI source",
             "AI",
-            "Attach a Harness you run yourself",
+            "Point a Harness you run yourself at ai-buddy",
             "Do Not Disturb",
             "Excluded applications",
             "Harness attachment",
