@@ -40,7 +40,7 @@ either way and are unaffected by it.
 
 ### How to reproduce
 
-`scripts/bench-rss.sh` launches the app, waits out the settling curve below,
+`scripts/bench-rss-macos.sh` launches the app, waits out the settling curve below,
 samples every process's RSS on a fixed interval, and reads each one's peak
 physical footprint before it stops the app.
 
@@ -57,10 +57,10 @@ HOME=/tmp/bench-home \
 AI_BUDDY_DIRECTOR=0 AI_BUDDY_DIRECTOR_API_KEY=x AI_BUDDY_CAPTURABLE=1 \
 AI_BUDDY_TRACE_ENGINE=1 AI_BUDDY_CHARACTERS="$PWD/characters" \
 AI_BUDDY_INSTANCES="bmo:One" \
-scripts/bench-rss.sh --out /tmp/one-instance.tsv
+scripts/bench-rss-macos.sh --out /tmp/one-instance.tsv
 
 # Research mode (300s settle + 300s sample) for measurement studies:
-scripts/bench-rss.sh --research --out /tmp/research-run.tsv
+scripts/bench-rss-macos.sh --research --out /tmp/research-run.tsv
 ```
 
 Five variables carry the run. `AI_BUDDY_INSTANCES` is the roster,
@@ -400,7 +400,7 @@ processes.
 
 ### How to run
 
-`scripts\bench-rss.ps1` implements the same contract as the macOS and Linux
+`scripts\bench-rss-windows.ps1` implements the same contract as the macOS and Linux
 scripts, adapted for Windows PowerShell:
 
 **Default: Brief smoke test** (settle ~3s, sample ~10s) — fast enough for a test
@@ -422,10 +422,10 @@ $env:AI_BUDDY_TRACE_ENGINE = "1"
 $env:AI_BUDDY_CHARACTERS = (Get-Location).Path + "\characters"
 $env:AI_BUDDY_INSTANCES = "bmo:One"
 
-.\scripts\bench-rss.ps1 -Out "C:\Temp\one-instance.tsv"
+.\scripts\bench-rss-windows.ps1 -Out "C:\Temp\one-instance.tsv"
 
 # Research mode (300s settle + 300s sample) for measurement studies:
-.\scripts\bench-rss.ps1 -Research -Out "C:\Temp\research-run.tsv"
+.\scripts\bench-rss-windows.ps1 -Research -Out "C:\Temp\research-run.tsv"
 ```
 
 ### Process architecture

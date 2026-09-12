@@ -8,7 +8,7 @@
 # not of the app, so no process-tree walk finds them. This takes the set of
 # WebKit helpers before launch and after, and calls the difference ours.
 #
-# Usage: scripts/bench-rss.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
+# Usage: scripts/bench-rss-macos.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
 #   Launches target/debug/ai-buddy, waits `settle` seconds, then samples every
 #   interval for `seconds`, writes one TSV row per sample, prints min/median/max
 #   over the sampled window and each process's peak physical footprint, then

@@ -5,7 +5,7 @@
 # Network, Renderer (one per webview), etc. This script discovers all
 # msedgewebview2.exe processes after launch and attributes them to the app.
 #
-# Usage: scripts\bench-rss.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]
+# Usage: scripts\bench-rss-windows.ps1 [-Settle N] [-Seconds N] [-Interval N] [-Out FILE] [-Research]
 #   Launches target\debug\ai-buddy.exe, waits Settle seconds, then samples every
 #   Interval for Seconds, writes one TSV row per sample, prints min/median/max
 #   over the sampled window and each process's peak working set, then stops the
