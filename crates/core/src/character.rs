@@ -58,6 +58,9 @@
 //! then = "settle"
 //! weight = 30
 //! when = "idle over 2m"
+//!
+//! [props.football]
+//! frames = ["props/football-0.png"]
 //! ```
 //!
 //! Frame count and frame size are read from the art instead of declared, since

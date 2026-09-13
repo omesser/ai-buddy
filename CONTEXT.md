@@ -49,6 +49,14 @@ _Avoid_: System prompt, custom instructions, jailbreak
 A named frame sequence belonging to a Character. Pure art with no logic.
 _Avoid_: Clip, sprite, sequence
 
+**Prop**:
+A small piece of art with a position in the shared point space and a life
+independent of any one Animation. Declared in the Character Manifest by the
+Character that owns it. Exists only once it is not being carried: put down,
+dropped, or left behind. The carried state stays painted into the Character's
+frames. Click-through scenery in v1, forgotten on quit. #165.
+_Avoid_: item, object, pickup, particle, sprite
+
 **Variant**:
 An Animation declared `variant_of` another. A base Animation and its variants
 form a ring, and when the engine asks for the base it draws one member of that
