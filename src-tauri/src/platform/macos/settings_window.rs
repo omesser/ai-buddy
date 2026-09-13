@@ -26,7 +26,7 @@ use objc2_foundation::{
 
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
@@ -235,63 +235,59 @@ define_class!(
             self.apply(patch);
         }
 
-        /// The Base URL shortcut, which stages rather than saves.
-        ///
-        /// Not `popupPicked:`: this popup writes no field of its own, because
-        /// the four Director rows only apply together (#279). It fills in the
-        /// field, and Apply is what reaches the file.
-        #[unsafe(method(endpointPicked:))]
-        fn endpoint_picked(&self, sender: Option<&AnyObject>) {
+        /// Every composite popup that is a shortcut for the field below it,
+        /// by the tag the pick carries. Not `popupPicked:`: a shortcut writes
+        /// no field of its own, and reads its title through `Shortcut` (#670).
+        #[unsafe(method(shortcutPicked:))]
+        fn shortcut_picked(&self, sender: Option<&AnyObject>) {
             let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
+                return;
+            };
+            let tag = popup.tag();
+            let id = self.ivars().tag_to_id.borrow().get(&tag).cloned();
+            let Some(id) = id else {
+                return;
+            };
+            let description = form::describe();
+            let Some(shortcut) = description.shortcut(&id) else {
                 return;
             };
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
-            // Custom, and any title off the list, name no endpoint to write:
-            // the field is what a custom endpoint is.
-            let Some(url) = form::endpoint_url(&title.to_string()) else {
+            // Custom, and any title off the list, name nothing to write: the
+            // field below is what a value this picker cannot spell is.
+            let Some(value) = (shortcut.value)(&title.to_string()) else {
                 return;
             };
-            let Some(field) = self.ivars().base_url.borrow().clone() else {
-                return;
-            };
-            field.setStringValue(&NSString::from_str(url));
-            self.update_director_buttons();
-        }
-
-        /// The reasoning-effort shortcut, which saves rather than stages.
-        ///
-        /// Unlike the Base URL shortcut beside it: the Development rows apply
-        /// one at a time, so there is no Apply button here to reach the file
-        /// (#638). The field below is what refresh then redraws.
-        #[unsafe(method(effortPicked:))]
-        fn effort_picked(&self, sender: Option<&AnyObject>) {
-            let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
-                return;
-            };
-            let Some(title) = popup.titleOfSelectedItem() else {
-                return;
-            };
-            // Custom names no level to write: the field below is what a level
-            // this picker cannot spell is.
-            let Some(level) = form::effort_value(&title.to_string()) else {
-                return;
-            };
-            // AppKit sends the action for a click on the item already
-            // selected, and that is a save and a redraw for nothing.
-            let unchanged = self
+            let field = self
                 .ivars()
                 .fields
                 .borrow()
                 .iter()
-                .find(|(id, _)| id == form::DIRECTOR_REASONING_EFFORT_ID)
-                .is_some_and(|(_, field)| field.stringValue().to_string() == level);
-            if unchanged {
+                .find(|(id, _)| id == shortcut.row)
+                .map(|(_, field)| field.clone());
+            let Some(field) = field else {
+                return;
+            };
+            // AppKit sends the action for a click on the item already
+            // selected, and that is a save and a redraw for nothing.
+            if field.stringValue().to_string() == value {
                 return;
             }
+            field.setStringValue(&NSString::from_str(value));
+            // A batched row stages: the four Director rows only apply
+            // together, so Apply is what reaches the file (#279). An
+            // unbatched one has no Apply beside it and saves here (#638).
+            if description.text_batched(shortcut.row) {
+                self.update_director_buttons();
+                return;
+            }
+            let Some(writes) = description.text_write(shortcut.row) else {
+                return;
+            };
             let mut patch = SettingsPatch::default();
-            if !patch.set_text(TextField::DirectorReasoningEffort, level) {
+            if !patch.set_text(writes, value) {
                 return;
             }
             self.apply(patch);
@@ -574,7 +570,7 @@ impl SettingsController {
             freeze_or_bind(
                 field,
                 description.frozen(id),
-                text_row_batched(description, id),
+                description.text_batched(id),
                 self,
             );
         }
@@ -1236,19 +1232,28 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 }
                                 // The choices come from the form at refresh,
                                 // not from here, so `options` goes unread.
-                                CompositeControl::Popup { id, frozen, .. } => {
-                                    // Only the Base URL shortcut acts on its
-                                    // own pick. Every other composite popup is
-                                    // read by the button beside it on press,
-                                    // which is what `new_instance` does.
-                                    let pop = match id.as_str() {
-                                        form::DIRECTOR_BASE_URL_PICK_ID => {
-                                            popup(&controller, sel!(endpointPicked:), mtm)
+                                CompositeControl::Popup {
+                                    id, frozen, fills, ..
+                                } => {
+                                    // Only a shortcut acts on its own pick.
+                                    // Every other composite popup is read by
+                                    // the button beside it on press, which is
+                                    // what `new_instance` does.
+                                    let pop = match fills {
+                                        Some(_) => {
+                                            let pop =
+                                                popup(&controller, sel!(shortcutPicked:), mtm);
+                                            let tag = next_tag;
+                                            next_tag += 1;
+                                            pop.setTag(tag);
+                                            controller
+                                                .ivars()
+                                                .tag_to_id
+                                                .borrow_mut()
+                                                .insert(tag, id.clone());
+                                            pop
                                         }
-                                        form::DIRECTOR_REASONING_EFFORT_PICK_ID => {
-                                            popup(&controller, sel!(effortPicked:), mtm)
-                                        }
-                                        _ => popup_plain(mtm),
+                                        None => popup_plain(mtm),
                                     };
                                     pop.setEnabled(!frozen);
                                     // Wide enough for the longest resting
@@ -1738,24 +1743,6 @@ fn popup_plain(mtm: MainThreadMarker) -> Retained<NSPopUpButton> {
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(180.0, 24.0)),
         false,
     )
-}
-
-/// Whether a text row commits on Apply. Secure fields are always batched
-/// (`FormRow::SecureField`); ids that are not text rows stay false.
-fn text_row_batched(description: &form::FormDescription, id: &str) -> bool {
-    description
-        .sections()
-        .flat_map(|section| &section.rows)
-        .find_map(|row| match row {
-            form::FormRow::TextField {
-                id: row_id,
-                batched,
-                ..
-            } if row_id == id => Some(*batched),
-            form::FormRow::SecureField { id: row_id, .. } if row_id == id => Some(true),
-            _ => None,
-        })
-        .unwrap_or(false)
 }
 
 fn fill_checkbox(cell: &RefCell<Option<Retained<NSButton>>>, value: bool) {
