@@ -341,14 +341,15 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
         ),
         "hermes" => (
             format!("hermes mcp add ai-buddy --url '{url}' --auth header"),
-            "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the \
-             interactive prompt. This stores `MCP_AI_BUDDY_API_KEY` in `~/.hermes/.env` \
-             and adds the header `Bearer ${{MCP_AI_BUDDY_API_KEY}}`. Then run `/reload-mcp` \
-             in your Hermes session. Alternatively, add or update `ai-buddy:` under \
-             `mcp_servers:` in `~/.hermes/config.yaml` with `url: \"{url}\"` and `headers:` \
-             → `Authorization: \"Bearer {token}\"`; keep the indentation exactly. \
-             `hermes mcp test ai-buddy` reports."
-                .to_string(),
+            format!(
+                "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the \
+                 interactive prompt. This stores `MCP_AI_BUDDY_API_KEY` in `~/.hermes/.env` \
+                 and adds the header `Bearer ${{MCP_AI_BUDDY_API_KEY}}`. Then run `/reload-mcp` \
+                 in your Hermes session. Alternatively, add or update `ai-buddy:` under \
+                 `mcp_servers:` in `~/.hermes/config.yaml` with `url: \"{url}\"` and `headers:` \
+                 → `Authorization: \"Bearer <token>\"`; keep the indentation exactly. \
+                 `hermes mcp test ai-buddy` reports."
+            ),
             token.to_string(), // Show token separately for interactive paste
         ),
         "opencode" => (
@@ -4168,12 +4169,12 @@ mod tests {
     #[test]
     fn every_byo_snippet_carries_the_url_and_the_raw_token() {
         for harness in form::HARNESS_PRESETS {
-            let (snippet, steps, _token) =
+            let (snippet, steps, byo_token) =
                 byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
 
             // Every harness must carry the URL somewhere
             assert!(
-                snippet.contains("http://127.0.0.1:5051/mcp") 
+                snippet.contains("http://127.0.0.1:5051/mcp")
                     || steps.contains("http://127.0.0.1:5051/mcp"),
                 "{harness} must carry the URL in snippet or steps, got snippet: {snippet:?}, steps: {steps:?}"
             );
@@ -4192,14 +4193,14 @@ mod tests {
                     );
                 }
                 "hermes" => {
-                    // Hermes: snippet has --auth header only, token in steps
+                    // Hermes: snippet has --auth header only, token in separate byo_token field
                     assert!(
                         snippet.contains("--auth header"),
                         "hermes snippet must have --auth header, got {snippet:?}"
                     );
-                    assert!(
-                        steps.contains("beef"),
-                        "hermes must show raw token in steps, got {steps:?}"
+                    assert_eq!(
+                        byo_token, "beef",
+                        "hermes must show raw token via byo_token, got {byo_token:?}"
                     );
                     assert!(
                         !snippet.contains("beef"),

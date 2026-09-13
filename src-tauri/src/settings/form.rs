@@ -3001,7 +3001,7 @@ mod tests {
             .find(|s| s.heading == BYO_HEADING)
             .expect("the Harness registration section");
 
-        assert_eq!(section.rows.len(), 4);
+        assert_eq!(section.rows.len(), 6);
         assert!(matches!(
             section.rows[0],
             FormRow::Popup { ref id, ref options, frozen: false, .. }

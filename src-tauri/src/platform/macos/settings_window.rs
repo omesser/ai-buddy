@@ -93,6 +93,7 @@ struct Ivars {
     harness_state: RefCell<Option<Retained<NSTextField>>>,
     byo_harness: RefCell<Option<Retained<NSPopUpButton>>>,
     byo_snippet: RefCell<Option<Retained<NSTextField>>>,
+    byo_token: RefCell<Option<Retained<NSTextField>>>,
     byo_steps: RefCell<Option<Retained<NSTextField>>>,
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
@@ -768,6 +769,9 @@ impl SettingsController {
         if let Some(field) = self.ivars().byo_snippet.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.byo_snippet));
         }
+        if let Some(field) = self.ivars().byo_token.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.byo_token));
+        }
         if let Some(field) = self.ivars().byo_steps.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.byo_steps));
         }
@@ -961,6 +965,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut harness_state_field = None;
     let mut byo_harness_popup = None;
     let mut byo_snippet_field = None;
+    let mut byo_token_field = None;
     let mut byo_steps_field = None;
     let mut new_character_popup = None;
     let mut new_name_field = None;
@@ -1212,6 +1217,11 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 let field = inspect_block(mtm);
                                 cursor.place(&field, 172.0);
                                 byo_snippet_field = Some(field);
+                            }
+                            form::BYO_TOKEN_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 66.0);
+                                byo_token_field = Some(field);
                             }
                             form::BYO_STEPS_ID => {
                                 let field = inspect_block(mtm);

@@ -1175,6 +1175,9 @@ impl SettingsWindow {
         if let Some(Control::Label(label)) = controls.get(form::BYO_SNIPPET_ID) {
             label.set_text(&view.byo_snippet);
         }
+        if let Some(Control::Label(label)) = controls.get(form::BYO_TOKEN_ID) {
+            label.set_text(&view.byo_token);
+        }
         if let Some(Control::Label(label)) = controls.get(form::BYO_STEPS_ID) {
             label.set_text(&view.byo_steps);
         }
