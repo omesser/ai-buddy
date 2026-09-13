@@ -466,6 +466,7 @@ mod tests {
             personality: format!("A test character named {name}"),
             animations,
             behaviors,
+            props: BTreeMap::new(),
             art: BTreeMap::new(),
             smooth: false,
             scale: 1,

@@ -2107,6 +2107,7 @@ mod tests {
             personality: String::new(),
             animations,
             behaviors,
+            props: BTreeMap::new(),
             art: BTreeMap::new(),
             smooth: false,
             scale: 1,

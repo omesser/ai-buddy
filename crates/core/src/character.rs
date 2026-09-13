@@ -27,9 +27,9 @@
 //! without the Character gaining flight.
 //!
 //! The Character Manifest is TOML (ADR-0015): a name, a table per Animation,
-//! a table per Behavior, an optional `[source]` saying where the art came
-//! from, and an optional `[director]` for how proactive model calls space
-//! themselves. TOML replaces only the container — the `when`
+//! a table per Behavior, an optional table per Prop, an optional `[source]`
+//! saying where the art came from, and an optional `[director]` for how
+//! proactive model calls space themselves. TOML replaces only the container — the `when`
 //! condition is still this module's own small language, checked here. It stays
 //! internal and undocumented until v2, so this is the whole of it:
 //!
@@ -165,6 +165,13 @@ pub(crate) const MAX_FRAME_SIDE: u32 = 1024;
 /// to ask for terabytes. A hand-drawn Animation is a handful of frames.
 pub(crate) const MAX_FRAMES: usize = 256;
 
+/// The most Props a Character may declare.
+///
+/// Scenery, not a particle system. A dropped football and a skateboard are
+/// the working picture; eight is enough for a desk and not enough to turn
+/// the overlay into a sprite engine. #165.
+pub(crate) const MAX_PROPS: usize = 8;
+
 /// The most pixels all of a Character's distinct frames may add up to.
 ///
 /// The half `MAX_FRAMES` is still missing: it bounds one Animation, and a
@@ -260,6 +267,14 @@ pub struct Animation {
     pub weight: u32,
 }
 
+/// Declared art for a Prop. Frames and size only — a Prop is scenery, not
+/// an Animation, and the Engine never plays it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PropArt {
+    pub frames: Vec<String>,
+    pub frame_size: (u32, u32),
+}
+
 impl Animation {
     /// Which frame is on screen `elapsed_ms` after this Animation started.
     ///
@@ -348,7 +363,10 @@ pub struct Character {
     pub personality: String,
     pub animations: BTreeMap<String, Animation>,
     pub behaviors: BTreeMap<String, Behavior>,
-    /// Every distinct frame any Animation names, by the name it is named.
+    /// Declared Props, by the name the package wrote. Empty when the package
+    /// writes no `[props]`.
+    pub props: BTreeMap<String, PropArt>,
+    /// Every distinct frame any Animation or Prop names, by the name it is named.
     pub art: BTreeMap<String, Art>,
     /// The renderer smooths this art when scaling instead of keeping hard
     /// pixels — the `render_mode` ADR-0006 reserved, for Characters whose
@@ -592,7 +610,8 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
     let personality = personality(package, &mut errors);
     let variant_pairs = check_variants(&declared.animations, &mut errors);
     let left_pairs = check_left_strips(&declared.animations, &mut errors);
-    let (mut animations, art) = resolve_animations(package, declared.animations, &mut errors);
+    let (mut animations, props, art) =
+        resolve_animations(package, declared.animations, declared.props, &mut errors);
     // Linked after resolution so a variant whose frames failed never joins a
     // ring; its own declaration errors already say why.
     for (variant, base) in variant_pairs {
@@ -630,6 +649,7 @@ pub fn load(package: &PackageBytes) -> Result<Character, Vec<String>> {
             personality,
             animations,
             behaviors,
+            props,
             art,
             smooth: declared.smooth.unwrap_or(false),
             scale: declared.scale.unwrap_or(DEFAULT_SCALE),

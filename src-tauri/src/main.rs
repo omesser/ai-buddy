@@ -2789,6 +2789,7 @@ mod tests {
             personality: String::new(),
             animations: BTreeMap::new(),
             behaviors: BTreeMap::new(),
+            props: BTreeMap::new(),
             art: BTreeMap::new(),
             smooth: false,
             scale: 1,
