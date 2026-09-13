@@ -1019,8 +1019,7 @@ fn byo_section() -> FormSection {
             id: BYO_TOKEN_ID.to_string(),
             label: None,
             help: Some(
-                "Paste at Hermes auth prompt; no Bearer prefix; rotates each launch."
-                    .to_string(),
+                "Paste at Hermes auth prompt; no Bearer prefix; rotates each launch.".to_string(),
             ),
             disclosure: None,
             status: None,
@@ -3079,8 +3078,10 @@ mod tests {
         let settings_path = crate::settings::settings_path(&data_dir);
 
         for harness in HARNESS_PRESETS {
-            let mut settings = crate::settings::Settings::default();
-            settings.byo_harness = harness.to_string();
+            let settings = crate::settings::Settings {
+                byo_harness: harness.to_string(),
+                ..Default::default()
+            };
             settings.save(&settings_path).expect("save settings");
 
             let description = describe();
