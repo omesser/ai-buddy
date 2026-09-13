@@ -1515,18 +1515,6 @@ fn checkbox(
     button
 }
 
-/// How tall a wrapping label has to be to show all of its text at
-/// `FIELD_WIDTH`.
-///
-/// Measured rather than assumed: help text is written in `settings::form` and
-/// a fixed height silently clips the sentence when someone lengthens it.
-/// Widening the window only ever frees space, since `stretch_x` lets the label
-/// grow and wrap into fewer lines.
-///
-/// Untested, and not testable in this harness: `fittingSize` drives autolayout,
-/// which aborts the process off the main thread, and `cargo test` runs on a
-/// worker. `Cursor` carries a `MainThreadMarker`, so a caller cannot reach here
-/// from anywhere else.
 /// The label on a "What is this?" toggle, closed or open.
 fn disclosure_title(open: bool) -> &'static str {
     if open {
@@ -1546,6 +1534,18 @@ fn hang(bottom: f64, height: f64, target: f64) -> (f64, f64) {
     (bottom + height - target, target - height)
 }
 
+/// How tall a wrapping label has to be to show all of its text at
+/// `FIELD_WIDTH`.
+///
+/// Measured rather than assumed: help text is written in `settings::form` and
+/// a fixed height silently clips the sentence when someone lengthens it.
+/// Widening the window only ever frees space, since `stretch_x` lets the label
+/// grow and wrap into fewer lines.
+///
+/// Untested, and not testable in this harness: `fittingSize` drives autolayout,
+/// which aborts the process off the main thread, and `cargo test` runs on a
+/// worker. `Cursor` carries a `MainThreadMarker`, so a caller cannot reach here
+/// from anywhere else.
 fn wrapped_height(label: &NSTextField) -> f64 {
     label.setPreferredMaxLayoutWidth(FIELD_WIDTH);
     label.fittingSize().height.ceil()
@@ -1874,10 +1874,15 @@ mod tests {
         );
     }
 
-    /// #642: the copy used to be laid out at its full height and merely
-    /// hidden, which left a blank band under every "What is this?".
+    /// #642: opening has to move the bottom edge down by exactly what closing
+    /// gives back, or the rows under a disclosure drift every toggle.
+    ///
+    /// The other half of #642 — the copy laid out at zero height in
+    /// `Cursor::disclosure` rather than its full height — stays uncovered.
+    /// Reaching it means `setFrame` and `addSubview` on a real `NSView`, which
+    /// is the main-thread AppKit `test_mtm` promises not to touch.
     #[test]
-    fn a_closed_disclosure_reserves_no_space() {
+    fn hang_gives_back_exactly_what_it_took() {
         let top = 400.0;
         let (bottom, grow) = hang(top, 0.0, 30.0);
         assert_eq!((bottom, grow), (370.0, 30.0), "opening hangs off the top");
