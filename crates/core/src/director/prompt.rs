@@ -8,15 +8,28 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 /// Later wakes send `follow_up` only. The Completer holds the conversation
 /// so the Personality Prompt is not paid for again.
 ///
-/// `blank` is the blank-AI mode of #657: the model is sent what it may
-/// propose, how to answer, and what just happened, and nothing about who it is
-/// supposed to be. It is the control run — a misbehaviour under it is the
-/// model's, because no Character Prompt shaped the reply.
+/// `blank` is the blank-AI mode of #657: `follow_up(context)` and not one word
+/// more. Not the authored layers, not the voice rules, and not the roster or
+/// the format contract either — those are instruction too, and instruction is
+/// what the mode exists to remove. What is left is the moment, which is the
+/// question, and a model with nothing in front of it.
+///
+/// The reply is then prose: `parse_proposal` fails, `as_speech` speaks it, and
+/// the buddy talks without playing a Behavior for as long as the mode is on.
+/// That is the measurement, not a gap in it — a fallback or a shorter contract
+/// to keep Behaviors working would put the instruction back under a new name.
 pub(crate) fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
 ) -> String {
+    let moment = follow_up(context);
+    if blank {
+        // Before the roster is even joined: nothing below is sent, so nothing
+        // below is worth building.
+        return moment;
+    }
+
     let names: Vec<String> = behaviors
         .into_iter()
         .map(|name| name.as_ref().to_string())
@@ -26,21 +39,6 @@ pub(crate) fn character_prompt(
     } else {
         names.join(", ")
     };
-    // The roster and the format contract. Blank-AI mode keeps these and the
-    // moment below and nothing else: a reply with no contract cannot be
-    // parsed, and a turn with no moment asks nothing, so a mode short of
-    // either would measure nothing (#657).
-    let contract = format!(
-        "You may propose one of these behaviors: {declared}\n\
-         \n\
-         Reply with the behavior name on the first line.\n\
-         An optional spoken line may follow on the next line.\n\
-         Propose nothing else."
-    );
-    let moment = follow_up(context);
-    if blank {
-        return format!("{contract}\n\n{moment}");
-    }
 
     let personality = if context.personality.is_empty() {
         "(no personality)"
@@ -65,7 +63,11 @@ pub(crate) fn character_prompt(
     format!(
         "{authored}\n\
          \n\
-         {contract}\n\
+         You may propose one of these behaviors: {declared}\n\
+         \n\
+         Reply with the behavior name on the first line.\n\
+         An optional spoken line may follow on the next line.\n\
+         Propose nothing else.\n\
          \n\
          Speak in this character's voice, always in character: never mention \
          being a model or an assistant. A spoken line fits a small speech \

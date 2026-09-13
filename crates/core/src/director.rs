@@ -287,8 +287,8 @@ pub struct ModelDirector<C> {
     /// The Character Prompt is the opening turn only. After a successful
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
-    /// Blank-AI mode: no Personality Prompt, no Instance prompt, no voice
-    /// rules (#657).
+    /// Blank-AI mode: `follow_up` and nothing else, on the opening turn as
+    /// on every later one (#657).
     ///
     /// Fixed for this Director's life, the way the Endpoint bakes in the
     /// timeout and the reply cap: the mode decides the opening turn, and
@@ -1810,11 +1810,12 @@ mod tests {
         );
     }
 
-    /// #657: the blank-AI opening is the contract and the moment, and nothing
-    /// about who the buddy is. Both modes in one test, so an edit that puts a
-    /// layer back has to say so here.
+    /// #657: the blank-AI opening is the moment and not one word more, and
+    /// the shaped one still carries every layer. Equality rather than a list
+    /// of absences: the regression this mode invites is a line left behind,
+    /// and a `contains` check cannot see one.
     #[test]
-    fn blank_mode_drops_the_authored_layers_and_the_voice_rules() {
+    fn blank_mode_sends_the_moment_and_nothing_else() {
         let moment = Context {
             instance_prompt: "Answer in haiku.".to_string(),
             ..context(working(), &["nap"])
@@ -1822,6 +1823,12 @@ mod tests {
 
         let shaped = character_prompt(&moment, ["wave"], false);
         let blank = character_prompt(&moment, ["wave"], true);
+
+        assert_eq!(
+            blank,
+            follow_up(&moment),
+            "blank is `follow_up` itself: no roster, no contract, no rules"
+        );
 
         // Every sentence of the rules paragraph, not just its first: a later
         // edit that leaves one of them behind has to fail here.
@@ -1834,31 +1841,17 @@ mod tests {
             "Vary",
             "React to this moment",
             "never promise",
-        ] {
-            assert!(shaped.contains(layer), "the shaped opening: {shaped}");
-            assert!(
-                !blank.contains(layer),
-                "blank carries no {layer:?}: {blank}"
-            );
-        }
-        // The placeholder is a Character with an empty personality file, which
-        // still gets the rules above. Blank mode is not that.
-        assert!(
-            !blank.contains("(no personality)"),
-            "a missing layer is left out, not stood in for: {blank}"
-        );
-
-        for kept in [
             "You may propose one of these behaviors: wave",
             "Reply with the behavior name on the first line.",
             "Propose nothing else.",
-            "what just happened: poked",
         ] {
-            assert!(blank.contains(kept), "blank keeps {kept:?}: {blank}");
+            assert!(shaped.contains(layer), "the shaped opening: {shaped}");
         }
+        // The placeholder is a Character with an empty personality file, which
+        // still gets all of the above. Blank mode is not that.
         assert!(
-            blank.ends_with(&follow_up(&moment)),
-            "the moment is the question being asked, and it comes last: {blank}"
+            !blank.contains("(no personality)"),
+            "a missing layer is left out, not stood in for: {blank}"
         );
     }
 

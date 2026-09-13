@@ -34,9 +34,9 @@ pub fn tracing() -> bool {
     crate::dev_flags::TRACE_DIRECTOR.is_on()
 }
 
-/// Blank-AI mode in force: the opening turn carries no Personality Prompt, no
-/// Instance prompt and no voice rules (#657). Read where a `ModelDirector` is
-/// built, for the reason `ModelDirector::blank` gives.
+/// Blank-AI mode in force: every turn carries what just happened and nothing
+/// else (#657). Read where a `ModelDirector` is built, for the reason
+/// `ModelDirector::blank` gives.
 pub fn blank() -> bool {
     crate::dev_flags::DIRECTOR_BLANK.is_on()
 }
@@ -69,9 +69,9 @@ pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 pub(crate) const TIMEOUT_SECS: &str = "AI_BUDDY_DIRECTOR_TIMEOUT_SECS";
 pub(crate) const MAX_TOKENS: &str = "AI_BUDDY_DIRECTOR_MAX_TOKENS";
 
-/// Blank-AI mode: send the contract and the moment, and nothing about who the
-/// buddy is meant to be (#657). A switch, so it reads the same words every
-/// other switch does, and it owns its Development row the same way.
+/// Blank-AI mode: send what just happened and nothing else (#657). A switch,
+/// so it reads the same words every other switch does, and it owns its
+/// Development row the same way.
 pub(crate) const BLANK: &str = "AI_BUDDY_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";

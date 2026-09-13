@@ -46,12 +46,13 @@ by the same rule: demeanour only, never capability. ADR-0012.
 _Avoid_: System prompt, custom instructions, jailbreak
 
 **Blank AI**:
-The Director mode that sends no Character Prompt: the Behaviors it may propose,
-the reply contract, and this moment, and nothing about who the buddy is. Off by
-default. A buddy in it has no character, which is what makes it the control run
-for telling a model's misbehaviour apart from the prompt's. #657.
+The Director mode that sends no Character Prompt at all: this moment, and not
+one word more — no personality, no voice rules, no Behavior roster and no reply
+contract. Off by default. With no contract the reply is prose, so the buddy
+talks and plays no Behavior while the mode is on: that is the control run for
+telling a model's misbehaviour apart from the prompt's. #657.
 _Avoid_: Empty personality — that is a Character with an empty file, which
-still gets the voice rules
+still gets the voice rules and the contract
 
 **Animation**:
 A named frame sequence belonging to a Character. Pure art with no logic.

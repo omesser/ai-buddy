@@ -1108,14 +1108,14 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Blank AI".to_string(),
             comment: Some("Also for development and testing. Off is the buddy as shipped.".to_string()),
-            disclosure: Some("Blank AI sends the model the behavior list, the reply contract, and what just happened — and nothing about who it is meant to be: no Personality Prompt, no Instance Prompt, no voice rules. It is the control run for \"is this the model or is this our prompt\": a buddy in this mode has no character. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            disclosure: Some("Blank AI sends the model what just happened and nothing else: no Personality Prompt, no Instance Prompt, no voice rules, no behavior list and no reply contract. It is the control run for \"is this the model or is this our prompt\". Nothing asks for a Behavior name, so the buddy says what comes back and plays no Behavior while this is on. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
             status: None,
             rows: vec![flag_row(
                 DIRECTOR_BLANK_ID,
                 &dev_flags::DIRECTOR_BLANK,
                 BoolField::DirectorBlank,
                 "Blank AI",
-                "No personality and no voice rules: the contract and the moment only.",
+                "What just happened, and nothing else. The buddy talks and plays no Behavior.",
             )],
         },
         FormSection {
