@@ -404,14 +404,14 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
 /// with none has an endpoint like everyone else.
 /// The registration box's Harness, resting on the first name the picker
 /// offers so the box is never blank on a first visit.
-fn byo_harness_in_force(settings: &Settings) -> String {
+pub fn byo_harness_in_force(settings: &Settings) -> String {
     match settings.byo_harness.trim() {
         "" => form::HARNESS_PRESETS[0].to_string(),
         picked => picked.to_string(),
     }
 }
 
-fn byo_rows(harness: &str) -> (String, String, String) {
+pub fn byo_rows(harness: &str) -> (String, String, String) {
     match crate::mcp_http::endpoint() {
         Some(endpoint) => {
             let (url, token) = endpoint.registration();

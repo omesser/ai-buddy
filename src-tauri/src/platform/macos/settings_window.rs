@@ -1497,6 +1497,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().harness_state.borrow_mut() = harness_state_field;
     *controller.ivars().byo_harness.borrow_mut() = byo_harness_popup;
     *controller.ivars().byo_snippet.borrow_mut() = byo_snippet_field;
+    *controller.ivars().byo_token.borrow_mut() = byo_token_field;
     *controller.ivars().byo_steps.borrow_mut() = byo_steps_field;
     *controller.ivars().new_character.borrow_mut() = new_character_popup;
     *controller.ivars().new_name.borrow_mut() = new_name_field;
