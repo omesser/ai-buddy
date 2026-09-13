@@ -338,17 +338,26 @@ impl SettingsView {
     ///
     /// GTK needs none of it: a click on the active radio of a group emits no
     /// `toggled`. Win32 reads it to draw rather than to guard — it fills a
-    /// popup from the row's `options` and selects the value in force from here
-    /// (#468) — and commits no pick at all until #461 maps a control back to
-    /// its row.
+    /// popup from the row's `options` and selects the value in force from
+    /// here (#468).
+    ///
+    /// The last two are shortcut pickers, which rest on the title for what
+    /// the field below them holds rather than on a value of their own (#670).
     // The Linux lane is the one that asks for none of it, and the binary's
     // dead-code lint sees no caller there — the same reason `form::bool_write`
     // carries this.
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-    pub fn popup_value(&self, id: &str) -> Option<&str> {
+    pub fn popup_value(&self, id: &str) -> Option<String> {
         match id {
-            form::CHARACTER_ID => Some(&self.character),
-            form::HARNESS_ID => Some(&self.harness),
+            form::CHARACTER_ID => Some(self.character.clone()),
+            form::HARNESS_ID => Some(self.harness.clone()),
+            form::DIRECTOR_BASE_URL_PICK_ID => Some(form::endpoint_title(&self.director_base_url)),
+            form::DIRECTOR_REASONING_EFFORT_PICK_ID => Some(form::effort_title(
+                self.development_texts
+                    .get(form::DIRECTOR_REASONING_EFFORT_ID)
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+            )),
             _ => None,
         }
     }
@@ -3797,10 +3806,10 @@ mod tests {
             // And a renderer asks before it commits at all, so the click on
             // the entry already selected writes nothing.
             assert_eq!(
-                view.popup_value(form::HARNESS_ID),
+                view.popup_value(form::HARNESS_ID).as_deref(),
                 Some(form::HARNESS_CUSTOM)
             );
-            assert_eq!(view.popup_value(form::CHARACTER_ID), Some(""));
+            assert_eq!(view.popup_value(form::CHARACTER_ID), Some(String::new()));
             assert_eq!(view.popup_value("nothing_like_it"), None);
         });
     }

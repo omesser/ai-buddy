@@ -16,7 +16,7 @@ use gtk::{
 
 use crate::settings::form::{self, CompositeControl, FormRow, RowOperation};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
@@ -542,6 +542,7 @@ impl SettingsWindow {
                             id,
                             options,
                             frozen,
+                            fills,
                         } => {
                             let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
                             radio_box.set_size_request(180, -1);
@@ -565,20 +566,26 @@ impl SettingsWindow {
                                 }
                                 radio.set_sensitive(!frozen);
 
-                                // Into the field rather than into the file: the
-                                // four Director rows only apply together, and
-                                // `bind_batched`'s `changed` is what lights
-                                // Apply up (#279).
-                                if !frozen {
+                                // A shortcut fills in the row below it and
+                                // writes no field of its own, so its title has
+                                // to be read as a value first (#670).
+                                if let (false, Some(shortcut)) = (*frozen, *fills) {
                                     let title = option.clone();
                                     let controls = self.controls.clone();
                                     let refreshing = self.refreshing.clone();
                                     let session = Arc::clone(&self.session);
-                                    // The reasoning-effort shortcut saves
-                                    // rather than staging: the Development
-                                    // rows apply one at a time, so there is no
-                                    // Apply beside it to reach the file (#638).
-                                    let effort = id == form::DIRECTOR_REASONING_EFFORT_PICK_ID;
+                                    // A batched row stages: the four Director
+                                    // rows only apply together, and
+                                    // `bind_batched`'s `changed` is what
+                                    // lights Apply up (#279). An unbatched one
+                                    // has no Apply beside it and saves here,
+                                    // because `connect_changed` is not what
+                                    // commits it (#638).
+                                    let description = form::describe();
+                                    let writes = match description.text_batched(shortcut.row) {
+                                        true => None,
+                                        false => description.text_write(shortcut.row),
+                                    };
                                     radio.connect_toggled(move |radio| {
                                         // The refreshing guard must stay above
                                         // the `controls` borrow below: `refresh`
@@ -589,33 +596,31 @@ impl SettingsWindow {
                                         if refreshing.get() || !radio.is_active() {
                                             return;
                                         }
-                                        if effort {
-                                            let Some(level) = form::effort_value(&title) else {
-                                                return;
-                                            };
-                                            if let Ok(guard) = session.lock() {
-                                                if let Some(sess) = guard.as_ref() {
-                                                    let mut patch = SettingsPatch::default();
-                                                    if !patch.set_text(
-                                                        TextField::DirectorReasoningEffort,
-                                                        level,
-                                                    ) {
-                                                        return;
-                                                    }
-                                                    if let Err(e) = sess.apply(patch) {
-                                                        eprintln!("settings: {e}");
-                                                    }
-                                                }
-                                            }
-                                            return;
-                                        }
-                                        let Some(url) = form::endpoint_url(&title) else {
+                                        // Custom, and any title off the list,
+                                        // name nothing to write: the field
+                                        // below is what a value this picker
+                                        // cannot spell is.
+                                        let Some(value) = (shortcut.value)(&title) else {
                                             return;
                                         };
                                         if let Some(Control::Entry(entry)) =
-                                            controls.borrow().get(form::DIRECTOR_BASE_URL_ID)
+                                            controls.borrow().get(shortcut.row)
                                         {
-                                            entry.set_text(url);
+                                            entry.set_text(value);
+                                        }
+                                        let Some(writes) = writes else {
+                                            return;
+                                        };
+                                        if let Ok(guard) = session.lock() {
+                                            if let Some(sess) = guard.as_ref() {
+                                                let mut patch = SettingsPatch::default();
+                                                if !patch.set_text(writes, value) {
+                                                    return;
+                                                }
+                                                if let Err(e) = sess.apply(patch) {
+                                                    eprintln!("settings: {e}");
+                                                }
+                                            }
                                         }
                                     });
                                 }

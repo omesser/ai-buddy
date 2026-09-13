@@ -176,6 +176,9 @@ pub enum CompositeControl {
         options: Vec<String>,
         /// Disabled, for the same reason as `FormRow::TextField::frozen`.
         frozen: bool,
+        /// The row this popup is a shortcut for, or `None` for one read by
+        /// the button beside it — which is what `new_instance` does.
+        fills: Option<Shortcut>,
     },
     Button {
         id: String,
@@ -184,6 +187,36 @@ pub enum CompositeControl {
         frozen: bool,
     },
 }
+
+/// What a composite popup fills in, and how to read a title as a value.
+///
+/// A shortcut picker does not write its own title: `Custom` names no level,
+/// and the Base URL picker writes a URL rather than a label. So a field alone
+/// cannot serve it and the reading travels with the row it fills.
+///
+/// Whether a pick stages or saves is not declared here — it is the target
+/// row's `batched`, so the shortcut and the field below it cannot disagree
+/// about when the file is reached (#279).
+#[derive(Clone, Copy, Debug)]
+pub struct Shortcut {
+    /// The id of the text row filled in, whose `writes` is the field.
+    pub row: &'static str,
+    /// The value a picked title means, or `None` for Custom and for a title
+    /// off the list — neither of which is a value to write over what the
+    /// field holds.
+    pub value: fn(&str) -> Option<&'static str>,
+}
+
+/// By the row alone. A shortcut is the row it fills, and comparing the
+/// reading beside it answers nothing: function pointer addresses are not
+/// guaranteed unique.
+impl PartialEq for Shortcut {
+    fn eq(&self, other: &Self) -> bool {
+        self.row == other.row
+    }
+}
+
+impl Eq for Shortcut {}
 
 /// One tab of the settings form, holding the sections that belong together.
 ///
@@ -294,6 +327,52 @@ impl FormDescription {
                 | FormRow::Popup {
                     id: row_id, writes, ..
                 } if row_id == id => Some(*writes),
+                _ => None,
+            })
+    }
+
+    /// Whether the text row with this id commits on Apply rather than on
+    /// every blur. Secure fields are always batched (`FormRow::SecureField`);
+    /// an id that is not a text row stays false.
+    pub fn text_batched(&self, id: &str) -> bool {
+        self.sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField {
+                    id: row_id,
+                    batched,
+                    ..
+                } if row_id == id => Some(*batched),
+                FormRow::SecureField { id: row_id, .. } if row_id == id => Some(true),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    /// The row a composite popup is a shortcut for, and how to read its
+    /// titles. `None` for every other control, popups included: a row that
+    /// writes a field of its own answers `text_write` instead.
+    ///
+    /// For a renderer holding an id and needing the shortcut — AppKit reaches
+    /// it through the tag the pick carries, Win32 through the child id.
+    // GTK captures the shortcut where it builds the radio, so the binary's
+    // dead-code lint sees no caller there — the same reason `bool_write`
+    // carries this.
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    pub fn shortcut(&self, id: &str) -> Option<Shortcut> {
+        self.sections()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::Composite { controls, .. } => {
+                    controls.iter().find_map(|control| match control {
+                        CompositeControl::Popup {
+                            id: control_id,
+                            fills,
+                            ..
+                        } if control_id == id => *fills,
+                        _ => None,
+                    })
+                }
                 _ => None,
             })
     }
@@ -410,9 +489,6 @@ pub fn endpoint_options() -> Vec<String> {
 
 /// The base URL a picked title means, or `None` for Custom and for a title off
 /// the list — neither of which is a value to write over what the field holds.
-// AppKit and GTK spend a pick; Win32 draws the choices and commits none of
-// them yet, so the binary's dead-code lint sees no caller there.
-#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn endpoint_url(title: &str) -> Option<&'static str> {
     ENDPOINTS
         .iter()
@@ -423,9 +499,6 @@ pub fn endpoint_url(title: &str) -> Option<&'static str> {
 /// The title to rest on for the base URL in force. The inverse of
 /// `endpoint_url`, and Custom for the endpoints this list does not name —
 /// which is most of what the field can hold.
-// Win32 selects from `SettingsView::popup_value`, which answers for no
-// composite control; the same dead-code note as `endpoint_url`.
-#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn endpoint_title(base_url: &str) -> String {
     let base_url = base_url.trim().trim_end_matches('/');
     ENDPOINTS
@@ -456,8 +529,6 @@ pub fn effort_options() -> Vec<String> {
 
 /// The level a picked title means, or `None` for Custom — which writes
 /// nothing, because the field is what a level off this list is.
-// Win32 draws no composite pick yet; the same dead-code note as `endpoint_url`.
-#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn effort_value(title: &str) -> Option<&'static str> {
     EFFORT_LEVELS.iter().find(|level| **level == title).copied()
 }
@@ -465,7 +536,6 @@ pub fn effort_value(title: &str) -> Option<&'static str> {
 /// The title to rest on for the level in force. Custom for anything the
 /// picker does not name, blank included: blank is `low` by default, not by a
 /// pick, and resting on `low` would offer to un-set it as an edit.
-#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn effort_title(effort: &str) -> String {
     match effort_value(effort.trim()) {
         Some(level) => level.to_string(),
@@ -721,6 +791,10 @@ fn director_sections() -> Vec<FormSection> {
                         id: DIRECTOR_BASE_URL_PICK_ID.to_string(),
                         options: endpoint_options(),
                         frozen: base_url_frozen,
+                        fills: Some(Shortcut {
+                            row: DIRECTOR_BASE_URL_ID,
+                            value: endpoint_url,
+                        }),
                     }],
                 },
                 FormRow::TextField {
@@ -807,15 +881,10 @@ fn director_sections() -> Vec<FormSection> {
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
 ///
-/// ponytail: all three renderers draw these rows — AppKit from the start, GTK
-/// since #467, Win32 since #468. What Win32 still cannot do is commit one: no
-/// control in that window maps back to the row it belongs to, because its
-/// handlers look a row up by the numeric child id, so nothing typed or picked
-/// there is written — the wake interval and both Completer limits included.
-/// One generic commit handler plus that id map fixes them together and is
-/// #461, not written blind here: Win32 does not compile on the machine this
-/// landed from. The file field is the setting either way, so a hand-edit
-/// works everywhere today.
+/// All three renderers draw these rows — AppKit from the start, GTK since
+/// #467, Win32 since #468 — and all three commit them: `control_id_to_form_id`
+/// maps a Win32 child id back to its row (#461), and a pick reaches the file
+/// through the generic handler every row shares (#670).
 fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
@@ -899,6 +968,7 @@ fn character_sections() -> Vec<FormSection> {
                             id: NEW_CHARACTER_ID.to_string(),
                             options: Vec::new(),
                             frozen: false,
+                            fills: None,
                         },
                         CompositeControl::Button {
                             id: SPAWN_ID.to_string(),
@@ -1200,6 +1270,10 @@ fn development_sections() -> Vec<FormSection> {
                         id: DIRECTOR_REASONING_EFFORT_PICK_ID.to_string(),
                         options: effort_options(),
                         frozen: effort_frozen,
+                        fills: Some(Shortcut {
+                            row: DIRECTOR_REASONING_EFFORT_ID,
+                            value: effort_value,
+                        }),
                     }],
                 },
                 FormRow::TextField {
@@ -2081,6 +2155,7 @@ mod tests {
                             id,
                             options,
                             frozen,
+                            ..
                         } if id == DIRECTOR_BASE_URL_PICK_ID => {
                             Some((help.clone().unwrap_or_default(), options.clone(), *frozen))
                         }
@@ -2255,6 +2330,69 @@ mod tests {
             );
             assert_eq!(effort_value(off_list), None);
         }
+    }
+
+    /// #670: a shortcut picker writes no field of its own, and does not write
+    /// its own title either — Custom names no level, and the Base URL picker
+    /// writes a URL rather than a label. Both readings travel with the
+    /// declaration, or the generic handler every lane shares resolves a pick
+    /// to nothing, which is what Windows did.
+    #[test]
+    fn every_shortcut_picker_names_a_row_that_writes_and_a_reading_for_its_titles() {
+        crate::model::tests::with_env(None, None, None, || {
+            let description = describe();
+            let mut pickers = 0;
+            for row in description.sections().flat_map(|section| &section.rows) {
+                let FormRow::Composite { controls, .. } = row else {
+                    continue;
+                };
+                for control in controls {
+                    let CompositeControl::Popup {
+                        id, options, fills, ..
+                    } = control
+                    else {
+                        continue;
+                    };
+                    let Some(shortcut) = fills else {
+                        continue;
+                    };
+                    pickers += 1;
+                    assert_eq!(
+                        description.shortcut(id),
+                        Some(*shortcut),
+                        "{id} has to be reachable by the id the pick carries"
+                    );
+                    assert!(
+                        description.text_write(shortcut.row).is_some(),
+                        "{id} fills in {}, which writes no field",
+                        shortcut.row
+                    );
+                    for title in options {
+                        assert!(
+                            (shortcut.value)(title).is_some() || title == PICKER_CUSTOM,
+                            "{id} offers {title}, which reads as no value and is not Custom"
+                        );
+                    }
+                }
+            }
+            assert_eq!(
+                pickers, 2,
+                "the Base URL and reasoning-effort pickers (#465, #638)"
+            );
+
+            // The Character picker is read by Spawn beside it, so a pick of
+            // its own must commit nothing.
+            assert_eq!(description.shortcut(NEW_CHARACTER_ID), None);
+
+            // Stage or save is the target row's, not a second flag on the
+            // picker: Apply owns the Director rows and nothing owns the
+            // Development ones.
+            assert!(description.text_batched(DIRECTOR_BASE_URL_ID), "#279");
+            assert!(
+                !description.text_batched(DIRECTOR_REASONING_EFFORT_ID),
+                "#638"
+            );
+        });
     }
 
     /// #272's rule, for the row and the shortcut above it alike.

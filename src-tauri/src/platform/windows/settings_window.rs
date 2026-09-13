@@ -383,29 +383,78 @@ impl SettingsWindow {
             .borrow()
             .get(&control_id)
             .cloned();
-        if let Some(form_id) = form_id {
+        let Some(form_id) = form_id else {
+            return;
+        };
+        let title = {
             let controls = self.controls.borrow();
-            if let Some(Control::ComboBox(hwnd, _, options)) = controls.get(&form_id) {
-                let index = unsafe { SendMessageA(*hwnd, CB_GETCURSEL, 0, 0) };
-                if index < 0 {
-                    return;
-                }
-
-                let selected_title = options.get(index as usize).cloned();
-
-                if let Some(title) = selected_title {
-                    if let Some(field) = form::describe().text_write(&form_id) {
-                        let value = match field {
-                            TextField::Harness => form::harness_choice(&title),
-                            _ => title,
-                        };
-                        let mut patch = SettingsPatch::default();
-                        patch.set_text(field, &value);
-                        drop(controls);
-                        self.apply(patch);
-                    }
-                }
+            let Some(Control::ComboBox(hwnd, _, options)) = controls.get(&form_id) else {
+                return;
+            };
+            let index = unsafe { SendMessageA(*hwnd, CB_GETCURSEL, 0, 0) };
+            if index < 0 {
+                return;
             }
+            options.get(index as usize).cloned()
+        };
+        let Some(title) = title else {
+            return;
+        };
+
+        let description = form::describe();
+        if let Some(field) = description.text_write(&form_id) {
+            let value = match field {
+                TextField::Harness => form::harness_choice(&title),
+                _ => title,
+            };
+            let mut patch = SettingsPatch::default();
+            patch.set_text(field, &value);
+            self.apply(patch);
+            return;
+        }
+        if let Some(shortcut) = description.shortcut(&form_id) {
+            self.fill_shortcut(&description, shortcut, &title);
+        }
+    }
+
+    /// A composite popup writes no field of its own: it fills in the row
+    /// below it, which is what its title has to be read as first (#670).
+    fn fill_shortcut(
+        &self,
+        description: &form::FormDescription,
+        shortcut: form::Shortcut,
+        title: &str,
+    ) {
+        // Custom, and any title off the list, name nothing to write: the
+        // field below is what a value this picker cannot spell is.
+        let Some(value) = (shortcut.value)(title) else {
+            return;
+        };
+        let hwnd = match self.controls.borrow().get(shortcut.row) {
+            Some(Control::Edit(hwnd, _)) => Some(*hwnd),
+            _ => None,
+        };
+        // Under the refresh guard, and outside the `controls` borrow, for one
+        // reason: `SetWindowText` sends `EN_CHANGE` to the parent before it
+        // returns, and `handle_text_change` would both re-enter the borrow and
+        // commit the fill a second time.
+        if let Some(hwnd) = hwnd {
+            *self.refreshing.borrow_mut() = true;
+            set_window_text(hwnd, value);
+            *self.refreshing.borrow_mut() = false;
+        }
+        // A batched row stages: the four Director rows only apply together,
+        // so Apply is what reaches the file (#279). An unbatched one has no
+        // Apply beside it and saves here (#638).
+        if description.text_batched(shortcut.row) {
+            return;
+        }
+        let Some(writes) = description.text_write(shortcut.row) else {
+            return;
+        };
+        let mut patch = SettingsPatch::default();
+        if patch.set_text(writes, value) {
+            self.apply(patch);
         }
     }
 
@@ -1886,23 +1935,20 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += field_width + 8;
                                         control_id += 1;
                                     }
-                                    // Skipped until #670: a shortcut picker
-                                    // declares no field, so `text_write` finds
-                                    // none for these ids and
-                                    // `handle_combobox_change` commits nothing.
-                                    // Drawing the combo box anyway would list
-                                    // endpoints and ignore the click, which is
-                                    // the failure #465 set out to remove. An
-                                    // empty options vec is not the way to say
-                                    // that either: the refresh above reads
-                                    // empty as "fill from `view.installed`",
-                                    // which would offer Character packages as
-                                    // endpoints.
-                                    form::CompositeControl::Popup { id, .. }
-                                        if id == form::DIRECTOR_BASE_URL_PICK_ID
-                                            || id == form::DIRECTOR_REASONING_EFFORT_PICK_ID => {}
-                                    form::CompositeControl::Popup { id, frozen, .. } => {
-                                        let combo_width = 100;
+                                    form::CompositeControl::Popup {
+                                        id,
+                                        frozen,
+                                        options,
+                                        ..
+                                    } => {
+                                        // A shortcut rests on the title for
+                                        // what it fills in, and an endpoint
+                                        // title carries the URL. 100px clips
+                                        // it to nothing legible.
+                                        let combo_width = match description.shortcut(id).is_some() {
+                                            true => 300,
+                                            false => 100,
+                                        };
                                         // Disabled at creation for the same
                                         // reason `FormRow::Popup` is: an
                                         // exported variable owns the pick, and
@@ -1934,7 +1980,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                             .insert(control_id, id.clone());
                                         window.controls.borrow_mut().insert(
                                             id.clone(),
-                                            Control::ComboBox(hwnd, tab_index, Vec::new()),
+                                            Control::ComboBox(hwnd, tab_index, options.clone()),
                                         );
                                         x += combo_width + 8;
                                         control_id += 1;
