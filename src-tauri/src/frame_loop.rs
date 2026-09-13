@@ -23,9 +23,9 @@ use super::{
     model, note_happened, open_chat, overlay_label, paced, place_overlays, platform,
     publish_instances, push_chat_opening, push_chat_openings, remember_instances, spawn_live,
     switch_instance, tray, ChatMsg, ChatReply, ChatStatus, ChatStatusPush, DirectorRun, Drawn,
-    FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, Placement,
-    SpritePlacement, Traced, TrayHandle, CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK, FRAME_EVENT,
-    MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
+    FrameExtras, InstanceState, MenuChannel, MenuHold, MenuSignal, Placed, PlacedProp, Placement,
+    PropPlacement, SpritePlacement, Traced, TrayHandle, CHAT_EVENT, CHAT_STATUS_EVENT, ENGINE_TICK,
+    FRAME_EVENT, MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
 /// One overlay's last applied shape: the mask, then x, y, facing, scale, and
@@ -1554,6 +1554,29 @@ pub(crate) fn run_frame_loop(
                     Instant::now(),
                 );
 
+                let props = frame
+                    .props
+                    .iter()
+                    .enumerate()
+                    .map(|(index, prop)| {
+                        let (prop_width, prop_height) =
+                            (prop.size.0 as i32 * scale, prop.size.1 as i32 * scale);
+                        let prop_sprite = place_sprite(
+                            (prop.position.x, prop.position.y),
+                            (prop_width, prop_height),
+                            scale,
+                        );
+                        PlacedProp {
+                            id: format!("{}:{}:{index}", live.id, prop.name),
+                            character: live.character.name.clone(),
+                            name: prop.name.clone(),
+                            sprite: prop_sprite,
+                            width: prop_width,
+                            height: prop_height,
+                        }
+                    })
+                    .collect();
+
                 placed.push(Placed {
                     id: live.id.clone(),
                     character: live.character.name.clone(),
@@ -1568,6 +1591,7 @@ pub(crate) fn run_frame_loop(
                     cue: frame.cue,
                     owner,
                     mask: drawn.mask.clone(),
+                    props,
                 });
             }
 
@@ -1721,6 +1745,24 @@ pub(crate) fn run_frame_loop(
                 // its own label to match: an untargeted listener hears every
                 // emit, addressed elsewhere or not, and would draw whichever
                 // display's rectangles arrived last.
+                let props = placed
+                    .iter()
+                    .flat_map(|instance| {
+                        instance.props.iter().map(|prop| {
+                            let local = prop.sprite.in_overlay(*display);
+                            PropPlacement {
+                                id: prop.id.clone(),
+                                character: prop.character.clone(),
+                                name: prop.name.clone(),
+                                x: local.x,
+                                y: local.y,
+                                width: prop.width,
+                                height: prop.height,
+                            }
+                        })
+                    })
+                    .collect();
+
                 let sprites = placed
                     .iter()
                     .map(|instance| {
@@ -1751,6 +1793,7 @@ pub(crate) fn run_frame_loop(
                     FRAME_EVENT,
                     Placement {
                         sprites,
+                        props,
                         visible: presence.visible,
                         fade_ms: presence.fade_ms,
                         sound: sound_allowed,
@@ -2107,6 +2150,7 @@ mod tests {
             personality: String::new(),
             animations,
             behaviors,
+            props: BTreeMap::new(),
             art: BTreeMap::new(),
             smooth: false,
             scale: 1,
