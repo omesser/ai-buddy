@@ -17,8 +17,8 @@ days later. The Harness now genuinely brings its own executor, so we do not writ
 
 ## Consequences
 
-The capability is a research preview gated behind a Pro or Max subscription, so the
-Functional Layer is unavailable to users without one.
+The capability is a research preview gated behind a Pro or Max subscription and an
+interactive session, so the Functional Layer is unavailable to users without both.
 
 It is not portable across Harnesses. Other vendors follow the API pattern — actions out,
 client executes — so "BYO Harness" does not imply "any Harness can drive the desktop." A
