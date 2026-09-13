@@ -171,6 +171,7 @@ pub(crate) fn run_frame_loop(
         let mut time_since_launch = Duration::ZERO;
         let mut tour_triggered = false;
         let mut schedule_mode = scheduler::ScheduleMode::Active;
+        let mut was_visible = true;
 
         loop {
             // Scheduler-aware wait: either sleep 16ms (active) or block on input
@@ -178,8 +179,14 @@ pub(crate) fn run_frame_loop(
             // ambient wake, activity sensing) without artificial caps. Active mode
             // runs whenever the Engine needs regular ticks (motion, multi-frame
             // animation, sleep-after accrual). #183.
-            match (schedule_mode, &input_events) {
-                (scheduler::ScheduleMode::Idle, Some(events)) => {
+            //
+            // Spec CLEAR: while !visible (fullscreen/hotkey-hide/etc.), ignore
+            // ALL XI2 (Motion+Button) by sleeping instead of recv on events.
+            // While visible (incl. Asleep/DND), keep XI2 for hit-testing so
+            // Poke/Grab/Throw work. SPEC #27: DND stays visible+quiet.
+            match (schedule_mode, was_visible, &input_events) {
+                (scheduler::ScheduleMode::Idle, true, Some(events)) => {
+                    // Visible idle: block on XI2 events for cursor-over-art.
                     // Compute next real work deadline: min of Director ambient
                     // wakes and activity sensing interval.
                     let next_director = lives
@@ -201,6 +208,28 @@ pub(crate) fn run_frame_loop(
                     // Block on input events until deadline. Motion/button events
                     // wake immediately; timeout means real work is due.
                     let _ = events.recv_timeout(deadline);
+                }
+                (scheduler::ScheduleMode::Idle, false, Some(_events)) => {
+                    // Hidden idle: deep sleep without XI2 wakes. Only non-XI2
+                    // callbacks (sense deadline, visibility change, hotkey show,
+                    // menu/ops, Director ambient, chat/MCP, tray) unblock.
+                    let next_director = lives
+                        .iter()
+                        .filter_map(|live| {
+                            let remaining = live.pace.wait().saturating_sub(live.since_wake);
+                            if remaining.is_zero() {
+                                None
+                            } else {
+                                Some(remaining)
+                            }
+                        })
+                        .min()
+                        .unwrap_or(Duration::from_secs(3600));
+
+                    let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                    let deadline = next_director.min(next_sense);
+
+                    thread::sleep(deadline);
                 }
                 _ => {
                     thread::sleep(ENGINE_TICK);
@@ -1884,13 +1913,14 @@ pub(crate) fn run_frame_loop(
 
                 // Set schedule mode for next iteration based on visibility and what
                 // any_needs_active captured during frame processing. Hidden sprites
-                // always idle. #183.
+                // always idle. Track visibility for XI2 wake policy. #183.
                 if index == 0 {
                     schedule_mode = if !presence.visible || !any_needs_active {
                         scheduler::ScheduleMode::Idle
                     } else {
                         scheduler::ScheduleMode::Active
                     };
+                    was_visible = presence.visible;
                 }
 
                 // Click-through is per-window, and a click only ever lands on

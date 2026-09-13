@@ -8,8 +8,12 @@
 //! **Deep-idle savings:** With shipped Characters' multi-frame looping
 //! idle/sleep animations, visible buddies almost never reach deep-idle (block
 //! on recv). The CPU win is primarily when **Hidden** — a fullscreen app, a
-//! sleep rule, or DND. Optional future: duty-cycle the animation so visible
-//! idle buddies can also deep-idle between frames.
+//! sleep rule, or hotkey hide. When Hidden, frame_loop uses `thread::sleep`
+//! instead of `recv` so XI2 input events cannot wake the loop (Spec CLEAR).
+//! When visible but Idle (Asleep, DND), `recv` stays to keep XI2 for hit-test
+//! and gesture (Poke/Grab/Throw). SPEC #27: DND stays visible+quiet.
+//! Optional future: duty-cycle the animation so visible idle buddies can also
+//! deep-idle between frames.
 //!
 //! Idle mode predicate: visible sprite with Grounded/Perched state runs Active
 //! until truly still (animation settled, sleep-after complete). Active ensures
