@@ -5,10 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::overlay::AlphaMask;
 
-use super::manifest::{DeclaredAnimation, DeclaredBehavior};
+use super::manifest::{DeclaredAnimation, DeclaredBehavior, DeclaredProp};
 use super::{
-    Animation, Art, Behavior, PackageBytes, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS, MAX_FRAME_SIDE,
-    SHOWN_LOOP_BEHAVIORS,
+    Animation, Art, Behavior, PackageBytes, PropArt, ALPHA_THRESHOLD, MAX_CHARACTER_PIXELS,
+    MAX_FRAME_SIDE, SHOWN_LOOP_BEHAVIORS,
 };
 
 /// Check every declared Animation against the art the package carries, and
@@ -29,13 +29,19 @@ use super::{
 pub(super) fn resolve_animations(
     package: &PackageBytes,
     declared: BTreeMap<String, DeclaredAnimation>,
+    declared_props: BTreeMap<String, DeclaredProp>,
     errors: &mut Vec<String>,
-) -> (BTreeMap<String, Animation>, BTreeMap<String, Art>) {
+) -> (
+    BTreeMap<String, Animation>,
+    BTreeMap<String, PropArt>,
+    BTreeMap<String, Art>,
+) {
     let mut animations = BTreeMap::new();
+    let mut props = BTreeMap::new();
     let mut art: BTreeMap<String, Art> = BTreeMap::new();
     // One mask per distinct frame, exactly as the renderer holds them: a frame
-    // two Animations share is charged once. The animation name is kept so a
-    // decode error still names the declaration, not only the file.
+    // two Animations or Props share is charged once. The owner name is kept so
+    // a decode error still names the declaration, not only the file.
     let mut charged: BTreeMap<String, String> = BTreeMap::new();
     let mut pixels: u64 = 0;
 
@@ -43,40 +49,23 @@ pub(super) fn resolve_animations(
         let mut frame_size = None;
 
         for frame in &declaration.frames {
-            let Some(bytes) = package.get(frame) else {
-                errors.push(format!(
-                    "animation {name:?} frame {frame:?} is not in the package"
-                ));
-                continue;
-            };
-            // Header first, pixels second: the header says how big the frame
-            // claims to be for a few dozen bytes of bounded work, so a frame
-            // over the size bound is rejected before anything inflates it.
-            match art_size(bytes) {
-                Err(why) => errors.push(format!(
-                    "animation {name:?} frame {frame:?} is not readable art: {why}"
-                )),
-                Ok(size) if size.0 > MAX_FRAME_SIDE || size.1 > MAX_FRAME_SIDE => {
-                    errors.push(format!(
+            if let Some(size) = charge_frame(
+                package,
+                "animation",
+                &name,
+                frame,
+                &mut charged,
+                &mut pixels,
+                errors,
+            ) {
+                match frame_size {
+                    None => frame_size = Some(size),
+                    Some(first) if first != size => errors.push(format!(
                         "animation {name:?} frame {frame:?} is {}x{}, \
-                         and no side of a frame may be over {MAX_FRAME_SIDE} pixels",
-                        size.0, size.1
-                    ));
-                }
-                Ok(size) => {
-                    if let Entry::Vacant(slot) = charged.entry(frame.clone()) {
-                        slot.insert(name.clone());
-                        pixels += u64::from(size.0) * u64::from(size.1);
-                    }
-                    match frame_size {
-                        None => frame_size = Some(size),
-                        Some(first) if first != size => errors.push(format!(
-                            "animation {name:?} frame {frame:?} is {}x{}, \
-                             and its first frame is {}x{}; every frame is one size",
-                            size.0, size.1, first.0, first.1
-                        )),
-                        Some(_) => {}
-                    }
+                         and its first frame is {}x{}; every frame is one size",
+                        size.0, size.1, first.0, first.1
+                    )),
+                    Some(_) => {}
                 }
             }
         }
@@ -99,6 +88,42 @@ pub(super) fn resolve_animations(
         }
     }
 
+    for (name, declaration) in declared_props {
+        let mut frame_size = None;
+
+        for frame in &declaration.frames {
+            if let Some(size) = charge_frame(
+                package,
+                "prop",
+                &name,
+                frame,
+                &mut charged,
+                &mut pixels,
+                errors,
+            ) {
+                match frame_size {
+                    None => frame_size = Some(size),
+                    Some(first) if first != size => errors.push(format!(
+                        "prop {name:?} frame {frame:?} is {}x{}, \
+                         and its first frame is {}x{}; every frame is one size",
+                        size.0, size.1, first.0, first.1
+                    )),
+                    Some(_) => {}
+                }
+            }
+        }
+
+        if let Some(frame_size) = frame_size {
+            props.insert(
+                name,
+                PropArt {
+                    frames: declaration.frames,
+                    frame_size,
+                },
+            );
+        }
+    }
+
     if pixels > MAX_CHARACTER_PIXELS {
         errors.push(format!(
             "the package's frames are {pixels} pixels in all, over the \
@@ -107,10 +132,10 @@ pub(super) fn resolve_animations(
         // Past the budget the package is refused, and decoding on regardless
         // would build the very masks the bound exists to refuse. Headers
         // already named every frame; that is the whole of this path.
-        return (animations, art);
+        return (animations, props, art);
     }
 
-    for (frame, animation) in charged {
+    for (frame, owner) in charged {
         let bytes = &package[&frame];
         match AlphaMask::from_png(bytes, ALPHA_THRESHOLD) {
             Ok(mask) => {
@@ -123,12 +148,56 @@ pub(super) fn resolve_animations(
                 );
             }
             Err(why) => errors.push(format!(
-                "animation {animation:?} frame {frame:?} is not readable art: {why}"
+                "{owner} frame {frame:?} is not readable art: {why}"
             )),
         }
     }
 
-    (animations, art)
+    (animations, props, art)
+}
+
+/// Header-check one frame and charge it once against the package budget.
+fn charge_frame(
+    package: &PackageBytes,
+    kind: &str,
+    name: &str,
+    frame: &str,
+    charged: &mut BTreeMap<String, String>,
+    pixels: &mut u64,
+    errors: &mut Vec<String>,
+) -> Option<(u32, u32)> {
+    let Some(bytes) = package.get(frame) else {
+        errors.push(format!(
+            "{kind} {name:?} frame {frame:?} is not in the package"
+        ));
+        return None;
+    };
+    // Header first, pixels second: the header says how big the frame
+    // claims to be for a few dozen bytes of bounded work, so a frame
+    // over the size bound is rejected before anything inflates it.
+    match art_size(bytes) {
+        Err(why) => {
+            errors.push(format!(
+                "{kind} {name:?} frame {frame:?} is not readable art: {why}"
+            ));
+            None
+        }
+        Ok(size) if size.0 > MAX_FRAME_SIDE || size.1 > MAX_FRAME_SIDE => {
+            errors.push(format!(
+                "{kind} {name:?} frame {frame:?} is {}x{}, \
+                 and no side of a frame may be over {MAX_FRAME_SIDE} pixels",
+                size.0, size.1
+            ));
+            None
+        }
+        Ok(size) => {
+            if let Entry::Vacant(slot) = charged.entry(frame.to_string()) {
+                slot.insert(format!("{kind} {name:?}"));
+                *pixels += u64::from(size.0) * u64::from(size.1);
+            }
+            Some(size)
+        }
+    }
 }
 
 /// Validate every `variant_of` declaration and hand back the (variant, base)
@@ -569,6 +638,42 @@ mod tests {
                 (budget as u64 + 1) * pixels
             )],
             "the author is told how much art they declared and how much a Character may hold"
+        );
+    }
+
+    #[test]
+    fn prop_frames_count_against_the_character_pixel_budget() {
+        let frame = png_bytes(MAX_FRAME_SIDE, MAX_FRAME_SIDE);
+        let pixels = u64::from(MAX_FRAME_SIDE) * u64::from(MAX_FRAME_SIDE);
+        let budget = (MAX_CHARACTER_PIXELS / pixels) as usize;
+
+        let mut package = art();
+        let names: Vec<String> = (0..budget)
+            .map(|i| {
+                let name = format!("prop-{i}.png");
+                package.insert(name.clone(), frame.clone());
+                format!("\"{name}\"")
+            })
+            .collect();
+        let mut manifest = declaring(&REQUIRED_ANIMATIONS);
+        manifest.push_str(&format!(
+            "[props.football]\nframes = [{}]\n",
+            names.join(", ")
+        ));
+        package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
+
+        // Nine required 2x2 frames plus the prop's distinct full-size
+        // frames: the prop is what pushes the package over.
+        let required_pixels = (REQUIRED_ANIMATIONS.len() as u64) * 2 * 2;
+        let over = errors(load(&package));
+        assert_eq!(
+            over,
+            vec![format!(
+                "the package's frames are {} pixels in all, over the \
+                 {MAX_CHARACTER_PIXELS}-pixel limit",
+                budget as u64 * pixels + required_pixels
+            )],
+            "prop art is scenery and still spends the same mask budget"
         );
     }
 
