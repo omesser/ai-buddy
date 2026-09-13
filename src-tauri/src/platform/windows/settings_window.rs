@@ -667,6 +667,7 @@ impl SettingsWindow {
                     RowOperation::WipeMemory => self.do_memory_wipe(),
                     RowOperation::ClearKey => self.do_clear_key(),
                     RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
+                    RowOperation::CopyByoToken => self.do_copy_byo_token(),
                     RowOperation::Apply => self.do_apply(),
                     RowOperation::Cancel => self.do_cancel(),
                     RowOperation::NewSession => self.do_new_session(),
@@ -801,6 +802,43 @@ impl SettingsWindow {
             return;
         }
         let bytes = view.byo_snippet.as_bytes();
+
+        unsafe {
+            if OpenClipboard(self.hwnd) == 0 {
+                return;
+            }
+            EmptyClipboard();
+            let handle = GlobalAlloc(GMEM_MOVEABLE, bytes.len() + 1);
+            if !handle.is_null() {
+                let block = GlobalLock(handle);
+                if !block.is_null() {
+                    ptr::copy_nonoverlapping(bytes.as_ptr(), block as *mut u8, bytes.len());
+                    *(block.add(bytes.len()) as *mut u8) = 0;
+                    GlobalUnlock(handle);
+                    SetClipboardData(CF_TEXT, handle as _);
+                }
+            }
+            CloseClipboard();
+        }
+    }
+
+    fn do_copy_byo_token(&self) {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+
+        const CF_TEXT: u32 = 1;
+
+        let Some(view) = self.session.lock().unwrap().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_token.is_empty() {
+            return;
+        }
+        let bytes = view.byo_token.as_bytes();
 
         unsafe {
             if OpenClipboard(self.hwnd) == 0 {

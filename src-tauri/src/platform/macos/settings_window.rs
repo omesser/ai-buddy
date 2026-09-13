@@ -327,6 +327,7 @@ define_class!(
                 form::RowOperation::WipeMemory => self.do_memory_wipe(),
                 form::RowOperation::ClearKey => self.do_clear_key(),
                 form::RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
+                form::RowOperation::CopyByoToken => self.do_copy_byo_token(),
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
                 form::RowOperation::NewSession => self.do_new_session(),
@@ -463,6 +464,23 @@ impl SettingsController {
         let snippet = NSString::from_str(&view.byo_snippet);
         unsafe {
             pasteboard.setString_forType(&snippet, objc2_app_kit::NSPasteboardTypeString);
+        }
+    }
+
+    fn do_copy_byo_token(&self) {
+        use objc2_app_kit::NSPasteboard;
+
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_token.is_empty() {
+            return;
+        }
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        let token = NSString::from_str(&view.byo_token);
+        unsafe {
+            pasteboard.setString_forType(&token, objc2_app_kit::NSPasteboardTypeString);
         }
     }
 

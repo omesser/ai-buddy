@@ -852,6 +852,22 @@ impl SettingsWindow {
                                                             }
                                                         }
                                                     }
+                                                    RowOperation::CopyByoToken => {
+                                                        let token = sess.view().byo_token.clone();
+                                                        if !token.is_empty() {
+                                                            if let Some(display) =
+                                                                gtk::gdk::Display::default()
+                                                            {
+                                                                if let Some(clipboard) =
+                                                                    gtk::Clipboard::default(
+                                                                        &display,
+                                                                    )
+                                                                {
+                                                                    clipboard.set_text(&token);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                     _ => {}
                                                 }
                                             }

@@ -75,6 +75,9 @@ pub struct SettingsView {
     pub byo_harness: String,
     pub byo_snippet: String,
     pub byo_steps: String,
+    /// The raw token for Hermes interactive paste. Empty when snippet already
+    /// embeds the token (Claude, Codex, Grok, OpenCode, Pi).
+    pub byo_token: String,
     /// The Development rows, by form row id: the value in force, which is the
     /// exported variable's where it owns the row and the file's otherwise.
     ///
@@ -271,7 +274,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 }
 
 /// What to paste to point a Harness the user runs themselves at this app's
-/// MCP server, and what to do with it, as (snippet, instructions).
+/// MCP server, and what to do with it, as (snippet, instructions, raw_token).
 ///
 /// Pure, because the five registration shapes are the whole of what can be
 /// wrong here: each was checked against the installed CLI in #580, and a typo
@@ -281,10 +284,14 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 /// that prefix themselves, so a pre-prefixed token reads `Bearer Bearer` in
 /// the other two.
 ///
+/// The third element (raw_token) is empty when the snippet already embeds the
+/// token. For Hermes (interactive paste), it holds the raw token for the separate
+/// copy field.
+///
 /// A name the popup cannot offer - blank, `custom`, a hand-edited file - gets
 /// the pair on its own, because the pair is all any of the five templates is
 /// made of.
-fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
+fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, String) {
     match harness {
         // The remove is not optional: Claude Code answers a re-add of an
         // existing name by keeping the old URL and token and exiting 0 (#580,
@@ -303,6 +310,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
              user` only if you want the same entry in every project. `claude mcp list` \
              says whether it connected."
                 .to_string(),
+            String::new(), // Token already in snippet
         ),
         "codex" => (
             format!(
@@ -316,6 +324,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
              `~/.codex/config.toml` with `url = \"{url}\"` and `http_headers = {{ \
              \"Authorization\" = \"Bearer {token}\" }}`."
                 .to_string(),
+            String::new(), // Token already in snippet (export)
         ),
         "grok" => (
             format!(
@@ -323,22 +332,24 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
-             after a relaunch is enough. Add `--scope user` if you want it for every \
-             project, otherwise it defaults to the current project. Then in your live \
-             Grok session, run `/mcps` and press `r` to reload. `grok mcp doctor \
-             ai-buddy` reports."
+             after a relaunch is enough. It defaults to user scope (`~/.grok/config.toml`). \
+             Add `--scope project` only if you want project-local config (careful: shareable \
+             config should not commit the token). Then in your live Grok session, run `/mcps` \
+             and press `r` to reload. `grok mcp doctor ai-buddy` reports."
                 .to_string(),
+            String::new(), // Token already in snippet
         ),
         "hermes" => (
             format!("hermes mcp add ai-buddy --url '{url}' --auth header"),
             "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the \
-             interactive prompt: `{token}`. This stores `MCP_AI_BUDDY_API_KEY` in \
-             `~/.hermes/.env` and adds the header `Bearer ${{MCP_AI_BUDDY_API_KEY}}`. \
-             Then run `/reload-mcp` in your Hermes session. Alternatively, add or update \
-             `ai-buddy:` under `mcp_servers:` in `~/.hermes/config.yaml` with `url: \
-             \"{url}\"` and `headers:` → `Authorization: \"Bearer {token}\"`; keep the \
-             indentation exactly. `hermes mcp test ai-buddy` reports."
+             interactive prompt. This stores `MCP_AI_BUDDY_API_KEY` in `~/.hermes/.env` \
+             and adds the header `Bearer ${{MCP_AI_BUDDY_API_KEY}}`. Then run `/reload-mcp` \
+             in your Hermes session. Alternatively, add or update `ai-buddy:` under \
+             `mcp_servers:` in `~/.hermes/config.yaml` with `url: \"{url}\"` and `headers:` \
+             → `Authorization: \"Bearer {token}\"`; keep the indentation exactly. \
+             `hermes mcp test ai-buddy` reports."
                 .to_string(),
+            token.to_string(), // Show token separately for interactive paste
         ),
         "opencode" => (
             format!(
@@ -351,6 +362,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
              \"url\": \"{url}\", \"oauth\": false, \"headers\": {{ \"Authorization\": \
              \"Bearer {token}\" }} }} }} }}`. `opencode mcp list` reports."
                 .to_string(),
+            String::new(), // Token already in snippet
         ),
         "pi" => (
             format!(
@@ -369,6 +381,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
              command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
              `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
                 .to_string(),
+            String::new(), // Token already in snippet
         ),
         _ => (
             format!("URL:   {url}\nToken: {token}"),
@@ -376,6 +389,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
                 "No generated snippet for {harness:?}. Point the Harness at that URL over \
                  Streamable HTTP and have it send `Authorization: Bearer <token>`."
             ),
+            String::new(),
         ),
     }
 }
@@ -396,7 +410,7 @@ fn byo_harness_in_force(settings: &Settings) -> String {
     }
 }
 
-fn byo_rows(harness: &str) -> (String, String) {
+fn byo_rows(harness: &str) -> (String, String, String) {
     match crate::mcp_http::endpoint() {
         Some(endpoint) => {
             let (url, token) = endpoint.registration();
@@ -407,6 +421,7 @@ fn byo_rows(harness: &str) -> (String, String) {
             "The loopback MCP server did not start this run, so there is nothing to \
              register. Restarting ai-buddy is the fix; stderr says why it failed."
                 .to_string(),
+            String::new(),
         ),
     }
 }
@@ -422,7 +437,7 @@ impl SettingsView {
         harness: Option<crate::harness::HarnessInspect>,
     ) -> Self {
         let (api_key_set, api_key_fingerprint, api_key_error) = api_key;
-        let (byo_snippet, byo_steps) = byo_rows(&byo_harness_in_force(settings));
+        let (byo_snippet, byo_steps, byo_token) = byo_rows(&byo_harness_in_force(settings));
         Self {
             // The value in force, as the Development rows show theirs: an
             // exported switch reads as it exported, however the file has it.
@@ -452,6 +467,7 @@ impl SettingsView {
             byo_harness: byo_harness_in_force(settings),
             byo_snippet,
             byo_steps,
+            byo_token,
             development_switches: development_switches(settings),
             development_texts: development_texts(settings),
             consent: consent::rows(|id| settings.wants_consent(id)),
@@ -4145,29 +4161,71 @@ mod tests {
     /// the one precondition a user cannot see: Claude Code answers a re-add of
     /// an existing name by keeping the old URL and token and exiting 0, so a
     /// snippet without the remove installs a stale entry that cannot connect.
+    ///
+    /// After Architect redesign: Codex exports the raw token, Hermes shows token
+    /// in steps only (interactive paste). Every harness carries the URL in snippet
+    /// or steps as appropriate.
     #[test]
     fn every_byo_snippet_carries_the_url_and_the_raw_token() {
         for harness in form::HARNESS_PRESETS {
-            let (snippet, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+            let (snippet, steps, _token) =
+                byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+
+            // Every harness must carry the URL somewhere
             assert!(
-                snippet.contains("http://127.0.0.1:5051/mcp"),
-                "{harness} must carry the URL, got {snippet:?}"
+                snippet.contains("http://127.0.0.1:5051/mcp") 
+                    || steps.contains("http://127.0.0.1:5051/mcp"),
+                "{harness} must carry the URL in snippet or steps, got snippet: {snippet:?}, steps: {steps:?}"
             );
-            assert!(
-                snippet.contains("Bearer beef"),
-                "{harness} must carry Bearer and the token"
-            );
-            assert!(
-                !snippet.contains("Bearer Bearer"),
-                "{harness} double-prefixed the token"
-            );
+
+            // Check token presence based on harness type
+            match harness {
+                "codex" => {
+                    // Codex: raw token in export, no Bearer in snippet
+                    assert!(
+                        snippet.contains("AI_BUDDY_MCP_TOKEN='beef'"),
+                        "codex must export raw token in AI_BUDDY_MCP_TOKEN, got {snippet:?}"
+                    );
+                    assert!(
+                        !snippet.contains("Bearer beef"),
+                        "codex snippet should not contain Bearer+token directly"
+                    );
+                }
+                "hermes" => {
+                    // Hermes: snippet has --auth header only, token in steps
+                    assert!(
+                        snippet.contains("--auth header"),
+                        "hermes snippet must have --auth header, got {snippet:?}"
+                    );
+                    assert!(
+                        steps.contains("beef"),
+                        "hermes must show raw token in steps, got {steps:?}"
+                    );
+                    assert!(
+                        !snippet.contains("beef"),
+                        "hermes snippet should not embed the token, got {snippet:?}"
+                    );
+                }
+                _ => {
+                    // Claude, Grok, OpenCode, Pi: snippet still has Bearer+token
+                    assert!(
+                        snippet.contains("Bearer beef"),
+                        "{harness} must carry Bearer and the token in snippet, got {snippet:?}"
+                    );
+                    assert!(
+                        !snippet.contains("Bearer Bearer"),
+                        "{harness} double-prefixed the token"
+                    );
+                }
+            }
+
             assert!(!steps.is_empty(), "{harness} needs its instructions");
         }
     }
 
     #[test]
     fn the_claude_snippet_removes_before_it_adds() {
-        let (snippet, _) = byo_registration("claude", "http://127.0.0.1:5051/mcp", "beef");
+        let (snippet, _, _) = byo_registration("claude", "http://127.0.0.1:5051/mcp", "beef");
         let remove = snippet
             .find("claude mcp remove")
             .expect("the remove line is what makes the snippet re-runnable");
@@ -4183,42 +4241,43 @@ mod tests {
         );
     }
 
-    /// Codex, hermes, opencode, and pi paste into a file that may already
-    /// exist, so their box holds a fragment and the words beside it have to say
-    /// so. None should say they "start" or "launch" the harness.
+    /// Pi pastes into a file that may already exist, so its box holds a
+    /// fragment and the words beside it have to say so. It should not say it
+    /// "starts" or "launches" the harness.
     #[test]
     fn the_file_fragment_harnesses_say_they_are_fragments() {
-        for (harness, file) in [("pi", ".mcp.json")] {
-            let (snippet, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
-            assert!(
-                steps.contains(file),
-                "{harness} must name the file it merges into, got {steps:?}"
-            );
-            assert!(
-                steps.contains("fragment")
-                    || steps.to_lowercase().contains("merge")
-                    || steps.to_lowercase().contains("add or update"),
-                "{harness} must say it is a fragment, got {steps:?}"
-            );
-            let lower_steps = steps.to_lowercase();
-            let lower_snippet = snippet.to_lowercase();
-            assert!(
-                !lower_steps.contains("starts ")
-                    && !lower_steps.contains(" start ")
-                    && !lower_steps.starts_with("start ")
-                    && !lower_snippet.contains(" start ")
-                    && !lower_snippet.starts_with("start ")
-                    && !lower_steps.contains("launch"),
-                "{harness} must not say it starts/launches the harness, got snippet: {snippet:?}, steps: {steps:?}"
-            );
-        }
+        let harness = "pi";
+        let file = ".mcp.json";
+        let (snippet, steps, _token) =
+            byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            steps.contains(file),
+            "{harness} must name the file it merges into, got {steps:?}"
+        );
+        assert!(
+            steps.contains("fragment")
+                || steps.to_lowercase().contains("merge")
+                || steps.to_lowercase().contains("add or update"),
+            "{harness} must say it is a fragment, got {steps:?}"
+        );
+        let lower_steps = steps.to_lowercase();
+        let lower_snippet = snippet.to_lowercase();
+        assert!(
+            !lower_steps.contains("starts ")
+                && !lower_steps.contains(" start ")
+                && !lower_steps.starts_with("start ")
+                && !lower_snippet.contains(" start ")
+                && !lower_snippet.starts_with("start ")
+                && !lower_steps.contains("launch"),
+            "{harness} must not say it starts/launches the harness, got snippet: {snippet:?}, steps: {steps:?}"
+        );
     }
 
     /// Codex uses `http_headers` not `headers`. Architect verified `headers`
     /// is silently ignored (#599).
     #[test]
     fn codex_snippet_is_cli_with_export_and_bearer_token_env_var() {
-        let (snippet, _) = byo_registration("codex", "http://127.0.0.1:5051/mcp", "beef");
+        let (snippet, _, _) = byo_registration("codex", "http://127.0.0.1:5051/mcp", "beef");
         assert!(
             snippet.contains("export AI_BUDDY_MCP_TOKEN="),
             "codex must export the token env var, got {snippet:?}"
@@ -4245,7 +4304,7 @@ mod tests {
     /// not nested mcp.servers.<name> with type: http (#599).
     #[test]
     fn opencode_snippet_is_cli_with_url_and_header() {
-        let (snippet, _) = byo_registration("opencode", "http://127.0.0.1:5051/mcp", "beef");
+        let (snippet, _, _) = byo_registration("opencode", "http://127.0.0.1:5051/mcp", "beef");
         assert!(
             snippet.contains("opencode mcp add"),
             "opencode must use CLI add, got {snippet:?}"
@@ -4267,7 +4326,8 @@ mod tests {
     /// Hermes uses CLI with --auth header and interactive token paste (#599).
     #[test]
     fn hermes_snippet_is_cli_with_auth_header() {
-        let (snippet, steps) = byo_registration("hermes", "http://127.0.0.1:5051/mcp", "beef");
+        let (snippet, steps, _token) =
+            byo_registration("hermes", "http://127.0.0.1:5051/mcp", "beef");
         assert!(
             snippet.contains("hermes mcp add"),
             "hermes must use CLI add, got {snippet:?}"
@@ -4299,9 +4359,26 @@ mod tests {
     /// five templates is made of.
     #[test]
     fn an_unknown_harness_still_gets_the_url_and_the_token() {
-        let (snippet, steps) = byo_registration("custom", "http://127.0.0.1:5051/mcp", "beef");
+        let (snippet, steps, _token) =
+            byo_registration("custom", "http://127.0.0.1:5051/mcp", "beef");
         assert!(snippet.contains("http://127.0.0.1:5051/mcp"));
         assert!(snippet.contains("beef"));
         assert!(!steps.is_empty());
+    }
+
+    /// Hermes shows the raw token separately for interactive paste. Others
+    /// embed it in the snippet and return empty token.
+    #[test]
+    fn hermes_returns_separate_token_others_do_not() {
+        let (_, _, token) = byo_registration("hermes", "http://127.0.0.1:5051/mcp", "beef");
+        assert_eq!(token, "beef", "hermes must return the raw token separately");
+
+        for harness in ["claude", "codex", "grok", "opencode", "pi"] {
+            let (_, _, token) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
+            assert!(
+                token.is_empty(),
+                "{harness} must return empty token (embeds in snippet)"
+            );
+        }
     }
 }
