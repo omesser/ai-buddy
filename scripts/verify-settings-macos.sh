@@ -259,8 +259,13 @@ info "Close and reopen"
 dump_window "$out/reopened.txt" || fail "could not dump Settings after reopen"
 
 info "Runtime switch: $harness_title"
+# A pick that does not take is the bug this script exists to catch (#634),
+# not an environment it cannot run in - `form::harness_options` is static, so
+# every option is in the popup on every machine. The skips further down are
+# the real environment ones: they fire after the pick took, for a Harness that
+# is installed but not signed in.
 if ! "$ax" pick "$app_pid" "AI source" "$harness_title"; then
-  skip "could not pick $harness_title in the source popup"
+  fail "could not pick $harness_title in the source popup"
 else
   wait_attached 1 || true
   driven="$out/harness.txt"
@@ -278,7 +283,7 @@ else
 
   info "Runtime switch: $model_api"
   if ! "$ax" pick "$app_pid" "AI source" "$model_api"; then
-    skip "could not pick $model_api in the source popup"
+    fail "could not pick $model_api in the source popup"
   else
     waited=0
     off="$out/off-again.txt"
@@ -293,7 +298,7 @@ else
 
   info "Runtime switch: $harness_title again"
   if ! "$ax" pick "$app_pid" "AI source" "$harness_title"; then
-    skip "could not pick $harness_title a second time"
+    fail "could not pick $harness_title a second time"
   else
     wait_attached 2 || true
     again="$out/harness-again.txt"

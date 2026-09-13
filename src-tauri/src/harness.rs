@@ -1557,15 +1557,14 @@ pub fn retarget(saved: Option<&str>, spawning: bool) {
     let old = std::mem::replace(&mut slot.session, opened.clone());
     drop(slot);
     if let Some(old) = old {
-        // Reaped on a thread of its own: `shutdown` waits out `REAP` for a
-        // child that does not go at once, and the only caller of this is a
-        // Settings row committing on the UI thread — so picking Model API
-        // froze the window for two seconds, and the menu the pick came from
-        // was still down when the next one arrived (#634). Nothing waits on
-        // the old session: the slot already holds what replaced it, which is
-        // what `attached` answers with. The kill still leaves at once; only
-        // the wait for the child to go moves off this thread.
-        std::thread::spawn(move || old.shutdown());
+        // On the calling thread, which for the only caller is the UI thread —
+        // a Settings row committing inside the popup's own action. That is
+        // affordable because `Msg::Shutdown` now ends a turn in flight rather
+        // than being swallowed by it (`acp_wire::turn`), so `wait_for_exit`
+        // returns as fast as the kill does. It used to wait out the whole
+        // `REAP`, which froze the window for two seconds and left the menu the
+        // pick came from still down when the next one arrived (#634).
+        old.shutdown();
     }
     match &opened {
         None => eprintln!("harness: detached; HTTP Completer is the Director's \"AI brain\""),
@@ -2928,6 +2927,69 @@ mod tests {
         let turns = fx.events("turn");
         assert_eq!(turns[0]["stop"], json!("cancelled"), "{turns:?}");
         session.shutdown();
+    }
+
+    /// #634: switching the AI source commits on the UI thread, so `retarget`
+    /// must not wait on the child it is dropping. It does wait — `shutdown`
+    /// calls `wait_for_exit(REAP)`, because a caller that must not outlive its
+    /// child has to — and that is only cheap because `Msg::Shutdown` ends the
+    /// turn in flight instead of being swallowed by it.
+    ///
+    /// Production change that would fail this: `acp_wire::turn` handling
+    /// `Msg::Shutdown` like `Msg::Cancel` again. The turn then loops for a
+    /// `cancelled` stop the fake never sends, the break waits for the second
+    /// Shutdown `Drop for Wire` posts, and `retarget` pays the full `REAP` —
+    /// 2.0s against the 133µs it costs with the fix.
+    #[test]
+    fn retarget_does_not_wait_out_a_turn_in_flight() {
+        let (fx, session) = Fixture::new("slow");
+        let session = Arc::new(session);
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        // The prompt is on the wire and unanswered, which is the state the
+        // freeze needed: `shutdown` posts into a `turn`, not into `serve`.
+        assert!(fx.wait_for("prompt", 1), "the turn never went out");
+        {
+            let mut slot = attachment();
+            slot.forward = Some(silent());
+            slot.session = Some(Arc::clone(&session));
+        }
+        let start = Instant::now();
+        // `""` is Off, which `reattach` reads as `Drop`: the session goes and
+        // nothing replaces it.
+        retarget(Some(""), false);
+        let waited = start.elapsed();
+        // The session is process-global; leave the slot as the other tests
+        // expect to find it.
+        {
+            let mut slot = attachment();
+            slot.session = None;
+            slot.forward = None;
+        }
+        // Fast and reaped are the same fact: `shutdown` returns either when
+        // `wait_for_exit` sees the wire thread end — which `run` does only
+        // after `kill_harness_tree` — or when `REAP` runs out at a flat 2s. So
+        // anything under half a second is the child killed, and 2s is the
+        // child still running, which is exactly what stderr says when this
+        // assert fails: "was still running 2s after shutdown".
+        assert!(
+            waited < Duration::from_millis(500),
+            "retarget waited {waited:?} on the dropped session"
+        );
+        assert!(attached().is_none(), "the Off pick did not take");
+        // And the child really was killed rather than left behind: the wire
+        // thread ends only after `kill_harness_tree`, and the turn's caller
+        // only returns once that thread has hung up on it.
+        assert!(
+            worker.join().unwrap().is_err(),
+            "the turn outlived the kill"
+        );
+        assert!(
+            !session.inspect().alive,
+            "the dropped session still reads live"
+        );
     }
 
     /// #499: one child serves every Instance (ADR-0008), so buddy B's wake
