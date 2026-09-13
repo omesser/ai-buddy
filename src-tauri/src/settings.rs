@@ -310,7 +310,7 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
             format!(
                 "[mcp_servers.ai-buddy]\n\
                  url = \"{url}\"\n\
-                 headers = {{ \"Authorization\" = \"Bearer {token}\" }}"
+                 http_headers = {{ \"Authorization\" = \"Bearer {token}\" }}"
             ),
             "A fragment for `~/.codex/config.toml`, not a command. Add or update the \
              `[mcp_servers.ai-buddy]` entry, then run `mcpServer/refresh` from your \
@@ -342,26 +342,25 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
              `hermes mcp test ai-buddy` reports."
                 .to_string(),
         ),
-        // V2 config uses mcp.servers.<name>, not top-level mcp.<name>, and
-        // type: http rather than type: remote. `disabled` replaces `enabled`.
+        // Flat mcp.ai-buddy with type: remote and oauth: false. The nested
+        // mcp.servers.<name> shape is V2; V1 uses a flat top-level mcp.<name>.
         "opencode" => (
             format!(
                 "{{\n\
                  \x20 \"mcp\": {{\n\
-                 \x20   \"servers\": {{\n\
-                 \x20     \"ai-buddy\": {{\n\
-                 \x20       \"type\": \"http\",\n\
-                 \x20       \"url\": \"{url}\",\n\
-                 \x20       \"headers\": {{\n\
-                 \x20         \"Authorization\": \"Bearer {token}\"\n\
-                 \x20       }}\n\
+                 \x20   \"ai-buddy\": {{\n\
+                 \x20     \"type\": \"remote\",\n\
+                 \x20     \"url\": \"{url}\",\n\
+                 \x20     \"oauth\": false,\n\
+                 \x20     \"headers\": {{\n\
+                 \x20       \"Authorization\": \"Bearer {token}\"\n\
                  \x20     }}\n\
                  \x20   }}\n\
                  \x20 }}\n\
                  }}"
             ),
             "A fragment for `opencode.jsonc`, not a command. With a file already there, \
-             merge the `mcp.servers` content rather than replacing the entire config. Then \
+             merge the `mcp.ai-buddy` content rather than replacing the entire config. Then \
              run `/reload` in your OpenCode session. `opencode mcp list` reports."
                 .to_string(),
         ),
@@ -4226,6 +4225,49 @@ mod tests {
                 "{harness} must not say it starts/launches the harness, got snippet: {snippet:?}, steps: {steps:?}"
             );
         }
+    }
+
+    /// Codex uses `http_headers` not `headers`. Architect verified `headers`
+    /// is silently ignored (#599).
+    #[test]
+    fn codex_snippet_uses_http_headers_not_headers() {
+        let (snippet, _) = byo_registration("codex", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            snippet.contains("http_headers"),
+            "codex must use http_headers, got {snippet:?}"
+        );
+        // Check that it's http_headers = and not headers =
+        assert!(
+            !snippet.contains("\nheaders = "),
+            "codex must not use plain 'headers =' (silently ignored), got {snippet:?}"
+        );
+    }
+
+    /// OpenCode uses flat mcp.ai-buddy with type: remote and oauth: false,
+    /// not nested mcp.servers.<name> with type: http (#599).
+    #[test]
+    fn opencode_snippet_is_flat_with_remote_and_oauth_false() {
+        let (snippet, _) = byo_registration("opencode", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            snippet.contains(r#""mcp""#) && snippet.contains(r#""ai-buddy""#),
+            "opencode must have mcp.ai-buddy, got {snippet:?}"
+        );
+        assert!(
+            !snippet.contains(r#""servers""#),
+            "opencode must not use nested mcp.servers (that is V2), got {snippet:?}"
+        );
+        assert!(
+            snippet.contains(r#""type": "remote""#),
+            "opencode must use type: remote, got {snippet:?}"
+        );
+        assert!(
+            snippet.contains(r#""oauth": false"#),
+            "opencode must specify oauth: false, got {snippet:?}"
+        );
+        assert!(
+            !snippet.contains(r#""type": "http""#),
+            "opencode must not use type: http (that is V2), got {snippet:?}"
+        );
     }
 
     /// A harness name the popup cannot offer - blank, `custom`, or a
