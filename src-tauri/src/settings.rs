@@ -232,12 +232,23 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
             // retry is the Session's own, and the row above moves the handle
             // now rather than at the next launch, so the wait is bounded by
             // the user rather than by a relaunch.
-            None if !attached.alive => format!(
-                "{} is set but not running, so the AI runs on static weights until it \
-                 answers. It stays the AI brain while it is set; Model API above hands the HTTP \
-                 endpoint back, and takes effect at once.",
-                attached.name
-            ),
+            // #659 splits the first of those: a machine that never had the
+            // CLI is waiting for an install, not for an answer, and an errno
+            // is not a sentence that says so.
+            None if !attached.alive => match &attached.missing {
+                Some(command) => format!(
+                    "`{command}` is not installed, so {} is not running and the AI runs on \
+                     static weights. ai-buddy does not bundle a Harness - install it, or Model \
+                     API above hands the HTTP endpoint back.",
+                    attached.name
+                ),
+                None => format!(
+                    "{} is set but not running, so the AI runs on static weights until it \
+                     answers. It stays the AI brain while it is set; Model API above hands the \
+                     HTTP endpoint back, and takes effect at once.",
+                    attached.name
+                ),
+            },
             None => match &attached.session_id {
                 Some(id) => format!("{} attached, session {id}.", attached.name),
                 None => format!("{} attached; no session opened yet.", attached.name),
@@ -3710,6 +3721,33 @@ mod tests {
         assert!(
             line.contains("static weights"),
             "the line has to name what is answering instead, got {line:?}"
+        );
+    }
+
+    /// #659: the machine has not got the CLI, which is not the same state as a
+    /// child that stopped answering. The line has to say so in words a user can
+    /// act on - an errno is not one of them - and name the binary that was
+    /// looked for, since ai-buddy bundles no Harness (ADR-0018).
+    #[test]
+    fn a_harness_this_machine_has_not_got_names_the_command_not_an_errno() {
+        let missing = crate::harness::HarnessInspect {
+            name: "codex".to_string(),
+            command: "npx -y @agentclientprotocol/codex-acp@latest".to_string(),
+            missing: Some("npx".to_string()),
+            alive: false,
+            ..Default::default()
+        };
+        let line = harness_state(Some(&missing));
+        assert!(line.contains("not installed"), "got {line:?}");
+        assert!(line.contains("`npx`"), "got {line:?}");
+        assert!(line.contains("does not bundle"), "got {line:?}");
+        assert!(
+            !line.contains("os error") && !line.to_lowercase().contains("no such file"),
+            "an errno is not a sentence, got {line:?}"
+        );
+        assert!(
+            line.contains("Model API above"),
+            "the line has to name the way back, got {line:?}"
         );
     }
 
