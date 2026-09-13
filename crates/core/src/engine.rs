@@ -596,11 +596,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Forget every dropped Prop. Tests, and nothing in production yet.
-    pub fn clear_props(&mut self) {
-        self.dropped.clear();
-    }
-
     /// How tall this Instance's art stands, in points.
     ///
     /// Without it the Engine falls back to #100's fixed guess, which is a
@@ -1876,6 +1871,12 @@ mod tests {
     /// come to rest, and returns the last frame.
     fn settle(engine: &mut Engine, snapshot: &WorldSnapshot) -> Frame {
         (0..40).map(|_| engine.tick(snapshot)).last().unwrap()
+    }
+
+    /// A full-height fall, the wait `dropped_onto` already uses. `settle` is
+    /// forty ticks and is not enough for an 800-point drop from y=0.
+    fn rest_after_fall(engine: &mut Engine, snapshot: &WorldSnapshot) -> Frame {
+        (0..120).map(|_| engine.tick(snapshot)).last().unwrap()
     }
 
     /// Whether a display covers `position` — the invariant #5 and #85
@@ -7256,9 +7257,7 @@ mod tests {
         engine
             .drop_prop("football")
             .expect("the Character declared it");
-        // Longer than `settle`: an 800-point fall from the top needs more
-        // than forty 16ms ticks, the same reason `dropped_onto` waits 120.
-        let frame = (0..120).map(|_| engine.tick(&snapshot(16))).last().unwrap();
+        let frame = rest_after_fall(&mut engine, &snapshot(16));
 
         assert_eq!(frame.props.len(), 1);
         assert_eq!(frame.props[0].name, "football");
@@ -7334,7 +7333,7 @@ mod tests {
         };
         settle(&mut engine, &perch);
 
-        let frame = (0..120).map(|_| engine.tick(&snapshot(16))).last().unwrap();
+        let frame = rest_after_fall(&mut engine, &snapshot(16));
         assert_eq!(
             frame.props[0].position,
             Point { x: 200.0, y: 800.0 },
