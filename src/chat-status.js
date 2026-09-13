@@ -165,11 +165,14 @@ function cleanName(raw) {
 // to press.
 //
 // The branches are `settings::harness_state`'s, in its order, so the two
-// windows cannot disagree — and the order is what makes it honest. A Harness
-// that is set and never came up is the state the user cannot otherwise see,
-// and it is named before the session that a live one would show. The login
-// command for an attached-but-not-signed-in Harness is named once here and
-// never run; ADR-0010's seventh rule covers the endpoint's key.
+// windows cannot disagree about a state this one is given — and the order is
+// what makes it honest. #659 gave Settings one more: a Harness `PATH` has not
+// got reads as `not running` here, because the Chat payload carries no
+// `missing` to tell it apart, until #661 sends one. A Harness that is set and
+// never came up is the state the user cannot otherwise see, and it is named
+// before the session that a live one would show. The login command for an
+// attached-but-not-signed-in Harness is named once here and never run;
+// ADR-0010's seventh rule covers the endpoint's key.
 export function mindLine(opening) {
   if (!opening) {
     return "";

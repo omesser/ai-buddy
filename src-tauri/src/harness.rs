@@ -884,12 +884,21 @@ impl Session {
             .map_err(|why| SpawnError::Failed(format!("{}: {why}", self.dir.display())))?;
         let dir = self.dir.clone();
         let forward = Arc::clone(&self.forward);
-        let wire = Wire::spawn(
+        let spawned = Wire::spawn(
             self.launch.command(&self.dir),
             self.attach_timeout(),
             Box::new(move |event| note_event(&dir, &forward, event)),
-        )
-        .map_err(|why| match why {
+        );
+        // Anything but `Missing` means `PATH` had the file to run, so this is
+        // the one place that knows whether the CLI is installed - and it has
+        // to answer on the failing edge too. A machine that installs the CLI
+        // and then fails to initialize kept the old `missing`, so Settings
+        // told the user to install what they had just installed, and said
+        // nothing about the adapter that actually failed (#659).
+        if !matches!(spawned, Err(SpawnError::Missing)) {
+            self.update_inspect(|inspect| inspect.missing = None);
+        }
+        let wire = spawned.map_err(|why| match why {
             SpawnError::Missing => SpawnError::Missing,
             SpawnError::Failed(why) => {
                 SpawnError::Failed(format!("`{}` {why}", self.launch.line()))
@@ -904,8 +913,6 @@ impl Session {
             inspect.agent = state.handshake.agent.clone();
             inspect.mcp_http = state.handshake.mcp_http;
             inspect.alive = true;
-            // Installed after all, so the row must stop saying otherwise.
-            inspect.missing = None;
         });
         let wire = Arc::new(wire);
         if !self.wanted.load(Ordering::SeqCst) {
@@ -1807,6 +1814,9 @@ mod tests {
             };
             let id = message.get("id").cloned().unwrap_or(Value::Null);
             match message.get("method").and_then(Value::as_str) {
+                // A child that starts and then fails: the spawn is not
+                // `Missing`, which is what #659 turns on.
+                Some("initialize") if script == "die-initializing" => std::process::exit(3),
                 Some("initialize") => say(json!({"jsonrpc": "2.0", "id": id, "result": {
                     "protocolVersion": 1,
                     "agentInfo": {"name": "fake-agent", "version": "0"},
@@ -2985,6 +2995,29 @@ mod tests {
         assert_eq!(session.backoff(2), Duration::from_secs(10));
         assert_eq!(session.backoff(40), BACKOFF_CAP);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// #659's other half: `missing` has to be cleared by a spawn that fails,
+    /// not only by one that works. A machine that installs the CLI and then
+    /// fails to initialize used to keep the old `missing`, so the Settings row
+    /// told the user to install what they had just installed and never named
+    /// the real failure.
+    #[test]
+    fn a_spawn_that_fails_for_another_reason_stops_saying_not_installed() {
+        let (fx, session) = Fixture::new("die-initializing");
+        session.note_missing();
+        let reply = session.complete(&asking("hi"));
+        assert!(
+            reply.as_ref().is_err_and(|why| why.contains("initialize")),
+            "{reply:?}"
+        );
+        let inspect = session.inspect();
+        assert_eq!(inspect.missing, None, "the row still says not installed");
+        assert!(!inspect.alive);
+        // The child did start, so the ladder is still the right answer for it.
+        assert!(session.state.lock().unwrap().spawn_wait_until.is_some());
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
     }
 
     /// #659's subtle half: `codex` attaches through `npx` and logs in through
