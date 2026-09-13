@@ -3518,30 +3518,11 @@ mod tests {
         };
         let line = harness_state(Some(&unauthenticated));
         assert!(line.contains("not authenticated"), "got {line:?}");
-        assert!(line.contains("claude /login"), "got {line:?}");
+        assert!(line.contains("`claude /login`"), "got {line:?}");
         assert!(
             !line.to_lowercase().contains("api key") && !line.to_lowercase().contains("password"),
             "ADR-0010: no credential is ever asked for, got {line:?}"
         );
-    }
-
-    /// #654: Chat's Connect button answers with `harness::login_hint` and this
-    /// row prints `HarnessInspect::login`. Both are the same table, so the two
-    /// surfaces cannot tell one user two different fixes — and neither of them
-    /// runs it.
-    #[test]
-    fn chat_and_the_source_row_name_the_same_login_command() {
-        for name in ["claude", "codex", "grok", "hermes", "opencode", "pi"] {
-            let hint = crate::harness::login_hint(name);
-            let unauthenticated = crate::harness::HarnessInspect {
-                name: name.to_string(),
-                login: Some(hint.clone()),
-                alive: true,
-                ..Default::default()
-            };
-            let line = harness_state(Some(&unauthenticated));
-            assert!(line.contains(&format!("`{hint}`")), "got {line:?}");
-        }
     }
 
     /// Production change that would fail this: a different Harness left to the

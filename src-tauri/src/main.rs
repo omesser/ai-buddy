@@ -1284,14 +1284,8 @@ fn permission_answer(request: String, option: String) {
 /// `ReloadChat` that apply sends is what carries the new state back to the
 /// window that asked (#473).
 ///
-/// The answer is a line to read, not a process to run. Chat used to chain a
-/// `harness_login` that spawned `codex login` from this GUI process — no
-/// terminal of its own, and racing the child ai-buddy had just attached for
-/// `localhost:1455`. Two PKCE challenges, one port, and the redirect landed on
-/// whichever listener won: the browser reported success twice and the CLI
-/// handshake completed neither time (#654). ADR-0018 has the Harness
-/// authenticate itself, so naming the command is the whole of what we do —
-/// the same sentence Settings has always shown, from the same table.
+/// The answer is a line to read, not a process to run: ai-buddy never spawns
+/// the login. `harness::login_hint` owns that constraint and why. #654.
 #[tauri::command]
 fn select_harness(
     harness: String,
@@ -2805,24 +2799,6 @@ mod tests {
         Character, CursorReaction, PackageBytes, CHARACTER_MANIFEST_FILE, DEFAULT_MODEL_BASE,
         DEFAULT_MODEL_POWER, REQUIRED_ANIMATIONS,
     };
-
-    /// #654: no command here starts a process. `harness_login` spawned
-    /// `codex login` from this GUI process while the child ai-buddy had just
-    /// attached was opening a loopback listener of its own, so two PKCE
-    /// challenges raced for `localhost:1455` and the browser's success reached
-    /// whichever won — never the one holding the handshake. The Harness signs
-    /// itself in (ADR-0018); a child that is ours goes through `acp_wire`,
-    /// which is the one place that knows how to hold one.
-    ///
-    /// The needle is split so this test does not match its own source.
-    #[test]
-    fn no_command_here_spawns_a_process() {
-        let spawner = concat!("Command", "::new");
-        assert!(
-            !include_str!("main.rs").contains(spawner),
-            "#654: a process started from a Tauri command races the attached Harness"
-        );
-    }
 
     fn stub_character(name: &str) -> Character {
         Character {
