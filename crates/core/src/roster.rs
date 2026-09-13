@@ -276,6 +276,13 @@ impl Roster {
         let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let engine = Engine::new(position)
             .with_behaviors(character.behaviors.clone())
+            .with_props(
+                character
+                    .props
+                    .iter()
+                    .map(|(name, prop)| (name.clone(), prop.frame_size))
+                    .collect(),
+            )
             // How much room a Perch near the top of a display has to leave,
             // which is this Character's own height rather than a guess at the
             // tallest one anybody ships. #395.
