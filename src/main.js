@@ -34,8 +34,8 @@ let characters = {};
 // One view per Instance, keyed by its id.
 const views = new Map();
 
-// Dropped Props, keyed by the id the Shell minted. Separate from `views`
-// because a Prop is not an Instance: no bubble, no cue, no hit-test. #165.
+// Separate from `views` because a Prop is not an Instance: no bubble, no cue,
+// no hit-test. #165.
 const propNodes = new Map();
 
 function currentDisplayBounds() {

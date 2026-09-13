@@ -507,8 +507,8 @@ struct Placed {
     props: Vec<PlacedProp>,
 }
 
-/// A dropped Prop placed once in the shared point space, then shifted into
-/// each overlay the same way a sprite is (`in_overlay`, not `bubble_owner`).
+/// Shifted into each overlay the same way a sprite is (`in_overlay`, not
+/// `bubble_owner`). A clamp would un-clip a prop on a display seam. #165.
 struct PlacedProp {
     id: String,
     character: String,

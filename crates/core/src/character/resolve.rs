@@ -156,7 +156,6 @@ pub(super) fn resolve_animations(
     (animations, props, art)
 }
 
-/// Header-check one frame and charge it once against the package budget.
 fn charge_frame(
     package: &PackageBytes,
     kind: &str,
@@ -662,8 +661,6 @@ mod tests {
         ));
         package.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
 
-        // Nine required 2x2 frames plus the prop's distinct full-size
-        // frames: the prop is what pushes the package over.
         let required_pixels = (REQUIRED_ANIMATIONS.len() as u64) * 2 * 2;
         let over = errors(load(&package));
         assert_eq!(

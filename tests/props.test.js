@@ -1,8 +1,7 @@
 // Run with `node --test tests/`.
 //
 // The overlay page cannot be imported here (it grabs `#stage` at load).
-// `syncProps` is the seam the frame listener calls: siblings of the sprite,
-// never its children, and never mirrored.
+// `syncProps` is the seam the frame listener calls.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

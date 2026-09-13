@@ -275,7 +275,6 @@ pub enum DropPropError {
     Unknown { name: String },
 }
 
-/// A dropped Prop body. Exists only once it is not being carried.
 struct Prop {
     name: String,
     position: Point,
@@ -510,7 +509,6 @@ pub struct Engine {
     /// Declared Prop names and their art size in pixels. The Engine never
     /// holds PNG bytes.
     known_props: BTreeMap<String, (u32, u32)>,
-    /// Dropped Prop bodies, ticked with the same snapshot as the sprite.
     dropped: Vec<Prop>,
 }
 
@@ -1252,8 +1250,7 @@ impl Engine {
         }
     }
 
-    /// Move dropped Props with the same snapshot the sprite just used.
-    /// Wall contact zeros sideways speed and keeps the fall; Props never Climb.
+    /// Wall contact zeros sideways speed and keeps the fall. Props never Climb.
     fn tick_props(&mut self, snapshot: &WorldSnapshot) {
         let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
         if dt <= 0.0 {
