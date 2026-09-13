@@ -104,13 +104,16 @@ x11rb ships it behind `xinput = ["x11rb-protocol/xinput", "xfixes"]`; the
 repo enables `randr, xfixes, shape, dpms, screensaver` but not `xinput`
 (`src-tauri/Cargo.toml`).
 <https://github.com/psychon/x11rb/blob/master/x11rb/Cargo.toml>
+As of #183, the `xinput` feature is enabled and the frame loop uses XI2 raw
+events to avoid polling when idle.
 
 **Wayland.** `wl_pointer.enter` is "Notification that this seat's pointer is
 focused on a certain surface"; `motion` coordinates are "relative to the
 focused surface." There is no global pointer, and `XQueryPointer` needs an X
 connection, so today Wayland has only the webview latch
 (`platform.rs`: "Wayland has only the overlay latch"). The degradation is not
-a slow poll; it is no out-of-window witness at all.
+a slow poll; it is no out-of-window witness at all. Wayland remains
+webview-only as documented here and is not slowed to a poll rate. #183.
 <https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_pointer>
 tao's GTK `CursorIgnoreEvents` sets a 1×1 input shape when ignoring and clears
 it otherwise; the repo already carves per-pixel input on X11 (#191).

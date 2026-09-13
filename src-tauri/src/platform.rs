@@ -684,6 +684,13 @@ pub enum LinuxActivitySource {
     Wayland,
 }
 
+/// Spawn an XI2 input event listener thread on X11. Returns `None` on other
+/// platforms or when XI2 is unavailable. #183.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn spawn_xi2_listener() -> Option<std::sync::mpsc::Receiver<x11::InputEvent>> {
+    x11::spawn_listener()
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 impl ActivitySource for LinuxActivitySource {
     fn frontmost_application(&self) -> Option<String> {

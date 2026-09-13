@@ -10,6 +10,7 @@ use ai_buddy_core::engine::{BehaviorProposal, Cue, State, Verb};
 use ai_buddy_core::input::press_target;
 use ai_buddy_core::overlay::{bubble_owner, display_index_for, place_sprite};
 use ai_buddy_core::roster::{InstanceId, Roster};
+use ai_buddy_core::scheduler;
 use ai_buddy_core::sensing::{Activity, FreeTier, SystemClock};
 use ai_buddy_core::snapshot::SnapshotAssembler;
 use ai_buddy_core::visibility::{fullscreen_frontmost, Change, Desktop, HideRules};
@@ -156,15 +157,84 @@ pub(crate) fn run_frame_loop(
         // and so the only place that knows when this is true again.
         let covered = Arc::new(Mutex::new(covered));
 
+        // Spawn XI2 input event listener on X11. When available, the frame loop
+        // blocks on this channel when idle instead of polling at 16ms. #183.
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let input_events = platform::spawn_xi2_listener();
+        #[cfg(any(target_os = "macos", not(unix)))]
+        let input_events: Option<mpsc::Receiver<()>> = None;
+
         let mut button_was_down = false;
         let mut sound_allowed = true;
         let mut ticks: u32 = 0;
         let mut last_tick = Instant::now();
         let mut time_since_launch = Duration::ZERO;
         let mut tour_triggered = false;
+        let mut schedule_mode = scheduler::ScheduleMode::Active;
+        let mut was_visible = true;
 
         loop {
-            thread::sleep(ENGINE_TICK);
+            // Scheduler-aware wait: either sleep 16ms (active) or block on input
+            // events (idle). When idle, compute the next real deadline (Director
+            // ambient wake, activity sensing) without artificial caps. Active mode
+            // runs whenever the Engine needs regular ticks (motion, multi-frame
+            // animation, sleep-after accrual). #183.
+            //
+            // Spec CLEAR: while !visible (fullscreen/hotkey-hide/etc.), ignore
+            // ALL XI2 (Motion+Button) by sleeping instead of recv on events.
+            // While visible (incl. Asleep/DND), keep XI2 for hit-testing so
+            // Poke/Grab/Throw work. SPEC #27: DND stays visible+quiet.
+            match (schedule_mode, was_visible, &input_events) {
+                (scheduler::ScheduleMode::Idle, true, Some(events)) => {
+                    // Visible idle: block on XI2 events for cursor-over-art.
+                    // Compute next real work deadline: min of Director ambient
+                    // wakes and activity sensing interval.
+                    let next_director = lives
+                        .iter()
+                        .filter_map(|live| {
+                            let remaining = live.pace.wait().saturating_sub(live.since_wake);
+                            if remaining.is_zero() {
+                                None
+                            } else {
+                                Some(remaining)
+                            }
+                        })
+                        .min()
+                        .unwrap_or(Duration::from_secs(3600));
+
+                    let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                    let deadline = next_director.min(next_sense);
+
+                    // Block on input events until deadline. Motion/button events
+                    // wake immediately; timeout means real work is due.
+                    let _ = events.recv_timeout(deadline);
+                }
+                (scheduler::ScheduleMode::Idle, false, Some(_events)) => {
+                    // Hidden idle: deep sleep without XI2 wakes. Only non-XI2
+                    // callbacks (sense deadline, visibility change, hotkey show,
+                    // menu/ops, Director ambient, chat/MCP, tray) unblock.
+                    let next_director = lives
+                        .iter()
+                        .filter_map(|live| {
+                            let remaining = live.pace.wait().saturating_sub(live.since_wake);
+                            if remaining.is_zero() {
+                                None
+                            } else {
+                                Some(remaining)
+                            }
+                        })
+                        .min()
+                        .unwrap_or(Duration::from_secs(3600));
+
+                    let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                    let deadline = next_director.min(next_sense);
+
+                    thread::sleep(deadline);
+                }
+                _ => {
+                    thread::sleep(ENGINE_TICK);
+                }
+            }
 
             // Read per tick, not once at setup: the Development tab can flip
             // these while the loop runs, and an atomic load is nothing beside
@@ -1027,6 +1097,25 @@ pub(crate) fn run_frame_loop(
                 fullscreen_frontmost: fullscreen_frontmost(&rects, &displays.frames),
             };
 
+            // Compute visibility before instance processing so scheduler::mode gets
+            // real visibility, not hardcoded true. #183.
+            let presence = rules
+                .lock()
+                .map(|mut rules| {
+                    if let Some(change) = rules.update(desktop) {
+                        eprintln!(
+                            "presence: {} over {}ms",
+                            if change.visible { "shown" } else { "hidden" },
+                            change.fade_ms,
+                        );
+                    }
+                    rules.presence()
+                })
+                .unwrap_or(Change {
+                    visible,
+                    fade_ms: 0,
+                });
+
             // Where each Instance ends up, in the space every display shares.
             let mut placed: Vec<Placed> = Vec::with_capacity(lives.len());
 
@@ -1034,6 +1123,11 @@ pub(crate) fn run_frame_loop(
             // riding a moving window. One riding buddy is reason enough: the
             // others cost nothing extra, the read being shared.
             let mut riding = false;
+
+            // Track whether any instance needs active timing for the next iteration.
+            // Idle means all visible instances are grounded/perched with no behavior
+            // playing, asleep, or hidden. #183.
+            let mut any_needs_active = false;
 
             // Whether the cursor is over any Instance's art. Click-through is a
             // property of the overlay, which every Instance shares, so one
@@ -1250,6 +1344,45 @@ pub(crate) fn run_frame_loop(
                 if live.last_state != Some(frame.state) {
                     live.last_state = Some(frame.state);
                     live.since_state = Duration::ZERO;
+                }
+
+                // Check if this instance needs active timing (16ms) for next iteration.
+                // Stay Active while:
+                // (a) moving/dragging/climbing/behavior playing (scheduler::mode)
+                // (b) idle/sleep animation is multi-frame and needs advances
+                // (c) idle_ms is accruing toward sleep (Grounded/Perched, not Asleep yet)
+                // #183 Architect review.
+                let behavior_playing = frame.playing_behavior.is_some();
+                let needs_active_for_motion =
+                    scheduler::mode(&frame, presence.visible, behavior_playing)
+                        == scheduler::ScheduleMode::Active;
+
+                let needs_active_for_animation =
+                    if let Some(character) = characters.get(instance.character_name()) {
+                        character
+                            .animations
+                            .get(frame.animation)
+                            .is_some_and(|anim| {
+                                // Multi-frame: looping OR not at last frame yet
+                                anim.looping || {
+                                    let current_frame = anim.frame_at(frame.animation_ms);
+                                    current_frame + 1 < anim.frames.len()
+                                }
+                            })
+                    } else {
+                        false
+                    };
+
+                // idle_ms accrues when Grounded/Perched but not Asleep.
+                // Keep Active while accruing so sleep-after happens on time.
+                let needs_active_for_sleep_accrual =
+                    matches!(frame.state, State::Grounded | State::Perched);
+
+                if needs_active_for_motion
+                    || needs_active_for_animation
+                    || needs_active_for_sleep_accrual
+                {
+                    any_needs_active = true;
                 }
 
                 // After the tick so a Throw is already Falling, not still Dragged.
@@ -1597,30 +1730,8 @@ pub(crate) fn run_frame_loop(
 
             assembler.poll_fast(riding);
 
-            // The log is what is silent on almost every tick, not the
-            // renderer: only a change is worth a line, and a fullscreen
-            // application held for an hour is one of them rather than one an
-            // Engine tick.
-            let presence = rules
-                .lock()
-                .map(|mut rules| {
-                    if let Some(change) = rules.update(desktop) {
-                        // Unconditional, unlike the traces above, because it is
-                        // rare — a handful of lines in a session — and because
-                        // whether a rule fired is the first thing anyone
-                        // checking hiding by hand needs to know.
-                        eprintln!(
-                            "presence: {} over {}ms",
-                            if change.visible { "shown" } else { "hidden" },
-                            change.fade_ms,
-                        );
-                    }
-                    rules.presence()
-                })
-                .unwrap_or(Change {
-                    visible,
-                    fade_ms: 0,
-                });
+            // Visibility was already computed before the instance loop (so
+            // scheduler::mode gets real visibility). Use it here.
 
             // A display can be plugged in, unplugged or rearranged while the
             // app runs, and every display needs its overlay. Posted rather than
@@ -1799,6 +1910,18 @@ pub(crate) fn run_frame_loop(
                         sound: sound_allowed,
                     },
                 );
+
+                // Set schedule mode for next iteration based on visibility and what
+                // any_needs_active captured during frame processing. Hidden sprites
+                // always idle. Track visibility for XI2 wake policy. #183.
+                if index == 0 {
+                    schedule_mode = if !presence.visible || !any_needs_active {
+                        scheduler::ScheduleMode::Idle
+                    } else {
+                        scheduler::ScheduleMode::Active
+                    };
+                    was_visible = presence.visible;
+                }
 
                 // Click-through is per-window, and a click only ever lands on
                 // the overlay the cursor is on. Every other overlay passes
