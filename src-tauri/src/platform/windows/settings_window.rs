@@ -1935,7 +1935,12 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         x += field_width + 8;
                                         control_id += 1;
                                     }
-                                    form::CompositeControl::Popup { id, frozen, options, .. } => {
+                                    form::CompositeControl::Popup {
+                                        id,
+                                        frozen,
+                                        options,
+                                        ..
+                                    } => {
                                         // A shortcut rests on the title for
                                         // what it fills in, and an endpoint
                                         // title carries the URL. 100px clips
