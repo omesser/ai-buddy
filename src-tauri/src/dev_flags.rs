@@ -71,6 +71,10 @@ pub static TRACE_ENGINE: Flag = Flag::new("AI_BUDDY_TRACE_ENGINE");
 /// gracefully (no exclusion API).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub static CAPTURABLE: Flag = Flag::new("AI_BUDDY_CAPTURABLE");
+/// Blank-AI mode (#657). Named from `model` rather than spelled again here:
+/// it is a Director variable, and the row that freezes on it names the same
+/// string the Director's other knobs do.
+pub static DIRECTOR_BLANK: Flag = Flag::new(model::BLANK);
 
 /// Completer timeout, reply cap, and first ambient wait, as the variable or
 /// the file gives them.
@@ -137,6 +141,7 @@ fn flag_vars() -> Vec<&'static str> {
         TRACE_ENGINE.var(),
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         CAPTURABLE.var(),
+        DIRECTOR_BLANK.var(),
     ]
 }
 
@@ -179,6 +184,7 @@ pub fn seed(settings: &Settings) {
     TRACE_ENGINE.seed(settings.trace_engine);
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     CAPTURABLE.seed(settings.capturable);
+    DIRECTOR_BLANK.seed(settings.director_blank);
     TIMEOUT_SECS.store(
         model::env_or_file(model::TIMEOUT_SECS, &settings.director_timeout_secs)
             .trim()
@@ -284,6 +290,31 @@ mod tests {
 
             seed(&Settings::default());
             assert!(!TRACE_DIRECTOR.is_on());
+        });
+    }
+
+    /// #657: the row writes the switch a Director reads when it is built, and
+    /// an exported variable outranks it like every other switch.
+    #[test]
+    fn a_patched_blank_switch_moves_what_the_director_reads() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings {
+                director_blank: true,
+                ..Settings::default()
+            });
+            assert!(DIRECTOR_BLANK.is_on());
+            assert!(model::blank(), "model::blank reads the live flag");
+
+            std::env::set_var(model::BLANK, "0");
+            seed(&Settings {
+                director_blank: true,
+                ..Settings::default()
+            });
+            std::env::remove_var(model::BLANK);
+            assert!(!model::blank(), "the exported variable wins");
+
+            seed(&Settings::default());
+            assert!(!DIRECTOR_BLANK.is_on(), "off is the shipped answer");
         });
     }
 

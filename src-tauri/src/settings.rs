@@ -105,6 +105,10 @@ fn development_switches(settings: &Settings) -> HashMap<String, bool> {
             form::TRACE_ENGINE_ID.to_string(),
             dev_flags::TRACE_ENGINE.in_force(settings.trace_engine),
         ),
+        (
+            form::DIRECTOR_BLANK_ID.to_string(),
+            dev_flags::DIRECTOR_BLANK.in_force(settings.director_blank),
+        ),
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         (
             form::CAPTURABLE_ID.to_string(),
@@ -488,6 +492,15 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_max_tokens
             .as_ref()
             .is_some_and(|cap| cap != &settings.director_max_tokens)
+        // Blank-AI mode decides the opening turn, and a session that has had
+        // its opening cannot be given another one — so the toggle has to
+        // rebuild the Director rather than change what the next follow-up
+        // rides on. Without this the mode would lie: half a session shaped by
+        // a Character, half not, and no way to tell which reply was which
+        // (#657).
+        || patch
+            .director_blank
+            .is_some_and(|blank| blank != settings.director_blank)
         // Every Completer source change retargets since #500, Off and a
         // different Harness alike: `harness::retarget` has moved the handle by
         // the time the payload is built, and `completer_from` reads it.
@@ -897,6 +910,7 @@ pub struct SettingsPatch {
     pub trace_hittest: Option<bool>,
     pub trace_director: Option<bool>,
     pub trace_engine: Option<bool>,
+    pub director_blank: Option<bool>,
     pub capturable: Option<bool>,
     /// Present so callers can write the store; `Settings::apply` ignores it
     /// because the key is not a file field.
@@ -923,6 +937,7 @@ pub enum BoolField {
     TraceHittest,
     TraceDirector,
     TraceEngine,
+    DirectorBlank,
     /// macOS and Windows support capture exclusion. The patch field itself is
     /// not gated: the file carries it anywhere.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -980,6 +995,7 @@ impl SettingsPatch {
             BoolField::TraceHittest => self.trace_hittest = Some(value),
             BoolField::TraceDirector => self.trace_director = Some(value),
             BoolField::TraceEngine => self.trace_engine = Some(value),
+            BoolField::DirectorBlank => self.director_blank = Some(value),
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             BoolField::Capturable => self.capturable = Some(value),
             #[cfg(not(target_os = "linux"))]
@@ -1056,6 +1072,7 @@ impl fmt::Debug for SettingsPatch {
             .field("trace_hittest", &self.trace_hittest)
             .field("trace_director", &self.trace_director)
             .field("trace_engine", &self.trace_engine)
+            .field("director_blank", &self.director_blank)
             .field("capturable", &self.capturable)
             .field(
                 "director_api_key",
@@ -1169,6 +1186,9 @@ impl Settings {
         }
         if let Some(value) = patch.trace_engine {
             self.trace_engine = value;
+        }
+        if let Some(value) = patch.director_blank {
+            self.director_blank = value;
         }
         if let Some(value) = patch.capturable {
             self.capturable = value;
@@ -1284,6 +1304,8 @@ pub struct Settings {
     pub trace_hittest: bool,
     pub trace_director: bool,
     pub trace_engine: bool,
+    /// Blank-AI mode: the Director sends no Character Prompt (#657).
+    pub director_blank: bool,
     /// Appear in screenshots and screen shares. True (default) means the buddy
     /// is capturable; false excludes it. macOS and Windows read it; the field
     /// is unconditional so the document round-trips on every platform.
@@ -1325,6 +1347,7 @@ impl Default for Settings {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
+            director_blank: false,
             capturable: true,
             use_accessibility: false,
             use_screen_recording: false,
@@ -1574,6 +1597,7 @@ mod tests {
             trace_hittest: true,
             trace_director: true,
             trace_engine: true,
+            director_blank: true,
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
@@ -1874,6 +1898,7 @@ mod tests {
             trace_hittest: false,
             trace_director: false,
             trace_engine: false,
+            director_blank: false,
             capturable: true,
             use_accessibility: true,
             use_screen_recording: false,
@@ -2611,6 +2636,28 @@ mod tests {
             ..SettingsPatch::default()
         };
         assert!(completer_retargets(&settings, &model));
+    }
+
+    /// #657: the mode decides the opening turn, and `opened` has no way back
+    /// to one — so a toggle has to rebuild the Director. Without the rebuild
+    /// the switch would only change the next session, and the current one
+    /// would go on answering out of a Character Prompt it claims not to have.
+    #[test]
+    fn toggling_blank_ai_retargets_and_leaving_it_alone_does_not() {
+        let settings = endpoint_settings();
+        let on = SettingsPatch {
+            director_blank: Some(true),
+            ..SettingsPatch::default()
+        };
+        assert!(completer_retargets(&settings, &on));
+        let unchanged = SettingsPatch {
+            director_blank: Some(settings.director_blank),
+            ..SettingsPatch::default()
+        };
+        assert!(
+            !completer_retargets(&settings, &unchanged),
+            "both windows commit on blur; the same value is not a change"
+        );
     }
 
     #[test]

@@ -337,6 +337,7 @@ pub const TRACE_DIRECTOR_ID: &str = "trace_director";
 pub const TRACE_ENGINE_ID: &str = "trace_engine";
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub const CAPTURABLE_ID: &str = "capturable";
+pub const DIRECTOR_BLANK_ID: &str = "director_blank";
 pub const DIRECTOR_TIMEOUT_SECS_ID: &str = "director_timeout_secs";
 pub const DIRECTOR_MAX_TOKENS_ID: &str = "director_max_tokens";
 pub const DIRECTOR_WAKE_SECS_ID: &str = "director_wake_secs";
@@ -1105,6 +1106,19 @@ fn development_sections() -> Vec<FormSection> {
             rows,
         },
         FormSection {
+            heading: "Blank AI".to_string(),
+            comment: Some("Also for development and testing. Off is the buddy as shipped.".to_string()),
+            disclosure: Some("Blank AI sends the model what just happened and nothing else: no Personality Prompt, no Instance Prompt, no voice rules, no behavior list and no reply contract. It is the control run for \"is this the model or is this our prompt\". Nothing asks for a Behavior name, so the buddy says what comes back and plays no Behavior while this is on. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            status: None,
+            rows: vec![flag_row(
+                DIRECTOR_BLANK_ID,
+                &dev_flags::DIRECTOR_BLANK,
+                BoolField::DirectorBlank,
+                "Blank AI",
+                "What just happened, and nothing else. The buddy talks and plays no Behavior.",
+            )],
+        },
+        FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
             disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length.".to_string()),
@@ -1235,6 +1249,7 @@ mod tests {
         assert_eq!(placed, headings.len(), "a heading is on two tabs");
 
         let mut expected = vec![
+            "Blank AI",
             "Character",
             "Model / API",
             "HTTP limits",
