@@ -83,6 +83,7 @@ mod tests {
             addressed: false,
             cue: None,
             refused: None,
+            props: Vec::new(),
         }
     }
 
