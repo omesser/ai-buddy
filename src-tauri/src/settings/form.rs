@@ -352,6 +352,13 @@ impl FormDescription {
     /// The row a composite popup is a shortcut for, and how to read its
     /// titles. `None` for every other control, popups included: a row that
     /// writes a field of its own answers `text_write` instead.
+    ///
+    /// For a renderer holding an id and needing the shortcut — AppKit reaches
+    /// it through the tag the pick carries, Win32 through the child id.
+    // GTK captures the shortcut where it builds the radio, so the binary's
+    // dead-code lint sees no caller there — the same reason `bool_write`
+    // carries this.
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub fn shortcut(&self, id: &str) -> Option<Shortcut> {
         self.sections()
             .flat_map(|section| &section.rows)
