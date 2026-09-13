@@ -874,15 +874,10 @@ fn director_sections() -> Vec<FormSection> {
 /// and ai-buddy holds nothing for it (ADR-0010's eight rules). The login
 /// command the state line names is text, and nothing here runs it.
 ///
-/// ponytail: all three renderers draw these rows — AppKit from the start, GTK
-/// since #467, Win32 since #468. What Win32 still cannot do is commit one: no
-/// control in that window maps back to the row it belongs to, because its
-/// handlers look a row up by the numeric child id, so nothing typed or picked
-/// there is written — the wake interval and both Completer limits included.
-/// One generic commit handler plus that id map fixes them together and is
-/// #461, not written blind here: Win32 does not compile on the machine this
-/// landed from. The file field is the setting either way, so a hand-edit
-/// works everywhere today.
+/// All three renderers draw these rows — AppKit from the start, GTK since
+/// #467, Win32 since #468 — and all three commit them: `control_id_to_form_id`
+/// maps a Win32 child id back to its row (#461), and a pick reaches the file
+/// through the generic handler every row shares (#670).
 fn completer_source_section() -> FormSection {
     let (source_label, frozen, source_status) = harness_env_row_parts("AI source");
     FormSection {
