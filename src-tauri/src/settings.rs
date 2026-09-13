@@ -288,34 +288,33 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
     match harness {
         // The remove is not optional: Claude Code answers a re-add of an
         // existing name by keeping the old URL and token and exiting 0 (#580,
-        // #644), and both of ours change every launch. `-s project` is
-        // deliberately absent - it writes a checked-in `.mcp.json`, which would
-        // commit the token.
+        // #644), and both of ours change every launch. Scope is omitted so it
+        // defaults to local. `-s project` is deliberately absent - it writes a
+        // checked-in `.mcp.json`, which would commit the token.
         "claude" => (
             format!(
-                "claude mcp remove -s user ai-buddy 2>/dev/null\n\
-                 claude mcp add -s user --transport http ai-buddy \"{url}\" \
+                "claude mcp remove ai-buddy 2>/dev/null\n\
+                 claude mcp add --transport http ai-buddy \"{url}\" \
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run both lines in a terminal, then exit your Claude session and start a \
              new one with `claude`. The remove is not optional: re-adding a name Claude \
-             Code already knows keeps the old URL and token and reports success. `claude \
-             mcp list` says whether it connected."
+             Code already knows keeps the old URL and token and reports success. Add `-s \
+             user` only if you want the same entry in every project. `claude mcp list` \
+             says whether it connected."
                 .to_string(),
         ),
-        // Config fragment rather than launch flags: the URL and token are new
-        // every launch, so reconfiguration is always required. mcpServer/refresh
-        // picks up config changes mid-session (#644).
         "codex" => (
             format!(
-                "[mcp_servers.ai-buddy]\n\
-                 url = \"{url}\"\n\
-                 http_headers = {{ \"Authorization\" = \"Bearer {token}\" }}"
+                "export AI_BUDDY_MCP_TOKEN='{token}'\n\
+                 codex mcp add ai-buddy --url '{url}' --bearer-token-env-var AI_BUDDY_MCP_TOKEN"
             ),
-            "A fragment for `~/.codex/config.toml`, not a command. Add or update the \
-             `[mcp_servers.ai-buddy]` entry, then run `mcpServer/refresh` from your \
-             Codex session to pick up the change. If `mcpServer/refresh` is unavailable, \
-             exit your Codex session and open a new one."
+            "Run both lines in a terminal where Codex will inherit the environment, then \
+             run `mcpServer/refresh` from your Codex session to pick up the change. If \
+             `mcpServer/refresh` is unavailable, exit your Codex session and open a new \
+             one. Alternatively, add or update `[mcp_servers.ai-buddy]` in \
+             `~/.codex/config.toml` with `url = \"{url}\"` and `http_headers = {{ \
+             \"Authorization\" = \"Bearer {token}\" }}`."
                 .to_string(),
         ),
         "grok" => (
@@ -324,44 +323,33 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String) {
                  --header \"Authorization: Bearer {token}\""
             ),
             "Run it in a terminal; `grok mcp add` overwrites in place, so re-running it \
-             after a relaunch is enough. Then in your live Grok session, run `/mcps` and \
-             press `r` to reload. `grok mcp doctor ai-buddy` reports."
+             after a relaunch is enough. Add `--scope user` if you want it for every \
+             project, otherwise it defaults to the current project. Then in your live \
+             Grok session, run `/mcps` and press `r` to reload. `grok mcp doctor \
+             ai-buddy` reports."
                 .to_string(),
         ),
         "hermes" => (
-            format!(
-                "mcp_servers:\n\
-                 \x20 ai-buddy:\n\
-                 \x20   url: \"{url}\"\n\
-                 \x20   headers:\n\
-                 \x20     Authorization: \"Bearer {token}\""
-            ),
-            "A fragment for `~/.hermes/config.yaml`, not a command. If it already has \
-             `mcp_servers:`, paste only the indented `ai-buddy:` block under it, and keep \
-             the indentation exactly. Then run `/reload-mcp` in your Hermes session. \
-             `hermes mcp test ai-buddy` reports."
+            format!("hermes mcp add ai-buddy --url '{url}' --auth header"),
+            "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the \
+             interactive prompt: `{token}`. This stores `MCP_AI_BUDDY_API_KEY` in \
+             `~/.hermes/.env` and adds the header `Bearer ${{MCP_AI_BUDDY_API_KEY}}`. \
+             Then run `/reload-mcp` in your Hermes session. Alternatively, add or update \
+             `ai-buddy:` under `mcp_servers:` in `~/.hermes/config.yaml` with `url: \
+             \"{url}\"` and `headers:` → `Authorization: \"Bearer {token}\"`; keep the \
+             indentation exactly. `hermes mcp test ai-buddy` reports."
                 .to_string(),
         ),
-        // Flat mcp.ai-buddy with type: remote and oauth: false. The nested
-        // mcp.servers.<name> shape is V2; V1 uses a flat top-level mcp.<name>.
         "opencode" => (
             format!(
-                "{{\n\
-                 \x20 \"mcp\": {{\n\
-                 \x20   \"ai-buddy\": {{\n\
-                 \x20     \"type\": \"remote\",\n\
-                 \x20     \"url\": \"{url}\",\n\
-                 \x20     \"oauth\": false,\n\
-                 \x20     \"headers\": {{\n\
-                 \x20       \"Authorization\": \"Bearer {token}\"\n\
-                 \x20     }}\n\
-                 \x20   }}\n\
-                 \x20 }}\n\
-                 }}"
+                "opencode mcp add ai-buddy --url '{url}' --header \"Authorization=Bearer {token}\""
             ),
-            "A fragment for `opencode.jsonc`, not a command. With a file already there, \
-             merge the `mcp.ai-buddy` content rather than replacing the entire config. Then \
-             run `/reload` in your OpenCode session. `opencode mcp list` reports."
+            "Run it in a terminal, then run `/reload` in your OpenCode session. If \
+             OpenCode tries OAuth, set `\"oauth\": false` in the config. Alternatively, \
+             merge this flat `mcp.ai-buddy` content into `opencode.jsonc` (not nested \
+             `mcp.servers`): `{{ \"mcp\": {{ \"ai-buddy\": {{ \"type\": \"remote\", \
+             \"url\": \"{url}\", \"oauth\": false, \"headers\": {{ \"Authorization\": \
+             \"Bearer {token}\" }} }} }} }}`. `opencode mcp list` reports."
                 .to_string(),
         ),
         "pi" => (
@@ -4189,6 +4177,10 @@ mod tests {
             !snippet.contains("-s project"),
             "project scope writes a checked-in .mcp.json and would commit the token"
         );
+        assert!(
+            !snippet.contains("-s user"),
+            "omit scope to use local default, got {snippet:?}"
+        );
     }
 
     /// Codex, hermes, opencode, and pi paste into a file that may already
@@ -4196,19 +4188,14 @@ mod tests {
     /// so. None should say they "start" or "launch" the harness.
     #[test]
     fn the_file_fragment_harnesses_say_they_are_fragments() {
-        for (harness, file) in [
-            ("codex", "config.toml"),
-            ("hermes", "config.yaml"),
-            ("opencode", "opencode.jsonc"),
-            ("pi", ".mcp.json"),
-        ] {
+        for (harness, file) in [("pi", ".mcp.json")] {
             let (snippet, steps) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
             assert!(
                 steps.contains(file),
                 "{harness} must name the file it merges into, got {steps:?}"
             );
             assert!(
-                steps.to_lowercase().contains("fragment")
+                steps.contains("fragment")
                     || steps.to_lowercase().contains("merge")
                     || steps.to_lowercase().contains("add or update"),
                 "{harness} must say it is a fragment, got {steps:?}"
@@ -4230,43 +4217,80 @@ mod tests {
     /// Codex uses `http_headers` not `headers`. Architect verified `headers`
     /// is silently ignored (#599).
     #[test]
-    fn codex_snippet_uses_http_headers_not_headers() {
+    fn codex_snippet_is_cli_with_export_and_bearer_token_env_var() {
         let (snippet, _) = byo_registration("codex", "http://127.0.0.1:5051/mcp", "beef");
         assert!(
-            snippet.contains("http_headers"),
-            "codex must use http_headers, got {snippet:?}"
+            snippet.contains("export AI_BUDDY_MCP_TOKEN="),
+            "codex must export the token env var, got {snippet:?}"
         );
-        // Check that it's http_headers = and not headers =
         assert!(
-            !snippet.contains("\nheaders = "),
-            "codex must not use plain 'headers =' (silently ignored), got {snippet:?}"
+            snippet.contains("codex mcp add"),
+            "codex must use CLI add, got {snippet:?}"
+        );
+        assert!(
+            snippet.contains("--url"),
+            "codex must use --url flag, got {snippet:?}"
+        );
+        assert!(
+            snippet.contains("--bearer-token-env-var AI_BUDDY_MCP_TOKEN"),
+            "codex must use --bearer-token-env-var, got {snippet:?}"
+        );
+        assert!(
+            !snippet.starts_with("[mcp_servers"),
+            "codex must not start with TOML fragment, got {snippet:?}"
         );
     }
 
     /// OpenCode uses flat mcp.ai-buddy with type: remote and oauth: false,
     /// not nested mcp.servers.<name> with type: http (#599).
     #[test]
-    fn opencode_snippet_is_flat_with_remote_and_oauth_false() {
+    fn opencode_snippet_is_cli_with_url_and_header() {
         let (snippet, _) = byo_registration("opencode", "http://127.0.0.1:5051/mcp", "beef");
         assert!(
-            snippet.contains(r#""mcp""#) && snippet.contains(r#""ai-buddy""#),
-            "opencode must have mcp.ai-buddy, got {snippet:?}"
+            snippet.contains("opencode mcp add"),
+            "opencode must use CLI add, got {snippet:?}"
         );
         assert!(
-            !snippet.contains(r#""servers""#),
-            "opencode must not use nested mcp.servers (that is V2), got {snippet:?}"
+            snippet.contains("--url"),
+            "opencode must use --url flag, got {snippet:?}"
         );
         assert!(
-            snippet.contains(r#""type": "remote""#),
-            "opencode must use type: remote, got {snippet:?}"
+            snippet.contains("--header \"Authorization=Bearer"),
+            "opencode must use --header with Authorization=Bearer, got {snippet:?}"
         );
         assert!(
-            snippet.contains(r#""oauth": false"#),
-            "opencode must specify oauth: false, got {snippet:?}"
+            !snippet.starts_with("{"),
+            "opencode must not start with JSON fragment, got {snippet:?}"
+        );
+    }
+
+    /// Hermes uses CLI with --auth header and interactive token paste (#599).
+    #[test]
+    fn hermes_snippet_is_cli_with_auth_header() {
+        let (snippet, steps) = byo_registration("hermes", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            snippet.contains("hermes mcp add"),
+            "hermes must use CLI add, got {snippet:?}"
         );
         assert!(
-            !snippet.contains(r#""type": "http""#),
-            "opencode must not use type: http (that is V2), got {snippet:?}"
+            snippet.contains("--url"),
+            "hermes must use --url flag, got {snippet:?}"
+        );
+        assert!(
+            snippet.contains("--auth header"),
+            "hermes must use --auth header, got {snippet:?}"
+        );
+        assert!(
+            !snippet.starts_with("mcp_servers:"),
+            "hermes must not start with YAML fragment, got {snippet:?}"
+        );
+        assert!(
+            steps.contains("paste the raw token"),
+            "hermes instructions must mention pasting the raw token, got {steps:?}"
+        );
+        assert!(
+            steps.contains("no `Bearer` prefix"),
+            "hermes instructions must mention no Bearer prefix, got {steps:?}"
         );
     }
 
