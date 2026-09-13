@@ -6,6 +6,8 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(windows)]
+use std::process::Stdio;
 
 use crate::paths::RunPaths;
 use crate::proof;
@@ -139,8 +141,17 @@ fn ayatana_present() -> bool {
     }
 }
 
+/// Relative paths under the repo root for a built `ai-buddy` binary (with EXE_SUFFIX).
+fn ai_buddy_bin_relpaths() -> [String; 2] {
+    let suffix = env::consts::EXE_SUFFIX;
+    [
+        format!("target/release/ai-buddy{suffix}"),
+        format!("target/debug/ai-buddy{suffix}"),
+    ]
+}
+
 fn ai_buddy_bin(repo_root: &Path) -> Option<PathBuf> {
-    for rel in ["target/release/ai-buddy", "target/debug/ai-buddy"] {
+    for rel in ai_buddy_bin_relpaths() {
         let p = repo_root.join(rel);
         if p.is_file() {
             #[cfg(unix)]
@@ -161,12 +172,26 @@ fn ai_buddy_bin(repo_root: &Path) -> Option<PathBuf> {
     None
 }
 
+/// True if `name` resolves on PATH (Unix: `command -v` via sh; Windows: `where`).
 fn command_on_path(name: &str) -> bool {
-    Command::new("sh")
-        .args(["-c", &format!("command -v {name} >/dev/null 2>&1")])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    #[cfg(windows)]
+    {
+        Command::new("where")
+            .arg(name)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("sh")
+            .args(["-c", &format!("command -v {name} >/dev/null 2>&1")])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 fn pid_alive(pid: &str) -> bool {
@@ -193,4 +218,50 @@ fn fail(msg: &str) {
 }
 fn warn(msg: &str) {
     println!("  WARN  {msg}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ai_buddy_bin_relpaths_include_exe_suffix_on_windows() {
+        let paths = ai_buddy_bin_relpaths();
+        assert_eq!(
+            paths[0],
+            format!("target/release/ai-buddy{}", env::consts::EXE_SUFFIX)
+        );
+        assert_eq!(
+            paths[1],
+            format!("target/debug/ai-buddy{}", env::consts::EXE_SUFFIX)
+        );
+        #[cfg(windows)]
+        {
+            assert!(paths[0].ends_with(".exe"));
+            assert!(paths[1].ends_with(".exe"));
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(!paths[0].ends_with(".exe"));
+            assert!(!paths[1].ends_with(".exe"));
+        }
+    }
+
+    #[test]
+    fn command_on_path_finds_a_known_command() {
+        #[cfg(windows)]
+        {
+            assert!(
+                command_on_path("cmd") || command_on_path("where"),
+                "expected cmd or where on Windows PATH"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert!(
+                command_on_path("sh") || command_on_path("true"),
+                "expected sh or true on Unix PATH"
+            );
+        }
+    }
 }

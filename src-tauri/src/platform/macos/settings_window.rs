@@ -16,7 +16,7 @@ use objc2_app_kit::{
     NSBackingStoreType, NSBox, NSBoxType, NSButton, NSColor, NSControl, NSControlStateValueOff,
     NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventMask,
     NSEventModifierFlags, NSFont, NSPopUpButton, NSScrollView, NSSecureTextField,
-    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextDelegate, NSTextField,
+    NSStatusWindowLevel, NSTabView, NSTabViewItem, NSTextAlignment, NSTextDelegate, NSTextField,
     NSTextFieldDelegate, NSTextView, NSTextViewDelegate, NSView, NSWindow, NSWindowDelegate,
     NSWindowLevel, NSWindowStyleMask,
 };
@@ -26,7 +26,7 @@ use objc2_foundation::{
 
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
 
 const WINDOW_WIDTH: f64 = 560.0;
 const WINDOW_HEIGHT: f64 = 720.0;
@@ -58,6 +58,9 @@ struct Ivars {
     /// static list and selected from the live value, the same pair the Harness
     /// popup needs (#465).
     base_url_pick: RefCell<Option<Retained<NSPopUpButton>>>,
+    /// The reasoning-effort shortcut, for the same reason as the one above
+    /// (#638).
+    effort_pick: RefCell<Option<Retained<NSPopUpButton>>>,
     model: RefCell<Option<Retained<NSTextField>>>,
     api_key: RefCell<Option<Retained<NSTextField>>>,
     clear_key: RefCell<Option<Retained<NSButton>>>,
@@ -91,6 +94,10 @@ struct Ivars {
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
+    /// Every "What is this?" copy and the tab document it hangs in, indexed
+    /// by the tag its button carries. `toggleDisclosure:` has only the button
+    /// AppKit hands it, and the copy is not a subview of it (#642).
+    disclosures: RefCell<Vec<(Retained<NSTextField>, Retained<NSView>)>>,
     /// Keeps the local mouse-down monitor alive for the window's life. #460
     move_monitor: RefCell<Option<Retained<AnyObject>>>,
 }
@@ -253,6 +260,43 @@ define_class!(
             self.update_director_buttons();
         }
 
+        /// The reasoning-effort shortcut, which saves rather than stages.
+        ///
+        /// Unlike the Base URL shortcut beside it: the Development rows apply
+        /// one at a time, so there is no Apply button here to reach the file
+        /// (#638). The field below is what refresh then redraws.
+        #[unsafe(method(effortPicked:))]
+        fn effort_picked(&self, sender: Option<&AnyObject>) {
+            let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
+                return;
+            };
+            let Some(title) = popup.titleOfSelectedItem() else {
+                return;
+            };
+            // Custom names no level to write: the field below is what a level
+            // this picker cannot spell is.
+            let Some(level) = form::effort_value(&title.to_string()) else {
+                return;
+            };
+            // AppKit sends the action for a click on the item already
+            // selected, and that is a save and a redraw for nothing.
+            let unchanged = self
+                .ivars()
+                .fields
+                .borrow()
+                .iter()
+                .find(|(id, _)| id == form::DIRECTOR_REASONING_EFFORT_ID)
+                .is_some_and(|(_, field)| field.stringValue().to_string() == level);
+            if unchanged {
+                return;
+            }
+            let mut patch = SettingsPatch::default();
+            if !patch.set_text(TextField::DirectorReasoningEffort, level) {
+                return;
+            }
+            self.apply(patch);
+        }
+
         #[unsafe(method(handleAction:))]
         fn handle_action(&self, sender: Option<&AnyObject>) {
             let Some(button) = sender.and_then(|s| s.downcast_ref::<NSButton>()) else {
@@ -278,6 +322,27 @@ define_class!(
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
             }
+        }
+
+        /// Open or close the copy this button's tag points at.
+        ///
+        /// The button carries no state of its own: the copy's own hidden flag
+        /// is the state, so the two cannot drift apart.
+        #[unsafe(method(toggleDisclosure:))]
+        fn toggle_disclosure(&self, sender: Option<&AnyObject>) {
+            let Some(button) = sender.and_then(|s| s.downcast_ref::<NSButton>()) else {
+                return;
+            };
+            let pair = self
+                .ivars()
+                .disclosures
+                .borrow()
+                .get(button.tag() as usize)
+                .cloned();
+            let Some((copy, document)) = pair else {
+                return;
+            };
+            self.disclose(button, &copy, &document, copy.isHidden());
         }
 
         #[unsafe(method(dismiss:))]
@@ -524,6 +589,9 @@ impl SettingsController {
         if let Some(popup) = ivars.base_url_pick.borrow().clone() {
             popup.setEnabled(!description.frozen(form::DIRECTOR_BASE_URL_PICK_ID));
         }
+        if let Some(popup) = ivars.effort_pick.borrow().clone() {
+            popup.setEnabled(!description.frozen(form::DIRECTOR_REASONING_EFFORT_PICK_ID));
+        }
         if let Some(button) = ivars.clear_key.borrow().clone() {
             button.setEnabled(!description.frozen(form::CLEAR_KEY_ID));
         }
@@ -646,6 +714,17 @@ impl SettingsController {
                 &form::endpoint_title(&view.director_base_url),
             );
         }
+        // The shortcut rests on whatever the field holds, so it moves with it.
+        fill_popup(
+            &self.ivars().effort_pick,
+            &form::effort_options(),
+            &form::effort_title(
+                view.development_texts
+                    .get(form::DIRECTOR_REASONING_EFFORT_ID)
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+            ),
+        );
         // Static choices, so they come from the form rather than the view.
         fill_popup(
             &self.ivars().harness,
@@ -695,6 +774,44 @@ impl SettingsController {
                 field.setPreferredMaxLayoutWidth(scroll.contentSize().width - MARGIN * 2.0);
             }
         }
+    }
+
+    /// Show or hide a disclosure's copy and reflow the tab around it.
+    ///
+    /// The copy hangs from a top edge `Cursor::disclosure` fixed and is
+    /// zero-height while closed, so a closed disclosure reserves no space —
+    /// the rows under it move by exactly what the copy takes.
+    fn disclose(&self, button: &NSButton, copy: &NSTextField, document: &NSView, open: bool) {
+        let frame = copy.frame();
+        let target = if open { wrapped_height(copy) } else { 0.0 };
+        let (bottom, grow) = hang(frame.origin.y, frame.size.height, target);
+        for row in document.subviews() {
+            let origin = row.frame().origin;
+            if origin.y < frame.origin.y {
+                row.setFrameOrigin(NSPoint::new(origin.x, origin.y - grow));
+            }
+        }
+        copy.setFrame(NSRect::new(
+            NSPoint::new(frame.origin.x, bottom),
+            NSSize::new(frame.size.width, target),
+        ));
+        copy.setHidden(!open);
+        button.setTitle(&NSString::from_str(disclosure_title(open)));
+
+        {
+            let mut panes = self.ivars().panes.borrow_mut();
+            for (scroll, needed) in panes.iter_mut() {
+                if scroll
+                    .documentView()
+                    .is_some_and(|view| view.isEqual(Some(document)))
+                {
+                    *needed += grow;
+                }
+            }
+        }
+        // The document is anchored at its bottom, so the pane has to be
+        // re-sized for the rows to keep their distance from the top.
+        self.fit_to_window();
     }
 
     fn fill_instances(&self, view: &SettingsView, dismiss_label: &str) {
@@ -751,6 +868,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut ambient_button = None;
     let mut base_url_field = None;
     let mut base_url_pick_popup = None;
+    let mut effort_pick_popup = None;
     let mut model_field = None;
     let mut api_key_field = None;
     let mut clear_key_button = None;
@@ -814,7 +932,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
             }
 
             if let Some(disclosure) = &section.disclosure {
-                cursor.disclosure(disclosure);
+                cursor.disclosure(disclosure, &controller);
             }
 
             for row in &section.rows {
@@ -848,7 +966,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
 
                         controller
@@ -910,7 +1028,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::SecureField {
@@ -975,7 +1093,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::InspectBlock {
@@ -1017,7 +1135,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::Popup {
@@ -1059,7 +1177,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.status_strip(status_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::Multiline {
@@ -1083,7 +1201,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                     FormRow::Composite {
@@ -1127,6 +1245,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         form::DIRECTOR_BASE_URL_PICK_ID => {
                                             popup(&controller, sel!(endpointPicked:), mtm)
                                         }
+                                        form::DIRECTOR_REASONING_EFFORT_PICK_ID => {
+                                            popup(&controller, sel!(effortPicked:), mtm)
+                                        }
                                         _ => popup_plain(mtm),
                                     };
                                     pop.setEnabled(!frozen);
@@ -1150,6 +1271,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                         form::NEW_CHARACTER_ID => new_character_popup = Some(pop),
                                         form::DIRECTOR_BASE_URL_PICK_ID => {
                                             base_url_pick_popup = Some(pop)
+                                        }
+                                        form::DIRECTOR_REASONING_EFFORT_PICK_ID => {
+                                            effort_pick_popup = Some(pop)
                                         }
                                         _ => {}
                                     }
@@ -1204,7 +1328,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                             cursor.hint(help_text);
                         }
                         if let Some(disclosure_text) = disclosure {
-                            cursor.disclosure(disclosure_text);
+                            cursor.disclosure(disclosure_text, &controller);
                         }
                     }
                 }
@@ -1239,6 +1363,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().ambient.borrow_mut() = ambient_button;
     *controller.ivars().base_url.borrow_mut() = base_url_field;
     *controller.ivars().base_url_pick.borrow_mut() = base_url_pick_popup;
+    *controller.ivars().effort_pick.borrow_mut() = effort_pick_popup;
     *controller.ivars().model.borrow_mut() = model_field;
     *controller.ivars().api_key.borrow_mut() = api_key_field;
     *controller.ivars().clear_key.borrow_mut() = clear_key_button;
@@ -1382,21 +1507,43 @@ impl Cursor {
         self.put(&label, height, HINT_GAP);
     }
 
-    fn disclosure(&mut self, text: &str) {
-        let disclosure_button = NSButton::new(self.mtm);
-        disclosure_button.setTitle(&NSString::from_str("What is this?"));
-        disclosure_button.setButtonType(objc2_app_kit::NSButtonType::OnOff);
-        disclosure_button.setBezelStyle(objc2_app_kit::NSBezelStyle::Disclosure);
+    /// "What is this?" over the copy it opens.
+    ///
+    /// The triangle is drawn in the title rather than by the bezel.
+    /// `NSBezelStyle::Disclosure` is a ~13pt triangle that carries no title,
+    /// so stretching it to `FIELD_WIDTH` painted the clipped first letter of
+    /// the label — a stray "W" beside every help line (#642).
+    fn disclosure(&mut self, text: &str, controller: &SettingsController) {
+        // SAFETY: buttonWithTitle_target_action does not retain its target, so
+        // the controller must outlive the button. The `CONTROLLER`
+        // thread-local holds it for the life of the process, and it
+        // implements toggleDisclosure:.
+        let button = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                &NSString::from_str(disclosure_title(false)),
+                Some(controller),
+                Some(sel!(toggleDisclosure:)),
+                self.mtm,
+            )
+        };
+        button.setBordered(false);
+        button.setAlignment(NSTextAlignment::Left);
+        button.setFont(Some(&NSFont::systemFontOfSize(11.0)));
 
-        let disclosure_label =
-            NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
-        disclosure_label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
-        disclosure_label.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        disclosure_label.setHidden(true);
+        let copy = NSTextField::wrappingLabelWithString(&NSString::from_str(text), self.mtm);
+        copy.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+        copy.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        copy.setHidden(true);
 
-        let _height = 20.0 + wrapped_height(&disclosure_label);
-        self.put(&disclosure_button, 20.0, HINT_GAP);
-        self.put(&disclosure_label, wrapped_height(&disclosure_label), 0.0);
+        let mut disclosures = controller.ivars().disclosures.borrow_mut();
+        button.setTag(disclosures.len() as isize);
+        disclosures.push((copy.clone(), self.parent.clone()));
+        drop(disclosures);
+
+        self.put(&button, 20.0, HINT_GAP);
+        // Zero-height, so the cursor does not advance past it: `disclose`
+        // hangs the copy off this top edge when the button is clicked.
+        self.put(&copy, 0.0, 0.0);
     }
 
     fn hint(&mut self, text: &str) {
@@ -1428,6 +1575,25 @@ fn checkbox(
     button.setButtonType(objc2_app_kit::NSButtonType::Switch);
     button.setTag(tag);
     button
+}
+
+/// The label on a "What is this?" toggle, closed or open.
+fn disclosure_title(open: bool) -> &'static str {
+    if open {
+        "▾ What is this?"
+    } else {
+        "▸ What is this?"
+    }
+}
+
+/// Where a disclosure's copy sits at `target` height, and how much taller its
+/// tab becomes. AppKit's y grows upward, so pinning the top edge means the
+/// bottom moves and everything under it follows by the same `grow`.
+///
+/// A closed copy is `target` zero and therefore reserves nothing, which is the
+/// whole of "a collapsed disclosure leaves no gap" (#642).
+fn hang(bottom: f64, height: f64, target: f64) -> (f64, f64) {
+    (bottom + height - target, target - height)
 }
 
 /// How tall a wrapping label has to be to show all of its text at
@@ -1767,6 +1933,43 @@ mod tests {
         assert!(
             !release_window_when_closed(),
             "the next tray Settings raises this same Retained window"
+        );
+    }
+
+    /// #642: opening has to move the bottom edge down by exactly what closing
+    /// gives back, or the rows under a disclosure drift every toggle.
+    ///
+    /// The other half of #642 — the copy laid out at zero height in
+    /// `Cursor::disclosure` rather than its full height — stays uncovered.
+    /// Reaching it means `setFrame` and `addSubview` on a real `NSView`, which
+    /// is the main-thread AppKit `test_mtm` promises not to touch.
+    #[test]
+    fn hang_gives_back_exactly_what_it_took() {
+        let top = 400.0;
+        let (bottom, grow) = hang(top, 0.0, 30.0);
+        assert_eq!((bottom, grow), (370.0, 30.0), "opening hangs off the top");
+
+        let (bottom, grow) = hang(bottom, 30.0, 0.0);
+        assert_eq!(
+            (bottom, grow),
+            (top, -30.0),
+            "closing gives every inch back"
+        );
+    }
+
+    /// The bug was the bezel eating the title down to its first letter.
+    #[test]
+    fn a_disclosure_toggle_says_what_it_opens() {
+        for open in [false, true] {
+            assert!(
+                disclosure_title(open).ends_with("What is this?"),
+                "the label has to survive whatever marks the state"
+            );
+        }
+        assert_ne!(
+            disclosure_title(false),
+            disclosure_title(true),
+            "open and closed have to look different"
         );
     }
 
