@@ -96,3 +96,9 @@ is the Generated rule argued in one line.
 
 Reversing this means allowing a Described page, and accepting that each one
 drifts from the code it describes with nothing to catch it.
+
+---
+
+**2026-09-14**: Issue #388 resolved. MekaRamen (Yeoh Kher En), creator of the
+Sketchfab model from which Timber Wolf's frames were derived, granted permission
+for use in ai-buddy. The character is no longer withheld from the gallery.

@@ -50,9 +50,7 @@ PLACEHOLDER = '{"characters": [], "required": [], "defaults": {}}'
 # it. Nothing about the omission reaches the page — saying "we ship art whose
 # license we are unsure of" is its own kind of publishing, and the manifest
 # already keeps the full position for anyone reading the repository.
-WITHHELD = {
-    "timber-wolf": "its art is licensed for editorial use only (#388)",
-}
+WITHHELD = {}
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 

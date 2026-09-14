@@ -118,8 +118,15 @@ def main():
     )
     print(f"✓ nim-sleep.gif ({os.path.getsize(out_dir / 'nim-sleep.gif') / 1024:.1f} KB)")
 
-    # Timber Wolf has no GIF: its frames capture a Sketchfab model licensed for
-    # editorial use only, and the README renders on a public page (#388).
+    # Timber Wolf: walk animation (mech patrol stride, 20 frames)
+    # Permission granted by MekaRamen (Yeoh Kher En) to publish (#388)
+    timber_wolf_walk_frames = [
+        chars_dir / "timber-wolf" / "frames" / f"walk-{i}.png" for i in range(20)
+    ]
+    create_looping_gif(
+        timber_wolf_walk_frames, out_dir / "timber-wolf-walk.gif", fps=8, target_height=target_height
+    )
+    print(f"✓ timber-wolf-walk.gif ({os.path.getsize(out_dir / 'timber-wolf-walk.gif') / 1024:.1f} KB)")
 
     # Trump: talk animation (rally wave, 3 frames)
     trump_talk_frames = [
