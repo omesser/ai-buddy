@@ -221,19 +221,6 @@ body {
   opacity: 0;
 }
 
-/* Dropped Props: scenery, click-through, never mirrored. Same fade as the
-   sprite so a hidden buddy's ball hides with it. #165, #12. */
-.prop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  image-rendering: pixelated;
-  -webkit-user-drag: none;
-  pointer-events: none;
-  visibility: hidden;
-  opacity: 0;
-}
-
 /* Cues: one per interaction, drawn over the sprite and gone in under half a
    second (#277). Ported value for value from the reviewed proposal in
    docs/design/cues.html — every keyframe, duration and easing curve here is a
