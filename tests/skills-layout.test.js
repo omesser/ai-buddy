@@ -1,11 +1,12 @@
 // Run with `node --test tests/*.test.js`.
 //
 // `.agents/skills/` holds every skill this repository offers an agent, both the
-// vendored pstack ones and its own. Claude Code and Cursor each glob
-// `<dir>/skills/*/SKILL.md`, so `.claude/skills` and `.cursor/skills` are
-// symlinks to it rather than copies. The symlink sits in the literal prefix of
-// that pattern, before the wildcard, so discovery is plain path traversal into
-// a real directory.
+// vendored pstack ones and its own, and `.agents/agents/` holds the agent
+// definitions. Claude Code and Cursor each glob `<dir>/skills/*/SKILL.md`, so
+// `.claude/skills` and `.cursor/skills` are symlinks to the first, and
+// `.claude/agents` to the second, rather than copies. The symlink sits in the
+// literal prefix of that pattern, before the wildcard, so discovery is plain
+// path traversal into a real directory.
 //
 // One copy of the bytes means there is no mirror to drift. What can still
 // break is the link itself: deleted by a tool that rewrites its own config,
@@ -21,12 +22,20 @@ import { test } from "node:test";
 const root = new URL("../", import.meta.url);
 const path = (p) => fileURLToPath(new URL(p, root));
 
-// Where the bytes live, and the two links that must reach them.
-const REAL = ".agents/skills";
+// Every link `scripts/sync-pstack.sh` creates, and what each must point at.
+// `.claude/agents` is here for the same reason as the other two: the sync
+// creates it, so a break in it is a break this test is claimed to catch.
 const LINKS = [
   [".claude/skills", "../.agents/skills"],
   [".cursor/skills", "../.agents/skills"],
+  [".claude/agents", "../.agents/agents"],
 ];
+
+// Where the skill bytes live, and the links that must reach them. `.agents/agents`
+// holds agent definitions rather than skills, so the skill-shaped assertions
+// below run over these two only.
+const REAL = ".agents/skills";
+const SKILL_LINKS = LINKS.filter(([, target]) => target === `../${REAL}`);
 
 // A skill this repository owns rather than vendors. It proves the directory is
 // shared, so a sync that blew it away would fail here rather than in six
@@ -72,7 +81,7 @@ for (const [link, target] of LINKS) {
     );
   });
 
-  test(`${link} resolves to the skills directory`, () => {
+  test(`${link} resolves to a directory`, () => {
     let stat;
     try {
       // statSync follows the link. A dangling one throws here, which is the
@@ -84,7 +93,11 @@ for (const [link, target] of LINKS) {
       );
     }
     assert.ok(stat.isDirectory(), `${link} does not resolve to a directory`);
+  });
+}
 
+for (const [link] of SKILL_LINKS) {
+  test(`${link} sees the same skills as ${REAL}`, () => {
     const through = skillsIn(link);
     assert.deepEqual(
       through,
