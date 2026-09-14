@@ -85,6 +85,13 @@
   --codex-accent: #26C399;
   --grok-accent: #7A8FA3;
   --opencode-accent: #7A9EF0;
+  /* Nous ships #0000F2 across the Hermes surfaces; lifted to read on the dark
+     Chat ground the way the other four accents are. */
+  --hermes-accent: #8C8CF2;
+  /* pi.dev's --color-sunkissed. Their own --color-accent-blue (#6A9FCC) is the
+     obvious pick, but it lands between OpenCode and Hermes and the three read
+     as one blue; sunkissed is the same palette and stays apart. */
+  --pi-accent: #E1B06E;
 }
 
 /* The empty-state panel and its parts are laid out as grids and hidden with
@@ -588,6 +595,28 @@ body {
 }
 .empty .connect-btn[data-harness="opencode"] .connect-icon {
   color: var(--opencode-accent);
+}
+
+.empty .connect-btn[data-harness="hermes"] {
+  border-color: color-mix(in srgb, var(--hermes-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="hermes"]:hover {
+  background: color-mix(in srgb, var(--hermes-accent) 10%, var(--chat-fill));
+  border-color: var(--hermes-accent);
+}
+.empty .connect-btn[data-harness="hermes"] .connect-icon {
+  color: var(--hermes-accent);
+}
+
+.empty .connect-btn[data-harness="pi"] {
+  border-color: color-mix(in srgb, var(--pi-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="pi"]:hover {
+  background: color-mix(in srgb, var(--pi-accent) 10%, var(--chat-fill));
+  border-color: var(--pi-accent);
+}
+.empty .connect-btn[data-harness="pi"] .connect-icon {
+  color: var(--pi-accent);
 }
 
 .empty .settings-btn {
