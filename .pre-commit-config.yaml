@@ -14,10 +14,24 @@ repos:
       - id: forbid-new-submodules
 
     # Common errors
+    #
+    # The vendored pstack files are byte-identical to upstream on purpose, so
+    # a formatter that rewrites them puts the weekly sync pull request
+    # permanently out of step with `cursor/plugins`.
+    #
+    # `.agents/skills/` mixes vendored skills with ours, so the exclude cannot
+    # name the directory: `verify-ai-buddy` is this repository's and stays
+    # linted, which is what the lookahead protects. `.agents/pstack/` holds
+    # generated or upstream files except `UPSTREAM.json`, which is ours to read
+    # and benefits from `check-json`.
+    #
+    # The security hooks below are deliberately not excluded: third-party
+    # content refreshed by a bot is exactly what a secret scanner is for.
       - id: end-of-file-fixer
-        exclude: ^(.*\.b64|branding/_b64/parts/.*)$
+        exclude: ^(.*\.b64|branding/_b64/parts/.*)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: ^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: check-yaml
       - id: check-json
       - id: check-toml
@@ -28,6 +42,7 @@ repos:
       - id: check-case-conflict
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
 
     # Security
       - id: detect-aws-credentials
@@ -42,7 +57,7 @@ repos:
         # "crate" is Rust vocabulary, not a misspelling of "create".
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
         args: ["--ignore-words-list=crate,crates,static,statics"]
-        exclude: ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$
+        exclude: ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
@@ -59,7 +74,9 @@ repos:
     hooks:
       - id: shfmt
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
+        exclude: ^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: shellcheck
+        exclude: ^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
 
     # PowerShell linting
   - repo: local
