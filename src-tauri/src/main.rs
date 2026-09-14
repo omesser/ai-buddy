@@ -1065,9 +1065,11 @@ struct ChatOpening {
     harness_name: Option<String>,
     /// The Character's own Personality Prompt, frozen: the Prompt tab shows it
     /// for reference above the layer the user may write (ADR-0012). Empty when
-    /// the package shipped none.
+    /// the package shipped none, and empty under Blank AI — the flag empties
+    /// the built-in layer rather than hiding the tab (#680).
     personality: String,
-    /// This Instance's own layer, as it stands. Empty by default.
+    /// This Instance's own layer, as it stands. Empty by default. Still sent
+    /// under Blank AI, so a control run can iterate a prompt (#680).
     instance_prompt: String,
     /// What the tab may not exceed, so the box can say so before the save
     /// surface has to.
@@ -1119,7 +1121,11 @@ fn chat_opening_from(
             .harness
             .as_ref()
             .map(|attached| attached.name.clone()),
-        personality: personality.to_string(),
+        personality: if model::blank() {
+            String::new()
+        } else {
+            personality.to_string()
+        },
         instance_prompt: instance.prompt().to_string(),
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
     }
@@ -1165,11 +1171,15 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
     }
     let inspect = state.inspect.lock().ok();
     ChatOpening {
-        personality: state
-            .personalities
-            .get(&character)
-            .cloned()
-            .unwrap_or_default(),
+        personality: if model::blank() {
+            String::new()
+        } else {
+            state
+                .personalities
+                .get(&character)
+                .cloned()
+                .unwrap_or_default()
+        },
         name,
         character,
         configured: inspect.as_ref().is_some_and(|read| read.configured),
@@ -2953,6 +2963,42 @@ mod tests {
             written.personality, "Nim is patient.",
             "the author's layer stays the package's, frozen"
         );
+    }
+
+    /// #680: Blank AI empties the built-in Personality Prompt on the opening
+    /// the tab draws. The Instance Prompt stays, so a control run can still
+    /// iterate one.
+    #[test]
+    fn chat_opening_empties_personality_under_blank_ai() {
+        crate::model::tests::with_env(None, None, None, || {
+            let mut roster = Roster::new();
+            let character = stub_character("nim");
+            let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+            assert!(roster.set_prompt(&id, "Answer in haiku.".to_string()));
+
+            let off = chat_opening_from(
+                roster.get(&id).expect("spawned"),
+                &stub_inspect(),
+                "Nim is patient.",
+            );
+            assert_eq!(off.personality, "Nim is patient.");
+            assert_eq!(off.instance_prompt, "Answer in haiku.");
+
+            crate::dev_flags::seed(&settings::Settings {
+                director_blank: true,
+                ..settings::Settings::default()
+            });
+            let on = chat_opening_from(
+                roster.get(&id).expect("spawned"),
+                &stub_inspect(),
+                "Nim is patient.",
+            );
+            assert_eq!(on.personality, "", "the built-in layer was emptied");
+            assert_eq!(
+                on.instance_prompt, "Answer in haiku.",
+                "the Instance Prompt is still the one the user wrote"
+            );
+        });
     }
 
     /// #17: losing a line that is waiting in `happened` would answer a question

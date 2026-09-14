@@ -391,8 +391,9 @@ function askingToSave(asking) {
 }
 
 function showPrompt(opening) {
-  document.getElementById("personality").textContent =
-    opening.personality || "This Character ships no personality.";
+  // The string as sent. Empty under Blank AI because the built-in layer was
+  // emptied, not because the tab hid it (#680).
+  document.getElementById("personality").textContent = opening.personality;
   // Said before it is hit as well as in the refusal after: the Shell owns the
   // number, so the tab reads it rather than restating it.
   document.getElementById("prompt-limit").textContent = opening.prompt_limit;
