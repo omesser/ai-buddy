@@ -672,9 +672,23 @@ async fn turn(
                 };
             }
             command = rx.recv() => match command {
-                Some(Msg::Cancel) | Some(Msg::Shutdown) => {
+                Some(Msg::Cancel) => {
                     let _ = cx.send_notification(CancelNotification::new(session.clone()));
                     end_turn(&mut asks, &mut thought, on_event);
+                }
+                // Not a Cancel, though it starts the same way. Shutdown is a
+                // caller tearing the wire down, so the turn leaves with it
+                // rather than looping for a `cancelled` stop the Harness may
+                // never send: `Lost` is what `serve` breaks on, and that break
+                // is the only road to `kill_harness_tree` in `run`. Swallowed
+                // here, the kill waited for the *second* Shutdown `Drop for
+                // Wire` posts, and `Session::shutdown` paid `REAP` for it
+                // (#634). The reply is lost by design — every sender of this
+                // is killing the child a line later.
+                Some(Msg::Shutdown) => {
+                    let _ = cx.send_notification(CancelNotification::new(session.clone()));
+                    end_turn(&mut asks, &mut thought, on_event);
+                    return Err(TurnError::Lost);
                 }
                 Some(Msg::Answer { request, option }) => {
                     if let Some(at) = asks.iter().position(|(id, _)| *id == request) {
