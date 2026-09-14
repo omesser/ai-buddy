@@ -120,7 +120,7 @@ test("the save warning sits outside the Instance Prompt field", () => {
   );
   assert.match(
     section,
-    /<\/div>\s*<p class="warn">/,
+    /<\/div>\s*<p class="warn"[^>]*>/,
     "the warning follows the wrapper as a later grid sibling",
   );
 });

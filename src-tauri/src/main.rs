@@ -1072,6 +1072,9 @@ struct ChatOpening {
     /// What the tab may not exceed, so the box can say so before the save
     /// surface has to.
     prompt_limit: usize,
+    /// Whether Blank AI is in force (#657). The Prompt tab cannot present the
+    /// authored layers as the opening turn without this bit (#680).
+    blank: bool,
 }
 
 /// The Harness half of an opening. Facts and not a sentence: the wording is
@@ -1122,6 +1125,7 @@ fn chat_opening_from(
         personality: personality.to_string(),
         instance_prompt: instance.prompt().to_string(),
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
+        blank: model::blank(),
     }
 }
 
@@ -1193,6 +1197,7 @@ fn chat_opening(instance: String, state: tauri::State<'_, SettingsState>) -> Cha
             .map(|attached| attached.name.clone()),
         instance_prompt,
         prompt_limit: roster::INSTANCE_PROMPT_LIMIT,
+        blank: model::blank(),
     }
 }
 
@@ -2953,6 +2958,41 @@ mod tests {
             written.personality, "Nim is patient.",
             "the author's layer stays the package's, frozen"
         );
+        assert!(!written.blank, "off is the shipped answer");
+    }
+
+    /// #680: the Prompt tab cannot present those layers as the opening turn
+    /// unless the opening also carried Blank AI. The same `blank` the Director
+    /// bakes in — seeding the flag is asking.
+    #[test]
+    fn chat_opening_carries_blank_ai() {
+        crate::model::tests::with_env(None, None, None, || {
+            let mut roster = Roster::new();
+            let character = stub_character("nim");
+            let id = roster.spawn(&character, "Pip".to_string(), Point { x: 10.0, y: 20.0 });
+
+            let off = chat_opening_from(
+                roster.get(&id).expect("spawned"),
+                &stub_inspect(),
+                "Nim is patient.",
+            );
+            assert!(!off.blank);
+
+            crate::dev_flags::seed(&settings::Settings {
+                director_blank: true,
+                ..settings::Settings::default()
+            });
+            let on = chat_opening_from(
+                roster.get(&id).expect("spawned"),
+                &stub_inspect(),
+                "Nim is patient.",
+            );
+            assert!(on.blank);
+            assert_eq!(
+                on.personality, "Nim is patient.",
+                "the words stay so they can be edited for when the mode is off"
+            );
+        });
     }
 
     /// #17: losing a line that is waiting in `happened` would answer a question

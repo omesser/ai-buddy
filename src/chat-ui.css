@@ -216,6 +216,15 @@ body {
   padding: 16px 18px 18px;
 }
 
+/* Same gap as the tab: wrapping the authored Personality block (so Blank AI
+   can hide it) must not collapse the three rows into one cell. */
+#prompt-blank,
+#prompt-personality {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
 .prompt h2 {
   margin: 6px 0 0;
   font-size: 13px;
