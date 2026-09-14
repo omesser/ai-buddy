@@ -203,7 +203,8 @@ When no Harness is attached, the HTTP Completer streams chat-completions (first
 token arrives long before the reply; a dropped call stops the host generating
 rather than merely going unheard; non-streaming hosts are answered whole). When
 a Harness is attached, it fills the trait instead. Settings names the HTTP
-fill's timeout and reply cap. The environment variables
+fill's timeout and reply cap. A Harness turn has its own budget
+(#690). The environment variables
 `AI_BUDDY_DIRECTOR_BASE_URL`, `AI_BUDDY_DIRECTOR_MODEL`, and
 `AI_BUDDY_DIRECTOR_API_KEY` configure the HTTP Completer (#466).
 _Avoid_: Using "Completer" as user-facing brand, or as synonym for HTTP-only fill

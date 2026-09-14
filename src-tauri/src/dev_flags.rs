@@ -84,12 +84,14 @@ pub static DIRECTOR_BLANK: Flag = Flag::new(model::BLANK);
 /// and a zero wait is no wait at all, so none is a value worth telling apart
 /// from absent.
 ///
-/// Numbers rather than `Flag`s. `model` still picks between the local and
-/// hosted default when neither the variable nor the file says anything.
+/// Numbers rather than `Flag`s. `model` still picks the local vs hosted
+/// reply cap when neither the variable nor the file says anything. Timeout
+/// is one Model API number (#690).
 static TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 static MAX_TOKENS: AtomicU32 = AtomicU32::new(0);
 static WAKE_SECS: AtomicU64 = AtomicU64::new(0);
 static AUTH_RETRY_SECS: AtomicU64 = AtomicU64::new(0);
+static HARNESS_TURN_TIMEOUT_SECS: AtomicU64 = AtomicU64::new(0);
 
 /// How hard the Completer is asked to think, as the variable or the file
 /// gives it. A `Mutex<String>` for the reason `MCP_BIN` is one: the value is
@@ -106,7 +108,7 @@ static REASONING_EFFORT: Mutex<String> = Mutex::new(String::new());
 /// type.
 static MCP_BIN: Mutex<String> = Mutex::new(String::new());
 
-/// The Completer timeout in force, in seconds.
+/// The Model API timeout in force, in seconds.
 pub fn director_timeout_secs() -> Option<u64> {
     let secs = TIMEOUT_SECS.load(Ordering::Relaxed);
     (secs > 0).then_some(secs)
@@ -129,6 +131,13 @@ pub fn director_wake_secs() -> Option<u64> {
 /// that has said it is not signed in.
 pub fn harness_auth_retry_secs() -> Option<u64> {
     let secs = AUTH_RETRY_SECS.load(Ordering::Relaxed);
+    (secs > 0).then_some(secs)
+}
+
+/// The Harness turn timeout in force, in seconds. Zero is unset for the
+/// reason a zero Model API timeout is: a turn with no budget cannot finish.
+pub fn harness_turn_timeout_secs() -> Option<u64> {
+    let secs = HARNESS_TURN_TIMEOUT_SECS.load(Ordering::Relaxed);
     (secs > 0).then_some(secs)
 }
 
@@ -184,6 +193,7 @@ pub(crate) fn test_vars() -> Vec<&'static str> {
             model::REASONING_EFFORT,
             model::WAKE_SECS,
             harness::AUTH_RETRY_SECS,
+            harness::TURN_TIMEOUT_SECS,
             harness::MCP_BIN,
         ])
         .collect()
@@ -228,6 +238,16 @@ pub fn seed(settings: &Settings) {
             .trim()
             .parse()
             .unwrap_or(0),
+        Ordering::Relaxed,
+    );
+    HARNESS_TURN_TIMEOUT_SECS.store(
+        model::env_or_file(
+            harness::TURN_TIMEOUT_SECS,
+            &settings.harness_turn_timeout_secs,
+        )
+        .trim()
+        .parse()
+        .unwrap_or(0),
         Ordering::Relaxed,
     );
     *REASONING_EFFORT
@@ -448,6 +468,30 @@ mod tests {
             assert_eq!(harness_auth_retry_secs(), Some(1));
 
             std::env::remove_var(harness::AUTH_RETRY_SECS);
+        });
+    }
+
+    /// Same precedence as auth retry: the export wins over the file (#690).
+    #[test]
+    fn an_exported_harness_turn_timeout_outranks_the_file() {
+        model::tests::with_env(None, None, None, || {
+            seed(&Settings::default());
+            assert_eq!(harness_turn_timeout_secs(), None, "blank is unset");
+
+            seed(&Settings {
+                harness_turn_timeout_secs: "45".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(harness_turn_timeout_secs(), Some(45));
+
+            std::env::set_var(harness::TURN_TIMEOUT_SECS, "90");
+            seed(&Settings {
+                harness_turn_timeout_secs: "45".to_string(),
+                ..Settings::default()
+            });
+            assert_eq!(harness_turn_timeout_secs(), Some(90));
+
+            std::env::remove_var(harness::TURN_TIMEOUT_SECS);
         });
     }
 

@@ -148,6 +148,13 @@ fn development_texts(settings: &Settings) -> HashMap<String, String> {
                 &settings.harness_auth_retry_secs,
             ),
         ),
+        (
+            form::HARNESS_TURN_TIMEOUT_SECS_ID.to_string(),
+            limit_in_force::<u64>(
+                crate::harness::TURN_TIMEOUT_SECS,
+                &settings.harness_turn_timeout_secs,
+            ),
+        ),
         // Not a limit either: the app cannot know which values the user's
         // host takes, so whatever was typed is shown back (#638).
         (
@@ -514,6 +521,10 @@ fn completer_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
             .director_timeout_secs
             .as_ref()
             .is_some_and(|secs| secs != &settings.director_timeout_secs)
+        || patch
+            .harness_turn_timeout_secs
+            .as_ref()
+            .is_some_and(|secs| secs != &settings.harness_turn_timeout_secs)
         || patch
             .director_max_tokens
             .as_ref()
@@ -939,6 +950,7 @@ pub struct SettingsPatch {
     pub harness: Option<String>,
     pub harness_command: Option<String>,
     pub harness_auth_retry_secs: Option<String>,
+    pub harness_turn_timeout_secs: Option<String>,
     pub mcp_bin: Option<String>,
     pub trace_frames: Option<bool>,
     pub trace_hittest: Option<bool>,
@@ -1007,6 +1019,7 @@ pub enum TextField {
     Harness,
     HarnessCommand,
     HarnessAuthRetrySecs,
+    HarnessTurnTimeoutSecs,
     McpBin,
     ExcludedApplications,
 }
@@ -1066,6 +1079,9 @@ impl SettingsPatch {
             TextField::HarnessAuthRetrySecs => {
                 self.harness_auth_retry_secs = Some(value.to_string())
             }
+            TextField::HarnessTurnTimeoutSecs => {
+                self.harness_turn_timeout_secs = Some(value.to_string())
+            }
             // Trimmed like the command line beside it: a path pasted out of a
             // terminal carries the space that follows it.
             TextField::McpBin => self.mcp_bin = Some(value.trim().to_string()),
@@ -1108,6 +1124,7 @@ impl fmt::Debug for SettingsPatch {
                 &self.harness_command.as_deref().map(command_line_debug),
             )
             .field("harness_auth_retry_secs", &self.harness_auth_retry_secs)
+            .field("harness_turn_timeout_secs", &self.harness_turn_timeout_secs)
             .field("mcp_bin", &self.mcp_bin)
             .field("trace_frames", &self.trace_frames)
             .field("trace_hittest", &self.trace_hittest)
@@ -1216,6 +1233,9 @@ impl Settings {
         if let Some(value) = patch.harness_auth_retry_secs {
             self.harness_auth_retry_secs = value;
         }
+        if let Some(value) = patch.harness_turn_timeout_secs {
+            self.harness_turn_timeout_secs = value;
+        }
         if let Some(value) = patch.mcp_bin {
             self.mcp_bin = value;
         }
@@ -1315,7 +1335,8 @@ pub struct Settings {
     pub director_base_url: String,
     /// Empty means unset — Completer resolution falls through to env then defaults.
     pub director_model: String,
-    /// Completer timeout, in seconds. Empty means unset, as on the two above.
+    /// Model API timeout, in seconds. Empty means unset, as on the two above.
+    /// A Harness turn is `harness_turn_timeout_secs` (#690).
     pub director_timeout_secs: String,
     /// Reply cap, in tokens. Empty means unset, as on the two above.
     pub director_max_tokens: String,
@@ -1342,6 +1363,10 @@ pub struct Settings {
     /// `harness::AUTH_RETRY`. Read when a Session is built, so a change lands
     /// on the next attach (#447).
     pub harness_auth_retry_secs: String,
+    /// How long a Harness `session/prompt` may run, in seconds. Empty means
+    /// unset, and leaves `harness::TURN_TIMEOUT`. Not the Model API field
+    /// (#690).
+    pub harness_turn_timeout_secs: String,
     /// Where the stdio MCP server binary is. Empty means beside the app, then
     /// the app binary's own `--mcp-stdio` (#166). For power users and CI,
     /// which is why it is a Development row and not a Director one.
@@ -1392,6 +1417,7 @@ impl Default for Settings {
             harness: String::new(),
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
+            harness_turn_timeout_secs: String::new(),
             mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
@@ -1643,6 +1669,7 @@ mod tests {
             harness: "custom".into(),
             harness_command: "opencode acp".into(),
             harness_auth_retry_secs: "5".into(),
+            harness_turn_timeout_secs: "90".into(),
             mcp_bin: "/opt/ai-buddy-mcp".into(),
             trace_frames: true,
             trace_hittest: true,
@@ -1945,6 +1972,7 @@ mod tests {
             harness: String::new(),
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
+            harness_turn_timeout_secs: String::new(),
             mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
@@ -3143,11 +3171,13 @@ mod tests {
     #[test]
     fn the_harness_knobs_round_trip_through_a_patch() {
         let mut patch = SettingsPatch::default();
+        assert!(patch.set_text(TextField::HarnessTurnTimeoutSecs, "90"));
         assert!(patch.set_text(TextField::HarnessAuthRetrySecs, "5"));
         assert!(patch.set_text(TextField::McpBin, "  /tmp/ai-buddy-mcp  "));
 
         let mut settings = Settings::default();
         settings.apply(patch);
+        assert_eq!(settings.harness_turn_timeout_secs, "90");
         assert_eq!(settings.harness_auth_retry_secs, "5");
         assert_eq!(settings.mcp_bin, "/tmp/ai-buddy-mcp");
     }

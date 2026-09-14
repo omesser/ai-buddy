@@ -426,6 +426,7 @@ pub const HARNESS_ID: &str = "harness";
 pub const HARNESS_COMMAND_ID: &str = "harness_command";
 pub const HARNESS_STATE_ID: &str = "harness_state";
 pub const HARNESS_AUTH_RETRY_SECS_ID: &str = "harness_auth_retry_secs";
+pub const HARNESS_TURN_TIMEOUT_SECS_ID: &str = "harness_turn_timeout_secs";
 pub const MCP_BIN_ID: &str = "mcp_bin";
 
 /// The two Completer-source titles the file does not spell the same way: Model
@@ -1201,6 +1202,10 @@ fn development_sections() -> Vec<FormSection> {
 
     let (timeout_label, timeout_frozen, timeout_status) =
         env_row_parts("Timeout, in seconds", model::TIMEOUT_SECS);
+    let (harness_turn_label, harness_turn_frozen, harness_turn_status) = env_row_parts(
+        "Turn timeout, in seconds",
+        crate::harness::TURN_TIMEOUT_SECS,
+    );
     let (max_tokens_label, max_tokens_frozen, max_tokens_status) =
         env_row_parts("Reply cap, in tokens", model::MAX_TOKENS);
     let (effort_label, effort_frozen, effort_status) =
@@ -1233,8 +1238,11 @@ fn development_sections() -> Vec<FormSection> {
         },
         FormSection {
             heading: "HTTP limits".to_string(),
-            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.".to_string()),
+            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
+            disclosure: Some(format!(
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                model::TIMEOUT.as_secs()
+            )),
             status: None,
             rows: vec![
                 FormRow::TextField {
@@ -1244,7 +1252,7 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
-                    help: Some("One turn's budget. Expiry cancels the turn.".to_string()),
+                    help: Some("Model API hop. Expiry falls back to default behavior.".to_string()),
                     disclosure: None,
                     status: timeout_status,
                 },
@@ -1291,10 +1299,24 @@ fn development_sections() -> Vec<FormSection> {
         },
         FormSection {
             heading: "Harness attachment".to_string(),
-            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).".to_string()),
+            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
+            disclosure: Some(format!(
+                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).",
+                crate::harness::TURN_TIMEOUT.as_secs()
+            )),
             status: None,
             rows: vec![
+                FormRow::TextField {
+                    id: HARNESS_TURN_TIMEOUT_SECS_ID.to_string(),
+                    label: Some(harness_turn_label),
+                    placeholder: crate::harness::turn_timeout_placeholder(),
+                    writes: TextField::HarnessTurnTimeoutSecs,
+                    frozen: harness_turn_frozen,
+                    batched: false,
+                    help: Some("Harness session/prompt. Expiry cancels the turn.".to_string()),
+                    disclosure: None,
+                    status: harness_turn_status,
+                },
                 FormRow::TextField {
                     id: HARNESS_AUTH_RETRY_SECS_ID.to_string(),
                     label: Some(auth_retry_label),
@@ -2192,39 +2214,32 @@ mod tests {
         }
     }
 
-    /// #447: one timeout budgets both minds. A user who reads the row as the
-    /// HTTP Completer's alone cannot explain a Harness turn that was cancelled
-    /// halfway. With progressive disclosure (#548), the detailed explanation is
-    /// in the section's disclosure field, while the row's help stays short.
+    /// #690: Model API blank is one number. The Harness budget is the other row.
     #[test]
-    fn the_timeout_row_says_it_budgets_a_harness_turn() {
+    fn a_blank_model_api_timeout_is_thirty_seconds() {
         let description = describe();
         let dev_tab = development_tab(&description);
-
-        // Check that the row help is short and mentions cancellation
-        let help = dev_tab
+        let placeholder = dev_tab
             .sections
             .iter()
             .flat_map(|section| &section.rows)
             .find_map(|row| match row {
-                FormRow::TextField { id, help, .. } if id == DIRECTOR_TIMEOUT_SECS_ID => {
-                    help.clone()
-                }
+                FormRow::TextField {
+                    id, placeholder, ..
+                } if id == DIRECTOR_TIMEOUT_SECS_ID => Some(placeholder.clone()),
                 _ => None,
             })
-            .expect("the timeout row carries help");
+            .expect("the timeout row carries a placeholder");
 
-        assert!(
-            help.contains("cancel"),
-            "the help has to say what expiry does, got {help:?}"
-        );
+        assert_eq!(placeholder, "30");
 
-        // Check that the section disclosure has the detailed Harness explanation
         let disclosure = dev_tab
             .sections
             .iter()
             .find_map(|section| {
-                if section.rows.iter().any(|row| matches!(row, FormRow::TextField { id, .. } if id == DIRECTOR_TIMEOUT_SECS_ID)) {
+                if section.rows.iter().any(|row| {
+                    matches!(row, FormRow::TextField { id, .. } if id == DIRECTOR_TIMEOUT_SECS_ID)
+                }) {
                     section.disclosure.clone()
                 } else {
                     None
@@ -2233,12 +2248,80 @@ mod tests {
             .expect("the timeout section carries disclosure");
 
         assert!(
-            disclosure.contains("Harness"),
-            "the disclosure must name the other \"AI brain\" it budgets, got {disclosure:?}"
+            disclosure.contains("Model API"),
+            "the disclosure must say which brain this row budgets, got {disclosure:?}"
         );
         assert!(
-            disclosure.contains("session/prompt"),
-            "the disclosure must name the call it budgets, got {disclosure:?}"
+            disclosure.contains("Leave empty"),
+            "empty-field copy has to name what the user does, not Blank, got {disclosure:?}"
+        );
+        assert!(
+            disclosure.contains("fallback to default behavior"),
+            "expiry has to be user terms, not Static, got {disclosure:?}"
+        );
+        assert!(
+            !disclosure.contains("session/prompt"),
+            "a Harness turn is the other row, got {disclosure:?}"
+        );
+    }
+
+    /// #690: Harness turn timeout is its own Development row.
+    #[test]
+    fn the_harness_turn_timeout_row_names_session_prompt() {
+        let description = describe();
+        let dev_tab = development_tab(&description);
+        let placeholder = dev_tab
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField {
+                    id, placeholder, ..
+                } if id == HARNESS_TURN_TIMEOUT_SECS_ID => Some(placeholder.clone()),
+                _ => None,
+            })
+            .expect("the Harness turn-timeout row carries a placeholder");
+
+        assert_eq!(placeholder, "120");
+
+        let help = dev_tab
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField { id, help, .. } if id == HARNESS_TURN_TIMEOUT_SECS_ID => {
+                    help.clone()
+                }
+                _ => None,
+            })
+            .expect("the Harness turn-timeout row carries help");
+
+        assert!(
+            help.contains("cancel"),
+            "the help has to say what expiry does, got {help:?}"
+        );
+
+        let disclosure = dev_tab
+            .sections
+            .iter()
+            .find_map(|section| {
+                if section.rows.iter().any(|row| {
+                    matches!(row, FormRow::TextField { id, .. } if id == HARNESS_TURN_TIMEOUT_SECS_ID)
+                }) {
+                    section.disclosure.clone()
+                } else {
+                    None
+                }
+            })
+            .expect("the Harness section carries disclosure");
+
+        assert!(
+            disclosure.contains("Leave empty"),
+            "empty-field copy has to name what the user does, not Blank, got {disclosure:?}"
+        );
+        assert!(
+            !disclosure.contains("Blank is"),
+            "Settings must not name the empty state Blank, got {disclosure:?}"
         );
     }
 
@@ -2255,6 +2338,10 @@ mod tests {
             .collect();
 
         for (id, writes) in [
+            (
+                HARNESS_TURN_TIMEOUT_SECS_ID,
+                TextField::HarnessTurnTimeoutSecs,
+            ),
             (HARNESS_AUTH_RETRY_SECS_ID, TextField::HarnessAuthRetrySecs),
             (MCP_BIN_ID, TextField::McpBin),
         ] {

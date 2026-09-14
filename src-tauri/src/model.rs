@@ -21,11 +21,14 @@ use ai_buddy_core::roster::InstanceId;
 use serde::Serialize;
 use url::{Host, Url};
 
-/// Completer timeout. After this, fall back to `StaticDirector`.
+/// Model API turn. After this, fall back to `StaticDirector`.
 ///
-/// Longer than a snappy chat-completions hop: xAI's Responses path can
-/// think, and 8s was enough to lose a Grok wake to Static.
-pub const TIMEOUT: Duration = Duration::from_secs(20);
+/// One number for remote and local HTTP: 8s lost a thinking Grok wake to
+/// Static, and a second local-only budget was mistaken for a Harness turn
+/// (#690). A cold local server that needs longer sets
+/// `AI_BUDDY_DIRECTOR_TIMEOUT_SECS`. A Harness turn is
+/// `harness::TURN_TIMEOUT`, not this.
+pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Prompt, raw reply, and parse. Off unless asked: a Character Prompt is
 /// a paragraph, and printing it sixty times a minute would bury everything
@@ -61,8 +64,9 @@ pub(crate) const ENABLED: &str = "AI_BUDDY_DIRECTOR";
 /// `pub(crate)` like the four above: the row it owns has to name it.
 pub(crate) const WAKE_SECS: &str = "AI_BUDDY_DIRECTOR_WAKE_SECS";
 
-/// Completer timeout, in seconds, and the reply cap, in tokens. Both have a
-/// local default that differs from the hosted one; these override either.
+/// Model API timeout, in seconds, and the reply cap, in tokens. The cap
+/// still has a local default that differs from the hosted one; the timeout
+/// does not (#690). These override either.
 ///
 /// `pub(crate)` for the same reason as the three above: the settings window
 /// names the variable that owns a frozen row.
@@ -82,11 +86,6 @@ pub(crate) const BLANK: &str = "AI_BUDDY_DIRECTOR_BLANK";
 
 const DEFAULT_BASE: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
-
-/// A cold local server loads weights on the first call, which can outlast a
-/// hosted request several times over. Losing that one wake would leave the
-/// buddy quietly Static for the rest of the session.
-const LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Hosted replies are two lines. A local reasoning model (Qwen3, gpt-oss)
 /// thinks in the same budget on chat-completions, so 80 tokens can be spent
@@ -331,7 +330,7 @@ pub fn endpoint_from(settings: &DirectorSettings) -> Option<Endpoint> {
         api_key,
         url: completions_url(&settings.base_url),
         model: settings.model.clone(),
-        timeout: timeout_for(local),
+        timeout: timeout_for(),
         max_tokens: max_tokens_for(local),
         effort: effort_for(),
         session: Mutex::new(Session::default()),
@@ -530,17 +529,10 @@ fn is_local(base: &str) -> bool {
     }
 }
 
-fn timeout_for(local: bool) -> Duration {
+fn timeout_for() -> Duration {
     // `dev_flags` holds the value the variable or the file settled on, so the
     // precedence is not re-decided here (#273).
-    if let Some(secs) = crate::dev_flags::director_timeout_secs() {
-        return Duration::from_secs(secs);
-    }
-    if local {
-        LOCAL_TIMEOUT
-    } else {
-        TIMEOUT
-    }
+    crate::dev_flags::director_timeout_secs().map_or(TIMEOUT, Duration::from_secs)
 }
 
 fn max_tokens_for(local: bool) -> u32 {
@@ -562,17 +554,9 @@ fn effort_for() -> String {
     crate::dev_flags::director_reasoning_effort().unwrap_or_else(|| DEFAULT_EFFORT.to_string())
 }
 
-/// What an empty Completer-timeout field means, in seconds.
-///
-/// Both defaults, because `describe` builds the form without settings and so
-/// cannot know whether the endpoint is local. Naming one of them would make
-/// the placeholder wrong for half the users.
+/// What an empty Model API timeout field means, in seconds.
 pub(crate) fn timeout_placeholder() -> String {
-    format!(
-        "{} ({} for a local server)",
-        TIMEOUT.as_secs(),
-        LOCAL_TIMEOUT.as_secs()
-    )
+    TIMEOUT.as_secs().to_string()
 }
 
 /// What an empty reply-cap field means, in tokens. See `timeout_placeholder`.
@@ -3925,13 +3909,13 @@ pub(crate) mod tests {
                 ..Default::default()
             };
             crate::dev_flags::seed(&file);
-            assert_eq!(timeout_for(false), Duration::from_secs(45));
+            assert_eq!(timeout_for(), Duration::from_secs(45));
             assert_eq!(max_tokens_for(false), 300);
 
             std::env::set_var(TIMEOUT_SECS, "7");
             std::env::set_var(MAX_TOKENS, "11");
             crate::dev_flags::seed(&file);
-            assert_eq!(timeout_for(false), Duration::from_secs(7));
+            assert_eq!(timeout_for(), Duration::from_secs(7));
             assert_eq!(max_tokens_for(false), 11);
             std::env::remove_var(TIMEOUT_SECS);
             std::env::remove_var(MAX_TOKENS);
@@ -3960,12 +3944,23 @@ pub(crate) mod tests {
         });
     }
 
+    /// #690: blank Model API is one number, remote or local. A Harness turn
+    /// is `harness::TURN_TIMEOUT`, not this.
+    #[test]
+    fn a_model_api_turn_is_one_timeout_when_unset() {
+        with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(timeout_for(), TIMEOUT);
+            assert_eq!(TIMEOUT, Duration::from_secs(30));
+        });
+    }
+
     /// Under the env lock because both functions read the live `dev_flags`
     /// values, which another test in this binary sets and clears.
     #[test]
-    fn a_cold_local_model_gets_room_a_hosted_one_does_not_need() {
+    fn a_cold_local_model_gets_token_room_a_hosted_one_does_not_need() {
         with_env(None, None, None, || {
-            assert!(timeout_for(true) > timeout_for(false));
+            assert_eq!(timeout_for(), TIMEOUT, "timeout no longer splits on URL");
             assert!(max_tokens_for(true) > max_tokens_for(false));
         });
     }

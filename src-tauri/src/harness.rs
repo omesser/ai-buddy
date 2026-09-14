@@ -40,6 +40,9 @@ pub(crate) const MCP_BIN: &str = "AI_BUDDY_MCP_BIN";
 /// How long an unauthenticated Harness is left alone, in seconds. Named here
 /// with the two above so the Development row it owns can print it (#447).
 pub(crate) const AUTH_RETRY_SECS: &str = "AI_BUDDY_HARNESS_AUTH_RETRY_SECS";
+/// How long a Harness `session/prompt` may run, in seconds. Named here so
+/// the Development row it owns can print it (#690).
+pub(crate) const TURN_TIMEOUT_SECS: &str = "AI_BUDDY_HARNESS_TURN_TIMEOUT";
 
 /// The one file the session survives a restart in.
 const SESSION_FILE: &str = "harness-session.json";
@@ -56,6 +59,24 @@ const AUTH_RETRY: Duration = Duration::from_secs(60);
 /// are the same idea for the Completer limits.
 pub(crate) fn auth_retry_placeholder() -> String {
     AUTH_RETRY.as_secs().to_string()
+}
+
+/// How long a Harness `session/prompt` may run before `session/cancel`.
+///
+/// `model::TIMEOUT` is the Model API hop (then Static). A tool-using Ask is
+/// not that hop — twenty seconds cancelled a web lookup mid-search (#690).
+/// Forever would leave a hung child uncancelable. Two minutes is long enough
+/// for a lookup and short enough that expiry still maps to `session/cancel`
+/// (ADR-0017). The Model API field does not override this.
+pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Settings / `AI_BUDDY_HARNESS_TURN_TIMEOUT` still wins when set.
+pub(crate) fn turn_timeout() -> Duration {
+    crate::dev_flags::harness_turn_timeout_secs().map_or(TURN_TIMEOUT, Duration::from_secs)
+}
+
+pub(crate) fn turn_timeout_placeholder() -> String {
+    TURN_TIMEOUT.as_secs().to_string()
 }
 
 /// Respawn backoff after a wake the child could not serve: doubles from the
@@ -410,8 +431,7 @@ impl Session {
             launch,
             dir,
             forward,
-            timeout: crate::dev_flags::director_timeout_secs()
-                .map_or(crate::model::TIMEOUT, Duration::from_secs),
+            timeout: turn_timeout(),
             auth_retry: crate::dev_flags::harness_auth_retry_secs()
                 .map_or(AUTH_RETRY, Duration::from_secs),
             backoff_first: BACKOFF_FIRST,
@@ -1793,6 +1813,45 @@ mod tests {
     use ai_buddy_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
+
+    /// #690: a tool-using Ask is not the Model API hop.
+    #[test]
+    fn an_unset_timeout_gives_a_harness_turn_minutes_not_the_http_hop() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(turn_timeout(), Duration::from_secs(120));
+            assert_ne!(
+                turn_timeout(),
+                crate::model::TIMEOUT,
+                "the Model API hop is not a tool-using turn's budget"
+            );
+        });
+    }
+
+    /// The Model API field is not this budget (#690).
+    #[test]
+    fn a_director_timeout_does_not_set_the_harness_turn() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_timeout_secs: "45".into(),
+                ..Default::default()
+            });
+            assert_eq!(turn_timeout(), TURN_TIMEOUT);
+        });
+    }
+
+    /// The Development field and `AI_BUDDY_HARNESS_TURN_TIMEOUT` still win
+    /// (#690).
+    #[test]
+    fn a_set_timeout_is_the_harness_turn_budget() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                harness_turn_timeout_secs: "45".into(),
+                ..Default::default()
+            });
+            assert_eq!(turn_timeout(), Duration::from_secs(45));
+        });
+    }
 
     /// The fake ACP agent: this test binary re-executed with `script=<name>`
     /// among its filters, speaking newline JSON-RPC on stdio. Returns at once
