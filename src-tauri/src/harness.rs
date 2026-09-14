@@ -1372,9 +1372,9 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 /// to offer at the moment of the pick.
 ///
 /// ai-buddy never runs it. #654: Chat spawned `codex login` from a GUI process
-/// with no terminal of its own while the attached child was opening a loopback
-/// listener of its own, so two PKCE challenges raced for `localhost:1455` and
-/// neither redirect reached the process that would keep the token. Naming the
+/// with no terminal of its own, on inherited stdio. The browser flow finished
+/// but the CLI handshake and the token reached nothing Chat could use, and
+/// every Connect click spawned another `localhost:1455` server. Naming the
 /// command is the whole of what we can do — ADR-0018 has the Harness
 /// authenticate itself.
 pub(crate) fn login_hint(name: &str) -> String {
