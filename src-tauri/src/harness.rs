@@ -1105,7 +1105,11 @@ pub fn run_probe() -> i32 {
         // that timeout.
         Arc::new(Box::new(|forwarded| {
             if let Forwarded::Ask(ask) = forwarded {
-                println!("  permission   {} [{}]", ask.title, ask.request);
+                println!(
+                    "  permission   {} [{}]",
+                    ask.title.as_deref().unwrap_or("—"),
+                    ask.request
+                );
             }
         }) as Forward),
     ));
@@ -1878,7 +1882,14 @@ mod tests {
                             say(
                                 json!({"jsonrpc": "2.0", "id": 99, "method": "session/request_permission", "params": {
                                     "sessionId": &session,
-                                    "toolCall": {"toolCallId": "t1", "title": "rm -rf /", "kind": "execute"},
+                                    "toolCall": {
+                                        "toolCallId": "t1",
+                                        "title": "rm -rf /",
+                                        "kind": "execute",
+                                        "content": [{"type": "content", "content": {"type": "text", "text": "Delete everything?"}}],
+                                        "rawInput": {"command": "rm -rf /"},
+                                        "locations": [{"path": "/"}],
+                                    },
                                     "options": [
                                         {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
                                         {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
@@ -2732,8 +2743,13 @@ mod tests {
             thread::spawn(move || session.complete(&asking("hi")))
         };
         let ask = fx.ask();
-        assert_eq!(ask.title, "rm -rf /");
+        assert_eq!(ask.title.as_deref(), Some("rm -rf /"));
         assert_eq!(ask.kind.as_deref(), Some("execute"));
+        // #678: what the tool call says about itself has to survive the trip,
+        // or the surface is left asking the user to approve a kind.
+        assert_eq!(ask.content, ["Delete everything?"]);
+        assert_eq!(ask.input, Some(json!({"command": "rm -rf /"})));
+        assert_eq!(ask.locations, ["/"]);
         assert_eq!(ask.options.len(), 2);
         session.answer_permission(&ask.request, "allow");
         assert_eq!(worker.join().unwrap(), Ok(Reply::whole("ok:allow")));
