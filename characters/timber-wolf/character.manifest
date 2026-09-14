@@ -8,10 +8,13 @@ scale = 1
 art = """
 The Timber Wolf (Mad Cat) OmniMech from BattleTech, derived \
 from a Sketchfab viewer recording of Clan's Timberwolf Battlemech by \
-MekaRamen."""
+MekaRamen (Yeoh Kher En). Permission granted by the creator on 2026-09-14 \
+(https://github.com/omesser/ai-buddy/issues/388#issuecomment-5667427004) \
+to use the derived frames in ai-buddy."""
 url = "https://sketchfab.com/3d-models/clans-timberwolf-battlemech-74e4d72e0cf3409ba3992cd0d895bc2f"
 license = """
-Mixed, and unresolved for the art. The personality prose and the manifest \
+Mixed. The frames are derived from MekaRamen's Sketchfab model with \
+permission granted for use in ai-buddy. The personality prose and the manifest \
 are MIT. The Timber Wolf is also BattleTech IP."""
 
 # Cursor reactions: a patrol mech acquires the contact rather than closing on
