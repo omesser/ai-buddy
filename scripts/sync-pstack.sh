@@ -7,9 +7,11 @@
 #
 # `.agents/skills/` is the one skills directory for this repository, and it
 # mixes vendored skills with repo-owned ones such as `verify-ai-buddy`.
-# `UPSTREAM.json` records which names came from upstream, and this script
-# adds, updates and deletes only those. A directory not on that list is never
-# touched.
+# `UPSTREAM.json` records which names came from upstream. The sync vendors
+# whatever upstream ships, so a skill added upstream arrives without anyone
+# editing that list, and the list is rewritten from what was found. What the
+# list gates is deletion: only a name already on it can be removed, so a skill
+# this repository owns survives an upstream that has never heard of it.
 #
 # `.claude/skills` and `.cursor/skills` are symlinks to it, so there is one
 # copy of the bytes. Both loaders glob `<dir>/skills/*/SKILL.md`, and the
@@ -62,6 +64,10 @@ if [ "${1:-}" = "--fetch" ]; then
     rsync -a --delete "$up/skills/$name/" "$SKILLS/$name/"
   done <<< "$after"
 
+  # No allowlist here, unlike skills above: `.agents/agents/` is wholly
+  # upstream's, so `--delete` over the whole directory is the honest sync.
+  # Write a repo-owned agent into it and this line will eat it — give agents
+  # the same `vendored_names` treatment as skills before you do.
   rsync -a --delete "$up/agents/" .agents/agents/
   cp "$up/LICENSE" .agents/pstack/LICENSE
 

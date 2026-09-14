@@ -42,8 +42,12 @@ definitions.
 
 `.agents/pstack/` holds provenance and no skills. `UPSTREAM.json` records the
 upstream commit, the plugin version, and the list of skill names the sync owns.
-That list is what keeps `verify-ai-buddy` safe: the sync adds, updates and
-deletes only names it finds there. `LICENSE` carries the MIT text.
+The sync vendors whatever upstream ships and rewrites that list from what it
+found, so a skill added upstream arrives without anyone editing the list. What
+the list gates is deletion: only a name already on it can be removed, which is
+what keeps `verify-ai-buddy` safe from an upstream that has never heard of it.
+`.agents/agents/` has no such list — it is wholly upstream's, and the sync
+replaces it outright. `LICENSE` carries the MIT text.
 
 The upstream guide (`pstack/docs/`), logo and automations are not vendored.
 Read them at the source.
@@ -92,15 +96,17 @@ symlinks, for that reason.
 
 `.github/workflows/pstack-sync.yml` runs weekly and on demand. It re-runs
 `scripts/sync-pstack.sh --fetch`, which re-fetches `pstack/skills` and
-`pstack/agents` from `cursor/plugins@main`, updates only the skill names
-`UPSTREAM.json` lists, rewrites that file, and regenerates `SKILLS.md`. The
-workflow opens a pull request when the tree actually changed, labels it
-`needs-triage`, and never merges. The pull request carries the upstream SHA
-range and a diff summary so a reviewer does not have to read 124 files.
+`pstack/agents` from `cursor/plugins@main`, rewrites `UPSTREAM.json`, and
+regenerates `SKILLS.md`. The workflow opens a pull request when the tree
+actually changed, and never merges. It applies no label: every string in
+`docs/agents/triage-labels.md` is an issue triage role, and a pull request
+already arrives needing review. The pull request carries the upstream SHA range
+and a diff summary so a reviewer does not have to read 124 files.
 
 A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`,
-so `PR Tests` will not run on it. The workflow runs the layout test itself
-before opening one. Running the full suite there would need a personal access
-token, which this repository does not carry.
+so `PR Tests` will not run on it. The workflow runs `tests/skills-layout.test.js`
+itself before opening one, and its description says so and no more. Running the
+full suite there would need a personal access token, which this repository does
+not carry, so run `node --test tests/` yourself before approving one.
 
 To sync by hand, run `scripts/sync-pstack.sh --fetch`.
