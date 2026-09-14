@@ -1,0 +1,135 @@
+name: pstack Sync
+
+# `.agents/pstack/` is a copy of `cursor/plugins@main:pstack`, and a copy only
+# stays useful while someone refreshes it. This does that once a week and opens
+# a pull request when upstream actually moved.
+#
+# It never merges. Every pull request here goes through review, and a bot that
+# lands third-party markdown into an agent's instructions unreviewed is the one
+# thing this workflow must not become.
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC. Early enough in the week that a sync lands before the
+    # work that might use it.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  # Push the sync branch, and open or update the pull request for it. No other
+  # scope is used.
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        # The drift test runs here rather than on the pull request: a pull
+        # request opened with GITHUB_TOKEN does not trigger `on: pull_request`,
+        # so PR Tests would never run on it. Testing before opening it is what
+        # keeps the branch from arriving unverified.
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 'lts/*'
+
+      - name: Record the vendored commit
+        id: before
+        run: |
+          sed -n 's/.*"commit": *"\([^"]*\)".*/before=\1/p' \
+            .agents/pstack/UPSTREAM.json >> "$GITHUB_OUTPUT"
+
+      - name: Re-vendor from upstream
+        # The same script a human runs locally. One code path, so a sync done
+        # by hand and a sync done here cannot produce different trees.
+        run: scripts/sync-pstack.sh --fetch
+
+      - name: Decide whether upstream moved
+        id: changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            echo "Already at the upstream head. Nothing to open."
+          else
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Layout test
+        if: steps.changes.outputs.moved == 'true'
+        run: node --test tests/skills-layout.test.js
+
+      - name: Push the sync branch
+        if: steps.changes.outputs.moved == 'true'
+        id: push
+        run: |
+          after=$(sed -n 's/.*"commit": *"\([^"]*\)".*/\1/p' .agents/pstack/UPSTREAM.json)
+          version=$(sed -n 's/.*"plugin_version": *"\([^"]*\)".*/\1/p' .agents/pstack/UPSTREAM.json)
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Explicit path, never `git add -A`: a runner that leaves a stray
+          # file behind should not get it committed for free. `.agents` is the
+          # only tree the sync writes; `.claude/skills` and `.cursor/skills`
+          # are symlinks into it and never change.
+          git add .agents
+          # Captured from the index, before the commit. The checkout is shallow,
+          # so neither `HEAD~1` nor a merge base is available afterwards.
+          git diff --cached --stat | tail -40 > /tmp/pstack-diffstat.txt
+          git commit -m "chore(pstack): Sync vendored skills to ${after:0:12}"
+          git push --force origin "HEAD:$BRANCH"
+        env:
+          BRANCH: chore/pstack-sync
+
+      - name: Open or update the pull request
+        if: steps.changes.outputs.moved == 'true'
+        run: |
+          # The diff summary and the compare link are the point: a reviewer
+          # should see what moved without opening 124 files.
+          {
+            echo '## Why'
+            echo
+            echo '`.agents/pstack/` tracks `cursor/plugins@main:pstack`, and upstream moved.'
+            echo
+            echo '## What changed'
+            echo
+            echo "Vendored commit \`$BEFORE\` to \`$AFTER\`, plugin version \`$VERSION\`."
+            echo
+            echo "Upstream range: https://github.com/cursor/plugins/compare/$BEFORE...$AFTER"
+            echo
+            echo '```'
+            cat /tmp/pstack-diffstat.txt
+            echo '```'
+            echo
+            echo '## How to verify'
+            echo
+            echo '`node --test tests/*.test.js`. It already ran green on this branch before the pull request opened.'
+            echo
+            echo 'Read `docs/agents/pstack.md` before approving a change to a playbook this repository overrules.'
+          } > /tmp/pstack-pr.md
+
+          title="chore(pstack): Sync vendored skills to ${AFTER:0:12}"
+          if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
+            gh pr edit "$BRANCH" --title "$title" --body-file /tmp/pstack-pr.md
+          else
+            # `needs-triage` from docs/agents/triage-labels.md: a human decides
+            # what this is. No auto-merge is armed, here or anywhere.
+            gh pr create --base "$GITHUB_BASE" --head "$BRANCH" \
+              --title "$title" --body-file /tmp/pstack-pr.md \
+              --label needs-triage
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GITHUB_BASE: main
+          BRANCH: chore/pstack-sync
+          BEFORE: ${{ steps.before.outputs.before }}
+          AFTER: ${{ steps.push.outputs.after }}
+          VERSION: ${{ steps.push.outputs.version }}
