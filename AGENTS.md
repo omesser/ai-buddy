@@ -15,6 +15,16 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 `👷 Todo` on the AI Buddy project board, highest priority first, matching the OS
 you can build. See `docs/agents/picking-work.md`.
 
+### pstack
+
+The pstack skill library is vendored at `.agents/skills/`. Each skill is
+a directory holding a `SKILL.md`, and `.agents/pstack/SKILLS.md` indexes all 47
+with one line each. None of them is on by default. Apply one when the user names
+it, by reading that skill's `SKILL.md` and following it. `poteto-mode` is sticky
+once entered — it stays on across turns — so never enter it unprompted. When you
+do apply a skill, `docs/agents/pstack.md` records where pstack's opinions
+collide with this repository's rules, and this repository's rules win.
+
 ### Domain docs
 
 Single-context. Vocabulary is `CONTEXT.md`. v1 scope and requirements are
