@@ -1235,7 +1235,7 @@ fn development_sections() -> Vec<FormSection> {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
             disclosure: Some(format!(
-                "A set timeout budgets one turn, whichever Completer fill serves it: an HTTP request or a Harness session/prompt. Expiry cancels the turn. Blank keeps the HTTP fill at its hosted or local default and a Harness turn at {} seconds — the HTTP hop is not a tool-using Ask. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "A set timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP request or a Harness session/prompt. Expiry cancels the turn. Blank keeps the HTTP endpoint at its hosted or local default and a Harness turn at {} seconds — the HTTP hop is not a tool-using Ask. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
                 crate::harness::TURN_TIMEOUT.as_secs()
             )),
             status: None,
