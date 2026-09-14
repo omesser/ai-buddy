@@ -1234,7 +1234,10 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "HTTP limits".to_string(),
             comment: Some("Also for development and testing. Blank uses the default.".to_string()),
-            disclosure: Some("Timeout budgets one turn, whichever \"AI brain\" serves it: an HTTP endpoint request or a Harness session/prompt. Expiry cancels the turn. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.".to_string()),
+            disclosure: Some(format!(
+                "A set timeout budgets one turn, whichever Completer fill serves it: an HTTP request or a Harness session/prompt. Expiry cancels the turn. Blank keeps the HTTP fill at its hosted or local default and a Harness turn at {} seconds — the HTTP hop is not a tool-using Ask. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                crate::harness::TURN_TIMEOUT.as_secs()
+            )),
             status: None,
             rows: vec![
                 FormRow::TextField {
@@ -1244,7 +1247,7 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
-                    help: Some("One turn's budget. Expiry cancels the turn.".to_string()),
+                    help: Some("When set, one turn's budget. Expiry cancels the turn.".to_string()),
                     disclosure: None,
                     status: timeout_status,
                 },
@@ -2192,7 +2195,63 @@ mod tests {
         }
     }
 
-    /// #447: one timeout budgets both minds. A user who reads the row as the
+    /// #690: blank is two defaults, not 20s for whichever Completer fill
+    /// serves the turn. The placeholder has to name both, or a user who
+    /// leaves it empty still thinks a Harness Ask dies at twenty seconds.
+    #[test]
+    fn a_blank_timeout_names_the_http_hop_and_the_harness_turn() {
+        let description = describe();
+        let dev_tab = development_tab(&description);
+        let placeholder = dev_tab
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .find_map(|row| match row {
+                FormRow::TextField {
+                    id, placeholder, ..
+                } if id == DIRECTOR_TIMEOUT_SECS_ID => Some(placeholder.clone()),
+                _ => None,
+            })
+            .expect("the timeout row carries a placeholder");
+
+        assert!(
+            placeholder.contains("20"),
+            "blank still names the hosted HTTP hop, got {placeholder:?}"
+        );
+        assert!(
+            placeholder.contains("180"),
+            "blank must name the Harness turn, got {placeholder:?}"
+        );
+        assert!(
+            placeholder.contains("Harness"),
+            "the longer number is a Harness turn, not another Completer hop, got {placeholder:?}"
+        );
+
+        let disclosure = dev_tab
+            .sections
+            .iter()
+            .find_map(|section| {
+                if section.rows.iter().any(|row| {
+                    matches!(row, FormRow::TextField { id, .. } if id == DIRECTOR_TIMEOUT_SECS_ID)
+                }) {
+                    section.disclosure.clone()
+                } else {
+                    None
+                }
+            })
+            .expect("the timeout section carries disclosure");
+
+        assert!(
+            disclosure.contains("blank") || disclosure.contains("Blank"),
+            "the disclosure must say what empty means, got {disclosure:?}"
+        );
+        assert!(
+            !disclosure.starts_with("Timeout budgets one turn, whichever"),
+            "one budget is a set value, not blank, got {disclosure:?}"
+        );
+    }
+
+    /// #447: a set timeout budgets both fills. A user who reads the row as the
     /// HTTP Completer's alone cannot explain a Harness turn that was cancelled
     /// halfway. With progressive disclosure (#548), the detailed explanation is
     /// in the section's disclosure field, while the row's help stays short.

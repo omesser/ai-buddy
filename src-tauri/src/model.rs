@@ -562,16 +562,18 @@ fn effort_for() -> String {
     crate::dev_flags::director_reasoning_effort().unwrap_or_else(|| DEFAULT_EFFORT.to_string())
 }
 
-/// What an empty Completer-timeout field means, in seconds.
+/// What an empty timeout field means, in seconds.
 ///
-/// Both defaults, because `describe` builds the form without settings and so
-/// cannot know whether the endpoint is local. Naming one of them would make
-/// the placeholder wrong for half the users.
+/// Settings names the HTTP fill's timeout (hosted and local). Blank is also
+/// a Harness `session/prompt` budget, and that number is not the HTTP hop
+/// (#690). `describe` builds the form without settings, so every default
+/// has to live in the placeholder.
 pub(crate) fn timeout_placeholder() -> String {
     format!(
-        "{} ({} for a local server)",
+        "{} ({} for a local server; {} for a Harness)",
         TIMEOUT.as_secs(),
-        LOCAL_TIMEOUT.as_secs()
+        LOCAL_TIMEOUT.as_secs(),
+        crate::harness::TURN_TIMEOUT.as_secs()
     )
 }
 
@@ -3957,6 +3959,16 @@ pub(crate) mod tests {
 
             crate::dev_flags::seed(&crate::settings::Settings::default());
             assert_eq!(ambient_first(), Pace::FIRST);
+        });
+    }
+
+    /// #690: the 20s hosted hop is the HTTP Completer's fallback, not the
+    /// Harness turn budget. Blank must still land here.
+    #[test]
+    fn a_hosted_http_hop_stays_at_the_completer_timeout_when_unset() {
+        with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(timeout_for(false), TIMEOUT);
         });
     }
 

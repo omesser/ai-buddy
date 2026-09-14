@@ -56,6 +56,21 @@ pub(crate) fn auth_retry_placeholder() -> String {
     AUTH_RETRY.as_secs().to_string()
 }
 
+/// How long a Harness `session/prompt` may run before `session/cancel`.
+///
+/// `model::TIMEOUT` (20s hosted) is the HTTP Completer's fallback so a hung
+/// host does not pin the overlay. A Harness turn that uses tools is not that
+/// hop — twenty seconds cancels a web lookup mid-search (#690). Forever would
+/// leave a hung child uncancelable. Three minutes is long enough for a
+/// tool-using Ask and short enough that expiry still maps to `session/cancel`
+/// (ADR-0017).
+pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Settings still wins when set; blank is `TURN_TIMEOUT`, not the HTTP hop.
+pub(crate) fn turn_timeout() -> Duration {
+    crate::dev_flags::director_timeout_secs().map_or(TURN_TIMEOUT, Duration::from_secs)
+}
+
 /// Respawn backoff after a wake the child could not serve: doubles from the
 /// first up to the cap, so a missing binary costs one attempt every five
 /// minutes, not a loop.
@@ -404,8 +419,7 @@ impl Session {
             launch,
             dir,
             forward,
-            timeout: crate::dev_flags::director_timeout_secs()
-                .map_or(crate::model::TIMEOUT, Duration::from_secs),
+            timeout: turn_timeout(),
             auth_retry: crate::dev_flags::harness_auth_retry_secs()
                 .map_or(AUTH_RETRY, Duration::from_secs),
             backoff_first: BACKOFF_FIRST,
@@ -1699,6 +1713,34 @@ mod tests {
     use ai_buddy_core::engine::BehaviorProposal;
     use std::io::{BufRead, Write};
     use std::sync::mpsc::{self, Receiver};
+
+    /// #690: a tool-using Ask is not the HTTP Completer hop. Blank must not
+    /// resolve to `model::TIMEOUT`, or a web lookup dies at 20s.
+    #[test]
+    fn an_unset_timeout_gives_a_harness_turn_minutes_not_the_http_hop() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings::default());
+            assert_eq!(turn_timeout(), Duration::from_secs(180));
+            assert_ne!(
+                turn_timeout(),
+                crate::model::TIMEOUT,
+                "the HTTP hop's fallback is not a tool-using turn's budget"
+            );
+        });
+    }
+
+    /// The Development field and `AI_BUDDY_DIRECTOR_TIMEOUT_SECS` still win
+    /// (#690). A user who set 45s did not ask for the Harness default.
+    #[test]
+    fn a_set_timeout_is_the_harness_turn_budget() {
+        crate::model::tests::with_env(None, None, None, || {
+            crate::dev_flags::seed(&crate::settings::Settings {
+                director_timeout_secs: "45".into(),
+                ..Default::default()
+            });
+            assert_eq!(turn_timeout(), Duration::from_secs(45));
+        });
+    }
 
     /// The fake ACP agent: this test binary re-executed with `script=<name>`
     /// among its filters, speaking newline JSON-RPC on stdio. Returns at once
