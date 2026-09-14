@@ -723,6 +723,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
+                            superseded: false,
                         },
                     );
                     continue;
@@ -749,6 +750,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
+                            superseded: false,
                         },
                     );
                     continue;
@@ -771,6 +773,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error: None,
+                            superseded: false,
                         },
                     );
                     continue;
@@ -1329,6 +1332,7 @@ pub(crate) fn run_frame_loop(
                             you: false,
                             at: None,
                             error,
+                            superseded: false,
                         },
                     );
                 }
@@ -1434,8 +1438,9 @@ pub(crate) fn run_frame_loop(
                             // Starting a call cancels the one before it
                             // (ADR-0016) and `Slots::take` drops the superseded
                             // reply, so a typed line on the wire is told here
-                            // that no answer is coming. Nothing else would, and
-                            // a row left unanswered would take the next turn's
+                            // that its caret is cancelled, not that nothing
+                            // came back (#681). Nothing else would, and a row
+                            // left unanswered would take the next turn's
                             // answer, blinking for the life of the window.
                             if live.chat_turn {
                                 let _ = app.emit_to(
@@ -1448,6 +1453,7 @@ pub(crate) fn run_frame_loop(
                                         you: false,
                                         at: None,
                                         error: None,
+                                        superseded: true,
                                     },
                                 );
                             }
