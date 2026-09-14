@@ -16,7 +16,6 @@ import {
   placeBubble,
 } from "./bubble.js";
 import { createCueMachine, cueAnchor, cueIo } from "./cue.js";
-import { syncProps } from "./props.js";
 
 const stage = document.getElementById("stage");
 
@@ -33,10 +32,6 @@ let characters = {};
 
 // One view per Instance, keyed by its id.
 const views = new Map();
-
-// Separate from `views` because a Prop is not an Instance: no bubble, no cue,
-// no hit-test. #165.
-const propNodes = new Map();
 
 function currentDisplayBounds() {
   return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
@@ -444,16 +439,6 @@ async function start() {
           removeView(id);
         }
       }
-
-      syncProps({
-        stage,
-        createElement: (tag) => document.createElement(tag),
-        nodes: propNodes,
-        placements: payload.props ?? [],
-        characters,
-        visible: payload.visible,
-        fade_ms: payload.fade_ms,
-      });
     },
     { target: overlay.label },
   );

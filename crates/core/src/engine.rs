@@ -238,48 +238,6 @@ pub struct Frame {
     /// model that proposed nothing look identical in the trace. `crates/core`
     /// does no I/O, so the Shell prints it. #374.
     pub refused: Option<String>,
-    /// Dropped Props this tick, feet in the shared point space. Empty when
-    /// the Character declared none or none have been put down. #165.
-    pub props: Vec<PropFrame>,
-}
-
-/// One dropped Prop as the renderer sees it. Art stays on the Character;
-/// this is only where the feet are and how big the frame is.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PropFrame {
-    pub name: String,
-    pub position: Point,
-    pub size: (u32, u32),
-}
-
-/// How a dropped Prop is moving. Resting or falling, never climbing. #165.
-#[derive(Clone, Debug, PartialEq)]
-pub enum PropMotion {
-    Falling { velocity: Point },
-    Resting { support: PropSupport },
-}
-
-/// What a resting Prop is standing on.
-#[derive(Clone, Debug, PartialEq)]
-pub enum PropSupport {
-    Floor,
-    Perch {
-        window: WindowId,
-        hold_offset_x: f64,
-    },
-}
-
-/// Why `Engine::drop_prop` refused the name.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DropPropError {
-    Unknown { name: String },
-}
-
-struct Prop {
-    name: String,
-    position: Point,
-    motion: PropMotion,
-    size: (u32, u32),
 }
 
 /// How long one Primitive holds the screen.
@@ -506,10 +464,6 @@ pub struct Engine {
     /// keyed on the verb would fire for as long as the menu is open. The
     /// press edge is the cue; a gap clears this and the next press cues again.
     menu_held: bool,
-    /// Declared Prop names and their art size in pixels. The Engine never
-    /// holds PNG bytes.
-    known_props: BTreeMap<String, (u32, u32)>,
-    dropped: Vec<Prop>,
 }
 
 impl Engine {
@@ -555,8 +509,6 @@ impl Engine {
             chase_ms: 0,
             poke_cooldown_ms: 0,
             menu_held: false,
-            known_props: BTreeMap::new(),
-            dropped: Vec::new(),
         }
     }
 
@@ -566,34 +518,6 @@ impl Engine {
     pub fn with_behaviors(mut self, behaviors: BTreeMap<String, Behavior>) -> Self {
         self.behaviors = behaviors;
         self
-    }
-
-    /// The Props this Character declares, by name and art size in pixels.
-    pub fn with_props(mut self, props: BTreeMap<String, (u32, u32)>) -> Self {
-        self.known_props = props;
-        self
-    }
-
-    /// Put a declared Prop down at the sprite's feet, falling. A name the
-    /// Character does not declare is a no-op to the world and a named error
-    /// to the caller.
-    pub fn drop_prop(&mut self, name: &str) -> Result<(), DropPropError> {
-        let size = self
-            .known_props
-            .get(name)
-            .copied()
-            .ok_or_else(|| DropPropError::Unknown {
-                name: name.to_string(),
-            })?;
-        self.dropped.push(Prop {
-            name: name.to_string(),
-            position: self.position,
-            motion: PropMotion::Falling {
-                velocity: Point::default(),
-            },
-            size,
-        });
-        Ok(())
     }
 
     /// How tall this Instance's art stands, in points.
@@ -1208,8 +1132,6 @@ impl Engine {
             self.hold_offset_x = 0.0;
         }
 
-        self.tick_props(snapshot);
-
         Frame {
             position: self.position,
             velocity: self.velocity,
@@ -1233,102 +1155,6 @@ impl Engine {
             addressed,
             cue,
             refused,
-            props: self
-                .dropped
-                .iter()
-                .map(|prop| PropFrame {
-                    name: prop.name.clone(),
-                    position: prop.position,
-                    size: prop.size,
-                })
-                .collect(),
-        }
-    }
-
-    /// Wall contact zeros sideways speed and keeps the fall. Props never Climb.
-    fn tick_props(&mut self, snapshot: &WorldSnapshot) {
-        let dt = f64::from(snapshot.elapsed_ms) / 1000.0;
-        if dt <= 0.0 {
-            return;
-        }
-        for prop in &mut self.dropped {
-            let clearance = f64::from(prop.size.1) * CEILING_VISIBLE_SHARE;
-            prop.motion = match prop.motion {
-                PropMotion::Falling { mut velocity } => {
-                    velocity.y += GRAVITY * dt;
-                    prop.position.x += velocity.x * dt;
-                    if let Some(wall) = wall_reached(prop.position.x, velocity.x, snapshot) {
-                        prop.position.x = wall;
-                        velocity.x = 0.0;
-                    }
-                    let next_y = prop.position.y + velocity.y * dt;
-                    match support_below(prop.position, snapshot, clearance) {
-                        Some(support) if next_y >= support.y => {
-                            prop.position.y = support.y;
-                            Self::land_prop(prop.position, support.surface, snapshot)
-                        }
-                        _ => {
-                            prop.position.y = next_y;
-                            PropMotion::Falling { velocity }
-                        }
-                    }
-                }
-                PropMotion::Resting {
-                    support: PropSupport::Floor,
-                } => PropMotion::Resting {
-                    support: PropSupport::Floor,
-                },
-                PropMotion::Resting {
-                    support:
-                        PropSupport::Perch {
-                            window,
-                            hold_offset_x,
-                        },
-                } => match snapshot.windows.iter().position(|w| w.id == window) {
-                    Some(index)
-                        if is_perch(
-                            index,
-                            snapshot.windows[index].rect.x + hold_offset_x,
-                            snapshot,
-                            clearance,
-                        ) =>
-                    {
-                        let rect = snapshot.windows[index].rect;
-                        prop.position = Point {
-                            x: rect.x + hold_offset_x,
-                            y: rect.y,
-                        };
-                        PropMotion::Resting {
-                            support: PropSupport::Perch {
-                                window,
-                                hold_offset_x,
-                            },
-                        }
-                    }
-                    _ => PropMotion::Falling {
-                        velocity: Point::default(),
-                    },
-                },
-            };
-        }
-    }
-
-    fn land_prop(position: Point, surface: Surface, snapshot: &WorldSnapshot) -> PropMotion {
-        match surface {
-            Surface::Floor => PropMotion::Resting {
-                support: PropSupport::Floor,
-            },
-            Surface::Perch => match perch_at(position, &snapshot.windows) {
-                Some(window) => PropMotion::Resting {
-                    support: PropSupport::Perch {
-                        window: window.id,
-                        hold_offset_x: position.x - window.rect.x,
-                    },
-                },
-                None => PropMotion::Resting {
-                    support: PropSupport::Floor,
-                },
-            },
         }
     }
 
@@ -1871,12 +1697,6 @@ mod tests {
     /// come to rest, and returns the last frame.
     fn settle(engine: &mut Engine, snapshot: &WorldSnapshot) -> Frame {
         (0..40).map(|_| engine.tick(snapshot)).last().unwrap()
-    }
-
-    /// A full-height fall, the wait `dropped_onto` already uses. `settle` is
-    /// forty ticks and is not enough for an 800-point drop from y=0.
-    fn rest_after_fall(engine: &mut Engine, snapshot: &WorldSnapshot) -> Frame {
-        (0..120).map(|_| engine.tick(snapshot)).last().unwrap()
     }
 
     /// Whether a display covers `position` — the invariant #5 and #85
@@ -7245,124 +7065,5 @@ mod tests {
         assert_eq!(refused.playing_primitive, None, "nothing is on screen");
         assert_eq!(refused.state, State::Asleep, "still asleep");
         assert_eq!(refused.position, resting_at, "and has not moved");
-    }
-
-    fn with_football_at(position: Point) -> Engine {
-        Engine::new(position).with_props(BTreeMap::from([("football".to_string(), (2, 2))]))
-    }
-
-    #[test]
-    fn a_dropped_prop_falls_and_lands_on_the_floor() {
-        let mut engine = with_football_at(Point { x: 200.0, y: 0.0 });
-        engine
-            .drop_prop("football")
-            .expect("the Character declared it");
-        let frame = rest_after_fall(&mut engine, &snapshot(16));
-
-        assert_eq!(frame.props.len(), 1);
-        assert_eq!(frame.props[0].name, "football");
-        assert_eq!(
-            frame.props[0].position,
-            Point { x: 200.0, y: 800.0 },
-            "dropped at the sprite's feet and came to rest on the display floor"
-        );
-    }
-
-    #[test]
-    fn a_dropped_prop_lands_on_a_perch_and_rides_it() {
-        let mut engine = with_football_at(Point { x: 200.0, y: 0.0 });
-        engine
-            .drop_prop("football")
-            .expect("the Character declared it");
-        let perch = WorldSnapshot {
-            windows: vec![window(
-                1,
-                Rect {
-                    x: 100.0,
-                    y: 400.0,
-                    width: 300.0,
-                    height: 200.0,
-                },
-            )],
-            ..snapshot(16)
-        };
-        let landed = settle(&mut engine, &perch);
-        assert_eq!(
-            landed.props[0].position.y, 400.0,
-            "on the window's top edge"
-        );
-        assert_eq!(landed.props[0].position.x, 200.0);
-
-        let moved = WorldSnapshot {
-            windows: vec![window(
-                1,
-                Rect {
-                    x: 180.0,
-                    y: 350.0,
-                    width: 300.0,
-                    height: 200.0,
-                },
-            )],
-            ..snapshot(16)
-        };
-        let riding = engine.tick(&moved);
-        assert_eq!(
-            riding.props[0].position,
-            Point { x: 280.0, y: 350.0 },
-            "the hold offset is kept, so the prop slides with the window"
-        );
-    }
-
-    #[test]
-    fn a_prop_on_a_perch_falls_when_that_window_disappears() {
-        let mut engine = with_football_at(Point { x: 200.0, y: 0.0 });
-        engine
-            .drop_prop("football")
-            .expect("the Character declared it");
-        let perch = WorldSnapshot {
-            windows: vec![window(
-                1,
-                Rect {
-                    x: 100.0,
-                    y: 400.0,
-                    width: 300.0,
-                    height: 200.0,
-                },
-            )],
-            ..snapshot(16)
-        };
-        settle(&mut engine, &perch);
-
-        let frame = rest_after_fall(&mut engine, &snapshot(16));
-        assert_eq!(
-            frame.props[0].position,
-            Point { x: 200.0, y: 800.0 },
-            "the window is gone, so the prop falls through to the floor"
-        );
-    }
-
-    #[test]
-    fn a_package_declaring_no_props_emits_none_on_the_frame() {
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
-        let frame = settle(&mut engine, &snapshot(16));
-        assert!(
-            frame.props.is_empty(),
-            "an Engine that was given no Prop names never invents one"
-        );
-    }
-
-    #[test]
-    fn drop_of_an_unknown_prop_is_a_named_error() {
-        let mut engine = Engine::new(Point { x: 100.0, y: 0.0 });
-        assert_eq!(
-            engine.drop_prop("football"),
-            Err(DropPropError::Unknown {
-                name: "football".to_string()
-            })
-        );
-        assert!(
-            engine.tick(&snapshot(16)).props.is_empty(),
-            "a refused drop leaves nothing on the Frame"
-        );
     }
 }
