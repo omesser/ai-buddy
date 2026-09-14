@@ -87,8 +87,36 @@ test("more paths than fit are counted, not listed", () => {
 test("a huge argument payload is bounded and marked", () => {
   const says = askSays({ ...ask, input: { blob: "x".repeat(50_000) } });
 
-  assert.ok(says.length < 800, `${says.length} characters`);
+  assert.ok(says.length <= 600, `${says.length} characters`);
   assert.ok(says.endsWith("…"), says);
+});
+
+// The kind and the paths are drawn after the question, so the budget has to
+// cover them as well: three monorepo paths used to add 380 characters to a row
+// that had already spent all 600 on the question.
+test("the kind and the paths are inside the budget, not after it", () => {
+  const says = askSays({
+    ...ask,
+    title: "Edit some files",
+    kind: "edit",
+    content: ["Q".repeat(1000)],
+    locations: ["/a".repeat(100), "/b".repeat(100), "/c".repeat(100)],
+  });
+
+  assert.ok(says.length <= 600, `${says.length} characters`);
+  assert.ok(says.endsWith("…"), says);
+});
+
+// A chatty server, not a hostile one: the row is back to withholding the
+// question if a long title can spend the whole budget first (#678).
+test("a verbose title cannot crowd out the question", () => {
+  const says = askSays({
+    ...ask,
+    title: "Permission ".repeat(60),
+    content: ["Which branch should I push to?"],
+  });
+
+  assert.ok(says.includes("Which branch should I push to?"), says);
 });
 
 test("more arguments than fit are counted, not listed", () => {
@@ -105,7 +133,7 @@ test("more arguments than fit are counted, not listed", () => {
 test("a long question is bounded at the same budget the row has", () => {
   const says = askSays({ ...ask, content: ["why ".repeat(1000)] });
 
-  assert.ok(says.length < 800, `${says.length} characters`);
+  assert.ok(says.length <= 600, `${says.length} characters`);
   assert.ok(says.endsWith("…"), says);
 });
 

@@ -15,10 +15,13 @@
 
 // How much of an ask the row may draw, in characters.
 //
-// The Chat surface is 420 points tall (chat-ui.css) and `.said` wraps near 55
-// characters, so this is about eleven wrapped lines: enough for a question and
+// The Chat surface is 420 by 560 points (`main.rs`), so `.said` wraps near 55
+// characters and this is about eleven wrapped lines: enough for a question and
 // its arguments, short enough that the answer buttons stay on screen. `input`
 // is arbitrary JSON, so without a bound one ask could push them out of reach.
+//
+// It bounds the whole of what the row says, `about` included: a kind and three
+// 120-character paths otherwise landed after the question had spent the budget.
 const DETAIL_LIMIT = 600;
 
 // How many arguments the row names, and how much of each value.
@@ -87,7 +90,10 @@ function argumentLines(input) {
 }
 
 export function askSays(ask) {
-  const said = [flat(ask?.title ?? "")];
+  // The title is untrusted too, and a verbose one would spend the row's budget
+  // before the question arrived — #678 again, from a merely chatty server
+  // rather than a hostile one.
+  const said = [clamp(flat(ask?.title ?? ""), VALUE_LIMIT)];
   const content = (ask?.content ?? []).map(flat).filter(Boolean);
   // Content first: it is where a question's own words arrive. The arguments
   // are the fallback, and never both — a tool that sends its question as
@@ -107,12 +113,12 @@ export function askSays(ask) {
     .filter(Boolean)
     .join(" · ");
 
-  const body = clamp(said.filter(Boolean).join("\n"), DETAIL_LIMIT);
+  const body = said.filter(Boolean).join("\n");
   // A kind on its own is not an answer to "what am I approving": it names a
   // category, and the whole bug was a row that offered one in place of the
   // question. A path on its own is a fact worth drawing.
   if (body === "" && paths.length === 0) {
     return SILENT;
   }
-  return [body, about].filter(Boolean).join("\n");
+  return clamp([body, about].filter(Boolean).join("\n"), DETAIL_LIMIT);
 }
