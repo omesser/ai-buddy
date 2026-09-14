@@ -1238,9 +1238,9 @@ fn development_sections() -> Vec<FormSection> {
         },
         FormSection {
             heading: "HTTP limits".to_string(),
-            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
+            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Timeout is the Model API hop only: an HTTP request, then Static. Blank is {} seconds, remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
+                "Timeout is the Model API hop only: an HTTP request, then fallback to default behavior. Leave empty for {} seconds (the default), remote or local. A Harness turn is the row under Harness attachment. Reply cap is the HTTP endpoint's alone (reply length); a Harness decides its own reply length. Reasoning effort is the HTTP endpoint's alone too, and is sent verbatim: low, medium and high are what every documented host takes, and anything else typed there is between you and your server.",
                 model::TIMEOUT.as_secs()
             )),
             status: None,
@@ -1252,7 +1252,7 @@ fn development_sections() -> Vec<FormSection> {
                     writes: TextField::DirectorTimeoutSecs,
                     frozen: timeout_frozen,
                     batched: false,
-                    help: Some("Model API hop. Expiry falls back to Static.".to_string()),
+                    help: Some("Model API hop. Expiry falls back to default behavior.".to_string()),
                     disclosure: None,
                     status: timeout_status,
                 },
@@ -1299,9 +1299,9 @@ fn development_sections() -> Vec<FormSection> {
         },
         FormSection {
             heading: "Harness attachment".to_string(),
-            comment: Some("Also for development and testing. Blank uses the default.".to_string()),
+            comment: Some("Also for development and testing. Leave empty for the default.".to_string()),
             disclosure: Some(format!(
-                "Turn timeout: how long a session/prompt may run before session/cancel. Blank is {} seconds. Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).",
+                "Turn timeout: how long a session/prompt may run before session/cancel. Leave empty for {} seconds (the default). Auth retry: how long a Harness that has not signed in is left alone before session/new is tried again. MCP server binary: the stdio MCP server handed to the Harness session. A path that is not a file falls back to the default (beside the app, or this app as its own MCP server).",
                 crate::harness::TURN_TIMEOUT.as_secs()
             )),
             status: None,
@@ -2252,6 +2252,14 @@ mod tests {
             "the disclosure must say which brain this row budgets, got {disclosure:?}"
         );
         assert!(
+            disclosure.contains("Leave empty"),
+            "empty-field copy has to name what the user does, not Blank, got {disclosure:?}"
+        );
+        assert!(
+            disclosure.contains("fallback to default behavior"),
+            "expiry has to be user terms, not Static, got {disclosure:?}"
+        );
+        assert!(
             !disclosure.contains("session/prompt"),
             "a Harness turn is the other row, got {disclosure:?}"
         );
@@ -2291,6 +2299,29 @@ mod tests {
         assert!(
             help.contains("cancel"),
             "the help has to say what expiry does, got {help:?}"
+        );
+
+        let disclosure = dev_tab
+            .sections
+            .iter()
+            .find_map(|section| {
+                if section.rows.iter().any(|row| {
+                    matches!(row, FormRow::TextField { id, .. } if id == HARNESS_TURN_TIMEOUT_SECS_ID)
+                }) {
+                    section.disclosure.clone()
+                } else {
+                    None
+                }
+            })
+            .expect("the Harness section carries disclosure");
+
+        assert!(
+            disclosure.contains("Leave empty"),
+            "empty-field copy has to name what the user does, not Blank, got {disclosure:?}"
+        );
+        assert!(
+            !disclosure.contains("Blank is"),
+            "Settings must not name the empty state Blank, got {disclosure:?}"
         );
     }
 
