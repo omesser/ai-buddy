@@ -62,8 +62,15 @@ repos:
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
     hooks:
+      # `language-formatters-pre-commit-hooks` asks for `toml-sort>=0.22.0` with
+      # no upper bound, and toml-sort in turn floats `tomlkit`. The two disagree
+      # about inline-table spacing — `{version = "1"}` against
+      # `{ version = "1" }` — so an unpinned CI runner reformats files a
+      # developer's cached environment considers already formatted, and the
+      # branch goes red on files it never touched. Pin both. #688.
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
+        additional_dependencies: ["toml-sort==0.24.4", "tomlkit==0.15.1"]
         exclude: ^Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
