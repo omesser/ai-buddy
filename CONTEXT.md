@@ -46,11 +46,14 @@ by the same rule: demeanour only, never capability. ADR-0012.
 _Avoid_: System prompt, custom instructions, jailbreak
 
 **Blank AI**:
-The Director mode that sends no Character Prompt at all: this moment, and not
-one word more — no personality, no voice rules, no Behavior roster and no reply
-contract. Off by default. With no contract the reply is prose, so the buddy
-talks and plays no Behavior while the mode is on: that is the control run for
-telling a model's misbehaviour apart from the prompt's. #657.
+The Director mode that empties the built-in prompt layers — the package
+Personality Prompt and the app-level instructions (voice rules, Behavior roster,
+reply contract) — and still sends an Instance Prompt the user wrote. Off by
+default. The Prompt tab shows those emptied fields as empty: what you see is
+what is sent. With no contract the reply is prose, so the buddy talks and plays
+no Behavior unless the Instance Prompt asks for one. That is the control run
+for telling a model's misbehaviour apart from the shipped prompt, and for
+iterating a prompt under ai-buddy's conditions. #657, #680.
 _Avoid_: Empty personality — that is a Character with an empty file, which
 still gets the voice rules and the contract
 

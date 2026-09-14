@@ -12,7 +12,6 @@
 // ADR-0025 says why it is a strip above the composer instead.
 
 import { composerPlaceholder } from "./chat-placeholder.js";
-import { promptTabFromOpening } from "./chat-prompt-tab.js";
 import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
@@ -392,20 +391,12 @@ function askingToSave(asking) {
 }
 
 function showPrompt(opening) {
-  const view = promptTabFromOpening(opening);
-  document.getElementById("prompt-blank").hidden = view.authored;
-  document.getElementById("prompt-personality").hidden = !view.authored;
-  document.getElementById("prompt-layer-on").hidden = !view.authored;
-  document.getElementById("prompt-layer-off").hidden = view.authored;
-  document.getElementById("prompt-warn-on").hidden = !view.authored;
-  document.getElementById("prompt-warn-off").hidden = view.authored;
-  document.getElementById("personality").textContent = view.authored
-    ? opening.personality || "This Character ships no personality."
-    : "";
+  // The string as sent. Empty under Blank AI because the built-in layer was
+  // emptied, not because the tab hid it (#680).
+  document.getElementById("personality").textContent = opening.personality;
   // Said before it is hit as well as in the refusal after: the Shell owns the
   // number, so the tab reads it rather than restating it.
   document.getElementById("prompt-limit").textContent = opening.prompt_limit;
-  document.getElementById("prompt-limit-blank").textContent = opening.prompt_limit;
   if (promptText.value === savedPrompt) {
     promptText.value = opening.instance_prompt;
   }

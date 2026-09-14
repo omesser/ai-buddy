@@ -8,39 +8,35 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 /// Later wakes send `follow_up` only. The Completer holds the conversation
 /// so the Personality Prompt is not paid for again.
 ///
-/// `blank` is the blank-AI mode of #657: `follow_up(context)` and not one word
-/// more. Not the authored layers, not the voice rules, and not the roster or
-/// the format contract either — those are instruction too, and instruction is
-/// what the mode exists to remove. What is left is the moment, which is the
-/// question, and a model with nothing in front of it.
+/// `blank` empties the built-in layers and still runs this assembly (#657,
+/// #680). The package Personality Prompt and the app-level instructions
+/// (roster, format contract, voice rules) become empty strings. The Instance
+/// Prompt is the user's, so it stays: Blank AI is the control run for the
+/// shipped prompt, not a lock on iterating one.
 ///
-/// The reply is then prose: `parse_proposal` fails, `as_speech` speaks it, and
-/// the buddy talks without playing a Behavior for as long as the mode is on.
-/// That is the measurement, not a gap in it — a fallback or a shorter contract
-/// to keep Behaviors working would put the instruction back under a new name.
+/// Those empty strings take the same seats as the filled ones. The Prompt tab
+/// can only tell the truth if what it shows is what was sent. A missing
+/// Instance Prompt is left out rather than emitted blank, which is what makes
+/// an Instance with no prompt of its own assemble the moment alone.
+///
+/// With no contract the reply is prose: `parse_proposal` fails, `as_speech`
+/// speaks it, and the buddy talks without playing a Behavior for as long as
+/// the built-in instructions stay empty. That is the measurement — a fallback
+/// or a shorter contract to keep Behaviors working would put the instruction
+/// back under a new name.
 pub(crate) fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
     blank: bool,
 ) -> String {
     let moment = follow_up(context);
-    if blank {
-        // Before the roster is even joined: nothing below is sent, so nothing
-        // below is worth building.
-        return moment;
-    }
 
-    let names: Vec<String> = behaviors
-        .into_iter()
-        .map(|name| name.as_ref().to_string())
-        .collect();
-    let declared = if names.is_empty() {
-        "(none)".to_string()
-    } else {
-        names.join(", ")
-    };
-
-    let personality = if context.personality.is_empty() {
+    // Empty, not `(no personality)`: that placeholder is a Character with an
+    // empty file, which still gets the voice rules. Blank AI is the emptied
+    // built-in layer sitting in the same seat.
+    let personality = if blank {
+        ""
+    } else if context.personality.is_empty() {
         "(no personality)"
     } else {
         context.personality.as_str()
@@ -54,33 +50,50 @@ pub(crate) fn character_prompt(
     // always did (ADR-0012).
     let authored = match context.instance_prompt.trim() {
         "" => personality.to_string(),
+        written if personality.is_empty() => written.to_string(),
         written => format!("{personality}\n\n{written}"),
     };
 
-    // The universal voice rules, written once for every Character rather
-    // than copied into personality files to drift (#156). A personality
-    // supplies the material; this paragraph governs the delivery.
-    format!(
-        "{authored}\n\
-         \n\
-         You may propose one of these behaviors: {declared}\n\
-         \n\
-         Reply with the behavior name on the first line.\n\
-         An optional spoken line may follow on the next line.\n\
-         Propose nothing else.\n\
-         \n\
-         Speak in this character's voice, always in character: never mention \
-         being a model or an assistant. A spoken line fits a small speech \
-         bubble: five short sentences at the most. Vary: prefer a line you \
-         have not used yet, though a signature phrase may recur, and \
-         lean away from the behaviors listed as recently played. React to \
-         this moment when there is something worth remarking on: what just \
-         happened to you, and what you are standing on. Dialogue is \
-         demeanour, never capability: never promise an action on the machine \
-         or claim an ability.\n\
-         \n\
-         {moment}"
-    )
+    let instructions = if blank {
+        String::new()
+    } else {
+        let names: Vec<String> = behaviors
+            .into_iter()
+            .map(|name| name.as_ref().to_string())
+            .collect();
+        let declared = if names.is_empty() {
+            "(none)".to_string()
+        } else {
+            names.join(", ")
+        };
+        // The universal voice rules, written once for every Character rather
+        // than copied into personality files to drift (#156). A personality
+        // supplies the material; this paragraph governs the delivery.
+        format!(
+            "You may propose one of these behaviors: {declared}\n\
+             \n\
+             Reply with the behavior name on the first line.\n\
+             An optional spoken line may follow on the next line.\n\
+             Propose nothing else.\n\
+             \n\
+             Speak in this character's voice, always in character: never mention \
+             being a model or an assistant. A spoken line fits a small speech \
+             bubble: five short sentences at the most. Vary: prefer a line you \
+             have not used yet, though a signature phrase may recur, and \
+             lean away from the behaviors listed as recently played. React to \
+             this moment when there is something worth remarking on: what just \
+             happened to you, and what you are standing on. Dialogue is \
+             demeanour, never capability: never promise an action on the machine \
+             or claim an ability."
+        )
+    };
+
+    match (authored.is_empty(), instructions.is_empty()) {
+        (true, true) => moment,
+        (false, true) => format!("{authored}\n\n{moment}"),
+        (true, false) => format!("{instructions}\n\n{moment}"),
+        (false, false) => format!("{authored}\n\n{instructions}\n\n{moment}"),
+    }
 }
 
 /// The one word the prompt uses for each `Happened`.

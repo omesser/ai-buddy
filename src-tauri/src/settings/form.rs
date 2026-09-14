@@ -1221,14 +1221,14 @@ fn development_sections() -> Vec<FormSection> {
         FormSection {
             heading: "Blank AI".to_string(),
             comment: Some("Also for development and testing. Off is the buddy as shipped.".to_string()),
-            disclosure: Some("Blank AI sends the model what just happened and nothing else: no Personality Prompt, no Instance Prompt, no voice rules, no behavior list and no reply contract. It is the control run for \"is this the model or is this our prompt\". Nothing asks for a Behavior name, so the buddy says what comes back and plays no Behavior while this is on. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
+            disclosure: Some("Blank AI empties the built-in Personality Prompt and the app-level instructions (voice rules, behavior list, reply contract). An Instance Prompt you write still goes out, so a control run can iterate a prompt under ai-buddy's conditions. The Prompt tab shows the emptied Personality as empty. Without a contract the buddy says what comes back and plays no Behavior unless that Instance Prompt asks for one. Switching it opens a new session, so no session mixes the two prompts.".to_string()),
             status: None,
             rows: vec![flag_row(
                 DIRECTOR_BLANK_ID,
                 &dev_flags::DIRECTOR_BLANK,
                 BoolField::DirectorBlank,
                 "Blank AI",
-                "What just happened, and nothing else. The buddy talks and plays no Behavior.",
+                "Built-in prompts emptied. An Instance Prompt still goes out.",
             )],
         },
         FormSection {

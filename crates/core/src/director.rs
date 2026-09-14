@@ -153,11 +153,10 @@ pub struct WakeRequest {
     /// Whether the user addressed the buddy, as against a proactive wake.
     /// ADR-0008's wake policy names the two.
     pub reactive: bool,
-    /// Whether this wake is blank-AI mode's: a prompt with no Character in it
-    /// (#657). On the wire rather than read off a switch where the session is
-    /// kept, because it is what this conversation is — a Completer that
-    /// remembers a session must not serve one mode's opening into the other's
-    /// history.
+    /// Whether this wake is blank-AI mode's: built-in layers emptied (#657).
+    /// On the wire rather than read off a switch where the session is kept,
+    /// because it is what this conversation is — a Completer that remembers a
+    /// session must not serve one mode's opening into the other's history.
     pub blank: bool,
 }
 
@@ -287,8 +286,8 @@ pub struct ModelDirector<C> {
     /// The Character Prompt is the opening turn only. After a successful
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
-    /// Blank-AI mode: `follow_up` and nothing else, on the opening turn as
-    /// on every later one (#657).
+    /// Blank-AI mode: built-in layers emptied, Instance Prompt still sent
+    /// (#657, #680).
     ///
     /// Fixed for this Director's life, the way the Endpoint bakes in the
     /// timeout and the reply cap: the mode decides the opening turn, and
@@ -1810,12 +1809,12 @@ mod tests {
         );
     }
 
-    /// #657: the blank-AI opening is the moment and not one word more, and
-    /// the shaped one still carries every layer. Equality rather than a list
-    /// of absences: the regression this mode invites is a line left behind,
-    /// and a `contains` check cannot see one.
+    /// #657 / #680: Blank AI empties the built-in layers — the package
+    /// Personality Prompt and the app-level instructions (roster, contract,
+    /// voice rules) — and still passes an Instance Prompt the user wrote.
+    /// Without one, the opening is the moment alone.
     #[test]
-    fn blank_mode_sends_the_moment_and_nothing_else() {
+    fn blank_mode_empties_built_in_layers_and_keeps_the_instance_prompt() {
         let moment = Context {
             instance_prompt: "Answer in haiku.".to_string(),
             ..context(working(), &["nap"])
@@ -1824,14 +1823,27 @@ mod tests {
         let shaped = character_prompt(&moment, ["wave"], false);
         let blank = character_prompt(&moment, ["wave"], true);
 
-        assert_eq!(
-            blank,
-            follow_up(&moment),
-            "blank is `follow_up` itself: no roster, no contract, no rules"
+        assert!(
+            blank.starts_with("Answer in haiku.\n\nwhat just happened:"),
+            "the Instance Prompt is still in front of the moment: {blank}"
         );
+        assert!(
+            !blank.contains("a shy robot."),
+            "the package Personality Prompt was emptied: {blank}"
+        );
+        for instruction in [
+            "(no personality)",
+            "always in character",
+            "You may propose one of these behaviors: wave",
+            "Reply with the behavior name on the first line.",
+            "Propose nothing else.",
+        ] {
+            assert!(
+                !blank.contains(instruction),
+                "app-level instruction was emptied: {instruction} in {blank}"
+            );
+        }
 
-        // Every sentence of the rules paragraph, not just its first: a later
-        // edit that leaves one of them behind has to fail here.
         for layer in [
             "a shy robot.",
             "Answer in haiku.",
@@ -1847,12 +1859,13 @@ mod tests {
         ] {
             assert!(shaped.contains(layer), "the shaped opening: {shaped}");
         }
-        // The placeholder is a Character with an empty personality file, which
-        // still gets all of the above. Blank mode is not that.
-        assert!(
-            !blank.contains("(no personality)"),
-            "a missing layer is left out, not stood in for: {blank}"
-        );
+    }
+
+    #[test]
+    fn blank_mode_without_an_instance_prompt_is_the_moment() {
+        let moment = context(working(), &["nap"]);
+        let blank = character_prompt(&moment, ["wave"], true);
+        assert_eq!(blank, follow_up(&moment));
     }
 
     /// Each rule the opening turn must carry, and that later wakes do not
