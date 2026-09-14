@@ -606,10 +606,10 @@ pub struct ParseError;
 /// speech exactly as it does today.
 ///
 /// Every other line is dialogue, as it was written and whichever side of the
-/// name it falls. Keeping beats dropping while nothing
-/// tells the two apart: a model that writes `I'll rest now.` above `nap` is
-/// answering, and dropping that line to spare a banner would lose the answer
-/// far more often than it spares one.
+/// name it falls. Keeping beats dropping while nothing tells the two apart: a
+/// model that writes `I'll rest now.` above `nap` is answering, and dropping
+/// that line to spare a banner would lose the answer far more often than it
+/// spares one.
 ///
 /// The cost is named rather than filtered. Pi's banner sits before the name,
 /// so a turn that proposes a Behavior can still speak it — the bubble draws
@@ -637,8 +637,9 @@ pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
     said.extend(inline.filter(|line| !line.is_empty()));
     said.extend_from_slice(&lines[at + 1..]);
 
-    // Blank lines between the model's own are its paragraph breaks; the ones
-    // left either side of the action line are that line's padding.
+    // Blank lines are the model's own paragraph breaks; only the ones at the
+    // ends are dropped, as the contract line's padding. A name cut from the
+    // middle leaves the padding either side of it behind, as one wider gap.
     let dialogue = said
         .iter()
         .position(|line| !line.trim().is_empty())
@@ -1668,6 +1669,14 @@ mod tests {
         assert_eq!(
             proposal.dialogue.as_deref(),
             Some("I'll rest now.\nBack in five.")
+        );
+
+        let padded = parse_proposal("I'll be right back.\n\nnap\n\nSee you soon.")
+            .expect("the name is on line three");
+        assert_eq!(
+            padded.dialogue.as_deref(),
+            Some("I'll be right back.\n\n\nSee you soon."),
+            "padding either side of a name cut from the middle stays, as one wider gap"
         );
     }
 
