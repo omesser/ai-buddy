@@ -675,6 +675,14 @@ pub(crate) fn run_frame_loop(
                                 &director,
                                 config.configured,
                             );
+                            // HTTP gets a new Endpoint from retarget. The
+                            // Harness keys ACP sessions without the Instance
+                            // Prompt, so it has to be told to drop this
+                            // Instance or the next wake continues the old
+                            // transcript (#698, ADR-0012).
+                            if let Some(attached) = harness::attached() {
+                                attached.drop_conversation(&written.instance);
+                            }
                         }
 
                         // Same session replacement a Character switch uses:

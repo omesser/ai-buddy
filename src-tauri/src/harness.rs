@@ -1001,6 +1001,49 @@ impl Session {
             .find_map(|slot| (slot.key() == *key).then_some(slot.session_id))
     }
 
+    /// Forget this Instance's ACP conversations so the next wake is
+    /// `session/new`. Every lane (Character and Blank AI) opened with the
+    /// old Instance Prompt; leaving one would load it back (#698, ADR-0012).
+    ///
+    /// The in-memory ids and the saved slots both go, or a restart would
+    /// `session/load` the transcript that just got torn down. Other
+    /// Instances stay.
+    pub fn drop_conversation(&self, instance: &str) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let keys: Vec<SessionKey> = state
+            .sessions
+            .keys()
+            .filter(|key| key.instance == instance)
+            .cloned()
+            .collect();
+        let dropped: Vec<String> = keys
+            .iter()
+            .filter_map(|key| state.sessions.remove(key).map(|opened| opened.id))
+            .collect();
+        self.forget_saved(instance);
+        self.update_inspect(|inspect| {
+            if inspect
+                .session_id
+                .as_deref()
+                .is_some_and(|id| dropped.iter().any(|dropped| dropped == id))
+            {
+                inspect.session_id = None;
+            }
+        });
+    }
+
+    fn forget_saved(&self, instance: &str) {
+        let Some(mut record) = self.read_saved() else {
+            return;
+        };
+        record.sessions.retain(|slot| slot.instance != instance);
+        if let Ok(text) = serde_json::to_string(&record) {
+            let _ = std::fs::write(self.dir.join(SESSION_FILE), format!("{text}\n"));
+        }
+    }
+
     fn drop_saved(&self, key: &SessionKey) {
         let Some(mut record) = self.read_saved() else {
             return;
@@ -2436,6 +2479,114 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
                 .unwrap();
         assert_eq!(saved.sessions.len(), 2, "{:?}", saved.sessions);
+    }
+
+    /// #698 / ADR-0012: an Instance Prompt change cannot retrofit the opening
+    /// turn, so the next wake must be `session/new`, not a turn on the old id.
+    #[test]
+    fn dropping_a_conversation_opens_a_new_acp_session() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        session.drop_conversation("buddy-1");
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 2, "{prompts:?}");
+        assert_ne!(
+            prompts[0]["session_id"], prompts[1]["session_id"],
+            "the new Character Prompt continued the old ACP session: {prompts:?}"
+        );
+        assert_eq!(fx.count("new"), 2, "session/new was not asked again");
+        let saved: SavedSession =
+            serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(saved.sessions.len(), 1, "{:?}", saved.sessions);
+        assert_eq!(saved.sessions[0].session_id, "fresh-id-2");
+    }
+
+    /// #698: the Instance Prompt is in every lane, so dropping the Instance
+    /// must forget Blank AI as well as the shaped conversation.
+    #[test]
+    fn dropping_an_instance_forgets_every_lane() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        let blank = WakeRequest {
+            blank: true,
+            ..asking("hi")
+        };
+        assert_eq!(session.complete(&blank), Ok(Reply::whole("Hello")));
+        session.drop_conversation("buddy-1");
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(session.complete(&blank), Ok(Reply::whole("Hello")));
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 4, "{prompts:?}");
+        assert_ne!(
+            prompts[0]["session_id"], prompts[2]["session_id"],
+            "the shaped lane continued: {prompts:?}"
+        );
+        assert_ne!(
+            prompts[1]["session_id"], prompts[3]["session_id"],
+            "the blank lane continued: {prompts:?}"
+        );
+        assert_eq!(fx.count("new"), 4);
+    }
+
+    /// #698: a restart must not `session/load` the id that save just tore down.
+    #[test]
+    fn dropping_a_conversation_forgets_the_saved_id() {
+        let (fx, session) = Fixture::new("load");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"},{"instance":"buddy-2","character":"bmo","session_id":"id-b"}]}"#,
+        )
+        .unwrap();
+        session.drop_conversation("buddy-1");
+        assert_eq!(session.complete(&asking("hi")), Ok(Reply::whole("Hello")));
+        assert_eq!(fx.count("load"), 0, "the dropped id was loaded back");
+        assert_eq!(fx.count("new"), 1);
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "again")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(fx.count("load"), 1, "the other Instance was dropped too");
+        session.shutdown();
+    }
+
+    /// #698: dropping one Instance's conversation must not mint a new session
+    /// for another Instance that still holds its opening turn.
+    #[test]
+    fn dropping_one_instance_leaves_the_other_conversation() {
+        let (fx, session) = Fixture::new("happy");
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "a")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "b")),
+            Ok(Reply::whole("Hello"))
+        );
+        session.drop_conversation("buddy-1");
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "c")),
+            Ok(Reply::whole("Hello"))
+        );
+        session.shutdown();
+
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 3, "{prompts:?}");
+        assert_eq!(
+            prompts[1]["session_id"], prompts[2]["session_id"],
+            "Instance B was reopened when Instance A saved: {prompts:?}"
+        );
     }
 
     /// #657: blank-AI mode is a different conversation, not a different turn
