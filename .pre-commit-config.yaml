@@ -24,12 +24,9 @@ repos:
     # generated or upstream files except `UPSTREAM.json`, which is ours to read
     # and benefits from `check-json`.
     #
-    # `&vendored` is the single definition of that file set. Every hook that
-    # skips it aliases this value instead of restating the pattern, so the
-    # lookahead is edited in one place. Generated and binary paths
-    # (`Cargo.lock`, `.png`, `.b64`, `branding/_b64/parts/`) ride along in the
-    # same value: nothing worth linting lives in them, and folding them in is
-    # what lets one alias serve every call site.
+    # The anchor covers the generated and binary paths too — `Cargo.lock`,
+    # `.png`, `.b64`, `branding/_b64/parts/` — so one value serves all six
+    # sites that skip this set. None of them holds anything worth linting.
       - id: end-of-file-fixer
         exclude: &vendored ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: trailing-whitespace
@@ -47,12 +44,12 @@ repos:
         args: [--fix=lf]
         exclude: *vendored
 
-  # Security. Its own repo block, at the same `rev`, so these hooks sit outside
-  # the reach of the exclude above — structurally, not by a comment asking the
-  # next editor not to add one. They scan everything, vendored tree included:
-  # third-party content refreshed by a bot is exactly what a secret scanner is
-  # for. A second entry for the same repo and rev reuses the cached hook
-  # environment rather than installing a copy.
+  # The hooks that must see every file, in their own repo block at the same
+  # `rev` so no `exclude:` can reach them — structural, rather than a comment
+  # asking the next editor not to add one. Third-party content refreshed by a
+  # bot is exactly what a secret scanner is for, and an oversized file is worth
+  # catching wherever it lands. Same repo and rev, so pre-commit reuses the one
+  # cached environment rather than installing a second copy.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
