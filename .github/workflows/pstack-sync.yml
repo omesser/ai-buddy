@@ -84,7 +84,15 @@ jobs:
           # so neither `HEAD~1` nor a merge base is available afterwards.
           git diff --cached --stat | tail -40 > /tmp/pstack-diffstat.txt
           git commit -m "chore(pstack): Sync vendored skills to ${after:0:12}"
-          git push --force origin "HEAD:$BRANCH"
+          # `--force-with-lease` rather than `--force`: the sync branch is
+          # shared, and a concurrent push should lose this race rather than be
+          # silently clobbered. The lease needs an explicit expectation because
+          # the checkout is shallow and carries no remote-tracking ref for the
+          # branch. An empty one means "expect it not to exist", which is the
+          # first run.
+          lease=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          git push --force-with-lease="refs/heads/$BRANCH:$lease" \
+            origin "HEAD:$BRANCH"
         env:
           BRANCH: chore/pstack-sync
 
@@ -110,7 +118,9 @@ jobs:
             echo
             echo '## How to verify'
             echo
-            echo '`node --test tests/*.test.js`. It already ran green on this branch before the pull request opened.'
+            echo '`node --test tests/skills-layout.test.js` ran green on this branch before this pull request opened. That is the only check this job runs.'
+            echo
+            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `PR Tests`, so nothing else has run. Run `node --test tests/` and `pre-commit run --all-files` before approving.'
             echo
             echo 'Read `docs/agents/pstack.md` before approving a change to a playbook this repository overrules.'
           } > /tmp/pstack-pr.md
@@ -119,11 +129,13 @@ jobs:
           if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
             gh pr edit "$BRANCH" --title "$title" --body-file /tmp/pstack-pr.md
           else
-            # `needs-triage` from docs/agents/triage-labels.md: a human decides
-            # what this is. No auto-merge is armed, here or anywhere.
+            # No label. Every string in docs/agents/triage-labels.md is an
+            # issue triage role — `needs-triage` reads "maintainer needs to
+            # evaluate this issue" — and this is a pull request. It already
+            # arrives needing review, which is what the architect gate is for.
+            # No auto-merge is armed, here or anywhere.
             gh pr create --base "$GITHUB_BASE" --head "$BRANCH" \
-              --title "$title" --body-file /tmp/pstack-pr.md \
-              --label needs-triage
+              --title "$title" --body-file /tmp/pstack-pr.md
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
