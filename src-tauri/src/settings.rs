@@ -3518,7 +3518,7 @@ mod tests {
         };
         let line = harness_state(Some(&unauthenticated));
         assert!(line.contains("not authenticated"), "got {line:?}");
-        assert!(line.contains("claude /login"), "got {line:?}");
+        assert!(line.contains("`claude /login`"), "got {line:?}");
         assert!(
             !line.to_lowercase().contains("api key") && !line.to_lowercase().contains("password"),
             "ADR-0010: no credential is ever asked for, got {line:?}"

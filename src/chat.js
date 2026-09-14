@@ -315,21 +315,24 @@ function attached(opening) {
   return ready;
 }
 
-// Connect button clicks: spawn the login command for that Harness.
-// The Harness authenticates itself; ai-buddy never collects a credential.
+// Connect button clicks: make that Harness the Completer source and say how
+// to sign it in. The click never starts the sign-in — the Harness
+// authenticates itself, in a terminal of the user's own, and ai-buddy holds no
+// credential. #654.
 for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
     const label = btn.querySelector(".connect-label").textContent;
 
-    // First, select the Harness as the Completer source (persists to Settings)
+    // Nothing is repainted here: the pick goes through `SettingsSession::apply`,
+    // whose `ReloadChat` pushes a full opening to the `chat-opening` listener
+    // below (#473). A second read from this side would race that push and paint
+    // less of the window than it does.
     invoke("select_harness", { harness })
-      .then(() => {
-        // Then spawn the login command
-        return invoke("harness_login", { harness });
-      })
-      .then(() => {
-        note(`Starting ${label} login. Sign in through the ${label} window.`);
+      .then((login) => {
+        note(
+          `${label} is the AI brain now. Run \`${login}\` in a terminal to sign in — ai-buddy never asks for it.`,
+        );
       })
       .catch((why) => {
         console.error(`connect failed:`, why);

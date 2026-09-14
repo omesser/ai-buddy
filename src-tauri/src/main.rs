@@ -611,18 +611,14 @@ fn character(art: tauri::State<'_, ArtUrls>) -> ArtUrls {
     art.inner().clone()
 }
 
-/// Open the Settings window.
+/// The Settings window's own handle on the running app.
 ///
-/// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
-/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
-/// this is opened on the toolkit main thread where the native objects live.
-#[tauri::command]
-fn show_settings(app: tauri::AppHandle) {
-    let Some(state) = app.try_state::<SettingsState>() else {
-        eprintln!("settings: opened before the shell was ready");
-        return;
-    };
-    let session = SettingsSession {
+/// Not the window's alone: `SettingsSession::apply` is the one path that
+/// persists a setting *and* acts on it — the Harness retarget, the Director
+/// rebuild, the opening pushed to every open Chat surface. A command that
+/// writes Settings from anywhere else takes this rather than the file (#654).
+fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSession {
+    SettingsSession {
         settings: Arc::clone(&state.settings),
         path: state.path.clone(),
         memory_path: state.memory_path.clone(),
@@ -635,7 +631,21 @@ fn show_settings(app: tauri::AppHandle) {
         on_rebind: bind_hide_hotkey,
         secrets: Arc::clone(&state.secrets),
         key_cache: Mutex::new(None),
+    }
+}
+
+/// Open the Settings window.
+///
+/// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
+/// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
+/// this is opened on the toolkit main thread where the native objects live.
+#[tauri::command]
+fn show_settings(app: tauri::AppHandle) {
+    let Some(state) = app.try_state::<SettingsState>() else {
+        eprintln!("settings: opened before the shell was ready");
+        return;
     };
+    let session = settings_session(&app, &state);
 
     // On Linux, if the MainContext is already owned (menu/tray callback runs
     // on the GTK main thread), use idle_add_local_once to defer window creation
@@ -1266,64 +1276,29 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
-/// Select a Harness as the Completer source, persisting to Settings.
+/// Connect a named Harness from Chat, answering with the command that signs
+/// it in.
 ///
-/// This configures the product to use the named Harness (claude, codex, grok,
-/// hermes, opencode) as the Completer. The Harness is then attached and will
-/// authenticate through its own flow. This is step 1 of connecting from the
-/// Chat UI; step 2 is calling `harness_login` to spawn the auth command.
+/// Through `SettingsSession::apply` rather than the file, because the pick has
+/// to move the attachment now rather than at the next launch (#500) and the
+/// `ReloadChat` that apply sends is what carries the new state back to the
+/// window that asked (#473).
+///
+/// The answer is a line to read, not a process to run: ai-buddy never spawns
+/// the login. `harness::login_hint` owns that constraint and why. #654.
 #[tauri::command]
-fn select_harness(harness: String, state: tauri::State<'_, SettingsState>) -> Result<(), String> {
-    // Validate that this is a known preset
+fn select_harness(
+    harness: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SettingsState>,
+) -> Result<String, String> {
     if !["claude", "codex", "grok", "hermes", "opencode", "pi"].contains(&harness.as_str()) {
         return Err(format!("unknown Harness preset: {harness}"));
     }
-
-    let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
     let mut patch = settings::SettingsPatch::default();
     patch.set_text(settings::TextField::Harness, &harness);
-
-    settings.apply(patch);
-    settings.save(&state.path).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Spawn the login command for a named Harness, detached.
-///
-/// The command runs in the user's own terminal or spawns its own auth flow —
-/// ai-buddy never collects a credential (ADR-0010). Returns `Err` when the
-/// Harness name is unknown or the spawn fails.
-#[tauri::command]
-fn harness_login(harness: String) -> Result<(), String> {
-    let command = match harness.as_str() {
-        "claude" => vec!["claude", "/login"],
-        "codex" => vec!["codex", "login"],
-        "grok" => vec!["grok", "login"],
-        "hermes" => vec!["hermes", "login"],
-        "opencode" => vec!["opencode", "login"],
-        "pi" => vec!["npx", "-y", "pi-acp@latest", "--terminal-login"],
-        _ => return Err(format!("unknown Harness: {harness}")),
-    };
-
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new(command[0])
-            .args(&command[1..])
-            .spawn()
-            .map_err(|why| format!("could not start {}: {why}", command[0]))?;
-    }
-
-    #[cfg(windows)]
-    {
-        // On Windows, spawn in a new console so the user sees the auth flow
-        std::process::Command::new("cmd")
-            .args(["/c", "start", command[0]])
-            .args(&command[1..])
-            .spawn()
-            .map_err(|why| format!("could not start {}: {why}", command[0]))?;
-    }
-
-    Ok(())
+    settings_session(&app, &state).apply(patch)?;
+    Ok(harness::login_hint(&harness))
 }
 
 /// Push a full opening to an already-open Chat surface, without creating one.
@@ -2461,7 +2436,6 @@ fn main() {
             chat_ready,
             permission_answer,
             select_harness,
-            harness_login,
             show_settings
         ])
         .setup(|app| {
