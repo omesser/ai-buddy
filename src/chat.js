@@ -11,6 +11,7 @@
 // thinking is the one thing drawn here that is not a line of the log, and
 // ADR-0025 says why it is a strip above the composer instead.
 
+import { askSays } from "./chat-ask.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
 import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
@@ -205,7 +206,9 @@ function asked(ask) {
   const label = el("who-label");
   label.textContent = `${them} · asks`;
   const body = el("said");
-  body.textContent = ask.kind ? `${ask.kind}: ${ask.title}` : ask.title;
+  // Every word of this is untrusted and arrives as text, never as markup
+  // (#678). `chat-ask.js` decides what an ask says and how much of it.
+  body.textContent = askSays(ask);
   const buttons = el("options");
   for (const option of ask.options) {
     const button = el("", "button");

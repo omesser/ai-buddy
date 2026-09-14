@@ -23,7 +23,7 @@ use agent_client_protocol::schema::v1::{
     Implementation, InitializeRequest, LoadSessionRequest, McpServer, McpServerHttp,
     McpServerStdio, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
-    SessionNotification, SessionUpdate, StopReason, TextContent,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectionTo, Responder};
@@ -84,12 +84,27 @@ pub struct AuthHint {
 }
 
 /// A forwarded `session/request_permission`, as the Chat surface draws it.
+///
+/// Everything but `request` and `options` is untrusted: a Harness fills it in
+/// from a tool call an MCP server can steer. `chat-ask.js` decides which of it
+/// the consent row shows, and writes all of it as text (#678).
 #[derive(Clone, Debug, Serialize)]
 pub struct PermissionAsk {
     /// The request id, as text, handed back with the answer.
     pub request: String,
-    pub title: String,
+    /// The tool call's title, absent when it had none. Not a placeholder: the
+    /// surface has to tell an ask that described itself badly from one this
+    /// file emptied out, and `(untitled)` read as the second (#678).
+    pub title: Option<String>,
     pub kind: Option<String>,
+    /// The tool call's `content`, as the text of it. Where a question from an
+    /// MCP server arrives, and so the first thing the row has to show.
+    pub content: Vec<String>,
+    /// The arguments the call was made with: ACP's `rawInput`, arbitrary JSON.
+    /// What the row falls back to when a call carried no content.
+    pub input: Option<serde_json::Value>,
+    /// Every path the call says it would touch, `content` diffs included.
+    pub locations: Vec<String>,
     pub options: Vec<PermissionOption>,
 }
 
@@ -679,7 +694,7 @@ async fn turn(
                     note_update(update, &mut said, &mut thought, on_event)
                 }
                 Some(Incoming::Ask(request, responder)) => {
-                    let ask = permission_ask(&request, &responder);
+                    let ask = permission_ask(&request, responder.id().to_string());
                     asks.push((ask.request.clone(), responder));
                     on_event(Event::Permission(ask));
                 }
@@ -748,19 +763,51 @@ async fn turn(
     }
 }
 
-fn permission_ask(
-    request: &RequestPermissionRequest,
-    responder: &Responder<RequestPermissionResponse>,
-) -> PermissionAsk {
+/// Every field of the tool call a consent row could read out, forwarded as
+/// plain values. Which of them the row leads with is `chat-ask.js`'s call; the
+/// only judgement here is that a diff is a path and an image is nothing.
+///
+/// The `name` `ToolCallUpdateFields` also carries is not here: the SDK gates
+/// it behind its `unstable_tool_call_name` feature, which this crate does not
+/// enable, so the field does not exist on the type we compile against.
+fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionAsk {
+    let fields = &request.tool_call.fields;
+    let mut locations: Vec<String> = fields
+        .locations
+        .iter()
+        .flatten()
+        .map(|at| at.path.display().to_string())
+        .collect();
+    let mut content = Vec::new();
+    for piece in fields.content.iter().flatten() {
+        match piece {
+            ToolCallContent::Content(block) => {
+                if let ContentBlock::Text(text) = &block.content {
+                    content.push(text.text.clone());
+                }
+            }
+            // A diff is a file the call would rewrite, and the path is the
+            // part of that a consent row can use — its text is a whole new
+            // file. The same path can arrive both ways and is still one path.
+            ToolCallContent::Diff(diff) => {
+                let path = diff.path.display().to_string();
+                if !locations.contains(&path) {
+                    locations.push(path);
+                }
+            }
+            // An image, an embedded resource, a terminal to watch: nothing a
+            // text surface can read out, and `input` still says what was
+            // asked. Drawing a placeholder for them would only crowd it out.
+            _ => {}
+        }
+    }
     PermissionAsk {
-        request: responder.id().to_string(),
-        title: request
-            .tool_call
-            .fields
-            .title
-            .clone()
-            .unwrap_or_else(|| "(untitled)".to_string()),
-        kind: request.tool_call.fields.kind.as_ref().map(name_of),
+        request: id,
+        title: fields.title.clone(),
+        kind: fields.kind.as_ref().map(name_of),
+        content,
+        input: fields.raw_input.clone(),
+        locations,
         options: request
             .options
             .iter()
@@ -1153,6 +1200,93 @@ mod tests {
     fn a_thought_with_no_words_raises_nothing() {
         let (_, events) = drive(vec![thinking("   \n")]);
         assert!(events.is_empty(), "{events:?}");
+    }
+
+    /// One `session/request_permission`, deserialized rather than built, so
+    /// the test reads the same wire shape the SDK hands this file.
+    fn asked_for(tool_call: serde_json::Value) -> PermissionAsk {
+        let request: RequestPermissionRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "s1",
+            "toolCall": tool_call,
+            "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
+        }))
+        .expect("a permission request");
+        permission_ask(&request, "7".to_string())
+    }
+
+    /// #678: the question, the arguments and the paths used to be dropped here
+    /// and the surface was left with a kind and a title. Nothing downstream
+    /// can draw what this file does not forward.
+    #[test]
+    fn an_ask_forwards_the_question_the_arguments_and_the_paths() {
+        let ask = asked_for(serde_json::json!({
+            "toolCallId": "t1",
+            "title": "Question from MCP server",
+            "kind": "other",
+            "content": [{"type": "content", "content": {"type": "text", "text": "Which branch?"}}],
+            "rawInput": {"question": "Which branch?"},
+            "locations": [{"path": "/Users/oded/src/main.rs"}],
+        }));
+
+        assert_eq!(ask.request, "7");
+        assert_eq!(ask.title.as_deref(), Some("Question from MCP server"));
+        assert_eq!(ask.kind.as_deref(), Some("other"));
+        assert_eq!(ask.content, ["Which branch?"]);
+        assert_eq!(
+            ask.input,
+            Some(serde_json::json!({"question": "Which branch?"}))
+        );
+        assert_eq!(ask.locations, ["/Users/oded/src/main.rs"]);
+        assert_eq!(ask.options.len(), 1);
+    }
+
+    /// A diff is a file the call would rewrite, which is the path it touches.
+    /// Its text is a whole new file and has no business on a 420 point
+    /// surface, and the same path arriving both ways is still one path.
+    #[test]
+    fn a_diff_forwards_as_the_path_it_would_rewrite() {
+        let ask = asked_for(serde_json::json!({
+            "toolCallId": "t1",
+            "kind": "edit",
+            "content": [
+                {"type": "diff", "path": "/tmp/a.rs", "newText": "fn main() {}"},
+                {"type": "diff", "path": "/tmp/b.rs", "newText": "fn other() {}"},
+            ],
+            "locations": [{"path": "/tmp/a.rs"}],
+        }));
+
+        assert!(ask.content.is_empty(), "{:?}", ask.content);
+        assert_eq!(ask.locations, ["/tmp/a.rs", "/tmp/b.rs"]);
+    }
+
+    /// Content this row cannot read out is not content. An image says nothing
+    /// on a text surface, and the arguments still say what was asked.
+    #[test]
+    fn content_with_no_words_leaves_the_arguments_to_say_it() {
+        let ask = asked_for(serde_json::json!({
+            "toolCallId": "t1",
+            "content": [{
+                "type": "content",
+                "content": {"type": "image", "data": "AAAA", "mimeType": "image/png"},
+            }],
+            "rawInput": {"path": "/tmp/a.png"},
+        }));
+
+        assert!(ask.content.is_empty(), "{:?}", ask.content);
+        assert_eq!(ask.input, Some(serde_json::json!({"path": "/tmp/a.png"})));
+    }
+
+    /// A missing title is missing, not `(untitled)`: the surface has to tell
+    /// an ask that said nothing from one this file emptied out (#678).
+    #[test]
+    fn a_titleless_ask_forwards_no_title_rather_than_a_placeholder() {
+        let ask = asked_for(serde_json::json!({"toolCallId": "t1"}));
+
+        assert_eq!(ask.title, None);
+        assert_eq!(ask.kind, None);
+        assert!(ask.content.is_empty());
+        assert_eq!(ask.input, None);
+        assert!(ask.locations.is_empty());
     }
 }
 

@@ -941,13 +941,13 @@ fn forward_ask(app: &tauri::AppHandle, ask: harness::PermissionAsk) {
     if on_screen {
         eprintln!(
             "harness: permission asked for `{}`; answer it in the Chat window",
-            ask.title
+            ask.title.as_deref().unwrap_or("—")
         );
         return;
     }
     eprintln!(
         "harness: permission asked for `{}`; no Chat surface is on screen",
-        ask.title
+        ask.title.as_deref().unwrap_or("—")
     );
     // Do Not Disturb wins even over a question with a deadline: it is a promise
     // that the app takes no attention until it is switched off, and opening
