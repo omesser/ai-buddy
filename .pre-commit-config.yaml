@@ -24,11 +24,15 @@ repos:
     # generated or upstream files except `UPSTREAM.json`, which is ours to read
     # and benefits from `check-json`.
     #
+    # `src/vendor/marked.esm.js` is byte-for-byte what npm published, which is
+    # the only thing that makes its pinned hash checkable. A fixer that rewrites
+    # one line takes that away.
+    #
     # The anchor covers the generated and binary paths too — `Cargo.lock`,
     # `.png`, `.b64`, `branding/_b64/parts/` — so one value serves all six
     # sites that skip this set. None of them holds anything worth linting.
       - id: end-of-file-fixer
-        exclude: &vendored ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
+        exclude: &vendored ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored

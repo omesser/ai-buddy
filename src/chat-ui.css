@@ -404,6 +404,147 @@ body {
   }
 }
 
+/* Markdown in a reply (issue 677). The nodes come from src/markdown.js, which
+   builds them rather than writing HTML, so nothing here can be reached by a
+   reply's text.
+
+   `pre-wrap` comes back off: the blocks carry the structure now, and a soft
+   line break inside a Markdown paragraph is a space, which pre-wrap would
+   draw as a break. */
+.said.md {
+  white-space: normal;
+}
+
+/* The row's own padding is the margin above the first block and below the
+   last; between them, half a line. */
+.said.md > :first-child {
+  margin-block-start: 0;
+}
+
+.said.md > :last-child {
+  margin-block-end: 0;
+}
+
+.said.md p,
+.said.md ul,
+.said.md ol,
+.said.md blockquote,
+.said.md .md-wide {
+  margin-block: 0.5em;
+}
+
+/* A heading in a reply is a line in a chat row, not a document outline, so the
+   scale is flat on purpose: weight and a little size separate the levels and
+   an h1 does not shout across a 420-point window. */
+.said.md h1,
+.said.md h2,
+.said.md h3,
+.said.md h4,
+.said.md h5,
+.said.md h6 {
+  margin-block: 0.7em 0.3em;
+  font-size: 1em;
+  font-weight: 650;
+}
+
+.said.md h1,
+.said.md h2 {
+  font-size: 1.1em;
+}
+
+.said.md ul,
+.said.md ol {
+  padding-inline-start: 1.4em;
+}
+
+.said.md li {
+  margin-block: 0.15em;
+}
+
+.said.md li input {
+  margin-inline-end: 0.35em;
+  accent-color: var(--chat-accent);
+}
+
+.said.md blockquote {
+  margin-inline: 0;
+  padding-inline-start: 0.8em;
+  border-inline-start: 2px solid var(--chat-line);
+  color: var(--chat-ink-2);
+}
+
+.said.md hr {
+  border: 0;
+  border-block-start: 1px solid var(--chat-rule);
+}
+
+.said.md code {
+  padding: 0.05em 0.3em;
+  border-radius: var(--chat-radius-badge);
+  background: var(--chat-fill-soft);
+  font-family: var(--chat-mono);
+  font-size: 0.9em;
+}
+
+/* A fence and a table are the two blocks that do not reflow. The window opens
+   420 points wide, so the overflow scrolls inside the row rather than pushing
+   it sideways — and `anywhere`, inherited from .said, comes off so a line of
+   code is not broken mid-token to fit. */
+.said.md .md-wide {
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+
+.said.md pre {
+  margin: 0;
+  padding: 0.6em 0.75em;
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill-dim);
+}
+
+.said.md pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.88em;
+}
+
+.said.md table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.said.md th,
+.said.md td {
+  padding: 0.25em 0.55em;
+  border: 1px solid var(--chat-rule);
+  text-align: start;
+}
+
+.said.md th {
+  background: var(--chat-fill-dim);
+  font-weight: 650;
+}
+
+/* No rule for md-left: `start` on the cell above is already it. */
+.said.md .md-center {
+  text-align: center;
+}
+
+.said.md .md-right {
+  text-align: end;
+}
+
+/* Styled as a link and not wired as one. Nothing opens it yet: the app has no
+   opener plugin, and a real href would take this webview itself to the page.
+   The target rides in `data-href` for the Tauri command that will hand it to
+   the OS, and src/markdown.js only ever writes an http, https or mailto one
+   there. Not a pointer cursor, because nothing happens on the click. */
+.said.md .md-link {
+  color: var(--chat-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Not a turn, and deliberately not dressed as one: the Shell saying what
    became of a line, where a log that simply stops reads as one still
    waiting. */

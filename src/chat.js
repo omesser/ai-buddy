@@ -17,6 +17,7 @@ import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
+import { appendReply, drawReply } from "./markdown.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -111,8 +112,14 @@ function said(who, text, cls, at) {
   const label = el("who-label");
   label.textContent = who;
   cluster.append(label, when(at));
-  const body = el("said");
-  body.textContent = text;
+  // Only what answered gets its Markdown drawn (#677). The user's own turn
+  // stays the characters they typed: they wrote punctuation, not a document.
+  const body = el(cls === "them" ? "said md" : "said");
+  if (cls === "them") {
+    drawReply(body, text);
+  } else {
+    body.textContent = text;
+  }
   row.append(cluster, body);
   return add(row);
 }
@@ -129,12 +136,8 @@ function opening_answer() {
   return row;
 }
 
-// Inserted before the caret rather than assigned over the line so far: the
-// caret is a child of the same element, and writing textContent would take it
-// out on the first chunk.
 function arrived(row, text) {
-  const body = row.querySelector(".said");
-  body.insertBefore(document.createTextNode(text), body.querySelector(".caret"));
+  appendReply(row.querySelector(".said"), text);
   log.scrollTop = log.scrollHeight;
 }
 
