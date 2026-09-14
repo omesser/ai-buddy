@@ -605,11 +605,11 @@ pub struct ParseError;
 /// that one word does, and a word no Character declared falls through to
 /// speech exactly as it does today.
 ///
-/// Every other non-empty line is dialogue, in the order it was written and
-/// whichever side of the name it falls. Keeping beats dropping while nothing
-/// tells the two apart: a model that writes `I'll rest now.` above `nap` is
-/// answering, and dropping that line to spare a banner would lose the answer
-/// far more often than it spares one.
+/// Every other line is dialogue, as it was written and whichever side of the
+/// name it falls. Keeping beats dropping while nothing tells the two apart: a
+/// model that writes `I'll rest now.` above `nap` is answering, and dropping
+/// that line to spare a banner would lose the answer far more often than it
+/// spares one.
 ///
 /// The cost is named rather than filtered. Pi's banner sits before the name,
 /// so a turn that proposes a Behavior can still speak it — the bubble draws
@@ -620,25 +620,40 @@ pub struct ParseError;
 /// Public for `harness probe`, which reports whether a live session obeys the
 /// one-line format. The rest of the model path is crate-private.
 pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
-    let lines: Vec<&str> = reply
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
+    let lines: Vec<&str> = reply.lines().collect();
+    // Trimmed only to test the line against the contract. The name has to be
+    // the whole line, so a line indented or padded still names a Behavior.
     let (at, (name, inline)) = lines
         .iter()
         .enumerate()
-        .find_map(|(at, line)| contract_line(line).map(|found| (at, found)))
+        .find_map(|(at, line)| contract_line(line.trim()).map(|found| (at, found)))
         .ok_or(ParseError)?;
 
-    // Everything that is not the action line, in the order it was written.
+    // Everything that is not the action line, as it was written (#701). The
+    // lines are normalised to find the name, never to rebuild the speech:
+    // trimming and joining them cost every consumer its paragraphs, blank
+    // lines and indentation to spare the bubble, which clamps its own.
     let mut said: Vec<&str> = lines[..at].to_vec();
     said.extend(inline.filter(|line| !line.is_empty()));
     said.extend_from_slice(&lines[at + 1..]);
 
+    // Blank lines are the model's own paragraph breaks; only the ones at the
+    // ends are dropped, as the contract line's padding. A name cut from the
+    // middle leaves the padding either side of it behind, as one wider gap.
+    let dialogue = said
+        .iter()
+        .position(|line| !line.trim().is_empty())
+        .map(|first| {
+            let last = said
+                .iter()
+                .rposition(|line| !line.trim().is_empty())
+                .unwrap_or(first);
+            said[first..=last].join("\n")
+        });
+
     Ok(BehaviorProposal {
         behavior: name.to_string(),
-        dialogue: (!said.is_empty()).then(|| said.join(" ")),
+        dialogue,
     })
 }
 
@@ -1621,6 +1636,59 @@ mod tests {
 
         assert_eq!(proposal.behavior, "nap");
         assert_eq!(proposal.dialogue.as_deref(), Some("I'll rest now."));
+    }
+
+    /// #701: the parser normalises lines to find the name, and used to
+    /// rebuild the speech from those same normalised lines. That flattened
+    /// every reply that obeyed the contract — a bubble's six-line ceiling
+    /// applied in a parser that has no idea a bubble exists.
+    ///
+    /// Production change that would fail this: rebuilding the dialogue from
+    /// the trimmed, blank-stripped list again instead of from `reply.lines()`.
+    #[test]
+    fn a_reply_keeps_its_own_line_structure() {
+        let reply = "wave\nHere's what I found:\n\n  - the roster loads\n  - the session resumed";
+        let proposal = parse_proposal(reply).expect("the name is on line one");
+
+        assert_eq!(proposal.behavior, "wave");
+        assert_eq!(
+            proposal.dialogue.as_deref(),
+            Some("Here's what I found:\n\n  - the roster loads\n  - the session resumed"),
+            "the blank line, the indentation and the newlines all survive"
+        );
+    }
+
+    /// The name is cut out and the lines either side close over the gap, so a
+    /// model that wrote above and below the name keeps both halves apart.
+    #[test]
+    fn the_contract_line_is_cut_from_the_middle() {
+        let proposal =
+            parse_proposal("I'll rest now.\nnap\nBack in five.").expect("the name is on line two");
+
+        assert_eq!(proposal.behavior, "nap");
+        assert_eq!(
+            proposal.dialogue.as_deref(),
+            Some("I'll rest now.\nBack in five.")
+        );
+
+        let padded = parse_proposal("I'll be right back.\n\nnap\n\nSee you soon.")
+            .expect("the name is on line three");
+        assert_eq!(
+            padded.dialogue.as_deref(),
+            Some("I'll be right back.\n\n\nSee you soon."),
+            "padding either side of a name cut from the middle stays, as one wider gap"
+        );
+    }
+
+    /// Blank lines are the model's own paragraph breaks in the middle and the
+    /// contract line's padding at the ends, so only the inner ones are kept.
+    #[test]
+    fn blank_lines_at_the_ends_are_padding_not_speech() {
+        let padded = parse_proposal("\n\nwave\n\nHello\n\n").expect("a named Behavior");
+        assert_eq!(padded.dialogue.as_deref(), Some("Hello"));
+
+        let silent = parse_proposal("wave\n   \n\n").expect("a named Behavior");
+        assert_eq!(silent.dialogue, None, "whitespace is not something said");
     }
 
     /// Pi's startup banner, captured from pi v0.85.1 through `pi-acp` 0.0.33

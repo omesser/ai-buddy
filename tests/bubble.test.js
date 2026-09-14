@@ -72,6 +72,37 @@ test("exactly six lines is not truncation", () => {
   assert.equal(lines[5], "line6", "so no ellipsis either");
 });
 
+// #701: until the parser stopped flattening replies, `text.split("\n")` always
+// yielded one paragraph. The bubble keeps the breaks rather than collapsing
+// them back: a list read as one run-on line is worse than a clamped list, and
+// the clamp already has somewhere to send the rest (#547).
+test("a reply's paragraphs are the bubble's lines", () => {
+  const reply = "Here's what I found:\n\n- the roster loads\n- the session resumed";
+  const { lines, truncated } = wrapText(reply, 260, testMeasureFn);
+
+  assert.deepEqual(lines, [
+    "Here's what I found:",
+    "- the roster loads",
+    "- the session resumed",
+  ], "a paragraph per line, and the blank one costs none of the six");
+  assert.equal(truncated, false, "three of six fit");
+});
+
+// The cost of keeping them, asserted rather than discovered: a reply that fit
+// while it was flattened can now run past the ceiling and hand off to Chat.
+test("paragraphs reach the six-line ceiling sooner than one flowed line", () => {
+  const items = ["one", "two", "three", "four", "five", "six"];
+  const listed = `Here's what I found:\n${items.map((item) => `- ${item}`).join("\n")}`;
+
+  assert.equal(wrapText(listed.replaceAll("\n", " "), 260, testMeasureFn).truncated, false,
+    "flattened, the same reply fits inside the six");
+
+  const { lines, truncated } = wrapText(listed, 260, testMeasureFn);
+  assert.equal(lines.length, 6);
+  assert.equal(truncated, true, "seven paragraphs do not fit in six lines");
+  assert.ok(lines[5].endsWith("…"), "and the bubble says so");
+});
+
 test("bubble placement stays above sprite by default", () => {
   const spriteRect = { x: 100, y: 400, width: 64, height: 64 };
   const bubbleSize = { width: 200, height: 100 };
