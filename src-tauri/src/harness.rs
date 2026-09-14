@@ -25,7 +25,9 @@ use ai_buddy_core::director::{Completer, Reply, Wake, WakeRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::acp_wire::{Event, Handshake, McpChoice, McpLaunch, OpenError, TurnError, Wire};
+use crate::acp_wire::{
+    Event, Handshake, McpChoice, McpLaunch, OpenError, SpawnError, TurnError, Wire,
+};
 use crate::action_log;
 
 pub use crate::acp_wire::PermissionAsk;
@@ -235,6 +237,10 @@ pub struct HarnessInspect {
     /// Whether `initialize` offered HTTP MCP. #166 branches on it.
     pub mcp_http: bool,
     pub alive: bool,
+    /// The binary `PATH` has not got, when that is why nothing is running.
+    /// Told apart from a child that died because no respawn mends it and the
+    /// sentence a user needs is a different one (#659).
+    pub missing: Option<String>,
     /// What the last turn came back with, when it came back with an error, and
     /// `None` once a turn answers. A Harness that refuses every prompt is
     /// attached, alive and authenticated, so nothing else here tells it apart
@@ -768,6 +774,21 @@ impl Session {
         self.charge_loss(state);
     }
 
+    /// Record - and say - that the binary we spawn is not on `PATH`.
+    ///
+    /// The name is `argv[0]`, the file that was actually looked for, and never
+    /// the preset: `codex` attaches through `npx` and logs in through `codex`,
+    /// so `npx` can be there while the vendor CLI is not. Naming the preset
+    /// would accuse whichever of the two happens to be installed (#659).
+    fn note_missing(&self) -> String {
+        let command = self.launch.argv[0].clone();
+        self.update_inspect(|inspect| {
+            inspect.alive = false;
+            inspect.missing = Some(command.clone());
+        });
+        not_installed(&command)
+    }
+
     /// The user's answer to a forwarded permission request. Never chosen here.
     pub fn answer_permission(&self, request: &str, option: &str) {
         let Some(wire) = self.current_wire() else {
@@ -831,7 +852,12 @@ impl Session {
                 }
                 match self.spawn_and_initialize(&mut state) {
                     Ok(wire) => wire,
-                    Err(why) => {
+                    // A file `PATH` has not got is not a child that might come
+                    // back, so the ladder buys nothing but a slower way to say
+                    // the same thing - and leaves the next wake refused for up
+                    // to five minutes after the user installs the CLI (#659).
+                    Err(SpawnError::Missing) => return Err(self.note_missing()),
+                    Err(SpawnError::Failed(why)) => {
                         self.charge_loss(&mut state);
                         return Err(why);
                     }
@@ -853,17 +879,31 @@ impl Session {
         Ok((wire, id))
     }
 
-    fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Wire>, String> {
+    fn spawn_and_initialize(&self, state: &mut State) -> Result<Arc<Wire>, SpawnError> {
         std::fs::create_dir_all(&self.dir)
-            .map_err(|why| format!("{}: {why}", self.dir.display()))?;
+            .map_err(|why| SpawnError::Failed(format!("{}: {why}", self.dir.display())))?;
         let dir = self.dir.clone();
         let forward = Arc::clone(&self.forward);
-        let wire = Wire::spawn(
+        let spawned = Wire::spawn(
             self.launch.command(&self.dir),
             self.attach_timeout(),
             Box::new(move |event| note_event(&dir, &forward, event)),
-        )
-        .map_err(|why| format!("`{}` {why}", self.launch.line()))?;
+        );
+        // Anything but `Missing` means `PATH` had the file to run, so this is
+        // the one place that knows whether the CLI is installed - and it has
+        // to answer on the failing edge too. A machine that installs the CLI
+        // and then fails to initialize kept the old `missing`, so Settings
+        // told the user to install what they had just installed, and said
+        // nothing about the adapter that actually failed (#659).
+        if !matches!(spawned, Err(SpawnError::Missing)) {
+            self.update_inspect(|inspect| inspect.missing = None);
+        }
+        let wire = spawned.map_err(|why| match why {
+            SpawnError::Missing => SpawnError::Missing,
+            SpawnError::Failed(why) => {
+                SpawnError::Failed(format!("`{}` {why}", self.launch.line()))
+            }
+        })?;
         state.handshake = wire.handshake().clone();
         // A fresh process is a fresh chance to sign in: the gate belonged to
         // the one that died.
@@ -877,14 +917,14 @@ impl Session {
         let wire = Arc::new(wire);
         if !self.wanted.load(Ordering::SeqCst) {
             wire.shutdown();
-            return Err("harness detached".to_string());
+            return Err(SpawnError::Failed("harness detached".to_string()));
         }
         if let Ok(mut slot) = self.wire.lock() {
             *slot = Some(Arc::clone(&wire));
         }
         if !self.wanted.load(Ordering::SeqCst) {
             self.shutdown();
-            return Err("harness detached".to_string());
+            return Err(SpawnError::Failed("harness detached".to_string()));
         }
         Ok(wire)
     }
@@ -1344,6 +1384,13 @@ fn not_authenticated(command: &str) -> String {
     format!("harness not authenticated: run `{command}`")
 }
 
+/// A Harness is the user's to install and never ours to ship (ADR-0018), so
+/// the only fix is one the user makes outside the app - which is the same
+/// shape as `not_authenticated`, and for the same reason.
+fn not_installed(command: &str) -> String {
+    format!("`{command}` is not installed; ai-buddy does not bundle a Harness")
+}
+
 /// The command that logs the user in. The table outranks the handshake:
 /// adapters describe an `authMethods` entry in prose ("Use Claude
 /// subscription", "ChatGPT") because ACP never asked for a command. Only a
@@ -1767,6 +1814,9 @@ mod tests {
             };
             let id = message.get("id").cloned().unwrap_or(Value::Null);
             match message.get("method").and_then(Value::as_str) {
+                // A child that starts and then fails: the spawn is not
+                // `Missing`, which is what #659 turns on.
+                Some("initialize") if script == "die-initializing" => std::process::exit(3),
                 Some("initialize") => say(json!({"jsonrpc": "2.0", "id": id, "result": {
                     "protocolVersion": 1,
                     "agentInfo": {"name": "fake-agent", "version": "0"},
@@ -2747,9 +2797,9 @@ mod tests {
         session.shutdown();
     }
 
-    /// #437: the count `a_missing_binary_backs_off_instead_of_respawning`
-    /// exercises is shared with every other way a wake goes unserved, so a
-    /// Harness that dies is not respawned on the very next wake.
+    /// #437: one count is shared by every way a wake goes unserved that leaves
+    /// a child which might come back, so a Harness that dies is not respawned
+    /// on the very next wake.
     #[test]
     fn a_death_under_a_turn_buys_the_same_wait_a_failed_spawn_does() {
         let (fx, session) = Fixture::new("die");
@@ -2908,22 +2958,80 @@ mod tests {
         session.shutdown();
     }
 
+    /// #659, and the reversal of what this test used to pin. A binary `PATH`
+    /// has not got was charged the respawn ladder, so a Harness this machine
+    /// never had was retried every five minutes as though the child might come
+    /// back, and every surface got an errno instead of a sentence. The ladder
+    /// itself is untouched, which the three `backoff` reads below still hold.
     #[test]
-    fn a_missing_binary_backs_off_instead_of_respawning() {
+    fn a_missing_binary_says_so_instead_of_backing_off() {
+        const NOPE: &str = "/nonexistent/ai-buddy-no-such-harness";
         let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
         let launch = Launch {
             name: "nope".into(),
-            argv: vec!["/nonexistent/ai-buddy-no-such-harness".into()],
+            argv: vec![NOPE.into()],
         };
         let session = Session::new(launch, dir.clone(), silent());
-        let first = session.complete(&asking("hi")).unwrap_err();
-        assert!(first.contains("could not start"), "{first}");
-        let second = session.complete(&asking("hi")).unwrap_err();
-        assert!(second.contains("retrying in"), "{second}");
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_installed(NOPE)),
+            "the wake was answered with an errno"
+        );
+        assert!(
+            session.state.lock().unwrap().spawn_wait_until.is_none(),
+            "a binary that is not there was charged a respawn wait"
+        );
+        // No wait means the next wake asks again rather than being refused, so
+        // installing the CLI is picked up without a relaunch.
+        assert_eq!(
+            session.complete(&asking("hi")),
+            Err(not_installed(NOPE)),
+            "the second wake was refused by a backoff"
+        );
+        let inspect = session.inspect();
+        assert_eq!(inspect.missing.as_deref(), Some(NOPE));
+        assert!(!inspect.alive);
         assert_eq!(session.backoff(1), BACKOFF_FIRST);
         assert_eq!(session.backoff(2), Duration::from_secs(10));
         assert_eq!(session.backoff(40), BACKOFF_CAP);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// #659's other half: `missing` has to be cleared by a spawn that fails,
+    /// not only by one that works. A machine that installs the CLI and then
+    /// fails to initialize used to keep the old `missing`, so the Settings row
+    /// told the user to install what they had just installed and never named
+    /// the real failure.
+    #[test]
+    fn a_spawn_that_fails_for_another_reason_stops_saying_not_installed() {
+        let (fx, session) = Fixture::new("die-initializing");
+        session.note_missing();
+        let reply = session.complete(&asking("hi"));
+        assert!(
+            reply.as_ref().is_err_and(|why| why.contains("initialize")),
+            "{reply:?}"
+        );
+        let inspect = session.inspect();
+        assert_eq!(inspect.missing, None, "the row still says not installed");
+        assert!(!inspect.alive);
+        // The child did start, so the ladder is still the right answer for it.
+        assert!(session.state.lock().unwrap().spawn_wait_until.is_some());
+        session.shutdown();
+        let _ = std::fs::remove_dir_all(&fx.dir);
+    }
+
+    /// #659's subtle half: `codex` attaches through `npx` and logs in through
+    /// `codex`, so `argv[0]` being present says nothing about the vendor CLI
+    /// and the two argvs can disagree about what this machine has got. What is
+    /// named is the file that was looked for, never the preset.
+    #[test]
+    fn a_missing_launcher_is_not_a_missing_vendor_cli() {
+        let launch = launch(Some("codex")).unwrap();
+        assert_eq!(launch.argv[0], "npx", "the codex preset stopped using npx");
+        let dir = std::env::temp_dir().join(format!("ai-buddy-harness-{}", uuid::Uuid::new_v4()));
+        let session = Session::new(launch, dir, silent());
+        assert_eq!(session.note_missing(), not_installed("npx"));
+        assert_eq!(session.inspect().missing.as_deref(), Some("npx"));
     }
 
     /// ADR-0016's newest-wins, at the Harness seam: the Poke that arrives

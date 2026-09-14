@@ -180,6 +180,27 @@ pub enum TurnError {
     Failed(String),
 }
 
+/// Why no wire came back from a spawn.
+///
+/// `Missing` is the one no respawn can mend: `PATH` has no such file, so there
+/// is no child to wait for and the backoff ladder would only re-time the same
+/// failure every five minutes (#659). Told apart by `ErrorKind`, never by the
+/// text - `(os error 2)` is the platform's wording and the user's locale's.
+#[derive(Debug)]
+pub enum SpawnError {
+    Missing,
+    Failed(String),
+}
+
+impl SpawnError {
+    fn start(why: std::io::Error) -> Self {
+        match why.kind() {
+            std::io::ErrorKind::NotFound => Self::Missing,
+            _ => Self::Failed(format!("could not start: {why}")),
+        }
+    }
+}
+
 enum Msg {
     Open {
         load: Option<String>,
@@ -214,23 +235,27 @@ pub struct Wire {
 impl Wire {
     /// Spawn `command`, connect, and `initialize`. Blocks for at most
     /// `timeout`; the thread lives on for as long as the child does.
-    pub fn spawn(command: Command, timeout: Duration, on_event: OnEvent) -> Result<Self, String> {
+    pub fn spawn(
+        command: Command,
+        timeout: Duration,
+        on_event: OnEvent,
+    ) -> Result<Self, SpawnError> {
         let (tx, rx) = mpsc::unbounded_channel();
         let (ready_tx, ready_rx) = sync_mpsc::channel();
         let (done_tx, done) = sync_mpsc::channel();
         thread::Builder::new()
             .name("acp-wire".into())
             .spawn(move || run(command, rx, ready_tx, done_tx, on_event))
-            .map_err(|why| format!("could not start the wire thread: {why}"))?;
+            .map_err(|why| SpawnError::Failed(format!("could not start the wire thread: {why}")))?;
         let handshake = match ready_rx.recv_timeout(timeout) {
             Ok(Ok(handshake)) => handshake,
             Ok(Err(why)) => return Err(why),
             Err(RecvTimeoutError::Timeout) => {
                 let _ = tx.send(Msg::Shutdown);
-                return Err("did not answer initialize".to_string());
+                return Err(SpawnError::Failed("did not answer initialize".to_string()));
             }
             Err(RecvTimeoutError::Disconnected) => {
-                return Err("exited before initialize".to_string())
+                return Err(SpawnError::Failed("exited before initialize".to_string()))
             }
         };
         Ok(Self {
@@ -348,7 +373,7 @@ impl Drop for Wire {
 fn run(
     command: Command,
     rx: mpsc::UnboundedReceiver<Msg>,
-    ready: sync_mpsc::Sender<Result<Handshake, String>>,
+    ready: sync_mpsc::Sender<Result<Handshake, SpawnError>>,
     // Held, never sent on, and dropped when this function returns: that drop
     // is what `wait_for_exit` waits for.
     _done: sync_mpsc::Sender<()>,
@@ -357,37 +382,36 @@ fn run(
     let runtime = match tokio::runtime::Builder::new_current_thread().build() {
         Ok(runtime) => runtime,
         Err(why) => {
-            let _ = ready.send(Err(format!("no runtime for the wire: {why}")));
+            let _ = ready.send(Err(SpawnError::Failed(format!(
+                "no runtime for the wire: {why}"
+            ))));
             return;
         }
     };
     runtime.block_on(async move {
         #[cfg(windows)]
-        let mut child = match windows_job::spawn_in_job(command) {
-            Ok(child) => child,
-            Err(why) => {
-                let _ = ready.send(Err(format!("could not start: {why}")));
-                return;
-            }
-        };
+        let spawned = windows_job::spawn_in_job(command);
 
         #[cfg(not(windows))]
-        let mut child = {
+        let spawned = {
             let mut async_command = async_process::Command::from(command);
             async_command
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::inherit());
-            match async_command.spawn() {
-                Ok(child) => child,
-                Err(why) => {
-                    let _ = ready.send(Err(format!("could not start: {why}")));
-                    return;
-                }
+            async_command.spawn()
+        };
+        // Both platforms hand back the spawn's own `io::Error`, so the missing
+        // file is read off its kind in one place rather than two (#659).
+        let mut child = match spawned {
+            Ok(child) => child,
+            Err(why) => {
+                let _ = ready.send(Err(SpawnError::start(why)));
+                return;
             }
         };
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-            let _ = ready.send(Err("no pipes to the child".to_string()));
+            let _ = ready.send(Err(SpawnError::Failed("no pipes to the child".to_string())));
             return;
         };
         // What the Harness sends us, routed off the SDK's dispatch loop and
@@ -432,8 +456,9 @@ fn run(
                         });
                     let failed = handshake.is_err();
                     if let Some(ready) = ready.take() {
-                        let _ = ready
-                            .send(handshake.map_err(|why| format!("initialize: {}", why.message)));
+                        let _ = ready.send(handshake.map_err(|why| {
+                            SpawnError::Failed(format!("initialize: {}", why.message))
+                        }));
                     }
                     if !failed {
                         serve(&cx, rx, incoming_rx, &on_event).await;
@@ -443,10 +468,10 @@ fn run(
             )
             .await;
         if let Some(ready) = ready.take() {
-            let _ = ready.send(Err(match outcome {
+            let _ = ready.send(Err(SpawnError::Failed(match outcome {
                 Ok(()) => "exited before initialize".to_string(),
                 Err(why) => why.message,
-            }));
+            })));
         }
         // The Harness may have been started through `npx`, which does not
         // reliably die on stdin EOF; kill the process group rather than
@@ -1158,7 +1183,7 @@ mod windows_job {
     /// closing the post-spawn race.
     pub(super) fn spawn_in_job(
         mut command: std::process::Command,
-    ) -> Result<async_process::Child, String> {
+    ) -> Result<async_process::Child, std::io::Error> {
         use std::os::windows::process::CommandExt;
 
         let job = unsafe {
@@ -1196,9 +1221,11 @@ mod windows_job {
 
         let mut child = match async_command.spawn() {
             Ok(child) => child,
-            Err(e) => {
+            // Handed on as it came: `SpawnError::start` reads the kind, and a
+            // `format!` around it would turn a missing file into prose (#659).
+            Err(why) => {
                 unsafe { CloseHandle(job) };
-                return Err(format!("spawn failed: {e}"));
+                return Err(why);
             }
         };
 
@@ -1211,9 +1238,9 @@ mod windows_job {
                 eprintln!("harness: OpenProcess failed for pid {pid}; resuming without job");
                 if resume_primary_thread(pid).is_err() {
                     let _ = child.kill();
-                    return Err(format!(
+                    return Err(std::io::Error::other(format!(
                         "OpenProcess failed and resume failed for pid {pid}; child killed"
-                    ));
+                    )));
                 }
                 return Ok(child);
             }
@@ -1228,7 +1255,7 @@ mod windows_job {
                 );
                 if resume_primary_thread(pid).is_err() {
                     let _ = child.kill();
-                    return Err(format!("AssignProcessToJobObject failed and resume failed for pid {pid}; child killed"));
+                    return Err(std::io::Error::other(format!("AssignProcessToJobObject failed and resume failed for pid {pid}; child killed")));
                 }
                 return Ok(child);
             }
@@ -1236,9 +1263,9 @@ mod windows_job {
             if let Err(why) = resume_primary_thread(pid) {
                 CloseHandle(job);
                 let _ = child.kill();
-                return Err(format!(
+                return Err(std::io::Error::other(format!(
                     "ResumeThread failed for pid {pid}: {why}; child killed"
-                ));
+                )));
             }
 
             match JOBS.lock() {
@@ -1321,16 +1348,14 @@ mod windows_job {
     fn spawn_fallback_no_job(
         command: std::process::Command,
         why: &str,
-    ) -> Result<async_process::Child, String> {
+    ) -> Result<async_process::Child, std::io::Error> {
         eprintln!("harness: {why}; spawning without Job Object (grandchildren may linger)");
         let mut async_command = async_process::Command::from(command);
         async_command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit());
-        async_command
-            .spawn()
-            .map_err(|e| format!("fallback spawn failed: {e}"))
+        async_command.spawn()
     }
 
     pub(super) fn terminate_job(pid: u32) {
