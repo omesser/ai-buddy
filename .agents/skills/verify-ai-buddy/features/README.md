@@ -7,7 +7,7 @@ This directory is the maintained source for verifying user-facing behavior of th
 - Work from the repository root (`Cargo.toml` workspace with `src-tauri/`).
 - Set `RUN_ID` and evidence paths as in the skill (`/tmp/ai-buddy-verify-$RUN_ID/evidence`).
 - Prefer a binary this run built: `target/release/ai-buddy` or `target/debug/ai-buddy`.
-- Run `.cursor/skills/verify-ai-buddy/helpers/doctor.sh` and require exit `0` before Drive.
+- Run `.agents/skills/verify-ai-buddy/helpers/doctor.sh` and require exit `0` before Drive.
 - Never drive an instance that was not started by this verification run (or by the platform verify script it wraps).
 - **One agent per display.** Two overlapping drives share Perches and hit-test state; refuse double-drive.
 

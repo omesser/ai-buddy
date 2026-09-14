@@ -5,8 +5,8 @@ set -euo pipefail
 _helpers_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AI_BUDDY_SKILL_ROOT="$(cd "$_helpers_dir/.." && pwd)"
 REPO_ROOT="$(cd "$_helpers_dir/../../../.." && pwd)"
-# helpers -> verify-ai-buddy -> skills -> .cursor -> repo
-# From helpers: .. = skill, ../.. = skills, ../../.. = .cursor, ../../../.. = repo
+# helpers -> verify-ai-buddy -> skills -> .agents -> repo
+# From helpers: .. = skill, ../.. = skills, ../../.. = .agents, ../../../.. = repo
 if [ ! -f "$REPO_ROOT/Cargo.toml" ] || [ ! -d "$REPO_ROOT/src-tauri" ]; then
   # Fallback: walk up looking for workspace
   REPO_ROOT="$(cd "$_helpers_dir" && while [ ! -f Cargo.toml ] || [ ! -d src-tauri ]; do

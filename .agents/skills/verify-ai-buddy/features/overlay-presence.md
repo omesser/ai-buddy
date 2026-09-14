@@ -19,13 +19,13 @@ The buddy draws on a display-sized always-on-top overlay that skips the taskbar,
 
 Preconditions:
 
-- `.cursor/skills/verify-ai-buddy/helpers/doctor.sh` exits `0` for the active lane.
+- `.agents/skills/verify-ai-buddy/helpers/doctor.sh` exits `0` for the active lane.
 - Linux: `DISPLAY` set; `xdotool` `xprop` `xwininfo` `xterm` present; supporting WM (`openbox` if Xvfb).
 - Evidence dir `$AI_BUDDY_VERIFY_EVIDENCE` exists.
 
-- **Linux X11 full check.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .cursor/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh`. Prefer exit code `0`. If the stock script fails only because `xprop _NET_WM_STATE` is empty while the app log still has `^overlay:`, `EWMH configured`, and `frame:` lines, treat presence as proven and record the EWMH property gap in `PROOF.md` (see Gotchas). Prefer `frame:.*Perched` when a Perch window existed before launch; Falling/Grounded frames still count as presence.
-- **macOS full check.** Run `.cursor/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh`. Exit code `0`. Evidence contains `.verify/<stamp>/` with frame-loop and overlay PASS lines.
-- **Windows full check.** Run `.cursor/skills/verify-ai-buddy/helpers/drive-overlay-win.ps1` on a dual-display Windows host. Exit code `0`. Evidence contains `.verify/win-*/`.
+- **Linux X11 full check.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh`. Prefer exit code `0`. If the stock script fails only because `xprop _NET_WM_STATE` is empty while the app log still has `^overlay:`, `EWMH configured`, and `frame:` lines, treat presence as proven and record the EWMH property gap in `PROOF.md` (see Gotchas). Prefer `frame:.*Perched` when a Perch window existed before launch; Falling/Grounded frames still count as presence.
+- **macOS full check.** Run `.agents/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh`. Exit code `0`. Evidence contains `.verify/<stamp>/` with frame-loop and overlay PASS lines.
+- **Windows full check.** Run `.agents/skills/verify-ai-buddy/helpers/drive-overlay-win.ps1` on a dual-display Windows host. Exit code `0`. Evidence contains `.verify/win-*/`.
 - **Proof.** Keep the helper-copied stamp tree and a `PROOF.md` line naming `overlay-presence` and the helper invoked.
 
 ## Gotchas

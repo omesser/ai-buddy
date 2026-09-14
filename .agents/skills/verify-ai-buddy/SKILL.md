@@ -38,7 +38,7 @@ cargo build -p ai-buddy --release
 
 # Helpers set RUN_ID / evidence / scratch and start a traced instance when a
 # platform script does not already own the lifecycle:
-.cursor/skills/verify-ai-buddy/helpers/launch.sh
+.agents/skills/verify-ai-buddy/helpers/launch.sh
 ```
 
 Ready signals (any one is enough for doctor):
@@ -63,7 +63,7 @@ export AI_BUDDY_CAPTURABLE=1   # force visible in captures (default is already c
 Read-only health check. Run before Drive whenever anything looks off:
 
 ```sh
-.cursor/skills/verify-ai-buddy/helpers/doctor.sh
+.agents/skills/verify-ai-buddy/helpers/doctor.sh
 ```
 
 Doctor answers:
@@ -82,13 +82,13 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 
 | Lane | Command |
 |---|---|
-| Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .cursor/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `AI_BUDDY_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes) |
-| macOS overlay + physics + hit-test | `.cursor/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh` |
-| Windows overlay | `.cursor/skills/verify-ai-buddy/helpers/drive-overlay-win.ps1` |
+| Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `AI_BUDDY_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes) |
+| macOS overlay + physics + hit-test | `.agents/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh` |
+| Windows overlay | `.agents/skills/verify-ai-buddy/helpers/drive-overlay-win.ps1` |
 | Windows Settings | `scripts/verify-settings-win.ps1` (copy `$Out` into evidence after) |
 | Harness ACP (no sprite) | `AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh` |
 | macOS Keychain diagnostic unit | `scripts/test_verify_overlay_diagnostics.sh` |
-| Core + renderer units | `.cursor/skills/verify-ai-buddy/helpers/doctor.sh --units` |
+| Core + renderer units | `.agents/skills/verify-ai-buddy/helpers/doctor.sh --units` |
 
 Stable handles: log patterns (`frame: N Perched`, `verbs:.*Poke`, `verbs:.*Summon`, `EWMH configured`), X11 WM_CLASS `Ai-buddy`, EWMH `_NET_WM_STATE_ABOVE` + `_NET_WM_STATE_SKIP_TASKBAR`. Prefer those over click coordinates when asserting.
 
@@ -111,7 +111,7 @@ Proof standards:
 ## Cleanup
 
 ```sh
-.cursor/skills/verify-ai-buddy/helpers/cleanup.sh
+.agents/skills/verify-ai-buddy/helpers/cleanup.sh
 ```
 
 Rules:
@@ -129,7 +129,7 @@ test -d "$AI_BUDDY_VERIFY_EVIDENCE" && ls -la "$AI_BUDDY_VERIFY_EVIDENCE"
 
 ## Helpers
 
-All under `.cursor/skills/verify-ai-buddy/helpers/` (executable):
+All under `.agents/skills/verify-ai-buddy/helpers/` (executable):
 
 | Script | Invocation | Role |
 |---|---|---|
@@ -147,10 +147,10 @@ Example end-to-end (Linux box with X11 deps):
 
 ```sh
 export RUN_ID=$(date +%Y%m%d-%H%M%S)-$$
-.cursor/skills/verify-ai-buddy/helpers/doctor.sh --units
+.agents/skills/verify-ai-buddy/helpers/doctor.sh --units
 xvfb-run -a -s "-screen 0 1280x720x24" \
-  .cursor/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh
-.cursor/skills/verify-ai-buddy/helpers/cleanup.sh
+  .agents/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh
+.agents/skills/verify-ai-buddy/helpers/cleanup.sh
 ls "$AI_BUDDY_VERIFY_EVIDENCE"
 ```
 
