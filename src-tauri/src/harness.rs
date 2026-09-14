@@ -1344,23 +1344,25 @@ fn not_authenticated(command: &str) -> String {
     format!("harness not authenticated: run `{command}`")
 }
 
-/// The command that logs the user in, in the Harness's own words where it
-/// has any. Claude Code's adapter reports the method but not the command, so
-/// the table below outranks the handshake for it and only for it.
+/// The command that logs the user in. The table outranks the handshake:
+/// adapters describe an `authMethods` entry in prose ("Use Claude
+/// subscription", "ChatGPT") because ACP never asked for a command. Only a
+/// `terminal` method carries one, in `args`, and ADR-0018 hosts no terminal
+/// to run it. A custom command has no row, so it keeps whatever the adapter
+/// said, then the unnamed hint.
 fn login_command(name: &str, handshake: &Handshake) -> String {
-    if name == "claude" {
-        return login_hint(name);
-    }
-    handshake
-        .auth_methods
-        .first()
-        .map(|method| {
-            method
-                .description
-                .clone()
-                .unwrap_or_else(|| method.name.clone())
-        })
-        .unwrap_or_else(|| login_hint(name))
+    named_login(name).map(str::to_string).unwrap_or_else(|| {
+        handshake
+            .auth_methods
+            .first()
+            .map(|method| {
+                method
+                    .description
+                    .clone()
+                    .unwrap_or_else(|| method.name.clone())
+            })
+            .unwrap_or_else(|| login_hint(name))
+    })
 }
 
 /// The documented sign-in line for a named Harness, before any handshake has
@@ -1378,16 +1380,21 @@ fn login_command(name: &str, handshake: &Handshake) -> String {
 /// command is the whole of what we can do — ADR-0018 has the Harness
 /// authenticate itself.
 pub(crate) fn login_hint(name: &str) -> String {
-    match name {
+    named_login(name)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{name} (run it once in a terminal and sign in)"))
+}
+
+fn named_login(name: &str) -> Option<&'static str> {
+    Some(match name {
         "claude" => "claude /login",
         "codex" => "codex login",
         "grok" => "grok login",
         "hermes" => "hermes login",
         "opencode" => "opencode login",
         "pi" => "npx -y pi-acp@latest --terminal-login",
-        unnamed => return format!("{unnamed} (run it once in a terminal and sign in)"),
-    }
-    .to_string()
+        _ => return None,
+    })
 }
 
 /// The MCP server to hand this session, in the transport the Harness takes.
@@ -3114,23 +3121,23 @@ mod tests {
     }
 
     #[test]
-    fn login_command_prefers_the_known_fix_then_the_method_then_a_hint() {
+    fn login_command_takes_the_table_for_a_named_harness_and_the_handshake_for_a_custom_one() {
         let hint = |description: Option<&str>| Handshake {
             auth_methods: vec![crate::acp_wire::AuthHint {
-                name: "Hermes".into(),
+                name: "ChatGPT".into(),
                 description: description.map(str::to_string),
             }],
             ..Default::default()
         };
         assert_eq!(
-            login_command("claude", &Handshake::default()),
-            "claude /login"
+            login_command("codex", &hint(Some("Sign in with ChatGPT"))),
+            "codex login"
         );
         assert_eq!(
-            login_command("hermes", &hint(Some("hermes login"))),
-            "hermes login"
+            login_command("x", &hint(Some("run x login"))),
+            "run x login"
         );
-        assert_eq!(login_command("hermes", &hint(None)), "Hermes");
+        assert_eq!(login_command("x", &hint(None)), "ChatGPT");
         assert_eq!(
             login_command("x", &Handshake::default()),
             "x (run it once in a terminal and sign in)"
