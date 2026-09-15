@@ -618,6 +618,15 @@ pub(crate) fn run_frame_loop(
                         }
                     }
                     SettingsOp::ReloadChat => reload_chat = true,
+                    SettingsOp::NewSession => {
+                        for live in &mut lives {
+                            // Same Completer, same Character, same Blank AI:
+                            // the only thing thrown away is the conversation
+                            // the Instance is in (#679).
+                            replace_session(&mut slots, live, &director, config.configured);
+                            session_log::new_session(&app, &live.id, "a new session was started");
+                        }
+                    }
                 }
                 remember_instances(&roster, &settings, &settings_path);
             }
@@ -660,30 +669,10 @@ pub(crate) fn run_frame_loop(
                         {
                             // The Character Prompt is the opening turn, and this
                             // session opened without these words: no follow-up
-                            // can retrofit them. Same teardown a Character
-                            // switch uses — a Wake still on the wire is dropped
-                            // so the old host stops generating, and the next
-                            // wake opens with the new layer. Not woken here:
-                            // the edit takes effect at the next wake rather
-                            // than by re-asking to prove it landed (ADR-0012).
-                            model::retarget_model(
-                                &mut slots,
-                                &written.instance,
-                                &mut live.model,
-                                live.character.behaviors.keys().cloned(),
-                                live.character.name.clone(),
-                                &director,
-                                config.configured,
-                            );
-                            // HTTP gets a new Endpoint from retarget. The
-                            // Harness keys ACP sessions without the Instance
-                            // Prompt, so it has to be told to drop this
-                            // Instance or the next wake continues the old
-                            // transcript (#698, ADR-0012). The drop is also
-                            // where its turn in flight is cancelled (#704).
-                            if let Some(attached) = harness::attached() {
-                                attached.drop_conversation(&written.instance);
-                            }
+                            // can retrofit them. Not woken here: the edit takes
+                            // effect at the next wake rather than by re-asking
+                            // to prove it landed (ADR-0012).
+                            replace_session(&mut slots, live, &director, config.configured);
                         }
 
                         // Same session replacement a Character switch uses:
@@ -2147,6 +2136,40 @@ pub(crate) fn run_frame_loop(
             }
         }
     });
+}
+
+/// Throw this Instance's conversation away and leave it ready to open a new
+/// one on the same Completer.
+///
+/// Both halves or neither. `retarget_model` is the HTTP half: a Wake still on
+/// the wire is abandoned so the old host stops generating, and the rebuilt
+/// `ModelDirector` carries no held turns. The Harness keys its ACP sessions by
+/// Instance, so it has to be told separately or the next wake continues the old
+/// transcript through `session/load` (#698, ADR-0012); that drop is also where
+/// its turn in flight is cancelled (#704). One function because a caller that
+/// remembered only the first half would look right and leave the agent holding
+/// everything it read (#679).
+///
+/// The Action Log line and what an open Chat surface hears stay with the
+/// caller: only it knows why the session was replaced.
+fn replace_session(
+    slots: &mut model::Slots,
+    live: &mut InstanceState,
+    director: &model::DirectorSettings,
+    configured: bool,
+) {
+    model::retarget_model(
+        slots,
+        &live.id,
+        &mut live.model,
+        live.character.behaviors.keys().cloned(),
+        live.character.name.clone(),
+        director,
+        configured,
+    );
+    if let Some(attached) = harness::attached() {
+        attached.drop_conversation(&live.id);
+    }
 }
 
 /// Dispatch one `tools/call` against the live Instances and answer it.

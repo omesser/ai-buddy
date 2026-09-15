@@ -487,6 +487,7 @@ impl SettingsWindow {
                     RowOperation::ClearKey => self.do_clear_key(),
                     RowOperation::Apply => self.do_apply(),
                     RowOperation::Cancel => self.do_cancel(),
+                    RowOperation::NewSession => self.do_new_session(),
                 }
             }
         }
@@ -627,6 +628,16 @@ impl SettingsWindow {
 
     fn do_cancel(&self) {
         self.draw(true);
+    }
+
+    /// The patch carries no row, so a staged endpoint edit beside it is
+    /// neither written nor thrown away: this button is a session boundary and
+    /// nothing else (#679). No redraw either — nothing on the form moved.
+    fn do_new_session(&self) {
+        self.apply(SettingsPatch {
+            new_session: true,
+            ..SettingsPatch::default()
+        });
     }
 
     fn update_tab_visibility(&self) {
