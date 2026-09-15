@@ -119,14 +119,12 @@ has served a turn is never reopened. The fake agent's error-shaped refusal is
 why the tests missed it (#448).
 
 Protocol-compatible and not yet named, all first-party ACP on stdio and all
-reachable today through the custom value: Grok Build (`grok agent stdio`),
-GitHub Copilot CLI (`copilot --acp --stdio`, public preview) and Gemini CLI
-(`gemini --acp`). They earn a named row once a turn has been smoked. None of
-their always-approve, yolo, or `setSessionMode` auto-approve flags is ever
-passed by default — the Chat surface owns permissions. A vendor extension
-method we do not know (`x.ai/*` and the like) gets method-not-found, which
-the protocol allows. Gemini has open issues about stdout pollution corrupting
-its NDJSON; smoke it carefully.
+reachable today through the custom value: Grok Build (`grok agent stdio`) and
+GitHub Copilot CLI (`copilot --acp --stdio`, public preview). They earn a named
+row once a turn has been smoked. None of their always-approve, yolo, or
+`setSessionMode` auto-approve flags is ever passed by default — the Chat surface
+owns permissions. A vendor extension method we do not know (`x.ai/*` and the
+like) gets method-not-found, which the protocol allows.
 
 Pi stays deferred: it has no first-party ACP and the research says it wants
 a second adapter, not a compromise.

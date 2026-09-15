@@ -55,8 +55,8 @@ answered by a stub.
 
 Protocol-compatible harnesses not yet named (GitHub Copilot CLI) are reachable
 through the custom command and earn a named row once verified. Google is not
-among them: the Gemini CLI named here is sunset, and Antigravity speaks its own
-protocol rather than ACP, so it needs an adapter before any row (#603, #604).
+among them: Antigravity (`agy`) speaks its own protocol rather than ACP, so it
+needs an adapter before any row (#604).
 Their always-approve or auto-approve flags are never passed by default — the
 Chat surface owns permissions.
 
