@@ -322,7 +322,7 @@ mod macos {
         type GetResponsible = unsafe extern "C" fn(i32) -> i32;
         // SAFETY: RTLD_DEFAULT searches loaded images; libSystem is always in.
         let symbol = unsafe {
-            dlsym(
+            libc::dlsym(
                 -2isize as *mut c_void,
                 c"responsibility_get_pid_responsible_for_pid".as_ptr(),
             )
@@ -343,8 +343,7 @@ mod macos {
     /// Walk parents until one is a bundled app. A `cargo run` from Cursor's
     /// terminal is often zsh → Cursor Helper → Cursor; TCC names Cursor.
     fn bundled_ancestor_name() -> Option<String> {
-        // SAFETY: getppid takes no argument, returns a pid, and cannot fail.
-        let mut pid = unsafe { getppid() };
+        let mut pid = std::os::unix::process::parent_id() as i32;
         for _ in 0..24 {
             if pid <= 1 {
                 break;
@@ -372,38 +371,33 @@ mod macos {
         None
     }
 
-    fn parent_pid(pid: i32) -> Option<i32> {
-        let mut buf = [0u8; 232];
-        // SAFETY: `buf` is a local array and the call is handed its own length,
-        // so proc_pidinfo cannot write past it.
+    /// The parent of `pid`, or `None` when the kernel will not say.
+    ///
+    /// The flavor, the struct and the field offset all come from `libc`. A
+    /// hand-written `PROC_PIDTBSDINFO` was 5 — `PROC_PIDTHREADINFO`, which
+    /// wants a thread handle in `arg` — so every call wrote nothing and the
+    /// walk above never left the first hop. #703.
+    pub(super) fn parent_pid(pid: i32) -> Option<i32> {
+        // SAFETY: proc_bsdinfo is integers and byte arrays, so all-zeroes is a
+        // value it can hold; the call overwrites it on success.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        // SAFETY: the buffer is a local of exactly the type PROC_PIDTBSDINFO
+        // names, and the size passed is its own, so nothing can be written past
+        // it. A pid that has exited fails the call rather than writing.
         let wrote = unsafe {
-            proc_pidinfo(
+            libc::proc_pidinfo(
                 pid,
-                PROC_PIDTBSDINFO,
+                libc::PROC_PIDTBSDINFO,
                 0,
-                buf.as_mut_ptr().cast(),
-                buf.len() as i32,
+                std::ptr::from_mut(&mut info).cast(),
+                size_of::<libc::proc_bsdinfo>() as i32,
             )
         };
-        if wrote < 20 {
+        // A short write leaves pbi_ppid zeroed, which would read as a pid.
+        if wrote != size_of::<libc::proc_bsdinfo>() as i32 {
             return None;
         }
-        let ppid = u32::from_ne_bytes(buf[16..20].try_into().ok()?);
-        (ppid > 1).then_some(ppid as i32)
-    }
-
-    const PROC_PIDTBSDINFO: i32 = 5;
-
-    unsafe extern "C" {
-        fn dlsym(handle: *mut c_void, symbol: *const std::ffi::c_char) -> *mut c_void;
-        fn getppid() -> i32;
-        fn proc_pidinfo(
-            pid: i32,
-            flavor: i32,
-            arg: u64,
-            buffer: *mut c_void,
-            buffersize: i32,
-        ) -> i32;
+        (info.pbi_ppid > 1).then_some(info.pbi_ppid as i32)
     }
 }
 
@@ -610,6 +604,34 @@ mod tests {
             "the hint has to say where to look, got {hint:?}"
         );
         assert!(!listed_under_hint("Terminal").contains("Cursor"));
+    }
+
+    /// The walk in `bundled_ancestor_name` is 24 hops long and only pays for
+    /// itself past the first: `zsh -> Cursor Helper -> Cursor` needs two.
+    /// A wrong `proc_pidinfo` flavor writes nothing, the short-write guard
+    /// reads that as "no parent", and the walk stops at the immediate parent. #703.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn the_parent_walk_climbs_past_the_first_hop() {
+        let mut pid = std::process::id() as i32;
+        assert_eq!(
+            macos::parent_pid(pid),
+            Some(std::os::unix::process::parent_id() as i32),
+            "the first hop has to be the parent the kernel reports"
+        );
+
+        let mut chain = vec![pid];
+        while let Some(parent) = macos::parent_pid(pid) {
+            pid = parent;
+            chain.push(pid);
+            if chain.len() > 24 {
+                break;
+            }
+        }
+        assert!(
+            chain.len() > 2,
+            "the walk stopped at {chain:?}; it has to reach a grandparent"
+        );
     }
 
     #[test]
