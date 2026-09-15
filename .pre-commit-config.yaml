@@ -8,16 +8,30 @@ repos:
     rev: v5.0.0
     hooks:
     # Git style
-      - id: check-added-large-files
       - id: check-merge-conflict
       - id: check-vcs-permalinks
       - id: forbid-new-submodules
 
     # Common errors
+    #
+    # The vendored pstack files are byte-identical to upstream on purpose, so
+    # a formatter that rewrites them puts the weekly sync pull request
+    # permanently out of step with `cursor/plugins`.
+    #
+    # `.agents/skills/` mixes vendored skills with ours, so the exclude cannot
+    # name the directory: `verify-ai-buddy` is this repository's and stays
+    # linted, which is what the lookahead protects. `.agents/pstack/` holds
+    # generated or upstream files except `UPSTREAM.json`, which is ours to read
+    # and benefits from `check-json`.
+    #
+    # The anchor covers the generated and binary paths too — `Cargo.lock`,
+    # `.png`, `.b64`, `branding/_b64/parts/` — so one value serves all six
+    # sites that skip this set. None of them holds anything worth linting.
       - id: end-of-file-fixer
-        exclude: ^(.*\.b64|branding/_b64/parts/.*)$
+        exclude: &vendored ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: *vendored
       - id: check-yaml
       - id: check-json
       - id: check-toml
@@ -28,11 +42,26 @@ repos:
       - id: check-case-conflict
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: *vendored
 
-    # Security
+  # The hooks that must see every file, in their own repo block at the same
+  # `rev`. Third-party content refreshed by a bot is exactly what a secret
+  # scanner is for, and an oversized file is worth catching wherever it lands.
+  #
+  # The split keeps these three clear of a sweeping edit to the aliased block
+  # above; it cannot do more than that, because `exclude` is a per-hook key and
+  # pre-commit has no repo-level switch that would forbid one here.
+  # `tests/pre-commit-scans-everything.test.js` is what holds the line.
+  #
+  # Same repo and rev, so pre-commit reuses the one cached environment rather
+  # than installing a second copy.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
       - id: detect-aws-credentials
         args: ['--allow-missing-credentials']
-      - id: detect-private-key
+      - id: check-added-large-files
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.3.0
@@ -42,13 +71,20 @@ repos:
         # "crate" is Rust vocabulary, not a misspelling of "create".
         # "static" is Win32 control class vocabulary (STATIC); codespell flags STATICs/Statics as "statistics".
         args: ["--ignore-words-list=crate,crates,static,statics"]
-        exclude: ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*)$
+        exclude: *vendored
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0
     hooks:
+      # `language-formatters-pre-commit-hooks` asks for `toml-sort>=0.22.0` with
+      # no upper bound, and toml-sort in turn floats `tomlkit`. The two disagree
+      # about inline-table spacing — `{version = "1"}` against
+      # `{ version = "1" }` — so an unpinned CI runner reformats files a
+      # developer's cached environment considers already formatted, and the
+      # branch goes red on files it never touched. Pin both. #688.
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
+        additional_dependencies: ["toml-sort==0.24.4", "tomlkit==0.15.1"]
         exclude: ^Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
@@ -59,7 +95,9 @@ repos:
     hooks:
       - id: shfmt
         args: ['-l', '-i', '2', '-ci', '-sr', '-w']
+        exclude: *vendored
       - id: shellcheck
+        exclude: *vendored
 
     # PowerShell linting
   - repo: local

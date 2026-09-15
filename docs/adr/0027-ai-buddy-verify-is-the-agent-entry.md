@@ -4,9 +4,9 @@
 
 Verification today is a sprawl of platform scripts (`scripts/verify-overlay.sh`,
 `verify-overlay-x11.sh`, `verify-overlay-win.ps1`, settings/harness probes, …)
-plus a project-local skill (`.cursor/skills/verify-ai-buddy/`) that wraps them
-in bash helpers. Agents and humans must know which dialect and which path to
-run; Summon and a single cross-platform command line are still holes. Language
+plus a project-local `verify-ai-buddy` skill that wraps them in bash helpers.
+Agents and humans must know which dialect and which path to run; Summon and a
+single cross-platform command line are still holes. Language
 unification of the *leaves* (Swift / `xdotool` / Win32) is not the job — those
 probes are where the OS truth lives. The job is one discoverable entry that
 orchestrates them.
@@ -29,7 +29,7 @@ where the runner can support overlay. A minimal umbrella that only wraps
 3. **Evidence.** Default under `$TMPDIR/ai-buddy-verify-$RUN_ID/evidence`
    (survives cleanup); `--evidence-dir` overrides. Cleanup never deletes
    evidence.
-4. **Skill cutover.** After the crate exists, `.cursor/skills/verify-ai-buddy`
+4. **Skill cutover.** After the crate exists, the `verify-ai-buddy` skill
    calls only this CLI; duplicate bash helpers go away. Feature map stays.
 5. **V1 definition of done (not stone 0).** Agents need not call
    `scripts/verify-*` for CLI-owned paths; `poke` and `summon` are first-class

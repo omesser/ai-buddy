@@ -1,0 +1,173 @@
+name: pstack Sync
+
+# `.agents/pstack/` is a copy of `cursor/plugins@main:pstack`, and a copy only
+# stays useful while someone refreshes it. This does that once a week and opens
+# a pull request when upstream actually moved.
+#
+# It never merges. Every pull request here goes through review, and a bot that
+# lands third-party markdown into an agent's instructions unreviewed is the one
+# thing this workflow must not become.
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC. Early enough in the week that a sync lands before the
+    # work that might use it.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  # Push the sync branch, open or update the pull request for it, and dispatch
+  # `PR Tests` at the branch. `actions: write` is what `gh workflow run` spends.
+  # No other scope is used.
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        # The drift test runs here rather than as a check on the pull request:
+        # a pull request opened with GITHUB_TOKEN does not trigger
+        # `on: pull_request`, so PR Tests never fires for it. The full suite
+        # does still run — the last step dispatches it at the branch, and
+        # `workflow_dispatch` is the exception GitHub carves out of that
+        # suppression — but a dispatched run reports against the branch, not
+        # against the pull request. Testing here is what makes the branch
+        # verified at the moment it is pushed.
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 'lts/*'
+
+      - name: Record the vendored commit
+        id: before
+        run: |
+          sed -n 's/.*"commit": *"\([^"]*\)".*/before=\1/p' \
+            .agents/pstack/UPSTREAM.json >> "$GITHUB_OUTPUT"
+
+      - name: Re-vendor from upstream
+        # The same script a human runs locally. One code path, so a sync done
+        # by hand and a sync done here cannot produce different trees.
+        run: scripts/sync-pstack.sh --fetch
+
+      - name: Decide whether upstream moved
+        id: changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            echo "Already at the upstream head. Nothing to open."
+          else
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Layout test
+        if: steps.changes.outputs.moved == 'true'
+        run: node --test tests/skills-layout.test.js
+
+      - name: Push the sync branch
+        if: steps.changes.outputs.moved == 'true'
+        id: push
+        run: |
+          after=$(sed -n 's/.*"commit": *"\([^"]*\)".*/\1/p' .agents/pstack/UPSTREAM.json)
+          version=$(sed -n 's/.*"plugin_version": *"\([^"]*\)".*/\1/p' .agents/pstack/UPSTREAM.json)
+          echo "after=$after" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Explicit path, never `git add -A`: a runner that leaves a stray
+          # file behind should not get it committed for free. `.agents` is the
+          # only tree the sync writes; `.claude/skills` and `.cursor/skills`
+          # are symlinks into it and never change.
+          git add .agents
+          # Captured from the index, before the commit. The checkout is shallow,
+          # so neither `HEAD~1` nor a merge base is available afterwards.
+          git diff --cached --stat | tail -40 > /tmp/pstack-diffstat.txt
+          git commit -m "chore(pstack): Sync vendored skills to ${after:0:12}"
+          # `--force-with-lease` rather than `--force`: the sync branch is
+          # shared, and a concurrent push should lose this race rather than be
+          # silently clobbered. The lease needs an explicit expectation because
+          # the checkout is shallow and carries no remote-tracking ref for the
+          # branch. An empty one means "expect it not to exist", which is the
+          # first run.
+          lease=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          git push --force-with-lease="refs/heads/$BRANCH:$lease" \
+            origin "HEAD:$BRANCH"
+        env:
+          BRANCH: chore/pstack-sync
+
+      - name: Open or update the pull request
+        if: steps.changes.outputs.moved == 'true'
+        run: |
+          # The diff summary and the compare link are the point: a reviewer
+          # should see what moved without opening 124 files.
+          {
+            echo '## Why'
+            echo
+            echo '`.agents/pstack/` tracks `cursor/plugins@main:pstack`, and upstream moved.'
+            echo
+            echo '## What changed'
+            echo
+            echo "Vendored commit \`$BEFORE\` to \`$AFTER\`, plugin version \`$VERSION\`."
+            echo
+            echo "Upstream range: https://github.com/cursor/plugins/compare/$BEFORE...$AFTER"
+            echo
+            echo '```'
+            cat /tmp/pstack-diffstat.txt
+            echo '```'
+            echo
+            echo '## How to verify'
+            echo
+            echo '`node --test tests/skills-layout.test.js` ran green on this branch before this pull request opened, and the full `PR Tests` suite was dispatched at the branch straight afterwards.'
+            echo
+            echo "That dispatched run is a standalone run, not a status check: no \`PR Tests\` tick will appear on this pull request, however green the suite came out. Read it before approving: https://github.com/$GH_REPO/actions/workflows/tests.yml?query=branch%3A${BRANCH//\//%2F}"
+            echo
+            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`, which is why the suite has to be dispatched and why it cannot report here. If the dispatch itself failed, this job logged an error and the branch carries only the drift test above — run `node --test tests/` and `pre-commit run --all-files` locally before approving.'
+            echo
+            echo 'Read `docs/agents/pstack.md` before approving a change to a playbook this repository overrules.'
+          } > /tmp/pstack-pr.md
+
+          title="chore(pstack): Sync vendored skills to ${AFTER:0:12}"
+          if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
+            gh pr edit "$BRANCH" --title "$title" --body-file /tmp/pstack-pr.md
+          else
+            # No label. Every string in docs/agents/triage-labels.md is an
+            # issue triage role — `needs-triage` reads "maintainer needs to
+            # evaluate this issue" — and this is a pull request. It already
+            # arrives needing review, which is what the architect gate is for.
+            # No auto-merge is armed, here or anywhere.
+            gh pr create --base "$GITHUB_BASE" --head "$BRANCH" \
+              --title "$title" --body-file /tmp/pstack-pr.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GITHUB_BASE: main
+          BRANCH: chore/pstack-sync
+          BEFORE: ${{ steps.before.outputs.before }}
+          AFTER: ${{ steps.push.outputs.after }}
+          VERSION: ${{ steps.push.outputs.version }}
+
+      - name: Dispatch the full test suite at the sync branch
+        # Guarded on the same `moved` output as the push: a run of this workflow
+        # that found upstream unchanged has no branch to test.
+        if: steps.changes.outputs.moved == 'true'
+        # Last, and deliberately unable to fail the job. A sync pull request
+        # that exists with no dispatched run is worth keeping; one that never
+        # opened because the dispatch call errored is not. The failure is an
+        # annotation rather than a silent skip, and the pull request body says
+        # what to do when the run is missing.
+        run: |
+          gh workflow run tests.yml --ref "$BRANCH" ||
+            echo "::error::Could not dispatch PR Tests for $BRANCH." \
+              "The sync pull request stands, verified only by the drift test."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: chore/pstack-sync
