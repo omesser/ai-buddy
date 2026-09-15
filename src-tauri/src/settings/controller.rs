@@ -6,6 +6,14 @@
 //! left holding only the widgets: it reports a row id and a value, and does
 //! what the `Outcome` says.
 
+// The one caller is the macOS renderer, and #706 step 1 leaves Windows and x11
+// on their frozen copies — so on those two legs nothing calls this and
+// `-D warnings` makes `dead_code` an error. The module stays out of `cfg`
+// anyway: it is platform-free, and gating it would stop its tests running on
+// two of the three CI legs, which is the whole reason it exists. Step 4's
+// `settings_event` gives it a caller everywhere, and this goes with it.
+#![allow(dead_code)]
+
 use crate::settings::form::{FormDescription, RowOperation};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsView};
 
