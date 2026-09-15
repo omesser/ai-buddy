@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.option1-loose.json",
+  "include": ["./probe/*.js", "./tauri-boundary.d.ts"]
+}

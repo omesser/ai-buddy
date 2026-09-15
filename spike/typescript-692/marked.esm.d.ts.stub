@@ -1,0 +1,9 @@
+// Spike 692 working file, not for commit. Lets tsc type-check markdown.js
+// without descending into the vendored bundle.
+export const marked: any;
+export const Marked: any;
+export const Renderer: any;
+export const lexer: any;
+export const parse: any;
+export function use(...args: any[]): any;
+export function setOptions(opts: any): any;

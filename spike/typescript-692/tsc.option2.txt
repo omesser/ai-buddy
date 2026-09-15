@@ -1,0 +1,21 @@
+../../src/chat.js(180,29): error TS2339: Property 'closest' does not exist on type 'EventTarget'.
+../../src/chat.js(277,8): error TS2339: Property 'disabled' does not exist on type 'HTMLElement'.
+../../src/chat.js(278,8): error TS2339: Property 'disabled' does not exist on type 'HTMLElement'.
+../../src/chat.js(279,8): error TS2339: Property 'placeholder' does not exist on type 'HTMLElement'.
+../../src/chat.js(353,25): error TS2339: Property 'dataset' does not exist on type 'Element'.
+../../src/chat.js(396,41): error TS2345: Argument of type 'string | boolean' is not assignable to parameter of type 'string'.
+  Type 'boolean' is not assignable to type 'string'.
+../../src/chat.js(429,18): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(430,16): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(447,54): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(449,32): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(450,18): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(474,13): error TS2339: Property 'disabled' does not exist on type 'HTMLElement'.
+../../src/chat.js(475,10): error TS2339: Property 'placeholder' does not exist on type 'HTMLElement'.
+../../src/chat.js(489,12): error TS2339: Property 'requestSubmit' does not exist on type 'HTMLElement'.
+../../src/chat.js(494,21): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(512,12): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(561,3): error TS2304: Cannot find name 'loginSaid'.
+../../src/cue.js(38,49): error TS2551: Property 'webkitAudioContext' does not exist on type 'Window & typeof globalThis'. Did you mean 'AudioContext'?
+../../src/main.js(489,20): error TS2339: Property 'setPointerCapture' does not exist on type 'EventTarget'.
+../../src/markdown.js(17,10): error TS2724: '"./vendor/marked.esm.js"' has no exported member named 'Lexer'. Did you mean 'lexer'?

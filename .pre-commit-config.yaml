@@ -28,18 +28,18 @@ repos:
     # the only thing that makes its pinned hash checkable. A fixer that rewrites
     # one line takes that away.
     #
-    # The anchor covers the generated and binary paths too — `Cargo.lock`,
+    # The anchor covers the generated and binary paths too — any `Cargo.lock`,
     # `.png`, `.b64`, `branding/_b64/parts/` — so one value serves all six
     # sites that skip this set. None of them holds anything worth linting.
       - id: end-of-file-fixer
-        exclude: &vendored ^(Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
+        exclude: &vendored ^((.*/)?Cargo\.lock|.*\.png|.*\.b64|branding/_b64/parts/.*|src/vendor/marked\.esm\.js)$|^\.agents/(agents/|pstack/(SKILLS\.md|LICENSE)|skills/(?!verify-ai-buddy/))
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
         exclude: *vendored
       - id: check-yaml
       - id: check-json
       - id: check-toml
-        exclude: ^Cargo\.lock$
+        exclude: (^|/)Cargo\.lock$
       - id: check-executables-have-shebangs
 
     # Cross platform
@@ -89,7 +89,7 @@ repos:
       - id: pretty-format-toml
         args: [--autofix, --no-sort]
         additional_dependencies: ["toml-sort==0.24.4", "tomlkit==0.15.1"]
-        exclude: ^Cargo\.lock$
+        exclude: (^|/)Cargo\.lock$
       - id: pretty-format-yaml
         args: [--autofix, --indent, '2', '--offset', '2', --preserve-quotes]
 

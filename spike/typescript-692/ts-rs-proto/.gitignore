@@ -1,0 +1,4 @@
+# Build output, and ts-rs's default per-type dump. `generated/payloads.d.ts` is
+# the committed artefact; `cargo test` writes both.
+/target/
+/bindings/
