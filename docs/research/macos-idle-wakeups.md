@@ -48,7 +48,7 @@ contributor. Reading the code proves it runs unconditionally; it does not
 prove it dominates the other ~250 wakeups/sec. The async runtime, log
 rotation and the tray icon are unmeasured. Isolating them needs `sample` or a
 per-thread breakdown, not `powermetrics --samplers tasks`, which only totals
-at the process level. Tracked as #735.
+at the process level. Tracked as #741.
 
 ## How much to trust these numbers
 
