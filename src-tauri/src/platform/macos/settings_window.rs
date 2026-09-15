@@ -24,6 +24,7 @@ use objc2_foundation::{
     MainThreadMarker, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
+use crate::settings::controller;
 use crate::settings::form::{self, CompositeControl, FormRow};
 use crate::settings::move_drag::{should_begin_move, Hit};
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView};
@@ -160,20 +161,13 @@ define_class!(
             let Some(button) = sender.and_then(|s| s.downcast_ref::<NSButton>()) else {
                 return;
             };
-            let on = button.state() == NSControlStateValueOn;
-
-            let tag = button.tag();
-            let tag_to_id = self.ivars().tag_to_id.borrow();
-            let Some(id) = tag_to_id.get(&tag) else {
+            let Some(id) = self.row_at(button.tag()) else {
                 return;
             };
-
-            let Some(field) = form::describe().bool_write(id) else {
-                return;
-            };
-            let mut patch = SettingsPatch::default();
-            patch.set_bool(field, on);
-            self.apply(patch);
+            self.dispatch(controller::Event::SetBool {
+                id,
+                value: button.state() == NSControlStateValueOn,
+            });
         }
 
         #[unsafe(method(endpointEnded:))]
@@ -181,22 +175,13 @@ define_class!(
             let Some(field) = sender.and_then(|s| s.downcast_ref::<NSTextField>()) else {
                 return;
             };
-            let tag = field.tag();
-            let tag_to_id = self.ivars().tag_to_id.borrow();
-            let Some(id) = tag_to_id.get(&tag) else {
+            let Some(id) = self.row_at(field.tag()) else {
                 return;
             };
-
-            let Some(writes) = form::describe().text_write(id) else {
-                return;
-            };
-
-            let text = field.stringValue().to_string();
-            let mut patch = SettingsPatch::default();
-            if !patch.set_text(writes, &text) {
-                return;
-            }
-            self.apply(patch);
+            self.dispatch(controller::Event::SetText {
+                id,
+                value: field.stringValue().to_string(),
+            });
         }
 
         /// Every writing popup, by the tag the pick carries. Reached the same
@@ -207,45 +192,16 @@ define_class!(
             let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
                 return;
             };
-            let tag = popup.tag();
-            let tag_to_id = self.ivars().tag_to_id.borrow();
-            let Some(id) = tag_to_id.get(&tag) else {
-                return;
-            };
-            let Some(writes) = form::describe().text_write(id) else {
+            let Some(id) = self.row_at(popup.tag()) else {
                 return;
             };
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
-            let title = title.to_string();
-            // AppKit sends the action for a click on the item already
-            // selected. Writing that back is a save and a redraw for nothing,
-            // and on the source popup it is lossy (#452).
-            let unchanged = self
-                .ivars()
-                .session
-                .borrow()
-                .as_ref()
-                .map(|session| session.view())
-                .and_then(|view| view.popup_value(id).map(|shown| shown == title))
-                .unwrap_or(false);
-            if unchanged {
-                return;
-            }
-            let mut patch = SettingsPatch::default();
-            if !patch.set_text(writes, &title) {
-                return;
-            }
-            // Redrawn here rather than left to the frame loop, which only
-            // comes back around for a pick that raises a `SettingsOp`. The
-            // Character and source popups both do; the registration picker
-            // writes a view preference and raises none, so without this the
-            // popup moved and the box under it still held the last Harness's
-            // snippet (#577).
-            if self.apply(patch) {
-                self.refresh();
-            }
+            self.dispatch(controller::Event::Pick {
+                id,
+                value: title.to_string(),
+            });
         }
 
         /// Every composite popup that is a shortcut for the field below it,
@@ -256,54 +212,25 @@ define_class!(
             let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
                 return;
             };
-            let tag = popup.tag();
-            let id = self.ivars().tag_to_id.borrow().get(&tag).cloned();
-            let Some(id) = id else {
-                return;
-            };
-            let description = form::describe();
-            let Some(shortcut) = description.shortcut(&id) else {
+            let Some(id) = self.row_at(popup.tag()) else {
                 return;
             };
             let Some(title) = popup.titleOfSelectedItem() else {
                 return;
             };
-            // Custom, and any title off the list, name nothing to write: the
-            // field below is what a value this picker cannot spell is.
-            let Some(value) = (shortcut.value)(&title.to_string()) else {
-                return;
-            };
-            let field = self
-                .ivars()
-                .fields
-                .borrow()
-                .iter()
-                .find(|(id, _)| id == shortcut.row)
-                .map(|(_, field)| field.clone());
-            let Some(field) = field else {
-                return;
-            };
-            // AppKit sends the action for a click on the item already
-            // selected, and that is a save and a redraw for nothing.
-            if field.stringValue().to_string() == value {
-                return;
-            }
-            field.setStringValue(&NSString::from_str(value));
-            // A batched row stages: the four Director rows only apply
-            // together, so Apply is what reaches the file (#279). An
-            // unbatched one has no Apply beside it and saves here (#638).
-            if description.text_batched(shortcut.row) {
-                self.update_director_buttons();
-                return;
-            }
-            let Some(writes) = description.text_write(shortcut.row) else {
-                return;
-            };
-            let mut patch = SettingsPatch::default();
-            if !patch.set_text(writes, value) {
-                return;
-            }
-            self.apply(patch);
+            // The row this list fills, as it stands: AppKit sends the action
+            // for a click on the item already selected, and only the window
+            // can say whether that is a change.
+            let current = form::describe()
+                .shortcut(&id)
+                .and_then(|shortcut| self.field(shortcut.row))
+                .map(|field| field.stringValue().to_string())
+                .unwrap_or_default();
+            self.dispatch(controller::Event::Shortcut {
+                id,
+                value: title.to_string(),
+                current,
+            });
         }
 
         #[unsafe(method(handleAction:))]
@@ -312,28 +239,10 @@ define_class!(
                 return;
             };
 
-            let tag = button.tag();
-            let tag_to_id = self.ivars().tag_to_id.borrow();
-            let Some(id) = tag_to_id.get(&tag) else {
+            let Some(id) = self.row_at(button.tag()) else {
                 return;
             };
-
-            let description = form::describe();
-            let Some(op) = description.operations.get(id) else {
-                return;
-            };
-
-            match op {
-                form::RowOperation::Spawn => self.do_spawn(),
-                form::RowOperation::OpenMemory => self.do_memory_open(),
-                form::RowOperation::WipeMemory => self.do_memory_wipe(),
-                form::RowOperation::ClearKey => self.do_clear_key(),
-                form::RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
-                form::RowOperation::CopyByoToken => self.do_copy_byo_token(),
-                form::RowOperation::Apply => self.do_apply(),
-                form::RowOperation::Cancel => self.do_cancel(),
-                form::RowOperation::NewSession => self.do_new_session(),
-            }
+            self.dispatch(controller::Event::Press { id });
         }
 
         /// Open or close the copy this button's tag points at.
@@ -442,9 +351,6 @@ impl SettingsController {
         }
     }
 
-    /// Stage the delete rather than write it. Applying here would drop the
-    /// session history before the endpoint typed beside it was ever sent, and
-    /// Cancel could not take it back (#279).
     /// The generated registration, on the clipboard.
     ///
     /// Copied from the view rather than regenerated, so what lands on the
@@ -486,12 +392,95 @@ impl SettingsController {
         }
     }
 
+    /// Stage the delete rather than write it. Applying here would drop the
+    /// session history before the endpoint typed beside it was ever sent, and
+    /// Cancel could not take it back (#279).
     fn do_clear_key(&self) {
         self.ivars().clear_pending.set(true);
         if let Some(field) = self.ivars().api_key.borrow().clone() {
             field.setStringValue(&NSString::from_str(""));
         }
         self.update_director_buttons();
+    }
+
+    /// The row a control's tag names, or `None` for a tag whose row is gone.
+    fn row_at(&self, tag: isize) -> Option<String> {
+        self.ivars().tag_to_id.borrow().get(&tag).cloned()
+    }
+
+    fn field(&self, id: &str) -> Option<Retained<NSTextField>> {
+        self.ivars()
+            .fields
+            .borrow()
+            .iter()
+            .find(|(row, _)| row == id)
+            .map(|(_, field)| field.clone())
+    }
+
+    /// One gesture, decided by the shared controller and carried out here.
+    ///
+    /// What the window contributes is the draft — the Director rows live in
+    /// the widgets and nowhere else, so nothing but this can read them (#279).
+    fn dispatch(&self, event: controller::Event) {
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        let description = form::describe();
+        let draft = self.director_draft(&description);
+        self.perform(controller::handle(&event, &draft, &view));
+    }
+
+    /// The half of a gesture only a window can do.
+    fn perform(&self, outcome: controller::Outcome) {
+        use controller::Outcome;
+        match outcome {
+            Outcome::Nothing => {}
+            Outcome::Apply(patch) => {
+                self.apply(patch);
+            }
+            Outcome::ApplyAndRefresh(patch) => {
+                if self.apply(patch) {
+                    self.refresh();
+                }
+            }
+            Outcome::Commit(patch) => {
+                if let Some(patch) = patch {
+                    if !self.apply(patch) {
+                        return;
+                    }
+                }
+                // Resets even though the store now holds what the key field
+                // still shows: only a reset takes the typed key back out of it.
+                self.draw(true);
+            }
+            Outcome::Reset => self.draw(true),
+            Outcome::ClearKey => self.do_clear_key(),
+            Outcome::Fill { id, value, patch } => {
+                let Some(field) = self.field(id) else {
+                    return;
+                };
+                field.setStringValue(&NSString::from_str(value));
+                match patch {
+                    Some(patch) => {
+                        self.apply(patch);
+                    }
+                    None => self.update_director_buttons(),
+                }
+            }
+            Outcome::Run(op) => match op {
+                form::RowOperation::Spawn => self.do_spawn(),
+                form::RowOperation::OpenMemory => self.do_memory_open(),
+                form::RowOperation::WipeMemory => self.do_memory_wipe(),
+                form::RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
+                form::RowOperation::CopyByoToken => self.do_copy_byo_token(),
+                // Each of these is an `Outcome` of its own, so the controller
+                // never hands one back here.
+                form::RowOperation::ClearKey
+                | form::RowOperation::Apply
+                | form::RowOperation::Cancel
+                | form::RowOperation::NewSession => {}
+            },
+        }
     }
 
     /// The Director tab as the window holds it right now.
@@ -537,41 +526,6 @@ impl SettingsController {
         }
     }
 
-    /// Resets only once the write landed. A locked Keychain fails
-    /// `write_director_key` before the file is touched, and discarding the
-    /// typed endpoint on the way out would lose an edit nothing saved (#279).
-    fn do_apply(&self) {
-        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
-            return;
-        };
-        let description = form::describe();
-        if let Some(patch) = self.director_draft(&description).patch(&view) {
-            if !self.apply(patch) {
-                return;
-            }
-        }
-        // Resets even though the store now holds what the key field still
-        // shows: only a reset takes the typed key back out of it.
-        self.draw(true);
-    }
-
-    /// The patch carries no row, so a staged endpoint edit beside it is
-    /// neither written nor thrown away: this button is a session boundary and
-    /// nothing else (#679). No redraw either — nothing on the form moved.
-    fn do_new_session(&self) {
-        self.apply(SettingsPatch {
-            new_session: true,
-            ..SettingsPatch::default()
-        });
-    }
-
-    /// Writes neither the file nor the store: the reset draws every field
-    /// from live state, and blanking the key field is what drops the typed
-    /// one on the floor.
-    fn do_cancel(&self) {
-        self.draw(true);
-    }
-
     /// The field comes off the row itself rather than a literal, so the blur
     /// and the row cannot disagree about which field the text belongs to.
     fn commit_excluded(&self) {
@@ -582,14 +536,10 @@ impl SettingsController {
             .as_ref()
             .map(|field| field.string().to_string())
             .unwrap_or_default();
-        let Some(writes) = form::describe().text_write(form::EXCLUDED_ID) else {
-            return;
-        };
-        let mut patch = SettingsPatch::default();
-        if !patch.set_text(writes, &text) {
-            return;
-        }
-        self.apply(patch);
+        self.dispatch(controller::Event::SetText {
+            id: form::EXCLUDED_ID.into(),
+            value: text,
+        });
     }
 
     /// Whether the write landed, so Apply knows not to discard a staged edit

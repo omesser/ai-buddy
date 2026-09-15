@@ -5,6 +5,7 @@
 //! editor, the same deal Memory already makes. Missing keys take their
 //! defaults, so an older file keeps working when a field is added.
 
+pub mod controller;
 pub mod form;
 pub mod move_drag;
 
@@ -1112,7 +1113,7 @@ impl SettingsSession {
 }
 
 /// What the settings window can change in one call.
-#[derive(Clone, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize, PartialEq)]
 pub struct SettingsPatch {
     pub director_enabled: Option<bool>,
     pub ambient_wakes: Option<bool>,
