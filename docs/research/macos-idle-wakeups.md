@@ -20,6 +20,11 @@ A buddy sitting perched, doing nothing, on an idle desktop:
 
 Release build, M3 Pro, medians of three interleaved 45-second captures per arm.
 
+**#741 has since split these two numbers between the threads that produce
+them and moved both.** Read "What the 369 is made of" below before this
+table: half the wakeups belong to WebKit display-link threads and the 16ms
+tick holds 12% of them, which is not what any of the issues above assumed.
+
 ## What this means
 
 **14.6% of a CPU to animate a still sprite, and it did not move.** That is the
@@ -43,12 +48,121 @@ That is the shape of the finding: **#183's whole line of work is aimed at the
 smaller half of the problem, and the larger half is a JavaScript loop nobody
 has looked at.**
 
-**What is still a guess.** That the rAF loop is the single biggest remaining
-contributor. Reading the code proves it runs unconditionally; it does not
-prove it dominates the other ~250 wakeups/sec. The async runtime, log
-rotation and the tray icon are unmeasured. Isolating them needs `sample` or a
-per-thread breakdown, not `powermetrics --samplers tasks`, which only totals
-at the process level. Tracked as #741.
+**What was a guess, and is now measured.** That the rAF loop is the single
+biggest remaining contributor was a guess when this was written. #741 split
+the count per thread and the answer is below: the loop is the largest single
+cause of the wakeups, but not through its own JavaScript, and it is not where
+the CPU goes. The async runtime, log rotation and the tray icon are all
+negligible.
+
+## What the 369 is made of
+
+Split per thread under #741, on the same machine and the same scenario, with
+`ktrace trace -f S0x0140`. That filter records the kernel's Mach scheduling
+subclass, in which `MACH_MKRUNNABLE` names the thread being made runnable and
+the emitting context says what made it so. Counting only the events raised
+from kernel context isolates the timer and interrupt wakeups, which is what
+`powermetrics` puts in its `Wakeups intr` column. `sample` names the threads.
+
+Two 20-second windows on the `main` arm, interleaved with the fix arm, 298.2
+and 293.5 interrupt wakeups/sec in total:
+
+| Thread | Wakeups/sec | Share |
+|---|---|---|
+| `JavaScriptCore libpas scavenger` | 113.0, 111.3 | 38% |
+| `CVDisplayLink` (built-in panel) | 96.3, 95.5 | 32% |
+| `CVDisplayLink` (external panel) | 46.8, 48.2 | 16% |
+| frame loop (`run_frame_loop`) | 36.0, 34.0 | 12% |
+| `main` | 6.0, 4.6 | 2% |
+
+**The 16ms tick is 12% of the wakeups, and the two display links are 48%.**
+There is one `CVDisplayLink` thread per display, in the host process, and
+WebKit runs them for as long as the page it hosts wants animation frames.
+Their rates are the panels' own: 96/sec on the 120Hz built-in display and
+47/sec on the 60Hz external one. The overlay asked for a frame at the top of
+every frame, so they never stopped. That is the rAF loop's real cost in this
+column, and it is not in the webview's process at all.
+
+The `libpas scavenger` is JavaScriptCore's allocator, in the host process
+because Tauri links WebKit there.
+
+Under both fixes the same two windows read 207.2 and 210.3 in total, and the
+one row that does not move is the frame loop: 36.5 and 37.9. Every other row
+falls, and the display links stop running as two standing threads. Nothing a
+Rust-side tick policy can reach is what changed.
+
+### Where the CPU goes, which is somewhere else
+
+The host process is not the only one. `powermetrics` reports per process, and
+an overlay's WKWebView content runs in XPC services of its own:
+
+| Process | CPU (ms/s) | Wakeups/sec |
+|---|---|---|
+| `ai-buddy` | 163.6 | 392.1 |
+| `WebKit.WebContent` (both overlays) | 122.4 | 24.5 |
+| `WebKit.GPU` | 12.0 | 10.8 |
+| `WebKit.Networking` | 0.5 | 9.7 |
+| **Total** | **302.7** | **436.5** |
+
+Medians of three interleaved 30-second captures on the `main` arm, launched
+the same way `scripts/bench-wakeups-macos.sh` launches one and sampled the
+same way, with the XPC services the app spawned recorded alongside its own
+pid. It says the thing this document had no way to see before: the 14.6% at
+the top counts one of four processes, and the buddy's real idle cost is
+nearly twice the host process alone.
+
+It also says where the rAF loop's own work lands, which is not in the wakeup
+count: two `WebContent` processes burn 122ms/s of CPU between them and wake
+24 times a second. The loop is expensive in CPU where it runs and expensive
+in wakeups two processes away.
+
+Inside the host process, the cost is the event emit. Tauri delivers an event
+by evaluating JavaScript in the target webview, so a tick that sends a frame
+to two overlays is two `WKWebView` script evaluations. `log stream --process`
+on the host counts **205 of them a second**, each taking and releasing a
+WebKit process assertion and writing four `os_log` lines on the way. In the
+same `ktrace` capture, `main` takes 730 thread-to-thread wakeups a second
+against 5 interrupt ones: an emit wakes a thread with a Mach message, so it
+lands as CPU and never in the column this document has been reading.
+
+### After the two fixes
+
+Both halves have a fix and neither one covers the other, so all three arms ran
+together, A/B/C interleaved, three 45-second captures each, idle-family bucket:
+
+| Arm | Wakeups/sec, median [range] | CPU%, median [range] |
+|---|---|---|
+| `main` | 404.9 [404.5–424.0] | 12.48 [7.82–13.63] |
+| skip an unchanged emit | 409.0 [393.1–411.9] | 10.14 [6.76–10.45] |
+| and stop re-arming rAF | **313.4** [246.8–365.9] | **6.38** [4.84–8.21] |
+
+Read the arms against each other rather than against the table at the top of
+this document: this round ran on a quieter machine than #733 did and its
+`main` arm reads 405 wakeups/sec and 12.5% CPU where #733 read 369 and 14.6%.
+
+**Skipping an unchanged emit moves CPU and not wakeups.** Its whole range sits
+inside `main`'s on wakeups, which is the same non-result #718 got, and for the
+same reason: an emit wakes a thread by sending it a Mach message, and a
+message is not an interrupt. It cut the evaluation rate from 205/sec to
+16/sec, and the CPU followed.
+
+**Stopping the rAF re-arm moves wakeups, and the ranges do not overlap.** 405
+to 313, a 23% cut, with `main` at 404.5–424.0 and the fix at 246.8–365.9.
+Nothing in the two arms' ranges touches. The display links are what moved.
+
+Together: **12.5% CPU and 405 wakeups/sec become 6.4% and 313.**
+
+The whole-family capture above, rerun across all three arms, agrees and reads
+tighter, because it samples every second rather than the idle-animation ones:
+
+| Arm | `ai-buddy` CPU (ms/s) | `ai-buddy` wakeups/sec | Family CPU (ms/s) |
+|---|---|---|---|
+| `main` | 163.6 [163.6–169.2] | 392.1 [391.6–394.1] | 302.7 |
+| skip an unchanged emit | 124.7 [121.4–125.4] | 393.0 [392.4–393.0] | 221.5 |
+| and stop re-arming rAF | 76.5 [73.9–77.2] | 230.4 [228.1–231.1] | 98.8 |
+
+Every column separates cleanly, and the middle row is the same split again:
+the emit fix takes a quarter of the family's CPU and none of its wakeups.
 
 ## How much to trust these numbers
 
@@ -137,6 +251,12 @@ confound a second time, more directly.
   event stream directly, the same path a real click takes. Confirmed against
   the running app's own `verbs: ... [Poke]` / `[Summon]` trace lines, not
   assumed.
+- `sudo ktrace trace -f S0x0140 -T <secs> --csv` — the per-thread split
+  above. `powermetrics` cannot attribute below the process, and this is what
+  answers instead: every row carries the emitting thread and its process, and
+  a `MACH_MKRUNNABLE` row's first argument is the thread being woken. Count
+  by that argument for wakeups per thread, and keep only the rows whose
+  emitting process is the kernel for the interrupt-driven ones.
 - `sudo -n powermetrics` worked non-interactively in this environment (no
   password prompt). If a reviewer's machine prompts, powermetrics needs a
   session where `sudo` is already primed, or these numbers are not
@@ -306,8 +426,7 @@ Scoped out per this task's instructions, not fabricated:
   established direction, not a resolved magnitude (see Headline and the
   idle-perched table). More runs, or a quieter machine, would narrow the
   range; this document stops at the n the task asked for.
-- **What actually produces the ~300–450 wakeups/sec baseline** — not
-  isolated. See Headline. WKWebView's event pump, the async runtime, log
-  rotation, and the tray icon are named as candidates because they are the
-  process's other standing activity, not because any one of them was
-  measured separately from the others.
+- **What actually produces the ~300–450 wakeups/sec baseline** — isolated
+  since, under #741. See "What the 369 is made of". The candidates this
+  document originally named (the async runtime, log rotation, the tray icon)
+  are none of them.
