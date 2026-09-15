@@ -1381,8 +1381,8 @@ fn note_event(dir: &Path, forward: &Forward, event: Event) {
         // A tool call, a plan and a usage tick are logged and never forwarded,
         // so a turn shows the surface no phases: a slow one looks the same
         // whether it is on its third tool call or stalled. The events to draw
-        // one from already arrive here; #697 holds whether any reaches the
-        // surface, and ADR-0028 bounds what it could draw if it did.
+        // one from already arrive here, and the surface needs to show more of a
+        // turn than it does today; ADR-0028 bounds what it draws. #697 closes it.
         Event::ToolCall {
             id,
             title,
