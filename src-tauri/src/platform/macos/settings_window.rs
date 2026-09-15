@@ -91,6 +91,11 @@ struct Ivars {
     character: RefCell<Option<Retained<NSPopUpButton>>>,
     harness: RefCell<Option<Retained<NSPopUpButton>>>,
     harness_state: RefCell<Option<Retained<NSTextField>>>,
+    byo_harness: RefCell<Option<Retained<NSPopUpButton>>>,
+    byo_snippet: RefCell<Option<Retained<NSTextField>>>,
+    byo_token: RefCell<Option<Retained<NSTextField>>>,
+    byo_copy_token: RefCell<Option<Retained<NSButton>>>,
+    byo_steps: RefCell<Option<Retained<NSTextField>>>,
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
     instances: RefCell<Option<Retained<NSView>>>,
@@ -232,7 +237,15 @@ define_class!(
             if !patch.set_text(writes, &title) {
                 return;
             }
-            self.apply(patch);
+            // Redrawn here rather than left to the frame loop, which only
+            // comes back around for a pick that raises a `SettingsOp`. The
+            // Character and source popups both do; the registration picker
+            // writes a view preference and raises none, so without this the
+            // popup moved and the box under it still held the last Harness's
+            // snippet (#577).
+            if self.apply(patch) {
+                self.refresh();
+            }
         }
 
         /// Every composite popup that is a shortcut for the field below it,
@@ -315,6 +328,8 @@ define_class!(
                 form::RowOperation::OpenMemory => self.do_memory_open(),
                 form::RowOperation::WipeMemory => self.do_memory_wipe(),
                 form::RowOperation::ClearKey => self.do_clear_key(),
+                form::RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
+                form::RowOperation::CopyByoToken => self.do_copy_byo_token(),
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
                 form::RowOperation::NewSession => self.do_new_session(),
@@ -430,6 +445,47 @@ impl SettingsController {
     /// Stage the delete rather than write it. Applying here would drop the
     /// session history before the endpoint typed beside it was ever sent, and
     /// Cancel could not take it back (#279).
+    /// The generated registration, on the clipboard.
+    ///
+    /// Copied from the view rather than regenerated, so what lands on the
+    /// clipboard is the same string the box above is showing — including the
+    /// port and token of this app run, which change at the next one.
+    ///
+    /// Lifted from #596, which built the same three arms for the token alone.
+    fn do_copy_byo_snippet(&self) {
+        use objc2_app_kit::NSPasteboard;
+
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_snippet.is_empty() {
+            return;
+        }
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        let snippet = NSString::from_str(&view.byo_snippet);
+        unsafe {
+            pasteboard.setString_forType(&snippet, objc2_app_kit::NSPasteboardTypeString);
+        }
+    }
+
+    fn do_copy_byo_token(&self) {
+        use objc2_app_kit::NSPasteboard;
+
+        let Some(view) = self.ivars().session.borrow().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_token.is_empty() {
+            return;
+        }
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        let token = NSString::from_str(&view.byo_token);
+        unsafe {
+            pasteboard.setString_forType(&token, objc2_app_kit::NSPasteboardTypeString);
+        }
+    }
+
     fn do_clear_key(&self) {
         self.ivars().clear_pending.set(true);
         if let Some(field) = self.ivars().api_key.borrow().clone() {
@@ -711,6 +767,20 @@ impl SettingsController {
         if let Some(field) = self.ivars().harness_state.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.harness_state));
         }
+        if let Some(field) = self.ivars().byo_snippet.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.byo_snippet));
+        }
+        if let Some(field) = self.ivars().byo_token.borrow().clone() {
+            let has_token = !view.byo_token.is_empty();
+            field.setStringValue(&NSString::from_str(&view.byo_token));
+            field.setHidden(!has_token);
+        }
+        if let Some(button) = self.ivars().byo_copy_token.borrow().clone() {
+            button.setHidden(view.byo_token.is_empty());
+        }
+        if let Some(field) = self.ivars().byo_steps.borrow().clone() {
+            field.setStringValue(&NSString::from_str(&view.byo_steps));
+        }
         fill_popup(&self.ivars().character, &view.installed, &view.character);
         // Left alone while the field holds a staged edit, for the same reason
         // the field itself is: the pick is what the field says (#279).
@@ -737,6 +807,11 @@ impl SettingsController {
             &self.ivars().harness,
             &form::harness_options(),
             &view.harness,
+        );
+        fill_popup(
+            &self.ivars().byo_harness,
+            &form::HARNESS_PRESETS.map(str::to_string),
+            &view.byo_harness,
         );
         fill_popup(
             &self.ivars().new_character,
@@ -894,6 +969,11 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut character_popup = None;
     let mut harness_popup = None;
     let mut harness_state_field = None;
+    let mut byo_harness_popup = None;
+    let mut byo_snippet_field = None;
+    let mut byo_token_field = None;
+    let mut byo_copy_token_button = None;
+    let mut byo_steps_field = None;
     let mut new_character_popup = None;
     let mut new_name_field = None;
     let mut instances_view = None;
@@ -1132,6 +1212,29 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                 cursor.place(&field, 44.0);
                                 harness_state_field = Some(field);
                             }
+                            // ponytail: one height for all five, sized to
+                            // opencode's eleven-line JSON because a clipped
+                            // snippet is one pasted with a line missing. The
+                            // ceiling is the dead space under claude's two
+                            // lines; sizing per Harness needs the picked one
+                            // at `describe()` time, which reads the
+                            // environment and not the file, so it would cost
+                            // a relayout on every pick.
+                            form::BYO_SNIPPET_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 172.0);
+                                byo_snippet_field = Some(field);
+                            }
+                            form::BYO_TOKEN_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 66.0);
+                                byo_token_field = Some(field);
+                            }
+                            form::BYO_STEPS_ID => {
+                                let field = inspect_block(mtm);
+                                cursor.place(&field, 66.0);
+                                byo_steps_field = Some(field);
+                            }
                             _ => {}
                         }
 
@@ -1174,6 +1277,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                         match id.as_str() {
                             form::CHARACTER_ID => character_popup = Some(pop),
                             form::HARNESS_ID => harness_popup = Some(pop),
+                            form::BYO_HARNESS_ID => byo_harness_popup = Some(pop),
                             _ => {}
                         }
 
@@ -1327,6 +1431,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     if id == form::SPAWN_ID {
                                         pin_right(&btn);
                                     }
+                                    if id == form::BYO_COPY_TOKEN_ID {
+                                        byo_copy_token_button = Some(btn.clone());
+                                    }
                                     document.addSubview(&btn);
                                     x += if label.len() > 10 { 148.0 } else { 80.0 };
 
@@ -1398,6 +1505,11 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().character.borrow_mut() = character_popup;
     *controller.ivars().harness.borrow_mut() = harness_popup;
     *controller.ivars().harness_state.borrow_mut() = harness_state_field;
+    *controller.ivars().byo_harness.borrow_mut() = byo_harness_popup;
+    *controller.ivars().byo_snippet.borrow_mut() = byo_snippet_field;
+    *controller.ivars().byo_token.borrow_mut() = byo_token_field;
+    *controller.ivars().byo_copy_token.borrow_mut() = byo_copy_token_button;
+    *controller.ivars().byo_steps.borrow_mut() = byo_steps_field;
     *controller.ivars().new_character.borrow_mut() = new_character_popup;
     *controller.ivars().new_name.borrow_mut() = new_name_field;
     *controller.ivars().instances.borrow_mut() = instances_view;
@@ -2040,7 +2152,13 @@ mod tests {
                 .unwrap_or_default();
             assert_eq!(
                 headings,
-                ["AI", "AI source", "Model / API", "Last user turn"]
+                [
+                    "AI",
+                    "AI source",
+                    form::BYO_HEADING,
+                    "Model / API",
+                    "Last user turn"
+                ]
             );
         });
     }

@@ -242,11 +242,40 @@ impl SettingsWindow {
                                 .clone()
                                 .unwrap_or_else(|| "Nothing sent yet.".to_string()),
                             form::HARNESS_STATE_ID => view.harness_state.clone(),
+                            form::BYO_SNIPPET_ID => view.byo_snippet.clone(),
+                            form::BYO_TOKEN_ID => view.byo_token.clone(),
+                            form::BYO_STEPS_ID => view.byo_steps.clone(),
                             _ => String::new(),
                         };
                         set_window_text(*hwnd, &text);
+                        if id == form::BYO_TOKEN_ID {
+                            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                                ShowWindow, SW_HIDE, SW_SHOW,
+                            };
+                            ShowWindow(
+                                *hwnd,
+                                if view.byo_token.is_empty() {
+                                    SW_HIDE
+                                } else {
+                                    SW_SHOW
+                                },
+                            );
+                        }
                     }
-                    Control::Button(_, _) => {
+                    Control::Button(hwnd, _) => {
+                        if id == form::BYO_COPY_TOKEN_ID {
+                            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                                ShowWindow, SW_HIDE, SW_SHOW,
+                            };
+                            ShowWindow(
+                                *hwnd,
+                                if view.byo_token.is_empty() {
+                                    SW_HIDE
+                                } else {
+                                    SW_SHOW
+                                },
+                            );
+                        }
                         if id == form::APPLY_ID || id == form::CANCEL_ID {
                             let description = form::describe();
                             let _dirty = self.director_draft(&description).patch(&view).is_some();
@@ -664,6 +693,8 @@ impl SettingsWindow {
                     RowOperation::OpenMemory => self.do_memory_open(),
                     RowOperation::WipeMemory => self.do_memory_wipe(),
                     RowOperation::ClearKey => self.do_clear_key(),
+                    RowOperation::CopyByoSnippet => self.do_copy_byo_snippet(),
+                    RowOperation::CopyByoToken => self.do_copy_byo_token(),
                     RowOperation::Apply => self.do_apply(),
                     RowOperation::Cancel => self.do_cancel(),
                     RowOperation::NewSession => self.do_new_session(),
@@ -770,6 +801,88 @@ impl SettingsWindow {
             if let Err(why) = session.wipe_memory() {
                 eprintln!("settings: {why}");
             }
+        }
+    }
+
+    /// The generated registration, on the clipboard.
+    ///
+    /// Taken from the view rather than regenerated, so the clipboard holds the
+    /// same string the box is showing. Lifted from #596, which built this arm
+    /// for the token alone; the snippet is what a user actually pastes.
+    ///
+    /// `CF_TEXT` and a `GMEM_MOVEABLE` block, because the clipboard owns the
+    /// handle after `SetClipboardData` and would free a local buffer.
+    fn do_copy_byo_snippet(&self) {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+
+        const CF_TEXT: u32 = 1;
+
+        let Some(view) = self.session.lock().unwrap().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_snippet.is_empty() {
+            return;
+        }
+        let bytes = view.byo_snippet.as_bytes();
+
+        unsafe {
+            if OpenClipboard(self.hwnd) == 0 {
+                return;
+            }
+            EmptyClipboard();
+            let handle = GlobalAlloc(GMEM_MOVEABLE, bytes.len() + 1);
+            if !handle.is_null() {
+                let block = GlobalLock(handle);
+                if !block.is_null() {
+                    ptr::copy_nonoverlapping(bytes.as_ptr(), block as *mut u8, bytes.len());
+                    *(block.add(bytes.len()) as *mut u8) = 0;
+                    GlobalUnlock(handle);
+                    SetClipboardData(CF_TEXT, handle as _);
+                }
+            }
+            CloseClipboard();
+        }
+    }
+
+    fn do_copy_byo_token(&self) {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+
+        const CF_TEXT: u32 = 1;
+
+        let Some(view) = self.session.lock().unwrap().as_ref().map(|s| s.view()) else {
+            return;
+        };
+        if view.byo_token.is_empty() {
+            return;
+        }
+        let bytes = view.byo_token.as_bytes();
+
+        unsafe {
+            if OpenClipboard(self.hwnd) == 0 {
+                return;
+            }
+            EmptyClipboard();
+            let handle = GlobalAlloc(GMEM_MOVEABLE, bytes.len() + 1);
+            if !handle.is_null() {
+                let block = GlobalLock(handle);
+                if !block.is_null() {
+                    ptr::copy_nonoverlapping(bytes.as_ptr(), block as *mut u8, bytes.len());
+                    *(block.add(bytes.len()) as *mut u8) = 0;
+                    GlobalUnlock(handle);
+                    SetClipboardData(CF_TEXT, handle as _);
+                }
+            }
+            CloseClipboard();
         }
     }
 
@@ -1037,6 +1150,9 @@ fn should_update_label_text(id: &str) -> bool {
         || id == form::HOTKEY_ID
         || id == form::PAYLOAD_ID
         || id == form::HARNESS_STATE_ID
+        || id == form::BYO_SNIPPET_ID
+        || id == form::BYO_TOKEN_ID
+        || id == form::BYO_STEPS_ID
     {
         return true;
     }
