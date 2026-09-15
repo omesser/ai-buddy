@@ -21,7 +21,7 @@ This research answers:
 | **Claude Code** | `claude mcp add --header "Authorization: Bearer <token>"` | **No** — must exit and restart session | **Yes** — silently keeps stale | CLI with `remove` then `add` (omit `-s`, local default) |
 | **Codex** | CLI: `export` + `codex mcp add --bearer-token-env-var`; Alt: config with `http_headers` | **Yes** — `mcpServer/refresh` command | Unknown | CLI `export` + `codex mcp add` (TOML alt) |
 | **Hermes** | CLI: `hermes mcp add --auth header`; Alt: config YAML | **Yes** — `/reload-mcp` | Unknown | CLI `hermes mcp add --auth header` (YAML alt) |
-| **OpenCode** | CLI: `opencode mcp add --header`; Alt: flat JSON `type:remote` + `oauth:false` | **Yes** — `/reload` | Unknown | CLI `opencode mcp add --header` (flat JSON alt) |
+| **OpenCode** | CLI: `opencode mcp add --header`; Alt: flat JSON `type:remote` + `oauth:false` | **No** — restart; `/reload` does not exist (§6) | Unknown | CLI `opencode mcp add --header` (flat JSON alt) |
 | **Grok** | `grok mcp add` with `--header`, or config TOML | **Yes** — `/mcps` then press `r` | Unknown | CLI `grok mcp add` (default scope: user) |
 | **Pi** | Config: `.mcp.json` or `~/.pi/agent/mcp.json` | **Yes** — `/reload` + `/mcp reconnect` | Unknown | Config snippet + `/reload` |
 
@@ -201,7 +201,7 @@ CLI (PRIMARY):
 opencode mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
 ```
 
-Instructions: "Run it in a terminal, then run `/reload` in your OpenCode session. If OpenCode tries OAuth, set `\"oauth\": false` in the config. Alternatively, merge flat `mcp.ai-buddy` content into `opencode.jsonc` (NOT nested `mcp.servers.<name>` shape); use `type: \"remote\"` and `oauth: false`."
+Instructions: "Run it in a terminal, then restart OpenCode. If OpenCode tries OAuth, set `\"oauth\": false` in the config. Alternatively, merge flat `mcp.ai-buddy` content into `opencode.jsonc` (NOT nested `mcp.servers.<name>` shape); use `type: \"remote\"` and `oauth: false`."
 
 ---
 
@@ -316,13 +316,13 @@ This confirms #580's finding: the stdio shim is never required for bearer auth.
 | Has Native Reload | Harness | Method |
 |-------------------|---------|--------|
 | ✅ Yes | Hermes | `/reload-mcp` |
-| ✅ Yes | OpenCode | `/reload` |
 | ✅ Yes | Grok | `/mcps` + `r` |
 | ✅ Yes | Pi | `/reload` + `/mcp reconnect` |
 | ✅ Yes | Codex | `mcpServer/refresh` |
 | ❌ **No** | **Claude Code** | Must restart session |
+| ❌ **No** | **OpenCode** | Must restart; see §6 |
 
-**Inference**: Five of six harnesses support mid-session reload. Only Claude Code requires full session restart.
+**Fact**: Four of six harnesses support mid-session reload. Claude Code and OpenCode both require a restart; OpenCode's entry was corrected in §6 after a live run.
 
 ### 3. The Claude Code Re-Add Trap
 
@@ -351,6 +351,78 @@ This confirms #580's finding: the stdio shim is never required for bearer auth.
 
 This means "restart" is less disruptive than it sounds: the user types the command again, doesn't lose unsaved work in an app, and conversation history may be preserved depending on the harness.
 
+### 6. Prompting Is Not a Route
+
+**Fact**: No harness has a register-an-MCP-server tool the model can call, so a
+user cannot hand their running agent the URL and token in conversation. The
+reason is the same every time: the MCP server list is assembled from
+configuration when the process starts, and the tools the model can see are fixed
+for the turn.
+
+The model-facing tool surfaces say so directly. Claude Code's in-session `/mcp`
+takes `[reconnect <server>|enable|disable [<server>|all]]` and nothing else (read
+from the binary). OpenCode's builtin tools are `bash, edit, glob, grep, list,
+patch, read, task, todowrite, webfetch, write`, with no MCP verb among them
+(read). Grok's only MCP-facing tools are `search_tool` and `use_tool`, over
+servers that are *already* enabled (read). Codex's `/mcp [verbose]` only lists
+(read).
+
+A prompt can of course make the agent shell out to `claude mcp add` or `grok mcp
+add`. That writes the same file the user would have pasted into and still needs
+the restart or the manual refresh afterwards — a longer path to the same place,
+with a live agent editing config as the extra risk. Tell the user to paste one
+line instead.
+
+Two exceptions are worth knowing, and neither changes the recommendation.
+
+- **Hermes needs no restart, and not because anyone told it anything.** It stats
+  `config.yaml` every 5 seconds, and when the `mcp_servers` section specifically
+  differs it disconnects, re-reads, reconnects, and refreshes the agent's tool
+  list (read, in `cli.py`). So for Hermes the whole procedure is "save the file",
+  mid-session included. `/reload-mcp` forces the same thing and warns that it
+  invalidates the provider prompt cache.
+- **OpenCode has a genuinely dynamic path, and it is an API call rather than a
+  prompt.** `POST /mcp` (`mcp.add`) on a running OpenCode server registers a
+  server in memory, taking the same headers and environment (read). It does not
+  persist, and it needs that server's address, which ai-buddy does not have in
+  the BYO scenario. Not a fallback; recorded so nobody rediscovers it as one.
+
+**Implication for ai-buddy**: the Settings surface generates a snippet the user
+pastes. There is no version of this where ai-buddy talks the harness into
+registering itself, so nothing should be designed on the assumption that one
+arrives later.
+
+#### OpenCode does not reload, and the `/reload` in §2 was never shipped
+
+The §2 table originally credited OpenCode with `/reload`, while the earlier
+registration pass recorded the opposite from a live run. Settled by running it
+again on OpenCode 1.18.30, and the registration pass was right.
+
+**Fact** (ran, 2026-09-16): a headless `opencode serve` was started against a
+throwaway config holding one MCP server, `alpha`. A second server, `beta`, was
+then written into that same config file with the process left running. Three
+seconds later `GET /mcp` still reported only `alpha`, and `GET /config` still
+returned an `mcp` object with `alpha` alone in it. The configuration is read
+once at start and cached; a file the user edits mid-session is not seen.
+
+**Fact** (read): `sst/opencode#6719`, cited in this document's own sources, is
+titled *"[FEATURE]: slash command for reload"* and is **open**. It is a request
+for `/reload`, not documentation of it. That is where the ✅ came from.
+
+**Fact** (ran, 2026-09-16): `POST /mcp` (`mcp.add`) does work, exactly as §6
+describes. Posting `gamma` to a running server registered it immediately and
+OpenCode attempted the connection, with no restart and no config write. The
+server list also carries `POST /mcp/{name}/connect` and
+`POST /mcp/{name}/disconnect`, so a registered server can be reconnected in
+place. None of this rescues the BYO case: every route needs the address of the
+user's own OpenCode server, which ai-buddy does not have.
+
+**Implication for ai-buddy**: generate OpenCode's snippet with a restart
+instruction, alongside Claude Code's. Two of six, not one.
+
+Grok's refresh remains read from its shipped documentation rather than
+exercised, which matches the `~` this research already gives it.
+
 ---
 
 ## Recommendations for PR #599 Settings UI
@@ -378,7 +450,7 @@ This means "restart" is less disruptive than it sounds: the user types the comma
 | Claude Code | "Exit your Claude session and start a new one with `claude`." |
 | Codex | "Run `mcpServer/refresh` from your Codex session." (or "Restart your Codex session" if refresh unavailable) |
 | Hermes | "Run `/reload-mcp` in your Hermes session." |
-| OpenCode | "Run `/reload` in your OpenCode session." |
+| OpenCode | "Restart OpenCode." |
 | Grok | "Run `/mcps`, then press `r` to reload." |
 | Pi | "Run `/reload`, then `/mcp reconnect ai-buddy`." |
 
@@ -515,5 +587,7 @@ These are answerable with execution once harness CLIs are installed.
 ## Change Log
 
 - **2026-09-12**: Initial research document created. Covers six harnesses (Claude Code, Codex, Hermes, OpenCode, Grok, Pi). Documented reload mechanisms, re-add trap (Claude Code), and config locations. Recommendations for PR #599 Settings UI.
+- **2026-09-16**: Added §6, Prompting Is Not a Route, carried over from an earlier registration pass (branch `research/byo-harness-mcp`) that never reached a pull request. That pass covered five harnesses — Claude Code, Hermes, OpenCode, Grok and Codex — and did not examine Pi, so §6 says nothing about Pi. It also contradicted this document on OpenCode's mid-session reload.
+- **2026-09-16**: Settled that contradiction by running OpenCode 1.18.30 again. It does not re-read its config mid-session, and the `/reload` this document credited it with is an open feature request (`sst/opencode#6719`), not a shipped command. Corrected the summary table, the reload table, the per-harness instruction, and the #599 recommendation. Confirmed `POST /mcp` in-memory registration at the same time.
 
 _— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
