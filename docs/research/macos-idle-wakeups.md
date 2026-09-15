@@ -2,10 +2,11 @@
 
 Baseline for #431, under #423's plan. #423 names the suspect: an unconditional
 ~60 Hz frame-loop tick that never backs off, even when the sprite is still and
-the desktop is idle (#183). PR #718 is open right now, shipping idle
-back-off for macOS and Windows against that suspect (#183 Stage 2b); this
-document gives the baseline that makes its claim checkable, measured on both
-`main` and #718's head so the delta is a number, not an assertion.
+the desktop is idle (#183). PR #718 shipped idle back-off for macOS and
+Windows against that suspect (#183 Stage 2b) and has since merged as
+`8ba9481d`; these captures were taken while it was still open, against its
+head and against the `main` it branched from, so the comparison is between two
+fixed commits rather than against a moving branch.
 
 ## Headline, read this before the tables
 
@@ -23,8 +24,8 @@ number needs `sample` or a per-thread breakdown, not
 `powermetrics --samplers tasks`, which only totals wakeups at the process
 level.
 
-**#718's idle-perched effect is directionally real and not resolved at this
-sample size.** An earlier draft of this document reported a single 60-second
+**#718's idle-perched point estimate favors it, and this sample establishes
+neither direction nor magnitude.** An earlier draft of this document reported a single 60-second
 capture per branch and stated the gap between them — 3.59 vs. 0.8–1.3
 package-idle wakeups/sec — as a **65–75% reduction**, in bold, as a measured
 finding. That was arithmetic on one observation per arm dressed as a
@@ -34,12 +35,14 @@ on both arms rather than one, put `main`'s three runs at **2.92, 4.22,
 5.09** package-idle wakeups/sec (median 4.22) and #718's three runs at
 **3.24, 3.52, 4.32** (median 3.52). The ranges overlap almost entirely — #718's
 whole range sits inside `main`'s. The median gap (4.22 vs. 3.52, about 17%)
-points the same direction the original 65–75% figure did, but at n=3 per arm
-on this machine, that direction is not distinguishable from the run-to-run
-noise each arm shows on its own (`main` alone spans 2.92 to 5.09, a wider
-range than the gap between the two arms' medians). **The honest statement of
-this baseline is: #718 likely helps, and this data cannot yet say by how
-much.** Full tables below.
+falls on the same side as the original 65–75% figure, but at n=3 per arm on
+this machine it is not separable from the run-to-run noise each arm shows on
+its own (`main` alone spans 2.92 to 5.09, a wider range than the gap between
+the two arms' medians). **The honest statement of this baseline is: the point
+estimate favors #718, and this sample cannot establish direction or
+magnitude.** That is not evidence against the change either — a real effect
+and no effect are both consistent with these six captures. Separating them
+needs more runs or a quieter machine. Full tables below.
 
 **Read every number below against a shared, noisy machine, not a clean-room
 rig.** This is a dev laptop with other agents building and running their own
@@ -164,9 +167,9 @@ branch effect, which is exactly why it does not need to be thrown out.
 
 **The ranges overlap.** #718's package-idle range (3.24–4.32) sits almost
 entirely inside `main`'s (2.92–5.09). The median difference (4.22 vs. 3.52)
-is real and points toward #718 helping, but it is smaller than the spread
-each branch shows against itself across three runs on this machine, so this
-data does not resolve the effect size — only its direction, tentatively.
+falls on #718's side, but it is smaller than the spread each branch shows
+against itself across three runs on this machine, so this data resolves
+neither the effect size nor the direction.
 
 ## Walking
 
