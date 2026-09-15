@@ -25,8 +25,9 @@ number needs `sample` or a per-thread breakdown, not
 level.
 
 **#718's idle-perched point estimate favors it, and this sample establishes
-neither direction nor magnitude.** An earlier draft of this document reported a single 60-second
-capture per branch and stated the gap between them — 3.59 vs. 0.8–1.3
+neither direction nor magnitude.** An earlier draft of this document reported
+a single 60-second capture per branch and stated the gap between them — 3.59
+vs. 0.8–1.3
 package-idle wakeups/sec — as a **65–75% reduction**, in bold, as a measured
 finding. That was arithmetic on one observation per arm dressed as a
 confidence interval, and it does not survive a repeat: three idle-perched
