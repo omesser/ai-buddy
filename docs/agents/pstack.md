@@ -104,9 +104,13 @@ already arrives needing review. The pull request carries the upstream SHA range
 and a diff summary so a reviewer does not have to read 124 files.
 
 A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`,
-so `PR Tests` will not run on it. The workflow runs `tests/skills-layout.test.js`
-itself before opening one, and its description says so and no more. Running the
-full suite there would need a personal access token, which this repository does
-not carry, so run `node --test tests/` yourself before approving one.
+so `PR Tests` never fires for a sync pull request. The workflow runs
+`tests/skills-layout.test.js` itself before opening one, then dispatches the
+full suite at the sync branch — `workflow_dispatch` is one of the two events
+GitHub exempts from that suppression, so it fires where `pull_request` does not.
+A dispatched run is standalone, though. The pull request still carries no `PR
+Tests` check, however green the suite came out, so read the run itself; the
+description links it. Turning that into a check mark would take a GitHub App
+token, which this repository deliberately does not carry.
 
 To sync by hand, run `scripts/sync-pstack.sh --fetch`.
