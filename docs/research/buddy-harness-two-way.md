@@ -233,16 +233,16 @@ adapter against v1 and keep the completion signal behind one function.
 <https://agentclientprotocol.com/protocol/v2/overview>
 
 **Client-side prior art in the same shape as ai-buddy**: Jockey, an "open-source
-multi-agent orchestrator (Tauri + Rust + SolidJS) that coordinates Claude Code,
-Gemini CLI, and Codex CLI via ACP", and Zed itself.
+multi-agent orchestrator (Tauri + Rust + SolidJS) that coordinates agents via
+ACP", and Zed itself.
 <https://agentclientprotocol.com/get-started/clients>
 
 ## Per-harness headless/session APIs
 
 Every one of the five appears on ACP's own agent list, which is the cheapest way
 to see coverage in one place: Claude Agent "via Zed's SDK adapter", Codex CLI,
-Cursor, Gemini CLI, GitHub Copilot, Goose, "Hermes Agent", "OpenCode", "Pi …
-via pi-acp adapter", Qwen Code, and more.
+Cursor, GitHub Copilot, Goose, "Hermes Agent", "OpenCode", "Pi … via pi-acp
+adapter", Qwen Code, and more.
 <https://agentclientprotocol.com/get-started/agents>
 Per-harness first-party detail below; where only a third-party adapter exists,
 that is stated.
