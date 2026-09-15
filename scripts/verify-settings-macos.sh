@@ -15,7 +15,9 @@
 #
 # Expects a built debug binary; it does not cargo build. One throwaway HOME
 # so the run does not read your own settings or Keychain. Output under
-# .verify/settings-macos-<stamp>/.
+# .verify/settings-macos-<stamp>/. Picking the claude Harness downloads its
+# npx package the first time; that lands in a shared .verify/.npm-cache, not
+# the throwaway HOME, so a later run reuses it (#740) instead of refetching.
 #
 # That throwaway HOME has no keychain to find, so every dump carries
 # "Unavailable: Platform secure storage failure" where a stored key would be.
@@ -80,6 +82,14 @@ for link in .claude .claude.json .codex .config; do
   [ -e "$HOME/$link" ] && ln -sfn "$HOME/$link" "$home/$link"
 done
 
+npm_cache="$root/.verify/.npm-cache"
+mkdir -p "$npm_cache"
+# Outside the throwaway HOME on purpose. npm's cache is content-addressed and
+# checksum-verified per entry, so it carries no app or Settings state for the
+# isolation to protect, and a crashed run leaves one unused entry rather than a
+# broken cache. `@latest` still re-resolves against the registry every run
+# (#514); only the package bytes behind that tag are reused.
+
 log="$out/app.log"
 # HOME is overridden so settings.json and the Action Log are this run's and
 # not your own, while the Harness keeps its Keychain credentials, which is
@@ -103,6 +113,7 @@ log="$out/app.log"
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
+  npm_config_cache="$npm_cache" \
   "$bin" > "$log" 2>&1 &
 app_pid=$!
 
