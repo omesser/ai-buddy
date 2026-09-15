@@ -351,6 +351,59 @@ This confirms #580's finding: the stdio shim is never required for bearer auth.
 
 This means "restart" is less disruptive than it sounds: the user types the command again, doesn't lose unsaved work in an app, and conversation history may be preserved depending on the harness.
 
+### 6. Prompting Is Not a Route
+
+**Fact**: No harness has a register-an-MCP-server tool the model can call, so a
+user cannot hand their running agent the URL and token in conversation. The
+reason is the same every time: the MCP server list is assembled from
+configuration when the process starts, and the tools the model can see are fixed
+for the turn.
+
+The model-facing tool surfaces say so directly. Claude Code's in-session `/mcp`
+takes `[reconnect <server>|enable|disable [<server>|all]]` and nothing else (read
+from the binary). OpenCode's builtin tools are `bash, edit, glob, grep, list,
+patch, read, task, todowrite, webfetch, write`, with no MCP verb among them
+(read). Grok's only MCP-facing tools are `search_tool` and `use_tool`, over
+servers that are *already* enabled (read). Codex's `/mcp [verbose]` only lists
+(read).
+
+A prompt can of course make the agent shell out to `claude mcp add` or `grok mcp
+add`. That writes the same file the user would have pasted into and still needs
+the restart or the manual refresh afterwards — a longer path to the same place,
+with a live agent editing config as the extra risk. Tell the user to paste one
+line instead.
+
+Two exceptions are worth knowing, and neither changes the recommendation.
+
+- **Hermes needs no restart, and not because anyone told it anything.** It stats
+  `config.yaml` every 5 seconds, and when the `mcp_servers` section specifically
+  differs it disconnects, re-reads, reconnects, and refreshes the agent's tool
+  list (read, in `cli.py`). So for Hermes the whole procedure is "save the file",
+  mid-session included. `/reload-mcp` forces the same thing and warns that it
+  invalidates the provider prompt cache.
+- **OpenCode has a genuinely dynamic path, and it is an API call rather than a
+  prompt.** `POST /mcp` (`mcp.add`) on a running OpenCode server registers a
+  server in memory, taking the same headers and environment (read). It does not
+  persist, and it needs that server's address, which ai-buddy does not have in
+  the BYO scenario. Not a fallback; recorded so nobody rediscovers it as one.
+
+**Implication for ai-buddy**: the Settings surface generates a snippet the user
+pastes. There is no version of this where ai-buddy talks the harness into
+registering itself, so nothing should be designed on the assumption that one
+arrives later.
+
+#### One unresolved conflict with the table in §2
+
+The §2 table credits OpenCode with `/reload`. The earlier registration pass
+recorded the opposite from a live run of OpenCode 1.18.30: *"not hot-reloaded…
+quit and restart"*, quoted from the harness itself. Both cannot be right. Until
+someone re-runs it, treat OpenCode's mid-session reload as unverified rather
+than as the ✅ the table shows, and generate its snippet with a restart
+instruction.
+
+The same pass also reached Grok's refresh by reading its shipped documentation
+rather than exercising it, which matches the `~` this research already gives it.
+
 ---
 
 ## Recommendations for PR #599 Settings UI
@@ -515,5 +568,6 @@ These are answerable with execution once harness CLIs are installed.
 ## Change Log
 
 - **2026-09-12**: Initial research document created. Covers six harnesses (Claude Code, Codex, Hermes, OpenCode, Grok, Pi). Documented reload mechanisms, re-add trap (Claude Code), and config locations. Recommendations for PR #599 Settings UI.
+- **2026-09-16**: Added §6, Prompting Is Not a Route, carried over from an earlier registration pass (branch `research/byo-harness-mcp`) that never reached a pull request. That pass covered five harnesses — Claude Code, Hermes, OpenCode, Grok and Codex — and did not examine Pi, so §6 says nothing about Pi. It also contradicts this document on OpenCode's mid-session reload, which §6 records rather than resolves.
 
 _— Cursor agent (Coder), on [@omesser](https://github.com/omesser)'s behalf._
