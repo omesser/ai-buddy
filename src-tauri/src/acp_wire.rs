@@ -820,6 +820,15 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
     }
 }
 
+/// One session update, into the turn's text or an `Event`.
+///
+/// Text-only, in both chunk arms: an image, audio, a resource link or an
+/// embedded resource is dropped, and a turn made of nothing else comes back
+/// empty. Not a decision, and not something to settle into — ADR-0028 says a
+/// block that arrived has to leave a mark even where drawing it is simplified
+/// to a name and a path, and a resource link is the certain case. #697 closes
+/// it. The catch-all is the same gap for the update kinds this match does not
+/// name.
 fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, on_event: &OnEvent) {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
@@ -827,6 +836,12 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
                 said.push_str(&text.text);
             }
         }
+        // `fields.content` and `fields.locations` are dropped on both arms, so
+        // a call reaches the Action Log as a title and a status and never says
+        // what it touched. Every field is meant to be read — `Diff`, `Terminal`,
+        // `content`, `locations` — and how each is drawn can improve later;
+        // reading does not wait on that (ADR-0028). `permission_ask` above reads
+        // the same two fields and is the shape this takes. #697 closes it.
         SessionUpdate::ToolCall(call) => on_event(Event::ToolCall {
             id: call.tool_call_id.0.to_string(),
             title: Some(call.title),
@@ -839,6 +854,10 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
             kind: update.fields.kind.as_ref().map(name_of),
             status: update.fields.status.as_ref().map(name_of),
         }),
+        // The count, and not the steps the agent actually listed — which throws
+        // away the one part of a plan worth showing. The steps and which one is
+        // current are what a reader needs; the Action Log line holding only a
+        // count is the gap, not the design (ADR-0028). #697 closes it.
         SessionUpdate::Plan(plan) => on_event(Event::Plan {
             entries: plan.entries.len(),
         }),
