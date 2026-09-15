@@ -1,6 +1,6 @@
 [package]
 name = "ai-buddy-verify"
-description = "Agent/CI verify entry: doctor, units, overlay, cleanup (ADR-0027 stone 0)"
+description = "Agent/CI verify entry: doctor, units, overlay, poke, summon, cleanup (ADR-0027)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

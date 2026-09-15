@@ -152,8 +152,9 @@ fn write_gui_gap(dest: &Path) {
         body.push_str(
             "\n`scripts/verify-overlay-x11.sh` was not runnable here without \
              `DISPLAY` + `xterm` + supporting WM/`openbox`.\n\
-             Overlay presence / poke / summon GUI paths remain covered by that \
-             script on a proper X11 desktop;\n\
+             Overlay presence and Poke remain covered by that script on a proper \
+             X11 desktop; `ai-buddy-verify poke`/`summon` prove both gestures \
+             directly on macOS.\n\
              this evidence pack proves the unit + diagnostic subset only.\n",
         );
     }
