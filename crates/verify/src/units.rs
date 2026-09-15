@@ -81,6 +81,19 @@ pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
         status = 1;
     }
 
+    println!("prove-units: test_verify_settings_row_live.sh");
+    if tee_command(
+        Command::new("bash")
+            .arg("scripts/test_verify_settings_row_live.sh")
+            .current_dir(repo_root),
+        &dest.join("settings-row-live.txt"),
+    ) {
+        append_summary(&summary, "PASS settings-row-live");
+    } else {
+        append_summary(&summary, "FAIL settings-row-live");
+        status = 1;
+    }
+
     write_gui_gap(&dest);
 
     if status == 0 {
