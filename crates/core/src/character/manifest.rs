@@ -7,7 +7,7 @@ use toml_edit::{Document, Item};
 
 use super::{
     CursorReaction, Primitive, Source, Trigger, CHARACTER_MANIFEST_FILE, DEFAULT_FPS,
-    DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_SCALE, PRIMITIVES,
+    DEFAULT_WEIGHT, MAX_FPS, MAX_FRAMES, MAX_PROPS, MAX_SCALE, PRIMITIVES,
 };
 
 /// A Character Manifest as written, before its declarations are checked
@@ -24,6 +24,11 @@ pub(super) struct Declared {
     pub(super) source: Option<Source>,
     pub(super) animations: BTreeMap<String, DeclaredAnimation>,
     pub(super) behaviors: BTreeMap<String, DeclaredBehavior>,
+    pub(super) props: BTreeMap<String, DeclaredProp>,
+}
+
+pub(super) struct DeclaredProp {
+    pub(super) frames: Vec<String>,
 }
 
 pub(super) struct DeclaredAnimation {
@@ -117,6 +122,27 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
                         .to_string(),
                 ),
             },
+            "props" => match item.as_table_like() {
+                Some(table) => {
+                    let count = table.iter().count();
+                    if count > MAX_PROPS {
+                        errors.push(format!(
+                            "the package declares {count} props, \
+                             and a Character may have at most {MAX_PROPS}"
+                        ));
+                    }
+                    for (name, item) in table.iter() {
+                        if let Some(prop) = parse_prop(name, item, manifest, errors) {
+                            declared.props.insert(name.to_string(), prop);
+                        }
+                    }
+                }
+                None => errors.push(
+                    "\"props\" is not a set of tables; a Prop reads \
+                     [props.football] with its frames below"
+                        .to_string(),
+                ),
+            },
             "render_mode" => match item.as_str() {
                 Some("pixelated") => declared.smooth = Some(false),
                 Some("smooth") => declared.smooth = Some(true),
@@ -140,7 +166,7 @@ pub(super) fn parse(manifest: &str, errors: &mut Vec<String>) -> Option<Declared
             other => errors.push(format!(
                 "unknown declaration {other:?}; a Character Manifest declares \
                  name, render_mode, scale, source, animations, behaviors, \
-                 director and cursor"
+                 props, director and cursor"
             )),
         }
     }
@@ -415,6 +441,81 @@ fn parse_animation(
         left_of,
         weight,
     })
+}
+
+fn parse_prop(
+    name: &str,
+    item: &Item,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> Option<DeclaredProp> {
+    let Some(table) = item.as_table_like() else {
+        errors.push(format!(
+            "prop {name:?} is not a table; a Prop reads \
+             [props.{name}] with its frames below"
+        ));
+        return None;
+    };
+
+    let mut frames = None;
+    for (key, item) in table.iter() {
+        match key {
+            "frames" => frames = prop_frame_list(name, item, manifest, errors),
+            other => errors.push(format!(
+                "prop {name:?} declares unknown {other:?}; a Prop declares frames"
+            )),
+        }
+    }
+
+    if !table.contains_key("frames") {
+        errors.push(format!("prop {name:?} declares no frames"));
+    }
+    let frames = frames?;
+    Some(DeclaredProp { frames })
+}
+
+fn prop_frame_list(
+    name: &str,
+    item: &Item,
+    manifest: &str,
+    errors: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    let Some(list) = item.as_array() else {
+        errors.push(format!(
+            "frames for prop {name:?} is {}, and must be a list of \
+             frame files, as frames = [\"props/football-0.png\"]",
+            wrote(manifest, item.span()).unwrap_or("?")
+        ));
+        return None;
+    };
+
+    if list.len() > MAX_FRAMES {
+        errors.push(format!(
+            "prop {name:?} declares {} frames, \
+             and a Prop may have at most {MAX_FRAMES}",
+            list.len()
+        ));
+        return None;
+    }
+
+    let mut frames = Vec::new();
+    for frame in list.iter() {
+        match frame.as_str() {
+            Some(file) => frames.push(file.to_string()),
+            None => {
+                errors.push(format!(
+                    "prop {name:?} declares the frame {}, which is not a file name",
+                    wrote(manifest, frame.span()).unwrap_or("?")
+                ));
+                return None;
+            }
+        }
+    }
+    if frames.is_empty() {
+        errors.push(format!("prop {name:?} declares no frames"));
+        return None;
+    }
+    Some(frames)
 }
 
 /// An Animation's `frames` list.
@@ -720,7 +821,7 @@ mod tests {
             vec![
                 "unknown declaration \"capability\"; a Character Manifest declares \
                  name, render_mode, scale, source, animations, behaviors, \
-                 director and cursor"
+                 props, director and cursor"
                     .to_string()
             ],
             "no package can invent a declaration, so none can grant itself anything"
@@ -946,5 +1047,57 @@ mod tests {
                 assert_names(&errors, offender);
             }
         }
+    }
+
+    #[test]
+    fn a_prop_without_frames_is_rejected_by_name() {
+        let manifest = format!("{}\n[props.football]\n", declaring(&REQUIRED_ANIMATIONS));
+        let errors = errors(load_manifest(&manifest));
+        assert_eq!(
+            errors,
+            vec!["prop \"football\" declares no frames".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_package_declaring_a_prop_loads_its_frames() {
+        let character = load_manifest(&format!(
+            "{}\n[props.football]\nframes = [\"idle-0.png\"]\n",
+            declaring(&REQUIRED_ANIMATIONS)
+        ))
+        .expect("a declared prop loads");
+        assert_eq!(
+            character.props["football"].frames,
+            vec!["idle-0.png".to_string()]
+        );
+        assert_eq!(character.props["football"].frame_size, (2, 2));
+    }
+
+    #[test]
+    fn a_package_declaring_no_props_loads_an_empty_prop_set() {
+        let character =
+            load_manifest(&declaring(&REQUIRED_ANIMATIONS)).expect("required animations load");
+        assert!(
+            character.props.is_empty(),
+            "a package that writes no [props] owes none"
+        );
+    }
+
+    #[test]
+    fn more_props_than_the_cap_are_rejected() {
+        let extra: String = (0..=MAX_PROPS)
+            .map(|i| format!("[props.p{i}]\nframes = [\"idle-0.png\"]\n"))
+            .collect();
+        let errors = errors(load_manifest(&format!(
+            "{}{extra}",
+            declaring(&REQUIRED_ANIMATIONS)
+        )));
+        assert_eq!(
+            errors,
+            vec![format!(
+                "the package declares {} props, and a Character may have at most {MAX_PROPS}",
+                MAX_PROPS + 1
+            )]
+        );
     }
 }

@@ -392,6 +392,19 @@ struct SpritePlacement<'a> {
     cue: Option<&'static str>,
 }
 
+/// Where one dropped Prop is drawn in one overlay. Click-through scenery:
+/// these never join `sprites`, so they create no bubble, cue, or hit-test. #165.
+#[derive(Clone, Serialize)]
+struct PropPlacement {
+    id: String,
+    character: String,
+    name: String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
 /// One tick's instruction to the renderer: every Instance's sprite, and whether
 /// the Character is on screen at all.
 ///
@@ -405,6 +418,7 @@ struct SpritePlacement<'a> {
 #[derive(Clone, Serialize)]
 struct Placement<'a> {
     sprites: Vec<SpritePlacement<'a>>,
+    props: Vec<PropPlacement>,
     /// Whether the hide rules have the Character on screen, and how long the
     /// change that decided it was given. One answer for every Instance: the
     /// rules are about the desktop, not about a sprite.
@@ -490,6 +504,18 @@ struct Placed {
     owner: Option<usize>,
     #[allow(dead_code)]
     mask: ai_buddy_core::overlay::AlphaMask,
+    props: Vec<PlacedProp>,
+}
+
+/// Shifted into each overlay the same way a sprite is (`in_overlay`, not
+/// `bubble_owner`). A clamp would un-clip a prop on a display seam. #165.
+struct PlacedProp {
+    id: String,
+    character: String,
+    name: String,
+    sprite: SpriteRect,
+    width: i32,
+    height: i32,
 }
 
 /// Every Animation's frames as `data:` URLs, in play order, keyed by the
@@ -505,17 +531,20 @@ struct Placed {
 /// sends, so the order here has to be the play order `Character::draw` indexes
 /// — both walk `Animation::frames` as declared. Indexing `art` cannot miss: a
 /// validated Character carries art for every frame its Animations name.
-fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
-    // A frame two Animations share is encoded once and named twice.
-    let urls: BTreeMap<&String, String> = character
+fn frame_data_urls(character: &Character) -> BTreeMap<&String, String> {
+    character
         .art
         .iter()
         .map(|(frame, art)| {
             let url = format!("data:image/png;base64,{}", STANDARD.encode(&art.png));
             (frame, url)
         })
-        .collect();
+        .collect()
+}
 
+fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
+    // A frame two Animations share is encoded once and named twice.
+    let urls = frame_data_urls(character);
     character
         .animations
         .iter()
@@ -526,12 +555,33 @@ fn art_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
+fn prop_urls(character: &Character) -> BTreeMap<String, Vec<String>> {
+    let urls = frame_data_urls(character);
+    character
+        .props
+        .iter()
+        .map(|(name, prop)| {
+            let frames = prop.frames.iter().map(|frame| urls[frame].clone());
+            (name.clone(), frames.collect())
+        })
+        .collect()
+}
+
 /// What the webview needs of one Character: the art as `data:` URLs, and
 /// whether to smooth it when scaling (the Character Manifest's `render_mode`).
 #[derive(Clone, serde::Serialize)]
 struct CharacterArt {
     art: BTreeMap<String, Vec<String>>,
+    props: BTreeMap<String, Vec<String>>,
     smooth: bool,
+}
+
+fn character_art(character: &Character) -> CharacterArt {
+    CharacterArt {
+        art: art_urls(character),
+        props: prop_urls(character),
+        smooth: character.smooth,
+    }
 }
 
 /// Every Character on screen, by name, as Tauri managed state.
@@ -2053,13 +2103,7 @@ fn load_all_characters(
             Err(_) => continue,
         };
         if let Ok(character) = ai_buddy_core::character::load(&files) {
-            art.insert(
-                character.name.clone(),
-                CharacterArt {
-                    art: art_urls(&character),
-                    smooth: character.smooth,
-                },
-            );
+            art.insert(character.name.clone(), character_art(&character));
             cache.insert(character.name.clone(), Arc::new(character));
         }
     }
@@ -2495,10 +2539,7 @@ fn main() {
             for (_, character) in &loaded {
                 characters
                     .entry(character.name.clone())
-                    .or_insert_with(|| CharacterArt {
-                        art: art_urls(character),
-                        smooth: character.smooth,
-                    });
+                    .or_insert_with(|| character_art(character));
             }
             app.manage(ArtUrls { characters });
             let installed: Vec<String> = character_cache.keys().cloned().collect();
@@ -2827,6 +2868,7 @@ mod tests {
             personality: String::new(),
             animations: BTreeMap::new(),
             behaviors: BTreeMap::new(),
+            props: BTreeMap::new(),
             art: BTreeMap::new(),
             smooth: false,
             scale: 1,
@@ -3179,6 +3221,30 @@ mod tests {
 
         assert_eq!(art["idle"], vec![url(PATCHY), url(SOLID)]);
         assert_eq!(art["sit"], vec![url(SOLID), url(PATCHY)]);
+    }
+
+    #[test]
+    fn a_props_urls_stand_in_the_order_its_frames_do() {
+        let mut manifest = String::from("name = \"Blip\"\n");
+        let mut files = PackageBytes::new();
+        for required in REQUIRED_ANIMATIONS {
+            manifest.push_str(&format!(
+                "[animations.{required}]\nframes = [\"{required}.png\"]\n"
+            ));
+            files.insert(format!("{required}.png"), PATCHY.to_vec());
+        }
+        manifest.push_str("[props.football]\nframes = [\"ball-0.png\", \"ball-1.png\"]\n");
+        files.insert("ball-0.png".to_string(), PATCHY.to_vec());
+        files.insert("ball-1.png".to_string(), SOLID.to_vec());
+        files.insert(CHARACTER_MANIFEST_FILE.to_string(), manifest.into_bytes());
+        let character = ai_buddy_core::character::load(&files).expect("the package is valid");
+
+        let urls = prop_urls(&character);
+        assert_eq!(urls["football"], vec![url(PATCHY), url(SOLID)]);
+        assert_eq!(
+            urls["football"].len(),
+            character.props["football"].frames.len()
+        );
     }
 
     /// Every way of starting ai-buddy that existed before Instances did asks for
