@@ -52,13 +52,22 @@ distinction. <https://developer.apple.com/forums/thread/676422>
 exist to test and request that grant; their pages carry no prose.
 <https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()>
 
-**Unverified:** whether a `kCGSessionEventTap` + `kCGEventTapOptionListenOnly`
-tap whose mask holds only mouse types creates without an Input Monitoring
-prompt on current macOS. No Apple text says so. Chromium's remoting host
-ships exactly that shape (`kCGSessionEventTap, kCGHeadInsertEventTap,
-kCGEventTapOptionListenOnly, 1 << kCGEventMouseMoved`) but that host asks for
-Accessibility anyway, so it proves nothing about prompts.
-<https://chromium.googlesource.com/chromium/src/+/main/remoting/host/input_monitor/local_mouse_input_monitor_mac.mm>
+**Inference from public sources (2026-09):** a `kCGSessionEventTap` +
+`kCGEventTapOptionListenOnly` tap whose mask holds only mouse types appears to
+require Input Monitoring permission on current macOS. Multiple 2026 public
+sources report this behavior: `IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)`
+checks the permission (Stack Overflow #79010369), keytap 0.4.0 proactively
+checks and fails with `PermissionDenied` when access is not granted,
+tauri-plugin-macos-input-monitor documents the requirement and notes that
+`CGEventTapCreate` may return non-NULL even without permission but the tap is
+disabled. Chromium's remoting host ships exactly that shape
+(`kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionListenOnly, 1 <<
+kCGEventMouseMoved`) but asks for Accessibility, proving nothing about prompts.
+**Stage 1 live Mac spike remains open**: the four observations #183 Stage 1
+requests (TCC reset, tap creation, prompt appearance, preflight check) have not
+been run on real hardware. If Input Monitoring is required, that violates
+DESIGN.md decision 9 (no TCC prompt for spatial layer), so #183 Stage 2b (idle
+back-off) is the provisional v1 answer for macOS pending spike or waiver.
 
 **`NSEvent.addGlobalMonitorForEvents`.** "Key-related events may only be
 monitored if accessibility is enabled or if your application is trusted for
@@ -104,8 +113,8 @@ x11rb ships it behind `xinput = ["x11rb-protocol/xinput", "xfixes"]`; the
 repo enables `randr, xfixes, shape, dpms, screensaver` but not `xinput`
 (`src-tauri/Cargo.toml`).
 <https://github.com/psychon/x11rb/blob/master/x11rb/Cargo.toml>
-As of #183, the `xinput` feature is enabled and the frame loop uses XI2 raw
-events to avoid polling when idle.
+As of #562, the `xinput` feature is enabled and the frame loop uses XI2 raw
+events to avoid polling when idle on X11.
 
 **Wayland.** `wl_pointer.enter` is "Notification that this seat's pointer is
 focused on a certain surface"; `motion` coordinates are "relative to the
@@ -113,7 +122,8 @@ focused surface." There is no global pointer, and `XQueryPointer` needs an X
 connection, so today Wayland has only the webview latch
 (`platform.rs`: "Wayland has only the overlay latch"). The degradation is not
 a slow poll; it is no out-of-window witness at all. Wayland remains
-webview-only as documented here and is not slowed to a poll rate. #183.
+webview-only as documented here and is not slowed to a poll rate (no global
+pointer to poll). #183, #562.
 <https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_pointer>
 tao's GTK `CursorIgnoreEvents` sets a 1×1 input shape when ignoring and clears
 it otherwise; the repo already carves per-pixel input on X11 (#191).
@@ -147,20 +157,24 @@ bit are equivalent for that. `Witness::take` is the edge bit. If a session
 tap replaces the webview witness, the producer changes and `take` stays.
 #236 is the minimal correct fix today and is kept, not replaced, under #183.
 
-## Recommendation
+## Implementation (as of #562, #183)
 
-1. Merge #236.
-2. Re-scope #183 to a spike: create a mouse-only listen-only session tap in a
-   dev build after `tccutil reset ListenEvent <bundle>`; record whether a
-   prompt appears or `CGEventTapCreate` returns null. Until that answer
-   exists, decision 9 forbids the tap in v1.
-3. If permission-free: tap for down/up/moved on macOS, XI2 raw on X11, webview
-   only on Wayland/Windows; block on `recv()` when idle, 16 ms timer only
-   while animating. If not: the idle back-off the comment rejected is the
-   only saving available on macOS, or the tap becomes the documented opt-in.
-4. Corrections to the #183 comment: the relevant TCC class is Input
-   Monitoring, not Accessibility, and Apple has not exempted mouse events
-   from it; Wayland cannot "degrade to a slow poll" because nothing global is
-   pollable; `NSEvent` global monitors are the wrong API (own-window blind);
-   tao's `setIgnoresMouseEvents` is asynchronous, which any event design
-   must account for at the flip.
+**X11** (#562): XI2 raw events + two-clock scheduler. No poll when idle. Event-
+driven and permission-free.
+
+**Wayland**: Webview-only. No global pointer exists, so no poll and no events.
+
+**macOS** (#183 Stage 2b): Idle back-off. Mouse-only listen taps appear to
+require Input Monitoring (inferred from public sources 2026-09, live spike open
+unless waived), which would violate decision 9. The frame loop polls
+`CGEventSourceButtonState` and `NSEvent.mouseLocation` but backs off to the next
+real deadline (Director wakes, sense interval) when idle. Hidden idle: uncapped
+deep sleep (same as X11). Visible idle: capped at 1s for timely gesture/menu.
+Active mode (Grab/Throw/fall/animation) keeps 16ms ticks.
+
+**Windows**: Same idle back-off as macOS (no Windows-specific input events in
+v1 per SPEC.md).
+
+#236 merged (edge-detection witness for sub-tick clicks). The two-witness OR
+stays: full-display overlay + per-window click-through + no Input Monitoring
+tap is the v1 design.
