@@ -23,6 +23,9 @@ pub enum RowOperation {
     Apply,
     /// Redraw the Director tab from live state, writing nothing.
     Cancel,
+    /// Throw the conversation in flight away and open a fresh one, leaving
+    /// every row of the form where it is (#679).
+    NewSession,
 }
 
 /// One section of the settings form.
@@ -386,6 +389,7 @@ pub const DIRECTOR_BASE_URL_PICK_ID: &str = "director_base_url_pick";
 pub const DIRECTOR_MODEL_ID: &str = "director_model";
 pub const DIRECTOR_API_KEY_ID: &str = "director_api_key";
 pub const CLEAR_KEY_ID: &str = "clear_key";
+pub const NEW_SESSION_ID: &str = "new_session";
 pub const APPLY_ID: &str = "director_apply";
 pub const CANCEL_ID: &str = "director_cancel";
 pub const DND_ID: &str = "dnd";
@@ -771,6 +775,16 @@ fn director_sections() -> Vec<FormSection> {
                     help: None,
                     disclosure: None,
                     status: wake_status,
+                },
+                FormRow::Composite {
+                    id: "session_actions".to_string(),
+                    help: Some("Throws the conversation in flight away and opens a fresh one.".to_string()),
+                    disclosure: Some("Every other row stays where it is: the same AI source, the same model and key, the same Blank AI, the same Character and Instance Prompt. What goes is the conversation — the turns held here, and the history, tool results, and files the AI brain was holding for this buddy. The next wake is an opening turn rather than a follow-up. Memory is untouched.".to_string()),
+                    controls: vec![CompositeControl::Button {
+                        id: NEW_SESSION_ID.to_string(),
+                        label: "Start new session".to_string(),
+                        frozen: false,
+                    }],
                 },
             ],
         },
@@ -1374,6 +1388,7 @@ pub fn describe() -> FormDescription {
         (MEMORY_OPEN_ID.to_string(), RowOperation::OpenMemory),
         (MEMORY_WIPE_ID.to_string(), RowOperation::WipeMemory),
         (CLEAR_KEY_ID.to_string(), RowOperation::ClearKey),
+        (NEW_SESSION_ID.to_string(), RowOperation::NewSession),
         (APPLY_ID.to_string(), RowOperation::Apply),
         (CANCEL_ID.to_string(), RowOperation::Cancel),
     ]);
@@ -1632,7 +1647,7 @@ mod tests {
             .find(|s| s.heading == "AI")
             .expect("AI section");
 
-        assert_eq!(director.rows.len(), 3);
+        assert_eq!(director.rows.len(), 4);
         assert!(matches!(
             director.rows[0],
             FormRow::Checkbox { ref id, .. } if id == DIRECTOR_ID
@@ -1646,6 +1661,12 @@ mod tests {
         assert!(matches!(
             director.rows[2],
             FormRow::TextField { ref id, .. } if id == DIRECTOR_WAKE_SECS_ID
+        ));
+        // Last, because it is the one control on the tab that changes no
+        // setting: it ends the conversation the rows above shape (#679).
+        assert!(matches!(
+            director.rows[3],
+            FormRow::Composite { ref id, .. } if id == "session_actions"
         ));
     }
 
@@ -1912,6 +1933,36 @@ mod tests {
             description.operations.get(CANCEL_ID),
             Some(&RowOperation::Cancel)
         );
+    }
+
+    /// #679: the control is a button of its own on the AI tab. Reaching it
+    /// through Blank AI or through an Instance Prompt save is what the issue
+    /// rules out, and a button on another tab is not the one it asks for.
+    #[test]
+    fn the_ai_tab_starts_a_new_session_on_its_own_button() {
+        let description = describe();
+        assert_eq!(
+            description.operations.get(NEW_SESSION_ID),
+            Some(&RowOperation::NewSession)
+        );
+        let ai = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "AI")
+            .expect("an AI tab");
+        let on_the_tab = ai
+            .sections
+            .iter()
+            .flat_map(|section| &section.rows)
+            .filter_map(|row| match row {
+                FormRow::Composite { controls, .. } => Some(controls),
+                _ => None,
+            })
+            .flatten()
+            .any(|control| {
+                matches!(control, CompositeControl::Button { id, .. } if id == NEW_SESSION_ID)
+            });
+        assert!(on_the_tab, "Start new session is not on Settings -> AI");
     }
 
     #[test]

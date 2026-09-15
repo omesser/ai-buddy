@@ -317,6 +317,7 @@ define_class!(
                 form::RowOperation::ClearKey => self.do_clear_key(),
                 form::RowOperation::Apply => self.do_apply(),
                 form::RowOperation::Cancel => self.do_cancel(),
+                form::RowOperation::NewSession => self.do_new_session(),
             }
         }
 
@@ -496,6 +497,16 @@ impl SettingsController {
         // Resets even though the store now holds what the key field still
         // shows: only a reset takes the typed key back out of it.
         self.draw(true);
+    }
+
+    /// The patch carries no row, so a staged endpoint edit beside it is
+    /// neither written nor thrown away: this button is a session boundary and
+    /// nothing else (#679). No redraw either — nothing on the form moved.
+    fn do_new_session(&self) {
+        self.apply(SettingsPatch {
+            new_session: true,
+            ..SettingsPatch::default()
+        });
     }
 
     /// Writes neither the file nor the store: the reset draws every field

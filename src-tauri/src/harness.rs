@@ -2687,6 +2687,51 @@ mod tests {
         session.shutdown();
     }
 
+    /// #679: Start a new session drops every live Instance, so every lane has
+    /// to open with `session/new`. A restart between the two would be enough
+    /// to load one of the torn-down ids back, which is the box this is for.
+    #[test]
+    fn a_new_session_for_every_instance_loads_no_old_id() {
+        let (fx, session) = Fixture::new("load");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"old-a"},{"instance":"buddy-2","character":"bmo","session_id":"old-b"}]}"#,
+        )
+        .unwrap();
+        for instance in ["buddy-1", "buddy-2"] {
+            session.drop_conversation(instance);
+        }
+        assert_eq!(
+            session.complete(&asking_as("buddy-1", "bmo", "hi")),
+            Ok(Reply::whole("Hello"))
+        );
+        assert_eq!(
+            session.complete(&asking_as("buddy-2", "bmo", "hi")),
+            Ok(Reply::whole("Hello"))
+        );
+        session.shutdown();
+
+        assert_eq!(fx.count("load"), 0, "a dropped id was loaded back");
+        assert_eq!(fx.count("new"), 2, "each Instance opens its own session");
+        let prompts = fx.events("prompt");
+        assert_eq!(prompts.len(), 2, "{prompts:?}");
+        for prompt in &prompts {
+            assert_ne!(prompt["session_id"], json!("old-a"), "{prompts:?}");
+            assert_ne!(prompt["session_id"], json!("old-b"), "{prompts:?}");
+        }
+        let saved: SavedSession =
+            serde_json::from_str(&std::fs::read_to_string(fx.dir.join(SESSION_FILE)).unwrap())
+                .unwrap();
+        assert!(
+            saved
+                .sessions
+                .iter()
+                .all(|slot| slot.session_id != "old-a" && slot.session_id != "old-b"),
+            "{:?}",
+            saved.sessions
+        );
+    }
+
     /// #698: dropping one Instance's conversation must not mint a new session
     /// for another Instance that still holds its opening turn.
     #[test]

@@ -412,6 +412,11 @@ pub enum SettingsOp {
     /// surfaces must re-run `attached()` from a full opening. Not a second
     /// session (ADR-0008). #473.
     ReloadChat,
+    /// Throw every live Instance's conversation away and open a fresh one.
+    ///
+    /// Not a Retarget: nothing about what answers moved, so the Completer is
+    /// rebuilt from the settings the loop already holds (#679).
+    NewSession,
 }
 
 /// Whether what a secure field holds is a key somebody typed.
@@ -587,9 +592,12 @@ fn harness_retargets(settings: &Settings, patch: &SettingsPatch) -> bool {
 /// because a key or a timeout change re-pushes an opening that reads the same,
 /// and one redundant event is cheaper than a second rule to keep in step.
 fn chat_surface_reloads(settings: &Settings, patch: &SettingsPatch) -> bool {
-    patch
-        .director_enabled
-        .is_some_and(|on| on != settings.director_enabled)
+    // A new session empties the transcript the surface is showing, and the
+    // opening it draws over that is one the window only asked for once (#679).
+    patch.new_session
+        || patch
+            .director_enabled
+            .is_some_and(|on| on != settings.director_enabled)
         || harness_source_changed(settings, patch)
         || completer_retargets(settings, patch)
 }
@@ -805,6 +813,7 @@ impl SettingsSession {
     pub fn apply(&self, patch: SettingsPatch) -> Result<(), String> {
         let switching = patch.character.clone();
         let rebind = patch.hide_hotkey.clone();
+        let new_session = patch.new_session;
         write_director_key(self.secrets.as_ref(), &patch)?;
         if let Some(raw) = patch.director_api_key.as_deref() {
             self.remember_written_key(raw);
@@ -867,6 +876,11 @@ impl SettingsSession {
                     }
                 }
             }
+        }
+        // After Retarget, so a patch that did both leaves the new Completer in
+        // place before the conversation on it is opened.
+        if new_session {
+            let _ = self.ops.send(SettingsOp::NewSession);
         }
         if reload_chat {
             let _ = self.ops.send(SettingsOp::ReloadChat);
@@ -963,6 +977,11 @@ pub struct SettingsPatch {
     pub director_api_key: Option<String>,
     pub use_accessibility: Option<bool>,
     pub use_screen_recording: Option<bool>,
+    /// Throw the conversation in flight away and open a fresh one on the same
+    /// Completer. Not a file field either: a session boundary is a moment, not
+    /// a setting, and nothing about it survives the restart (#679).
+    #[serde(default)]
+    pub new_session: bool,
 }
 
 /// A boolean field of `SettingsPatch`, as the form row writing it names it.
@@ -3682,6 +3701,42 @@ mod tests {
             ..SettingsPatch::default()
         };
         assert!(!chat_surface_reloads(&settings, &patch));
+    }
+
+    /// #679: Start a new session is a session boundary and nothing else. A
+    /// patch that moved a row would be the very thing the button exists to
+    /// avoid — the only "start over" today is a setting the user did not want
+    /// to change.
+    #[test]
+    fn a_new_session_patch_changes_no_setting() {
+        let settings = Settings::default();
+        let patch = SettingsPatch {
+            new_session: true,
+            ..SettingsPatch::default()
+        };
+        let mut applied = settings.clone();
+        applied.apply(patch.clone());
+        assert_eq!(applied, settings, "a session boundary is not a file field");
+        assert!(
+            !completer_retargets(&settings, &patch),
+            "the Completer, the model, and the key stay what they are"
+        );
+        assert!(
+            !harness_retargets(&settings, &patch),
+            "the attached Harness child is not restarted"
+        );
+    }
+
+    /// #679: the new session must reach an already-open Chat surface the way
+    /// a Completer-source change does, or the window keeps a transcript the
+    /// thing about to answer has never read.
+    #[test]
+    fn a_new_session_patch_tells_an_open_chat_surface() {
+        let patch = SettingsPatch {
+            new_session: true,
+            ..SettingsPatch::default()
+        };
+        assert!(chat_surface_reloads(&Settings::default(), &patch));
     }
 
     #[test]

@@ -817,6 +817,20 @@ impl SettingsWindow {
                                                             eprintln!("settings: {e}");
                                                         }
                                                     }
+                                                    // No redraw: the patch
+                                                    // carries no row, so a
+                                                    // staged endpoint edit
+                                                    // beside it is neither
+                                                    // written nor lost (#679).
+                                                    RowOperation::NewSession => {
+                                                        let patch = SettingsPatch {
+                                                            new_session: true,
+                                                            ..SettingsPatch::default()
+                                                        };
+                                                        if let Err(e) = sess.apply(patch) {
+                                                            eprintln!("settings: {e}");
+                                                        }
+                                                    }
                                                     _ => {}
                                                 }
                                             }
