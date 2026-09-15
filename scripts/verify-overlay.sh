@@ -26,12 +26,21 @@ cd "$(dirname "$0")/.." || exit 1
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
 
+# Exact-path match, mirroring crates/verify/src/gesture.rs's stray_pid: this
+# checkout's absolute binary path names only the instance this script starts,
+# never another worktree's dogfood app or another agent's run of a binary at
+# the same "target/debug/ai-buddy" path suffix.
+BIN_PATH="$(pwd)/target/debug/ai-buddy"
+stray_pid() { pgrep -f "$BIN_PATH" 2> /dev/null | head -1; }
+
 # An orphaned overlay is always-on-top and has no window controls, so an
 # interrupted run would otherwise leave something on screen that is awkward to
 # get rid of. --keep opts out for the app, never for the prop window: that one
-# is scaffolding and nobody wants it left behind.
+# is scaffolding and nobody wants it left behind. Kills the pid this script
+# itself launched, never a path pattern, so another worktree's instance is
+# never at risk.
 trap 'pkill -f perch-window.swift 2> /dev/null;
-      [ "$KEEP" = "1" ] || pkill -f "target/debug/ai-buddy" 2> /dev/null' EXIT INT TERM
+      [ "$KEEP" = "1" ] || [ -z "${APP_PID:-}" ] || kill "$APP_PID" 2> /dev/null' EXIT INT TERM
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT=".verify/$STAMP"
@@ -159,7 +168,13 @@ await "$OUT/perch.log" '^\{' 40 || {
   exit 1
 }
 
-pkill -f 'target/debug/ai-buddy' 2> /dev/null
+# Nothing this script started should be running yet: a match here is a
+# stray, not ours, so it is named and failed rather than killed (#730).
+STRAY_PID=$(stray_pid)
+if [ -n "$STRAY_PID" ]; then
+  echo "FAIL: $BIN_PATH is already running (pid $STRAY_PID); stop it before running verify-overlay.sh"
+  exit 1
+fi
 AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_TRACE_FRAMES=1 \
   ./target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
 APP_PID=$!
@@ -545,7 +560,10 @@ await "$OUT/fling.log" '^\{' 40 || {
   exit 1
 }
 
-pkill -f 'target/debug/ai-buddy' 2> /dev/null
+# Stops the Perch run's own app (this is our recorded pid, not a stray) so
+# the Grip run gets a clean log of its own.
+kill "$APP_PID" 2> /dev/null
+wait "$APP_PID" 2> /dev/null
 AI_BUDDY_TRACE_FRAMES=1 ./target/debug/ai-buddy > "$OUT/grip.log" 2>&1 &
 APP_PID=$!
 await "$OUT/grip.log" '^frame: [0-9]+ Perched' 60 ||
@@ -640,6 +658,6 @@ if [ "$KEEP" = "1" ]; then
   printf '\n'
   echo "App still running (pid $APP_PID) for the manual checks, with tracing on."
   echo "Watch the decisions:  tail -f $OUT/app.log"
-  echo "Stop it:              pkill -f target/debug/ai-buddy"
+  echo "Stop it:              kill $APP_PID"
 fi
 exit $STATUS
