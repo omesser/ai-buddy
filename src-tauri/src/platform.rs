@@ -131,8 +131,7 @@ pub fn over_overlay_hotspot(label: &str, x: i32, y: i32) -> bool {
 /// plain map lookup, and its test is the one that keeps a neighbour overlay's
 /// rectangles from leaking into this one. Compiling that test only on the two
 /// lanes that call the function would stop it running on the machine most of
-/// this is written on. The macOS `update_input_region` stub below is allowed
-/// for the same reason.
+/// this is written on.
 #[allow(dead_code)]
 pub fn overlay_hotspots_for(label: &str) -> Vec<[i32; 4]> {
     OVERLAY_HOTSPOTS.lock().map_or_else(
@@ -223,7 +222,10 @@ impl Default for Displays {
 
 /// Which rung of the Dock-geometry chain answered; see `macos::dock_bounds`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(dead_code)] // macOS-only, not used on Linux
+// Only macOS ever names a source: `exact_dock` is `None` on every other lane,
+// so no variant is ever constructed there — but `Displays` carries the type on
+// all of them.
+#[allow(dead_code)]
 pub enum DockSource {
     /// `CoreDockGetRect`, the private SPI: exact, no grant needed.
     CoreDock,
@@ -420,6 +422,12 @@ fn opener(path: &Path) -> Command {
 /// `&` or `%`: Rust's `Command` quoting is not `cmd`'s, and `%VAR%` expands
 /// inside quotes. ShellExecuteW takes the path as a wide-string parameter, so
 /// neither metacharacter is syntax (#255).
+///
+/// Still hand-written after checking the crates: `open` shells out to
+/// `cmd /c start` on Windows, which is the shape #255 removed, and `opener`
+/// makes this same ShellExecuteW call while blocking on the unix arms where
+/// this code is fire-and-forget. Neither removes the `unsafe` — only whose it
+/// is — so the trade is a dependency for no change in what can go wrong.
 #[cfg(not(unix))]
 fn opener(path: &Path) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
@@ -429,6 +437,12 @@ fn opener(path: &Path) -> Result<(), String> {
     let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
 
     // Per MSDN, a return value greater than 32 means the call succeeded.
+    //
+    // SAFETY: both wide strings are built with `.chain(Some(0))`, so each is
+    // NUL-terminated, and both locals outlive the call. The null `hwnd` and the
+    // null parameters and directory are the documented "no owner window, no
+    // arguments, inherit the current directory"; ShellExecuteW reads all four
+    // pointers during the call and keeps none.
     let result = unsafe {
         ShellExecuteW(
             std::ptr::null_mut(),
@@ -533,20 +547,6 @@ pub fn hotspots_hit_tested() -> bool {
 #[cfg(not(unix))]
 pub fn hotspots_hit_tested() -> bool {
     true
-}
-
-#[cfg(target_os = "macos")]
-#[allow(dead_code)]
-pub fn update_input_region(
-    _window: &tauri::WebviewWindow,
-    _mask_data: Option<&ai_buddy_core::overlay::AlphaMask>,
-    _sprite_x: i32,
-    _sprite_y: i32,
-    _sprite_facing: i32,
-    _scale: i32,
-    _hotspot_rects: &[[i32; 4]],
-) -> Result<(), String> {
-    Ok(())
 }
 
 /// Cached double-click interval: queried from the OS once, then reused.

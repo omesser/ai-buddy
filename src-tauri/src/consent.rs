@@ -113,6 +113,14 @@ impl Probe for Macos {
 
 #[cfg(target_os = "windows")]
 mod windows {
+    use std::collections::HashMap;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
     pub fn process_list_name() -> String {
         if packaged() {
             return "ai-buddy".into();
@@ -130,56 +138,70 @@ mod windows {
         })
     }
 
-    fn parent_chain_name() -> Option<String> {
-        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-            TH32CS_SNAPPROCESS,
-        };
-        use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    /// One snapshot of the process list, closed once by `Drop`.
+    struct Snapshot(HANDLE);
 
-        let current_pid = unsafe { GetCurrentProcessId() };
-        let mut pid = current_pid;
+    impl Drop for Snapshot {
+        fn drop(&mut self) {
+            // SAFETY: the handle came from CreateToolhelp32Snapshot and the
+            // type is neither Copy nor Clone, so this is its only close.
+            unsafe { CloseHandle(self.0) };
+        }
+    }
 
-        for _ in 0..24 {
-            let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-            if snapshot == INVALID_HANDLE_VALUE {
-                return None;
-            }
+    impl Snapshot {
+        fn processes() -> Option<Self> {
+            // SAFETY: TH32CS_SNAPPROCESS takes no pid and nothing goes in by
+            // pointer; failure arrives as INVALID_HANDLE_VALUE, which the next
+            // line rejects rather than taking ownership of.
+            let handle = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+            (handle != INVALID_HANDLE_VALUE).then_some(Self(handle))
+        }
 
+        /// pid -> (parent pid, executable name) for every process in the snapshot.
+        fn table(&self) -> HashMap<u32, (u32, String)> {
+            // SAFETY: PROCESSENTRY32W is integers and a `[u16; 260]`, so
+            // all-zeroes is a valid value for it. `dwSize` is the one field the
+            // API requires the caller to fill, and the next line fills it.
             let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-            if unsafe { Process32FirstW(snapshot, &mut entry) } == 0 {
-                unsafe { CloseHandle(snapshot) };
-                return None;
+            let mut table = HashMap::new();
+            // SAFETY: `self.0` is live for as long as `self`, and `entry` is an
+            // initialized local carrying its `dwSize` — the two things the walk
+            // asks of the caller. It writes only into `entry`.
+            if unsafe { Process32FirstW(self.0, &mut entry) } == 0 {
+                return table;
             }
-
-            let mut found = false;
             loop {
-                if entry.th32ProcessID == pid {
-                    pid = entry.th32ParentProcessID;
-                    found = true;
-                    break;
-                }
-                if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
-                    break;
-                }
-            }
-
-            unsafe { CloseHandle(snapshot) };
-
-            if !found || pid == 0 || pid == current_pid {
-                return None;
-            }
-
-            if let Some(parent_name) = find_process_name(pid) {
-                if !is_toolchain(&parent_name) {
-                    return Some(parent_name);
+                table.insert(
+                    entry.th32ProcessID,
+                    (entry.th32ParentProcessID, parse_exe_name(&entry.szExeFile)),
+                );
+                // SAFETY: as Process32FirstW above; a zero return ends the walk.
+                if unsafe { Process32NextW(self.0, &mut entry) } == 0 {
+                    return table;
                 }
             }
         }
+    }
 
+    fn parent_chain_name() -> Option<String> {
+        let current_pid = std::process::id();
+        let table = Snapshot::processes()?.table();
+
+        let mut pid = current_pid;
+        for _ in 0..24 {
+            pid = table.get(&pid)?.0;
+            if pid == 0 || pid == current_pid {
+                return None;
+            }
+            let name = &table.get(&pid)?.1;
+            // An empty name is as unusable as a toolchain one: keep walking.
+            if !name.is_empty() && !is_toolchain(name) {
+                return Some(name.clone());
+            }
+        }
         None
     }
 
@@ -191,41 +213,6 @@ mod windows {
             name.to_lowercase().as_str(),
             "cargo" | "rustc" | "rustup" | "rust-analyzer" | "rls"
         )
-    }
-
-    fn find_process_name(pid: u32) -> Option<String> {
-        use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-            TH32CS_SNAPPROCESS,
-        };
-
-        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-        if snapshot == INVALID_HANDLE_VALUE {
-            return None;
-        }
-
-        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-
-        if unsafe { Process32FirstW(snapshot, &mut entry) } == 0 {
-            unsafe { CloseHandle(snapshot) };
-            return None;
-        }
-
-        loop {
-            if entry.th32ProcessID == pid {
-                let name = parse_exe_name(&entry.szExeFile);
-                unsafe { CloseHandle(snapshot) };
-                return if name.is_empty() { None } else { Some(name) };
-            }
-            if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
-                break;
-            }
-        }
-
-        unsafe { CloseHandle(snapshot) };
-        None
     }
 
     fn parse_exe_name(sz_exe: &[u16; 260]) -> String {
@@ -241,51 +228,48 @@ mod windows {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use std::ffi::c_void;
-
-    use objc2::rc::Retained;
-    use objc2_foundation::{ns_string, NSDictionary, NSNumber, NSString};
-
-    #[link(name = "ApplicationServices", kind = "framework")]
-    unsafe extern "C" {
-        fn AXIsProcessTrusted() -> bool;
-        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
-    }
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    unsafe extern "C" {
-        fn CGPreflightScreenCaptureAccess() -> bool;
-        fn CGRequestScreenCaptureAccess() -> bool;
-    }
+    use objc2_application_services::{
+        kAXTrustedCheckOptionPrompt, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
+    };
+    use objc2_core_foundation::{CFBoolean, CFDictionary, CFString};
+    use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
 
     pub fn accessibility_granted() -> bool {
-        // SAFETY: takes nothing, returns a BOOL, documented callable anywhere.
+        // SAFETY: the binding takes nothing and documents no precondition;
+        // objc2 marks every generated C function `unsafe` regardless. It is the
+        // non-prompting half of the pair, so settings may poll it (decision 9).
         unsafe { AXIsProcessTrusted() }
     }
 
     pub fn screen_recording_granted() -> bool {
-        // SAFETY: takes nothing, returns whether this process may capture.
-        unsafe { CGPreflightScreenCaptureAccess() }
+        // Preflight is the half that does not prompt — polling
+        // `CGRequestScreenCaptureAccess` instead would put a dialog on screen
+        // at launch.
+        CGPreflightScreenCaptureAccess()
     }
 
     pub fn request_accessibility() {
-        let prompt = NSNumber::new_bool(true);
-        let options: Retained<NSDictionary<NSString, NSNumber>> = NSDictionary::from_slices(
-            &[ns_string!("AXTrustedCheckOptionPrompt")],
-            &[prompt.as_ref()],
-        );
-        // SAFETY: toll-free to CFDictionary; the prompt key is the public
-        // constant's string value, and the dict lives for the call.
+        // SAFETY: reading a `static` declared in an `extern` block. This one is
+        // a CoreFoundation string constant the dynamic linker binds before any
+        // ApplicationServices entry point can run, so it is never the
+        // uninitialized memory the rule exists to catch.
+        let key: &CFString = unsafe { kAXTrustedCheckOptionPrompt };
+        let options = CFDictionary::from_slices(&[key], &[CFBoolean::new(true)]);
+        // The answer is dropped: it reports the grant as it stands now, before
+        // the user has answered the prompt this call raises.
+        //
+        // SAFETY: the binding's one documented requirement is that the
+        // dictionary's generics match what the key calls for, and
+        // kAXTrustedCheckOptionPrompt takes a CFBoolean.
         unsafe {
-            AXIsProcessTrustedWithOptions(std::ptr::from_ref(&*options).cast());
+            AXIsProcessTrustedWithOptions(Some(options.as_ref()));
         }
     }
 
     pub fn request_screen_recording() {
-        // SAFETY: the prompt API; we ignore the BOOL, the checkbox rereads.
-        unsafe {
-            let _ = CGRequestScreenCaptureAccess();
-        }
+        // The answer is dropped: it reports the grant as it stands now, before
+        // the user has answered the dialog, and the checkbox re-reads it after.
+        let _ = CGRequestScreenCaptureAccess();
     }
 
     pub fn tcc_list_name() -> String {
@@ -320,19 +304,32 @@ mod macos {
 
     fn responsible_pid() -> Option<i32> {
         type GetResponsible = unsafe extern "C" fn(i32) -> i32;
-        // SAFETY: RTLD_DEFAULT searches loaded images; libSystem is always in.
+        // SAFETY: `-2` is RTLD_DEFAULT, the pseudo-handle dlsym takes for "any
+        // image already loaded", so nothing has to have been dlopen'd first;
+        // the name is a `c"…"` literal, hence NUL-terminated and alive for the
+        // call, which is all dlsym reads it for. A symbol that is not there
+        // comes back null, and the check below is what stops it being called.
         let symbol = unsafe {
             libc::dlsym(
-                -2isize as *mut c_void,
+                -2isize as *mut std::ffi::c_void,
                 c"responsibility_get_pid_responsible_for_pid".as_ptr(),
             )
         };
         if symbol.is_null() {
             return None;
         }
-        // SAFETY: the SPI is pid in, pid out. Self is a valid answer for a
-        // packaged app. A reshape would be a wrong pid, and the caller still
-        // has to resolve a localized name from it.
+        // SAFETY: `symbol` is non-null, checked directly above, and dlsym
+        // returns the address of the code it resolved, so transmuting it to a
+        // function pointer is the intended use of the pair. The declared shape
+        // is the load-bearing part: `int f(int)` is what libSystem has exported
+        // under this name for years, and a call through a wrong signature would
+        // be undefined, not merely a wrong pid.
+        //
+        // This is the one FFI declaration in the file with no crate to defer
+        // to: a private SPI with no public header, so there is nothing for a
+        // binding generator to read and nothing to check the shape against.
+        // The comment is the whole of the available mitigation, not an excuse
+        // for a risk something else in the tree already carries.
         let pid = unsafe {
             let get: GetResponsible = std::mem::transmute(symbol);
             get(std::process::id() as i32)
@@ -398,6 +395,23 @@ mod macos {
             return None;
         }
         (info.pbi_ppid > 1).then_some(info.pbi_ppid as i32)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        /// #703 in one assertion. The old flavor made this return `None` for
+        /// every pid, and nothing noticed: the only test over this path asserts
+        /// a non-empty name, which the `unwrap_or_else` fallback satisfies.
+        /// std's `parent_id` is the independent answer to check against.
+        #[test]
+        fn the_parent_pid_is_the_one_std_reports() {
+            let ppid = std::os::unix::process::parent_id() as i32;
+            assert!(
+                ppid > 1,
+                "the test binary should have a real parent, got {ppid}"
+            );
+            assert_eq!(super::parent_pid(std::process::id() as i32), Some(ppid));
+        }
     }
 }
 
