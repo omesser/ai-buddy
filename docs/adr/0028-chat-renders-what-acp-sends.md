@@ -16,8 +16,9 @@ protocol and adapters but no client UI. The scope cannot be delegated to a
 dependency, so it needs an edge written down instead of argued per feature.
 
 ADR-0018 already refused to host the Harness's own interface, and ADR-0025
-refused to keep its reasoning. Neither says what the surface may draw of what
-the wire hands it, which is the question every one of these features asks.
+refused to keep its reasoning and fixed the strip that shows it. Neither says
+what the surface may draw of the rest of what the wire hands it, which is the
+question every one of these features asks.
 
 ## Decision
 
@@ -49,10 +50,17 @@ one change, justified by the wire. No feature gets in on the strength of what
 another client draws.
 
 How a field is drawn stays open. Whether a diff is a diff or a path and a line
-count, whether a terminal block is named and skipped, whether a long thought
-gets a scroll region, and whether a long transcript belongs on a 420-point
-window at all are decisions this ADR does not make. It bounds them; it does not
-settle them.
+count, whether a terminal block is named and skipped, and whether a long
+transcript belongs on a 420-point window at all are decisions this ADR does not
+make. It bounds them; it does not settle them.
+
+A long thought is not one of them. #697 lists the thought trace's scroll region
+as undecided, and ADR-0025 had already decided it: a thought is one transient
+line above the composer, replaced by the next, cleared at the end of the turn,
+kept by nothing. ADR-0025 names reasoning a reader scrolls back through as the
+workbench arriving by another door, which this ADR's refusal of a tool-call
+inspector follows rather than reopens. Giving a thought a scroll region means
+superseding ADR-0025. This ADR is not grounds for it.
 
 The surface will keep drawing less than the Harness's own TUI, permanently.
 That is the trade this ADR takes, and a complaint that it draws less is not
