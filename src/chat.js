@@ -557,8 +557,6 @@ function newSession(why) {
   // A boundary is where a stamp should say the hour again rather than count
   // minutes from a line that is no longer on screen.
   previousAt = null;
-  // The note that carried it went with the rest, so it may be owed again.
-  loginSaid = null;
   note(`New session — ${why}. Nothing said earlier is in it.`);
 }
 
