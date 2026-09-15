@@ -250,17 +250,13 @@ impl SettingsWindow {
                         set_window_text(*hwnd, &text);
                         if id == form::BYO_TOKEN_ID {
                             use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW};
-                            unsafe {
-                                ShowWindow(*hwnd, if view.byo_token.is_empty() { SW_HIDE } else { SW_SHOW });
-                            }
+                            ShowWindow(*hwnd, if view.byo_token.is_empty() { SW_HIDE } else { SW_SHOW });
                         }
                     }
                     Control::Button(hwnd, _) => {
                         if id == form::BYO_COPY_TOKEN_ID {
                             use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW};
-                            unsafe {
-                                ShowWindow(*hwnd, if view.byo_token.is_empty() { SW_HIDE } else { SW_SHOW });
-                            }
+                            ShowWindow(*hwnd, if view.byo_token.is_empty() { SW_HIDE } else { SW_SHOW });
                         }
                         if id == form::APPLY_ID || id == form::CANCEL_ID {
                             let description = form::describe();
