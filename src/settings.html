@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- The Settings surface as a webview, on the Chat surface's tokens (ADR-0010).
+     Nothing here is wired to Rust yet: the tabs select and the panel draws what
+     `render()` is handed, and what hands it a snapshot arrives in #706. -->
+<html lang="en" class="chat-ui-minimal">
+  <head>
+    <meta charset="utf-8" />
+    <title>ai-buddy Settings</title>
+    <link rel="stylesheet" href="chat-ui.css" />
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body class="set-page">
+    <header class="set-bar">
+      <h1>Settings</h1>
+    </header>
+    <nav class="set-tabs" role="tablist" aria-label="Settings">
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="true">Presence</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Character</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">AI</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Privacy</button>
+      <button class="set-tab" type="button" role="tab" aria-controls="set-panel" aria-selected="false">Development</button>
+    </nav>
+    <main class="set-form" id="set-panel" role="tabpanel" aria-label="Presence"></main>
+    <script type="module" src="settings.js"></script>
+  </body>
+</html>
