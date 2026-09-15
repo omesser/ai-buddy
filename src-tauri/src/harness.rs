@@ -372,11 +372,12 @@ pub struct Session {
     /// the lock rather than inside it because it is read exactly when the lock
     /// cannot be taken, which is the moment the ordering rule is decided.
     serving_reactive: AtomicBool,
-    /// The Instance whose wake holds `turn`. Beside the lock for the same
-    /// reason the flag above is, and read for the same kind of decision: one
-    /// child serves every Instance (ADR-0008), so a cancel sent without asking
-    /// who holds the turn lands on whichever buddy is mid-reply (#704).
-    serving: Mutex<Option<String>>,
+    /// The Instance whose wake holds `turn`, and `None` when no wake does.
+    /// Beside the lock for the same reason the flag above is: one child serves
+    /// every Instance (ADR-0008), so a cancel sent without asking who holds
+    /// the turn lands on whichever buddy is mid-reply (#704). `Serving` is
+    /// what keeps it honest either way.
+    serving_instance: Mutex<Option<String>>,
     /// The Instance a cancel has just gone out for, until the turn it cancels
     /// names itself. One slot, because one prompt is in flight at a time.
     withdrawing: Mutex<Option<String>>,
@@ -425,6 +426,29 @@ impl State {
     }
 }
 
+/// Names the Instance whose wake holds the turn lock, for exactly as long as
+/// it holds it. A save reads that name to decide whether the turn in flight is
+/// the one it is entitled to cancel, so a slot left behind by a turn that has
+/// ended would aim the cancel at the turn that replaced it (#704).
+struct Serving<'a>(&'a Session);
+
+impl<'a> Serving<'a> {
+    fn new(session: &'a Session, instance: &str) -> Self {
+        if let Ok(mut slot) = session.serving_instance.lock() {
+            *slot = Some(instance.to_string());
+        }
+        Self(session)
+    }
+}
+
+impl Drop for Serving<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.0.serving_instance.lock() {
+            *slot = None;
+        }
+    }
+}
+
 impl Session {
     pub fn new(launch: Launch, dir: PathBuf, forward: Arc<Forward>) -> Self {
         let inspect = HarnessInspect {
@@ -442,7 +466,7 @@ impl Session {
             backoff_first: BACKOFF_FIRST,
             turn: Mutex::new(()),
             serving_reactive: AtomicBool::new(false),
-            serving: Mutex::new(None),
+            serving_instance: Mutex::new(None),
             withdrawing: Mutex::new(None),
             withdrawn: Mutex::new(HashMap::new()),
             state: Mutex::new(State::default()),
@@ -607,9 +631,10 @@ impl Session {
         };
         self.serving_reactive
             .store(request.reactive, Ordering::SeqCst);
-        if let Ok(mut serving) = self.serving.lock() {
-            *serving = Some(request.instance.clone());
-        }
+        // Declared after the turn lock, so it is cleared before the lock is
+        // released: no window has the lock free and this slot still naming a
+        // turn that has ended.
+        let _serving = Serving::new(self, &request.instance);
         let (session_id, outcome) = self.attempt(request)?;
         // #448: a `session/load` answered with a success the Harness could not
         // honour leaves an id nothing can be prompted on, and the only place it
@@ -622,12 +647,17 @@ impl Session {
         // A loss is not one of these: the child is gone rather than the
         // session, and `lost` has already charged the respawn. Nor is a
         // timeout, which says nothing about the id and would spend the
-        // Completer's budget twice.
+        // Completer's budget twice. Nor is a turn we cancelled ourselves: it
+        // says nothing about the id either, and asking again is the one thing
+        // a save must not do — the prompt was built before the edit, so the
+        // retry would put the old Instance Prompt back on a fresh session
+        // (#704, ADR-0012).
         let key = SessionKey::from_request(request);
         let (session_id, outcome) = match &outcome {
-            Err(TurnError::Stopped(_) | TurnError::Failed(_)) if self.reopen_loaded(&key) => {
+            Err(TurnError::Stopped(reason)) if reason != CANCELLED && self.reopen_loaded(&key) => {
                 self.attempt(request)?
             }
+            Err(TurnError::Failed(_)) if self.reopen_loaded(&key) => self.attempt(request)?,
             _ => (session_id, outcome),
         };
         let mut withdrawn = false;
@@ -1041,15 +1071,10 @@ impl Session {
     ///
     /// Unlike `supersede` nothing waits for the handover: the caller is the
     /// frame loop committing a save, which must not sit on a turn it is
-    /// throwing away (#634), and no wake is waiting for the lock. The lock is
-    /// what says a turn is in flight, because `serving` outlives the turn that
-    /// set it.
+    /// throwing away (#634), and no wake is waiting for the lock.
     fn cancel_own_turn(&self, instance: &str) {
-        if self.turn.try_lock().is_ok() {
-            return;
-        }
         let ours = self
-            .serving
+            .serving_instance
             .lock()
             .is_ok_and(|serving| serving.as_deref() == Some(instance));
         if !ours {
@@ -2041,7 +2066,7 @@ mod tests {
                                 }}),
                             );
                         }
-                        "slow" if prompts == 1 => pending_prompt = Some(id),
+                        "slow" | "load-slow" if prompts == 1 => pending_prompt = Some(id),
                         "exit" if spawns == 1 => std::process::exit(3),
                         "die" => std::process::exit(3),
                         _ => {
@@ -3223,6 +3248,41 @@ mod tests {
         );
         assert_eq!(fx.count("new"), 1);
         assert_eq!(fx.count("prompt"), 2, "the reopen was tried more than once");
+        session.shutdown();
+    }
+
+    /// #448 meets #704: `cancelled` is a stop reason, so a turn that was
+    /// cancelled on a loaded session used to read as the evidence the load did
+    /// not restore. The withdrawn turn opened a fresh session and re-sent a
+    /// prompt nothing was waiting for — and after a save, that prompt carries
+    /// the Instance Prompt the save replaced (ADR-0012). A cancel says nothing
+    /// about the id either way.
+    #[test]
+    fn a_cancelled_turn_is_not_reopened_as_a_failed_load() {
+        let (fx, session) = Fixture::new("load-slow");
+        std::fs::write(
+            fx.dir.join(SESSION_FILE),
+            r#"{"harness":"fake","sessions":[{"instance":"buddy-1","character":"bmo","session_id":"saved-ok"}]}"#,
+        )
+        .unwrap();
+        let session = Arc::new(session.with_timeout(Duration::from_secs(10)));
+        let worker = {
+            let session = Arc::clone(&session);
+            thread::spawn(move || session.complete(&asking("hi")))
+        };
+        assert!(fx.wait_for("prompt", 1), "the first turn never went out");
+        // The cancel arrives the way a save's does, through the path a newer
+        // wake already takes: the loser writes its own line before the winner
+        // gets the lock, so what it did with the cancel is settled here.
+        assert_eq!(
+            session.complete(&asking("again")),
+            Ok(Reply::whole("Hello"))
+        );
+        let withdrawn = worker.join().unwrap().unwrap_err();
+        assert!(withdrawn.contains("cancelled"), "{withdrawn}");
+        assert_eq!(fx.count("load"), 1);
+        assert_eq!(fx.count("new"), 0, "the cancelled turn threw the id away");
+        assert_eq!(fx.count("prompt"), 2, "the cancelled turn was re-prompted");
         session.shutdown();
     }
 

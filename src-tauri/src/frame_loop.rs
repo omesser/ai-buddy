@@ -680,9 +680,7 @@ pub(crate) fn run_frame_loop(
                             // Prompt, so it has to be told to drop this
                             // Instance or the next wake continues the old
                             // transcript (#698, ADR-0012). The drop is also
-                            // where a turn of this Instance's still on the
-                            // wire is cancelled, which is what `retarget`
-                            // does for HTTP (#704).
+                            // where its turn in flight is cancelled (#704).
                             if let Some(attached) = harness::attached() {
                                 attached.drop_conversation(&written.instance);
                             }
