@@ -84,15 +84,11 @@ done
 
 npm_cache="$root/.verify/.npm-cache"
 mkdir -p "$npm_cache"
-# Picking the claude Harness spawns `npx -y @agentclientprotocol/claude-agent-acp@latest`
-# (harness.rs), which inherits HOME from the app and so caches packages under
-# $HOME/.npm by default. HOME is a fresh directory every run, so npm redownloaded
-# the whole tree - ~395 MB - on every single attempt, attached or not (#740).
-# npm's cache is content-addressed and checksum-verified per entry, so sharing
-# it across runs risks nothing a crashed run could leave broken, and it holds
-# no app or Settings state - the throwaway HOME still isolates all of that.
-# `@latest` still re-resolves against the registry every run (#514); only the
-# package contents behind that tag are now reused instead of refetched.
+# Outside the throwaway HOME on purpose. npm's cache is content-addressed and
+# checksum-verified per entry, so it carries no app or Settings state for the
+# isolation to protect, and a crashed run leaves one unused entry rather than a
+# broken cache. `@latest` still re-resolves against the registry every run
+# (#514); only the package bytes behind that tag are reused.
 
 log="$out/app.log"
 # HOME is overridden so settings.json and the Action Log are this run's and
