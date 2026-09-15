@@ -16,10 +16,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  # Push the sync branch, and open or update the pull request for it. No other
-  # scope is used.
+  # Push the sync branch, open or update the pull request for it, and dispatch
+  # `PR Tests` at the branch. `actions: write` is what `gh workflow run` spends.
+  # No other scope is used.
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   sync:
@@ -31,10 +33,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node
-        # The drift test runs here rather than on the pull request: a pull
-        # request opened with GITHUB_TOKEN does not trigger `on: pull_request`,
-        # so PR Tests would never run on it. Testing before opening it is what
-        # keeps the branch from arriving unverified.
+        # The drift test runs here rather than as a check on the pull request:
+        # a pull request opened with GITHUB_TOKEN does not trigger
+        # `on: pull_request`, so PR Tests never fires for it. The full suite
+        # does still run — the last step dispatches it at the branch, and
+        # `workflow_dispatch` is the exception GitHub carves out of that
+        # suppression — but a dispatched run reports against the branch, not
+        # against the pull request. Testing here is what makes the branch
+        # verified at the moment it is pushed.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 'lts/*'
@@ -118,9 +124,11 @@ jobs:
             echo
             echo '## How to verify'
             echo
-            echo '`node --test tests/skills-layout.test.js` ran green on this branch before this pull request opened. That is the only check this job runs.'
+            echo '`node --test tests/skills-layout.test.js` ran green on this branch before this pull request opened, and the full `PR Tests` suite was dispatched at the branch straight afterwards.'
             echo
-            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `PR Tests`, so nothing else has run. Run `node --test tests/` and `pre-commit run --all-files` before approving.'
+            echo "That dispatched run is a standalone run, not a status check: no \`PR Tests\` tick will appear on this pull request, however green the suite came out. Read it before approving: https://github.com/$GH_REPO/actions/workflows/tests.yml?query=branch%3A${BRANCH//\//%2F}"
+            echo
+            echo 'A pull request opened with `GITHUB_TOKEN` does not trigger `on: pull_request`, which is why the suite has to be dispatched and why it cannot report here. If the dispatch itself failed, this job logged an error and the branch carries only the drift test above — run `node --test tests/` and `pre-commit run --all-files` locally before approving.'
             echo
             echo 'Read `docs/agents/pstack.md` before approving a change to a playbook this repository overrules.'
           } > /tmp/pstack-pr.md
@@ -145,3 +153,21 @@ jobs:
           BEFORE: ${{ steps.before.outputs.before }}
           AFTER: ${{ steps.push.outputs.after }}
           VERSION: ${{ steps.push.outputs.version }}
+
+      - name: Dispatch the full test suite at the sync branch
+        # Guarded on the same `moved` output as the push: a run of this workflow
+        # that found upstream unchanged has no branch to test.
+        if: steps.changes.outputs.moved == 'true'
+        # Last, and deliberately unable to fail the job. A sync pull request
+        # that exists with no dispatched run is worth keeping; one that never
+        # opened because the dispatch call errored is not. The failure is an
+        # annotation rather than a silent skip, and the pull request body says
+        # what to do when the run is missing.
+        run: |
+          gh workflow run tests.yml --ref "$BRANCH" ||
+            echo "::error::Could not dispatch PR Tests for $BRANCH." \
+              "The sync pull request stands, verified only by the drift test."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: chore/pstack-sync
