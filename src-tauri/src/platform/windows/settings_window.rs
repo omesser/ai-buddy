@@ -73,6 +73,15 @@ thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
 }
 
+struct DisclosureLayout<'a> {
+    parent: HWND,
+    control_id: i32,
+    tab_index: usize,
+    hfont: HGDIOBJ,
+    display_left: i32,
+    y: &'a mut i32,
+}
+
 struct SettingsWindow {
     hwnd: HWND,
     session: Mutex<Option<SettingsSession>>,
@@ -577,12 +586,7 @@ impl SettingsWindow {
         &self,
         disclosure_text: &str,
         disclosure_id: String,
-        parent: HWND,
-        control_id: i32,
-        tab_index: usize,
-        hfont: HGDIOBJ,
-        display_left: i32,
-        y: &mut i32,
+        layout: DisclosureLayout,
     ) {
         let is_expanded = self
             .disclosure_expanded
@@ -598,17 +602,17 @@ impl SettingsWindow {
                 c"BUTTON".as_ptr() as *const u8,
                 button_cstr.as_ptr() as *const u8,
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                display_left,
-                *y,
+                layout.display_left,
+                *layout.y,
                 120,
                 ROW_HEIGHT,
-                parent,
-                control_id as _,
+                layout.parent,
+                layout.control_id as _,
                 GetModuleHandleA(ptr::null()),
                 ptr::null_mut(),
             );
-            SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-            *y += ROW_HEIGHT + HINT_GAP;
+            SendMessageA(button_hwnd, WM_SETFONT, layout.hfont as WPARAM, 1);
+            *layout.y += ROW_HEIGHT + HINT_GAP;
 
             let disclosure_cstr = CString::new(disclosure_text).unwrap();
             let label_height = measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
@@ -617,30 +621,30 @@ impl SettingsWindow {
                 c"STATIC".as_ptr() as *const u8,
                 disclosure_cstr.as_ptr() as *const u8,
                 WS_CHILD | if is_expanded { WS_VISIBLE } else { 0 } | SS_LEFT,
-                display_left,
-                *y,
+                layout.display_left,
+                *layout.y,
                 FIELD_WIDTH,
                 label_height,
-                parent,
+                layout.parent,
                 ptr::null_mut(),
                 GetModuleHandleA(ptr::null()),
                 ptr::null_mut(),
             );
-            SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
+            SendMessageA(label_hwnd, WM_SETFONT, layout.hfont as WPARAM, 1);
 
             self.control_id_to_form_id
                 .borrow_mut()
-                .insert(control_id, disclosure_id.clone());
+                .insert(layout.control_id, disclosure_id.clone());
             self.controls.borrow_mut().insert(
                 disclosure_id.clone(),
-                Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                Control::Disclosure(button_hwnd, label_hwnd, layout.tab_index),
             );
             self.disclosure_heights
                 .borrow_mut()
                 .insert(disclosure_id, label_height);
 
             if is_expanded {
-                *y += label_height + HINT_GAP;
+                *layout.y += label_height + HINT_GAP;
             }
         }
     }
@@ -1371,12 +1375,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                     window.add_disclosure(
                         disclosure_text,
                         disclosure_id,
-                        parent,
-                        control_id,
-                        tab_index,
-                        hfont,
-                        display_left,
-                        &mut y,
+                        DisclosureLayout {
+                            parent,
+                            control_id,
+                            tab_index,
+                            hfont,
+                            display_left,
+                            y: &mut y,
+                        },
                     );
                     control_id += 1;
                 }
@@ -1444,12 +1450,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
@@ -1570,12 +1578,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
@@ -1784,12 +1794,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
@@ -1847,12 +1859,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
@@ -2014,12 +2028,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
@@ -2126,12 +2142,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
@@ -2246,12 +2264,14 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 window.add_disclosure(
                                     disclosure_text,
                                     disclosure_id,
-                                    parent,
-                                    control_id,
-                                    tab_index,
-                                    hfont,
-                                    display_left,
-                                    &mut y,
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
                                 control_id += 1;
                             }
