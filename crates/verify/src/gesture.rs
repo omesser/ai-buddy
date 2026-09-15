@@ -78,12 +78,23 @@ pub fn run(verb: Verb, repo_root: &Path, paths: &RunPaths) -> i32 {
         Err(e) => return fail(verb, paths, &format!("cargo build: {e}")),
     }
 
-    // Only ever races a stray instance this same script left behind; cleanup
-    // (below) kills the one this run starts, same convention as
-    // verify-overlay.sh's own trap.
-    let _ = Command::new("pkill")
-        .args(["-f", "target/debug/ai-buddy"])
-        .status();
+    // A stray instance of this exact checkout's binary would confuse which
+    // app.log and which verbs line belongs to this run. Named as a failure
+    // rather than killed: a broad `pkill -f target/debug/ai-buddy` would also
+    // catch another worktree's dogfood instance or another agent's run, and
+    // this tool only ever owns the child it spawns below.
+    let bin_path = repo_root.join("target/debug/ai-buddy");
+    if let Some(pid) = stray_pid(&bin_path) {
+        return fail(
+            verb,
+            paths,
+            &format!(
+                "{} is already running (pid {pid}); stop it before running {}",
+                bin_path.display(),
+                verb.name().to_lowercase()
+            ),
+        );
+    }
 
     let log_path = dest.join("app.log");
     let log_out = match fs::File::create(&log_path) {
@@ -101,7 +112,7 @@ pub fn run(verb: Verb, repo_root: &Path, paths: &RunPaths) -> i32 {
         Err(e) => return fail(verb, paths, &format!("cannot dup log handle: {e}")),
     };
 
-    let mut child = match Command::new(repo_root.join("target/debug/ai-buddy"))
+    let mut child = match Command::new(&bin_path)
         .env("AI_BUDDY_TRACE_HITTEST", "1")
         .env("AI_BUDDY_TRACE_FRAMES", "1")
         .current_dir(repo_root)
@@ -191,6 +202,22 @@ fn drive(verb: Verb, repo_root: &Path, click_script: &Path, log_path: &Path) -> 
         log_path.display()
     );
     0
+}
+
+/// Pid of an already-running process at `bin_path`, if any. Exact-path match:
+/// this scopes to the one checkout `run` is about to build and launch, never
+/// another worktree's binary or the user's own dogfood app.
+fn stray_pid(bin_path: &Path) -> Option<String> {
+    let out = Command::new("pgrep")
+        .args(["-f", &bin_path.to_string_lossy()])
+        .output()
+        .ok()?;
+    let pid = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .to_string();
+    (!pid.is_empty()).then_some(pid)
 }
 
 fn skip(verb: Verb, paths: &RunPaths, reason: &str) -> i32 {
