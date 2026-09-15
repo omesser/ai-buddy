@@ -1236,6 +1236,24 @@ fn permission_answer(request: String, option: String) {
     }
 }
 
+/// Open a link the user clicked in a reply, in their own browser.
+///
+/// The webview cannot do this itself. There is no opener plugin, and nothing
+/// intercepts navigation, so an `<a href>` would take the chat window to the
+/// page and the conversation with it — `default-src 'self'` does not stop a
+/// top-level navigation, and neither `target="_blank"` nor `window.open`
+/// reaches the system browser from here. Handing the URL to the OS is the
+/// native side's to do.
+///
+/// Which schemes may be handed over is `platform::open_url`'s decision, not
+/// this function's: the gate belongs at the last edge before the OS, where no
+/// caller can route around it. What arrives here is untrusted — a link target
+/// is model output, and an MCP server's content can steer it.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    platform::open_url(&url)
+}
+
 /// Connect a named Harness from Chat, answering with the command that signs
 /// it in.
 ///
@@ -2406,6 +2424,7 @@ fn main() {
             chat_prompt,
             chat_ready,
             permission_answer,
+            open_link,
             select_harness,
             show_settings
         ])

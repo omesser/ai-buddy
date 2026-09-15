@@ -166,6 +166,28 @@ function note(text) {
   return add(row);
 }
 
+// A link in a reply opens in the user's browser, not in here.
+//
+// One listener on the log rather than one per link: every reply redraws its
+// whole row as chunks arrive (`appendReply`), so a per-link handler would be
+// attached and dropped over and over, and a link added by the last chunk of a
+// turn would be the one that missed out.
+//
+// `open_link` is what reaches the OS, and the scheme it will accept is decided
+// in Rust — `data-href` here is untrusted text that has already been through
+// `src/markdown.js`'s own allowlist, and neither check trusts the other.
+log.addEventListener("click", (event) => {
+  const link = event.target.closest?.(".md-link[data-href]");
+  if (!link) {
+    return;
+  }
+  const where = link.dataset.href;
+  invoke("open_link", { url: where }).catch((why) => {
+    console.error("chat: that link did not open:", why);
+    note(`That link did not open: ${why}.`);
+  });
+});
+
 // The rows still offering buttons, by request id. One request reaches every
 // open window and only one of them takes the click, so the Shell's settled
 // event is what retires the rest.

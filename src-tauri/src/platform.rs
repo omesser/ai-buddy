@@ -378,16 +378,68 @@ pub fn refresh_settings() {
 /// there reports it missing instead of giving the user something to write in.
 pub fn open_path(path: &Path) -> Result<(), String> {
     ensure_file(path)?;
+    hand_over(path.as_os_str())
+}
+
+/// The schemes a link in a reply is allowed to open.
+///
+/// `mailto` earns its place beside the two web schemes: a model writing an
+/// address as a link means it to be mailed, and the handler is the user's own
+/// client. Everything else — `javascript`, `data`, `file`, `vbscript` — is
+/// refused, because the only thing asking is untrusted text.
+const OPENABLE: [&str; 3] = ["http", "https", "mailto"];
+
+/// Hand a URL from a reply to whatever the desktop opens it with.
+///
+/// Separate from `open_path` rather than a widened version of it: that one
+/// calls `ensure_file` first, so a URL given to it would be created on disk as
+/// a file named after the URL.
+///
+/// The scheme gate lives here, at the last edge before the OS, so no caller can
+/// route around it — a link target is model output and an MCP server's content
+/// can steer it (#371). It is decided by parsing rather than by matching a
+/// prefix: `Url::parse` applies the WHATWG rules, so `&#106;avascript:`,
+/// `java<tab>script:`, `JAVASCRIPT:` and a leading newline all resolve to the
+/// scheme they really are and are refused, where `starts_with("http")` would
+/// have let each one past.
+///
+/// What goes to the opener is the parsed form, never the caller's string. They
+/// differ — parsing normalises — and validating one while opening the other is
+/// how a gate gets bypassed.
+///
+/// A refused scheme is an error rather than a silent no-op, so a link that does
+/// nothing can be told apart from one that was turned away.
+pub fn open_url(url: &str) -> Result<(), String> {
+    // A parsed URL always starts with its scheme, so it can never be read as an
+    // option by `open` or `xdg-open`. `Command` execs directly with no shell,
+    // so there is no metacharacter to quote either.
+    hand_over(std::ffi::OsStr::new(&openable(url)?))
+}
+
+/// The URL to hand over, or why this one is not handed over.
+///
+/// Split from `open_url` so the decision can be tested without launching a
+/// browser: everything above is policy, and the line below it spawns.
+fn openable(url: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(url).map_err(|why| format!("not a URL: {why}"))?;
+    if !OPENABLE.contains(&parsed.scheme()) {
+        return Err(format!("a {} link does not open", parsed.scheme()));
+    }
+    Ok(parsed.into())
+}
+
+/// The one per-platform call, shared by both entry points above.
+fn hand_over(target: &std::ffi::OsStr) -> Result<(), String> {
     #[cfg(unix)]
     {
-        opener(path)
+        opener(target)
             .spawn()
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
     #[cfg(not(unix))]
     {
-        opener(path)
+        opener(target)
     }
 }
 
@@ -403,16 +455,16 @@ fn ensure_file(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn opener(path: &Path) -> Command {
+fn opener(target: &std::ffi::OsStr) -> Command {
     let mut command = Command::new("open");
-    command.arg(path);
+    command.arg(target);
     command
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-fn opener(path: &Path) -> Command {
+fn opener(target: &std::ffi::OsStr) -> Command {
     let mut command = Command::new("xdg-open");
-    command.arg(path);
+    command.arg(target);
     command
 }
 
@@ -429,11 +481,11 @@ fn opener(path: &Path) -> Command {
 /// this code is fire-and-forget. Neither removes the `unsafe` — only whose it
 /// is — so the trade is a dependency for no change in what can go wrong.
 #[cfg(not(unix))]
-fn opener(path: &Path) -> Result<(), String> {
+fn opener(target: &std::ffi::OsStr) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-    let file = shell_execute_file_wide(path);
+    let file = shell_execute_file_wide(target);
     let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
 
     // Per MSDN, a return value greater than 32 means the call succeeded.
@@ -458,7 +510,7 @@ fn opener(path: &Path) -> Result<(), String> {
     } else {
         Err(format!(
             "ShellExecuteW failed opening {} (code {})",
-            path.display(),
+            target.to_string_lossy(),
             result as isize
         ))
     }
@@ -468,9 +520,9 @@ fn opener(path: &Path) -> Result<(), String> {
 /// function so tests can assert `&`, `%`, and spaces reach the API intact
 /// without spawning a viewer.
 #[cfg(not(unix))]
-fn shell_execute_file_wide(path: &Path) -> Vec<u16> {
+fn shell_execute_file_wide(target: &std::ffi::OsStr) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
-    path.as_os_str().encode_wide().chain(Some(0)).collect()
+    target.encode_wide().chain(Some(0)).collect()
 }
 
 /// Windows: extended window styles for floating, non-activating overlay.
@@ -1008,6 +1060,66 @@ fn exact_dock() -> Option<(Rect, DockSource)> {
 mod tests {
     use super::*;
 
+    /// The three schemes a reply's link may open, and nothing else.
+    #[test]
+    fn a_web_or_mail_link_opens() {
+        for url in [
+            "https://example.com/a?b=c#d",
+            "http://example.com",
+            "mailto:someone@example.com",
+        ] {
+            assert!(openable(url).is_ok(), "{url} should open");
+        }
+    }
+
+    /// The gate is the reason a reply cannot reach the shell with anything it
+    /// likes. Each of these is a scheme that runs or reads rather than browses,
+    /// and every one arrives as ordinary model output.
+    #[test]
+    fn a_link_that_runs_or_reads_does_not_open() {
+        for url in [
+            "javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "vbscript:msgbox(1)",
+            "file:///etc/passwd",
+        ] {
+            assert!(openable(url).is_err(), "{url} must not open");
+        }
+    }
+
+    /// Why the scheme is parsed and not matched.
+    ///
+    /// Each of these is `javascript:` wearing something a `starts_with` or a
+    /// lowercase compare would have missed — a case fold, an HTML entity, an
+    /// embedded tab, leading whitespace. `Url::parse` applies the WHATWG rules
+    /// and resolves every one to the scheme it really is.
+    #[test]
+    fn an_obfuscated_scheme_is_still_that_scheme() {
+        for url in [
+            "JaVaScRiPt:alert(1)",
+            "JAVASCRIPT:alert(1)",
+            "java\tscript:alert(1)",
+            "java\nscript:alert(1)",
+            "  javascript:alert(1)",
+            "\njavascript:alert(1)",
+            "&#106;avascript:alert(1)",
+        ] {
+            assert!(openable(url).is_err(), "{url:?} must not open");
+        }
+    }
+
+    /// What is handed to the OS is the parsed form, never the caller's string.
+    /// Validating one and opening the other is how a gate gets walked past.
+    #[test]
+    fn the_opened_url_is_the_parsed_one() {
+        let opened = openable("  https://example.com  ").expect("a web link opens");
+        assert_eq!(opened, "https://example.com/");
+        assert!(
+            !opened.starts_with(' '),
+            "the untrimmed original must not reach the opener, got {opened:?}"
+        );
+    }
+
     /// A press that lands on the overlay is one `CGEventSource` has been
     /// seen to miss. The overlay's own pointer events are the other half of
     /// `buttons_down`; without them a click on the sprite is silent.
@@ -1164,7 +1276,7 @@ mod tests {
     #[test]
     fn the_opener_is_handed_the_whole_path() {
         let path = Path::new("/tmp/ai buddy/memory.md");
-        let command = opener(path);
+        let command = opener(path.as_os_str());
 
         assert_eq!(command.get_args().last(), Some(path.as_os_str()));
         #[cfg(target_os = "macos")]

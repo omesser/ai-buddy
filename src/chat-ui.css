@@ -538,9 +538,11 @@ body {
    opener plugin, and a real href would take this webview itself to the page.
    The target rides in `data-href` for the Tauri command that will hand it to
    the OS, and src/markdown.js only ever writes an http, https or mailto one
-   there. Not a pointer cursor, because nothing happens on the click. */
+   there. The pointer cursor is honest now: a click hands the URL to the
+   browser through `open_link`. */
 .said.md .md-link {
   color: var(--chat-accent);
+  cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
