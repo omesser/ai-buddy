@@ -232,7 +232,42 @@ pub(crate) fn run_frame_loop(
                     thread::sleep(deadline);
                 }
                 _ => {
-                    thread::sleep(ENGINE_TICK);
+                    // macOS and Windows: no XI2 events, so poll with back-off when
+                    // idle. #183 Stage 2b. CGEventTap with mouse-only listen requires
+                    // Input Monitoring (decision 9 forbids it), so event-driven input
+                    // is unavailable. Idle back-off reduces wakeups when the sprite is
+                    // still/hidden/asleep.
+                    match schedule_mode {
+                        scheduler::ScheduleMode::Active => {
+                            thread::sleep(ENGINE_TICK);
+                        }
+                        scheduler::ScheduleMode::Idle => {
+                            // Idle: compute next real work deadline (Director ambient
+                            // wakes, activity sensing) and sleep until then, capped at
+                            // 1s to keep gesture/menu response timely.
+                            let next_director = lives
+                                .iter()
+                                .filter_map(|live| {
+                                    let remaining =
+                                        live.pace.wait().saturating_sub(live.since_wake);
+                                    if remaining.is_zero() {
+                                        None
+                                    } else {
+                                        Some(remaining)
+                                    }
+                                })
+                                .min()
+                                .unwrap_or(Duration::from_secs(3600));
+
+                            let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                            let deadline = next_director.min(next_sense);
+
+                            // Cap at 1s: even when idle, gesture and menu response must
+                            // stay timely (menu deadline is bounded, not instant).
+                            let capped = deadline.min(Duration::from_secs(1));
+                            thread::sleep(capped);
+                        }
+                    }
                 }
             }
 
