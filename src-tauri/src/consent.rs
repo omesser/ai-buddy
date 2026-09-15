@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum CapabilityId {
     Accessibility,
     ScreenRecording,
@@ -21,7 +21,7 @@ pub struct Capability {
     pub costs: &'static str,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct ConsentRow {
     pub id: CapabilityId,
     pub title: &'static str,

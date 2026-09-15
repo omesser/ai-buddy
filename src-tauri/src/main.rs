@@ -584,6 +584,30 @@ fn settings_session(app: &tauri::AppHandle, state: &SettingsState) -> SettingsSe
     }
 }
 
+/// The Settings form and the values in force, in one reply.
+///
+/// The shape and the values travel together because a row is only renderable
+/// with both: the description says a checkbox writes `DirectorEnabled`, and
+/// the view says whether it is on. Committed fixtures pin the shape; the
+/// values are this machine's and pin nothing (#706).
+#[derive(serde::Serialize)]
+struct SettingsSnapshot {
+    form: settings::form::FormDescription,
+    view: settings::SettingsView,
+}
+
+#[tauri::command]
+fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> {
+    let state = app
+        .try_state::<SettingsState>()
+        .ok_or("settings: asked for before the shell was ready")?;
+    let session = settings_session(&app, &state);
+    Ok(SettingsSnapshot {
+        form: settings::form::describe(),
+        view: session.view(),
+    })
+}
+
 /// Open the Settings window.
 ///
 /// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
@@ -2429,7 +2453,8 @@ fn main() {
             permission_answer,
             open_link,
             select_harness,
-            show_settings
+            show_settings,
+            settings_snapshot
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character

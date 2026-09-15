@@ -28,7 +28,7 @@ use crate::model::{self, DirectorInspect, DirectorSettings};
 use crate::secrets::{SecretStore, DIRECTOR_API_KEY};
 
 /// One running buddy, as settings lists it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct InstanceRow {
     pub id: String,
     pub name: String,
@@ -41,7 +41,7 @@ pub struct InstanceRow {
 
 /// What the settings window shows. Built from the live file and roster so the
 /// window holds no copy that could drift.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SettingsView {
     pub director_enabled: bool,
     pub ambient_wakes: bool,
@@ -1159,7 +1159,7 @@ pub struct SettingsPatch {
 /// A name rather than a `&str` so the row and the setter cannot disagree: with
 /// a string key, a row could name a field no setter knew, and that compiled
 /// clean and shipped a checkbox that wrote nothing (#273).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum BoolField {
     DirectorEnabled,
     AmbientWakes,
@@ -1192,7 +1192,7 @@ pub enum BoolField {
 /// Typed for the reason `BoolField` is. No `hide_hotkey`: the row showing it is
 /// an `InspectBlock` that writes nothing, because a text field is not a key
 /// recorder.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum TextField {
     Character,
     DirectorBaseUrl,

@@ -7,13 +7,15 @@
 
 use std::collections::HashMap;
 
+use serde::Serialize;
+
 use crate::consent;
 use crate::dev_flags;
 use crate::model;
 use crate::settings::{BoolField, TextField};
 
 /// Operations the settings window requests.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum RowOperation {
     Spawn,
     OpenMemory,
@@ -33,7 +35,7 @@ pub enum RowOperation {
 }
 
 /// One section of the settings form.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormSection {
     pub heading: String,
     pub rows: Vec<FormRow>,
@@ -50,7 +52,8 @@ pub struct FormSection {
 /// A row that writes carries the field it writes, so its kind and its field
 /// have to agree: a `Checkbox` can only name a bool. That is what makes a
 /// control writing nothing unrepresentable rather than merely tested (#287).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "type")]
 pub enum FormRow {
     /// A checkbox that writes a bool to Settings.
     Checkbox {
@@ -169,7 +172,8 @@ pub enum FormRow {
 }
 
 /// One control in a composite row.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "type")]
 pub enum CompositeControl {
     TextField {
         id: String,
@@ -204,13 +208,16 @@ pub enum CompositeControl {
 /// Whether a pick stages or saves is not declared here — it is the target
 /// row's `batched`, so the shortcut and the field below it cannot disagree
 /// about when the file is reached (#279).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct Shortcut {
     /// The id of the text row filled in, whose `writes` is the field.
     pub row: &'static str,
     /// The value a picked title means, or `None` for Custom and for a title
     /// off the list — neither of which is a value to write over what the
     /// field holds.
+    /// A function pointer is not data, so the shortcut crosses to
+    /// JavaScript as the row it fills and nothing else.
+    #[serde(skip)]
     pub value: fn(&str) -> Option<&'static str>,
 }
 
@@ -230,7 +237,7 @@ impl Eq for Shortcut {}
 /// The grouping is data here rather than a layout decision in each renderer,
 /// so AppKit's `NSTabView` and GTK's `gtk::Notebook` cannot disagree about
 /// which heading sits where.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormTab {
     pub title: String,
     pub sections: Vec<FormSection>,
@@ -241,12 +248,25 @@ pub struct FormTab {
 /// Everything here is owned, so this crosses a thread boundary. That is the
 /// point of it: the description is built where the state lives, and the
 /// platform window builds from it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormDescription {
     pub tabs: Vec<FormTab>,
     /// What each button does, by control id. Only buttons: a writing row
     /// carries its own field, so no registry can disagree with one.
+    #[serde(serialize_with = "sorted_operations")]
     pub operations: HashMap<String, RowOperation>,
+}
+
+/// A `HashMap` serializes in hash order, which differs run to run. The
+/// committed fixtures are compared, so the keys leave in one order.
+fn sorted_operations<S: serde::Serializer>(
+    operations: &HashMap<String, RowOperation>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    operations
+        .iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
+        .serialize(serializer)
 }
 
 impl FormDescription {
@@ -737,10 +757,12 @@ fn flag_row(
     }
 }
 
-fn director_sections() -> Vec<FormSection> {
-    let driving = crate::harness::driving();
-    // Configured, not driving: the handle still shadows these three (#469).
-    let configured = crate::harness::attached().is_some();
+fn director_sections(live: &Live) -> Vec<FormSection> {
+    let Live {
+        driving,
+        configured,
+        ..
+    } = *live;
     let (base_url_label, base_url_frozen, base_url_status) =
         http_row_parts("Base URL", model::BASE_URL, driving, configured);
     let (model_label, model_frozen, model_status) =
@@ -1202,15 +1224,8 @@ fn presence_sections() -> Vec<FormSection> {
     ]
 }
 
-fn privacy_sections() -> Vec<FormSection> {
-    #[cfg(target_os = "macos")]
-    let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
-
-    #[cfg(target_os = "windows")]
-    let consent_comment = Some(consent::pane_intro(&consent::process_listed_as()));
-
-    #[cfg(target_os = "linux")]
-    let consent_comment = Some(consent::linux_pane_intro());
+fn privacy_sections(live: &Live) -> Vec<FormSection> {
+    let consent_comment = Some(live.consent_intro.clone());
 
     #[cfg(not(target_os = "linux"))]
     let consent_rows = vec![
@@ -1469,7 +1484,43 @@ fn development_sections() -> Vec<FormSection> {
 }
 
 /// Describe the settings form. The AppKit and Linux GTK windows build from this.
+/// What the description reads from the running process rather than the file.
+///
+/// A value rather than three calls inside the builders, because none of the
+/// three can be pinned otherwise: `harness::driving` is a process global no
+/// test can set for the whole binary, and the consent intro names the process
+/// Privacy will list, which is the responsible parent and so differs per
+/// machine. A fixture compared byte for byte needs all three chosen (#706).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Live {
+    /// A Harness is answering, so the three HTTP rows drive nothing (ADR-0008).
+    pub driving: bool,
+    /// Configured but not answering: the handle still shadows them (#469).
+    pub configured: bool,
+    /// The whole intro rather than the process name, because Linux has no
+    /// consent system and says something else entirely (#250).
+    pub consent_intro: String,
+}
+
+impl Live {
+    pub fn current() -> Self {
+        #[cfg(not(target_os = "linux"))]
+        let consent_intro = consent::pane_intro(&consent::process_listed_as());
+        #[cfg(target_os = "linux")]
+        let consent_intro = consent::linux_pane_intro();
+        Self {
+            driving: crate::harness::driving(),
+            configured: crate::harness::attached().is_some(),
+            consent_intro,
+        }
+    }
+}
+
 pub fn describe() -> FormDescription {
+    describe_with(&Live::current())
+}
+
+pub fn describe_with(live: &Live) -> FormDescription {
     let tabs = vec![
         FormTab {
             title: "Presence".to_string(),
@@ -1481,11 +1532,11 @@ pub fn describe() -> FormDescription {
         },
         FormTab {
             title: "AI".to_string(),
-            sections: director_sections(),
+            sections: director_sections(live),
         },
         FormTab {
             title: "Privacy".to_string(),
-            sections: privacy_sections(),
+            sections: privacy_sections(live),
         },
         FormTab {
             title: "Development".to_string(),
@@ -1511,6 +1562,89 @@ pub fn describe() -> FormDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The intro a packaged macOS build writes. A literal, because
+    /// `consent::process_listed_as` answers with the responsible parent — a
+    /// terminal here, a CI runner's shell there — and a fixture cannot hold a
+    /// string that changes with who launched the test.
+    const FIXTURE_CONSENT_INTRO: &str =
+        "Checking a box asks macOS for the permission. macOS lists this app as ai-buddy, under Privacy & Security.";
+
+    /// Linux builds two tabs deliberately smaller: no capture-exclusion row and
+    /// no consent rows, because there is nothing there to grant (#250). Those
+    /// two are pinned on the platforms that build them; the other three pin
+    /// everywhere, and they are where form churn lands.
+    #[cfg(target_os = "linux")]
+    const UNPINNED_TABS: &[&str] = &["Presence", "Privacy"];
+    #[cfg(not(target_os = "linux"))]
+    const UNPINNED_TABS: &[&str] = &[];
+
+    fn fixture_live(driving: bool, configured: bool) -> Live {
+        Live {
+            driving,
+            configured,
+            consent_intro: FIXTURE_CONSENT_INTRO.to_string(),
+        }
+    }
+
+    /// The snapshot with the tabs this platform does not build the same way
+    /// dropped, so one pair of fixtures serves all three.
+    fn pinned_tabs(mut value: serde_json::Value) -> serde_json::Value {
+        let tabs = value["tabs"].as_array().expect("tabs is an array").clone();
+        value["tabs"] = tabs
+            .into_iter()
+            .filter(|tab| !UNPINNED_TABS.contains(&tab["title"].as_str().unwrap_or_default()))
+            .collect();
+        value
+    }
+
+    /// The page in #706 renders these two files, so they are the interface
+    /// between the Rust description and the JavaScript that draws it. Compared
+    /// and never written: a `form.rs` edit nobody meant to make has to reach
+    /// CI as a fixture diff rather than as a quietly refreshed file.
+    #[test]
+    fn both_ai_sources_serialize_to_the_committed_fixtures() {
+        const FIXTURES: [(&str, &str, bool, bool); 2] = [
+            (
+                "settings-snapshot-modelApi.json",
+                include_str!("../../../tests/fixtures/settings-snapshot-modelApi.json"),
+                false,
+                false,
+            ),
+            (
+                "settings-snapshot-harnessDriving.json",
+                include_str!("../../../tests/fixtures/settings-snapshot-harnessDriving.json"),
+                true,
+                true,
+            ),
+        ];
+        // The Director and Development variables decide half these rows, and a
+        // developer's exported one would otherwise rewrite the fixture.
+        crate::model::tests::with_env(None, None, None, || {
+            for (name, committed, driving, configured) in FIXTURES {
+                let expected = pinned_tabs(
+                    serde_json::from_str(committed).expect("the fixture has to be JSON"),
+                );
+                let actual = pinned_tabs(
+                    serde_json::to_value(describe_with(&fixture_live(driving, configured)))
+                        .expect("the description has to serialize"),
+                );
+                if actual != expected {
+                    let dump = std::env::temp_dir().join(name);
+                    let _ = std::fs::write(
+                        &dump,
+                        serde_json::to_string_pretty(&actual).unwrap_or_default(),
+                    );
+                    panic!(
+                        "tests/fixtures/{name} no longer matches form::describe_with. \
+                         What the form produces now is at {}; diff it, and commit it \
+                         with the change that moved it.",
+                        dump.display()
+                    );
+                }
+            }
+        });
+    }
 
     #[test]
     fn form_description_can_be_sent_to_another_thread() {
