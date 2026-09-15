@@ -18,3 +18,9 @@ serde_json = "1"
 # ureq rather than a hand-rolled client: already in the tree for the Completer,
 # and no tokio (src-tauri/Cargo.toml says why).
 ureq = "3"
+
+[lints.rust]
+# Pure Rust today, and nothing about what this crate does needs FFI. `forbid`
+# rather than `deny` so the guarantee cannot be turned off one `#[allow]` at a
+# time: adding `unsafe` here should be a conversation, not a local override.
+unsafe_code = "forbid"

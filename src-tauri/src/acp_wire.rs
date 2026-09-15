@@ -1305,7 +1305,21 @@ mod windows_job {
         THREAD_SUSPEND_RESUME,
     };
 
+    /// A Job Object handle, parked in `JOBS` until the process exits.
+    ///
+    /// The name overpromises: nothing here closes the handle, and that is
+    /// deliberate — the job carries `KILL_ON_JOB_CLOSE`, so closing it kills
+    /// the Harness child it holds. `Drop` would be a bug, not the missing half.
     struct SafeHandle(HANDLE);
+
+    // SAFETY: a Job Object handle is a process-wide kernel handle. It is not
+    // bound to the thread that created it and every API that takes one is
+    // thread-agnostic, so moving it between threads reaches the same object.
+    // `HANDLE` is only `!Send` because it is a raw pointer, which is the
+    // language's default for a type it knows nothing else about.
+    //
+    // The claim is about the type forever: anything later stored in a
+    // `SafeHandle` has to be a handle of that kind too.
     unsafe impl Send for SafeHandle {}
 
     static JOBS: Mutex<Option<HashMap<u32, SafeHandle>>> = Mutex::new(None);

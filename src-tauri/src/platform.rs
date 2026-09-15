@@ -422,6 +422,12 @@ fn opener(path: &Path) -> Command {
 /// `&` or `%`: Rust's `Command` quoting is not `cmd`'s, and `%VAR%` expands
 /// inside quotes. ShellExecuteW takes the path as a wide-string parameter, so
 /// neither metacharacter is syntax (#255).
+///
+/// Still hand-written after checking the crates: `open` shells out to
+/// `cmd /c start` on Windows, which is the shape #255 removed, and `opener`
+/// makes this same ShellExecuteW call while blocking on the unix arms where
+/// this code is fire-and-forget. Neither removes the `unsafe` — only whose it
+/// is — so the trade is a dependency for no change in what can go wrong.
 #[cfg(not(unix))]
 fn opener(path: &Path) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;

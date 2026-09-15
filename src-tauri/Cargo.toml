@@ -169,10 +169,23 @@ block2 = {version = "0.6", default-features = false, features = ["alloc"]}
 #
 # `default-features = false` throughout: these crates default to binding whole
 # frameworks, which drags in Metal for a window list.
+# AXIsProcessTrusted and the prompt-option key. The hand-written
+# `extern "C"` declarations these replace typed the return as Rust `bool`;
+# ApplicationServices returns a one-byte `Boolean`, so the crate's `!= 0` is a
+# correctness fix, not only one fewer declaration. #696.
+objc2-application-services = {version = "0.3", default-features = false, features = [
+  "std",
+  "objc2",
+  "HIServices",
+  "AXUIElement"
+]}
 objc2-core-foundation = {version = "0.3", default-features = false, features = [
   "std",
   "CFCGTypes",
-  "CFDictionary"
+  "CFDictionary",
+  # The AX prompt option: a CFString key against a CFBoolean value.
+  "CFNumber",
+  "CFString"
 ]}
 objc2-core-graphics = {version = "0.3", default-features = false, features = [
   "std",

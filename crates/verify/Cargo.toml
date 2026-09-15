@@ -15,3 +15,9 @@ clap = {version = "4", features = ["derive"]}
 
 [dev-dependencies]
 tempfile = "3"
+
+[lints.rust]
+# Pure Rust today, and nothing about what this crate does needs FFI. `forbid`
+# rather than `deny` so the guarantee cannot be turned off one `#[allow]` at a
+# time: adding `unsafe` here should be a conversation, not a local override.
+unsafe_code = "forbid"
