@@ -357,7 +357,9 @@ if (settingsBtn) {
 
 // Which tab is showing. The conversation and the prompt behind it are the two
 // things this window holds, and they do not fit one above the other at 420
-// points (ADR-0012).
+// points (`main.rs`). ADR-0012 is the Instance Prompt's own decision and says
+// nothing about the geometry; this line used to cite it, and the mistake was
+// copied from here into #686.
 function showTab(name) {
   const prompt = name === "prompt";
   log.hidden = prompt;
@@ -449,6 +451,21 @@ function showWho(opening) {
     line.placeholder = composerPlaceholder(opening);
   }
 }
+
+// The composer became a textarea so a paste keeps its newlines (#686), and a
+// textarea does not submit its form on Enter the way the input it replaced
+// did. Enter still sends, because that is the whole muscle memory of this
+// window; Shift+Enter is left alone, so it does what it does everywhere else
+// and types the newline. `isComposing` is the IME's Enter — it accepts a
+// candidate, and sending there would cut the word in half.
+line.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+    return;
+  }
+  // Otherwise the newline lands in the field as well as sending the turn.
+  event.preventDefault();
+  composer.requestSubmit();
+});
 
 composer.addEventListener("submit", (event) => {
   event.preventDefault();
