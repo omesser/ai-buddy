@@ -368,11 +368,6 @@ mod macos {
         None
     }
 
-    /// #703: the flavor was hand-written as 5, which is `PROC_PIDTHREADINFO`
-    /// and wants a thread handle in `arg`. It wrote nothing, the short-write
-    /// guard swallowed that as "no parent", and the walk above never ran past
-    /// its first hop. `libc` carries the constant, the struct and the field
-    /// name, so none of the three is ours to get wrong again.
     /// The parent of `pid`, or `None` when the kernel will not say.
     ///
     /// The flavor, the struct and the field offset all come from `libc`. A
