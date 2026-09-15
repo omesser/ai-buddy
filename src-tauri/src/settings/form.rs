@@ -3103,9 +3103,6 @@ mod tests {
                 has_copy_token_button,
                 "{harness} should have the copy token button (always present)"
             );
-                    "{harness} should not have the copy token button"
-                );
-            }
         }
     }
 
