@@ -104,8 +104,13 @@ Rust: `Serialize` derives ~10, `settings_snapshot` + `settings_event` commands
 folding events into `SettingsPatch`/operations ~250–350, window build ~40, a
 macOS `raise` ~15; `node --test` ~200. ≈ **1250**.
 
-**Net ≈ −6300 lines**, and platform-`cfg`'d Settings code goes from ~6100
-lines to ~15 (the raise-above-overlay call, see below).
+**Net ≈ −5500 to −6300 lines**, and platform-`cfg`'d Settings code goes from
+~6100 lines to ~15 (the raise-above-overlay call, see below).
+
+The range rather than a single figure: the three renderers have diverged more
+than a line count shows, so some of what looks duplicated is not, and deleting
+it saves less than the arithmetic suggests. Step 1 of the plan measures the
+real controller and closes the range.
 
 ## Verification
 
@@ -194,9 +199,18 @@ needs a live check.
 
 **Platform integration points.** TCC/consent (`SettingsSession::enable_consent`
 → `consent::enable`), Keychain (`SecretStore` in `settings.rs`), open Memory
-file (`open_memory`), wipe (`wipe_memory`), spawn/dismiss, Harness attach —
-**all** are already `SettingsSession` methods in Rust; none live in a renderer.
-They become the body of `settings_event`. Zero of them move to JS.
+file (`open_memory`), wipe (`wipe_memory`), spawn/dismiss, Harness attach — all
+are already `SettingsSession` methods in Rust; none live in a renderer. They
+become the body of `settings_event` and stay where they are.
+
+One exception, which arrived after this section was first written: **PR #599's
+clipboard write is renderer code, three times over** — `NSPasteboard`,
+`SetClipboardData`/`CF_TEXT`, and `gtk::Clipboard`, none of them in
+`SettingsSession`. In a webview it is one `navigator.clipboard.writeText()`.
+That is the only platform integration that moves to JS, and it moves *because*
+the renderers each hand-rolled it. It is a fourth triplication, landing while
+this spike was being written, and it argues for the change rather than against
+it.
 
 **Look and feel on macOS.** This is the real trade. Native today: Aqua
 controls, system font, follows light/dark, a standard `NSTabView` — the System
