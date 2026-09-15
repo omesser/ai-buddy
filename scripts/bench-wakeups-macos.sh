@@ -4,7 +4,7 @@
 # release ai-buddy binary, per #423 scenario. A reviewer reruns this directly
 # rather than trusting a number in a doc.
 #
-# Needs: sudo (powermetrics), swift (warp-cursor.swift and click-cursor.swift).
+# Needs: sudo (powermetrics), swift (click-cursor.swift, chat scenario only).
 # Requires AI_BUDDY_TRACE_FRAMES so the frame log can prove what the sprite
 # was doing during the sample, and AI_BUDDY_DIRECTOR_API_KEY so a worktree
 # build does not block on a Keychain prompt (#283).
@@ -19,11 +19,14 @@
 #   run can also answer the walking scenario when it gets lucky. Walking is
 #   never forced - StaticDirector picks it on its own timetable, whatever that
 #   turns out to be for a given run.
-# chat: launch, warp the cursor onto the sprite (scripts/warp-cursor.swift)
-#   and double-click it (scripts/click-cursor.swift, a real HID event -
-#   `osascript ... System Events click at` cannot resolve this borderless
-#   overlay's Accessibility element and fails with -25208), confirm the
-#   Summon verb, then sample with chat open.
+# chat: launch, read the sprite's centre from the frame log, and double-click
+#   it there (scripts/click-cursor.swift x y 2, a real HID event that warps
+#   the cursor itself - `osascript ... System Events click at` cannot resolve
+#   this borderless overlay's Accessibility element and fails with -25208),
+#   confirm the Summon verb, then sample with chat open.
+#
+# scripts/click-cursor.swift is shared with #728 (crates/verify's `summon`
+# subcommand) - one click poster in the tree, not two. Do not fork it here.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -129,14 +132,13 @@ PY
   read -r SX SY SW SH <<< "$SPRITE_AT"
   CX=$((SX + SW / 2))
   CY=$((SY + SH / 2))
-  swift scripts/warp-cursor.swift "$CX" "$CY" > /dev/null
-  sleep 0.3
   # `osascript ... click at` resolves an AX UI element under the point first,
   # and this overlay's borderless always-on-top panel does not present one to
   # resolve (fails -25208 even once the app's own hit-test has flipped
-  # click-through off). click-cursor.swift posts real HID mouse events
-  # instead, the same path a real click takes; see its header comment.
-  swift scripts/click-cursor.swift --double > "$OUT/click.log" 2>&1
+  # click-through off). click-cursor.swift warps the cursor and posts real
+  # HID mouse events instead, the same path a real click takes; see its
+  # header comment. `2` clicks reads as one Summon, not two Pokes.
+  swift scripts/click-cursor.swift "$CX" "$CY" 2 > "$OUT/click.log" 2>&1
   sleep 1
   if grep -qE 'verbs:.*Summon' "$LOG"; then
     SUMMON_STATUS="confirmed"
