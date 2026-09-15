@@ -2,7 +2,8 @@
 //!
 //! Append-only, in the data folder beside Memory. It points at the Harness's
 //! own session (session id, tool call ids) rather than copying a transcript,
-//! which is what CONTEXT.md asks of it. No reader yet; `tail -f` is the UI.
+//! which is what CONTEXT.md asks of it. There is still no reader in the app:
+//! the tray hands the current file to the user's editor, and `tail -f` is the UI.
 //!
 //! ## Growth policy
 //!
@@ -46,6 +47,15 @@ use file_rotate::{ContentLimit, FileRotate};
 use serde_json::{json, Value};
 
 pub const FILE: &str = "action-log.jsonl";
+
+/// The log as it stands now, for anything that opens it rather than writes it.
+///
+/// The rotated siblings (`.1` … `.10`) get no accessor: after a session the
+/// current file is what a user wants, and someone who needs an older one is
+/// already in the folder. #687.
+pub fn current_path() -> PathBuf {
+    ai_buddy_core::memory::data_dir().join(FILE)
+}
 
 /// The size bound per log file, in bytes.
 ///
@@ -211,6 +221,20 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// The tray row (#687) and every writer must land on one file. Two callers
+    /// joining the same name are two places for it to stop being the same name.
+    #[test]
+    fn the_log_the_tray_opens_sits_beside_memory() {
+        let opened = current_path();
+
+        assert_eq!(opened.file_name().unwrap(), FILE);
+        assert_eq!(
+            opened.parent().unwrap(),
+            ai_buddy_core::memory::data_dir(),
+            "the data folder Memory is in, not a temp copy"
+        );
     }
 
     #[test]

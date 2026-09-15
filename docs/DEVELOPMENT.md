@@ -44,6 +44,7 @@ The Action Log uses the [`file-rotate`](https://crates.io/crates/file-rotate) cr
 **To inspect the log:**
 - macOS/Linux: `tail -f ~/Library/Application\ Support/ai-buddy/action-log.jsonl` (macOS) or `tail -f ~/.local/share/ai-buddy/action-log.jsonl` (Linux)
 - Windows (PowerShell): `Get-Content -Wait -Tail 50 $env:APPDATA\ai-buddy\action-log.jsonl`
+- From the buddy: the **Action Log…** row in the tray and sprite menus opens the current file in the system editor
 
 ### Memory Growth Policy
 

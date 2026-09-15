@@ -1747,6 +1747,9 @@ fn apply_menu_action(
         menu::MenuAction::OpenMemory => {
             let _ = platform::open_path(&memory::shared_path());
         }
+        menu::MenuAction::OpenActionLog => {
+            let _ = platform::open_path(&action_log::current_path());
+        }
         menu::MenuAction::OpenSettings => show_settings(app.clone()),
         menu::MenuAction::Summon => {
             if let Some(instance) = roster.get(instance_id) {
