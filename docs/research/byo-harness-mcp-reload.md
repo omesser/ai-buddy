@@ -18,11 +18,11 @@ This research answers:
 
 | Harness | Add with Auth | Reload Without Restart | Re-add Trap | Generate |
 |---------|---------------|------------------------|-------------|----------|
-| **Claude Code** | `claude mcp add --header "Authorization: Bearer <token>"` | **No** — must exit and restart session | **Yes** — silently keeps stale | CLI with `remove` then `add` |
-| **Codex** | Config: `~/.codex/config.toml` with `headers` | **Yes** — `mcpServer/refresh` command | Unknown | Config snippet + instructions |
-| **Hermes** | Config: `~/.hermes/config.yaml` with `headers` | **Yes** — `/reload-mcp` | Unknown | Config snippet + `/reload-mcp` |
-| **OpenCode** | Config: `mcp.servers.<name>` with `headers` | **Yes** — `/reload` | Unknown | Config snippet + `/reload` |
-| **Grok** | `grok mcp add` with `--header`, or config TOML | **Yes** — `/mcps` then press `r` | Unknown | CLI or config + `/mcps` + `r` |
+| **Claude Code** | `claude mcp add --header "Authorization: Bearer <token>"` | **No** — must exit and restart session | **Yes** — silently keeps stale | CLI with `remove` then `add` (omit `-s`, local default) |
+| **Codex** | CLI: `export` + `codex mcp add --bearer-token-env-var`; Alt: config with `http_headers` | **Yes** — `mcpServer/refresh` command | Unknown | CLI `export` + `codex mcp add` (TOML alt) |
+| **Hermes** | CLI: `hermes mcp add --auth header`; Alt: config YAML | **Yes** — `/reload-mcp` | Unknown | CLI `hermes mcp add --auth header` (YAML alt) |
+| **OpenCode** | CLI: `opencode mcp add --header`; Alt: flat JSON `type:remote` + `oauth:false` | **Yes** — `/reload` | Unknown | CLI `opencode mcp add --header` (flat JSON alt) |
+| **Grok** | `grok mcp add` with `--header`, or config TOML | **Yes** — `/mcps` then press `r` | Unknown | CLI `grok mcp add` (defaults to current project) |
 | **Pi** | Config: `.mcp.json` or `~/.pi/agent/mcp.json` | **Yes** — `/reload` + `/mcp reconnect` | Unknown | Config snippet + `/reload` |
 
 ### Legend
@@ -72,28 +72,34 @@ claude mcp add --transport http --scope user \
 
 Issue #580 confirmed this trap: Claude Code silently ignores re-add of an existing name, keeping the stale entry.
 
-**What to generate**: (**Inference**)
+**What to generate**: (**Fact** per #599)
 ```bash
-# Remove stale entry, then add fresh one
-claude mcp remove -s user ai-buddy 2>/dev/null
-claude mcp add -s user --transport http ai-buddy \
+# Remove stale entry, then add fresh one (omit -s to use local default)
+claude mcp remove ai-buddy 2>/dev/null
+claude mcp add --transport http ai-buddy \
   "http://127.0.0.1:<port>/mcp" \
   --header "Authorization: Bearer <token>"
 ```
 
-Instructions: "Exit your Claude session and start a new one (`claude`) to connect."
+Instructions: "Exit your Claude session and start a new one (`claude`) to connect. Add `-s user` only if you want the same entry in every project (optional)."
 
 ---
 
 ### Codex
 
-**Add with bearer token**: (**Fact** from docs)
+**Add with bearer token**: (**Fact** per #599)
 
-Config: `~/.codex/config.toml`
+PRIMARY: CLI with environment variable
+```bash
+export AI_BUDDY_MCP_TOKEN='<token>'
+codex mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var AI_BUDDY_MCP_TOKEN
+```
+
+ALTERNATIVE: Config `~/.codex/config.toml`
 ```toml
 [mcp_servers.ai-buddy]
 url = "http://127.0.0.1:<port>/mcp"
-headers = { "Authorization" = "Bearer <token>" }
+http_headers = { "Authorization" = "Bearer <token>" }
 ```
 
 **Reload mechanism**: (**Fact** from source)
@@ -105,25 +111,29 @@ headers = { "Authorization" = "Bearer <token>" }
 **Re-add trap**: (**Assumption**)
 Unknown. Config file editing would naturally overwrite existing values, but behavior after `mcpServer/refresh` is not documented for URL/token changes specifically.
 
-**What to generate**: (**Inference**)
-TOML config fragment:
-```toml
-[mcp_servers.ai-buddy]
-url = "http://127.0.0.1:<port>/mcp"
-headers = { "Authorization" = "Bearer <token>" }
+**What to generate**: (**Fact** per #599)
+CLI with environment variable (PRIMARY):
+```bash
+export AI_BUDDY_MCP_TOKEN='<token>'
+codex mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var AI_BUDDY_MCP_TOKEN
 ```
 
-Instructions: "Add or update this in `~/.codex/config.toml`, then run `mcpServer/refresh` from your Codex session."
+Instructions: "Run both lines in a terminal where Codex will inherit the environment, then run `mcpServer/refresh` from your Codex session. If `mcpServer/refresh` is unavailable, restart your Codex session. Alternatively, add or update `[mcp_servers.ai-buddy]` in `~/.codex/config.toml` with `http_headers` (not `headers`)."
 
-**Note**: Codex CLI availability varies. If `mcpServer/refresh` is unavailable, fallback: "Restart your Codex session."
+**Note**: Codex uses `http_headers`, NOT `headers` (which is silently ignored per #599).
 
 ---
 
 ### Hermes
 
-**Add with bearer token**: (**Fact** from docs)
+**Add with bearer token**: (**Fact** per #599)
 
-Config: `~/.hermes/config.yaml`
+PRIMARY: CLI with interactive token prompt
+```bash
+hermes mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --auth header
+```
+
+ALTERNATIVE: Config `~/.hermes/config.yaml`
 ```yaml
 mcp_servers:
   ai-buddy:
@@ -141,44 +151,40 @@ mcp_servers:
 **Re-add trap**: (**Assumption**)
 Unknown. YAML file editing would overwrite existing values. No trap documented similar to Claude's silent ignore.
 
-**What to generate**: (**Inference**)
-YAML config fragment:
-```yaml
-mcp_servers:
-  ai-buddy:
-    url: "http://127.0.0.1:<port>/mcp"
-    headers:
-      Authorization: "Bearer <token>"
+**What to generate**: (**Fact** per #599)
+CLI with interactive token prompt (PRIMARY):
+```bash
+hermes mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --auth header
 ```
 
-Instructions: "Add or update this in `~/.hermes/config.yaml`, then run `/reload-mcp` in your Hermes session."
-
-**Alternative**: "Or just edit the config; Hermes will auto-reload within 30 seconds."
+Instructions: "Run it in a terminal, then paste the raw token (no `Bearer` prefix) at the interactive prompt. This stores `MCP_AI_BUDDY_API_KEY` in `~/.hermes/.env` and adds the header `Bearer ${MCP_AI_BUDDY_API_KEY}`. Then run `/reload-mcp` in your Hermes session. Alternatively, add or update `ai-buddy:` under `mcp_servers:` in `~/.hermes/config.yaml` with YAML format above; keep indentation exact."
 
 ---
 
 ### OpenCode
 
-**Add with bearer token**: (**Fact** from docs)
+**Add with bearer token**: (**Fact** per #599)
 
-Config: `opencode.jsonc` (project or global `~/.config/opencode/opencode.jsonc`)
+PRIMARY: CLI
+```bash
+opencode mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
+```
+
+ALTERNATIVE: Flat JSON in `opencode.jsonc` (NOT nested `mcp.servers`)
 ```jsonc
 {
   "mcp": {
-    "servers": {
-      "ai-buddy": {
-        "type": "http",
-        "url": "http://127.0.0.1:<port>/mcp",
-        "headers": {
-          "Authorization": "Bearer <token>"
-        }
+    "ai-buddy": {
+      "type": "remote",
+      "url": "http://127.0.0.1:<port>/mcp",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer <token>"
       }
     }
   }
 }
 ```
-
-Note: V2 uses `mcp.servers.<name>`, not top-level `mcp.<name>`. Uses `disabled: true/false`, not `enabled`.
 
 **Reload mechanism**: (**Fact**)
 - **Yes** — `/reload` command
@@ -189,25 +195,13 @@ Note: V2 uses `mcp.servers.<name>`, not top-level `mcp.<name>`. Uses `disabled: 
 **Re-add trap**: (**Assumption**)
 Unknown. JSON file editing would overwrite existing values. No documented trap.
 
-**What to generate**: (**Inference**)
-JSON config fragment (with trailing comma tolerance):
-```jsonc
-{
-  "mcp": {
-    "servers": {
-      "ai-buddy": {
-        "type": "http",
-        "url": "http://127.0.0.1:<port>/mcp",
-        "headers": {
-          "Authorization": "Bearer <token>"
-        }
-      }
-    }
-  }
-}
+**What to generate**: (**Fact** per #599)
+CLI (PRIMARY):
+```bash
+opencode mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --header "Authorization=Bearer <token>"
 ```
 
-Instructions: "Add or update this in your `opencode.jsonc`, then run `/reload` in your OpenCode session."
+Instructions: "Run it in a terminal, then run `/reload` in your OpenCode session. If OpenCode tries OAuth, set `\"oauth\": false` in the config. Alternatively, merge flat `mcp.ai-buddy` content into `opencode.jsonc` (NOT nested `mcp.servers.<name>` shape); use `type: \"remote\"` and `oauth: false`."
 
 ---
 
@@ -241,24 +235,21 @@ headers = { "Authorization" = "Bearer <token>" }
 **Re-add trap**: (**Assumption**)
 Unknown. Config editing or `grok mcp add` (if it overwrites) would replace values. No documented trap like Claude's.
 
-**What to generate**: (**Inference**)
-Option 1 — CLI:
+**What to generate**: (**Fact** per #599)
+CLI (overwrites in place, no remove needed):
 ```bash
-# Remove if exists, then add
-grok mcp remove ai-buddy 2>/dev/null
-grok mcp add --transport http \
-  --header "Authorization: Bearer <token>" \
-  ai-buddy "http://127.0.0.1:<port>/mcp"
+grok mcp add ai-buddy "http://127.0.0.1:<port>/mcp" --transport http \
+  --header "Authorization: Bearer <token>"
 ```
 
-Option 2 — Config:
+Instructions: "Run it in a terminal; `grok mcp add` overwrites in place, so re-running after a relaunch is enough. Add `--scope user` if you want it for every project, otherwise it defaults to the current project. Then in your live Grok session, run `/mcps` and press `r` to reload."
+
+Config alternative (if preferred):
 ```toml
 [mcp_servers.ai-buddy]
 url = "http://127.0.0.1:<port>/mcp"
 headers = { "Authorization" = "Bearer <token>" }
 ```
-
-Instructions: "Run `/mcps` in your Grok session, then press `r` to reload."
 
 ---
 
@@ -368,16 +359,17 @@ This means "restart" is less disruptive than it sounds: the user types the comma
 
 | Harness | Generate | Format |
 |---------|----------|--------|
-| Claude Code | CLI with `remove` + `add` | Bash |
-| Codex | Config TOML fragment | TOML |
-| Hermes | Config YAML fragment | YAML |
-| OpenCode | Config JSON fragment | JSON |
-| Grok | CLI **or** config TOML | Bash or TOML |
+| Claude Code | CLI with `remove` + `add` (omit `-s`) | Bash |
+| Codex | CLI with `export` + `codex mcp add --bearer-token-env-var` | Bash (TOML alt) |
+| Hermes | CLI `hermes mcp add --auth header` (interactive token) | Bash (YAML alt) |
+| OpenCode | CLI `opencode mcp add --header` | Bash (flat JSON alt) |
+| Grok | CLI `grok mcp add` (defaults to project scope) | Bash (TOML alt) |
 | Pi | Config JSON fragment | JSON |
 
-**Rationale**:
-- CLI is best when it's the primary method and config files are opaque (Claude Code, optionally Grok)
-- Config snippets are best when files are user-edited and location is standard (all others)
+**Rationale** (per #599 Spec):
+- CLI is PRIMARY for Claude, Codex, Hermes, OpenCode, Grok (matches actual CLI availability and product constraint to prefer reconfiguration over launch)
+- Config snippets are ALTERNATIVES for Codex/Hermes/OpenCode (when CLI unavailable or user prefers file editing)
+- Pi has no CLI, remains JSON fragment only
 
 ### 2. Include Reload Instructions Per Harness
 
@@ -396,45 +388,52 @@ This means "restart" is less disruptive than it sounds: the user types the comma
 
 Suggested text: "The URL and token change every time ai-buddy launches. Re-run this command/snippet each time."
 
-### 4. Claude Code Snippet Must Remove First
+### 4. Claude Code Snippet Must Remove First (and Omit Scope)
 
-**Critical**: Because `claude mcp add` silently keeps stale values when the name exists, the generated snippet **must** be:
+**Critical**: Because `claude mcp add` silently keeps stale values when the name exists, the generated snippet **must** remove first:
 
 ```bash
-claude mcp remove -s user ai-buddy 2>/dev/null
-claude mcp add -s user --transport http ai-buddy \
+claude mcp remove ai-buddy 2>/dev/null
+claude mcp add --transport http ai-buddy \
   "http://127.0.0.1:<port>/mcp" \
   --header "Authorization: Bearer <token>"
 ```
 
 The `2>/dev/null` suppresses "not found" errors when the entry doesn't exist yet.
 
+**Scope**: Omit `-s` to use local default (project-scoped). `-s user` is optional only if the user wants the same entry in every project (#599).
+
 ### 5. Scope Selection (Claude Code)
 
-Claude Code has three scopes: `local` (project-only), `user` (all projects), `project` (shared with teammates).
+Claude Code has three scopes: `local` (project-only, default when omitted), `user` (all projects), `project` (shared with teammates).
 
-**Recommendation**: Default to `--scope user` for BYO scenarios. Reasoning:
-- `local`: Requires re-add per project directory
-- `user`: Works across all projects for this user
-- `project`: Writes `.mcp.json` teammates would commit, but the token is per-run and won't work for them
+**Recommendation per #599**: Omit `-s` to use **local** default. Reasoning:
+- `local` (default): Project-scoped, appropriate for BYO scenarios where token is per-run
+- `user`: Only when user explicitly wants the same entry in every project (optional, mentioned in instructions)
+- `project`: Deliberately excluded — writes checked-in `.mcp.json`, which would commit the per-run token
 
-If scope selector is added to UI, offer `user` and `local`; `project` is inappropriate for per-run credentials.
+If scope selector is added to UI, offer `local` (default) and `user` (optional); `project` is inappropriate for per-run credentials.
 
-### 6. Config Snippet Formatting
+### 6. CLI-First with Config Alternative
 
-For harnesses that take config files, show:
+Per #599 Spec, most harnesses show **CLI as PRIMARY**, config as **ALTERNATIVE**:
+
+**CLI snippets** (Claude, Codex, Hermes, OpenCode, Grok):
+1. Command line ready to run in terminal
+2. Instructions for reload mechanism
+3. Alternative config format noted in instructions
+
+**Config snippets** (Pi only):
 1. The **minimal addition** — just the `ai-buddy` server entry
-2. Path where it goes: "`~/.hermes/config.yaml` under `mcp_servers:`"
+2. Path where it goes: "`.mcp.json` (project) or `~/.pi/agent/mcp.json`"
 3. Merge instructions: "Add or replace the `ai-buddy` entry."
 
-Example for Hermes:
-```yaml
-# Add or replace this in ~/.hermes/config.yaml under mcp_servers:
-ai-buddy:
-  url: "http://127.0.0.1:<port>/mcp"
-  headers:
-    Authorization: "Bearer <token>"
+Example CLI-first (Codex):
+```bash
+export AI_BUDDY_MCP_TOKEN='<token>'
+codex mcp add ai-buddy --url 'http://127.0.0.1:<port>/mcp' --bearer-token-env-var AI_BUDDY_MCP_TOKEN
 ```
+Instructions: "Run both lines... Alternatively, add `[mcp_servers.ai-buddy]` in `~/.codex/config.toml` with `http_headers`..."
 
 ### 7. Consider "Custom" Fallback
 
