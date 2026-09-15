@@ -1560,18 +1560,15 @@ pub struct Settings {
     /// `harness::AUTH_RETRY`. Read when a Session is built, so a change lands
     /// on the next attach (#447).
     pub harness_auth_retry_secs: String,
-<<<<<<< HEAD
     /// How long a Harness `session/prompt` may run, in seconds. Empty means
     /// unset, and leaves `harness::TURN_TIMEOUT`. Not the Model API field
     /// (#690).
     pub harness_turn_timeout_secs: String,
-=======
     /// Which Harness the registration box on the AI tab is written for. A
     /// view preference: the box is something a BYO user comes back to every
     /// launch, so the pick is worth keeping. Blank rests on the first name
     /// `form::HARNESS_PRESETS` lists, and nothing else reads it (#577).
     pub byo_harness: String,
->>>>>>> 6f13667 (feat(settings): Generate the MCP registration for a BYO Harness)
     /// Where the stdio MCP server binary is. Empty means beside the app, then
     /// the app binary's own `--mcp-stdio` (#166). For power users and CI,
     /// which is why it is a Development row and not a Director one.
@@ -1622,11 +1619,8 @@ impl Default for Settings {
             harness: String::new(),
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
-<<<<<<< HEAD
             harness_turn_timeout_secs: String::new(),
-=======
             byo_harness: String::new(),
->>>>>>> 6f13667 (feat(settings): Generate the MCP registration for a BYO Harness)
             mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
@@ -1878,11 +1872,8 @@ mod tests {
             harness: "custom".into(),
             harness_command: "opencode acp".into(),
             harness_auth_retry_secs: "5".into(),
-<<<<<<< HEAD
             harness_turn_timeout_secs: "90".into(),
-=======
             byo_harness: "hermes".into(),
->>>>>>> 6f13667 (feat(settings): Generate the MCP registration for a BYO Harness)
             mcp_bin: "/opt/ai-buddy-mcp".into(),
             trace_frames: true,
             trace_hittest: true,
@@ -2185,11 +2176,8 @@ mod tests {
             harness: String::new(),
             harness_command: String::new(),
             harness_auth_retry_secs: String::new(),
-<<<<<<< HEAD
             harness_turn_timeout_secs: String::new(),
-=======
             byo_harness: String::new(),
->>>>>>> 6f13667 (feat(settings): Generate the MCP registration for a BYO Harness)
             mcp_bin: String::new(),
             trace_frames: false,
             trace_hittest: false,
