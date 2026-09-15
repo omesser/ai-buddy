@@ -8,53 +8,69 @@ Windows against that suspect (#183 Stage 2b) and has since merged as
 head and against the `main` it branched from, so the comparison is between two
 fixed commits rather than against a moving branch.
 
-## Headline, read this before the tables
+## The numbers
 
-**#431's own hypothesis is rejected as stated, and the reason is not fully
-identified.** #431 predicts ~60 wakeups/sec from the 16 ms tick. Measured:
-this process sits at **~300–450 wakeups/sec**, on `main` and on #718's head,
-in every scenario, across nine separate captures. The frame loop's 16
-ms-vs-1 s tick difference cannot explain a gap that size. Something else in
-this process — a WKWebView event pump, the async runtime, log rotation, the
-tray icon are candidates, in descending order of how much of this process's
-own thread activity they plausibly own — accounts for the bulk of it. **This
-is a guess, not a finding**: nothing in this task isolated which one, or
-whether it is several of them at once. A follow-up that wants the real
-number needs `sample` or a per-thread breakdown, not
-`powermetrics --samplers tasks`, which only totals wakeups at the process
-level.
+A buddy sitting perched, doing nothing, on an idle desktop:
 
-**#718's idle-perched point estimate favors it, and this sample establishes
-neither direction nor magnitude.** An earlier draft of this document reported
-a single 60-second capture per branch and stated the gap between them — 3.59
-vs. 0.8–1.3
-package-idle wakeups/sec — as a **65–75% reduction**, in bold, as a measured
-finding. That was arithmetic on one observation per arm dressed as a
-confidence interval, and it does not survive a repeat: three idle-perched
-captures per branch, interleaved A/B/A/B/A/B so a drift in machine load lands
-on both arms rather than one, put `main`'s three runs at **2.92, 4.22,
-5.09** package-idle wakeups/sec (median 4.22) and #718's three runs at
-**3.24, 3.52, 4.32** (median 3.52). The ranges overlap almost entirely — #718's
-whole range sits inside `main`'s. The median gap (4.22 vs. 3.52, about 17%)
-falls on the same side as the original 65–75% figure, but at n=3 per arm on
-this machine it is not separable from the run-to-run noise each arm shows on
-its own (`main` alone spans 2.92 to 5.09, a wider range than the gap between
-the two arms' medians). **The honest statement of this baseline is: the point
-estimate favors #718, and this sample cannot establish direction or
-magnitude.** That is not evidence against the change either — a real effect
-and no effect are both consistent with these six captures. Separating them
-needs more runs or a quieter machine. Full tables below.
+| | `main` | after #718 |
+|---|---|---|
+| **CPU** | **14.6%** | **14.9%** |
+| **Wakeups/sec** | **369** | **369** |
+| Wakeups/sec, package-idle only | 4.22 | 3.52 |
 
-**Read every number below against a shared, noisy machine, not a clean-room
-rig.** This is a dev laptop with other agents building and running their own
-work on it throughout every capture in this document, including their own
-`ai-buddy` instances. That is not a hypothetical caveat: it is the direct
-cause of the overlap above, and separately, re-measuring the chat-open
-scenario about fifteen minutes after the first attempt moved that scenario's
-package-idle wakeups by ~60% on **both** branches, with no code change. A
-number in this document is a sample from a moving system, not a constant.
-Rerunning this on a quiet machine should be expected to produce different
-figures, and that expectation is part of the result, not a footnote to it.
+Release build, M3 Pro, medians of three interleaved 45-second captures per arm.
+
+## What this means
+
+**14.6% of a CPU to animate a still sprite, and it did not move.** That is the
+result. Everything below is about why.
+
+**The 16 ms tick is not what costs.** #183 and #423 are both built on the
+premise that a 60 Hz frame loop that never backs off is the idle cost. A 60 Hz
+tick is 60 wakeups/sec. This process does **369**. The tick is at most a sixth
+of the problem, so backing it off cannot fix idle cost — and measurably did
+not. #718 moved the headline wakeup count by nothing and CPU by nothing.
+
+**The webview's animation loop never stops, and that is in the code, not a
+guess.** `src/main.js:343` calls `requestAnimationFrame(draw)` at the top of
+`draw`, before it checks whether any view has anything to redraw. So the
+overlay webview re-schedules itself at display refresh forever, per display,
+whatever the sprite is doing and whatever the Rust frame loop decides. On a
+120 Hz panel that is 120 wakeups/sec per display that no Rust-side back-off
+can reach.
+
+That is the shape of the finding: **#183's whole line of work is aimed at the
+smaller half of the problem, and the larger half is a JavaScript loop nobody
+has looked at.**
+
+**What is still a guess.** That the rAF loop is the single biggest remaining
+contributor. Reading the code proves it runs unconditionally; it does not
+prove it dominates the other ~250 wakeups/sec. The async runtime, log
+rotation and the tray icon are unmeasured. Isolating them needs `sample` or a
+per-thread breakdown, not `powermetrics --samplers tasks`, which only totals
+at the process level. Tracked as #735.
+
+## How much to trust these numbers
+
+**The package-idle sub-metric does not resolve.** That is the one column where
+#718 could have shown a win. Three interleaved captures per arm put `main` at
+2.92, 4.22, 5.09 and #718 at 3.24, 3.52, 4.32 package-idle wakeups/sec. #718's
+whole range sits inside `main`'s. The median gap of about 17% falls on #718's
+side but is smaller than the spread each arm shows against itself, so this
+sample establishes neither direction nor magnitude. A real effect and no
+effect are both consistent with it. This does not soften the headline: CPU and
+total wakeups did not move at all, and those are not close calls.
+
+**A withdrawn number, recorded so it is not re-quoted.** An earlier draft
+reported one 60-second capture per arm and called the gap a **65-75%
+reduction**, in bold. That was arithmetic on a single observation per arm. It
+did not survive repetition and it is wrong.
+
+**Shared machine.** A dev laptop with other agents building and running their
+own work throughout every capture, including their own `ai-buddy` instances.
+That is the direct cause of the overlap above. Re-measuring chat-open fifteen
+minutes later moved it ~60% on both arms with no code change. Rerun on a quiet
+machine and expect different figures.
 
 ## The machine and the build
 
