@@ -820,6 +820,13 @@ fn permission_ask(request: &RequestPermissionRequest, id: String) -> PermissionA
     }
 }
 
+/// One session update, into the turn's text or an `Event`.
+///
+/// Text-only, in both chunk arms: an image, audio, a resource link or an
+/// embedded resource is dropped, and a turn made of nothing else comes back
+/// empty. Not a decision — nothing here has ever been offered one, and #697
+/// holds whether the surface grows a way to draw them (ADR-0028). The catch-all
+/// is the same gap for the update kinds this match does not name.
 fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, on_event: &OnEvent) {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => {
@@ -827,6 +834,10 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
                 said.push_str(&text.text);
             }
         }
+        // `fields.content` and `fields.locations` are dropped on both arms, so
+        // a call reaches the Action Log as a title and a status and never says
+        // what it touched. `permission_ask` above reads the same two fields and
+        // is the shape this would take; #697 holds whether it does (ADR-0028).
         SessionUpdate::ToolCall(call) => on_event(Event::ToolCall {
             id: call.tool_call_id.0.to_string(),
             title: Some(call.title),
@@ -839,6 +850,9 @@ fn note_update(update: SessionUpdate, said: &mut String, thought: &mut String, o
             kind: update.fields.kind.as_ref().map(name_of),
             status: update.fields.status.as_ref().map(name_of),
         }),
+        // The count, and not the steps the agent actually listed. What the
+        // Action Log line was built to hold, and all any reader has ever been
+        // given; #697 holds whether the steps get drawn (ADR-0028).
         SessionUpdate::Plan(plan) => on_event(Event::Plan {
             entries: plan.entries.len(),
         }),

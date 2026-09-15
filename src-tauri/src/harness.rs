@@ -1378,6 +1378,11 @@ fn probe(session: &Session) -> i32 {
 /// request, on to the Chat surface. Runs on the wire thread.
 fn note_event(dir: &Path, forward: &Forward, event: Event) {
     match event {
+        // A tool call, a plan and a usage tick are logged and never forwarded,
+        // so a turn shows the surface no phases: a slow one looks the same
+        // whether it is on its third tool call or stalled. The events to draw
+        // one from already arrive here; #697 holds whether any reaches the
+        // surface, and ADR-0028 bounds what it could draw if it did.
         Event::ToolCall {
             id,
             title,
