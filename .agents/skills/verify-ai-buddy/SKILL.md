@@ -90,6 +90,8 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 | Windows Settings | `scripts/verify-settings-win.ps1` (copy `$Out` into evidence after) |
 | Harness ACP (no sprite) | `AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh` |
 | macOS Keychain diagnostic unit | `scripts/test_verify_overlay_diagnostics.sh` |
+| macOS Settings window | `scripts/verify-settings-macos.sh` (needs an Accessibility grant) |
+| macOS Settings row matcher unit | `scripts/test_verify_settings_row_live.sh` |
 | Core + renderer units | `.agents/skills/verify-ai-buddy/helpers/doctor.sh --units` |
 
 Stable handles: log patterns (`frame: N Perched`, `verbs:.*Poke`, `verbs:.*Summon`, `EWMH configured`), X11 WM_CLASS `Ai-buddy`, EWMH `_NET_WM_STATE_ABOVE` + `_NET_WM_STATE_SKIP_TASKBAR`. Prefer those over click coordinates when asserting.

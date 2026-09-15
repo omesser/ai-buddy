@@ -11,10 +11,16 @@
 #   ./scripts/verify-settings-macos.sh
 #   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-macos.sh
 #   AI_BUDDY_VERIFY_HARNESS=grok ./scripts/verify-settings-macos.sh
+#   AI_BUDDY_CHARACTERS=path/to/characters ./scripts/verify-settings-macos.sh
 #
 # Expects a built debug binary; it does not cargo build. One throwaway HOME
 # so the run does not read your own settings or Keychain. Output under
 # .verify/settings-macos-<stamp>/.
+#
+# That throwaway HOME has no keychain to find, so every dump carries
+# "Unavailable: Platform secure storage failure" where a stored key would be.
+# It is the price of the isolation, not a defect in the window: the row is
+# still editable, which is all these checks read.
 #
 # Needs an Accessibility grant for the terminal running it - see
 # scripts/ax-settings.swift. The Harness switch needs that Harness installed
@@ -75,11 +81,28 @@ for link in .claude .claude.json .codex .config; do
 done
 
 log="$out/app.log"
-# HOME is the only thing overridden: it isolates settings.json and the
-# Action Log from your own, while leaving the Harness its Keychain
-# credentials, which is where a signed-in CLI actually keeps them.
+# HOME is overridden so settings.json and the Action Log are this run's and
+# not your own, while the Harness keeps its Keychain credentials, which is
+# where a signed-in CLI actually stores them.
 # No AI_BUDDY_HARNESS: the source switch has to happen in this window.
-env HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
+#
+# AI_BUDDY_DIRECTOR_API_KEY is dropped rather than inherited. direnv exports
+# it in this repository, and a key that arrives from the environment freezes
+# the API key row on purpose (#272) - so an inherited one adds failures about
+# rows that are doing exactly what they were built to do, and the dump says
+# "Overridden by env" in a line nobody reads.
+#
+# AI_BUDDY_CHARACTERS is defaulted because package::search_paths() looks in
+# HOME and in the Tauri resource directory, and a bare binary has neither: the
+# throwaway HOME is empty and there is no bundle around the executable. No
+# Character loads, the app exits before it draws a status item, and the script
+# reports "no status item after 20s", which reads as a launch that hung rather
+# than one that had nothing to draw. Pointing at the repository's own
+# characters/ is what a bundle would have supplied. An explicit value still
+# wins, for pointing a run at a Character somewhere else.
+env -u AI_BUDDY_DIRECTOR_API_KEY \
+  HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
+  AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
   "$bin" > "$log" 2>&1 &
 app_pid=$!
 
@@ -96,9 +119,21 @@ dump_window() {
   still "$(basename "$target" .txt)"
 }
 
-# Whether the control right after a label is live, which is how a labelled row
-# is addressed here: the tree is in render order, so the control for "Base URL"
-# is the line straight after the static text that says it.
+# Whether the control for a row is live. A row is addressed by the text you can
+# read on it, and this window draws two shapes of row. Most are a label and the
+# control beside it: the tree is in render order, so the control for "Base URL"
+# is the line straight after the static text that says it, and that text sits
+# in the value column, because value is where an AXStaticText keeps what it
+# displays. A button is the other shape - it carries its own text in the title
+# column and has no label line above it at all, so the answer for "Clear key"
+# has to come off the very line that matched rather than off the one after it.
+# Matching the value column alone left two assertions that could not pass
+# whatever the window did (#732).
+#
+# Only a role that can be live answers for its own title. The toolbar is in the
+# same tree as the form and its tabs are titled too, so an unqualified title
+# match would let a tab shadow a row that happens to share a word with it -
+# first line in render order wins, and the toolbar comes first.
 #
 # The role is not fixed, which is the trap. AppKit demotes a non-editable
 # NSTextField from AXTextField to plain AXStaticText, so a frozen row and its
@@ -107,14 +142,19 @@ dump_window() {
 # column that means "live" for that role: settability for a field, enabled for
 # a popup or a button, and nothing at all for the demoted static text, which is
 # frozen by definition. AXEnabled on a text field stays true either way.
+#
+# scripts/test_verify_settings_row_live.sh pins this against recorded dumps,
+# including a button that is genuinely disabled: a looser matcher would call
+# that one live too.
 row_live() {
   awk -F'|' -v want="$2" '
-    found {
-      if ($1 ~ /AXTextField/) { print $6 }
-      else if ($1 ~ /AXPopUpButton|AXButton/) { print $5 }
-      else { print "false" }
-      exit
+    function live() {
+      if ($1 ~ /AXTextField/) { return $6 }
+      if ($1 ~ /AXPopUpButton|AXButton/) { return $5 }
+      return "false"
     }
+    found { print live(); exit }
+    $1 ~ /AXPopUpButton|AXButton/ && $2 == want { print live(); exit }
     $3 == want { found = 1 }
   ' "$1"
 }
