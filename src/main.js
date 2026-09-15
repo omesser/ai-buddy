@@ -8,7 +8,7 @@
 // list is also the answer to which Instances still exist — a dismissed buddy is
 // one that is no longer mentioned.
 
-import { interpolate } from "./interpolate.js";
+import { arrived, interpolate } from "./interpolate.js";
 import {
   createBubbleMachine,
   forOverlay,
@@ -156,15 +156,21 @@ function createView(id) {
   // Character's presence fade and rides every frame long after the rule that
   // set it. Keying a bubble's exit on that kept a dismissed one painted for
   // half a second — longer than the grace before the indicator arrives.
+  //
+  // Both arm a frame, because a bubble comes and goes on its own reading timer
+  // rather than on a placement, and the control it carries is only clickable
+  // once `reportHotspots` has told the Shell about it.
   function show(mode) {
     bubble.dataset.mode = mode;
     bubble.classList.add("visible");
     positionBubble(view, spriteRect(), currentDisplayBounds());
+    arm();
   }
 
   function hide() {
     bubble.classList.remove("visible");
     view.hotspot = null;
+    arm();
   }
 
   // Anchored when the cue fires rather than followed afterwards: a cue is a
@@ -339,11 +345,28 @@ function drawView(view, now) {
   view.sprite.style.visibility = "visible";
 }
 
-function draw(now) {
+// Armed rather than looping. `draw` used to re-arm itself at the top of every
+// frame, so the overlay asked for a display frame at panel refresh forever,
+// whatever the sprite was doing. The asking is what costs, and not in this
+// process: WebKit runs a CVDisplayLink per display in the host, for as long as
+// a page wants frames, and #741 measured those threads at half an idle buddy's
+// wakeups. Every arrival arms this again, so a placement is still drawn the
+// frame after it lands.
+let armed = false;
+
+function arm() {
+  if (armed) return;
+  armed = true;
   requestAnimationFrame(draw);
+}
+
+function draw(now) {
+  armed = false;
   for (const view of views.values()) {
-    if (view.latest) {
-      drawView(view, now);
+    if (!view.latest) continue;
+    drawView(view, now);
+    if (!arrived(view.previous, view.latest, now)) {
+      arm();
     }
   }
   reportHotspots();
@@ -439,11 +462,13 @@ async function start() {
           removeView(id);
         }
       }
+
+      arm();
     },
     { target: overlay.label },
   );
 
-  requestAnimationFrame(draw);
+  arm();
 
   // The overlay only receives these while click-through is off — over the
   // art. The Rust side's session button poll has been seen to miss that

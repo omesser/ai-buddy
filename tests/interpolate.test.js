@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { interpolate } from "../src/interpolate.js";
+import { arrived, interpolate } from "../src/interpolate.js";
 
 const at = (x, y, ms) => ({ x, y, at: ms });
 
@@ -42,4 +42,24 @@ test("two placements in the same millisecond draw the latest", () => {
 
 test("a clock that goes backwards draws the latest rather than dividing by a negative span", () => {
   assert.deepEqual(interpolate(at(0, 0, 80), at(90, 10, 20), 25), { x: 90, y: 10 });
+});
+
+// `arrived` decides when the renderer stops asking for display frames. A false
+// it never returns is a sprite that stutters; a true it returns too early is a
+// loop that stops and never comes back.
+
+test("a sprite still crossing the gap has not arrived", () => {
+  assert.equal(arrived(at(100, 200, 1000), at(140, 200, 1020), 1030), false);
+});
+
+test("a sprite has arrived once a sample interval has passed", () => {
+  assert.equal(arrived(at(100, 200, 1000), at(140, 200, 1020), 1040), true);
+});
+
+test("two placements in the same place are arrived however far apart they fell", () => {
+  assert.equal(arrived(at(100, 200, 1000), at(100, 200, 1250), 1001), true);
+});
+
+test("the first placement of all has nowhere to have come from", () => {
+  assert.equal(arrived(null, at(100, 200, 1000), 1000), true);
 });
