@@ -1176,7 +1176,12 @@ impl SettingsWindow {
             label.set_text(&view.byo_snippet);
         }
         if let Some(Control::Label(label)) = controls.get(form::BYO_TOKEN_ID) {
+            let has_token = !view.byo_token.is_empty();
             label.set_text(&view.byo_token);
+            label.set_visible(has_token);
+        }
+        if let Some(Control::Button(button)) = controls.get(form::BYO_COPY_TOKEN_ID) {
+            button.set_visible(!view.byo_token.is_empty());
         }
         if let Some(Control::Label(label)) = controls.get(form::BYO_STEPS_ID) {
             label.set_text(&view.byo_steps);

@@ -972,82 +972,6 @@ fn completer_source_section() -> FormSection {
 /// answers a wake. This one changes nothing about the app: a BYO user has no
 /// Harness attached at all, and the endpoint is served either way.
 fn byo_section() -> FormSection {
-    let data_dir = ai_buddy_core::memory::data_dir();
-    let settings_file = crate::settings::settings_path(&data_dir);
-    let settings = crate::settings::Settings::load(&settings_file);
-    let harness = crate::settings::byo_harness_in_force(&settings);
-    let (_snippet, _steps, token) = crate::settings::byo_rows(&harness);
-    let has_token = !token.is_empty();
-
-    let mut rows = vec![
-        FormRow::Popup {
-            id: BYO_HARNESS_ID.to_string(),
-            label: Some("Harness".to_string()),
-            writes: TextField::ByoHarness,
-            help: Some("Which Harness the box below is written for.".to_string()),
-            options: HARNESS_PRESETS.map(str::to_string).to_vec(),
-            frozen: false,
-            disclosure: None,
-            status: None,
-        },
-        FormRow::InspectBlock {
-            id: BYO_SNIPPET_ID.to_string(),
-            label: None,
-            help: Some(
-                "Good for this app run only: the port and the token are both new \
-                 every launch, so a paste from yesterday stops connecting. Come \
-                 back here and copy it again."
-                    .to_string(),
-            ),
-            disclosure: None,
-            status: None,
-        },
-        FormRow::Composite {
-            id: "byo_actions".to_string(),
-            help: None,
-            disclosure: None,
-            controls: vec![CompositeControl::Button {
-                id: BYO_COPY_ID.to_string(),
-                label: "Copy".to_string(),
-                frozen: false,
-            }],
-        },
-    ];
-
-    if has_token {
-        rows.push(FormRow::InspectBlock {
-            id: BYO_TOKEN_ID.to_string(),
-            label: None,
-            help: Some(
-                "Paste at Hermes auth prompt; no Bearer prefix; rotates each launch.".to_string(),
-            ),
-            disclosure: None,
-            status: None,
-        });
-        rows.push(FormRow::Composite {
-            id: "byo_token_actions".to_string(),
-            help: None,
-            disclosure: None,
-            controls: vec![CompositeControl::Button {
-                id: BYO_COPY_TOKEN_ID.to_string(),
-                label: "Copy".to_string(),
-                frozen: false,
-            }],
-        });
-    }
-
-    rows.push(FormRow::InspectBlock {
-        id: BYO_STEPS_ID.to_string(),
-        label: None,
-        help: Some(
-            "This token reaches ai-buddy and nothing else. The Harness \
-             signs itself in."
-                .to_string(),
-        ),
-        disclosure: None,
-        status: None,
-    });
-
     FormSection {
         heading: BYO_HEADING.to_string(),
         comment: Some(
@@ -1058,7 +982,71 @@ fn byo_section() -> FormSection {
         ),
         disclosure: None,
         status: None,
-        rows,
+        rows: vec![
+            FormRow::Popup {
+                id: BYO_HARNESS_ID.to_string(),
+                label: Some("Harness".to_string()),
+                writes: TextField::ByoHarness,
+                help: Some("Which Harness the box below is written for.".to_string()),
+                options: HARNESS_PRESETS.map(str::to_string).to_vec(),
+                frozen: false,
+                disclosure: None,
+                status: None,
+            },
+            FormRow::InspectBlock {
+                id: BYO_SNIPPET_ID.to_string(),
+                label: None,
+                help: Some(
+                    "Good for this app run only: the port and the token are both new \
+                     every launch, so a paste from yesterday stops connecting. Come \
+                     back here and copy it again."
+                        .to_string(),
+                ),
+                disclosure: None,
+                status: None,
+            },
+            FormRow::Composite {
+                id: "byo_actions".to_string(),
+                help: None,
+                disclosure: None,
+                controls: vec![CompositeControl::Button {
+                    id: BYO_COPY_ID.to_string(),
+                    label: "Copy".to_string(),
+                    frozen: false,
+                }],
+            },
+            FormRow::InspectBlock {
+                id: BYO_TOKEN_ID.to_string(),
+                label: None,
+                help: Some(
+                    "Paste at Hermes auth prompt; no Bearer prefix; rotates each launch."
+                        .to_string(),
+                ),
+                disclosure: None,
+                status: None,
+            },
+            FormRow::Composite {
+                id: "byo_token_actions".to_string(),
+                help: None,
+                disclosure: None,
+                controls: vec![CompositeControl::Button {
+                    id: BYO_COPY_TOKEN_ID.to_string(),
+                    label: "Copy".to_string(),
+                    frozen: false,
+                }],
+            },
+            FormRow::InspectBlock {
+                id: BYO_STEPS_ID.to_string(),
+                label: None,
+                help: Some(
+                    "This token reaches ai-buddy and nothing else. The Harness \
+                     signs itself in."
+                        .to_string(),
+                ),
+                disclosure: None,
+                status: None,
+            },
+        ],
     }
 }
 
@@ -3073,10 +3061,13 @@ mod tests {
     }
 
     #[test]
-    fn the_byo_token_ui_is_present_only_for_hermes() {
+    fn the_byo_token_ui_is_always_present_after_gate5_fix() {
         let data_dir = ai_buddy_core::memory::data_dir();
         let settings_path = crate::settings::settings_path(&data_dir);
 
+        // After gate 5 fix: all harnesses get 6 rows. Token field and button
+        // are hidden via platform refresh when byo_token is empty, but the
+        // form always emits them so switching to Hermes mid-session works.
         for harness in HARNESS_PRESETS {
             let settings = crate::settings::Settings {
                 byo_harness: harness.to_string(),
@@ -3090,6 +3081,12 @@ mod tests {
                 .find(|s| s.heading == BYO_HEADING)
                 .expect("the Harness registration section");
 
+            assert_eq!(
+                section.rows.len(),
+                6,
+                "{harness} should always have 6 rows (gate 5 fix)"
+            );
+
             let has_token_row = section
                 .rows
                 .iter()
@@ -3098,32 +3095,14 @@ mod tests {
                 matches!(row, FormRow::Composite { controls, .. } if controls.iter().any(|c| matches!(c, CompositeControl::Button { id, .. } if id == BYO_COPY_TOKEN_ID)))
             });
 
-            if harness == "hermes" {
-                assert_eq!(
-                    section.rows.len(),
-                    6,
-                    "{harness} should have 6 rows including token UI"
-                );
-                assert!(
-                    has_token_row,
-                    "{harness} should have the token InspectBlock"
-                );
-                assert!(
-                    has_copy_token_button,
-                    "{harness} should have the copy token button"
-                );
-            } else {
-                assert_eq!(
-                    section.rows.len(),
-                    4,
-                    "{harness} should have 4 rows without token UI"
-                );
-                assert!(
-                    !has_token_row,
-                    "{harness} should not have the token InspectBlock"
-                );
-                assert!(
-                    !has_copy_token_button,
+            assert!(
+                has_token_row,
+                "{harness} should have the token InspectBlock (always present)"
+            );
+            assert!(
+                has_copy_token_button,
+                "{harness} should have the copy token button (always present)"
+            );
                     "{harness} should not have the copy token button"
                 );
             }

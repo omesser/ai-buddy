@@ -94,6 +94,7 @@ struct Ivars {
     byo_harness: RefCell<Option<Retained<NSPopUpButton>>>,
     byo_snippet: RefCell<Option<Retained<NSTextField>>>,
     byo_token: RefCell<Option<Retained<NSTextField>>>,
+    byo_copy_token: RefCell<Option<Retained<NSButton>>>,
     byo_steps: RefCell<Option<Retained<NSTextField>>>,
     new_character: RefCell<Option<Retained<NSPopUpButton>>>,
     new_name: RefCell<Option<Retained<NSTextField>>>,
@@ -770,7 +771,12 @@ impl SettingsController {
             field.setStringValue(&NSString::from_str(&view.byo_snippet));
         }
         if let Some(field) = self.ivars().byo_token.borrow().clone() {
+            let has_token = !view.byo_token.is_empty();
             field.setStringValue(&NSString::from_str(&view.byo_token));
+            field.setHidden(!has_token);
+        }
+        if let Some(button) = self.ivars().byo_copy_token.borrow().clone() {
+            button.setHidden(view.byo_token.is_empty());
         }
         if let Some(field) = self.ivars().byo_steps.borrow().clone() {
             field.setStringValue(&NSString::from_str(&view.byo_steps));
@@ -966,6 +972,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     let mut byo_harness_popup = None;
     let mut byo_snippet_field = None;
     let mut byo_token_field = None;
+    let mut byo_copy_token_button = None;
     let mut byo_steps_field = None;
     let mut new_character_popup = None;
     let mut new_name_field = None;
@@ -1424,6 +1431,9 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
                                     if id == form::SPAWN_ID {
                                         pin_right(&btn);
                                     }
+                                    if id == form::BYO_COPY_TOKEN_ID {
+                                        byo_copy_token_button = Some(btn.clone());
+                                    }
                                     document.addSubview(&btn);
                                     x += if label.len() > 10 { 148.0 } else { 80.0 };
 
@@ -1498,6 +1508,7 @@ fn build(mtm: MainThreadMarker, session: SettingsSession) -> Retained<SettingsCo
     *controller.ivars().byo_harness.borrow_mut() = byo_harness_popup;
     *controller.ivars().byo_snippet.borrow_mut() = byo_snippet_field;
     *controller.ivars().byo_token.borrow_mut() = byo_token_field;
+    *controller.ivars().byo_copy_token.borrow_mut() = byo_copy_token_button;
     *controller.ivars().byo_steps.borrow_mut() = byo_steps_field;
     *controller.ivars().new_character.borrow_mut() = new_character_popup;
     *controller.ivars().new_name.borrow_mut() = new_name_field;
