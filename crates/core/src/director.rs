@@ -52,10 +52,13 @@ pub const REMEMBERED: usize = 3;
 
 /// How long a typed line may be, in characters.
 ///
-/// The same bound as `PERSONALITY_LIMIT`, for a sharper reason: ADR-0008 keeps
-/// one session per Instance, so an unbounded paste is paid not once but on
-/// every turn after it. Generous enough for a pasted paragraph.
-pub const CHAT_LIMIT: usize = 2000;
+/// A bound on one turn's input, so a paste cannot quietly take over a
+/// session's context. ADR-0008 keeps one session per Instance, so the line is
+/// paid once on the way in and then carried — by the provider's context under
+/// the HTTP Completer, by the Harness's own accounting under the other. Sized
+/// to the largest single file a user would reasonably paste and ask about,
+/// about 4000 tokens (#685).
+pub const CHAT_LIMIT: usize = 16_000;
 
 /// What the user (or the clock) just did, and what was said with it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2091,6 +2094,21 @@ mod tests {
             sent.matches('é').count(),
             CHAT_LIMIT,
             "cut on a character boundary, not a byte one: {sent}"
+        );
+    }
+
+    /// #685: the story the bound is sized for. A source file pasted with a
+    /// question has to reach the model whole, or the answer refactors a file
+    /// that stops mid-function.
+    #[test]
+    fn a_pasted_source_file_reaches_the_model_whole() {
+        let pasted = "fn main() {\n    println!(\"hello\");\n}\n".repeat(100);
+        let sent = follow_up(&typed(&pasted));
+
+        assert!(
+            sent.contains(pasted.trim_end()),
+            "a {}-character paste was cut at {CHAT_LIMIT}",
+            pasted.chars().count()
         );
     }
 

@@ -211,9 +211,20 @@
     <!-- The only way in: the Instance name changes but a tray Character still
          has to feel like one thing, so the composer is never hidden. The button
          disables when the field does, so a line the user can still see but not
-         send says why. -->
+         send says why.
+
+         maxlength is `CHAT_LIMIT` (#685): the bound is the field's, so a paste
+         is stopped where the user can see it rather than cut behind them in
+         `chat_send`, which would leave the log showing what was never sent.
+         The `.take()` there stays the trust boundary's guard. -->
     <form class="composer" id="composer">
-      <input type="text" id="line" placeholder="Nothing can answer yet" autocomplete="off" />
+      <input
+        type="text"
+        id="line"
+        maxlength="16000"
+        placeholder="Nothing can answer yet"
+        autocomplete="off"
+      />
       <button type="submit" id="send">Send</button>
     </form>
 
