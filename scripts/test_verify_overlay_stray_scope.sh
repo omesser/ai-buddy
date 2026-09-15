@@ -64,6 +64,39 @@ EOF
     echo "  PASS  stray_pid() left a foreign worktree's process ($FOREIGN_PID) unmatched"
   fi
   kill "$FOREIGN_PID" 2> /dev/null
+
+  # The negative above passes even if stray_pid() can never match anything.
+  # This is the half that fails when the script launches the app by a relative
+  # ./target/debug/ai-buddy: argv then holds no absolute path for pgrep to see.
+  OWN_DIR="$TEMP_DIR/this-checkout/target/debug"
+  mkdir -p "$OWN_DIR"
+  cat > "$OWN_DIR/ai-buddy" << 'EOF'
+#!/bin/sh
+exec sleep 30
+EOF
+  chmod +x "$OWN_DIR/ai-buddy"
+  BIN_PATH="$OWN_DIR/ai-buddy"
+  "$BIN_PATH" &
+  OWN_PID=$!
+  sleep 0.2
+
+  FOUND=$(stray_pid)
+  if [ -n "$FOUND" ]; then
+    echo "  PASS  stray_pid() found a stray at its own BIN_PATH (pid $FOUND)"
+  else
+    echo "  FAIL  stray_pid() missed a stray at its own BIN_PATH (pid $OWN_PID)"
+    FAILED=1
+  fi
+  kill "$OWN_PID" 2> /dev/null
+fi
+
+echo
+echo "Test: the app is launched through \$BIN_PATH, so argv carries the absolute path"
+if grep -qE '^\s*(AI_BUDDY_[A-Z_]+=1 )*\./target/debug/ai-buddy' scripts/verify-overlay.sh; then
+  echo "  FAIL  a launch still uses ./target/debug/ai-buddy; stray_pid() cannot see a relative argv"
+  FAILED=1
+else
+  echo "  PASS  no relative launch left"
 fi
 
 echo

@@ -29,7 +29,9 @@ KEEP=0
 # Exact-path match, mirroring crates/verify/src/gesture.rs's stray_pid: this
 # checkout's absolute binary path names only the instance this script starts,
 # never another worktree's dogfood app or another agent's run of a binary at
-# the same "target/debug/ai-buddy" path suffix.
+# the same "target/debug/ai-buddy" path suffix. Launching through $BIN_PATH is
+# what puts that absolute path in argv, so pgrep -f can see it; a relative
+# ./target/debug/ai-buddy would leave the stray check below matching nothing.
 BIN_PATH="$(pwd)/target/debug/ai-buddy"
 stray_pid() { pgrep -f "$BIN_PATH" 2> /dev/null | head -1; }
 
@@ -176,7 +178,7 @@ if [ -n "$STRAY_PID" ]; then
   exit 1
 fi
 AI_BUDDY_TRACE_HITTEST=1 AI_BUDDY_TRACE_FRAMES=1 \
-  ./target/debug/ai-buddy > "$OUT/app.log" 2>&1 &
+  "$BIN_PATH" > "$OUT/app.log" 2>&1 &
 APP_PID=$!
 
 # Wait for the startup line rather than sleeping a guessed interval.
@@ -564,7 +566,7 @@ await "$OUT/fling.log" '^\{' 40 || {
 # the Grip run gets a clean log of its own.
 kill "$APP_PID" 2> /dev/null
 wait "$APP_PID" 2> /dev/null
-AI_BUDDY_TRACE_FRAMES=1 ./target/debug/ai-buddy > "$OUT/grip.log" 2>&1 &
+AI_BUDDY_TRACE_FRAMES=1 "$BIN_PATH" > "$OUT/grip.log" 2>&1 &
 APP_PID=$!
 await "$OUT/grip.log" '^frame: [0-9]+ Perched' 60 ||
   echo "  (the sprite never perched - the checks below will say so)"
