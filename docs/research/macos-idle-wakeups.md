@@ -62,8 +62,14 @@ figures, and that expectation is part of the result, not a footnote to it.
 | Director | `AI_BUDDY_DIRECTOR=0` — `StaticDirector`, offline, no HTTP leaves the process |
 | Character | BMO (the default when none is set) |
 | Date | 2026-09-15 |
-| `main` | `7a58e02f` (this issue's base) |
-| PR #718 head | `9864d789` (`cursor/macos-idle-backoff-183-3b49`) |
+| Control arm, written `main` below | `7a58e02f` — this issue's base, **before** #718 |
+| Treatment arm, written `#718` below | `9864d789` (`cursor/macos-idle-backoff-183-3b49`) |
+
+**#718 has since merged** (`8ba9481d`). So the arm labelled `#718` throughout this
+document is what `main` does today, and the arm labelled `main` is the pre-back-off
+state that no longer exists on the branch. The A/B below is unaffected: it compares two
+fixed commits and both are still in history. What changed is which arm a future reader
+should treat as the baseline to beat. That is the `#718` column, not the `main` one.
 
 Both binaries were built with `cargo build -p ai-buddy --release` from a
 dedicated worktree per branch (`.worktrees/431-macos-wakeups` and
