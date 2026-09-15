@@ -10,9 +10,19 @@ of text. The gap is real and it pulls in two directions at once: the surface
 has to become more legible than it is — closer to what a harness shows — while
 every missing piece also has an obvious fix that is somebody else's IDE.
 
-Nothing off the shelf settles it either. Zed's renderer is Rust and GPUI,
-VS Code's chat UI is welded to its workbench, and the ACP ecosystem publishes a
-protocol and adapters but no client UI. The scope cannot be delegated to a
+Nothing off the shelf settles it either. Zed is the closest thing to a reference
+renderer, and it fails twice. Its `acp_thread` and `agent_ui` crates are
+GPL-3.0-or-later against this repository's MIT, and even with the licence
+granted, `acp_thread` is not a protocol-to-model layer that could be lifted: it
+pulls `gpui`, `project`, `multi_buffer`, `language`, `language_model` and
+`buffer_diff`. VS Code's chat UI is welded to its workbench.
+
+Four permissively licensed web chat libraries come closer and still do not
+settle it: assistant-ui, CopilotKit, LangGraph's SDK and Vercel's `ai`. Each
+assumes React and a bundler, which `src/` does not have. Whether it should is
+#723. None of them models ACP either, so every one would still need the adapter
+that holds the decisions this ADR is about. The ACP ecosystem itself publishes
+a protocol and adapters but no client UI. The scope cannot be delegated to a
 dependency, so it needs an edge written down instead of argued per feature.
 
 ADR-0018 already refused to host the Harness's own interface, and ADR-0025
