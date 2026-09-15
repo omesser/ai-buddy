@@ -218,13 +218,11 @@
          `chat_send`, which would leave the log showing what was never sent.
          The `.take()` there stays the trust boundary's guard. -->
     <form class="composer" id="composer">
-      <input
-        type="text"
-        id="line"
-        maxlength="16000"
-        placeholder="Nothing can answer yet"
-        autocomplete="off"
-      />
+      <!-- A textarea, not an input: `type=text` value sanitization deletes every
+           LF and CR from the value. It rests at one row because the Chat surface
+           is 420 by 560 points (`main.rs`) and the log above it has no height to
+           spare. -->
+      <textarea id="line" rows="1" maxlength="16000" placeholder="Nothing can answer yet" autocomplete="off"></textarea>
       <button type="submit" id="send">Send</button>
     </form>
 

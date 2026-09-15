@@ -358,7 +358,7 @@ if (settingsBtn) {
 
 // Which tab is showing. The conversation and the prompt behind it are the two
 // things this window holds, and they do not fit one above the other at 420
-// points (ADR-0012).
+// points (`main.rs`).
 function showTab(name) {
   const prompt = name === "prompt";
   log.hidden = prompt;
@@ -450,6 +450,19 @@ function showWho(opening) {
     line.placeholder = composerPlaceholder(opening);
   }
 }
+
+// A textarea does not submit its form on Enter. Enter still sends, because that
+// is the whole muscle memory of this window; Shift+Enter types the newline.
+// `isComposing` is the IME's Enter — it accepts a candidate, and sending there
+// would cut the word in half.
+line.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
+    return;
+  }
+  // Otherwise the newline lands in the field as well as sending the turn.
+  event.preventDefault();
+  composer.requestSubmit();
+});
 
 composer.addEventListener("submit", (event) => {
   event.preventDefault();

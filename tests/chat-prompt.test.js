@@ -26,18 +26,34 @@ function promptSection(source) {
   return match[1];
 }
 
-// Every event this window listens for, in the order it wires them.
-const LISTENED = [...js.matchAll(/addEventListener\(\s*"([a-z-]+)"/g)].map(([, name]) => name);
+// Every event this window listens for, as `target.event`, in the order it
+// wires them.
+const LISTENED = [...js.matchAll(/(\w+)\.addEventListener\(\s*"([a-z-]+)"/g)].map(
+  ([, target, name]) => `${target}.${name}`,
+);
 
 test("nothing in the Chat surface saves on a keystroke", () => {
-  const typing = LISTENED.filter((name) =>
-    ["input", "keyup", "keydown", "keypress", "change"].includes(name),
+  assert.ok(LISTENED.length >= 4, "the listener parse stopped matching — this cannot pass vacuously");
+
+  const typing = LISTENED.filter((wiring) =>
+    ["input", "keyup", "keydown", "keypress", "change"].includes(wiring.split(".")[1]),
   );
 
+  // The composer's send key is the one listener that may fire mid-typing: the
+  // field became a textarea (#686), which does not submit its form on Enter,
+  // so Enter had to be wired by hand. It sends a turn; it does not save.
   assert.deepEqual(
     typing,
-    [],
+    ["line.keydown"],
     `these fire while the user is still typing, and saving reopens the session: ${typing.join(", ")}`,
+  );
+
+  const at = js.indexOf('line.addEventListener("keydown"');
+  const end = js.indexOf("\n});", at);
+  assert.doesNotMatch(
+    js.slice(at, end),
+    /invoke\(/,
+    "the send key reaches the Shell only through the submit listener, never the save",
   );
 });
 
