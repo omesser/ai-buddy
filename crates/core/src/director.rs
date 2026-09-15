@@ -594,6 +594,55 @@ pub fn session_due(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseError;
 
+/// Strip known Harness startup banners from `reply`, by wire markers specific
+/// enough that real sentences are kept.
+///
+/// Pi's banner: `pi v{version}`, a `---` rule, optional blank line, `## Skills`,
+/// then skill paths. Recognized by those markers in sequence at the start of
+/// the reply, and removed as a block through the last skill path. A reply that
+/// names Pi in a sentence, or mentions skills, or draws a horizontal rule in
+/// the middle of an answer, is not the banner and is kept (#632).
+fn strip_harness_banners(reply: &str) -> String {
+    let lines: Vec<&str> = reply.lines().collect();
+
+    if lines.len() < 4 {
+        return reply.to_string();
+    }
+
+    // Pi banner markers: version line, horizontal rule, then Skills heading.
+    let has_pi_version = lines[0].trim().starts_with("pi v");
+    let has_rule = lines.get(1).is_some_and(|l| l.trim() == "---");
+
+    if !has_pi_version || !has_rule {
+        return reply.to_string();
+    }
+
+    // Find the Skills heading (may have a blank line before it).
+    let skills_idx = lines
+        .iter()
+        .skip(2)
+        .take(2)
+        .position(|l| l.trim() == "## Skills")
+        .map(|pos| pos + 2);
+
+    let skills_idx = match skills_idx {
+        Some(idx) => idx,
+        None => return reply.to_string(),
+    };
+
+    // Find where the banner ends: after the last consecutive line starting with "- ".
+    let mut banner_end = skills_idx + 1;
+    for (idx, line) in lines.iter().enumerate().skip(skills_idx + 1) {
+        if line.trim_start().starts_with("- ") {
+            banner_end = idx + 1;
+        } else {
+            break;
+        }
+    }
+
+    lines[banner_end..].join("\n")
+}
+
 /// Parse a reply as a Behavior name on a line of its own, and everything
 /// else as the spoken line. Anything else is `ParseError`.
 ///
@@ -601,7 +650,7 @@ pub struct ParseError;
 /// nothing else, not on line one, because a Harness may put its own text
 /// ahead of the model's answer: Pi writes a version banner and a list of the
 /// user's skill files as the turn's first `agent_message_chunk`, and nothing
-/// on the ACP wire marks it as not the answer (#609).
+/// on the ACP wire marks it as not the answer (#609, #632).
 ///
 /// Scanning is safe because a candidate must be the *whole* line. A Behavior
 /// named inside a sentence never matches; only a line that is nothing but
@@ -614,16 +663,16 @@ pub struct ParseError;
 /// that line to spare a banner would lose the answer far more often than it
 /// spares one.
 ///
-/// The cost is named rather than filtered. Pi's banner sits before the name,
-/// so a turn that proposes a Behavior can still speak it — the bubble draws
-/// six wrapped lines of it and offers Chat for the rest (#588). Telling a
-/// Harness's chrome from its model's words is the follow-up; nothing here
-/// guesses at it.
+/// Known Harness banners — Pi's startup chrome — are filtered by their
+/// specific markers before the name is read (#632). A targeted filter, not a
+/// heuristic: a sentence that happens to mention Pi or skills is not a banner
+/// and is kept.
 ///
 /// Public for `harness probe`, which reports whether a live session obeys the
 /// one-line format. The rest of the model path is crate-private.
 pub fn parse_proposal(reply: &str) -> Result<BehaviorProposal, ParseError> {
-    let lines: Vec<&str> = reply.lines().collect();
+    let cleaned = strip_harness_banners(reply);
+    let lines: Vec<&str> = cleaned.lines().collect();
     // Trimmed only to test the line against the contract. The name has to be
     // the whole line, so a line indented or padded still names a Behavior.
     let (at, (name, inline)) = lines
@@ -1703,13 +1752,6 @@ mod tests {
     /// #609: a Harness may put its own text ahead of the model's answer, and
     /// nothing on the ACP wire marks it. The name is read past it, in both of
     /// the shapes the contract allows, and no line of it is promoted.
-    ///
-    /// The banner still reaches the dialogue, because nothing here filters a
-    /// Harness's chrome and dropping what precedes the name would lose real
-    /// answers. That cost is asserted, not hidden.
-    ///
-    /// Production change that would fail this: reading the Behavior name from
-    /// line one again, or letting `---` stand as a name.
     #[test]
     fn a_behavior_name_is_read_past_a_harness_banner() {
         for reply in [
@@ -1721,16 +1763,68 @@ mod tests {
                 proposal.behavior, "wave",
                 "no line of the banner is promoted, `---` included"
             );
-            let dialogue = proposal.dialogue.expect("the rest of the reply is spoken");
+        }
+    }
+
+    /// #632: Pi's startup banner is filtered from Speech by recognizing its
+    /// specific markers: version line, horizontal rule, Skills heading. A
+    /// targeted filter, not a heuristic.
+    #[test]
+    fn pi_banner_is_filtered_from_dialogue() {
+        for reply in [
+            format!("{PI_BANNER}\nwave | Hello!"),
+            format!("{PI_BANNER}\nwave\nHello!"),
+        ] {
+            let proposal = parse_proposal(&reply).expect("the name is found past the banner");
+            let dialogue = proposal.dialogue.as_deref().unwrap_or("");
+
             assert!(
-                dialogue.ends_with("Hello!"),
-                "the answer is kept: {dialogue}"
+                !dialogue.contains("pi v0.85.1"),
+                "version line was filtered: {dialogue}"
             );
             assert!(
-                dialogue.starts_with("pi v0.85.1"),
-                "and so is the banner, until something can tell the two apart"
+                !dialogue.contains("## Skills"),
+                "Skills heading was filtered: {dialogue}"
+            );
+            assert!(
+                dialogue.trim().starts_with("Hello!") || dialogue.trim() == "Hello!",
+                "the model's answer is kept: {dialogue}"
             );
         }
+    }
+
+    /// #632: A banner-like structure that is not Pi's is kept, because the
+    /// filter is targeted to known markers, not a general heuristic.
+    #[test]
+    fn a_non_pi_banner_is_not_filtered() {
+        let fake_banner = "other-tool v1.0\n---\n## Something\nwave\nHello!";
+        let proposal = parse_proposal(fake_banner).expect("parsed");
+
+        let dialogue = proposal.dialogue.as_deref().unwrap_or("");
+        assert!(
+            dialogue.contains("other-tool v1.0"),
+            "non-Pi banner is kept: {dialogue}"
+        );
+    }
+
+    /// #632: Real sentences that happen to mention Pi or skills are not
+    /// filtered, because the filter requires the specific banner structure.
+    #[test]
+    fn real_sentences_are_not_filtered_as_banners() {
+        let with_pi_word = "wave\nI'm using pi for calculations today.";
+        let proposal = parse_proposal(with_pi_word).expect("parsed");
+
+        assert_eq!(
+            proposal.dialogue.as_deref(),
+            Some("I'm using pi for calculations today.")
+        );
+
+        let with_version = "wave\nThe app is at v2.0 now.";
+        let proposal = parse_proposal(with_version).expect("parsed");
+        assert_eq!(
+            proposal.dialogue.as_deref(),
+            Some("The app is at v2.0 now.")
+        );
     }
 
     #[test]
