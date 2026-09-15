@@ -1,8 +1,9 @@
 // Run with `node --test tests/`.
 //
-// ADR-0013's seam: a colour, font family or radius written outside a
+// ADR-0019's seam: a colour, font family or radius written outside a
 // `.chat-ui-*` block breaks it, and breaks it quietly — the surface still
-// renders, and the next design simply cannot recolour it.
+// renders, and the next design simply cannot recolour it. Every stylesheet
+// that reads the tokens is held to it, not only the one that defines them.
 //
 // `rgb()` and `rgba()` go beyond the three the ADR names, because most of
 // modern minimal's palette is white tints and hex alone would let them back in.
@@ -12,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8");
+const settings = readFileSync(new URL("../src/settings.css", import.meta.url), "utf8");
 
 // The stylesheet with every design block removed, as `{line, text}` per line.
 //
@@ -53,14 +55,24 @@ const LITERALS = [
   [/border-radius:[^;]*[0-9]/, "a radius"],
 ];
 
+// chat-ui.css is where the designs themselves live, so its own `.chat-ui-*`
+// blocks are the one exemption. settings.css carries no design: it reads the
+// tokens and nothing else, so every line of it is held to the rule.
+const SHEETS = [
+  ["chat-ui.css", outsideDesignBlocks(css)],
+  ["settings.css", settings.split("\n").map((text, index) => ({ line: index + 1, text }))],
+];
+
 test("every colour, font and radius outside a design block reads a token", () => {
   const offenders = [];
 
-  for (const { line, text } of outsideDesignBlocks(css)) {
-    const bare = text.replace(/var\([^)]*\)/g, "").replace(/\/\*[^*]*\*\//g, "");
-    for (const [pattern, what] of LITERALS) {
-      if (pattern.test(bare)) {
-        offenders.push(`chat-ui.css:${line} carries ${what}: ${text.trim()}`);
+  for (const [sheet, lines] of SHEETS) {
+    for (const { line, text } of lines) {
+      const bare = text.replace(/var\([^)]*\)/g, "").replace(/\/\*[^*]*\*\//g, "");
+      for (const [pattern, what] of LITERALS) {
+        if (pattern.test(bare)) {
+          offenders.push(`${sheet}:${line} carries ${what}: ${text.trim()}`);
+        }
       }
     }
   }
@@ -68,7 +80,7 @@ test("every colour, font and radius outside a design block reads a token", () =>
   assert.deepEqual(
     offenders,
     [],
-    `these sit outside a .chat-ui-* block, so a second design cannot reach them:\n${offenders.join("\n")}`,
+    `a second design cannot reach these, so they would survive the recolour:\n${offenders.join("\n")}`,
   );
 });
 
