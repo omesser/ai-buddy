@@ -29,6 +29,15 @@ use super::{
     MENU_HOLD_TIMEOUT, SENSE_INTERVAL,
 };
 
+/// How long an overlay may go without being told anything.
+///
+/// Bounds the one thing sending only changed frames gives up: a webview that
+/// begins listening mid-silence hears nothing until the sprite next moves. A
+/// quarter second is under the fade this repository gives a hide rule, so a
+/// Character that should not be on screen at launch still goes before the
+/// fullscreen application it would sit on top of notices.
+const FRAME_RESEND: Duration = Duration::from_millis(250);
+
 /// One overlay's last applied shape: the mask, then x, y, facing, scale, and
 /// hotspot rectangles the renderer reported for controls outside the art.
 ///
@@ -121,6 +130,11 @@ pub(crate) fn run_frame_loop(
         // One click-through flag per overlay, `None` until that overlay's first
         // decision so the first tick always applies.
         let mut ignoring: Vec<Option<bool>> = vec![None; covered.len()];
+
+        // The last instruction sent to each overlay and when, so a tick that
+        // repeats one does not send it again. See the emit site for the
+        // measurement that earns this.
+        let mut last_frame: Vec<Option<(String, Instant)>> = vec![None; covered.len()];
 
         // Track whether each overlay's EWMH configuration (floating, skip taskbar)
         // succeeded. Retried on each frame until successful. GTK may not have a
@@ -333,6 +347,7 @@ pub(crate) fn run_frame_loop(
 
             // One flag per overlay, and the desktop can gain or lose one.
             ignoring.resize(displays.frames.len(), None);
+            last_frame.resize(displays.frames.len(), None);
             configured
                 .lock()
                 .unwrap()
@@ -1919,16 +1934,37 @@ pub(crate) fn run_frame_loop(
                     })
                     .collect();
 
-                let _ = window.emit_to(
-                    &label,
-                    FRAME_EVENT,
-                    Placement {
-                        sprites,
-                        visible: presence.visible,
-                        fade_ms: presence.fade_ms,
-                        sound: sound_allowed,
-                    },
-                );
+                let placement = Placement {
+                    sprites,
+                    visible: presence.visible,
+                    fade_ms: presence.fade_ms,
+                    sound: sound_allowed,
+                };
+
+                // A tick that repeats the last instruction is not sent. Tauri
+                // delivers an event by evaluating JavaScript in the overlay's
+                // WebContent process, and #741 measured that those evaluations,
+                // not the 16ms tick, are where an idle buddy's wakeups go: 205
+                // of them a second across two overlays, each one taking a
+                // WebKit process assertion and logging four os_log lines on the
+                // way. A still sprite has nothing to say sixty times a second.
+                //
+                // Resent anyway once the deadline passes, because `Placement`
+                // carries `visible` on every frame for a webview that may only
+                // just have begun listening — see its doc comment. That
+                // promise now costs four sends a second instead of sixty, and
+                // a launch-hidden Character learns so a quarter second late at
+                // worst rather than a frame late.
+                let next = serde_json::to_string(&placement).ok();
+                let repeat = next.as_ref().is_some_and(|next| {
+                    last_frame[index]
+                        .as_ref()
+                        .is_some_and(|(sent, at)| sent == next && at.elapsed() < FRAME_RESEND)
+                });
+                if !repeat {
+                    last_frame[index] = next.map(|next| (next, Instant::now()));
+                    let _ = window.emit_to(&label, FRAME_EVENT, placement);
+                }
 
                 // Set schedule mode for next iteration based on visibility and what
                 // any_needs_active captured during frame processing. Hidden sprites

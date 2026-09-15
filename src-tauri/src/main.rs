@@ -395,8 +395,8 @@ struct SpritePlacement<'a> {
 /// One tick's instruction to the renderer: every Instance's sprite, and whether
 /// the Character is on screen at all.
 ///
-/// Pushed every tick rather than fetched, so the webview holds no authoritative
-/// state — it draws what it was last told and remembers nothing.
+/// Pushed rather than fetched, so the webview holds no authoritative state —
+/// it draws what it was last told and remembers nothing.
 ///
 /// One message carrying every sprite rather than one per Instance, because the
 /// list is also the answer to which Instances still exist. Sent separately, a
@@ -414,7 +414,8 @@ struct Placement<'a> {
     /// its art and begun listening, and Tauri buffers nothing for a listener
     /// that is not there yet — so a Character hidden at launch would be told
     /// to go once, to nobody, and stay on top of the fullscreen application
-    /// all session.
+    /// all session. A repeated frame is not sent (#741), so what keeps that
+    /// promise is `FRAME_RESEND` rather than the tick.
     visible: bool,
     fade_ms: u32,
     /// Whether a cue this frame may be heard as well as seen. Decided in
