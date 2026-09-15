@@ -242,7 +242,7 @@ grok mcp add ai-buddy "http://127.0.0.1:<port>/mcp" --transport http \
   --header "Authorization: Bearer <token>"
 ```
 
-Instructions: "Run it in a terminal; `grok mcp add` overwrites in place, so re-running after a relaunch is enough. Default scope is user (all projects); use `--scope local` for current project only. Then in your live Grok session, run `/mcps` and press `r` to reload."
+Instructions: "Run it in a terminal; `grok mcp add` overwrites in place, so re-running after a relaunch is enough. Default scope is user (all projects); use `--scope project` for current project only. Then in your live Grok session, run `/mcps` and press `r` to reload."
 
 Config alternative (if preferred):
 ```toml
