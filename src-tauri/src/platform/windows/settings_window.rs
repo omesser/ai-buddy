@@ -499,6 +499,17 @@ impl SettingsWindow {
             let label_y = label_pt.y;
 
             let controls = self.controls.borrow();
+            let button_hwnd = controls
+                .get(form_id)
+                .and_then(|c| {
+                    if let Control::Disclosure(btn, _, _) = c {
+                        Some(*btn)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(ptr::null_mut());
+
             let mut to_move = Vec::new();
             for control in controls.values() {
                 let hwnds: Vec<HWND> = match control {
@@ -511,6 +522,9 @@ impl SettingsWindow {
                     Control::Disclosure(button, label, _) => vec![*button, *label],
                 };
                 for hwnd in hwnds {
+                    if hwnd == button_hwnd || hwnd == label_hwnd {
+                        continue;
+                    }
                     let mut rect = RECT {
                         left: 0,
                         top: 0,
@@ -523,7 +537,7 @@ impl SettingsWindow {
                         y: rect.top,
                     };
                     ScreenToClient(parent, &mut pt);
-                    if pt.y > label_y {
+                    if pt.y >= label_y {
                         to_move.push(hwnd);
                     }
                 }
