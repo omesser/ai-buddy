@@ -58,7 +58,9 @@ enum Control {
     TextView(gtk::TextView),
     Label(gtk::Label),
     List(gtk::Box, String),
-    CharacterPicker(gtk::Box, Vec<String>),
+    /// A dropdown popup (ComboBoxText), matching macOS NSPopUpButton and
+    /// Windows COMBOBOX. Stores the widget and the list of options.
+    ComboBox(gtk::ComboBoxText, Vec<String>),
     /// A composite row's button, so `refresh` can reach Apply, Cancel and
     /// Clear key by id rather than by walking the widget tree.
     Button(gtk::Button),
@@ -544,95 +546,85 @@ impl SettingsWindow {
                             frozen,
                             fills,
                         } => {
-                            let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                            radio_box.set_size_request(180, -1);
+                            let combo = gtk::ComboBoxText::new();
+                            combo.set_size_request(180, -1);
 
                             // A composite popup carrying its own choices is
                             // filled here, once, like `FormRow::Popup`'s. One
                             // carrying none is left to `refresh`, which is how
                             // `new_instance`'s Character picker gets the
                             // installed packages.
-                            let mut group: Option<gtk::RadioButton> = None;
                             for option in options {
-                                let radio = if let Some(ref first) = group {
-                                    gtk::RadioButton::from_widget(first)
-                                } else {
-                                    gtk::RadioButton::with_label(option)
-                                };
-                                if group.is_none() {
-                                    group = Some(radio.clone());
-                                } else {
-                                    radio.set_label(option);
-                                }
-                                radio.set_sensitive(!frozen);
+                                combo.append_text(option);
+                            }
+                            combo.set_sensitive(!frozen);
 
-                                // A shortcut fills in the row below it and
-                                // writes no field of its own, so its title has
-                                // to be read as a value first (#670).
-                                if let (false, Some(shortcut)) = (*frozen, *fills) {
-                                    let title = option.clone();
-                                    let controls = self.controls.clone();
-                                    let refreshing = self.refreshing.clone();
-                                    let session = Arc::clone(&self.session);
-                                    // A batched row stages: the four Director
-                                    // rows only apply together, and
-                                    // `bind_batched`'s `changed` is what
-                                    // lights Apply up (#279). An unbatched one
-                                    // has no Apply beside it and saves here,
-                                    // because `connect_changed` is not what
-                                    // commits it (#638).
-                                    let description = form::describe();
-                                    let writes = match description.text_batched(shortcut.row) {
-                                        true => None,
-                                        false => description.text_write(shortcut.row),
+                            // A shortcut fills in the row below it and
+                            // writes no field of its own, so its title has
+                            // to be read as a value first (#670).
+                            if let (false, Some(shortcut)) = (*frozen, *fills) {
+                                let controls = self.controls.clone();
+                                let refreshing = self.refreshing.clone();
+                                let session = Arc::clone(&self.session);
+                                // A batched row stages: the four Director
+                                // rows only apply together, and
+                                // `bind_batched`'s `changed` is what
+                                // lights Apply up (#279). An unbatched one
+                                // has no Apply beside it and saves here,
+                                // because `connect_changed` is not what
+                                // commits it (#638).
+                                let description = form::describe();
+                                let writes = match description.text_batched(shortcut.row) {
+                                    true => None,
+                                    false => description.text_write(shortcut.row),
+                                };
+                                combo.connect_changed(move |combo| {
+                                    // The refreshing guard must stay above
+                                    // the `controls` borrow below: `refresh`
+                                    // calls `set_active` while holding
+                                    // `controls.borrow_mut()`, so reaching
+                                    // the borrow during a redraw is a
+                                    // `BorrowMutError` panic, not a no-op.
+                                    if refreshing.get() {
+                                        return;
+                                    }
+                                    let Some(text) = combo.active_text() else {
+                                        return;
                                     };
-                                    radio.connect_toggled(move |radio| {
-                                        // The refreshing guard must stay above
-                                        // the `controls` borrow below: `refresh`
-                                        // calls `set_active` while holding
-                                        // `controls.borrow_mut()`, so reaching
-                                        // the borrow during a redraw is a
-                                        // `BorrowMutError` panic, not a no-op.
-                                        if refreshing.get() || !radio.is_active() {
-                                            return;
-                                        }
-                                        // Custom, and any title off the list,
-                                        // name nothing to write: the field
-                                        // below is what a value this picker
-                                        // cannot spell is.
-                                        let Some(value) = (shortcut.value)(&title) else {
-                                            return;
-                                        };
-                                        if let Some(Control::Entry(entry)) =
-                                            controls.borrow().get(shortcut.row)
-                                        {
-                                            entry.set_text(value);
-                                        }
-                                        let Some(writes) = writes else {
-                                            return;
-                                        };
-                                        if let Ok(guard) = session.lock() {
-                                            if let Some(sess) = guard.as_ref() {
-                                                let mut patch = SettingsPatch::default();
-                                                if !patch.set_text(writes, value) {
-                                                    return;
-                                                }
-                                                if let Err(e) = sess.apply(patch) {
-                                                    eprintln!("settings: {e}");
-                                                }
+                                    let title = text.to_string();
+                                    // Custom, and any title off the list,
+                                    // name nothing to write: the field
+                                    // below is what a value this picker
+                                    // cannot spell is.
+                                    let Some(value) = (shortcut.value)(&title) else {
+                                        return;
+                                    };
+                                    if let Some(Control::Entry(entry)) =
+                                        controls.borrow().get(shortcut.row)
+                                    {
+                                        entry.set_text(value);
+                                    }
+                                    let Some(writes) = writes else {
+                                        return;
+                                    };
+                                    if let Ok(guard) = session.lock() {
+                                        if let Some(sess) = guard.as_ref() {
+                                            let mut patch = SettingsPatch::default();
+                                            if !patch.set_text(writes, value) {
+                                                return;
+                                            }
+                                            if let Err(e) = sess.apply(patch) {
+                                                eprintln!("settings: {e}");
                                             }
                                         }
-                                    });
-                                }
-
-                                radio_box.pack_start(&radio, false, false, 0);
+                                    }
+                                });
                             }
 
-                            hbox.pack_start(&radio_box, false, false, 0);
-                            self.controls.borrow_mut().insert(
-                                id.clone(),
-                                Control::CharacterPicker(radio_box, options.clone()),
-                            );
+                            hbox.pack_start(&combo, false, false, 0);
+                            self.controls
+                                .borrow_mut()
+                                .insert(id.clone(), Control::ComboBox(combo, options.clone()));
                         }
                         CompositeControl::Button { id, label, frozen } => {
                             let button = gtk::Button::with_label(label);
@@ -675,24 +667,17 @@ impl SettingsWindow {
                                                     let character = ctrl
                                                         .get(&new_char_id)
                                                         .and_then(|c| {
-                                                            if let Control::CharacterPicker(radio_box, _) = c {
-                                                                radio_box.children().into_iter().find_map(|child| {
-                                                                    child.downcast::<gtk::RadioButton>().ok().and_then(|radio| {
-                                                                        if radio.is_active() {
-                                                                            Some(radio.label().unwrap().to_string())
-                                                                        } else {
-                                                                            None
-                                                                        }
-                                                                    })
-                                                                })
+                                                            if let Control::ComboBox(combo, _) = c {
+                                                                combo
+                                                                    .active_text()
+                                                                    .map(|s| s.to_string())
                                                             } else {
                                                                 None
                                                             }
                                                         })
                                                         .unwrap_or_default();
 
-                                                    if !name.is_empty() && !character.is_empty()
-                                                    {
+                                                    if !name.is_empty() && !character.is_empty() {
                                                         sess.spawn(character, name);
                                                         if let Some(Control::Entry(e)) =
                                                             ctrl.get(&new_name_id)
@@ -911,77 +896,68 @@ impl SettingsWindow {
                     pack(container, &label_widget, ROW_GAP);
                 }
 
-                let radio_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                let combo = gtk::ComboBoxText::new();
+                combo.set_size_request(180, -1);
 
                 // A row that carries its own choices is filled here, once: the
                 // list is the form's and cannot change while the window is
-                // open. Empty options leave the group to `draw`, which is how
+                // open. Empty options leave the combo to `draw`, which is how
                 // the Character picker gets the installed packages — a list
                 // only the live view can see. Filling from the one and not the
                 // other is what left the source picker empty (#467).
-                let mut group: Option<gtk::RadioButton> = None;
                 for option in options {
-                    let radio = if let Some(ref first) = group {
-                        gtk::RadioButton::from_widget(first)
-                    } else {
-                        gtk::RadioButton::with_label(option)
-                    };
-                    if group.is_none() {
-                        group = Some(radio.clone());
-                    } else {
-                        radio.set_label(option);
-                    }
-                    radio.set_sensitive(!frozen);
+                    combo.append_text(option);
+                }
+                combo.set_sensitive(!frozen);
 
-                    // Frozen like the field arms above, so `draw`'s
-                    // `set_active` has nothing to fire into: an exported
-                    // variable's value is drawn and takes no edit (#272).
-                    if !frozen {
-                        let writes = *writes;
-                        let title = option.clone();
-                        let session = Arc::clone(&self.session);
-                        let refreshing = self.refreshing.clone();
-                        radio.connect_toggled(move |radio| {
-                            if refreshing.get() || !radio.is_active() {
-                                return;
-                            }
-                            let mut patch = SettingsPatch::default();
-                            if !patch.set_text(writes, &title) {
-                                return;
-                            }
-                            let applied = match session.lock() {
-                                Ok(guard) => match guard.as_ref() {
-                                    Some(sess) => match sess.apply(patch) {
-                                        Ok(()) => true,
-                                        Err(e) => {
-                                            eprintln!("settings: {e}");
-                                            false
-                                        }
-                                    },
-                                    None => false,
+                // Frozen like the field arms above, so `draw`'s
+                // `set_active_id` has nothing to fire into: an exported
+                // variable's value is drawn and takes no edit (#272).
+                if !frozen {
+                    let writes = *writes;
+                    let session = Arc::clone(&self.session);
+                    let refreshing = self.refreshing.clone();
+                    combo.connect_changed(move |combo| {
+                        if refreshing.get() {
+                            return;
+                        }
+                        let Some(text) = combo.active_text() else {
+                            return;
+                        };
+                        let title = text.to_string();
+                        let mut patch = SettingsPatch::default();
+                        if !patch.set_text(writes, &title) {
+                            return;
+                        }
+                        let applied = match session.lock() {
+                            Ok(guard) => match guard.as_ref() {
+                                Some(sess) => match sess.apply(patch) {
+                                    Ok(()) => true,
+                                    Err(e) => {
+                                        eprintln!("settings: {e}");
+                                        false
+                                    }
                                 },
-                                Err(_) => false,
-                            };
-                            // Below the lock, not inside it: `refresh` reads
-                            // the session for itself and this mutex is not
-                            // reentrant. Needed at all because only a pick
-                            // that raises a `SettingsOp` comes back through
-                            // the frame loop, and the registration picker
-                            // writes a view preference and raises none (#577).
-                            if applied {
-                                refresh_if_showing();
-                            }
-                        });
-                    }
-
-                    radio_box.pack_start(&radio, false, false, 0);
+                                None => false,
+                            },
+                            Err(_) => false,
+                        };
+                        // Below the lock, not inside it: `refresh` reads
+                        // the session for itself and this mutex is not
+                        // reentrant. Needed at all because only a pick
+                        // that raises a `SettingsOp` comes back through
+                        // the frame loop, and the registration picker
+                        // writes a view preference and raises none (#577).
+                        if applied {
+                            refresh_if_showing();
+                        }
+                    });
                 }
 
-                pack(container, &radio_box, ROW_GAP);
-                self.controls.borrow_mut().insert(
-                    id.clone(),
-                    Control::CharacterPicker(radio_box, options.clone()),
-                );
+                pack(container, &combo, ROW_GAP);
+                self.controls
+                    .borrow_mut()
+                    .insert(id.clone(), Control::ComboBox(combo, options.clone()));
 
                 if let Some(help_text) = help {
                     help_line(container, help_text);
@@ -1064,6 +1040,9 @@ impl SettingsWindow {
                     Control::Button(button) => {
                         button.set_sensitive(!frozen);
                     }
+                    Control::ComboBox(combo, _) => {
+                        combo.set_sensitive(!frozen);
+                    }
                     _ => {}
                 }
             }
@@ -1132,16 +1111,12 @@ impl SettingsWindow {
             }
             // The shortcut rests on whatever the field holds, so it moves with
             // it — and only while nothing is staged, for the same reason.
-            if let Some(Control::CharacterPicker(radio_box, _)) =
+            if let Some(Control::ComboBox(combo, options)) =
                 controls.get(form::DIRECTOR_BASE_URL_PICK_ID)
             {
                 let title = form::endpoint_title(&view.director_base_url);
-                for child in radio_box.children() {
-                    if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
-                        if radio.label().is_some_and(|label| label == title) {
-                            radio.set_active(true);
-                        }
-                    }
+                if let Some(index) = options.iter().position(|opt| opt == &title) {
+                    combo.set_active(Some(index as u32));
                 }
             }
         }
@@ -1201,7 +1176,7 @@ impl SettingsWindow {
         }
         // The reasoning-effort shortcut rests on whatever the field holds, so
         // it moves with it (#638).
-        if let Some(Control::CharacterPicker(radio_box, _)) =
+        if let Some(Control::ComboBox(combo, options)) =
             controls.get(form::DIRECTOR_REASONING_EFFORT_PICK_ID)
         {
             let title = form::effort_title(
@@ -1210,155 +1185,101 @@ impl SettingsWindow {
                     .map(String::as_str)
                     .unwrap_or_default(),
             );
-            for child in radio_box.children() {
-                if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
-                    if radio.label().is_some_and(|label| label == title) {
-                        radio.set_active(true);
-                    }
-                }
+            if let Some(index) = options.iter().position(|opt| opt == &title) {
+                combo.set_active(Some(index as u32));
             }
         }
         // The picker's own row declares the field, so the radio buttons built
         // here and the row cannot disagree about what a pick writes.
         let character_field = form::describe().text_write(form::CHARACTER_ID);
-        if let Some(Control::CharacterPicker(radio_box, cached_installed)) =
+        if let Some(Control::ComboBox(combo, cached_installed)) =
             controls.get_mut(form::CHARACTER_ID)
         {
             if cached_installed != &view.installed {
-                for child in radio_box.children() {
-                    radio_box.remove(&child);
-                }
+                combo.remove_all();
 
-                let mut group: Option<gtk::RadioButton> = None;
                 for name in &view.installed {
-                    let radio = if let Some(ref first) = group {
-                        gtk::RadioButton::from_widget(first)
-                    } else {
-                        gtk::RadioButton::with_label(name)
+                    combo.append_text(name);
+                }
+
+                // Connect the handler now that we have items. The initial
+                // creation in `build_ui` left the combo empty, so the handler
+                // needs to be wired here where we know what field it writes.
+                let session = Arc::clone(&self.session);
+                let refreshing = self.refreshing.clone();
+                combo.connect_changed(move |combo| {
+                    if refreshing.get() {
+                        return;
+                    }
+                    let Some(text) = combo.active_text() else {
+                        return;
                     };
-                    if group.is_none() {
-                        group = Some(radio.clone());
-                    } else {
-                        radio.set_label(name);
-                    }
-
-                    if name == &view.character {
-                        radio.set_active(true);
-                    }
-
-                    let session = Arc::clone(&self.session);
-                    let refreshing = self.refreshing.clone();
-                    let character = name.clone();
-                    radio.connect_toggled(move |radio| {
-                        if refreshing.get() {
-                            return;
-                        }
-                        if radio.is_active() {
-                            let Some(writes) = character_field else {
+                    let character = text.to_string();
+                    let Some(writes) = character_field else {
+                        return;
+                    };
+                    if let Ok(guard) = session.lock() {
+                        if let Some(sess) = guard.as_ref() {
+                            let mut patch = SettingsPatch::default();
+                            if !patch.set_text(writes, &character) {
                                 return;
-                            };
-                            if let Ok(guard) = session.lock() {
-                                if let Some(sess) = guard.as_ref() {
-                                    let mut patch = SettingsPatch::default();
-                                    if !patch.set_text(writes, &character) {
-                                        return;
-                                    }
-                                    if let Err(e) = sess.apply(patch) {
-                                        eprintln!("settings: {e}");
-                                    }
-                                }
                             }
-                        }
-                    });
-
-                    radio_box.pack_start(&radio, false, false, 0);
-                }
-
-                radio_box.show_all();
-                *cached_installed = view.installed.clone();
-            } else {
-                for child in radio_box.children() {
-                    if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
-                        if let Some(label) = radio.label() {
-                            if label == view.character {
-                                radio.set_active(true);
+                            if let Err(e) = sess.apply(patch) {
+                                eprintln!("settings: {e}");
                             }
                         }
                     }
-                }
+                });
+
+                combo.show_all();
+                *cached_installed = view.installed.clone();
+            }
+
+            // Set the active item to match the current character.
+            if let Some(index) = view
+                .installed
+                .iter()
+                .position(|name| name == &view.character)
+            {
+                combo.set_active(Some(index as u32));
             }
         }
-        if let Some(Control::CharacterPicker(radio_box, cached_installed)) =
+        if let Some(Control::ComboBox(combo, cached_installed)) =
             controls.get_mut(form::NEW_CHARACTER_ID)
         {
-            let current_selection = radio_box.children().into_iter().find_map(|child| {
-                child.downcast::<gtk::RadioButton>().ok().and_then(|radio| {
-                    if radio.is_active() {
-                        radio.label().map(|s| s.to_string())
-                    } else {
-                        None
-                    }
-                })
-            });
+            let current_selection = combo.active_text().map(|s| s.to_string());
 
             if cached_installed != &view.installed {
-                for child in radio_box.children() {
-                    radio_box.remove(&child);
-                }
+                combo.remove_all();
 
-                let mut group: Option<gtk::RadioButton> = None;
                 for name in &view.installed {
-                    let radio = if let Some(ref first) = group {
-                        gtk::RadioButton::from_widget(first)
-                    } else {
-                        gtk::RadioButton::with_label(name)
-                    };
-                    if group.is_none() {
-                        group = Some(radio.clone());
-                    } else {
-                        radio.set_label(name);
-                    }
-
-                    if let Some(ref selected) = current_selection {
-                        if name == selected {
-                            radio.set_active(true);
-                        }
-                    } else if name == &view.character {
-                        radio.set_active(true);
-                    }
-
-                    radio_box.pack_start(&radio, false, false, 0);
+                    combo.append_text(name);
                 }
 
-                radio_box.show_all();
+                combo.show_all();
                 *cached_installed = view.installed.clone();
+            }
+
+            // Set the active item: preserve current selection if it's still
+            // in the list, otherwise default to the current character.
+            let target = current_selection.as_ref().unwrap_or(&view.character);
+            if let Some(index) = view.installed.iter().position(|name| name == target) {
+                combo.set_active(Some(index as u32));
             }
         }
         // The source picker's choices came with its row, so a redraw only
-        // moves the selection. Setting the active radio writes nothing back:
-        // `refreshing` is up, and GTK emits no `toggled` for a radio that was
-        // already the active one.
-        if let Some(Control::CharacterPicker(radio_box, _)) = controls.get(form::HARNESS_ID) {
-            for child in radio_box.children() {
-                if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
-                    if let Some(label) = radio.label() {
-                        if label == view.harness {
-                            radio.set_active(true);
-                        }
-                    }
-                }
+        // moves the selection. Setting the active combo item writes nothing
+        // back: `refreshing` is up, and GTK emits no `changed` for a combo
+        // that was already at that index.
+        if let Some(Control::ComboBox(combo, options)) = controls.get(form::HARNESS_ID) {
+            if let Some(index) = options.iter().position(|opt| opt == &view.harness) {
+                combo.set_active(Some(index as u32));
             }
         }
         // The registration picker, for the same reason and the same way (#577).
-        if let Some(Control::CharacterPicker(radio_box, _)) = controls.get(form::BYO_HARNESS_ID) {
-            for child in radio_box.children() {
-                if let Ok(radio) = child.downcast::<gtk::RadioButton>() {
-                    if let Some(label) = radio.label() {
-                        if label == view.byo_harness {
-                            radio.set_active(true);
-                        }
-                    }
-                }
+        if let Some(Control::ComboBox(combo, options)) = controls.get(form::BYO_HARNESS_ID) {
+            if let Some(index) = options.iter().position(|opt| opt == &view.byo_harness) {
+                combo.set_active(Some(index as u32));
             }
         }
         if let Some(Control::List(list_box, dismiss_label)) = controls.get(form::INSTANCES_ID) {
