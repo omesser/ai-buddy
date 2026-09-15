@@ -2987,27 +2987,22 @@ mod tests {
     }
 
     /// The Advanced rows, in the order a user reads them: pick the Harness,
-    /// copy what the box holds, do what the words under it say. #577.
+    /// copy what the box holds, do what the words under it say. After gate 5
+    /// fix, always emits 6 rows (token field + Copy always present, hidden
+    /// via platform refresh when empty). #577.
     #[test]
     fn the_byo_section_picks_a_harness_then_shows_the_snippet() {
-        let data_dir = ai_buddy_core::memory::data_dir();
-        let settings_file = crate::settings::settings_path(&data_dir);
-        let settings = crate::settings::Settings::load(&settings_file);
-        let harness = crate::settings::byo_harness_in_force(&settings);
-        let (_snippet, _steps, token) = crate::settings::byo_rows(&harness);
-        let has_token = !token.is_empty();
-
         let description = describe();
         let section = description
             .sections()
             .find(|s| s.heading == BYO_HEADING)
             .expect("the Harness registration section");
 
-        let expected_len = if has_token { 6 } else { 4 };
+        // Gate 5 fix: always 6 rows for all harnesses
         assert_eq!(
             section.rows.len(),
-            expected_len,
-            "harness {harness:?} should have {expected_len} rows"
+            6,
+            "BYO section always emits 6 rows (gate 5 fix)"
         );
 
         assert!(matches!(
@@ -3027,37 +3022,22 @@ mod tests {
                     [CompositeControl::Button { id, frozen: false, .. }] if id == BYO_COPY_ID
                 )
         ));
-
-        if has_token {
-            assert!(matches!(
-                section.rows[3],
-                FormRow::InspectBlock { ref id, .. } if id == BYO_TOKEN_ID
-            ));
-            assert!(matches!(
-                section.rows[4],
-                FormRow::Composite { ref controls, .. }
-                    if matches!(
-                        controls.as_slice(),
-                        [CompositeControl::Button { id, frozen: false, .. }] if id == BYO_COPY_TOKEN_ID
-                    )
-            ));
-            assert!(matches!(
-                section.rows[5],
-                FormRow::InspectBlock { ref id, .. } if id == BYO_STEPS_ID
-            ));
-        } else {
-            assert!(matches!(
-                section.rows[3],
-                FormRow::InspectBlock { ref id, .. } if id == BYO_STEPS_ID
-            ));
-            assert!(
-                !section.rows.iter().any(|row| matches!(
-                    row,
-                    FormRow::InspectBlock { id, .. } if id == BYO_TOKEN_ID
-                )),
-                "token row should not be present for non-Hermes harnesses"
-            );
-        }
+        assert!(matches!(
+            section.rows[3],
+            FormRow::InspectBlock { ref id, .. } if id == BYO_TOKEN_ID
+        ));
+        assert!(matches!(
+            section.rows[4],
+            FormRow::Composite { ref controls, .. }
+                if matches!(
+                    controls.as_slice(),
+                    [CompositeControl::Button { id, frozen: false, .. }] if id == BYO_COPY_TOKEN_ID
+                )
+        ));
+        assert!(matches!(
+            section.rows[5],
+            FormRow::InspectBlock { ref id, .. } if id == BYO_STEPS_ID
+        ));
     }
 
     #[test]
