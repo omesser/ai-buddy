@@ -35,6 +35,8 @@ pub enum MenuAction {
     ToggleFullscreenHide,
     /// Open Memory in the user's editor.
     OpenMemory,
+    /// Open the Action Log in the user's editor. The log's only reader.
+    OpenActionLog,
     /// Open the settings window. Tray and sprite both reach it this way.
     OpenSettings,
     /// Open the Chat surface. The same action a Summon performs.
@@ -120,6 +122,9 @@ const DIRECTOR_ID: &str = "director";
 
 /// The id of the Memory row.
 const MEMORY_ID: &str = "memory";
+
+/// The id of the Action Log row.
+const ACTION_LOG_ID: &str = "action-log";
 
 /// The id of the Settings row, and of Hotkey… which opens the same window.
 const SETTINGS_ID: &str = "settings";
@@ -281,6 +286,13 @@ pub fn describe(snapshot: MenuSnapshot<'_>) -> MenuDescription {
         enabled: true,
     });
     actions.insert(MEMORY_ID.to_string(), MenuAction::OpenMemory);
+
+    entries.push(MenuEntry::Item {
+        id: ACTION_LOG_ID.to_string(),
+        label: "Action Log…".to_string(),
+        enabled: true,
+    });
+    actions.insert(ACTION_LOG_ID.to_string(), MenuAction::OpenActionLog);
 
     entries.push(MenuEntry::Item {
         id: SETTINGS_ID.to_string(),
@@ -807,6 +819,26 @@ mod tests {
                 label: "Memory…".to_string(),
                 enabled: true,
             })
+        );
+    }
+
+    /// #687: every reply the buddy gave is already in `action-log.jsonl`, and
+    /// nothing in the app opened it. This row is the whole reader.
+    #[test]
+    fn the_action_log_is_reachable() {
+        let description = describe(snapshot(&[], "bmo", false));
+
+        assert_eq!(
+            entry_with_id(&description, "action-log"),
+            Some(&MenuEntry::Item {
+                id: "action-log".to_string(),
+                label: "Action Log…".to_string(),
+                enabled: true,
+            })
+        );
+        assert_eq!(
+            description.actions.get("action-log"),
+            Some(&MenuAction::OpenActionLog)
         );
     }
 
