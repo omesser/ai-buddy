@@ -1,0 +1,340 @@
+../../src/bubble.js(9,32): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/bubble.js(20,26): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/bubble.js(20,32): error TS7006: Parameter 'maxWidth' implicitly has an 'any' type.
+../../src/bubble.js(20,42): error TS7006: Parameter 'measureFn' implicitly has an 'any' type.
+../../src/bubble.js(83,37): error TS7006: Parameter 'io' implicitly has an 'any' type.
+../../src/bubble.js(84,37): error TS7006: Parameter 'fn' implicitly has an 'any' type.
+../../src/bubble.js(84,41): error TS7006: Parameter 'ms' implicitly has an 'any' type.
+../../src/bubble.js(85,33): error TS7006: Parameter 'id' implicitly has an 'any' type.
+../../src/bubble.js(87,7): error TS7034: Variable 'pendingDialogue' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/bubble.js(88,7): error TS7034: Variable 'speechTimer' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/bubble.js(90,7): error TS7034: Variable 'graceTimer' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/bubble.js(91,7): error TS7034: Variable 'minHoldTimer' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/bubble.js(96,9): error TS7005: Variable 'graceTimer' implicitly has an 'any' type.
+../../src/bubble.js(97,14): error TS7005: Variable 'graceTimer' implicitly has an 'any' type.
+../../src/bubble.js(100,9): error TS7005: Variable 'minHoldTimer' implicitly has an 'any' type.
+../../src/bubble.js(101,14): error TS7005: Variable 'minHoldTimer' implicitly has an 'any' type.
+../../src/bubble.js(125,11): error TS7006: Parameter 'placement' implicitly has an 'any' type.
+../../src/bubble.js(130,11): error TS7006: Parameter 'placement' implicitly has an 'any' type.
+../../src/bubble.js(131,24): error TS7005: Variable 'pendingDialogue' implicitly has an 'any' type.
+../../src/bubble.js(138,13): error TS7005: Variable 'speechTimer' implicitly has an 'any' type.
+../../src/bubble.js(138,42): error TS7005: Variable 'speechTimer' implicitly has an 'any' type.
+../../src/bubble.js(146,27): error TS7005: Variable 'graceTimer' implicitly has an 'any' type.
+../../src/bubble.js(152,31): error TS7005: Variable 'graceTimer' implicitly has an 'any' type.
+../../src/bubble.js(155,18): error TS7005: Variable 'graceTimer' implicitly has an 'any' type.
+../../src/bubble.js(156,16): error TS7005: Variable 'graceTimer' implicitly has an 'any' type.
+../../src/bubble.js(158,35): error TS7005: Variable 'minHoldTimer' implicitly has an 'any' type.
+../../src/bubble.js(166,11): error TS7005: Variable 'speechTimer' implicitly has an 'any' type.
+../../src/bubble.js(167,16): error TS7005: Variable 'speechTimer' implicitly has an 'any' type.
+../../src/bubble.js(180,29): error TS7006: Parameter 'spriteRect' implicitly has an 'any' type.
+../../src/bubble.js(180,41): error TS7006: Parameter 'bubbleSize' implicitly has an 'any' type.
+../../src/bubble.js(180,53): error TS7006: Parameter 'displayBounds' implicitly has an 'any' type.
+../../src/bubble.js(211,28): error TS7006: Parameter 'placement' implicitly has an 'any' type.
+../../src/chat-ask.js(56,15): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/chat-ask.js(63,16): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/chat-ask.js(63,22): error TS7006: Parameter 'limit' implicitly has an 'any' type.
+../../src/chat-ask.js(68,16): error TS7006: Parameter 'list' implicitly has an 'any' type.
+../../src/chat-ask.js(68,22): error TS7006: Parameter 'keep' implicitly has an 'any' type.
+../../src/chat-ask.js(68,28): error TS7006: Parameter 'noun' implicitly has an 'any' type.
+../../src/chat-ask.js(78,24): error TS7006: Parameter 'input' implicitly has an 'any' type.
+../../src/chat-ask.js(92,25): error TS7006: Parameter 'ask' implicitly has an 'any' type.
+../../src/chat-ask.js(105,11): error TS7006: Parameter 'where' implicitly has an 'any' type.
+../../src/chat-placeholder.js(5,37): error TS7006: Parameter 'opening' implicitly has an 'any' type.
+../../src/chat-settle.js(8,9): error TS7034: Variable 'waiting' implicitly has type 'any[]' in some locations where its type cannot be determined.
+../../src/chat-settle.js(17,10): error TS7006: Parameter 'turn' implicitly has an 'any' type.
+../../src/chat-settle.js(18,18): error TS7005: Variable 'waiting' implicitly has an 'any[]' type.
+../../src/chat-settle.js(20,9): error TS7005: Variable 'waiting' implicitly has an 'any[]' type.
+../../src/chat-settle.js(25,14): error TS7005: Variable 'waiting' implicitly has an 'any[]' type.
+../../src/chat-settle.js(32,12): error TS7006: Parameter 'payload' implicitly has an 'any' type.
+../../src/chat-settle.js(33,20): error TS7005: Variable 'waiting' implicitly has an 'any[]' type.
+../../src/chat-settle.js(38,32): error TS7005: Variable 'waiting' implicitly has an 'any[]' type.
+../../src/chat-stamp.js(20,15): error TS7006: Parameter 'n' implicitly has an 'any' type.
+../../src/chat-stamp.js(24,18): error TS7006: Parameter 'at' implicitly has an 'any' type.
+../../src/chat-stamp.js(28,19): error TS7006: Parameter 'at' implicitly has an 'any' type.
+../../src/chat-stamp.js(32,23): error TS7006: Parameter 'a' implicitly has an 'any' type.
+../../src/chat-stamp.js(32,26): error TS7006: Parameter 'b' implicitly has an 'any' type.
+../../src/chat-stamp.js(45,27): error TS7006: Parameter 'at' implicitly has an 'any' type.
+../../src/chat-stamp.js(45,31): error TS7006: Parameter 'previousAt' implicitly has an 'any' type.
+../../src/chat-status.js(15,27): error TS7006: Parameter 'ms' implicitly has an 'any' type.
+../../src/chat-status.js(32,29): error TS7006: Parameter 'status' implicitly has an 'any' type.
+../../src/chat-status.js(32,37): error TS7006: Parameter 'msLeft' implicitly has an 'any' type.
+../../src/chat-status.js(52,29): error TS7006: Parameter 'status' implicitly has an 'any' type.
+../../src/chat-status.js(52,37): error TS7006: Parameter 'msLeft' implicitly has an 'any' type.
+../../src/chat-status.js(82,27): error TS7006: Parameter 'status' implicitly has an 'any' type.
+../../src/chat-status.js(108,27): error TS7006: Parameter 'behavior' implicitly has an 'any' type.
+../../src/chat-status.js(117,28): error TS7006: Parameter 'animation' implicitly has an 'any' type.
+../../src/chat-status.js(126,28): error TS7006: Parameter 'primitive' implicitly has an 'any' type.
+../../src/chat-status.js(135,27): error TS7006: Parameter 'happened' implicitly has an 'any' type.
+../../src/chat-status.js(149,10): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ poked: string; summoned: string; thrown: string; grabbed: string; dropped: string; "spoken to": string; }'.
+../../src/chat-status.js(154,20): error TS7006: Parameter 'raw' implicitly has an 'any' type.
+../../src/chat-status.js(176,26): error TS7006: Parameter 'opening' implicitly has an 'any' type.
+../../src/chat-strip.js(14,29): error TS7006: Parameter 'show' implicitly has an 'any' type.
+../../src/chat-strip.js(23,14): error TS7006: Parameter 'latest' implicitly has an 'any' type.
+../../src/chat.js(22,27): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/chat.js(23,27): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/chat.js(25,21): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/chat.js(63,5): error TS7034: Variable 'previousAt' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/chat.js(69,5): error TS7034: Variable 'status' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/chat.js(70,5): error TS7034: Variable 'wakeAt' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/chat.js(73,16): error TS7005: Variable 'wakeAt' implicitly has an 'any' type.
+../../src/chat.js(73,53): error TS7005: Variable 'wakeAt' implicitly has an 'any' type.
+../../src/chat.js(74,29): error TS7005: Variable 'status' implicitly has an 'any' type.
+../../src/chat.js(76,5): error TS18047: 'node' is possibly 'null'.
+../../src/chat.js(76,24): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ behavior: any; primitive: any; animation: any; state: any; facing: string; director: string; happened: any; }'.
+  No index signature with a parameter of type 'string' was found on type '{ behavior: any; primitive: any; animation: any; state: any; facing: string; director: string; happened: any; }'.
+../../src/chat.js(78,3): error TS18047: 'plainEl' is possibly 'null'.
+../../src/chat.js(78,37): error TS7005: Variable 'status' implicitly has an 'any' type.
+../../src/chat.js(86,13): error TS7006: Parameter 'cls' implicitly has an 'any' type.
+../../src/chat.js(86,18): error TS7006: Parameter 'tag' implicitly has an 'any' type.
+../../src/chat.js(92,14): error TS7006: Parameter 'node' implicitly has an 'any' type.
+../../src/chat.js(93,3): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(94,3): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(94,19): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(98,15): error TS7006: Parameter 'at' implicitly has an 'any' type.
+../../src/chat.js(100,36): error TS7005: Variable 'previousAt' implicitly has an 'any' type.
+../../src/chat.js(109,15): error TS7006: Parameter 'who' implicitly has an 'any' type.
+../../src/chat.js(109,20): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/chat.js(109,26): error TS7006: Parameter 'cls' implicitly has an 'any' type.
+../../src/chat.js(109,31): error TS7006: Parameter 'at' implicitly has an 'any' type.
+../../src/chat.js(139,18): error TS7006: Parameter 'row' implicitly has an 'any' type.
+../../src/chat.js(139,23): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/chat.js(141,3): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(141,19): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(144,18): error TS7006: Parameter 'row' implicitly has an 'any' type.
+../../src/chat.js(158,28): error TS7006: Parameter 'line' implicitly has an 'any' type.
+../../src/chat.js(159,3): error TS18047: 'thought' is possibly 'null'.
+../../src/chat.js(160,3): error TS18047: 'thought' is possibly 'null'.
+../../src/chat.js(163,15): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/chat.js(179,1): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(180,16): error TS18047: 'event.target' is possibly 'null'.
+../../src/chat.js(180,29): error TS2339: Property 'closest' does not exist on type 'EventTarget'.
+../../src/chat.js(185,46): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(204,17): error TS7006: Parameter 'request' implicitly has an 'any' type.
+../../src/chat.js(204,26): error TS7006: Parameter 'option' implicitly has an 'any' type.
+../../src/chat.js(227,16): error TS7006: Parameter 'ask' implicitly has an 'any' type.
+../../src/chat.js(250,87): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(271,19): error TS7006: Parameter 'opening' implicitly has an 'any' type.
+../../src/chat.js(276,3): error TS18047: 'empty' is possibly 'null'.
+../../src/chat.js(277,3): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(277,8): error TS2339: Property 'disabled' does not exist on type 'HTMLElement'.
+../../src/chat.js(278,3): error TS18047: 'send' is possibly 'null'.
+../../src/chat.js(278,8): error TS2339: Property 'disabled' does not exist on type 'HTMLElement'.
+../../src/chat.js(279,3): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(279,8): error TS2339: Property 'placeholder' does not exist on type 'HTMLElement'.
+../../src/chat.js(287,3): error TS18047: 'landing' is possibly 'null'.
+../../src/chat.js(288,3): error TS18047: 'httpEmpty' is possibly 'null'.
+../../src/chat.js(289,3): error TS18047: 'httpOff' is possibly 'null'.
+../../src/chat.js(299,7): error TS18047: 'httpEmpty' is possibly 'null'.
+../../src/chat.js(301,7): error TS18047: 'httpOff' is possibly 'null'.
+../../src/chat.js(305,5): error TS18047: 'landing' is possibly 'null'.
+../../src/chat.js(322,27): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ claude: string; codex: string; grok: string; opencode: string; hermes: string; pi: string; }'.
+../../src/chat.js(323,7): error TS18047: 'title' is possibly 'null'.
+../../src/chat.js(324,7): error TS18047: 'lede' is possibly 'null'.
+../../src/chat.js(325,7): error TS18047: 'command' is possibly 'null'.
+../../src/chat.js(326,7): error TS18047: 'command' is possibly 'null'.
+../../src/chat.js(327,7): error TS18047: 'hint' is possibly 'null'.
+../../src/chat.js(328,7): error TS18047: 'hint' is possibly 'null'.
+../../src/chat.js(331,7): error TS18047: 'title' is possibly 'null'.
+../../src/chat.js(332,7): error TS18047: 'lede' is possibly 'null'.
+../../src/chat.js(333,7): error TS18047: 'command' is possibly 'null'.
+../../src/chat.js(334,7): error TS18047: 'hint' is possibly 'null'.
+../../src/chat.js(337,7): error TS18047: 'title' is possibly 'null'.
+../../src/chat.js(338,7): error TS18047: 'lede' is possibly 'null'.
+../../src/chat.js(339,7): error TS18047: 'command' is possibly 'null'.
+../../src/chat.js(340,7): error TS18047: 'hint' is possibly 'null'.
+../../src/chat.js(353,25): error TS2339: Property 'dataset' does not exist on type 'Element'.
+../../src/chat.js(354,19): error TS2531: Object is possibly 'null'.
+../../src/chat.js(361,14): error TS7006: Parameter 'login' implicitly has an 'any' type.
+../../src/chat.js(366,15): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(377,36): error TS7006: Parameter 'err' implicitly has an 'any' type.
+../../src/chat.js(387,18): error TS7006: Parameter 'name' implicitly has an 'any' type.
+../../src/chat.js(389,3): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(390,3): error TS18047: 'composer' is possibly 'null'.
+../../src/chat.js(391,3): error TS18047: 'promptTab' is possibly 'null'.
+../../src/chat.js(396,41): error TS2345: Argument of type 'string | boolean' is not assignable to parameter of type 'string'.
+  Type 'boolean' is not assignable to type 'string'.
+../../src/chat.js(397,5): error TS18047: 'tab' is possibly 'null'.
+../../src/chat.js(400,5): error TS18047: 'promptText' is possibly 'null'.
+../../src/chat.js(404,1): error TS2531: Object is possibly 'null'.
+../../src/chat.js(405,1): error TS2531: Object is possibly 'null'.
+../../src/chat.js(416,23): error TS7006: Parameter 'asking' implicitly has an 'any' type.
+../../src/chat.js(417,3): error TS18047: 'promptSave' is possibly 'null'.
+../../src/chat.js(418,3): error TS18047: 'promptConfirm' is possibly 'null'.
+../../src/chat.js(419,3): error TS18047: 'promptCancel' is possibly 'null'.
+../../src/chat.js(422,21): error TS7006: Parameter 'opening' implicitly has an 'any' type.
+../../src/chat.js(425,3): error TS2531: Object is possibly 'null'.
+../../src/chat.js(428,3): error TS2531: Object is possibly 'null'.
+../../src/chat.js(429,7): error TS18047: 'promptText' is possibly 'null'.
+../../src/chat.js(429,18): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(430,5): error TS18047: 'promptText' is possibly 'null'.
+../../src/chat.js(430,16): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(435,1): error TS18047: 'promptSave' is possibly 'null'.
+../../src/chat.js(436,3): error TS18047: 'promptSaid' is possibly 'null'.
+../../src/chat.js(440,1): error TS18047: 'promptCancel' is possibly 'null'.
+../../src/chat.js(442,1): error TS18047: 'promptConfirm' is possibly 'null'.
+../../src/chat.js(447,43): error TS18047: 'promptText' is possibly 'null'.
+../../src/chat.js(447,54): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(449,21): error TS18047: 'promptText' is possibly 'null'.
+../../src/chat.js(449,32): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(450,7): error TS18047: 'promptText' is possibly 'null'.
+../../src/chat.js(450,18): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(451,7): error TS18047: 'promptSaid' is possibly 'null'.
+../../src/chat.js(455,13): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(456,7): error TS18047: 'promptSaid' is possibly 'null'.
+../../src/chat.js(460,18): error TS7006: Parameter 'opening' implicitly has an 'any' type.
+../../src/chat.js(462,3): error TS2531: Object is possibly 'null'.
+../../src/chat.js(463,3): error TS2531: Object is possibly 'null'.
+../../src/chat.js(467,3): error TS2531: Object is possibly 'null'.
+../../src/chat.js(474,8): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(474,13): error TS2339: Property 'disabled' does not exist on type 'HTMLElement'.
+../../src/chat.js(475,5): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(475,10): error TS2339: Property 'placeholder' does not exist on type 'HTMLElement'.
+../../src/chat.js(483,1): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(489,3): error TS18047: 'composer' is possibly 'null'.
+../../src/chat.js(489,12): error TS2339: Property 'requestSubmit' does not exist on type 'HTMLElement'.
+../../src/chat.js(492,1): error TS18047: 'composer' is possibly 'null'.
+../../src/chat.js(494,16): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(494,21): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(503,12): error TS7006: Parameter 'opening' implicitly has an 'any' type.
+../../src/chat.js(512,7): error TS18047: 'line' is possibly 'null'.
+../../src/chat.js(512,12): error TS2339: Property 'value' does not exist on type 'HTMLElement'.
+../../src/chat.js(516,12): error TS2339: Property 'you' does not exist on type '{ alreadyHasSpeechAhead: boolean; }'.
+../../src/chat.js(517,12): error TS2339: Property 'them' does not exist on type '{ alreadyHasSpeechAhead: boolean; }'.
+../../src/chat.js(518,61): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(523,13): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(531,15): error TS7006: Parameter 'turn' implicitly has an 'any' type.
+../../src/chat.js(549,21): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(553,3): error TS18047: 'log' is possibly 'null'.
+../../src/chat.js(553,23): error TS2345: Argument of type 'HTMLElement | null' is not assignable to parameter of type 'string | Node'.
+  Type 'null' is not assignable to type 'string | Node'.
+../../src/chat.js(561,3): error TS2304: Cannot find name 'loginSaid'.
+../../src/chat.js(571,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(634,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(642,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(650,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(658,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(669,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(680,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/chat.js(691,45): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/chat.js(699,3): error TS18047: 'line' is possibly 'null'.
+../../src/cue.js(21,5): error TS7034: Variable 'context' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/cue.js(28,20): error TS7006: Parameter 'why' implicitly has an 'any' type.
+../../src/cue.js(37,10): error TS7005: Variable 'context' implicitly has an 'any' type.
+../../src/cue.js(38,49): error TS2551: Property 'webkitAudioContext' does not exist on type 'Window & typeof globalThis'. Did you mean 'AudioContext'?
+../../src/cue.js(53,26): error TS2339: Property 'message' does not exist on type '{}'.
+../../src/cue.js(53,40): error TS2339: Property 'message' does not exist on type '{}'.
+../../src/cue.js(79,3): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(80,20): error TS7022: 'from' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+../../src/cue.js(80,20): error TS7031: Binding element 'from' implicitly has an 'any' type.
+../../src/cue.js(111,10): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(112,12): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(116,10): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(117,83): error TS2322: Type 'number' is not assignable to type 'null | undefined'.
+../../src/cue.js(118,83): error TS2322: Type 'number' is not assignable to type 'null | undefined'.
+../../src/cue.js(120,12): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(121,10): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(122,11): error TS7006: Parameter 'v' implicitly has an 'any' type.
+../../src/cue.js(125,13): error TS7006: Parameter 'cls' implicitly has an 'any' type.
+../../src/cue.js(125,18): error TS7006: Parameter 'x' implicitly has an 'any' type.
+../../src/cue.js(125,21): error TS7006: Parameter 'y' implicitly has an 'any' type.
+../../src/cue.js(133,15): error TS7006: Parameter 'node' implicitly has an 'any' type.
+../../src/cue.js(133,21): error TS7006: Parameter 'child' implicitly has an 'any' type.
+../../src/cue.js(139,30): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(143,8): error TS7006: Parameter 'stage' implicitly has an 'any' type.
+../../src/cue.js(143,15): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(149,10): error TS7006: Parameter 'stage' implicitly has an 'any' type.
+../../src/cue.js(149,17): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(157,8): error TS7006: Parameter 'stage' implicitly has an 'any' type.
+../../src/cue.js(157,15): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(168,19): error TS7006: Parameter 'p' implicitly has an 'any' type.
+../../src/cue.js(169,19): error TS7006: Parameter 'now' implicitly has an 'any' type.
+../../src/cue.js(185,10): error TS7006: Parameter 'stage' implicitly has an 'any' type.
+../../src/cue.js(185,17): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(198,8): error TS7006: Parameter 'stage' implicitly has an 'any' type.
+../../src/cue.js(198,15): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(204,9): error TS7006: Parameter 'stage' implicitly has an 'any' type.
+../../src/cue.js(204,16): error TS7006: Parameter 'c' implicitly has an 'any' type.
+../../src/cue.js(216,27): error TS7006: Parameter 'spriteRect' implicitly has an 'any' type.
+../../src/cue.js(228,23): error TS7006: Parameter 'layer' implicitly has an 'any' type.
+../../src/cue.js(228,30): error TS7006: Parameter 'anchorOf' implicitly has an 'any' type.
+../../src/cue.js(230,10): error TS7006: Parameter 'name' implicitly has an 'any' type.
+../../src/cue.js(231,21): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ poke(stage: any, c: any): HTMLDivElement[]; summon(stage: any, c: any): HTMLDivElement[]; menu(stage: any, c: any): HTMLDivElement[]; pickup(stage: any, c: any): HTMLDivElement[]; drop(stage: any, c: any): HTMLDivElement[]; throw(stage: any, c: any): HTMLDivElement[]; }'.
+../../src/cue.js(232,35): error TS7006: Parameter 'node' implicitly has an 'any' type.
+../../src/cue.js(234,11): error TS7006: Parameter 'name' implicitly has an 'any' type.
+../../src/cue.js(241,9): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{ poke: (v: any) => void; summon: (v: any) => void; menu: (v: any) => void; pickup: (v: any) => void; drop: (v: any) => void; throw: (v: any) => void; }'.
+../../src/cue.js(244,30): error TS2339: Property 'message' does not exist on type '{}'.
+../../src/cue.js(244,44): error TS2339: Property 'message' does not exist on type '{}'.
+../../src/cue.js(260,34): error TS7006: Parameter 'io' implicitly has an 'any' type.
+../../src/cue.js(261,37): error TS7006: Parameter 'fn' implicitly has an 'any' type.
+../../src/cue.js(261,41): error TS7006: Parameter 'ms' implicitly has an 'any' type.
+../../src/cue.js(262,33): error TS7006: Parameter 'id' implicitly has an 'any' type.
+../../src/cue.js(266,7): error TS7034: Variable 'poke' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/cue.js(269,9): error TS7005: Variable 'poke' implicitly has an 'any' type.
+../../src/cue.js(270,12): error TS7005: Variable 'poke' implicitly has an 'any' type.
+../../src/cue.js(278,11): error TS7006: Parameter 'placement' implicitly has an 'any' type.
+../../src/cue.js(284,32): error TS7005: Variable 'poke' implicitly has an 'any' type.
+../../src/main.js(47,21): error TS7006: Parameter 'id' implicitly has an 'any' type.
+../../src/main.js(74,20): error TS7006: Parameter 'event' implicitly has an 'any' type.
+../../src/main.js(79,12): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(79,70): error TS7006: Parameter 'err' implicitly has an 'any' type.
+../../src/main.js(98,3): error TS18047: 'stage' is possibly 'null'.
+../../src/main.js(142,10): error TS18047: 'view.latest' is possibly 'null'.
+../../src/main.js(143,10): error TS18047: 'view.latest' is possibly 'null'.
+../../src/main.js(144,14): error TS18047: 'view.latest' is possibly 'null'.
+../../src/main.js(145,15): error TS18047: 'view.latest' is possibly 'null'.
+../../src/main.js(159,17): error TS7006: Parameter 'mode' implicitly has an 'any' type.
+../../src/main.js(173,8): error TS2339: Property 'cues' does not exist on type '{ sprite: HTMLImageElement; bubble: HTMLDivElement; bubbleContent: HTMLDivElement; more: HTMLButtonElement; ... 5 more ...; character: null; }'.
+../../src/main.js(175,8): error TS2551: Property 'bubbles' does not exist on type '{ sprite: HTMLImageElement; bubble: HTMLDivElement; bubbleContent: HTMLDivElement; more: HTMLButtonElement; ... 5 more ...; character: null; }'. Did you mean 'bubble'?
+../../src/main.js(176,16): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/main.js(176,22): error TS7006: Parameter 'cutOff' implicitly has an 'any' type.
+../../src/main.js(179,7): error TS18047: 'ctx' is possibly 'null'.
+../../src/main.js(180,56): error TS18047: 'ctx' is possibly 'null'.
+../../src/main.js(201,25): error TS7006: Parameter 'view' implicitly has an 'any' type.
+../../src/main.js(201,31): error TS7006: Parameter 'spriteRect' implicitly has an 'any' type.
+../../src/main.js(201,43): error TS7006: Parameter 'displayBounds' implicitly has an 'any' type.
+../../src/main.js(253,10): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(253,70): error TS7006: Parameter 'err' implicitly has an 'any' type.
+../../src/main.js(261,21): error TS7006: Parameter 'id' implicitly has an 'any' type.
+../../src/main.js(271,19): error TS7006: Parameter 'view' implicitly has an 'any' type.
+../../src/main.js(271,25): error TS7006: Parameter 'now' implicitly has an 'any' type.
+../../src/main.js(323,15): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{}'.
+../../src/main.js(342,15): error TS7006: Parameter 'now' implicitly has an 'any' type.
+../../src/main.js(353,30): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(359,36): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(373,26): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(375,16): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(377,8): error TS7031: Binding element 'payload' implicitly has an 'any' type.
+../../src/main.js(380,32): error TS7006: Parameter 'sprite' implicitly has an 'any' type.
+../../src/main.js(380,40): error TS7006: Parameter 'index' implicitly has an 'any' type.
+../../src/main.js(453,21): error TS7006: Parameter 'command' implicitly has an 'any' type.
+../../src/main.js(455,9): error TS7034: Variable 'queued' implicitly has type 'any' in some locations where its type cannot be determined.
+../../src/main.js(456,19): error TS7006: Parameter 'down' implicitly has an 'any' type.
+../../src/main.js(458,14): error TS2339: Property '__TAURI__' does not exist on type 'Window & typeof globalThis'.
+../../src/main.js(460,17): error TS7006: Parameter 'err' implicitly has an 'any' type.
+../../src/main.js(465,15): error TS7005: Variable 'queued' implicitly has an 'any' type.
+../../src/main.js(466,26): error TS7005: Variable 'queued' implicitly has an 'any' type.
+../../src/main.js(472,13): error TS7006: Parameter 'down' implicitly has an 'any' type.
+../../src/main.js(489,7): error TS18047: 'event.target' is possibly 'null'.
+../../src/main.js(489,20): error TS2339: Property 'setPointerCapture' does not exist on type 'EventTarget'.
+../../src/markdown.js(17,10): error TS2724: '"./vendor/marked.esm.js"' has no exported member named 'Lexer'. Did you mean 'lexer'?
+../../src/markdown.js(35,17): error TS7006: Parameter 'href' implicitly has an 'any' type.
+../../src/markdown.js(45,19): error TS7006: Parameter 'token' implicitly has an 'any' type.
+../../src/markdown.js(45,26): error TS7006: Parameter 'parent' implicitly has an 'any' type.
+../../src/markdown.js(45,34): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+../../src/markdown.js(49,17): error TS7006: Parameter 'tokens' implicitly has an 'any' type.
+../../src/markdown.js(49,25): error TS7006: Parameter 'parent' implicitly has an 'any' type.
+../../src/markdown.js(49,33): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+../../src/markdown.js(90,15): error TS7006: Parameter 'tag' implicitly has an 'any' type.
+../../src/markdown.js(90,20): error TS7006: Parameter 'token' implicitly has an 'any' type.
+../../src/markdown.js(90,27): error TS7006: Parameter 'parent' implicitly has an 'any' type.
+../../src/markdown.js(90,35): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+../../src/markdown.js(96,14): error TS7006: Parameter 'cells' implicitly has an 'any' type.
+../../src/markdown.js(96,21): error TS7006: Parameter 'tag' implicitly has an 'any' type.
+../../src/markdown.js(96,26): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+../../src/markdown.js(112,17): error TS7006: Parameter 'tokens' implicitly has an 'any' type.
+../../src/markdown.js(112,25): error TS7006: Parameter 'parent' implicitly has an 'any' type.
+../../src/markdown.js(112,33): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+../../src/markdown.js(221,27): error TS7006: Parameter 'body' implicitly has an 'any' type.
+../../src/markdown.js(221,33): error TS7006: Parameter 'text' implicitly has an 'any' type.
+../../src/markdown.js(242,29): error TS7006: Parameter 'body' implicitly has an 'any' type.
+../../src/markdown.js(242,35): error TS7006: Parameter 'chunk' implicitly has an 'any' type.
