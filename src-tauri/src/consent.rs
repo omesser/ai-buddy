@@ -120,7 +120,6 @@ mod windows {
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
     };
-    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 
     pub fn process_list_name() -> String {
         if packaged() {
@@ -188,8 +187,7 @@ mod windows {
     }
 
     fn parent_chain_name() -> Option<String> {
-        // SAFETY: no arguments, no pointers, and a process always has a pid.
-        let current_pid = unsafe { GetCurrentProcessId() };
+        let current_pid = std::process::id();
         let table = Snapshot::processes()?.table();
 
         let mut pid = current_pid;
