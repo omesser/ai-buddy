@@ -17,6 +17,7 @@ import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
+import { appendReply, drawReply } from "./markdown.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -111,8 +112,14 @@ function said(who, text, cls, at) {
   const label = el("who-label");
   label.textContent = who;
   cluster.append(label, when(at));
-  const body = el("said");
-  body.textContent = text;
+  // Only what answered gets its Markdown drawn (#677). The user's own turn
+  // stays the characters they typed: they wrote punctuation, not a document.
+  const body = el(cls === "them" ? "said md" : "said");
+  if (cls === "them") {
+    drawReply(body, text);
+  } else {
+    body.textContent = text;
+  }
   row.append(cluster, body);
   return add(row);
 }
@@ -129,12 +136,8 @@ function opening_answer() {
   return row;
 }
 
-// Inserted before the caret rather than assigned over the line so far: the
-// caret is a child of the same element, and writing textContent would take it
-// out on the first chunk.
 function arrived(row, text) {
-  const body = row.querySelector(".said");
-  body.insertBefore(document.createTextNode(text), body.querySelector(".caret"));
+  appendReply(row.querySelector(".said"), text);
   log.scrollTop = log.scrollHeight;
 }
 
@@ -162,6 +165,28 @@ function note(text) {
   row.append(when(), document.createTextNode(text));
   return add(row);
 }
+
+// A link in a reply opens in the user's browser, not in here.
+//
+// One listener on the log rather than one per link: every reply redraws its
+// whole row as chunks arrive (`appendReply`), so a per-link handler would be
+// attached and dropped over and over, and a link added by the last chunk of a
+// turn would be the one that missed out.
+//
+// `open_link` is what reaches the OS, and the scheme it will accept is decided
+// in Rust — `data-href` here is untrusted text that has already been through
+// `src/markdown.js`'s own allowlist, and neither check trusts the other.
+log.addEventListener("click", (event) => {
+  const link = event.target.closest?.(".md-link[data-href]");
+  if (!link) {
+    return;
+  }
+  const where = link.dataset.href;
+  invoke("open_link", { url: where }).catch((why) => {
+    console.error("chat: that link did not open:", why);
+    note(`That link did not open: ${why}.`);
+  });
+});
 
 // The rows still offering buttons, by request id. One request reaches every
 // open window and only one of them takes the click, so the Shell's settled
