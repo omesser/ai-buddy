@@ -1,0 +1,319 @@
+/* Settings on the Chat surface's tokens. Every colour, radius and font here is
+   a var() from chat-ui.css, with no design block of its own to exempt it, so a
+   second design recolours Settings for free (tests/chat-ui-tokens.test.js).
+
+   Every selector is prefixed `.set-`. The spike's unprefixed `.frozen` and
+   `.row` reached the Chat surface's Prompt box, which is what the prefix is
+   here to make impossible rather than merely avoided. */
+
+.set-page {
+  height: 100vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat-panel);
+  color: var(--chat-ink);
+  font-family: var(--chat-sans);
+}
+
+.set-bar {
+  padding: 10px 18px 6px;
+}
+
+.set-bar h1 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.set-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--chat-rule);
+}
+
+.set-tab {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--chat-radius-tab);
+  background: transparent;
+  color: var(--chat-ink-3);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.set-tab[aria-selected="true"] {
+  border-color: var(--chat-line);
+  background: var(--chat-fill-soft);
+  color: var(--chat-ink);
+}
+
+/* The form scrolls in the log's place. Content-sized, never clipped (#601). */
+.set-form {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 18px 18px;
+}
+
+.set-section {
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--chat-rule);
+}
+
+.set-section:last-child {
+  border-bottom: 0;
+}
+
+.set-section h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.set-comment,
+.set-help {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--chat-ink-2);
+}
+
+.set-help {
+  margin-top: 4px;
+}
+
+/* The muted strip: env override or "not in use" — read as a note, not a field. */
+.set-status {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--chat-line);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--chat-ink-3);
+}
+
+.set-row {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+}
+
+.set-row > label,
+.set-label {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.set-check > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.set-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--chat-accent);
+}
+
+.set-row input[type="text"],
+.set-row input[type="password"],
+.set-row select,
+.set-row textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill);
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.set-row textarea {
+  font-family: var(--chat-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* One dropdown look on every OS, which is the whole #674 conversation. */
+.set-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--chat-ink-3) 50%),
+    linear-gradient(135deg, var(--chat-ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.set-row select option {
+  background: var(--chat-panel);
+  color: var(--chat-ink);
+}
+
+.set-row input::placeholder,
+.set-row textarea::placeholder {
+  color: var(--chat-ink-4);
+}
+
+.set-tab:focus-visible,
+.set-row input:focus-visible,
+.set-row select:focus-visible,
+.set-row textarea:focus-visible,
+.set-row button:focus-visible,
+.set-inspect:focus-visible,
+.set-disclosure summary:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* Frozen reads as frozen: dimmer field, dimmer label, still legible (#625). */
+.set-is-frozen > label,
+.set-is-frozen .set-label {
+  color: var(--chat-ink-3);
+}
+
+.set-row input[readonly],
+.set-row textarea[readonly],
+.set-row select:disabled {
+  background: var(--chat-fill-dim);
+  color: var(--chat-ink-3);
+  border-style: dashed;
+}
+
+.set-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.set-controls select,
+.set-controls input[type="text"] {
+  width: auto;
+  min-width: 220px;
+}
+
+.set-controls button,
+.set-list button {
+  padding: 6px 14px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: transparent;
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.set-controls button[data-id="director_apply"] {
+  border-color: transparent;
+  background: var(--chat-accent);
+  color: var(--chat-accent-ink);
+}
+
+.set-controls button:disabled {
+  color: var(--chat-ink-4);
+  cursor: default;
+}
+
+.set-list {
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--chat-rule);
+  border-radius: var(--chat-radius-control);
+  list-style: none;
+}
+
+.set-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--chat-rule);
+  font-size: 12.5px;
+}
+
+.set-list li:last-child {
+  border-bottom: 0;
+}
+
+.set-list li span {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.set-list button {
+  padding: 2px 10px;
+  border-radius: var(--chat-radius-badge);
+  font-size: 11.5px;
+}
+
+.set-inspect {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--chat-rule);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill-dim);
+  color: var(--chat-ink-2);
+  font-family: var(--chat-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A path is read and copied, never edited, and it wraps rather than truncates:
+   the Memory File's home is long and the middle of it is the part that matters. */
+.set-path {
+  margin: 0;
+  color: var(--chat-ink-2);
+  font-family: var(--chat-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.set-disclosure {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--chat-ink-3);
+}
+
+.set-disclosure summary {
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+
+.set-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.set-disclosure summary::before {
+  content: "▸ ";
+}
+
+.set-disclosure[open] summary::before {
+  content: "▾ ";
+}
+
+.set-disclosure p {
+  margin: 4px 0 0 14px;
+  line-height: 1.45;
+  color: var(--chat-ink-2);
+}
