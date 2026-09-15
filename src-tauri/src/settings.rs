@@ -4371,4 +4371,36 @@ mod tests {
             );
         }
     }
+
+    /// OpenCode does not re-read MCP mid-session; `/reload` is not shipped
+    /// (#6719, #751). After-steps must say restart OpenCode, not run `/reload`.
+    #[test]
+    fn opencode_byo_after_steps_say_restart_not_reload() {
+        let (_, steps, _) = byo_registration("opencode", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            !steps.contains("/reload"),
+            "opencode steps must not mention /reload, got {steps:?}"
+        );
+        assert!(
+            steps.to_lowercase().contains("restart"),
+            "opencode steps must tell user to restart OpenCode, got {steps:?}"
+        );
+    }
+
+    /// Hermes and Pi reload commands must stay unchanged (regression guard).
+    #[test]
+    fn hermes_and_pi_still_have_reload_commands() {
+        let (_, hermes_steps, _) =
+            byo_registration("hermes", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            hermes_steps.contains("/reload-mcp"),
+            "hermes must still mention /reload-mcp, got {hermes_steps:?}"
+        );
+
+        let (_, pi_steps, _) = byo_registration("pi", "http://127.0.0.1:5051/mcp", "beef");
+        assert!(
+            pi_steps.contains("/reload"),
+            "pi must still mention /reload, got {pi_steps:?}"
+        );
+    }
 }
