@@ -22,7 +22,7 @@ This research answers:
 | **Codex** | CLI: `export` + `codex mcp add --bearer-token-env-var`; Alt: config with `http_headers` | **Yes** — `mcpServer/refresh` command | Unknown | CLI `export` + `codex mcp add` (TOML alt) |
 | **Hermes** | CLI: `hermes mcp add --auth header`; Alt: config YAML | **Yes** — `/reload-mcp` | Unknown | CLI `hermes mcp add --auth header` (YAML alt) |
 | **OpenCode** | CLI: `opencode mcp add --header`; Alt: flat JSON `type:remote` + `oauth:false` | **Yes** — `/reload` | Unknown | CLI `opencode mcp add --header` (flat JSON alt) |
-| **Grok** | `grok mcp add` with `--header`, or config TOML | **Yes** — `/mcps` then press `r` | Unknown | CLI `grok mcp add` (defaults to current project) |
+| **Grok** | `grok mcp add` with `--header`, or config TOML | **Yes** — `/mcps` then press `r` | Unknown | CLI `grok mcp add` (default scope: user) |
 | **Pi** | Config: `.mcp.json` or `~/.pi/agent/mcp.json` | **Yes** — `/reload` + `/mcp reconnect` | Unknown | Config snippet + `/reload` |
 
 ### Legend
@@ -242,7 +242,7 @@ grok mcp add ai-buddy "http://127.0.0.1:<port>/mcp" --transport http \
   --header "Authorization: Bearer <token>"
 ```
 
-Instructions: "Run it in a terminal; `grok mcp add` overwrites in place, so re-running after a relaunch is enough. Add `--scope user` if you want it for every project, otherwise it defaults to the current project. Then in your live Grok session, run `/mcps` and press `r` to reload."
+Instructions: "Run it in a terminal; `grok mcp add` overwrites in place, so re-running after a relaunch is enough. Default scope is user (all projects); use `--scope local` for current project only. Then in your live Grok session, run `/mcps` and press `r` to reload."
 
 Config alternative (if preferred):
 ```toml
@@ -363,7 +363,7 @@ This means "restart" is less disruptive than it sounds: the user types the comma
 | Codex | CLI with `export` + `codex mcp add --bearer-token-env-var` | Bash (TOML alt) |
 | Hermes | CLI `hermes mcp add --auth header` (interactive token) | Bash (YAML alt) |
 | OpenCode | CLI `opencode mcp add --header` | Bash (flat JSON alt) |
-| Grok | CLI `grok mcp add` (defaults to project scope) | Bash (TOML alt) |
+| Grok | CLI `grok mcp add` (default scope: user) | Bash (TOML alt) |
 | Pi | Config JSON fragment | JSON |
 
 **Rationale** (per #599 Spec):
