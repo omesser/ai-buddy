@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- Spike: the Settings AI tab as a webview on the Chat surface's tokens.
+     Static. Nothing here is wired to Rust; ai-tab.js is a hand-written snapshot
+     of form::describe() and SettingsView in two states.
+
+     SERVE THIS FROM THE REPOSITORY ROOT, not from this directory. The
+     chat-ui.css link below is relative and reaches up out of spike/, so a
+     server rooted here answers it 404 and the page renders unstyled — which
+     looks like a plain form rather than a broken one, and silently invalidates
+     any judgement about layout or type scale. The first Linux run of #715 was
+     read that way. From the root:
+         python3 -m http.server 8000
+         open http://localhost:8000/spike/settings-webview/index.html -->
+<html lang="en" class="chat-ui-minimal">
+  <head>
+    <meta charset="utf-8" />
+    <title>ai-buddy Settings (spike)</title>
+    <link rel="stylesheet" href="../../src/chat-ui.css" />
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <header class="tb">
+      <h1>Settings</h1>
+      <span class="state" id="state" role="group" aria-label="Snapshot state"></span>
+    </header>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="false">Presence</button>
+      <button class="tab" role="tab" aria-selected="false">Character</button>
+      <button class="tab" role="tab" aria-selected="true">AI</button>
+      <button class="tab" role="tab" aria-selected="false">Privacy</button>
+      <button class="tab" role="tab" aria-selected="false">Development</button>
+    </nav>
+    <main class="form" id="form" role="tabpanel" aria-label="AI"></main>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
