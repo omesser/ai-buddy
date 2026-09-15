@@ -33,20 +33,27 @@ guard let source = CGEventSource(stateID: .combinedSessionState) else {
     exit(1)
 }
 
-func post(_ type: CGEventType) {
+func post(_ type: CGEventType, clickState: Int64) {
     let event = CGEvent(
         mouseEventSource: source,
         mouseType: type,
         mouseCursorPosition: point,
         mouseButton: .left
     )
+    // The gap alone already lands two clicks inside the OS double-click
+    // interval, which is enough for this app's own polling reader. Setting
+    // the click count explicitly is the correct way to tell the window
+    // server (and any AX-based observer) which click in the run this is,
+    // rather than leaving it to infer solely from timing.
+    event?.setIntegerValueField(.mouseEventClickState, value: clickState)
     event?.post(tap: .cghidEventTap)
 }
 
 for i in 0 ..< clicks {
-    post(.leftMouseDown)
+    let clickState = Int64(i + 1)
+    post(.leftMouseDown, clickState: clickState)
     Thread.sleep(forTimeInterval: 0.06)
-    post(.leftMouseUp)
+    post(.leftMouseUp, clickState: clickState)
     if i < clicks - 1 {
         Thread.sleep(forTimeInterval: gap)
     }
