@@ -1,180 +1,260 @@
-# Spike 692: should the webview move from JavaScript to TypeScript?
+# Spike 692: would TypeScript make this webview safer?
 
-Run in a detached worktree at `68e3fe41`. No production code changed. This pull request
-commits the report and the prototypes under `spike/`, and nothing else.
+The issue asks whether to move `src/` from JavaScript to TypeScript. The decision is not
+what a migration would cost to *perform* — a count of compiler errors answers that, and
+the answer is boring. The decision is whether we would be **safer afterwards**, and
+whether the tooling we would take on is worth it.
+
+This report answers those two.
 
 ## Answer
 
-Stay on JavaScript files. Add a type check, not a build.
+**Keep writing `.js`. Do not add a build step.** The evidence for a transition is weak,
+and the tooling price is higher here than in a normal web project.
 
-- Run `tsc --noEmit` over `src/` with JSDoc types (the issue's option 1). It is about
-  30 small fixes, one config file, and one CI step. It already found a crash.
-- Generate the Rust payload types with `ts-rs` from a `cargo test` that fails when the
-  committed copy is stale (the issue's option 2, but generated, not hand-written). It
-  costs six dev-only crates and eighteen attribute lines. A hand-written `.d.ts`
-  would only buy autocomplete.
-- Do not take option 3. Nothing measured here needs a build step, and it would put a
-  `tsc` run in front of every `cargo build` and `cargo test`.
-- Start with `src/settings.js` from #734. It is new, and it reads the largest payload
-  this app has. Retrofit `chat.js` and `main.js` with the 30 fixes; do not rewrite them
-  mid-migration.
+**If we want static analysis anyway — and there is a decent case for it — `tsc --noEmit`
+with `checkJs` is the right tool, used as a checker rather than as a language.** It is a
+lighter dependency than a linter and it catches strictly more. That is option 1 in the
+issue. Option 2 (generated payload types) is cheap and works; it is worth adding when
+something actually reads a large payload. Option 3 (the full port) is the one to refuse.
 
-## What the type check found on the first run
+## 1. Types would have caught none of the bugs this webview has shipped
 
-`tsc --noEmit` with `checkJs` over the twelve modules, `strict` off, implicit `any` and
-null checks off:
+Nineteen commits in this repository's history fix a bug in `src/*.js`. I read every
+diff. Classified by what could have prevented them:
 
-| Class | Count | What it is |
+| | Count | |
 |---|---|---|
-| `window.__TAURI__` untyped | 10 | one global declaration removes all ten |
-| DOM narrowing | 16 | `getElementById` gives `HTMLElement`; `.value`, `.disabled`, `.closest` need a JSDoc cast each |
-| `webkitAudioContext` | 1 | a `/** @type {any} */` on `cue.js:38` |
-| tuple inference | 1 | `chat.js:392`, a `[string, boolean]` array read as `(string \| boolean)[]` |
-| vendor stub artefact | 1 | `markdown.js` imports `Lexer`; the stub below needs that name |
-| **real bug** | **1** | see below |
-| **Total** | **30** | |
+| Needed **type annotations** to catch | **0** | — |
+| Caught by **static analysis without types** | **2** | #652, #738 |
+| Logic, timing, copy, or a missing feature | 17 | no checker sees these |
 
-With `strict` on the count is 337, nearly all "implicitly has an `any` type". That is
-the cost of typing every parameter, and it is not the cheap first step.
+The two:
 
-**The real bug.** `src/chat.js:561` assigns `loginSaid = null` and nothing declares
-`loginSaid`. #563 (`b597885a`) removed the declaration and left this line. In an ES
-module an assignment to an undeclared name throws `ReferenceError`, so the
-`chat-session` handler dies before it writes its "New session — …" note. Every earlier
-line in that handler (clearing the log, the strip, the asks) still runs. Not verified
-live; verified by reading the module semantics and the git history.
+- **#652** (`6f1c112e`) imported `TRUNCATED_MARK` from `bubble.js` after the exporter
+  dropped it. The overlay is a `type=module` page, so one missing binding is a
+  `SyntaxError`, `start()` never runs, and the Character is invisible.
+- **#738** (`b39b37bb`) assigned to an undeclared `loginSaid`. Strict mode makes that a
+  `ReferenceError`, so a session reset cleared the log and then died before its own note.
 
-That became #737 and shipped in #738, with `tests/no-undeclared-assignment.test.js` as a
-guard. Re-run against `main` at `32a8d28d`, the loose config now reports 29: that one
-line is gone and the other 29 are unchanged. The logs in this directory are the original
-run, before the fix.
+Neither needs a type. One is an unresolved import, the other an undeclared name. Both are
+the kind of thing a linter has caught since 2013.
 
-**Vendored code.** `tsc` follows `markdown.js`'s import into `src/vendor/marked.esm.js`
-and reports 273 errors there. `exclude` does not stop it. A nine-line
-`src/vendor/marked.esm.d.ts` beside the vendored file does; `tsc` prefers a `.d.ts` to a
-sibling `.js`. It would be served raw like everything in `src/` and never loaded by a
-browser. The stub is at `marked.esm.d.ts.stub`; copy it into `src/vendor/` to reproduce
-the numbers above.
+The other seventeen are things no checker reads: a thinking bubble painting over speech,
+a bubble drawn on two displays, an audio context that fails on Linux, a permission row
+that led with the tool kind and buried the question. Types do not have opinions about
+those.
 
-## Has boundary drift caused bugs, and would types have caught them?
+**Both static-analysis classes are already guarded.** `tests/overlay-imports.test.js` was
+added *in* the #652 fix commit; `tests/no-undeclared-assignment.test.js` in the #738 one.
+They are hand-rolled approximations of two standard rules, and the second says so in its
+own header: *"it is not a substitute for a real checker."*
 
-**History.** 31 commits changed one of the seven structs the webview listens to
-(`ChatOpening`, `ChatHarness`, `ChatReply`, `ChatStatus`, `PermissionAsk`,
-`SpritePlacement`, `Settled`). 30 of them also changed a `src/*.js` file in the same
-commit. The one that did not (#322) changed internals, not the wire. The shape "Rust
-changed, JavaScript forgot" does not appear in this repo's history.
+### The honest limit of this evidence
 
-**The incidents the coordinator named** are real but a different shape:
+A census of `fix(...)` commits sees only bugs that shipped, were noticed, and were fixed
+under that prefix. Bugs a type checker would have stopped someone from *writing* leave no
+trace anywhere. So "0 of 19" is evidence about shipped defects, not proof that types are
+worthless. It is the best evidence available, and it points one way, but it is not the
+whole truth and should not be quoted as if it were.
 
-- #654 changed `select_harness` from `Result<(), String>` to `Result<String, String>`.
-  A reviewer walked every call site by hand. A type checker would not have flagged
-  anything: JavaScript that ignores a return is fine whether the return is `void` or
-  `string`.
-- #659 and #678: `ChatHarness` (`main.rs:1106`) carries `name`, `login`, `alive`,
-  `session` and no `missing`, so Chat says "not running" where Settings says "not
-  installed". Still on `main`, documented in a comment at `src/chat-status.js:170`. A
-  type checker cannot flag a field that nobody reads because it does not exist. Types
-  say what is there, not what should be.
+## 2. What the checkers actually say about today's code
 
-So the boundary argument is weaker than the issue framed it. What the boundary types do
-catch is the mechanical class: a misread name, wrong case, a renamed or removed field,
-wrong nullability, an unknown event or command name, a wrong argument key. The probe
-in `probe/misread.js` makes six such mistakes on purpose and `tsc` reports all six
-(`tsconfig.probe.json`). Nothing in the history shows that class has bitten yet.
+| Tool | Findings on current `src/` | What they are |
+|---|---|---|
+| `eslint` (`no-undef`, `import/named`, `no-unused-vars`) | **0 errors**, 1 warning | the warning is a real dead variable, `main.js:176` |
+| `tsc --noEmit --checkJs`, loose | **29 errors** | 10 untyped `window.__TAURI__`, 16 DOM casts, 3 one-liners |
+| `tsc --noEmit --checkJs`, `strict` | **337 errors** | almost all "implicitly has an `any` type" |
 
-What did pay on the first run was the plain type check over 2,529 lines of JavaScript
-that no test reaches: the `loginSaid` crash has nothing to do with the boundary.
+The 29 deserve a closer look, because they are the number the issue would have us pay
+down. Twenty-six are ceremony: `getElementById` returns `HTMLElement`, so every `.value`,
+`.disabled` and `.closest` needs a cast that asserts something the code already knew. A
+cast is not a caught bug. It silences the checker and adds a line.
 
-## Can the payload types be generated?
+That is the signal-to-noise problem with the loose config: it reports 29 things and
+roughly 3 of them are about correctness.
 
-Yes, cheaply. `ts-rs-proto/` is a standalone crate that copies the real payload
-shapes and derives `ts_rs::TS` only under `#[cfg(test)]`, so the shipped binary carries
-none of it.
+**Both checkers catch both historical bugs.** Measured by reintroducing each:
 
-- A test writes `generated/payloads.d.ts` when `REFRESH_BINDINGS=1` is set and
-  otherwise compares the committed file to a fresh render. This is the same shape as
-  #729's `both_ai_sources_serialize_to_the_committed_fixtures` in `form.rs:1606`.
-- Renaming `alive` to `missing` in Rust fails the test with the refresh command in the
-  message. Measured.
+```
+eslint  →  'loginSaid' is not defined                          no-undef
+           TRUNCATED_MARK not found in './bubble.js'           import/named
+tsc     →  TS2304: Cannot find name 'loginSaid'.
+           TS2305: Module '"./bubble.js"' has no exported member 'TRUNCATED_MARK'.
+```
+
+So `tsc` is a superset for the classes that have bitten.
+
+## 3. The dependency question, which comes out backwards
+
+Today the repository has **zero npm dependencies**: no `node_modules`, no lockfile, and
+CI installs Node but never runs an install. `package.json` is four lines. Any static
+analysis ends that, so it is worth knowing what each one costs.
+
+| | Packages | Size |
+|---|---|---|
+| `typescript` | **1** (zero transitive dependencies) | 23 MB |
+| `eslint` + `globals` + `eslint-plugin-import` | **194** (34 direct) | 34 MB |
+
+This is the opposite of the usual intuition. The linter is the heavy supply-chain
+commitment; the type checker is one vendor-published package that depends on nothing. If
+we are going to break the zero-dependency position for a checker, `tsc` is the cheaper
+break *and* it catches more.
+
+## 4. The build step is the expensive part, and here it is worse than usual
+
+`frontendDist` is `"../src"`. The files we read are the files we ship. There is no
+frontend build anywhere in this project.
+
+**Verified:** point `frontendDist` at a directory that does not exist and the Rust build
+fails at compile time —
+
+```
+error: proc macro panicked
+    --> src-tauri/src/main.rs:2805:16
+     |
+2805 |         .build(tauri::generate_context!())
+     = help: message: The `frontendDist` configuration is set to `"../dist"`
+             but this path doesn't exist
+```
+
+So under option 3 a built `dist/` is a **compile-time prerequisite for every `cargo
+check`, `cargo build` and `cargo test`** — including pull requests that touch no
+JavaScript at all. Every Rust contributor grows an `npm ci && tsc` step. The spike's
+earlier draft listed this as unverified; it is now measured, and it is the single
+strongest argument against the full port.
+
+Three smaller losses, in descending order of how much they should matter:
+
+- **Tests.** `tests/` is 25 files run by `node --test`. As `.ts` they need Node 22.18+
+  for type stripping. CI's `lts/*` is fine; the Node 20 on this machine fails with
+  `ERR_UNKNOWN_FILE_EXTENSION`.
+- **The vendored renderer.** `src/vendor/marked.esm.js` is byte-for-byte what npm
+  published, and `tests/chat-markdown.test.js:500` pins its sha256 against that. The test
+  would still pass after bundling — it reads the source file — but it would no longer
+  describe what ships. The guarantee quietly stops meaning what it says.
+- **Debugging.** What runs in the webview today is what is on disk. After a build it is
+  `dist/`, and reading a stack trace needs source maps to be right.
+
+None of these is fatal. Together with the compile-time coupling they are the "high price
+in tooling" the issue asks about, and it is real.
+
+## 5. What we would actually gain
+
+Stated fairly, because sections 1 to 4 lean one way:
+
+- **The mechanical class.** A misread field name, wrong case, a renamed field, wrong
+  nullability. `probe/misread.js` makes six such mistakes deliberately and `tsc` reports
+  all six. This class has not bitten yet, but it is the class that gets more likely as
+  the webview grows.
+- **Editor help on payloads.** Autocomplete on `opening.`, `payload.`, `placement.` is a
+  genuine daily improvement, and it does not require the full port — a generated `.d.ts`
+  plus JSDoc gives it.
+- **#706.** This is the real argument. Settings moves from a native window into the
+  webview, `settings.js` is already 323 of the 2,850 lines here, and it reads the largest
+  payload this app has (`FormDescription` with a nine-variant tagged `FormRow`, plus a
+  28-field `SettingsView`). A much larger webview changes the arithmetic above.
+
+The boundary-drift argument the issue leads with, though, does not survive contact with
+the history: 31 commits changed one of the seven structs the webview listens to, and 30
+changed a `src/*.js` file in the same commit. The one that did not (#322) changed
+internals, not the wire. "Rust changed, JavaScript forgot" has not happened here, because
+the same person changes both sides at once.
+
+Nor would types have caught the two incidents the issue names. #654 changed a return type
+from `Result<(), String>` to `Result<String, String>`; JavaScript that ignores a return is
+fine either way. #659/#678 is a field that does not exist on `ChatHarness` — and a checker
+cannot flag a field nobody reads, because types describe what is there, not what should
+be.
+
+## 6. Recommendation
+
+1. **Do not port to TypeScript, and do not add a build.** Zero of nineteen shipped bugs
+   needed types; the compile-time coupling in section 4 is a standing tax on every Rust
+   change.
+2. **If we add a checker, make it `tsc --noEmit` with `checkJs`** — one zero-dependency
+   package, catches both classes that have bitten, and unlike a linter it can also read
+   the payloads later. Expect to spend the 26 DOM casts to buy the 3 real findings, and
+   decide whether that trade is worth it with eyes open. Running it non-blocking for a
+   while is a cheap way to find out.
+3. **Take option 2 when something needs it.** `ts-rs-proto/` proves generation works
+   (section 7). The first real customer is #706's settings payload, not `chat.js`.
+4. **Revisit after #706 lands.** That is the change that could move this answer, and it
+   is the only one that should.
+
+The status quo is not "no safety". It is 203 tests, and a habit visible in #691 and #694
+of pulling logic out of `chat.js` into a small module precisely so it can be tested. That
+habit has caught more than a type checker would have.
+
+## 7. Option 2 works, and here is what it costs
+
+`ts-rs-proto/` is a standalone crate that copies the real payload shapes and derives
+`ts_rs::TS` only under `#[cfg(test)]`, so the shipped binary carries none of it.
+
+- A test writes `generated/payloads.d.ts` under `REFRESH_BINDINGS=1` and otherwise
+  compares the committed file to a fresh render — the same shape as #729's fixture test
+  in `form.rs:1606`. Renaming `alive` to `missing` fails it with the refresh command in
+  the message; restoring passes. Measured both ways.
 - Cold build 6.9 s, warm 0.2 s. Six dev-only crates join the tree: `ts-rs`,
-  `ts-rs-macros`, `thiserror`, `thiserror-impl`, `termcolor`, `syn 2` (`syn 3` is already
-  there). Nothing at runtime.
-- Lifetimes (`SpritePlacement<'a>`), `Option`, `Vec`, `BTreeMap`, `&'static str` and
-  `#[serde(tag = "type")]` all render correctly. `#[serde(tag = "type")]` matters
-  because `FormRow` in `form.rs` uses it and is what `settings.js` will read.
-- One gotcha: `u64` renders as `bigint`, but the JSON wire carries a number. Without a
-  fix `chat.js:661` (`payload.wake_ms + …`) is a false error.
-  `#[cfg_attr(test, ts(type = "number | null"))]` on the two `Option<u64>` fields fixes
-  it. Measured.
-- `serde_json::Value` renders as `JsonValue` and needs that alias declared once.
-- A second gotcha, found while committing this: the generator must end the file with
-  exactly one newline. ts-rs's per-type render leaves a trailing blank line,
-  `end-of-file-fixer` trims it on commit, and the next `cargo test` then fails against a
-  fixture the lint itself rewrote. One `trim_end` in the generator settles it. Any
-  generated file this repository commits has the same constraint.
-- The committed `Cargo.lock` needed a `.pre-commit-config.yaml` fix, included here: all
-  three `Cargo.lock` excludes were anchored at the repo root, so `pretty-format-toml`
-  reformatted this nested lock and cargo rewrote it back on the next build.
+  `ts-rs-macros`, `thiserror`, `thiserror-impl`, `termcolor`, `syn 2`. Nothing at runtime.
+- Lifetimes, `Option`, `Vec`, `BTreeMap`, `&'static str` and `#[serde(tag = "type")]` all
+  render correctly. The last matters: `FormRow` uses it, and that is what #706 will read.
+- Adding the generated types on top of the loose config takes 29 findings to 19, and **no
+  new boundary error appears**. Today's JavaScript reads the payloads correctly.
 
-Commands are not generated. `tauri-boundary.d.ts` hand-writes the 8 event names and
-15 command names with their payloads, and types `window.__TAURI__` through a global
-declaration, so `src/` needs no edit for `listen` and `invoke` to be checked.
-`tauri-specta` would generate the command half too, but it is a runtime dependency and
-a registration step, and 15 lines did not earn it. Not prototyped.
+Two gotchas, both measured and both fixed in the prototype:
 
-With the generated payloads plus that declaration on top of the loose config, the
-count over the real `src/` drops from 30 to 20: the ten `__TAURI__` errors go, and no
-new boundary error appears. Today's JavaScript reads the payloads correctly.
+- `u64` renders as `bigint` while the JSON wire carries a number, so `chat.js:661` becomes
+  a false error. `#[cfg_attr(test, ts(type = "number | null"))]` on the two `Option<u64>`
+  fields settles it.
+- The generator must end the file with **exactly one newline**. ts-rs leaves a trailing
+  blank line, `end-of-file-fixer` trims it on commit, and the next `cargo test` then fails
+  against a fixture the lint itself rewrote. Any generated file this repository commits
+  has the same constraint.
 
-## What each option costs
-
-| | Option 1: JSDoc + `tsc --noEmit` | Option 2: generated payload types | Option 3: full TypeScript |
-|---|---|---|---|
-| What ships | unchanged | unchanged | `dist/`, `frontendDist` moves |
-| `package.json` | unchanged (`npx -y -p typescript@5`) | unchanged | probably unchanged, but a lockfile question |
-| Files added | `tsconfig.json`, `src/vendor/marked.esm.d.ts` | `types/payloads.d.ts` (generated), `types/tauri.d.ts` | `dist/` in `.gitignore`, watch config |
-| Files edited | ~30 one-line JSDoc fixes across `chat.js`, `main.js`, `cue.js`, `markdown.js` | `src-tauri/Cargo.toml` (one dev-dep), ~18 `#[cfg_attr(test, derive(TS))]` lines, one test | rename 12 modules, every import in `tests/`, `tauri.conf.json`, `release.yml` |
-| CI | one step, ~2 s cold `npx` + 1.4 s `tsc` | none new; `cargo test` already runs | `tsc` before every `cargo build`/`cargo test`, because Tauri embeds `frontendDist` at compile time |
-| Local loop | none | `REFRESH_BINDINGS=1 cargo test` after editing a payload struct | `tsc -w` beside `cargo tauri dev` |
-| `tests/` | unchanged | unchanged | imports change to `.ts`. Node 22.18+ strips types with no loader; CI's `lts/*` and Homebrew Node 26 pass, the local nvm Node 20 fails with `ERR_UNKNOWN_FILE_EXTENSION` (measured) |
-| Pre-commit | one `npx` hook, or none (CI is enough for a 3 s check) | none | build hook — which `docs/agents/writing.md` says pre-commit is not for |
-
-Option 3's one real cost is the ordering: `cargo test` in `src-tauri` would need a
-built `dist/`, so every Rust-only pull request pays for the JavaScript build. Not
-verified in this run that Tauri fails hard on a missing `frontendDist` directory; that
-is from its documented behaviour.
-
-## #706 changes the timing, in one direction
-
-Settings is the largest payload this app will have: `SettingsSnapshot` is
-`FormDescription` (tabs, sections, a nine-variant tagged `FormRow`) plus `SettingsView`
-(28 fields). #734's `settings.js` and its tests already read `.form.tabs`. That file is
-new and has no 30 errors to fix, so it is the right first user of a generated
-`SettingsSnapshot` type. Chat and the overlay should get the config and the 30 fixes,
-nothing more, until #706 is done.
-
-## Adjacent
-
-#723 owns the dependency half (when the webview earns a bundler). Nothing here needs
-one; if #723 adds one anyway, option 3's build cost is already paid and the answer here
-can be revisited.
+Commands are not generated. `tauri-boundary.d.ts` hand-writes the 8 event names and 15
+command names and types `window.__TAURI__`, which is what removes the 10 `__TAURI__`
+errors. `tauri-specta` would generate that half too, but it is a runtime dependency and a
+registration step, and 15 lines did not earn it. Not prototyped.
 
 ## Not verified
 
-- The `loginSaid` crash in the running app.
-- `ts-rs` on the real `src-tauri` crate; the prototype copies the shapes into a
+- The `loginSaid` crash in the running app (read from module semantics and git history;
+  the fix shipped in #738).
+- `ts-rs` against the real `src-tauri` crate. The prototype copies the shapes into a
   standalone crate to avoid a cold Tauri build.
-- Tauri's behaviour with a missing `frontendDist` directory.
 - `tauri-specta`.
-- `npx` availability on the Windows runner for a pre-commit hook.
+- `npx` availability on the Windows runner, if a checker ever became a pre-commit hook.
+- Whether a bundler can preserve the vendored `marked` bytes. Section 4 assumes it cannot.
 
 ## Files in this directory
 
 - `tsconfig.option1.json`, `tsconfig.option1-loose.json` — option 1, strict and loose.
-- `tsc.option1.strict.txt` (337), `tsc.option1.loose.txt` (30) — the runs. Named
-  `.txt` because the root `.gitignore` skips `*.log`.
-- `marked.esm.d.ts.stub` — copy to `src/vendor/marked.esm.d.ts` to reproduce.
+- `tsc.option1.strict.txt` (337), `tsc.option1.loose.txt` (30) — the original runs, made
+  before #738 fixed `loginSaid`. Against `main` at `32a8d28d` the loose run is 29: that
+  one line is gone and the other 29 are unchanged. Named `.txt` because the root
+  `.gitignore` skips `*.log`.
+- `marked.esm.d.ts.stub` — copy to `src/vendor/marked.esm.d.ts` to reproduce. Without it
+  `tsc` follows the import into the vendored file and reports 273 errors there;
+  `exclude` does not stop it, but a sibling `.d.ts` does.
 - `tauri-boundary.d.ts`, `tsconfig.option2.json`, `tsc.option2.txt` (20) — option 2.
 - `probe/misread.js`, `tsconfig.probe.json` — six deliberate misreads, six errors.
-- `ts-rs-proto/` — the generator: `src/lib.rs`, `generated/payloads.d.ts`,
-  `REFRESH_BINDINGS=1 cargo test` to regenerate.
+- `ts-rs-proto/` — the generator. `REFRESH_BINDINGS=1 cargo test` to regenerate.
+
+## How to reproduce
+
+```sh
+# The type check against current main (expect 29)
+cp spike/typescript-692/marked.esm.d.ts.stub src/vendor/marked.esm.d.ts
+npx -y -p typescript@5 tsc --noEmit -p spike/typescript-692/tsconfig.option1-loose.json
+rm src/vendor/marked.esm.d.ts
+
+# The generator and its stale check (16 tests)
+cd spike/typescript-692/ts-rs-proto && cargo test
+
+# The compile-time coupling: set frontendDist to a missing path, then
+cargo check -p ai-buddy      # proc macro panicked, generate_context!
+
+# The bug census
+git log --no-merges --pretty='%h|%s' -- 'src/*.js' | grep -iE '\|fix'
+```
