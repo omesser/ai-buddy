@@ -1293,7 +1293,7 @@ mod tests {
     #[test]
     fn windows_opener_keeps_ampersand_percent_and_space() {
         let path = Path::new(r"C:\Users\a & b\100%\memory.md");
-        let wide = shell_execute_file_wide(path);
+        let wide = shell_execute_file_wide(path.as_os_str());
         assert_eq!(
             wide.last().copied(),
             Some(0),
