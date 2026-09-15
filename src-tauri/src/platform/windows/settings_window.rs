@@ -27,15 +27,15 @@ use windows_sys::Win32::UI::Controls::{
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
-    GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowTextA,
-    GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW, SetWindowLongPtrA, SetWindowPos,
-    SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_PUSHBUTTON,
-    CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL, ES_MULTILINE, ES_PASSWORD,
-    ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES,
-    MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA,
-    WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
-    WS_VISIBLE, WS_VSCROLL,
+    GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowRect,
+    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
+    SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
+    BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL,
+    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT,
+    HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT,
+    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -73,6 +73,15 @@ thread_local! {
     static WINDOW: RefCell<Option<Arc<SettingsWindow>>> = const { RefCell::new(None) };
 }
 
+struct DisclosureLayout<'a> {
+    parent: HWND,
+    control_id: i32,
+    tab_index: usize,
+    hfont: HGDIOBJ,
+    display_left: i32,
+    y: &'a mut i32,
+}
+
 struct SettingsWindow {
     hwnd: HWND,
     session: Mutex<Option<SettingsSession>>,
@@ -82,6 +91,7 @@ struct SettingsWindow {
     refreshing: RefCell<bool>,
     current_tab: RefCell<usize>,
     disclosure_expanded: RefCell<HashMap<String, bool>>,
+    disclosure_heights: RefCell<HashMap<String, i32>>,
 }
 
 #[derive(Clone)]
@@ -107,6 +117,7 @@ impl SettingsWindow {
             refreshing: RefCell::new(false),
             current_tab: RefCell::new(0),
             disclosure_expanded: RefCell::new(HashMap::new()),
+            disclosure_heights: RefCell::new(HashMap::new()),
         })
     }
 
@@ -465,8 +476,176 @@ impl SettingsWindow {
         expanded.insert(form_id.to_string(), new_state);
         drop(expanded);
 
+        let label_height = self
+            .disclosure_heights
+            .borrow()
+            .get(form_id)
+            .copied()
+            .unwrap_or(0);
+
         unsafe {
             ShowWindow(label_hwnd, if new_state { SW_SHOW } else { SW_HIDE });
+
+            let delta = if new_state {
+                label_height + HINT_GAP
+            } else {
+                -(label_height + HINT_GAP)
+            };
+
+            let mut label_rect = RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            GetWindowRect(label_hwnd, &mut label_rect);
+            let parent = GetParent(label_hwnd);
+            let mut label_pt = POINT {
+                x: label_rect.left,
+                y: label_rect.top,
+            };
+            ScreenToClient(parent, &mut label_pt);
+            let label_y = label_pt.y;
+
+            let controls = self.controls.borrow();
+            let button_hwnd = controls
+                .get(form_id)
+                .and_then(|c| {
+                    if let Control::Disclosure(btn, _, _) = c {
+                        Some(*btn)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(ptr::null_mut());
+
+            let mut to_move = Vec::new();
+            for control in controls.values() {
+                let hwnds: Vec<HWND> = match control {
+                    Control::Checkbox(h, _)
+                    | Control::Edit(h, _)
+                    | Control::Label(h, _)
+                    | Control::Button(h, _)
+                    | Control::ComboBox(h, _, _)
+                    | Control::InstancesList(h, _) => vec![*h],
+                    Control::Disclosure(button, label, _) => vec![*button, *label],
+                };
+                for hwnd in hwnds {
+                    if hwnd == button_hwnd || hwnd == label_hwnd {
+                        continue;
+                    }
+                    let mut rect = RECT {
+                        left: 0,
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                    };
+                    GetWindowRect(hwnd, &mut rect);
+                    let mut pt = POINT {
+                        x: rect.left,
+                        y: rect.top,
+                    };
+                    ScreenToClient(parent, &mut pt);
+                    if pt.y >= label_y {
+                        to_move.push(hwnd);
+                    }
+                }
+            }
+            drop(controls);
+
+            for hwnd in to_move {
+                let mut rect = RECT {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                };
+                GetWindowRect(hwnd, &mut rect);
+                let mut pt = POINT {
+                    x: rect.left,
+                    y: rect.top,
+                };
+                ScreenToClient(parent, &mut pt);
+                let width = rect.right - rect.left;
+                let height = rect.bottom - rect.top;
+                let new_y = pt.y + delta;
+                SetWindowPos(
+                    hwnd,
+                    ptr::null_mut(),
+                    pt.x,
+                    new_y,
+                    width,
+                    height,
+                    SWP_NOZORDER,
+                );
+            }
+        }
+    }
+
+    fn add_disclosure(
+        &self,
+        disclosure_text: &str,
+        disclosure_id: String,
+        layout: DisclosureLayout,
+    ) {
+        let is_expanded = self
+            .disclosure_expanded
+            .borrow()
+            .get(&disclosure_id)
+            .copied()
+            .unwrap_or(false);
+
+        unsafe {
+            let button_cstr = CString::new("What is this?").unwrap();
+            let button_hwnd = CreateWindowExA(
+                0,
+                c"BUTTON".as_ptr() as *const u8,
+                button_cstr.as_ptr() as *const u8,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
+                layout.display_left,
+                *layout.y,
+                120,
+                ROW_HEIGHT,
+                layout.parent,
+                layout.control_id as _,
+                GetModuleHandleA(ptr::null()),
+                ptr::null_mut(),
+            );
+            SendMessageA(button_hwnd, WM_SETFONT, layout.hfont as WPARAM, 1);
+            *layout.y += ROW_HEIGHT + HINT_GAP;
+
+            let disclosure_cstr = CString::new(disclosure_text).unwrap();
+            let label_height = measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
+            let label_hwnd = CreateWindowExA(
+                0,
+                c"STATIC".as_ptr() as *const u8,
+                disclosure_cstr.as_ptr() as *const u8,
+                WS_CHILD | if is_expanded { WS_VISIBLE } else { 0 } | SS_LEFT,
+                layout.display_left,
+                *layout.y,
+                FIELD_WIDTH,
+                label_height,
+                layout.parent,
+                ptr::null_mut(),
+                GetModuleHandleA(ptr::null()),
+                ptr::null_mut(),
+            );
+            SendMessageA(label_hwnd, WM_SETFONT, layout.hfont as WPARAM, 1);
+
+            self.control_id_to_form_id
+                .borrow_mut()
+                .insert(layout.control_id, disclosure_id.clone());
+            self.controls.borrow_mut().insert(
+                disclosure_id.clone(),
+                Control::Disclosure(button_hwnd, label_hwnd, layout.tab_index),
+            );
+            self.disclosure_heights
+                .borrow_mut()
+                .insert(disclosure_id, label_height);
+
+            if is_expanded {
+                *layout.y += label_height + HINT_GAP;
+            }
         }
     }
 
@@ -1191,53 +1370,20 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                 }
 
                 if let Some(disclosure_text) = &section.disclosure {
-                    let button_cstr = CString::new("What is this?").unwrap();
-                    let button_hwnd = CreateWindowExA(
-                        0,
-                        c"BUTTON".as_ptr() as *const u8,
-                        button_cstr.as_ptr() as *const u8,
-                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                        display_left,
-                        y,
-                        120,
-                        ROW_HEIGHT,
-                        parent,
-                        control_id as _,
-                        GetModuleHandleA(ptr::null()),
-                        ptr::null_mut(),
-                    );
-                    SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                    y += ROW_HEIGHT + HINT_GAP;
-
-                    let disclosure_cstr = CString::new(disclosure_text.as_str()).unwrap();
-                    let label_height = measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                    let label_hwnd = CreateWindowExA(
-                        0,
-                        c"STATIC".as_ptr() as *const u8,
-                        disclosure_cstr.as_ptr() as *const u8,
-                        WS_CHILD | SS_LEFT,
-                        display_left,
-                        y,
-                        FIELD_WIDTH,
-                        label_height,
-                        parent,
-                        ptr::null_mut(),
-                        GetModuleHandleA(ptr::null()),
-                        ptr::null_mut(),
-                    );
-                    SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                     let disclosure_id =
                         format!("section_disclosure_{}_{}", tab_index, section_index);
-                    window
-                        .control_id_to_form_id
-                        .borrow_mut()
-                        .insert(control_id, disclosure_id.clone());
-                    window.controls.borrow_mut().insert(
+                    window.add_disclosure(
+                        disclosure_text,
                         disclosure_id,
-                        Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                        DisclosureLayout {
+                            parent,
+                            control_id,
+                            tab_index,
+                            hfont,
+                            display_left,
+                            y: &mut y,
+                        },
                     );
-                    y += label_height + HINT_GAP;
                     control_id += 1;
                 }
 
@@ -1300,54 +1446,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("{}_disclosure", id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -1463,54 +1574,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("{}_disclosure", id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             // The `_help` suffix is what keeps a refresh from
@@ -1714,54 +1790,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("{}_disclosure", id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -1814,54 +1855,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             );
                             y += MULTILINE_HEIGHT + ROW_GAP;
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("{}_disclosure", id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -2018,54 +2024,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                             }
                             y += ROW_HEIGHT + ROW_GAP;
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("composite_disclosure_{}", control_id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -2167,54 +2138,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 .insert(id.clone(), Control::Edit(hwnd, tab_index));
                             y += MULTILINE_HEIGHT + ROW_GAP;
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("{}_disclosure", id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
@@ -2324,54 +2260,19 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             if let Some(disclosure_text) = disclosure {
-                                let button_cstr = CString::new("What is this?").unwrap();
-                                let button_hwnd = CreateWindowExA(
-                                    0,
-                                    c"BUTTON".as_ptr() as *const u8,
-                                    button_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
-                                    display_left,
-                                    y,
-                                    120,
-                                    ROW_HEIGHT,
-                                    parent,
-                                    control_id as _,
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(button_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-                                y += ROW_HEIGHT + HINT_GAP;
-
-                                let disclosure_cstr =
-                                    CString::new(disclosure_text.as_str()).unwrap();
-                                let label_height =
-                                    measure_wrapped_text_height(disclosure_text, FIELD_WIDTH);
-                                let label_hwnd = CreateWindowExA(
-                                    0,
-                                    c"STATIC".as_ptr() as *const u8,
-                                    disclosure_cstr.as_ptr() as *const u8,
-                                    WS_CHILD | SS_LEFT,
-                                    display_left,
-                                    y,
-                                    FIELD_WIDTH,
-                                    label_height,
-                                    parent,
-                                    ptr::null_mut(),
-                                    GetModuleHandleA(ptr::null()),
-                                    ptr::null_mut(),
-                                );
-                                SendMessageA(label_hwnd, WM_SETFONT, hfont as WPARAM, 1);
-
                                 let disclosure_id = format!("{}_disclosure", id);
-                                window
-                                    .control_id_to_form_id
-                                    .borrow_mut()
-                                    .insert(control_id, disclosure_id.clone());
-                                window.controls.borrow_mut().insert(
+                                window.add_disclosure(
+                                    disclosure_text,
                                     disclosure_id,
-                                    Control::Disclosure(button_hwnd, label_hwnd, tab_index),
+                                    DisclosureLayout {
+                                        parent,
+                                        control_id,
+                                        tab_index,
+                                        hfont,
+                                        display_left,
+                                        y: &mut y,
+                                    },
                                 );
-                                y += label_height + HINT_GAP;
                                 control_id += 1;
                             }
                             if let Some(help_text) = help {
