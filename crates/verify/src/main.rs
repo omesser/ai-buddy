@@ -9,11 +9,13 @@ use ai_buddy_verify::cleanup;
 use ai_buddy_verify::doctor;
 use ai_buddy_verify::overlay;
 use ai_buddy_verify::paths::{self, RunPaths};
+use ai_buddy_verify::poke;
+use ai_buddy_verify::summon;
 use ai_buddy_verify::units;
 
 #[derive(Debug, Parser)]
 #[command(name = "ai-buddy-verify")]
-#[command(about = "Agent/CI verify entry (doctor / units / overlay / cleanup)")]
+#[command(about = "Agent/CI verify entry (doctor / units / overlay / poke / summon / cleanup)")]
 #[command(version)]
 struct Cli {
     /// Override evidence directory. Scratch is the sibling `scratch` under the
@@ -38,6 +40,10 @@ enum Commands {
     Units,
     /// Dispatch platform verify-overlay leaf script; collect stamps into evidence.
     Overlay,
+    /// Click the sprite for real; assert `verbs:.*Poke` in the app's trace.
+    Poke,
+    /// Double-click the sprite for real; assert `verbs:.*Summon`.
+    Summon,
     /// Kill recorded PIDs; remove scratch; keep evidence.
     Cleanup,
 }
@@ -69,6 +75,8 @@ fn main() -> ExitCode {
         Commands::Doctor => doctor::run(&repo_root, &paths),
         Commands::Units => units::run(&repo_root, &paths),
         Commands::Overlay => overlay::run(&repo_root, &paths),
+        Commands::Poke => poke::run(&repo_root, &paths),
+        Commands::Summon => summon::run(&repo_root, &paths),
         Commands::Cleanup => cleanup::run(&paths),
     };
     ExitCode::from(code as u8)

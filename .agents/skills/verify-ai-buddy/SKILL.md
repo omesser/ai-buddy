@@ -13,7 +13,7 @@ Project-local control skill for **ai-buddy**, a Tauri desktop mascot whose prima
 |---|---|
 | **Surface** | Desktop overlay mascot (macOS / Linux X11 / Windows). Secondary: native Settings window, Chat surface (Summon), tray menu. |
 | **Run** | `cargo run -p ai-buddy` from repo root (or `target/release/ai-buddy` / `target/debug/ai-buddy` after build). Offline by default (Static Director). |
-| **Drive** | Prefer existing scripts: `scripts/verify-overlay.sh` (macOS), `scripts/verify-overlay-x11.sh` (Linux X11 under a WM), `scripts/verify-overlay-win.ps1`, `scripts/verify-settings-win.ps1`, `scripts/probe-harness.sh`, `scripts/test_verify_overlay_diagnostics.sh`. Plus `cargo test` / `node --test tests/*.test.js`. |
+| **Drive** | Prefer existing scripts: `scripts/verify-overlay.sh` (macOS), `scripts/verify-overlay-x11.sh` (Linux X11 under a WM), `scripts/verify-overlay-win.ps1`, `scripts/verify-settings-win.ps1`, `scripts/probe-harness.sh`, `scripts/test_verify_overlay_diagnostics.sh`. Plus `cargo test` / `node --test tests/*.test.js`. Poke and Summon are CLI-native on macOS: `cargo run -p ai-buddy-verify -- poke` / `-- summon` (ADR-0027 stone 2) — do not hand-roll a click with the bash helpers for those two verbs. |
 | **Observe** | Overlay logs (`AI_BUDDY_TRACE_FRAMES=1`, `AI_BUDDY_TRACE_HITTEST=1`), `.verify/` stamp dirs, screenshots when capturable, exit codes, `verbs: …Poke` / `verbs: …Summon` lines. |
 | **Isolate** | **Refuse double-drive on one display.** Two instances share the same window list / hit-test path (`AI_BUDDY_INSTANCES` is multi-buddy in *one* process, not two agents). Kill only the PID this run started. |
 
@@ -84,6 +84,8 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 |---|---|
 | Linux X11 overlay + perch/ride/drop + poke | `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh` (needs `openbox` + `xterm` on bare Xvfb; optional `AI_BUDDY_VERIFY_PREFIX=/path/to/extracted` for deb-extracted libs/themes) |
 | macOS overlay + physics + hit-test | `.agents/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh` |
+| macOS Poke (gesture verb) | `cargo run -p ai-buddy-verify -- poke` — real click, asserts `verbs:.*Poke` |
+| macOS Summon (gesture verb) | `cargo run -p ai-buddy-verify -- summon` — real double-click, asserts `verbs:.*Summon` |
 | Windows overlay | `.agents/skills/verify-ai-buddy/helpers/drive-overlay-win.ps1` |
 | Windows Settings | `scripts/verify-settings-win.ps1` (copy `$Out` into evidence after) |
 | Harness ACP (no sprite) | `AI_BUDDY_HARNESS=hermes scripts/probe-harness.sh` |
@@ -104,8 +106,8 @@ For every Drive:
 Proof standards:
 
 - Overlay presence: overlay window + EWMH states + `^overlay:` log.
-- Poke: `verbs:.*Poke` after a real click on the sprite body.
-- Summon: `verbs:.*Summon` after double-click; Chat window appears when a display session can show it.
+- Poke: `verbs:.*Poke` after a real click on the sprite body — on macOS, `cargo run -p ai-buddy-verify -- poke` proves this end to end and writes evidence under `<evidence>/poke/`.
+- Summon: `verbs:.*Summon` after double-click; Chat window appears when a display session can show it — on macOS, `cargo run -p ai-buddy-verify -- summon` proves this end to end and writes evidence under `<evidence>/summon/`.
 - Capturable override: env `AI_BUDDY_CAPTURABLE=0|1` observed in settings/platform behavior (macOS sharing type / Windows WDA); Linux has no capture-exclusion API equivalent — document as Gotcha.
 
 ## Cleanup
