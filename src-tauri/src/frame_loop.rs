@@ -237,14 +237,37 @@ pub(crate) fn run_frame_loop(
                     // Input Monitoring (decision 9 forbids it), so event-driven input
                     // is unavailable. Idle back-off reduces wakeups when the sprite is
                     // still/hidden/asleep.
-                    match schedule_mode {
-                        scheduler::ScheduleMode::Active => {
+                    match (schedule_mode, was_visible) {
+                        (scheduler::ScheduleMode::Active, _) => {
                             thread::sleep(ENGINE_TICK);
                         }
-                        scheduler::ScheduleMode::Idle => {
-                            // Idle: compute next real work deadline (Director ambient
-                            // wakes, activity sensing) and sleep until then, capped at
-                            // 1s to keep gesture/menu response timely.
+                        (scheduler::ScheduleMode::Idle, false) => {
+                            // Hidden idle: uncapped deep sleep like X11. Only non-input
+                            // callbacks (sense deadline, visibility change, hotkey show,
+                            // menu/ops, Director ambient, chat/MCP, tray) unblock.
+                            let next_director = lives
+                                .iter()
+                                .filter_map(|live| {
+                                    let remaining =
+                                        live.pace.wait().saturating_sub(live.since_wake);
+                                    if remaining.is_zero() {
+                                        None
+                                    } else {
+                                        Some(remaining)
+                                    }
+                                })
+                                .min()
+                                .unwrap_or(Duration::from_secs(3600));
+
+                            let next_sense = SENSE_INTERVAL.saturating_sub(since_sense);
+                            let deadline = next_director.min(next_sense);
+
+                            thread::sleep(deadline);
+                        }
+                        (scheduler::ScheduleMode::Idle, true) => {
+                            // Visible idle: compute next real work deadline (Director
+                            // ambient wakes, activity sensing) and sleep until then,
+                            // capped at 1s to keep gesture/menu response timely.
                             let next_director = lives
                                 .iter()
                                 .filter_map(|live| {

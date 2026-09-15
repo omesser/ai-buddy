@@ -52,18 +52,22 @@ distinction. <https://developer.apple.com/forums/thread/676422>
 exist to test and request that grant; their pages carry no prose.
 <https://developer.apple.com/documentation/coregraphics/cgpreflightlisteneventaccess()>
 
-**Verified (2026-09):** a `kCGSessionEventTap` + `kCGEventTapOptionListenOnly`
-tap whose mask holds only mouse types **requires Input Monitoring** permission
-on current macOS. `IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)` reports
-`kIOHIDAccessTypeGranted` when granted, `Denied` or `Unknown` otherwise.
-`CGEventTapCreate` may return non-NULL even without permission, but the tap is
-disabled and produces no events. Multiple 2026 sources confirm this (Stack
-Overflow #79010369, keytap 0.4.0 docs.rs, tauri-plugin-macos-input-monitor).
-Chromium's remoting host ships exactly that shape (`kCGSessionEventTap,
-kCGHeadInsertEventTap, kCGEventTapOptionListenOnly, 1 << kCGEventMouseMoved`)
-but that host asks for Accessibility anyway. This violates DESIGN.md decision 9
-(no TCC prompt for spatial layer), so #183 Stage 2b (idle back-off) is the v1
-answer for macOS.
+**Inference from public sources (2026-09):** a `kCGSessionEventTap` +
+`kCGEventTapOptionListenOnly` tap whose mask holds only mouse types appears to
+require Input Monitoring permission on current macOS. Multiple 2026 public
+sources report this behavior: `IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)`
+checks the permission (Stack Overflow #79010369), keytap 0.4.0 proactively
+checks and fails with `PermissionDenied` when access is not granted,
+tauri-plugin-macos-input-monitor documents the requirement and notes that
+`CGEventTapCreate` may return non-NULL even without permission but the tap is
+disabled. Chromium's remoting host ships exactly that shape
+(`kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionListenOnly, 1 <<
+kCGEventMouseMoved`) but asks for Accessibility, proving nothing about prompts.
+**Stage 1 live Mac spike remains open**: the four observations #183 Stage 1
+requests (TCC reset, tap creation, prompt appearance, preflight check) have not
+been run on real hardware. If Input Monitoring is required, that violates
+DESIGN.md decision 9 (no TCC prompt for spatial layer), so #183 Stage 2b (idle
+back-off) is the provisional v1 answer for macOS pending spike or waiver.
 
 **`NSEvent.addGlobalMonitorForEvents`.** "Key-related events may only be
 monitored if accessibility is enabled or if your application is trusted for
@@ -160,11 +164,13 @@ driven and permission-free.
 
 **Wayland**: Webview-only. No global pointer exists, so no poll and no events.
 
-**macOS** (#183 Stage 2b): Idle back-off. Mouse-only listen taps require Input
-Monitoring (verified 2026-09 from public sources), which violates decision 9.
-The frame loop polls `CGEventSourceButtonState` and `NSEvent.mouseLocation` but
-backs off to the next real deadline (Director wakes, sense interval, capped at
-1s) when idle. Active mode (Grab/Throw/fall/animation) keeps 16ms ticks.
+**macOS** (#183 Stage 2b): Idle back-off. Mouse-only listen taps appear to
+require Input Monitoring (inferred from public sources 2026-09, live spike open
+unless waived), which would violate decision 9. The frame loop polls
+`CGEventSourceButtonState` and `NSEvent.mouseLocation` but backs off to the next
+real deadline (Director wakes, sense interval) when idle. Hidden idle: uncapped
+deep sleep (same as X11). Visible idle: capped at 1s for timely gesture/menu.
+Active mode (Grab/Throw/fall/animation) keeps 16ms ticks.
 
 **Windows**: Same idle back-off as macOS (no Windows-specific input events in
 v1 per SPEC.md).
