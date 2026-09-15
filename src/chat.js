@@ -571,8 +571,6 @@ async function start() {
         turn.them.remove();
         note(outcome.note);
       } else if (outcome.action === "silent") {
-        // #681: Speech already landed for this question, or the Shell
-        // cancelled this caret because a newer wake started. Not a miss.
         turn.them.remove();
       } else {
         // A turn that produced no line: the call failed and static weights

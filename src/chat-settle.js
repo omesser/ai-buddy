@@ -9,7 +9,7 @@ export function createChatTurns() {
 
   return {
     typed() {
-      const turn = { speechDrawn: false, alreadyHasSpeechAhead: false };
+      const turn = { alreadyHasSpeechAhead: false };
       waiting.push(turn);
       return turn;
     },
@@ -35,7 +35,6 @@ export function createChatTurns() {
         return { action: "orphan", turn: null, said: payload.said ?? "" };
       }
       if (payload.said) {
-        turn.speechDrawn = true;
         for (const leftover of waiting) {
           leftover.alreadyHasSpeechAhead = true;
         }
@@ -48,10 +47,10 @@ export function createChatTurns() {
           note: `The Harness reported an error: ${payload.error}`,
         };
       }
-      // #681: empty is not "no answer" when Speech for this question is
-      // already drawn, when a leftover caret sits behind that Speech, or when
-      // the Shell named the settle as superseded rather than silent-failure.
-      if (turn.speechDrawn || turn.alreadyHasSpeechAhead || payload.superseded) {
+      // #681: empty is not "no answer" when a leftover caret sits behind
+      // Speech already in the log, or when the Shell named the settle as
+      // superseded rather than silent-failure.
+      if (turn.alreadyHasSpeechAhead || payload.superseded) {
         return { action: "silent", turn };
       }
       return { action: "missing", turn, note: MISSING_ANSWER };
