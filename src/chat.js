@@ -13,6 +13,7 @@
 
 import { askSays } from "./chat-ask.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
+import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
 import { mindLine, plainStatus, statusCells } from "./chat-status.js";
@@ -79,7 +80,7 @@ function paint() {
 // Turns waiting on an answer, oldest first. The Shell answers them in the
 // order it took them and refuses a line typed while one is still waiting, so
 // the oldest row takes the next answer and the newest takes a refusal.
-const waiting = [];
+const turns = createChatTurns();
 
 function el(cls, tag) {
   const node = document.createElement(tag || "div");
@@ -473,8 +474,9 @@ composer.addEventListener("submit", (event) => {
       line.value = "";
       // The last turn's mark has been read; this is the next question.
       strip.asked();
-      const turn = { you: said("You", text, "you"), them: opening_answer() };
-      waiting.push(turn);
+      const turn = turns.typed();
+      turn.you = said("You", text, "you");
+      turn.them = opening_answer();
       return invoke("chat_send", { instance, text }).catch((why) => {
         drop(turn);
         throw why;
@@ -489,10 +491,7 @@ composer.addEventListener("submit", (event) => {
 // A line that will never be answered takes its rows with it, rather than
 // leaving the user looking at a question in the log that nothing is working on.
 function drop(turn) {
-  const at = waiting.indexOf(turn);
-  if (at >= 0) {
-    waiting.splice(at, 1);
-  }
+  turns.drop(turn);
   turn.you.remove();
   turn.them.remove();
 }
@@ -515,7 +514,7 @@ function newSession(why) {
   // out with the rows leaves that lookup dereferencing null.
   log.replaceChildren(empty);
   strip.asked();
-  waiting.length = 0;
+  turns.clear();
   asks.clear();
   // A boundary is where a stamp should say the hour again rather than count
   // minutes from a line that is no longer on screen.
@@ -538,7 +537,7 @@ async function start() {
       }
       // #610: The strip is for thinking only (ADR-0025).
       if (payload.busy) {
-        const refused = waiting.pop();
+        const refused = turns.popNewest();
         if (refused) {
           drop(refused);
         }
@@ -559,31 +558,34 @@ async function start() {
         said(`${them} · ${payload.reacting_to}`, payload.said, "them", payload.at);
         return;
       }
-      const turn = waiting.shift();
-      if (!turn) {
+      const outcome = turns.settle(payload);
+      if (outcome.action === "orphan") {
         // An answer with no question in this window: the Instance was asked
         // somewhere else, or this window opened after the line was sent.
-        said(them, payload.said ?? "", "them", payload.at);
+        said(them, outcome.said, "them", payload.at);
         return;
       }
+      const turn = outcome.turn;
       settled(turn.them);
-      if (payload.said) {
-        arrived(turn.them, payload.said);
-      } else if (payload.error) {
+      if (outcome.action === "speech") {
+        arrived(turn.them, outcome.said);
+      } else if (outcome.action === "error") {
         // The Harness answered, and the answer was an error — a model the
         // installed CLI will not serve, a signed-out agent. Static weights
         // took the turn either way, so the row looks like the one below; the
         // error is the only part the user can act on, and #514 is a day of
         // wakes spent because it was never said (ADR-0008).
         turn.them.remove();
-        note(`The Harness reported an error: ${payload.error}`);
+        note(outcome.note);
+      } else if (outcome.action === "silent") {
+        turn.them.remove();
       } else {
         // A turn that produced no line: the call failed and static weights
         // took over, which are silent by contract, or Do Not Disturb refused
         // the dialogue. Said out loud, because a log that stops is
         // indistinguishable from one still waiting.
         turn.them.remove();
-        note("No answer came back.");
+        note(MISSING_ANSWER);
       }
     },
     { target: chat.label },

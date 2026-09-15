@@ -1362,6 +1362,10 @@ struct ChatReply {
     /// it named a version this CLI will not serve (#514). Not replayed: the
     /// session log keeps the line said, and there was none.
     error: Option<String>,
+    /// The Shell cancelled this caret because a newer wake started (ADR-0016).
+    /// `said` is `None`; this is not a turn that produced no Speech (#681).
+    #[serde(default)]
+    superseded: bool,
 }
 
 /// The Spatial Layer state one Chat surface draws in its status bar (ADR-0010).
@@ -1442,6 +1446,7 @@ fn chat_ready(
                     reacting_to: turn.reacting_to,
                     you: turn.you,
                     error: None,
+                    superseded: false,
                     at: Some(
                         turn.at
                             .duration_since(UNIX_EPOCH)
