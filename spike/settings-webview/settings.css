@@ -1,0 +1,244 @@
+/* Settings on the Chat surface's tokens. Every colour, radius and font here is
+   a var() from chat-ui.css, so tests/chat-ui-tokens.test.js's rule would hold
+   for this file as written; a second design recolours Settings for free. */
+
+body {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.tb h1 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.tb .state {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tb .state button {
+  padding: 2px 8px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-badge);
+  background: transparent;
+  color: var(--chat-ink-3);
+  font: inherit;
+  font-family: var(--chat-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tb .state button[aria-pressed="true"] {
+  color: var(--chat-accent);
+  border-color: var(--chat-accent);
+}
+
+/* The form scrolls in the log's place. Content-sized, never clipped (#601). */
+.form {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 18px 18px;
+}
+
+section {
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--chat-rule);
+}
+
+section:last-child {
+  border-bottom: 0;
+}
+
+section h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.comment,
+.help {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--chat-ink-2);
+}
+
+.help {
+  margin-top: 4px;
+}
+
+/* The muted strip: env override or "not in use" — read as a note, not a field. */
+.status {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--chat-line);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--chat-ink-3);
+}
+
+.row {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+}
+
+.row > label,
+.row .label {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.row.check > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--chat-accent);
+}
+
+input[type="text"],
+input[type="password"],
+select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill);
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* One dropdown look on every OS, which is the whole #674 conversation. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--chat-ink-3) 50%),
+    linear-gradient(135deg, var(--chat-ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+select option {
+  background: var(--chat-panel);
+  color: var(--chat-ink);
+}
+
+input::placeholder {
+  color: var(--chat-ink-4);
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+.inspect:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 2px;
+}
+
+/* Frozen reads as frozen: dimmer field, dimmer label, still legible (#625). */
+.row.is-frozen > label,
+.row.is-frozen .label {
+  color: var(--chat-ink-3);
+}
+
+input[readonly],
+select:disabled {
+  background: var(--chat-fill-dim);
+  color: var(--chat-ink-3);
+  border-style: dashed;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.controls select {
+  width: auto;
+  min-width: 220px;
+}
+
+.controls button {
+  padding: 6px 14px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--chat-radius-control);
+  background: transparent;
+  color: var(--chat-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.controls button[data-id="director_apply"] {
+  border-color: transparent;
+  background: var(--chat-accent);
+  color: var(--chat-accent-ink);
+}
+
+.controls button:disabled {
+  color: var(--chat-ink-4);
+  cursor: default;
+}
+
+.inspect {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--chat-rule);
+  border-radius: var(--chat-radius-control);
+  background: var(--chat-fill-dim);
+  color: var(--chat-ink-2);
+  font-family: var(--chat-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.disclosure {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--chat-ink-3);
+}
+
+.disclosure summary {
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+}
+
+.disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure summary::before {
+  content: "▸ ";
+}
+
+.disclosure[open] summary::before {
+  content: "▾ ";
+}
+
+.disclosure p {
+  margin: 4px 0 0 14px;
+  line-height: 1.45;
+  color: var(--chat-ink-2);
+}

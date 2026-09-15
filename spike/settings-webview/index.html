@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Spike: the Settings AI tab as a webview on the Chat surface's tokens.
+     Static. Nothing here is wired to Rust; ai-tab.js is a hand-written snapshot
+     of form::describe() and SettingsView in two states. -->
+<html lang="en" class="chat-ui-minimal">
+  <head>
+    <meta charset="utf-8" />
+    <title>ai-buddy Settings (spike)</title>
+    <link rel="stylesheet" href="../../src/chat-ui.css" />
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <header class="tb">
+      <h1>Settings</h1>
+      <span class="state" id="state" role="group" aria-label="Snapshot state"></span>
+    </header>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="false">Presence</button>
+      <button class="tab" role="tab" aria-selected="false">Character</button>
+      <button class="tab" role="tab" aria-selected="true">AI</button>
+      <button class="tab" role="tab" aria-selected="false">Privacy</button>
+      <button class="tab" role="tab" aria-selected="false">Development</button>
+    </nav>
+    <main class="form" id="form" role="tabpanel" aria-label="AI"></main>
+    <script type="module">
+      import { STATES } from "./ai-tab.js";
+      import { render } from "./settings.js";
+
+      const form = document.getElementById("form");
+      const picker = document.getElementById("state");
+      const wanted = new URLSearchParams(location.search).get("state");
+      let current = wanted in STATES ? wanted : "modelApi";
+
+      // Where `invoke("settings_event", …)` would go. The log is the payload
+      // the Rust side would fold into a SettingsPatch.
+      const emit = (event) => console.log("settings event", JSON.stringify(event));
+
+      function draw() {
+        const { tab, view } = STATES[current];
+        render(form, tab, view, emit);
+        for (const b of picker.children) b.setAttribute("aria-pressed", String(b.dataset.state === current));
+      }
+
+      for (const [key, { label }] of Object.entries(STATES)) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.state = key;
+        b.textContent = label;
+        b.addEventListener("click", () => { current = key; draw(); });
+        picker.append(b);
+      }
+      draw();
+    </script>
+  </body>
+</html>
