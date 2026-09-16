@@ -339,12 +339,12 @@ if (typeof document !== "undefined") {
     const errorDiv = document.createElement("div");
     errorDiv.className = "set-error";
     errorDiv.style.cssText = "padding: 2rem; text-align: center;";
-    
+
     const errorText = document.createElement("p");
     errorText.textContent = message;
     errorText.style.marginBottom = "1rem";
     errorDiv.appendChild(errorText);
-    
+
     if (onRetry) {
       const retryButton = document.createElement("button");
       retryButton.textContent = "Retry";
@@ -352,7 +352,7 @@ if (typeof document !== "undefined") {
       retryButton.addEventListener("click", onRetry);
       errorDiv.appendChild(retryButton);
     }
-    
+
     panel.appendChild(errorDiv);
   }
 
@@ -414,7 +414,7 @@ if (typeof document !== "undefined") {
 
   if (typeof window.__TAURI__ !== "undefined") {
     const { listen } = window.__TAURI__.event;
-    
+
     // Tauri's listen() returns a Promise<UnlistenFn>. Window destruction does
     // not guarantee cleanup of window-scoped listeners, so we unlisten on unload.
     // Evidence: Tauri v2 docs state "listeners need to be manually unlistened"
@@ -425,13 +425,13 @@ if (typeof document !== "undefined") {
     }).then((unlisten) => {
       unlistenRefresh = unlisten;
     });
-    
+
     window.addEventListener("beforeunload", () => {
       if (unlistenRefresh) {
         unlistenRefresh();
       }
     });
-    
+
     loadSnapshot();
   }
 }
