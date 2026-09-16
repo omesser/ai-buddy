@@ -47,6 +47,8 @@ use frame_loop::run_frame_loop;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+#[cfg(any(test, target_os = "windows"))]
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -2663,6 +2665,18 @@ fn load_named(
     })
 }
 
+/// Whether this Windows anchor-window focus should open Settings.
+///
+/// `on_window_event` takes `Fn`, not `FnMut`, so a captured `bool` cannot be
+/// assigned inside the handler. `AtomicBool::swap` takes `&self`.
+///
+/// Windows focuses the hidden anchor at startup; that is not a taskbar click,
+/// so the first call returns false. Later focuses return true. #767.
+#[cfg(any(test, target_os = "windows"))]
+fn windows_anchor_focus_opens_settings(first_focus_seen: &AtomicBool) -> bool {
+    first_focus_seen.swap(true, Ordering::Relaxed)
+}
+
 /// Build the anchor window that appears in the taskbar/panel on Windows and Linux.
 ///
 /// A small, invisible window that gives the running app a taskbar presence
@@ -2684,15 +2698,13 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
 
     let app_handle = app.clone();
     #[cfg(target_os = "windows")]
-    let first_focus_seen = std::cell::Cell::new(false);
+    let first_focus_seen = AtomicBool::new(false);
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
             #[cfg(target_os = "windows")]
             {
-                if first_focus_seen.get() {
+                if windows_anchor_focus_opens_settings(&first_focus_seen) {
                     show_settings(app_handle.clone());
-                } else {
-                    first_focus_seen.set(true);
                 }
             }
             #[cfg(not(target_os = "windows"))]
@@ -3712,5 +3724,25 @@ mod tests {
         {
         }
         takes_async(overlay_open_chat);
+    }
+
+    /// Production change that would fail this: assigning a captured `bool`
+    /// inside `on_window_event` (`Fn`, not `FnMut`), or opening Settings on
+    /// the first Windows focus. #767.
+    #[test]
+    fn windows_anchor_skips_the_first_focus_then_opens() {
+        let seen = AtomicBool::new(false);
+        assert!(
+            !windows_anchor_focus_opens_settings(&seen),
+            "startup focus must not open Settings"
+        );
+        assert!(
+            windows_anchor_focus_opens_settings(&seen),
+            "the next focus is a taskbar click"
+        );
+        assert!(
+            windows_anchor_focus_opens_settings(&seen),
+            "later focuses keep opening Settings"
+        );
     }
 }
