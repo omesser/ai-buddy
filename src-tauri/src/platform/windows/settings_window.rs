@@ -3353,8 +3353,8 @@ mod tests {
 
             let parent = CreateWindowExA(
                 0,
-                c"STATIC".as_ptr(),
-                c"Test".as_ptr(),
+                c"STATIC".as_ptr() as *const u8,
+                c"Test".as_ptr() as *const u8,
                 WS_OVERLAPPEDWINDOW,
                 0,
                 0,
@@ -3368,8 +3368,8 @@ mod tests {
 
             let edit_hwnd = CreateWindowExA(
                 WS_EX_CLIENTEDGE,
-                c"EDIT".as_ptr(),
-                c"".as_ptr(),
+                c"EDIT".as_ptr() as *const u8,
+                c"".as_ptr() as *const u8,
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
                 0,
                 0,
@@ -3383,9 +3383,9 @@ mod tests {
 
             let button_hwnd = CreateWindowExA(
                 0,
-                c"BUTTON".as_ptr(),
-                c"OK".as_ptr(),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                c"BUTTON".as_ptr() as *const u8,
+                c"OK".as_ptr() as *const u8,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON as u32,
                 0,
                 25,
                 50,
@@ -3398,9 +3398,9 @@ mod tests {
 
             let checkbox_hwnd = CreateWindowExA(
                 0,
-                c"BUTTON".as_ptr(),
-                c"Check".as_ptr(),
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                c"BUTTON".as_ptr() as *const u8,
+                c"Check".as_ptr() as *const u8,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX as u32,
                 0,
                 50,
                 50,
@@ -3453,6 +3453,7 @@ mod tests {
                         ],
                     }],
                 }],
+                operations: HashMap::new(),
             };
 
             window.apply_enabled_states(&frozen_description);
@@ -3495,6 +3496,7 @@ mod tests {
                         ],
                     }],
                 }],
+                operations: HashMap::new(),
             };
 
             window.apply_enabled_states(&unfrozen_description);
