@@ -1943,11 +1943,15 @@ pub(crate) fn run_frame_loop(
 
                 // A tick that repeats the last instruction is not sent. Tauri
                 // delivers an event by evaluating JavaScript in the overlay's
-                // WebContent process, and #741 measured that those evaluations,
-                // not the 16ms tick, are where an idle buddy's wakeups go: 205
-                // of them a second across two overlays, each one taking a
-                // WebKit process assertion and logging four os_log lines on the
-                // way. A still sprite has nothing to say sixty times a second.
+                // WebContent process: 205 of those a second across two
+                // overlays, each taking a WebKit process assertion and logging
+                // four os_log lines on the way (#741). That is where an idle
+                // buddy's CPU goes, and not its interrupt wakeups - an emit
+                // wakes a thread with a Mach message, and a message is not an
+                // interrupt. Skipping the repeats moved CPU alone and left the
+                // wakeup count inside the unfixed range; the rAF re-arm in
+                // src/main.js is the half that moves wakeups. A still sprite
+                // has nothing to say sixty times a second.
                 //
                 // Resent anyway once the deadline passes, because `Placement`
                 // carries `visible` on every frame for a webview that may only

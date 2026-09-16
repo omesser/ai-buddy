@@ -398,10 +398,10 @@ async function start() {
   await window.__TAURI__.event.listen(
     "frame",
     ({ payload }) => {
-      const arrived = new Set();
+      const seen = new Set();
 
       payload.sprites.forEach((sprite, index) => {
-        arrived.add(sprite.id);
+        seen.add(sprite.id);
         let view = views.get(sprite.id);
         if (!view) {
           view = createView(sprite.id);
@@ -458,7 +458,7 @@ async function start() {
       // from the list to mean anything else — absence is this, and a sprite
       // taken away here loses its bubble and its interpolation with it.
       for (const id of [...views.keys()]) {
-        if (!arrived.has(id)) {
+        if (!seen.has(id)) {
           removeView(id);
         }
       }
