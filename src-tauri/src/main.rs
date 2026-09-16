@@ -2707,14 +2707,16 @@ fn build_anchor_window(
 
 /// Whether this Windows anchor-window focus should open Settings.
 ///
-/// Blocks focus events until startup is complete (after tray installation).
-/// A time-based settle window fails on dual-monitor Windows where startup
-/// activation arrives >1600ms after the anchor appears. #767.
+/// Consumes the first focus event during startup (swaps flag to false and
+/// blocks), allows all subsequent events. The first Focused(true) arrives
+/// at an unpredictable delay after tray install (measured >2s on dual-monitor
+/// Windows), so tray-install-clear and time-settle both failed. Swallow the
+/// synthetic startup focus; let real clicks through. #767.
 #[cfg(any(test, target_os = "windows"))]
 fn windows_anchor_focus_opens_settings(
     startup_in_progress: &std::sync::atomic::AtomicBool,
 ) -> bool {
-    !startup_in_progress.load(std::sync::atomic::Ordering::Acquire)
+    !startup_in_progress.swap(false, std::sync::atomic::Ordering::AcqRel)
 }
 
 fn main() {
@@ -3059,11 +3061,6 @@ fn main() {
             };
             app.manage(TrayHandle(Mutex::new(tray)));
 
-            // Startup is complete after tray installation. Clear the flag so
-            // the anchor window focus handler opens Settings on user clicks.
-            #[cfg(target_os = "windows")]
-            startup_in_progress.store(false, std::sync::atomic::Ordering::Release);
-
             let director_run = DirectorRun {
                 config,
                 settings: director,
@@ -3214,30 +3211,36 @@ mod tests {
         );
     }
 
-    /// Production change that would fail this: opening Settings inside the
-    /// settle window, or assigning a captured value inside `on_window_event`
+    /// Production change that would fail this: opening Settings on the first
+    /// startup focus, or assigning a captured value inside `on_window_event`
     /// (`Fn`, not `FnMut`). #767.
     mod windows_anchor_tests {
         use super::*;
         use std::sync::atomic::AtomicBool;
 
         #[test]
-        fn startup_in_progress_blocks_focus() {
+        fn first_focus_clears_and_blocks() {
             let startup_in_progress = AtomicBool::new(true);
 
             assert!(
                 !windows_anchor_focus_opens_settings(&startup_in_progress),
-                "focus during startup should not open Settings"
+                "first focus should not open Settings"
+            );
+            assert!(
+                !startup_in_progress.load(std::sync::atomic::Ordering::Acquire),
+                "first focus should clear the flag"
             );
         }
 
         #[test]
-        fn startup_complete_allows_focus() {
-            let startup_in_progress = AtomicBool::new(false);
+        fn second_focus_allows() {
+            let startup_in_progress = AtomicBool::new(true);
+
+            windows_anchor_focus_opens_settings(&startup_in_progress);
 
             assert!(
                 windows_anchor_focus_opens_settings(&startup_in_progress),
-                "focus after startup completes should open Settings"
+                "second focus should open Settings"
             );
         }
     }
