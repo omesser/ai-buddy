@@ -22,9 +22,10 @@ Preconditions:
 - `AI_BUDDY_TRACE_FRAMES=1` and `AI_BUDDY_TRACE_HITTEST=1` (the verify scripts set these).
 - Sprite has a known `pos()` in the log (feet); click slightly above the feet so the body is hit.
 
-- **Linux X11.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh`. The script moves the pointer to `(sprite_x, sprite_y - 40)`, holds button 1 across a couple of polls, and asserts `verbs:.*Poke`. Exit `0` is proof.
-- **macOS.** Run `.agents/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh`. The hit-test section warps the cursor onto drawn pixels (`HIT`) and the transparent corner (`miss`).
-- **Proof.** Copy the app/trace log into `$AI_BUDDY_VERIFY_EVIDENCE/poke/` and quote the `verbs:` line that contains `Poke`.
+- **Linux X11.** Run `xvfb-run -a -s "-screen 0 1280x720x24" .agents/skills/verify-ai-buddy/helpers/drive-overlay-x11.sh`. The script moves the pointer to `(sprite_x, sprite_y - 40)`, holds button 1 across a couple of polls, and asserts `verbs:.*Poke`. Exit `0` is proof. Evidence copied to `$AI_BUDDY_VERIFY_EVIDENCE/overlay-presence/`.
+- **macOS hit-test (HIT/miss).** Run `.agents/skills/verify-ai-buddy/helpers/drive-overlay-macos.sh`. The hit-test section warps the cursor onto drawn pixels (`HIT`) and the transparent corner (`miss`). Evidence copied to `$AI_BUDDY_VERIFY_EVIDENCE/overlay-presence/`.
+- **macOS poke-hit (gesture verb).** Run `cargo run -p ai-buddy-verify -- poke`. Real click, asserts `verbs:.*Poke`, writes evidence to `$AI_BUDDY_VERIFY_EVIDENCE/poke/`.
+- **Proof.** Require the `verbs:` line containing `Poke` from the app/trace log.
 
 ## Gotchas
 

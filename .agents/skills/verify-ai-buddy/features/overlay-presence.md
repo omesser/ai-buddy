@@ -5,8 +5,8 @@ The buddy draws on a display-sized always-on-top overlay that skips the taskbar,
 ## Sub-features
 
 - `overlay-window` publishes one large overlay window per display (not the GDK 10×10 placeholder).
-- `overlay-ewmh` (X11) sets `_NET_WM_STATE_ABOVE` and `_NET_WM_STATE_SKIP_TASKBAR`.
-- `overlay-frames` emits `frame:` lines once the sprite is alive.
+- `overlay-ewmh` (X11) sets `_NET_WM_STATE_ABOVE`, `_NET_WM_STATE_SKIP_TASKBAR`, and `_NET_WM_STATE_SKIP_PAGER`.
+- `overlay-frames` emits `frame:` lines when `AI_BUDDY_TRACE_FRAMES=1` is set.
 - `overlay-perch` lands on a real window top edge when a Perch exists before launch.
 
 ## How to get to it (user POV)
