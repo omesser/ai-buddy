@@ -3196,10 +3196,12 @@ mod tests {
             .iter()
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
-            .find(|row| matches!(
-                row,
-                form::FormRow::TextField { id, .. } if id == form::DIRECTOR_BASE_URL_ID
-            ));
+            .find(|row| {
+                matches!(
+                    row,
+                    form::FormRow::TextField { id, .. } if id == form::DIRECTOR_BASE_URL_ID
+                )
+            });
 
         assert!(base_url_row.is_some(), "Base URL row must exist");
 
@@ -3219,10 +3221,12 @@ mod tests {
             .iter()
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
-            .find(|row| matches!(
-                row,
-                form::FormRow::TextField { id, .. } if id == form::DIRECTOR_BASE_URL_ID
-            ));
+            .find(|row| {
+                matches!(
+                    row,
+                    form::FormRow::TextField { id, .. } if id == form::DIRECTOR_BASE_URL_ID
+                )
+            });
 
         if let Some(form::FormRow::TextField { frozen, .. }) = base_url_row_frozen {
             assert!(*frozen, "Base URL must be frozen when driving");
@@ -3233,10 +3237,12 @@ mod tests {
             .iter()
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
-            .find(|row| matches!(
-                row,
-                form::FormRow::TextField { id, .. } if id == form::DIRECTOR_MODEL_ID
-            ));
+            .find(|row| {
+                matches!(
+                    row,
+                    form::FormRow::TextField { id, .. } if id == form::DIRECTOR_MODEL_ID
+                )
+            });
 
         if let Some(form::FormRow::TextField { frozen, .. }) = model_row_frozen {
             assert!(*frozen, "Model must be frozen when driving");
@@ -3247,10 +3253,12 @@ mod tests {
             .iter()
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
-            .find(|row| matches!(
-                row,
-                form::FormRow::SecureField { id, .. } if id == form::DIRECTOR_API_KEY_ID
-            ));
+            .find(|row| {
+                matches!(
+                    row,
+                    form::FormRow::SecureField { id, .. } if id == form::DIRECTOR_API_KEY_ID
+                )
+            });
 
         if let Some(form::FormRow::SecureField { frozen, .. }) = api_key_row_frozen {
             assert!(*frozen, "API key must be frozen when driving");
@@ -3303,11 +3311,11 @@ mod tests {
             .find_map(|row| match row {
                 form::FormRow::Composite { controls, .. } => {
                     controls.iter().find_map(|control| match control {
-                        form::CompositeControl::Popup {
-                            id,
-                            frozen,
-                            ..
-                        } if id == form::DIRECTOR_BASE_URL_PICK_ID => Some(*frozen),
+                        form::CompositeControl::Popup { id, frozen, .. }
+                            if id == form::DIRECTOR_BASE_URL_PICK_ID =>
+                        {
+                            Some(*frozen)
+                        }
                         _ => None,
                     })
                 }
@@ -3322,11 +3330,11 @@ mod tests {
             .find_map(|row| match row {
                 form::FormRow::Composite { controls, .. } => {
                     controls.iter().find_map(|control| match control {
-                        form::CompositeControl::Popup {
-                            id,
-                            frozen,
-                            ..
-                        } if id == form::DIRECTOR_BASE_URL_PICK_ID => Some(*frozen),
+                        form::CompositeControl::Popup { id, frozen, .. }
+                            if id == form::DIRECTOR_BASE_URL_PICK_ID =>
+                        {
+                            Some(*frozen)
+                        }
                         _ => None,
                     })
                 }
