@@ -40,9 +40,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::settings::form::{self, FormRow, RowOperation};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{
-    BoolField, DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField,
-};
+#[cfg(test)]
+use crate::settings::BoolField;
+use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
