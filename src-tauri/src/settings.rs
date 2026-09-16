@@ -291,7 +291,7 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 /// copy field.
 ///
 /// A name the popup cannot offer - blank, `custom`, a hand-edited file - gets
-/// the pair on its own, because the pair is all any of the five templates is
+/// the pair on its own, because the pair is all any of the seven templates is
 /// made of.
 fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, String) {
     match harness {
@@ -328,11 +328,13 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
                 .to_string(),
             String::new(), // Token already in snippet (export)
         ),
-        // A fragment, because Cursor has no `mcp add`: `cursor-agent mcp`
-        // offers login, list, list-tools, enable and disable only. A new name
-        // lands as `not loaded (needs approval)` until `mcp enable` approves
-        // it, which is why that line is not optional (#636).
-        "cursor-agent" => (
+        // One fragment, two Harnesses: neither Cursor nor Pi has an `mcp add`
+        // to generate a command from, and both read the same `mcpServers`
+        // object out of a file. Only the file and the reload differ.
+        // `cursor-agent mcp` offers login, list, list-tools, enable and
+        // disable, so `mcp enable` is not optional there: a new name lands as
+        // `not loaded (needs approval)` until it runs (#636).
+        "cursor-agent" | "pi" => (
             format!(
                 "{{\n\
                  \x20 \"mcpServers\": {{\n\
@@ -345,11 +347,17 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
                  \x20 }}\n\
                  }}"
             ),
-            "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
-             not a command. Add or update the `ai-buddy` entry under `mcpServers`, \
-             then run `cursor-agent mcp enable ai-buddy` in a terminal and start a \
-             new session. `cursor-agent mcp list` reports."
-                .to_string(),
+            if harness == "cursor-agent" {
+                "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
+                 not a command. Add or update the `ai-buddy` entry under `mcpServers`, \
+                 then run `cursor-agent mcp enable ai-buddy` in a terminal and start a \
+                 new session. `cursor-agent mcp list` reports."
+            } else {
+                "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
+                 command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
+                 `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
+            }
+            .to_string(),
             String::new(), // Token already in snippet
         ),
         "grok" => (
@@ -397,25 +405,6 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
              {{ \"type\": \"remote\", \"url\": \"{url}\", \"oauth\": false, \"headers\": \
              {{ \"Authorization\": \"Bearer {token}\" }} }} }} }}`. `opencode mcp list` \
              reports."
-                .to_string(),
-            String::new(), // Token already in snippet
-        ),
-        "pi" => (
-            format!(
-                "{{\n\
-                 \x20 \"mcpServers\": {{\n\
-                 \x20   \"ai-buddy\": {{\n\
-                 \x20     \"url\": \"{url}\",\n\
-                 \x20     \"headers\": {{\n\
-                 \x20       \"Authorization\": \"Bearer {token}\"\n\
-                 \x20     }}\n\
-                 \x20   }}\n\
-                 \x20 }}\n\
-                 }}"
-            ),
-            "A fragment for `.mcp.json` (project) or `~/.pi/agent/mcp.json`, not a \
-             command. Add or update the `ai-buddy` entry under `mcpServers`. Then run \
-             `/reload` followed by `/mcp reconnect ai-buddy` in your Pi session."
                 .to_string(),
             String::new(), // Token already in snippet
         ),
@@ -4381,7 +4370,7 @@ mod tests {
 
     /// A harness name the popup cannot offer - blank, `custom`, or a
     /// hand-edited file - still gets the pair, because that is all any of the
-    /// five templates is made of.
+    /// seven templates is made of.
     #[test]
     fn an_unknown_harness_still_gets_the_url_and_the_token() {
         let (snippet, steps, _token) =
@@ -4398,7 +4387,10 @@ mod tests {
         let (_, _, token) = byo_registration("hermes", "http://127.0.0.1:5051/mcp", "beef");
         assert_eq!(token, "beef", "hermes must return the raw token separately");
 
-        for harness in ["claude", "codex", "grok", "opencode", "pi"] {
+        for harness in form::HARNESS_PRESETS
+            .iter()
+            .filter(|name| **name != "hermes")
+        {
             let (_, _, token) = byo_registration(harness, "http://127.0.0.1:5051/mcp", "beef");
             assert!(
                 token.is_empty(),

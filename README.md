@@ -148,7 +148,7 @@ See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env v
 
 Which Harness you attach changes what ai-buddy can do with it.
 Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./docs/DEVELOPMENT.md)); the run itself lives on the issue that did it.
-A row whose Standing says the turn is unsmoked is named for its command line and its login command alone, and earns the rest when someone signs that Harness in and runs the probe.
+A row whose Standing says the turn is unsmoked carries its command line, its login command, and what `initialize` advertised; only the session columns wait on someone signing that Harness in and running the probe.
 
 | Harness | Command | Standing |
 |---|---|---|
@@ -167,7 +167,7 @@ How they handle session differs, and changes what ai-buddy can do with them:
 |---|---|---|---|---|---|
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `codex` | yes | yes | yes | http | two: API Key, ChatGPT |
-| `cursor-agent` | unsmoked | no | no | stdio | one: Cursor Login |
+| `cursor-agent` | unsmoked | no | no | stdio | one: `cursor_login` |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `opencode` | yes | yes | yes | http | Login with opencode |
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |

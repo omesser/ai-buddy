@@ -950,7 +950,10 @@ fn completer_source_section() -> FormSection {
     FormSection {
         heading: "AI source".to_string(),
         comment: Some("Choose which \"AI brain\" answers: Model API or an attached Harness.".to_string()),
-        disclosure: Some("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.".to_string()),
+        // The preset list is read from `HARNESS_PRESETS` rather than spelled
+        // again: the hand-kept copy this replaces had been missing `pi` since
+        // it was added.
+        disclosure: Some(format!("Model API uses the HTTP endpoint below (base URL, model, and key). A Harness ({}, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.", HARNESS_PRESETS.join(", "))),
         status: None,
         rows: vec![
             FormRow::Popup {

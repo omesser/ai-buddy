@@ -116,11 +116,10 @@ pub struct Launch {
 ///
 /// Claude Code goes through Zed's adapter because it has no first-party ACP
 /// mode; `cursor-agent acp`, `grok agent stdio`, `hermes acp` and `opencode
-/// acp` are first-party. Anything else is a command line of the user's own,
-/// which is how Copilot CLI attaches until it is smoked. Google has no row: Antigravity
-/// (`agy`) does not speak ACP (#604). Pi is a named row through Zed's registry
-/// adapter, same shape as `claude`. Copilot still attaches via Custom until
-/// smoked.
+/// acp` are first-party. Pi is a named row through Zed's registry adapter,
+/// same shape as `claude`. Anything else is a command line of the user's own,
+/// which is how Copilot CLI attaches until it is smoked. Google has no row:
+/// Antigravity (`agy`) does not speak ACP (#604).
 ///
 /// The README's Harness Support table is this table's user-facing half and is
 /// maintained by hand: a name or command changed here, or a new
@@ -150,8 +149,7 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
         ),
         // `acp` is absent from `cursor-agent --help`, which lists `agent`,
         // `login` and `mcp` and not this one. It answers `initialize` all the
-        // same, and bare `cursor-agent` is the interactive TUI, so the
-        // subcommand is the whole of the row — the `grok` shape. #636.
+        // same — the `grok` shape below. #636.
         "cursor-agent" => (value, vec!["cursor-agent", "acp"]),
         // `grok` alone is the interactive TUI; the ACP agent is the
         // subcommand. The Chat surface has offered a Grok button since
