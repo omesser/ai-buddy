@@ -146,6 +146,10 @@ const CHAT_PERMISSION_EVENT: &str = "chat-permission";
 /// has stopped thinking, which is what takes the strip away (ADR-0025).
 const CHAT_THOUGHT_EVENT: &str = "chat-thought";
 
+/// The event carrying the agent's plan to every open Chat surface. Each one
+/// replaces the whole list, and an empty one is the turn taking it away (#697).
+const CHAT_PLAN_EVENT: &str = "chat-plan";
+
 /// The event retiring one forwarded request in every open Chat surface, by
 /// request id. The ask went to all of them and one took the click; the rest
 /// would otherwise keep offering buttons on a question already answered,
@@ -1316,6 +1320,17 @@ fn show_thought(app: &tauri::AppHandle, line: String) {
     for label in app.webview_windows().into_keys() {
         if label.starts_with("chat-") {
             let _ = app.emit_to(label, CHAT_THOUGHT_EVENT, &line);
+        }
+    }
+}
+
+/// Show the agent's plan in every open Chat surface, for the reason
+/// `show_thought` gives: the session is shared and the wire does not say whose
+/// turn is on it.
+fn show_plan(app: &tauri::AppHandle, steps: &[harness::PlanStep]) {
+    for label in app.webview_windows().into_keys() {
+        if label.starts_with("chat-") {
+            let _ = app.emit_to(label, CHAT_PLAN_EVENT, steps);
         }
     }
 }
@@ -2999,6 +3014,7 @@ fn main() {
                         settle_ask(&forward_to, Settled { request, option })
                     }
                     harness::Forwarded::Thought(line) => show_thought(&forward_to, line),
+                    harness::Forwarded::Plan(steps) => show_plan(&forward_to, &steps),
                 }),
             );
             // The other lane's thoughts, through the same door. Only one lane

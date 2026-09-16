@@ -30,14 +30,14 @@ const SILENT = "The Harness asked for permission without saying what for.";
 // One untrusted string, flattened to plain text on one line: a newline, tab or
 // bidi override inside a tool's arguments could forge a fact the Harness never
 // sent. `\p{C}` is every control and format character; `\s` finishes the whitespace.
-function flat(text) {
+export function flat(text) {
   return String(text)
     .replace(/\p{C}+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function clamp(text, limit) {
+export function clamp(text, limit) {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
