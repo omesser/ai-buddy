@@ -2666,16 +2666,13 @@ fn load_named(
 /// Build the anchor window that appears in the taskbar/panel on Windows and Linux.
 ///
 /// A small, invisible window that gives the running app a taskbar presence
-/// matching the macOS Dock. Clicking it opens Settings, matching the macOS
-/// expectation that the Dock icon is the settings door. The tray remains the
-/// alternate path.
+/// matching the macOS Dock. On Linux, clicking it opens Settings. On Windows,
+/// user-initiated activate (taskbar click) opens Settings via WM_ACTIVATE
+/// filtering. The tray remains the alternate path.
 ///
 /// Main thread only: builds a window and registers event handlers.
 #[cfg(not(target_os = "macos"))]
-fn build_anchor_window(
-    app: &tauri::AppHandle,
-    #[cfg(target_os = "windows")] startup_in_progress: Arc<std::sync::atomic::AtomicBool>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
         .title("ai-buddy")
         .inner_size(1.0, 1.0)
@@ -2685,38 +2682,77 @@ fn build_anchor_window(
         .visible(false)
         .build()?;
 
-    let app_handle = app.clone();
-    #[cfg(target_os = "windows")]
-    let startup_for_handler = Arc::clone(&startup_in_progress);
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(true) = event {
-            #[cfg(target_os = "windows")]
-            {
-                if windows_anchor_focus_opens_settings(&startup_for_handler) {
-                    show_settings(app_handle.clone());
-                }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let app_handle = app.clone();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Focused(true) = event {
+                show_settings(app_handle.clone());
             }
-            #[cfg(not(target_os = "windows"))]
-            show_settings(app_handle.clone());
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let app_handle = app.clone();
+        if let Ok(handle) = window.window_handle() {
+            if let RawWindowHandle::Win32(win32_handle) = handle.as_ref() {
+                install_windows_anchor_wndproc(win32_handle.hwnd.get() as _, app_handle);
+            }
         }
-    });
+    }
 
     window.show()?;
     Ok(())
 }
 
-/// Whether this Windows anchor-window focus should open Settings.
-///
-/// Consumes the first focus event during startup (swaps flag to false and
-/// blocks), allows all subsequent events. The first Focused(true) arrives
-/// at an unpredictable delay after tray install (measured >2s on dual-monitor
-/// Windows), so tray-install-clear and time-settle both failed. Swallow the
-/// synthetic startup focus; let real clicks through. #767.
-#[cfg(any(test, target_os = "windows"))]
-fn windows_anchor_focus_opens_settings(
-    startup_in_progress: &std::sync::atomic::AtomicBool,
-) -> bool {
-    !startup_in_progress.swap(false, std::sync::atomic::Ordering::AcqRel)
+#[cfg(target_os = "windows")]
+fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicPtr, Ordering};
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, WM_ACTIVATE,
+    };
+
+    static OLD_WNDPROC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+    static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+    unsafe extern "system" fn anchor_wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_ACTIVATE {
+            let f_active = (wparam & 0xFFFF) as u16;
+            const WA_CLICKACTIVE: u16 = 2;
+            if f_active == WA_CLICKACTIVE {
+                if let Some(app) = APP_HANDLE.get() {
+                    show_settings(app.clone());
+                }
+            }
+        }
+        let old_proc = OLD_WNDPROC.load(Ordering::Relaxed);
+        if old_proc.is_null() {
+            windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
+        } else {
+            CallWindowProcW(
+                std::mem::transmute(old_proc),
+                hwnd,
+                msg,
+                wparam,
+                lparam,
+            )
+        }
+    }
+
+    APP_HANDLE.set(app).ok();
+
+    unsafe {
+        let old = SetWindowLongPtrW(hwnd as HWND, GWLP_WNDPROC, anchor_wndproc as isize);
+        OLD_WNDPROC.store(old as *mut (), Ordering::Relaxed);
+    }
 }
 
 fn main() {
@@ -2816,14 +2852,8 @@ fn main() {
             // On Windows and Linux, create a hidden anchor window that appears
             // in the taskbar/panel, matching the macOS Dock presence.
             // Clicking it opens Settings. Overlays stay off the taskbar.
-            #[cfg(target_os = "windows")]
-            let startup_in_progress = Arc::new(std::sync::atomic::AtomicBool::new(true));
             #[cfg(not(target_os = "macos"))]
-            build_anchor_window(
-                app.handle(),
-                #[cfg(target_os = "windows")]
-                Arc::clone(&startup_in_progress),
-            )?;
+            build_anchor_window(app.handle())?;
 
             // Read before the overlays are built rather than after the loop
             // starts: reading which part of a display is usable means asking
@@ -3211,37 +3241,42 @@ mod tests {
         );
     }
 
-    /// Production change that would fail this: opening Settings on the first
-    /// startup focus, or assigning a captured value inside `on_window_event`
-    /// (`Fn`, not `FnMut`). #767.
+    /// Production change that would fail this: opening Settings on WA_ACTIVE (1)
+    /// or WA_INACTIVE (0) in addition to WA_CLICKACTIVE (2). #767.
+    #[cfg(target_os = "windows")]
     mod windows_anchor_tests {
         use super::*;
-        use std::sync::atomic::AtomicBool;
 
         #[test]
-        fn first_focus_clears_and_blocks() {
-            let startup_in_progress = AtomicBool::new(true);
-
+        fn clickactive_opens_settings() {
+            const WA_CLICKACTIVE: u16 = 2;
             assert!(
-                !windows_anchor_focus_opens_settings(&startup_in_progress),
-                "first focus should not open Settings"
-            );
-            assert!(
-                !startup_in_progress.load(std::sync::atomic::Ordering::Acquire),
-                "first focus should clear the flag"
+                windows_activate_opens_settings(WA_CLICKACTIVE),
+                "WA_CLICKACTIVE (2) should open Settings"
             );
         }
 
         #[test]
-        fn second_focus_allows() {
-            let startup_in_progress = AtomicBool::new(true);
-
-            windows_anchor_focus_opens_settings(&startup_in_progress);
-
+        fn active_does_not_open() {
+            const WA_ACTIVE: u16 = 1;
             assert!(
-                windows_anchor_focus_opens_settings(&startup_in_progress),
-                "second focus should open Settings"
+                !windows_activate_opens_settings(WA_ACTIVE),
+                "WA_ACTIVE (1) should not open Settings"
             );
+        }
+
+        #[test]
+        fn inactive_does_not_open() {
+            const WA_INACTIVE: u16 = 0;
+            assert!(
+                !windows_activate_opens_settings(WA_INACTIVE),
+                "WA_INACTIVE (0) should not open Settings"
+            );
+        }
+
+        fn windows_activate_opens_settings(f_active: u16) -> bool {
+            const WA_CLICKACTIVE: u16 = 2;
+            f_active == WA_CLICKACTIVE
         }
     }
 
