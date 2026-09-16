@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The Settings surface when opened as a webview needs to listen for settings-refresh events that fire when the roster changes while the window is open (the frame loop push path), and to emit settings_event commands when a row is edited. Native remains the default; this capability applies only when AI_BUDDY_SETTINGS_WEBVIEW=1.",
+  "description": "The Settings surface when opened as a webview needs to listen for settings-refresh events that fire when the roster changes while the window is open (the frame loop push path at frame_loop.rs:710), and to emit settings_event commands when a row is edited. The start-dragging permission is for alt-drag: the page checks modifier held and event.target rather than dragging the whole window unconditionally, so a drag from a text field still selects. Native remains the default; this capability applies only when AI_BUDDY_SETTINGS_WEBVIEW=1.",
   "windows": [
     "settings"
   ],
   "permissions": [
     "core:event:allow-listen",
-    "core:event:allow-unlisten"
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging"
   ]
 }

@@ -414,6 +414,35 @@ if (typeof document !== "undefined") {
 
   if (typeof window.__TAURI__ !== "undefined") {
     const { listen } = window.__TAURI__.event;
+    const { getCurrentWindow } = window.__TAURI__.webviewWindow;
+
+    // Alt-drag to move the window, gated on modifier held and target is background.
+    document.addEventListener("mousedown", (event) => {
+      if (!event.altKey) return;
+      const isControl = event.target.closest("input, select, button, summary, pre");
+      if (isControl) return;
+      event.preventDefault();
+      getCurrentWindow().startDragging();
+    });
+
+    // Escape closes the window.
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        getCurrentWindow().close();
+      }
+    });
+
+    // Enter commits the active control (blur triggers its handler).
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && document.activeElement) {
+        const active = document.activeElement;
+        if (active.matches("input, textarea") && !active.matches('[type="checkbox"]')) {
+          event.preventDefault();
+          active.blur();
+        }
+      }
+    });
 
     // Tauri's listen() returns a Promise<UnlistenFn>. Window destruction does
     // not guarantee cleanup of window-scoped listeners, so we unlisten on unload.

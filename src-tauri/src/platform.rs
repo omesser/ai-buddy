@@ -330,6 +330,38 @@ pub fn show_settings(session: crate::settings::SettingsSession) {
     macos::show_settings(session)
 }
 
+/// Raise the Settings webview above the overlay. Main thread only.
+///
+/// Settings sits at NSStatusWindowLevel, above the overlay's NSFloatingWindowLevel,
+/// so a normal window falls behind it and opening Settings from the tray looks
+/// like a no-op.
+#[cfg(target_os = "macos")]
+pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use objc2::msg_send;
+    use objc2_app_kit::{NSApplication, NSStatusWindowLevel, NSWindowLevel};
+    use objc2_foundation::MainThreadMarker;
+
+    let ptr = window
+        .ns_window()
+        .map_err(|e| format!("settings window has no native handle: {e}"))?
+        as *mut objc2::runtime::AnyObject;
+
+    unsafe {
+        let ns_window = &*ptr;
+        let mtm = MainThreadMarker::new_unchecked();
+        let app = NSApplication::sharedApplication(mtm);
+
+        let _: () = msg_send![ns_window, setLevel: NSStatusWindowLevel as NSWindowLevel];
+        let _: () = msg_send![ns_window, setHidesOnDeactivate: false];
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+        let _: () = msg_send![ns_window, orderFrontRegardless];
+        let _: () = msg_send![ns_window, makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()];
+    }
+
+    Ok(())
+}
+
 /// Redraw the settings window from the live roster. Main thread only.
 ///
 /// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
