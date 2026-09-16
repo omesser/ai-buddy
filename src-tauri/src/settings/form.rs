@@ -34,6 +34,28 @@ pub enum RowOperation {
     NewSession,
 }
 
+impl RowOperation {
+    /// Stable wire representation for crossing the Rust/JS boundary.
+    ///
+    /// Step 5's `settings_event` command serializes `Outcome::Run` by calling
+    /// this rather than exposing Debug text. The string matches the enum name
+    /// in snake_case, which is what serde would derive, but explicit is cheaper
+    /// than a serde derive on an enum the native renderers also import.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Spawn => "spawn",
+            Self::OpenMemory => "open_memory",
+            Self::WipeMemory => "wipe_memory",
+            Self::ClearKey => "clear_key",
+            Self::CopyByoSnippet => "copy_byo_snippet",
+            Self::CopyByoToken => "copy_byo_token",
+            Self::Apply => "apply",
+            Self::Cancel => "cancel",
+            Self::NewSession => "new_session",
+        }
+    }
+}
+
 /// One section of the settings form.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FormSection {

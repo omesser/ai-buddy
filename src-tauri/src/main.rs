@@ -620,9 +620,6 @@ enum SettingsEventPayload {
     SetText {
         set_text: String,
         value: String,
-        #[serde(default)]
-        #[allow(dead_code)]
-        batched: bool,
     },
     Press {
         press: String,
@@ -667,27 +664,9 @@ mod settings_event_tests {
         let payload: SettingsEventPayload =
             serde_json::from_str(json).expect("set_text payload should deserialize");
         match payload {
-            SettingsEventPayload::SetText {
-                set_text,
-                value,
-                batched,
-            } => {
+            SettingsEventPayload::SetText { set_text, value } => {
                 assert_eq!(set_text, "director_base_url");
                 assert_eq!(value, "https://api.x.ai");
-                assert!(!batched);
-            }
-            _ => panic!("expected SetText variant"),
-        }
-    }
-
-    #[test]
-    fn set_text_with_batched_deserializes() {
-        let json = r#"{"set_text": "director_model", "value": "grok-4.6", "batched": true}"#;
-        let payload: SettingsEventPayload =
-            serde_json::from_str(json).expect("set_text with batched should deserialize");
-        match payload {
-            SettingsEventPayload::SetText { batched, .. } => {
-                assert!(batched);
             }
             _ => panic!("expected SetText variant"),
         }
@@ -765,6 +744,22 @@ mod settings_event_tests {
         assert!(json.contains(r#""id":"director_base_url""#));
         assert!(json.contains(r#""value":"https://api.openai.com""#));
     }
+
+    #[test]
+    fn response_run_uses_stable_wire_format() {
+        use settings::form::RowOperation;
+        let response = SettingsEventResponse::Run {
+            operation: RowOperation::Spawn.as_str().to_string(),
+        };
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert_eq!(json, r#"{"action":"run","operation":"spawn"}"#);
+
+        let response = SettingsEventResponse::Run {
+            operation: RowOperation::NewSession.as_str().to_string(),
+        };
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert_eq!(json, r#"{"action":"run","operation":"new_session"}"#);
+    }
 }
 
 /// What the webview must do about a gesture.
@@ -806,9 +801,7 @@ fn settings_event(
             id: set_bool,
             value,
         },
-        SettingsEventPayload::SetText {
-            set_text, value, ..
-        } => controller::Event::SetText {
+        SettingsEventPayload::SetText { set_text, value } => controller::Event::SetText {
             id: set_text,
             value,
         },
@@ -880,7 +873,7 @@ fn settings_event(
             })
         }
         controller::Outcome::Run(op) => Ok(SettingsEventResponse::Run {
-            operation: format!("{:?}", op),
+            operation: op.as_str().to_string(),
         }),
     }
 }
