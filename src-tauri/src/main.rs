@@ -620,9 +620,6 @@ enum SettingsEventPayload {
     SetText {
         set_text: String,
         value: String,
-        #[serde(default)]
-        #[allow(dead_code)]
-        batched: bool,
     },
     Press {
         press: String,
@@ -667,27 +664,9 @@ mod settings_event_tests {
         let payload: SettingsEventPayload =
             serde_json::from_str(json).expect("set_text payload should deserialize");
         match payload {
-            SettingsEventPayload::SetText {
-                set_text,
-                value,
-                batched,
-            } => {
+            SettingsEventPayload::SetText { set_text, value } => {
                 assert_eq!(set_text, "director_base_url");
                 assert_eq!(value, "https://api.x.ai");
-                assert!(!batched);
-            }
-            _ => panic!("expected SetText variant"),
-        }
-    }
-
-    #[test]
-    fn set_text_with_batched_deserializes() {
-        let json = r#"{"set_text": "director_model", "value": "grok-4.6", "batched": true}"#;
-        let payload: SettingsEventPayload =
-            serde_json::from_str(json).expect("set_text with batched should deserialize");
-        match payload {
-            SettingsEventPayload::SetText { batched, .. } => {
-                assert!(batched);
             }
             _ => panic!("expected SetText variant"),
         }
@@ -765,6 +744,22 @@ mod settings_event_tests {
         assert!(json.contains(r#""id":"director_base_url""#));
         assert!(json.contains(r#""value":"https://api.openai.com""#));
     }
+
+    #[test]
+    fn response_run_uses_stable_wire_format() {
+        use settings::form::RowOperation;
+        let response = SettingsEventResponse::Run {
+            operation: RowOperation::Spawn.as_str().to_string(),
+        };
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert_eq!(json, r#"{"action":"run","operation":"spawn"}"#);
+
+        let response = SettingsEventResponse::Run {
+            operation: RowOperation::NewSession.as_str().to_string(),
+        };
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert_eq!(json, r#"{"action":"run","operation":"new_session"}"#);
+    }
 }
 
 /// What the webview must do about a gesture.
@@ -806,9 +801,7 @@ fn settings_event(
             id: set_bool,
             value,
         },
-        SettingsEventPayload::SetText {
-            set_text, value, ..
-        } => controller::Event::SetText {
+        SettingsEventPayload::SetText { set_text, value } => controller::Event::SetText {
             id: set_text,
             value,
         },
@@ -880,7 +873,7 @@ fn settings_event(
             })
         }
         controller::Outcome::Run(op) => Ok(SettingsEventResponse::Run {
-            operation: format!("{:?}", op),
+            operation: op.as_str().to_string(),
         }),
     }
 }
@@ -890,12 +883,38 @@ fn settings_event(
 /// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
 /// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
 /// this is opened on the toolkit main thread where the native objects live.
+/// When `AI_BUDDY_SETTINGS_WEBVIEW=1`, opens the webview Settings instead;
+/// native remains the default.
 #[tauri::command]
 fn show_settings(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
         eprintln!("settings: opened before the shell was ready");
         return;
     };
+
+    if model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+        // Same clone-then-post as `open_chat`: the closure takes the handle,
+        // `run_on_main_thread` still borrows `app`.
+        let handle = app.clone();
+        if let Err(why) =
+            app.run_on_main_thread(move || match handle.get_webview_window("settings") {
+                Some(window) => {
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+                None => {
+                    if let Err(why) = build_settings(&handle) {
+                        eprintln!("settings webview: {why}");
+                    }
+                }
+            })
+        {
+            eprintln!("settings webview: {why}");
+        }
+        return;
+    }
+
+    // Native path: existing platform-specific renderers.
     let session = settings_session(&app, &state);
 
     // On Linux, if the MainContext is already owned (menu/tray callback runs
@@ -1136,6 +1155,19 @@ fn build_chat(
         .title(title)
         .inner_size(420.0, 560.0)
         .min_inner_size(320.0, 320.0)
+        .focused(true)
+        .build()
+}
+
+/// Build the Settings webview window.
+///
+/// Mirrors `build_chat`. Opens behind `AI_BUDDY_SETTINGS_WEBVIEW=1`; native
+/// remains the default.
+fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Settings")
+        .inner_size(600.0, 520.0)
+        .min_inner_size(480.0, 400.0)
         .focused(true)
         .build()
 }

@@ -706,8 +706,9 @@ pub(crate) fn run_frame_loop(
             // InstanceRow, not the one from last tick. Menu-driven switches
             // never set `settings_ops`. #375.
             if settings_ops || menu_acted {
-                let _ = app.run_on_main_thread(|| {
-                    platform::refresh_settings();
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    platform::refresh_settings(&handle);
                 });
             }
 

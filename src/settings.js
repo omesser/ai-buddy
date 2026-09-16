@@ -275,9 +275,9 @@ export function render(root, tab, values, emit = () => {}) {
   }
 }
 
-export async function handleEvent(payload) {
-  const response = await invokeSettingsEvent(payload);
-
+// Process a settings_event response into an outcome the page can act on.
+// Exported for testing; the page wires it through invokeSettingsEvent.
+export function processResponse(response) {
   switch (response.action) {
     case "refresh":
       return true;
@@ -293,6 +293,11 @@ export async function handleEvent(payload) {
     default:
       return false;
   }
+}
+
+export async function handleEvent(payload) {
+  const response = await invokeSettingsEvent(payload);
+  return processResponse(response);
 }
 
 // --- The tab shell ---------------------------------------------------------
@@ -314,30 +319,119 @@ async function invokeSettingsEvent(payload) {
   if (typeof window.__TAURI_INTERNALS__ === "undefined") {
     return { action: "nothing" };
   }
-  try {
-    return await window.__TAURI_INTERNALS__.invoke("settings_event", { payload });
-  } catch (error) {
-    console.error("settings_event failed:", error);
-    return { action: "nothing" };
-  }
+  return await window.__TAURI_INTERNALS__.invoke("settings_event", { payload });
 }
 
-// The page draws no snapshot in this step: nothing feeds `form::describe()`
-// across the boundary until `invoke` arrives. The shell still has to
-// behave, so the tabs select and the panel stays empty until a snapshot is set.
+// Snapshot + settings-refresh once Tauri is in the page; tab clicks still
+// work without it so the shell does not sit dead in a non-Tauri load.
 if (typeof document !== "undefined") {
   const tablist = document.querySelector('[role="tablist"]');
   const panel = document.querySelector('[role="tabpanel"]');
 
-  if (tablist && panel) {
-    for (const tab of tablist.querySelectorAll('[role="tab"]')) {
-      tab.addEventListener("click", () => {
-        for (const other of tablist.querySelectorAll('[role="tab"]')) {
-          other.setAttribute("aria-selected", String(other === tab));
+  let currentForm = null;
+  let currentValues = null;
+  let currentTabIndex = 0;
+  let lastSnapshotPromise = null;
+
+  function showError(message, onRetry) {
+    if (!panel) return;
+    panel.replaceChildren();
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "set-error";
+    errorDiv.style.cssText = "padding: 2rem; text-align: center;";
+
+    const errorText = document.createElement("p");
+    errorText.textContent = message;
+    errorText.style.marginBottom = "1rem";
+    errorDiv.appendChild(errorText);
+
+    if (onRetry) {
+      const retryButton = document.createElement("button");
+      retryButton.textContent = "Retry";
+      retryButton.type = "button";
+      retryButton.addEventListener("click", onRetry);
+      errorDiv.appendChild(retryButton);
+    }
+
+    panel.appendChild(errorDiv);
+  }
+
+  async function loadSnapshot() {
+    const currentLoad = (async () => {
+      try {
+        const snapshot = await window.__TAURI__.core.invoke("settings_snapshot");
+        if (lastSnapshotPromise === currentLoad) {
+          currentForm = snapshot.form;
+          currentValues = snapshot.view;
+          renderCurrentTab();
         }
-        panel.setAttribute("aria-label", tab.textContent);
-        panel.replaceChildren();
+      } catch (err) {
+        if (lastSnapshotPromise === currentLoad) {
+          showError("Could not load settings. Check that the app is running.", () => loadSnapshot());
+        }
+      }
+    })();
+    lastSnapshotPromise = currentLoad;
+    return currentLoad;
+  }
+
+  // handleEvent already invokes settings_event; a truthy outcome (refresh,
+  // fill, reset, clearKey, run) means the page's snapshot is stale.
+  async function emitEvent(payload) {
+    try {
+      if (await handleEvent(payload)) {
+        await loadSnapshot();
+      }
+    } catch (err) {
+      showError("Could not save changes. Check your connection.", () => {
+        emitEvent(payload);
       });
     }
+  }
+
+  function renderCurrentTab() {
+    if (!currentForm || !currentValues || !panel) return;
+    const tab = currentForm.tabs[currentTabIndex];
+    if (tab) {
+      render(panel, tab, currentValues, emitEvent);
+    }
+  }
+
+  if (tablist && panel) {
+    const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = tabs[i];
+      tab.addEventListener("click", () => {
+        currentTabIndex = i;
+        for (let j = 0; j < tabs.length; j++) {
+          tabs[j].setAttribute("aria-selected", String(j === i));
+        }
+        panel.setAttribute("aria-label", tab.textContent);
+        renderCurrentTab();
+      });
+    }
+  }
+
+  if (typeof window.__TAURI__ !== "undefined") {
+    const { listen } = window.__TAURI__.event;
+
+    // Tauri's listen() returns a Promise<UnlistenFn>. Window destruction does
+    // not guarantee cleanup of window-scoped listeners, so we unlisten on unload.
+    // Evidence: Tauri v2 docs state "listeners need to be manually unlistened"
+    // and the returned unlisten function exists for this reason.
+    let unlistenRefresh = null;
+    listen("settings-refresh", () => {
+      loadSnapshot();
+    }).then((unlisten) => {
+      unlistenRefresh = unlisten;
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if (unlistenRefresh) {
+        unlistenRefresh();
+      }
+    });
+
+    loadSnapshot();
   }
 }
