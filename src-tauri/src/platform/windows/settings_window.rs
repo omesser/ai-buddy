@@ -28,14 +28,14 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU}
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
     GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowRect,
-    GetWindowTextA, GetWindowTextLengthA, IsWindowEnabled, MessageBoxA, SendMessageA, SendMessageW,
+    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
     SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
     BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL,
-    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWL_STYLE, GWLP_USERDATA, GW_CHILD,
-    GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
-    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST,
-    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED,
-    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT,
+    HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT,
+    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -2653,6 +2653,7 @@ pub use show as show_settings;
 mod tests {
     use super::*;
     use crate::settings::BoolField;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GWL_STYLE;
 
     /// Layout constants must match macOS and GTK for consistent readability
     /// across platforms. These are compile-time assertions so drift is caught
@@ -3403,15 +3404,17 @@ mod tests {
                 "Edit must be readonly after frozen=true"
             );
 
-            let button_enabled = IsWindowEnabled(button_hwnd);
-            assert_eq!(
-                button_enabled, 0,
+            let button_style = GetWindowLongPtrA(button_hwnd, GWL_STYLE);
+            assert_ne!(
+                button_style & WS_DISABLED as isize,
+                0,
                 "Button must be disabled after frozen=true"
             );
 
-            let checkbox_enabled = IsWindowEnabled(checkbox_hwnd);
-            assert_eq!(
-                checkbox_enabled, 0,
+            let checkbox_style = GetWindowLongPtrA(checkbox_hwnd, GWL_STYLE);
+            assert_ne!(
+                checkbox_style & WS_DISABLED as isize,
+                0,
                 "Checkbox must be disabled after frozen=true"
             );
 
@@ -3470,15 +3473,17 @@ mod tests {
                 "Edit must not be readonly after frozen=false"
             );
 
-            let button_enabled_unfrozen = IsWindowEnabled(button_hwnd);
-            assert_ne!(
-                button_enabled_unfrozen, 0,
+            let button_style_unfrozen = GetWindowLongPtrA(button_hwnd, GWL_STYLE);
+            assert_eq!(
+                button_style_unfrozen & WS_DISABLED as isize,
+                0,
                 "Button must be enabled after frozen=false"
             );
 
-            let checkbox_enabled_unfrozen = IsWindowEnabled(checkbox_hwnd);
-            assert_ne!(
-                checkbox_enabled_unfrozen, 0,
+            let checkbox_style_unfrozen = GetWindowLongPtrA(checkbox_hwnd, GWL_STYLE);
+            assert_eq!(
+                checkbox_style_unfrozen & WS_DISABLED as isize,
+                0,
                 "Checkbox must be enabled after frozen=false"
             );
 
