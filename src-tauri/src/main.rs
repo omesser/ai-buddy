@@ -2665,18 +2665,6 @@ fn load_named(
     })
 }
 
-/// Whether this Windows anchor-window focus should open Settings.
-///
-/// `on_window_event` takes `Fn`, not `FnMut`, so a captured `bool` cannot be
-/// assigned inside the handler. `AtomicBool::swap` takes `&self`.
-///
-/// Windows focuses the hidden anchor at startup; that is not a taskbar click,
-/// so the first call returns false. Later focuses return true. #767.
-#[cfg(any(test, target_os = "windows"))]
-fn windows_anchor_focus_opens_settings(first_focus_seen: &AtomicBool) -> bool {
-    first_focus_seen.swap(true, Ordering::Relaxed)
-}
-
 /// Build the anchor window that appears in the taskbar/panel on Windows and Linux.
 ///
 /// A small, invisible window that gives the running app a taskbar presence
@@ -2687,6 +2675,8 @@ fn windows_anchor_focus_opens_settings(first_focus_seen: &AtomicBool) -> bool {
 /// Main thread only: builds a window and registers event handlers.
 #[cfg(not(target_os = "macos"))]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use std::time::{Duration, Instant};
+
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
         .title("ai-buddy")
         .inner_size(1.0, 1.0)
@@ -2698,12 +2688,12 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
 
     let app_handle = app.clone();
     #[cfg(target_os = "windows")]
-    let first_focus_seen = AtomicBool::new(false);
+    let shown_at = std::sync::OnceLock::new();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
             #[cfg(target_os = "windows")]
             {
-                if windows_anchor_focus_opens_settings(&first_focus_seen) {
+                if windows_anchor_focus_opens_settings(&shown_at) {
                     show_settings(app_handle.clone());
                 }
             }
@@ -2712,8 +2702,22 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         }
     });
 
+    #[cfg(target_os = "windows")]
+    shown_at.set(Instant::now()).ok();
     window.show()?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_anchor_focus_opens_settings(shown_at: &std::sync::OnceLock<std::time::Instant>) -> bool {
+    use std::time::Duration;
+
+    const SETTLE_MS: u64 = 500;
+
+    shown_at
+        .get()
+        .map(|start| start.elapsed() >= Duration::from_millis(SETTLE_MS))
+        .unwrap_or(false)
 }
 
 fn main() {
@@ -3200,6 +3204,47 @@ mod tests {
             opening.character, "nim",
             "the payload Character is the Instance's"
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    mod windows_anchor_tests {
+        use super::*;
+        use std::sync::OnceLock;
+        use std::time::{Duration, Instant};
+
+        #[test]
+        fn settle_window_blocks_early_focus() {
+            let shown_at = OnceLock::new();
+            shown_at.set(Instant::now()).ok();
+
+            assert!(
+                !windows_anchor_focus_opens_settings(&shown_at),
+                "focus within settle window should not open Settings"
+            );
+        }
+
+        #[test]
+        fn settle_window_allows_late_focus() {
+            let shown_at = OnceLock::new();
+            shown_at
+                .set(Instant::now() - Duration::from_millis(600))
+                .ok();
+
+            assert!(
+                windows_anchor_focus_opens_settings(&shown_at),
+                "focus after settle window should open Settings"
+            );
+        }
+
+        #[test]
+        fn uninitialized_shown_at_blocks_focus() {
+            let shown_at = OnceLock::new();
+
+            assert!(
+                !windows_anchor_focus_opens_settings(&shown_at),
+                "focus before shown_at is set should not open Settings"
+            );
+        }
     }
 
     /// A chosen name survives retarget; the Chat header still has to name the
