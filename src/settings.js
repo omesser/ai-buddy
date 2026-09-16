@@ -10,18 +10,9 @@
 // again, reading the same description, so a control cannot be built frozen and
 // drawn unfrozen.
 //
-<<<<<<< HEAD
-// `emit` is a stub here and the `settings_event` command in #706 is what it
-// becomes, so the payloads below are provisional. A secure field emits
-// `set_text` rather than a verb of its own because `FormRow::SecureField`
-// writes a `TextField`.
-=======
-// `emit` routes events to the `settings_event` Tauri command (#706 step 4).
-// A secure field emits `set_text` rather than a verb of its own because
-// `FormRow::SecureField` writes a `TextField`, and a row and its setter naming
-// different things is #273. Dismissing an Instance has no operation in
-// `describe()` at all.
->>>>>>> 77b91d1 (feat(settings): Add settings_event command for webview gestures)
+// `emit` routes events to the `settings_event` Tauri command (#706). A secure
+// field emits `set_text` rather than a verb of its own because
+// `FormRow::SecureField` writes a `TextField`.
 
 // `values` carries one scalar per row id, so a list of Instances or excluded
 // applications arrives as lines, the way the AppKit block shows them. An array
@@ -295,7 +286,7 @@ export function render(root, tab, values, emit = () => {}) {
 
 export async function handleEvent(payload) {
   const response = await invokeSettingsEvent(payload);
-  
+
   switch (response.action) {
     case "refresh":
       return true;
