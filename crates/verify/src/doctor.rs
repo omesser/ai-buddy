@@ -1,7 +1,7 @@
 //! Read-only readiness checks mirroring helpers/doctor.sh.
 //!
 //! Hard FAILs only for: missing workspace layout, or no binary and no cargo.
-//! OS tool gaps are WARNs (stone 0).
+//! OS tool gaps are SKIPs (stone 0).
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -9,35 +9,49 @@ use std::process::Command;
 #[cfg(windows)]
 use std::process::Stdio;
 
-use crate::paths::RunPaths;
-use crate::proof;
+use crate::contract::{Outcome, RunReport};
 
-/// Run doctor. Returns process exit code (0 = no hard fails).
-pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
-    let mut fails = 0u32;
-
-    println!(
+/// Run doctor.
+pub fn run(repo_root: &Path, report: &mut RunReport) {
+    report.say(&format!(
         "doctor: repo={} RUN_ID={}",
         repo_root.display(),
-        paths.run_id
-    );
-    println!("doctor: evidence={}", paths.evidence.display());
+        report.paths().run_id
+    ));
+    report.say(&format!(
+        "doctor: evidence={}",
+        report.paths().evidence.display()
+    ));
 
     if repo_root.join("Cargo.toml").is_file() && repo_root.join("src-tauri").is_dir() {
-        pass("workspace layout (Cargo.toml + src-tauri)");
+        report.check(Outcome::Pass, "workspace layout", "Cargo.toml + src-tauri");
     } else {
-        fail("not an ai-buddy checkout");
-        fails += 1;
+        report.check(
+            Outcome::Fail,
+            "workspace layout",
+            "not an ai-buddy checkout",
+        );
     }
 
     match ai_buddy_bin(repo_root) {
-        Some(bin) => pass(&format!("binary present: {}", bin.display())),
+        Some(bin) => report.check(
+            Outcome::Pass,
+            "ai-buddy binary",
+            &format!("present: {}", bin.display()),
+        ),
         None => {
             if command_on_path("cargo") {
-                pass("no binary yet; cargo is available to build");
+                report.check(
+                    Outcome::Pass,
+                    "ai-buddy binary",
+                    "not built yet; cargo is available to build",
+                );
             } else {
-                fail("no ai-buddy binary and no cargo");
-                fails += 1;
+                report.check(
+                    Outcome::Fail,
+                    "ai-buddy binary",
+                    "no ai-buddy binary and no cargo",
+                );
             }
         }
     }
@@ -45,77 +59,96 @@ pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
     match env::consts::OS {
         "macos" => {
             if command_on_path("swift") {
-                pass("swift on PATH");
+                report.check(Outcome::Pass, "swift", "on PATH");
             } else {
-                warn("swift missing (macOS verify-overlay)");
+                report.check(Outcome::Skip, "swift", "not on PATH (macOS verify-overlay)");
             }
         }
-        "linux" => linux_tool_checks(),
-        "windows" => {
-            pass("Windows host — use scripts/verify-overlay-win.ps1");
-        }
-        other => warn(&format!("unknown OS {other}")),
+        "linux" => linux_tool_checks(report),
+        "windows" => report.check(
+            Outcome::Pass,
+            "host os",
+            "windows; overlay via scripts/verify-overlay-win.ps1",
+        ),
+        other => report.check(Outcome::Skip, "host os", &format!("unknown OS {other}")),
     }
 
     if let Ok(app_pid) = env::var("APP_PID") {
         if !app_pid.is_empty() {
             if pid_alive(&app_pid) {
-                pass(&format!("APP_PID={app_pid} alive"));
+                report.check(Outcome::Pass, "APP_PID", &format!("{app_pid} alive"));
             } else {
-                // Soft: APP_PID is optional context from helpers; warn only.
-                warn(&format!("APP_PID={app_pid} not running"));
+                // Soft: APP_PID is optional context from helpers.
+                report.check(Outcome::Skip, "APP_PID", &format!("{app_pid} not running"));
             }
         }
     }
 
-    if fails == 0 {
-        println!("doctor: OK");
-        let _ = proof::append_proof(
-            paths,
-            &format!("doctor OK evidence={}", paths.evidence.display()),
-        );
-        0
+    if report.outcome() == Outcome::Pass {
+        report.say("doctor: OK");
     } else {
-        println!("doctor: {fails} failure(s)");
-        let _ = proof::append_proof(
-            paths,
-            &format!("doctor FAILED ({fails}) — do not Drive until fixed"),
-        );
-        1
+        let fails = report
+            .checks()
+            .iter()
+            .filter(|c| c.outcome == Outcome::Fail)
+            .count();
+        report.say(&format!("doctor: {fails} failure(s)"));
     }
 }
 
-fn linux_tool_checks() {
+fn linux_tool_checks(report: &mut RunReport) {
     match env::var("DISPLAY") {
-        Ok(d) if !d.is_empty() => pass(&format!("DISPLAY={d}")),
-        _ => warn("DISPLAY unset (X11 overlay drive needs xvfb-run or a session)"),
+        Ok(d) if !d.is_empty() => report.check(Outcome::Pass, "DISPLAY", &d),
+        _ => report.check(
+            Outcome::Skip,
+            "DISPLAY",
+            "unset (X11 overlay drive needs xvfb-run or a session)",
+        ),
     }
     for t in ["xdotool", "xprop", "xwininfo"] {
         if command_on_path(t) {
-            pass(&format!("{t} on PATH"));
+            report.check(Outcome::Pass, t, "on PATH");
         } else {
-            warn(&format!("{t} missing (needed for verify-overlay-x11)"));
+            report.check(
+                Outcome::Skip,
+                t,
+                "not on PATH (needed for verify-overlay-x11)",
+            );
         }
     }
     if command_on_path("xterm") {
-        pass("xterm on PATH");
+        report.check(Outcome::Pass, "xterm", "on PATH");
     } else {
-        warn("xterm missing (verify-overlay-x11 perch prop) — unit proof still OK");
+        report.check(
+            Outcome::Skip,
+            "xterm",
+            "not on PATH (verify-overlay-x11 perch prop); unit proof still OK",
+        );
     }
     if env::var("DISPLAY").map(|d| !d.is_empty()).unwrap_or(false) {
         if supporting_wm_published() {
-            pass("supporting WM published");
+            report.check(Outcome::Pass, "supporting WM", "published");
         } else if command_on_path("openbox") {
-            warn("no supporting WM yet; openbox is installed (script can start it)");
+            report.check(
+                Outcome::Skip,
+                "supporting WM",
+                "none yet; openbox is installed (script can start it)",
+            );
         } else {
-            warn("no supporting WM and openbox not installed (Xvfb needs openbox) — overlay drive blocked");
+            report.check(
+                Outcome::Skip,
+                "supporting WM",
+                "none and openbox not installed (Xvfb needs openbox); overlay drive blocked",
+            );
         }
     }
     if ayatana_present() {
-        pass("libayatana-appindicator3 present");
+        report.check(Outcome::Pass, "libayatana-appindicator3", "present");
     } else {
-        warn(
-            "libayatana-appindicator3 missing — overlay panics on tray init (apt install libayatana-appindicator3-1)",
+        report.check(
+            Outcome::Skip,
+            "libayatana-appindicator3",
+            "missing; overlay panics on tray init (apt install libayatana-appindicator3-1)",
         );
     }
 }
@@ -208,16 +241,6 @@ fn pid_alive(pid: &str) -> bool {
         let _ = pid;
         false
     }
-}
-
-fn pass(msg: &str) {
-    println!("  PASS  {msg}");
-}
-fn fail(msg: &str) {
-    println!("  FAIL  {msg}");
-}
-fn warn(msg: &str) {
-    println!("  WARN  {msg}");
 }
 
 #[cfg(test)]

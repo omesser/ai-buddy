@@ -4,58 +4,72 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::paths::{self, RunPaths};
-use crate::proof;
+use crate::contract::{Outcome, RunReport};
+use crate::paths;
 
 /// Run the OS-appropriate overlay script; copy stamps into evidence/overlay/.
 ///
-/// Exit code matches the leaf script. Failures (including EWMH/xprop gaps) are
-/// recorded in PROOF — no invented human chore lists.
-pub fn run(repo_root: &Path, paths: &RunPaths) -> i32 {
+/// Failures (including EWMH/xprop gaps) are recorded as a failed check with
+/// the leaf's exit code — no invented human chore lists.
+pub fn run(repo_root: &Path, report: &mut RunReport) {
     let Some(script_rel) = paths::overlay_script_for_host() else {
-        let msg = format!("overlay SKIP — unsupported OS {}", std::env::consts::OS);
-        println!("{msg}");
-        let _ = proof::append_proof(paths, &msg);
-        return 2;
+        report.check(
+            Outcome::Skip,
+            "overlay script",
+            &format!("unsupported OS {}", std::env::consts::OS),
+        );
+        return;
     };
 
     let script = repo_root.join(script_rel);
     if !script.is_file() {
-        let msg = format!("overlay FAIL — missing {}", script.display());
-        eprintln!("{msg}");
-        let _ = proof::append_proof(paths, &msg);
-        return 1;
+        report.check(
+            Outcome::Fail,
+            "overlay script",
+            &format!("missing {}", script.display()),
+        );
+        return;
     }
 
-    let dest = paths.evidence.join("overlay");
+    let dest = report.paths().evidence.join("overlay");
     let _ = fs::create_dir_all(&dest);
 
     let before = list_stamp_dirs(repo_root);
 
-    println!("overlay: running {script_rel}");
-    let status = run_overlay_script(repo_root, script_rel, &script);
-    let code = status.unwrap_or(1);
+    report.say(&format!("overlay: running {script_rel}"));
+    let code = run_overlay_script(report, repo_root, script_rel, &script);
 
     let after = list_stamp_dirs(repo_root);
-    copy_new_stamps(repo_root, &before, &after, &dest);
+    copy_new_stamps(report, repo_root, &before, &after, &dest);
 
-    let msg = if code == 0 {
-        format!(
-            "overlay PASS ({script_rel}) — evidence under {}",
-            dest.display()
-        )
-    } else {
-        format!(
-            "overlay FAIL exit={code} ({script_rel}) — see {} (script failure or host GUI/EWMH gap; no chore list)",
-            dest.display()
-        )
-    };
-    println!("{msg}");
-    let _ = proof::append_proof(paths, &msg);
-    code
+    match code {
+        Some(0) => report.check(
+            Outcome::Pass,
+            "overlay script",
+            &format!("{script_rel}; evidence under {}", dest.display()),
+        ),
+        Some(c) => report.check(
+            Outcome::Fail,
+            "overlay script",
+            &format!(
+                "{script_rel} exit {c}; see {} (script failure or host GUI/EWMH gap)",
+                dest.display()
+            ),
+        ),
+        None => report.check(
+            Outcome::Fail,
+            "overlay script",
+            &format!("could not run {script_rel}"),
+        ),
+    }
 }
 
-fn run_overlay_script(repo_root: &Path, script_rel: &str, script: &Path) -> Option<i32> {
+fn run_overlay_script(
+    report: &RunReport,
+    repo_root: &Path,
+    script_rel: &str,
+    script: &Path,
+) -> Option<i32> {
     let mut cmd = if script_rel.ends_with(".ps1") {
         let mut c = Command::new("powershell");
         c.args([
@@ -72,13 +86,7 @@ fn run_overlay_script(repo_root: &Path, script_rel: &str, script: &Path) -> Opti
         c
     };
     cmd.current_dir(repo_root);
-    match cmd.status() {
-        Ok(s) => Some(s.code().unwrap_or(1)),
-        Err(e) => {
-            eprintln!("overlay: failed to spawn: {e}");
-            None
-        }
-    }
+    report.exec(&mut cmd, None)
 }
 
 /// Stamp dirs under `.verify/`: `x11-*`, `win-*`, or bare timestamp dirs (macOS).
@@ -113,7 +121,13 @@ fn looks_like_macos_stamp(name: &str) -> bool {
         && !name.starts_with("win-")
 }
 
-fn copy_new_stamps(repo_root: &Path, before: &[PathBuf], after: &[PathBuf], dest: &Path) {
+fn copy_new_stamps(
+    report: &RunReport,
+    repo_root: &Path,
+    before: &[PathBuf],
+    after: &[PathBuf],
+    dest: &Path,
+) {
     let new: Vec<_> = after
         .iter()
         .filter(|p| !before.contains(p))
@@ -135,7 +149,11 @@ fn copy_new_stamps(repo_root: &Path, before: &[PathBuf], after: &[PathBuf], dest
                 target.display()
             );
         } else {
-            println!("overlay: copied {} → {}", dir.display(), target.display());
+            report.say(&format!(
+                "overlay: copied {} → {}",
+                dir.display(),
+                target.display()
+            ));
         }
     }
 }

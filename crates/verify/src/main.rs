@@ -1,15 +1,17 @@
 //! CLI entry for `ai-buddy-verify`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
 use ai_buddy_verify::cleanup;
+use ai_buddy_verify::contract::{Outcome, RunReport};
 use ai_buddy_verify::doctor;
 use ai_buddy_verify::overlay;
 use ai_buddy_verify::paths::{self, RunPaths};
 use ai_buddy_verify::poke;
+use ai_buddy_verify::proof;
 use ai_buddy_verify::summon;
 use ai_buddy_verify::units;
 
@@ -28,13 +30,17 @@ struct Cli {
     #[arg(long, global = true, value_name = "ID")]
     run_id: Option<String>,
 
+    /// Print one machine-parseable result object on stdout instead of human progress.
+    #[arg(long, global = true)]
+    json: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Read-only readiness (layout, binary/cargo, OS tool WARNs).
+    /// Read-only readiness (layout, binary/cargo, OS tool SKIPs).
     Doctor,
     /// cargo test core + node tests + overlay-diagnostics script.
     Units,
@@ -48,36 +54,63 @@ enum Commands {
     Cleanup,
 }
 
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let paths = RunPaths::resolve(cli.evidence_dir, cli.run_id);
-    if let Err(e) = paths.ensure_dirs() {
-        eprintln!("ai-buddy-verify: cannot create run dirs: {e}");
-        return ExitCode::from(1);
+impl Commands {
+    fn name(&self) -> &'static str {
+        match self {
+            Commands::Doctor => "doctor",
+            Commands::Units => "units",
+            Commands::Overlay => "overlay",
+            Commands::Poke => "poke",
+            Commands::Summon => "summon",
+            Commands::Cleanup => "cleanup",
+        }
     }
+}
 
-    let repo_root = match paths::discover_repo_root() {
-        Ok(r) => r,
+fn main() -> ExitCode {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
         Err(e) => {
-            // doctor still wants to report layout fail; others need the root.
-            eprintln!("ai-buddy-verify: {e}");
-            match cli.command {
-                Commands::Doctor => {
-                    let code = doctor::run(std::path::Path::new("."), &paths);
-                    return ExitCode::from(code as u8);
-                }
-                _ => return ExitCode::from(1),
-            }
+            let _ = e.print();
+            // clap exits 2 on a usage error, and 2 is `skip` in this contract.
+            // A bad flag proved nothing and broke nothing, it is a tool error.
+            return if e.use_stderr() {
+                ExitCode::from(Outcome::Error.exit_code())
+            } else {
+                ExitCode::SUCCESS
+            };
         }
     };
 
-    let code = match cli.command {
-        Commands::Doctor => doctor::run(&repo_root, &paths),
-        Commands::Units => units::run(&repo_root, &paths),
-        Commands::Overlay => overlay::run(&repo_root, &paths),
-        Commands::Poke => poke::run(&repo_root, &paths),
-        Commands::Summon => summon::run(&repo_root, &paths),
-        Commands::Cleanup => cleanup::run(&paths),
-    };
-    ExitCode::from(code as u8)
+    let paths = RunPaths::resolve(cli.evidence_dir, cli.run_id);
+    let mut report = RunReport::new(cli.command.name(), &paths, cli.json);
+
+    if let Err(e) = paths.ensure_dirs() {
+        report.check(
+            Outcome::Error,
+            "evidence dirs",
+            &format!("cannot create run dirs: {e}"),
+        );
+    } else {
+        match paths::discover_repo_root() {
+            Ok(repo_root) => match &cli.command {
+                Commands::Doctor => doctor::run(&repo_root, &mut report),
+                Commands::Units => units::run(&repo_root, &mut report),
+                Commands::Overlay => overlay::run(&repo_root, &mut report),
+                Commands::Poke => poke::run(&repo_root, &mut report),
+                Commands::Summon => summon::run(&repo_root, &mut report),
+                Commands::Cleanup => cleanup::run(&mut report),
+            },
+            // Doctor's product is the layout report, so it still runs and
+            // records the layout failure itself.
+            Err(e) => match &cli.command {
+                Commands::Doctor => doctor::run(Path::new("."), &mut report),
+                _ => report.check(Outcome::Error, "repo root", &e),
+            },
+        }
+    }
+
+    let _ = proof::append_proof(&report);
+    report.emit();
+    ExitCode::from(report.outcome().exit_code())
 }
