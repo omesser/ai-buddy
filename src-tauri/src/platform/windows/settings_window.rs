@@ -40,7 +40,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::settings::form::{self, FormRow, RowOperation};
 use crate::settings::move_drag::{should_begin_move, Hit};
-use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
+use crate::settings::{
+    BoolField, DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField,
+};
 
 const WINDOW_WIDTH: i32 = 560;
 const WINDOW_HEIGHT: i32 = 720;
@@ -3360,8 +3362,8 @@ mod tests {
                 0,
                 100,
                 100,
-                0,
-                0,
+                ptr::null_mut(),
+                ptr::null_mut(),
                 h_instance,
                 ptr::null(),
             );
@@ -3376,7 +3378,7 @@ mod tests {
                 50,
                 20,
                 parent,
-                0,
+                ptr::null_mut(),
                 h_instance,
                 ptr::null(),
             );
@@ -3391,7 +3393,7 @@ mod tests {
                 50,
                 20,
                 parent,
-                0,
+                ptr::null_mut(),
                 h_instance,
                 ptr::null(),
             );
@@ -3406,7 +3408,7 @@ mod tests {
                 50,
                 20,
                 parent,
-                0,
+                ptr::null_mut(),
                 h_instance,
                 ptr::null(),
             );
