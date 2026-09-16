@@ -122,7 +122,7 @@ Grant Accessibility to the terminal or IDE that runs the script (System Settings
 
 PASS means the AI tab order is `AI > AI source > Model / API > Last user turn`, the HTTP rows are live on Model API, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
 
-`verify-settings-linux.sh` drives the GTK Settings window through AT-SPI (Linux Accessibility). CI does not run it. Same smoke tests as the macOS script: section order, HTTP row freeze/unfreeze on source switch, runtime state changes without relaunch.
+`verify-settings-linux.sh` drives the GTK Settings window through AT-SPI (Linux Accessibility). CI does not run it. Same smoke tests as the macOS script: section order, HTTP row freeze/unfreeze on source switch, runtime state changes without relaunch. The AT-SPI driver is `scripts/ax-settings-linux.py`, invoked from the shell script.
 
 Build and run:
 
