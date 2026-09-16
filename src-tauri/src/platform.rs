@@ -332,9 +332,7 @@ pub fn show_settings(session: crate::settings::SettingsSession) {
 
 /// Raise the Settings webview above the overlay. Main thread only.
 ///
-/// Settings sits at NSStatusWindowLevel, above the overlay's NSFloatingWindowLevel,
-/// so a normal window falls behind it and opening Settings from the tray looks
-/// like a no-op.
+/// NSStatusWindowLevel sits above the overlay's NSFloatingWindowLevel, so tray-open is not a no-op.
 #[cfg(target_os = "macos")]
 pub fn raise_settings_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     use objc2::msg_send;

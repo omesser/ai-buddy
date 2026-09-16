@@ -1,8 +1,5 @@
-// Alt-drag gate: drag should begin only when modifier is held AND target is background.
-//
-// This test verifies the gate logic ported from move_drag.rs: alt-drag starts
-// only when altKey is true and the target is not a control. Controls are matched
-// by .closest("input, select, button, summary, pre").
+// Alt-drag gate: modifier on background begins drag; controls keep the press.
+// Ports move_drag.rs via .closest("input, select, button, summary, pre").
 
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
