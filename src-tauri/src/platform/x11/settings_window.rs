@@ -1590,7 +1590,13 @@ mod tests {
 
         assert_eq!(
             section_headings,
-            vec!["AI", "AI source", "Model / API", "Last user turn"],
+            vec![
+                "AI",
+                "AI source",
+                "Point a Harness you run yourself at ai-buddy",
+                "Model / API",
+                "Last user turn"
+            ],
             "AI tab section order matches director_sections"
         );
     }
