@@ -28,14 +28,14 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU}
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     ChildWindowFromPointEx, CreateWindowExA, DefWindowProcA, DestroyWindow, GetClassNameA,
     GetClientRect, GetDlgItem, GetParent, GetWindow, GetWindowLongPtrA, GetWindowRect,
-    GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
+    GetWindowTextA, GetWindowTextLengthA, IsWindowEnabled, MessageBoxA, SendMessageA, SendMessageW,
     SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
     BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL,
-    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT,
-    HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT,
-    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWL_STYLE, GWLP_USERDATA, GW_CHILD,
+    GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
+    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST,
+    WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED,
+    WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -3267,87 +3267,6 @@ mod tests {
     }
 
     #[test]
-    fn enablement_message_table() {
-        struct Case {
-            control_kind: &'static str,
-            frozen: bool,
-            expected_msg: u32,
-            expected_wparam: usize,
-        }
-
-        let cases = [
-            Case {
-                control_kind: "Edit",
-                frozen: true,
-                expected_msg: EM_SETREADONLY,
-                expected_wparam: 1,
-            },
-            Case {
-                control_kind: "Edit",
-                frozen: false,
-                expected_msg: EM_SETREADONLY,
-                expected_wparam: 0,
-            },
-            Case {
-                control_kind: "Checkbox",
-                frozen: true,
-                expected_msg: WM_ENABLE,
-                expected_wparam: 0,
-            },
-            Case {
-                control_kind: "Checkbox",
-                frozen: false,
-                expected_msg: WM_ENABLE,
-                expected_wparam: 1,
-            },
-            Case {
-                control_kind: "Button",
-                frozen: true,
-                expected_msg: WM_ENABLE,
-                expected_wparam: 0,
-            },
-            Case {
-                control_kind: "Button",
-                frozen: false,
-                expected_msg: WM_ENABLE,
-                expected_wparam: 1,
-            },
-            Case {
-                control_kind: "ComboBox",
-                frozen: true,
-                expected_msg: WM_ENABLE,
-                expected_wparam: 0,
-            },
-            Case {
-                control_kind: "ComboBox",
-                frozen: false,
-                expected_msg: WM_ENABLE,
-                expected_wparam: 1,
-            },
-        ];
-
-        for case in &cases {
-            let (msg, wparam) = match (case.control_kind, case.frozen) {
-                ("Edit", true) => (EM_SETREADONLY, 1),
-                ("Edit", false) => (EM_SETREADONLY, 0),
-                (_, true) => (WM_ENABLE, 0),
-                (_, false) => (WM_ENABLE, 1),
-            };
-
-            assert_eq!(
-                msg, case.expected_msg,
-                "{} frozen={} must use message {:#06x}",
-                case.control_kind, case.frozen, case.expected_msg
-            );
-            assert_eq!(
-                wparam, case.expected_wparam,
-                "{} frozen={} must use wParam {}",
-                case.control_kind, case.frozen, case.expected_wparam
-            );
-        }
-    }
-
-    #[test]
     fn apply_enabled_states_sends_em_setreadonly_and_wm_enable() {
         unsafe {
             let h_instance = GetModuleHandleA(ptr::null());
@@ -3459,6 +3378,16 @@ mod tests {
                                 disclosure: None,
                                 status: None,
                             },
+                            form::FormRow::Composite {
+                                id: "button_row".to_string(),
+                                help: None,
+                                disclosure: None,
+                                controls: vec![form::CompositeControl::Button {
+                                    id: "button1".to_string(),
+                                    label: "OK".to_string(),
+                                    frozen: true,
+                                }],
+                            },
                         ],
                     }],
                 }],
@@ -3467,17 +3396,23 @@ mod tests {
 
             window.apply_enabled_states(&frozen_description);
 
-            let edit_style = SendMessageA(edit_hwnd, 0x00D0, 0, 0);
+            let edit_style = GetWindowLongPtrA(edit_hwnd, GWL_STYLE);
             assert_ne!(
                 edit_style & ES_READONLY as isize,
                 0,
                 "Edit must be readonly after frozen=true"
             );
 
-            let button_enabled = SendMessageA(button_hwnd, 0x000A, 0, 0);
+            let button_enabled = IsWindowEnabled(button_hwnd);
             assert_eq!(
                 button_enabled, 0,
                 "Button must be disabled after frozen=true"
+            );
+
+            let checkbox_enabled = IsWindowEnabled(checkbox_hwnd);
+            assert_eq!(
+                checkbox_enabled, 0,
+                "Checkbox must be disabled after frozen=true"
             );
 
             let unfrozen_description = form::FormDescription {
@@ -3510,6 +3445,16 @@ mod tests {
                                 disclosure: None,
                                 status: None,
                             },
+                            form::FormRow::Composite {
+                                id: "button_row".to_string(),
+                                help: None,
+                                disclosure: None,
+                                controls: vec![form::CompositeControl::Button {
+                                    id: "button1".to_string(),
+                                    label: "OK".to_string(),
+                                    frozen: false,
+                                }],
+                            },
                         ],
                     }],
                 }],
@@ -3518,17 +3463,23 @@ mod tests {
 
             window.apply_enabled_states(&unfrozen_description);
 
-            let edit_style_unfrozen = SendMessageA(edit_hwnd, 0x00D0, 0, 0);
+            let edit_style_unfrozen = GetWindowLongPtrA(edit_hwnd, GWL_STYLE);
             assert_eq!(
                 edit_style_unfrozen & ES_READONLY as isize,
                 0,
                 "Edit must not be readonly after frozen=false"
             );
 
-            let button_enabled_unfrozen = SendMessageA(button_hwnd, 0x000A, 0, 0);
+            let button_enabled_unfrozen = IsWindowEnabled(button_hwnd);
             assert_ne!(
                 button_enabled_unfrozen, 0,
                 "Button must be enabled after frozen=false"
+            );
+
+            let checkbox_enabled_unfrozen = IsWindowEnabled(checkbox_hwnd);
+            assert_ne!(
+                checkbox_enabled_unfrozen, 0,
+                "Checkbox must be enabled after frozen=false"
             );
 
             DestroyWindow(parent);
