@@ -2663,6 +2663,11 @@ mod tests {
     use super::*;
     use crate::settings::BoolField;
 
+    #[link(name = "user32")]
+    extern "system" {
+        fn IsWindowEnabled(hWnd: HWND) -> i32;
+    }
+
     /// Layout constants must match macOS and GTK for consistent readability
     /// across platforms. These are compile-time assertions so drift is caught
     /// at build time rather than by eyeball comparison.
@@ -3412,16 +3417,14 @@ mod tests {
                 "Edit must be readonly after frozen=true"
             );
 
-            let button_style = GetWindowLongPtrA(button_hwnd, GWL_STYLE);
-            assert_ne!(
-                button_style & WS_DISABLED as isize,
+            assert_eq!(
+                IsWindowEnabled(button_hwnd),
                 0,
                 "Button must be disabled after frozen=true"
             );
 
-            let checkbox_style = GetWindowLongPtrA(checkbox_hwnd, GWL_STYLE);
-            assert_ne!(
-                checkbox_style & WS_DISABLED as isize,
+            assert_eq!(
+                IsWindowEnabled(checkbox_hwnd),
                 0,
                 "Checkbox must be disabled after frozen=true"
             );
@@ -3481,16 +3484,14 @@ mod tests {
                 "Edit must not be readonly after frozen=false"
             );
 
-            let button_style_unfrozen = GetWindowLongPtrA(button_hwnd, GWL_STYLE);
-            assert_eq!(
-                button_style_unfrozen & WS_DISABLED as isize,
+            assert_ne!(
+                IsWindowEnabled(button_hwnd),
                 0,
                 "Button must be enabled after frozen=false"
             );
 
-            let checkbox_style_unfrozen = GetWindowLongPtrA(checkbox_hwnd, GWL_STYLE);
-            assert_eq!(
-                checkbox_style_unfrozen & WS_DISABLED as isize,
+            assert_ne!(
+                IsWindowEnabled(checkbox_hwnd),
                 0,
                 "Checkbox must be enabled after frozen=false"
             );
