@@ -1,34 +1,17 @@
-// Markdown in a reply, drawn as formatting instead of as its punctuation.
-// Parsing belongs here rather than in the Shell for the reason
-// `src/main.js` and `CONTEXT.md` give about every other drawing decision: the
-// Shell names what was said, the webview draws it. Formatting is derived from
-// the text and carries no authority, so it is drawing, and the next view
-// decision — highlighting a fence, collapsing one, a copy button — stays in
-// this file instead of becoming a wire change.
-//
-// The parser is `marked` (`src/vendor/`), and only its token API is used.
-// Its HTML-string renderer is never called: a reply is untrusted text — a
-// model's output, steerable by an MCP server's content — so every piece of it
-// reaches the DOM through `createElement` and `textContent` on a node built
-// here. That makes injection structurally impossible rather than sanitized,
-// which is the property #371 is about.
+// Markdown in a reply, drawn as formatting instead of as its punctuation. Only
+// `marked`'s token API is used, never its HTML renderer: a reply is untrusted
+// text, so every piece reaches the DOM via `createElement` and `textContent`.
 
 import { Lexer } from "./vendor/marked.esm.js";
 
-// GFM, because that is what harnesses emit: Claude Code's output style asks
-// for tables and task lists, Codex emits fenced code with an info string, and
-// Zed — the reference ACP client — renders agent messages with
-// `pulldown-cmark`'s table, strikethrough, task-list and footnote extensions
-// on. CommonMark alone would draw a harness's table as a run of pipes.
+// GFM, because that is what harnesses emit: tables and task lists from Claude
+// Code, fenced code with an info string from Codex, and Zed's ACP client turns
+// the same extensions on. CommonMark alone would draw a table as a run of pipes.
 const FLAVOUR = { gfm: true, breaks: false, pedantic: false };
 
-// Schemes a link target may carry. Nothing here navigates — the app has no
-// opener plugin, and a live `href` would take the chat webview itself to the
-// page — but the target is written into the DOM for the opener that will read
-// it, and an allowlist means `javascript:` or `data:` never gets that far.
-// Checked as a scheme rather than searched for as a string: `JaVaScRiPt:`,
-// `&#106;avascript:` and `java<tab>script:` all fail to be one of these three,
-// so each is refused without needing its own rule.
+// Schemes a link target may carry; an allowlist means `javascript:` or `data:`
+// never reaches the DOM. Checked as a scheme rather than searched for as a
+// string, so `JaVaScRiPt:` and `java<tab>script:` fail without their own rule.
 const SCHEMES = new Set(["http:", "https:", "mailto:"]);
 
 function target(href) {
@@ -38,9 +21,8 @@ function target(href) {
 }
 
 // Whatever `marked` grew a token for and this file does not draw reads as the
-// source the model wrote — an image, a stretch of raw HTML, a footnote. That
-// is what the surface did for every construct before #677, so an unsupported
-// one is a line that looks unformatted rather than a line that vanished.
+// source the model wrote, so an unsupported construct is a line that looks
+// unformatted rather than a line that vanished.
 function asSource(token, parent, doc) {
   parent.append(doc.createTextNode(token.raw ?? token.text ?? ""));
 }
@@ -161,9 +143,8 @@ function blocks(tokens, parent, doc) {
       }
       case "code": {
         // A fence and a table are the two blocks that do not reflow, and the
-        // Chat window opens 420 points wide (`src-tauri/src/main.rs`). The
-        // scroll goes on a wrapper so the overflow stays inside the row
-        // instead of widening it.
+        // Chat window opens 420 points wide. The scroll goes on a wrapper so the
+        // overflow stays inside the row instead of widening it.
         const fence = doc.createElement("div");
         fence.className = "md-wide";
         const pre = doc.createElement("pre");
@@ -207,16 +188,8 @@ function blocks(tokens, parent, doc) {
 const drawn = new WeakMap();
 
 // Draw the whole of `text` into `body`, replacing whatever is there, and put
-// the caret back where it was found.
-//
-// The caret is found and put back with `querySelector` and `append`,
-// deliberately never `insertBefore`. A previous attempt at this threw
-// `DOMException: The child can not be found in the parent` on the second
-// chunk, because it nested the caret inside a block while inserting against a
-// reference node it assumed was a direct child of `body`. With no reference
-// node there is nothing to be wrong about, the lookup is a descendant search
-// so the caret's depth does not matter, and `append` moves a node that still
-// has a parent rather than needing it taken out first.
+// the caret back. Found and re-added with `querySelector` and `append`, never
+// `insertBefore`: the caret may be nested in a block, not a direct child of `body`.
 export function drawReply(body, text, doc = globalThis.document) {
   const caret = body.querySelector(".caret");
   drawn.set(body, text ?? "");
@@ -231,13 +204,9 @@ export function drawReply(body, text, doc = globalThis.document) {
   }
 }
 
-// One chunk of a streaming reply.
-//
-// The row is redrawn from the whole reply rather than having the chunk
-// appended to it, because a chunk lands mid-marker: a renderer fed `**bo` and
-// then `ld**` sees two things that are neither of them Markdown. Re-parsing
-// costs nothing today — the Shell accumulates the answer and `ChatReply`
-// carries it in one emit — and it is still right when chunks arrive.
+// One chunk of a streaming reply. The row is redrawn from the whole reply
+// rather than appended to, because a chunk lands mid-marker: `**bo` then
+// `ld**` are two things that are neither of them Markdown.
 export function appendReply(body, chunk, doc = globalThis.document) {
   drawReply(body, (drawn.get(body) ?? "") + chunk, doc);
 }

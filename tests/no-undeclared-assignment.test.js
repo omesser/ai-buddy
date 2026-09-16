@@ -1,15 +1,6 @@
-// Run with `node --test tests/`.
-//
-// The webview loads as `<script type="module">`, so every file in `src/` is
-// strict mode, and an assignment to a name nothing declared is a
-// `ReferenceError` rather than an implicit global. One of those took the
-// session-reset path down mid-way and lost the conversation with nothing
-// saying why (#737).
-//
-// Deliberately narrow. It looks at statement-level `name = …` only: a property
-// assignment carries a dot, and a declaration carries a keyword. So it cannot
-// see a mistake made through `globalThis`, and it is not a substitute for a
-// real checker.
+// The webview loads as `<script type="module">`, so every file is strict mode
+// and assigning to a name nothing declared is a `ReferenceError`. Narrow on
+// purpose: statement-level `name = …` only, and no substitute for a type checker.
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -27,10 +18,9 @@ function assignedBare(source) {
 }
 
 /**
- * Whether `name` is bound anywhere in the file: declared, destructured, or
- * arriving as a parameter. Generous on purpose — a false "declared" costs a
- * missed bug of this one shape, while a false "undeclared" fails the suite on
- * working code.
+ * Whether `name` is bound anywhere in the file: declared, destructured, or a
+ * parameter. Generous on purpose: a false "declared" costs a missed bug of this
+ * one shape, while a false "undeclared" fails the suite on working code.
  */
 function bound(source, name) {
   return new RegExp(

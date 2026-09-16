@@ -1,18 +1,6 @@
-// Run with `node --test tests/*.test.js`.
-//
-// `.agents/skills/` holds every skill this repository offers an agent, both the
-// vendored pstack ones and its own, and `.agents/agents/` holds the agent
-// definitions. Claude Code and Cursor each glob `<dir>/skills/*/SKILL.md`, so
-// `.claude/skills` and `.cursor/skills` are symlinks to the first, and
-// `.claude/agents` to the second, rather than copies. The symlink sits in the
-// literal prefix of that pattern, before the wildcard, so discovery is plain
-// path traversal into a real directory.
-//
-// One copy of the bytes means there is no mirror to drift. What can still
-// break is the link itself: deleted by a tool that rewrites its own config,
-// replaced with a directory, or pointed somewhere that no longer exists. Each
-// of those makes every skill silently invisible, which is exactly the failure
-// nobody notices. This test is what notices.
+// `.agents/skills/` holds every skill this repository offers an agent, and
+// `.claude/skills` and `.cursor/skills` are symlinks to it, since both loaders
+// glob `<dir>/skills/*/SKILL.md`. A broken link makes every skill silently invisible.
 
 import assert from "node:assert/strict";
 import { lstatSync, readFileSync, readdirSync, readlinkSync, statSync } from "node:fs";

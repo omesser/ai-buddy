@@ -1,7 +1,5 @@
-// Run with `node --test tests/`.
-//
-// #685: the composer's bound is `CHAT_LIMIT`, and it belongs to the field
-// rather than to what happens after Send.
+// The composer's bound is `CHAT_LIMIT`, and it belongs to the field rather than
+// to what happens after Send.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,6 +14,7 @@ test("the composer field is bounded at CHAT_LIMIT", () => {
   assert.ok(declared, "CHAT_LIMIT is not declared where this test reads it");
   const limit = Number(declared[1].replaceAll("_", ""));
 
+  // The field, whichever element it is drawn as.
   // The field, whichever element it is drawn as: #686 makes it a textarea.
   const field = html.match(/<(?:input|textarea)\b[^>]*\bid="line"[^>]*>/);
   assert.ok(field, "the composer has no field with id=line");

@@ -34,32 +34,24 @@ ICONS = ROOT / "src-tauri" / "icons"
 CANVAS = 1024
 # The size src-tauri/icons/icon.png ships at, for the reason in `main`.
 SHIPPED = 512
-# Apple's macOS icon grid. The 200px of transparent margin is not padding we
-# could tighten to taste: the Dock sizes every icon by the canvas and expects
-# the artwork to stop here, so a body drawn any larger sits proud of its row.
-# Measured off a Dock screenshot, WhatsApp is 58px of body in a 72px slot,
-# which is this ratio to within a pixel.
+# Apple's macOS icon grid. The 200px of transparent margin is not padding to
+# tighten: the Dock sizes every icon by the canvas and expects the artwork to
+# stop here. Measured off a Dock screenshot, WhatsApp is 58px of body in a 72px slot.
 BODY = 824
-# How much of the body the head fills, on its taller axis; the head is taller
-# than it is wide, so this puts it at 73% of the body across. Set against the
-# neighbours rather than to taste: measured off a Dock screenshot, WhatsApp's
-# glyph is 71% of its body and Grok's face about 90%, and 73% across is the
-# first value that stops reading a size smaller than the row it sits in.
-# Higher crowds the corners — past about 0.86 the headphones meet the edge.
+# How much of the body the head fills, on its taller axis (about 73% across).
+# Set against the neighbours, not to taste: WhatsApp's glyph is 71% of its body
+# and Grok's face about 90%. Past about 0.86 the headphones meet the edge.
 GLYPH_SHARE = 0.78
 # The squircle as a superellipse, |x/a|^n + |y/a|^n = 1. n = 5 is the standard
-# approximation of the shape macOS uses — flatter sides and a longer corner
-# sweep than the circular arc a plain rounded rectangle would give, which is
-# the whole difference between "rounded" and "looks native". It puts the
-# effective corner radius at about 22% of the body against Apple's ~22.5%.
+# approximation of the shape macOS uses, flatter sides and a longer corner sweep
+# than a rounded rectangle; effective corner radius about 22% against Apple's ~22.5%.
 SQUIRCLE_N = 5.0
 # Draw the mask this many times oversized, then box-average it down: the
 # average of an 8x mask is exact coverage, which is what keeps the edge off a
 # resampling filter. See `render`.
 SUPERSAMPLE = 8
 # What the existing icon.ico carried, kept as-is. tauri-build compiles this
-# into a Windows Resource whether or not Windows is a bundle target, and #247
-# is the note that nothing regenerated it; this script is that something.
+# into a Windows Resource whether or not Windows is a bundle target.
 ICO_SIZES = (16, 24, 32, 48, 64, 256)
 
 
@@ -239,11 +231,8 @@ def main():
 
     icon.save(MASTER)
     # Shipped at 512 rather than the 1024 master because both packagers narrow
-    # to it: the icns element table has no 1024-at-1x entry, so tauri-bundler
-    # fails the macOS bundle on one rather than skipping it, and the Linux
-    # packages file the icon under a hicolor size directory, which has to be
-    # one hicolor lists — it stops at 512. At 512 the bundler builds a valid
-    # .icns itself, so none has to be checked in. #247.
+    # to it: the icns element table has no 1024-at-1x entry, and hicolor size
+    # directories stop at 512. At 512 the bundler builds a valid .icns itself.
     render(grid, SHIPPED).save(ICONS / "icon.png")
     # Pillow resizes any .ico size it is not handed, so hand it all of them
     # and every frame comes off the same exact mask.

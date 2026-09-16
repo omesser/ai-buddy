@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 # Verify X11 overlay functional parity: Perch, ride, drop, Poke, EWMH states.
-#
-# Xvfb has no window manager. _NET_CLIENT_LIST (and therefore Perches) comes
-# from one, so a bare server is not a sufficient desktop. The sprite starts at
-# the display centre and lands in under a second, so the Perch window has to
-# exist before the app does — a window opened afterwards sits above the sprite,
-# which is not a surface from below. Same reason as scripts/verify-overlay.sh.
-#
+# Xvfb has no window manager, and _NET_CLIENT_LIST (so Perches) comes from one.
+# The Perch window has to exist before the app does, as in verify-overlay.sh.
 # xprop exits 0 even when a property is missing (`not found.`), so a property
 # check cannot be the process status.
-#
 # Run with: xvfb-run -a -s "-screen 0 1280x720x24" scripts/verify-overlay-x11.sh
 
 set -euo pipefail
@@ -213,7 +207,7 @@ done
 log_info "Drop behavior (Falling) verified"
 
 # Feet are pos(); the body is above them. A click shorter than one 16ms tick
-# can miss XQueryPointer, so hold the button across a couple of polls. #182.
+# can miss XQueryPointer, so hold the button across a couple of polls.
 sleep 0.5
 LAST_FRAME=$(grep 'frame:' "$TRACE_LOG" | tail -1)
 SPRITE_POS=$(echo "$LAST_FRAME" | grep -oE 'pos\([-0-9.]+,[-0-9.]+\)' | head -1 || true)

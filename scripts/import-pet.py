@@ -35,15 +35,9 @@ TARGET_STAND = 120
 STAND_BAND = (100, 130)
 MAX_FPS = 60
 
-# Licenses an import may proceed on without a human weighing in: permissive
-# enough that recording the license in the manifest's [source] discharges what
-# they ask of us. SPDX identifiers, plus the vernacular spellings the
-# ecosystems print — petdex's submit flow offers "CC0" on its own, and case
-# and spacing vary everywhere. Free-form prose ("The MIT License (MIT)") is
-# not recognized and is not meant to be.
-#
-# The list is short on purpose: a license nobody here has read is a license
-# the importer must not accept on somebody's behalf.
+# Licenses an import may proceed on without a human weighing in: recording the
+# license in the manifest's [source] discharges what they ask. SPDX ids plus the
+# spellings the ecosystems print. Short on purpose: nobody here has read the rest.
 KNOWN_LICENSES = (
     "MIT",
     "CC0-1.0",
@@ -140,13 +134,9 @@ PETSCODEX_ROWS = {
     "review": (8, 6, 1030),
 }
 
-# The Required Animation Set, from petdex rows: (animation, source row,
-# frame indices or None for all, loop, variant_of). Jumping's five frames
-# read anticipation, lift, peak, descent, settle — fall takes peak/descent,
-# land descent/settle, hold the lift pair. Walk's entry is a placeholder:
-# read_petscodex picks the row (see its doc — the drawn facing contradicts
-# petdex's row labels). The unchosen walk row and row 7 (running in place)
-# go unused; sleep is synthesized because petdex has no sleep row.
+# The Required Animation Set, from petdex rows: (animation, source row, frame
+# indices or None for all, loop, variant_of). Walk's entry is a placeholder:
+# read_petscodex picks the row. Sleep is synthesized; petdex has no sleep row.
 PETSCODEX_MAP = (
     ("idle", "idle", None, "forever", None),
     ("waiting", "waiting", None, "forever", "idle"),
@@ -194,10 +184,9 @@ def parse_mapping(text):
 # Shimeji-ee pose durations count scheduler ticks, ~40ms each.
 SHIMEJI_TICK_MS = 40
 
-# Shimeji-ee action names to the Required Animation Set — the BMO (#96)
-# mapping decisions, recorded as this adapter's defaults. First declared
-# candidate wins; packs rarely have a talk, so talk falls back to Stand,
-# react to the pinched wriggle, and sleep to the synthesized idle breath.
+# Shimeji-ee action names to the Required Animation Set. First declared
+# candidate wins; packs rarely have a talk, so talk falls back to Stand, react
+# to the pinched wriggle, and sleep to the synthesized idle breath.
 SHIMEJI_MAP = (
     ("idle", ("Stand",), "forever"),
     ("walk", ("Walk",), "forever"),
@@ -212,9 +201,8 @@ SHIMEJI_MAP = (
 )
 
 # Many distributed packs (shimejishop's among them) are bare shime PNGs that
-# drop into Shimeji-ee's standard conf. When a pack carries no actions.xml of
-# its own, these pose sequences — the standard conf's, for exactly the
-# actions SHIMEJI_MAP wants — stand in for it.
+# drop into Shimeji-ee's standard conf. When a pack carries no actions.xml,
+# these pose sequences from the standard conf stand in for it.
 SHIMEJI_DEFAULT_ACTIONS = {
     "Stand": [("shime1.png", "250")],
     "Walk": [("shime1.png", "6"), ("shime2.png", "6"),
@@ -737,11 +725,8 @@ def read_shimeji(source, name=None):
         actions = dict(SHIMEJI_DEFAULT_ACTIONS)
     else:
         # A pack is a download from the internet, so its actions.xml is
-        # untrusted. expat refuses external entity references already and has
-        # capped entity amplification since 2.4, but that cap is whichever
-        # libexpat the running Python bundles, and no pack has a reason to
-        # declare an entity at all. Refusing the declaration is the guard that
-        # does not depend on the parser's version. #382.
+        # untrusted. expat caps entity amplification only since 2.4, and no pack
+        # has a reason to declare an entity, so the declaration itself is refused.
         #
         # ponytail: a scan for the literal token rather than a parser-level
         # handler, because CPython's C XMLParser exposes no handler to install
@@ -882,17 +867,12 @@ def emit(pet, out, validate=True, stand=None):
                 ]
         unions = {a: union_bbox(spec["frames"]) for a, spec in animations.items()}
 
-    # A uniform per-Character canvas, and placement that keeps a cycle
-    # smooth while keeping every pose on the ground. Frames register to
-    # their animation's first frame in both axes (the per-cell jitter a
-    # generated sheet bakes in becomes body wobble if kept), then the
-    # animation plants its collective baseline on the canvas bottom, where
-    # the shell anchors art — the #96 floating-sit lesson. Per-frame
-    # planting would be firmer but jerks the body every time the feet tuck
-    # mid-stride, so only an outlier — a frame registration left floating
-    # visibly, a curled-up pose in a row of sitting ones — grounds itself.
-    # A spec marked `registered` (the synthesized sleep and its one-pixel
-    # breath) trusts its own relative positions and skips registration.
+    # A uniform per-Character canvas. Frames register to their animation's first
+    # frame (a generated sheet's per-cell jitter becomes body wobble if kept),
+    # then the animation plants its collective baseline on the canvas bottom,
+    # where the shell anchors art. Per-frame planting jerks the body when feet
+    # tuck mid-stride, so only an outlier past FLOAT_TOLERANCE grounds itself.
+    # A spec marked `registered` trusts its own positions and skips this.
     FLOAT_TOLERANCE = 6
     metrics = {}
     for animation, spec in animations.items():
@@ -1170,7 +1150,7 @@ def self_test():
         assert not (out / "personality.txt").exists()
 
         # An imported package declares where its art came from, because the
-        # gallery publishes that key and publishes nothing else (#289). The
+        # gallery publishes that key and publishes nothing else. The
         # license sentence is the part an import must never leave to silence.
         declared = tomllib.loads(manifest)["source"]
         assert "a test dot" in declared["art"]
@@ -1255,7 +1235,6 @@ def self_test():
         assert not (out / "frames" / "walk-3.png").exists()
 
         # Untrusted pack XML: an entity declaration is refused, not expanded.
-        # #382.
         (tmp / "conf" / "actions.xml").write_text(
             '<?xml version="1.0"?><!DOCTYPE Mascot [<!ENTITY a "aa">]>'
             '<Mascot><ActionList/></Mascot>'

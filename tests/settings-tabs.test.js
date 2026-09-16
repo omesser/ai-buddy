@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
 // The tab bar is the one part of the Settings page the form description does
-// not draw: settings.html writes the five buttons out, and `tabTitles()` says
-// what the snapshot expects them to be. A tab added in Rust and not here means
-// a tab of the form nobody can reach, and nothing else would say so.
+// not draw: settings.html writes the buttons out, and `tabTitles()` says what
+// the snapshot expects. A tab added in Rust and not here is one nobody can reach.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

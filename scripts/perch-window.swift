@@ -1,64 +1,32 @@
 // A real window at a chosen rectangle, which then steps or flings itself down
-// the screen.
-//
-// The frame loop can only be verified against a desktop, and the interesting
-// half of it is Perches: the sprite has to land on a window's top edge, ride
-// that edge when the window steps slowly, and fall when the window goes away. None of
-// the user's own windows can be used for that — moving another application's
-// window needs an Accessibility grant, which this project asks for nowhere —
-// but opening one of our own is free, and the window server reports it to
-// WindowSource exactly like any other window.
-//
-// --fast covers the same ground in one jump instead of three steps, which is
-// the other side of the grip: a Perch that moves slower than the sprite can
-// hold on is ridden, and one that outruns it leaves it behind to fall (#85).
-// Both sides need a window that moves on its own, because moving somebody
-// else's is the grant this project does not ask for.
-//
-// Each event prints one JSON line: when it happened, in Unix milliseconds, the
-// bounds the window server actually settled on, in the top-left-origin points
-// WindowSource reads, and how deep the window sits among the ordinary windows
-// in front of it. All three matter. A titled window's frame is taller
-// than the content rectangle it was asked for and AppKit may constrain where it
-// lands, so what was requested is not evidence; what the server reports is. The
-// timestamp is what lets verify-overlay.sh measure how long the app took to
-// notice, against the app's own frame trace in the same clock.
-//
-// It terminates on its own, so an interrupted run cannot leave a stray window
-// on the user's screen.
-//
-// The window keeps re-asserting its place at the front of its level for as long
-// as it lives. An accessory app's window has no claim on the front and anything
-// that takes focus buries it — the app under test starting up is enough — and an
-// edge covered by a window reported in front of it is not a Perch (#86). A
-// buried prop is one the sprite falls straight through, so a check that means to
-// assert a landing asserts nothing. Drop the re-assert and that returns.
-//
-// An optional window level makes the same prop into desktop furniture: the Dock
-// sits at 20 and the menu bar at 24, and neither is a Perch. A prop opened up
-// there is the only way to check that from a script, because the real furniture
-// all has its top edge at the top of the screen, where a falling sprite never
-// meets it.
-//
+// the screen. The frame loop's Perches can only be verified against a desktop,
+// and moving another app's window needs an Accessibility grant; ours is free.
+
+// --fast covers the travel in one jump: a Perch that outruns the sprite leaves
+// it behind to fall. Each event prints one JSON line: Unix ms, the bounds the
+// window server settled on (what was asked for is not evidence), and depth.
+
+// The window re-asserts its place at the front of its level while it lives: an
+// accessory window is buried by anything that takes focus, and a buried prop is
+// one the sprite falls through, so a landing check would assert nothing.
+
+// An optional window level makes the prop desktop furniture (Dock 20, menu bar
+// 24), the only way to check from a script that neither is a Perch. It quits on
+// its own, so an interrupted run leaves no stray window.
 // Usage: swift scripts/perch-window.swift [--fast] x y width height [level]
 
 import AppKit
 
-/// How far down the screen each step moves the window, and how long between
-/// steps. Slow enough that the sprite is settled before the next one, and
-/// repeated so the check can use whichever step happened once the sprite was
-/// already perched, rather than racing the app's startup. The fling waits the
-/// same interval, which is long enough for the sprite to have landed and short
-/// enough that it is still standing there: a Character wanders along an edge
-/// while it waits, and one that has walked off the end was never flung.
+/// How far each step moves the window, and how long between steps. Slow enough
+/// that the sprite is settled before the next, and repeated so the check can
+/// use a step after the sprite was perched. The fling waits the same interval.
 let stepPoints = 80.0
 let stepInterval = 5.0
 let steps = 3
 
-/// The whole of that travel in one move. One jump rather than a fast burst of
-/// small ones because the app reads the window list about ten times a second,
-/// and a burst can fall either side of a read with neither half fast enough to
-/// be a yank; a single jump is one delta however the reads land.
+/// The whole of that travel in one move: the app reads the window list about
+/// ten times a second, and a burst of small moves can fall either side of a
+/// read with neither half fast enough to be a yank.
 let flingPoints = stepPoints * Double(steps)
 
 /// How often the prop re-asserts its place at the front of its level. Faster
@@ -107,8 +75,7 @@ Timer.scheduledTimer(withTimeInterval: reassertInterval, repeats: true) { _ in
     window.orderFrontRegardless()
 }
 
-/// One line per event: when it happened, and what the window server says the
-/// window's bounds are. `at` is passed in rather than read here, because the
+/// One line per event. `at` is passed in rather than read here, because the
 /// server takes a moment to catch up with a move and the interesting timestamp
 /// is the move, not the reading.
 func report(at: Date) {
@@ -126,11 +93,9 @@ func report(at: Date) {
     if let layer = entry?[kCGWindowLayer as String] as? Int {
         line["layer"] = Double(layer)
     }
-    // How many ordinary windows are in front of this one, 0 when it is the
-    // frontmost. Bounds alone cannot tell a Perch from an edge buried behind
-    // another window — both report the same top edge — so a check that reads
-    // only the bounds passes whether or not the sprite could have landed (#90).
-    // The on-screen list comes back front to back.
+    // How many ordinary windows are in front of this one, 0 when frontmost.
+    // Bounds alone cannot tell a Perch from an edge buried behind another
+    // window, so a check that reads only the bounds asserts nothing.
     if let onScreen = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
         as? [[String: Any]]
     {

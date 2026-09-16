@@ -1,30 +1,14 @@
 #!/usr/bin/env pwsh
-# Windows watch smoke for PR #588 (Open chat on a truncated bubble).
-#
-# The bubble caps speech at six lines; a turn that runs past them draws one
-# control, "Open chat", above the head (outside the sprite's art). On Windows
-# the frame loop unions that control's rectangle into the overlay's input
-# region with SetWindowRgn (src-tauri/src/platform/windows/overlay.rs), so the
-# region is the one authority on where a click opens Chat. This smoke drives
-# that click and nothing else.
-#
-# Why the earlier live smokes on DESKTOP-UQIE144 kept failing, and what this
-# does instead:
-#   - The buddy strolls. Sampling once and then pausing before the click lands
-#     where it *was*. Here every click re-samples the newest `sprite(x,y)` the
-#     frame loop traced and fires within tens of milliseconds -- no pre-click
-#     pause.
-#   - Hunting a teal pixel across the desktop matches YouTube's cyan. Here the
-#     Character is found from the trace and the OS window region, never colour.
-#   - WindowFromPoint over click-through art returns the window behind ours.
-#     Here the target is read from GetWindowRgn/GetRegionData on the large
-#     overlay HWND (a full-display window), and every click point is confirmed
-#     with PtInRegion and a GA_ROOT check before it is sent. The 136x39 anchor
-#     window is never a target.
-#
-# Assumes the checkout at C:\Users\oded\src\ai-buddy on tip 4d52843 with a built
-# target\debug\ai-buddy.exe. Node is required for the Completer stub.
-#
+# Windows watch smoke for Open chat on a truncated bubble. The frame loop unions
+# the control's rectangle into the overlay's input region with SetWindowRgn, so
+# the region is the one authority on where a click opens Chat.
+
+# The Character is found from the frame trace and the OS window region, never
+# by colour, and every click re-samples the newest sprite(x,y) with no pre-click
+# pause: the buddy strolls. Each point is confirmed with PtInRegion and GA_ROOT.
+
+# Assumes a checkout with a built target\debug\ai-buddy.exe; Node runs the
+# Completer stub.
 # Usage:
 #   .\scripts\win-smoke-588-openchat.ps1
 #   $env:AI_BUDDY_VERIFY_BIN="path\to\ai-buddy.exe" .\scripts\win-smoke-588-openchat.ps1
@@ -336,11 +320,9 @@ function Overlay-At([int]$sx, [int]$sy) {
   return $null
 }
 
-# Read the "Open chat" rectangle straight out of the overlay's input region.
-# The region is the sprite mask plus the unioned control; the only region
-# rectangles clear of the 90px art box are the control's, so its bounding box
-# is the click target. Returns a screen-space center or $null when the control
-# is not in the region yet (no truncated bubble on this overlay).
+# Read the "Open chat" rectangle straight out of the overlay's input region: the
+# only region rectangles clear of the 90px art box are the control's, so its
+# bounding box is the click target. $null when the control is not in the region.
 function OpenChat-Point($overlay, $sprite) {
   $rects = [Smoke]::RegionRects($overlay.Hwnd)
   if ($rects.Count -eq 0) { return $null }
@@ -349,7 +331,7 @@ function OpenChat-Point($overlay, $sprite) {
   $above = @($rects | Where-Object { $_.Bottom -le $spriteTop })
   $below = @($rects | Where-Object { $_.Top -ge $spriteBottom })
   # Above the head is the normal placement; below is the inverted placement the
-  # bubble uses at the top of a display (placeBubble, #546). Prefer whichever
+  # bubble uses at the top of a display (placeBubble). Prefer whichever
   # cluster exists.
   $band = if ($above.Count -gt 0) { $above } elseif ($below.Count -gt 0) { $below } else { $null }
   if ($null -eq $band) { return $null }
@@ -402,15 +384,9 @@ function Confirm-Target($overlay, [int]$screenX, [int]$screenY) {
   return $root -eq $overlay.Hwnd
 }
 
-# Track the (possibly strolling) Open chat control and click it once.
-#
-# On Windows the overlay only takes a click while the frame loop has the cursor
-# over the control: it flips WS_EX_TRANSPARENT off a tick after the cursor
-# lands (src-tauri/src/frame_loop.rs). So the cursor is placed, given a couple
-# of ticks to make the overlay clickable, and re-centred on the newest sprite
-# each pass so a walking buddy does not carry the control out from under it.
-# The click fires only once the point is confirmed in the region and the
-# overlay is top-most. Bounded to a few hundred milliseconds, not a pause.
+# Track the (possibly strolling) Open chat control and click it once. The
+# overlay takes a click only a tick after the cursor lands (WS_EX_TRANSPARENT
+# flips off then), so the cursor is placed, given ticks, and re-centred each pass.
 function Track-And-Click-OpenChat {
   for ($k = 0; $k -lt 8; $k++) {
     $sp = Latest-Sprite
@@ -430,7 +406,7 @@ function Track-And-Click-OpenChat {
   return $false
 }
 
-# Summon: a double-click on the sprite art opens Chat too (#17). Same settle so
+# Summon: a double-click on the sprite art opens Chat too. Same settle so
 # the art is clickable, re-sampled so the click lands on the current sprite.
 function Summon-Sprite {
   $sp = Latest-Sprite
@@ -466,10 +442,8 @@ function Screenshot([string]$name, $rect) {
 }
 
 # --- Wait for the truncated bubble, then click Open chat immediately. ---
-# The wait polls the region for the control; it is not a pre-click pause. Once
-# the control is in the region we re-sample and click within tens of ms. The
-# budget is 2 Summon double-clicks plus 1 Open-chat click, and a Summon is the
-# fallback only when the control has not appeared.
+# The wait polls the region for the control; it is not a pre-click pause. Budget:
+# 2 Summon double-clicks plus 1 Open-chat click, Summon only as the fallback.
 $summons = 0
 $opened = $false
 $openedVia = ""
@@ -504,7 +478,7 @@ while ((Get-Date) -lt $deadline -and -not $opened) {
   }
 
   # Fallback: after the first wake window, or right after an Open-chat click
-  # that did not open Chat. A Summon opens Chat too (#17) and may prod a
+  # that did not open Chat. A Summon opens Chat too and may prod a
   # reactive turn that then truncates.
   if ($summons -lt 2 -and ($openChatTried -or (Get-Date) -ge $summonAfter)) {
     Info "Summon fallback (#$($summons + 1) of 2)"

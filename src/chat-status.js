@@ -1,7 +1,6 @@
-// What the Chat surface's status bar draws, from one push and the clock
-// (ADR-0010), and the header's line about which mind answers. Its own module
-// because chat.js reaches window.__TAURI__ as it loads and cannot be imported
-// outside a webview; this can, so it has a test.
+// What the Chat surface's status bar draws, from one push and the clock, and
+// the header's line about which mind answers. Its own module because chat.js
+// reaches window.__TAURI__ as it loads; this can be imported, so it has a test.
 
 // What a cell says when there is nothing to say — the dash the Shell's
 // `engine:` trace writes. A blank cell reads as a bar that broke.
@@ -9,9 +8,7 @@ const NONE = "—";
 
 // Milliseconds until the next ambient wake, in the largest unit that still
 // counts. Rounded up, and `due` past zero: a wake the Engine has not got to
-// yet is due, not late. Changing unit rather than growing keeps this to three
-// characters, which is what makes the bar's width budget fit — `Pace` reaches
-// two hours, and `wake 7200s` is both too wide and unreadable as a duration.
+// yet is due, not late. Three characters is what the bar's width budget fits.
 export function untilWake(ms) {
   if (ms === null || ms === undefined) {
     return NONE;
@@ -47,8 +44,7 @@ export function statusCells(status, msLeft) {
 }
 
 // Plain-language status for first-time readers: what the buddy is doing right
-// now, without Primitive/State vocabulary. Connects to the visual character's
-// behavior and actions rather than only chat state.
+// now, without Primitive/State vocabulary.
 export function plainStatus(status, msLeft) {
   if (!status) {
     return "Starting up…";
@@ -78,7 +74,6 @@ export function plainStatus(status, msLeft) {
   return parts.join(" · ");
 }
 
-// Map behavior/animation/primitive to a human-readable activity phrase.
 function humanizeActivity(status) {
   if (status.behavior) {
     const readable = humanizeBehavior(status.behavior);
@@ -104,7 +99,6 @@ function humanizeActivity(status) {
   return null;
 }
 
-// Turn behavior package names into readable text.
 function humanizeBehavior(behavior) {
   if (!behavior || behavior === NONE) {
     return null;
@@ -113,7 +107,6 @@ function humanizeBehavior(behavior) {
   return cleanName(behavior);
 }
 
-// Turn animation names into readable text.
 function humanizeAnimation(animation) {
   if (!animation || animation === NONE) {
     return null;
@@ -122,7 +115,6 @@ function humanizeAnimation(animation) {
   return cleanName(animation);
 }
 
-// Turn primitive names into readable text.
 function humanizePrimitive(primitive) {
   if (!primitive || primitive === NONE) {
     return null;
@@ -131,7 +123,6 @@ function humanizePrimitive(primitive) {
   return cleanName(primitive);
 }
 
-// Turn happened cues into readable phrases.
 function humanizeHappened(happened) {
   if (!happened || happened === NONE) {
     return null;
@@ -149,8 +140,6 @@ function humanizeHappened(happened) {
   return map[happened] || `just ${happened}`;
 }
 
-// Clean a raw package name into something readable: underscores to spaces,
-// title case the first word.
 function cleanName(raw) {
   if (!raw) {
     return null;
@@ -160,19 +149,8 @@ function cleanName(raw) {
 }
 
 // Which mind answers this window, for the header beside who you are talking
-// to (#474). A statement and never a control: ADR-0010 leaves the bar for what
-// our own layers are doing right now, and this is neither that nor something
-// to press.
-//
-// The branches are `settings::harness_state`'s, in its order, so the two
-// windows cannot disagree about a state this one is given, and the order is
-// what makes it honest. A Harness the `PATH` has not got reads as `not
-// running` here, because the Chat payload carries no `missing` to tell it
-// apart. A Harness that is set and never came up is the state the user cannot
-// otherwise see, and it is named before the session that a live one would
-// show. The login command for an
-// attached-but-not-signed-in Harness is named once here and never run;
-// ADR-0010's seventh rule covers the endpoint's key.
+// to. A statement and never a control. The branches are
+// `settings::harness_state`'s, in its order, so the two windows cannot disagree.
 export function mindLine(opening) {
   if (!opening) {
     return "";
@@ -196,9 +174,8 @@ export function mindLine(opening) {
   if (!harness.session) {
     return `${harness.name} · no session yet`;
   }
-  // The head of the id, not the whole of it: what the session proves here is
-  // that a live one exists, and a full UUID pushes the Instance's own name off
-  // a 420-point header. Settings draws it in full, and the head of an id
-  // Settings shows in full cannot disagree with it.
+  // The head of the id, not the whole of it: a full UUID pushes the Instance's
+  // own name off a 420-point header, and Settings draws it in full, so the head
+  // cannot disagree with it.
   return `${harness.name} · session ${harness.session.slice(0, 8)}`;
 }

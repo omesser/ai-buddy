@@ -1,8 +1,5 @@
-// Run with `node --test tests/chat-settle.test.js`.
-//
-// #681: the Chat surface wrote "No answer came back." under a turn that
-// already had Speech. Treating an empty `said` as a missing-answer note after
-// Speech has already been drawn is the production change that fails this file.
+// An empty `said` after Speech has already been drawn is not a missing answer;
+// treating it as one is the production change that fails this file.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

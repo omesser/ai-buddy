@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-#
-# Regression guard for #730: verify-overlay.sh must never signal a process by
-# the "target/debug/ai-buddy" path suffix every worktree's binary shares. It
-# scopes to this checkout's exact absolute binary path instead, the shape
-# crates/verify/src/gesture.rs already uses for its stray_pid check.
+# verify-overlay.sh must never signal a process by the "target/debug/ai-buddy"
+# path suffix every worktree's binary shares. It scopes to this checkout's exact
+# absolute binary path, the shape crates/verify/src/gesture.rs uses.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1

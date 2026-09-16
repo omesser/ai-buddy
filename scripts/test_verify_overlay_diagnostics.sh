@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-#
-# Test the diagnostic function in verify-overlay.sh
-#
-# Tests that the Keychain-hint message appears when overlays were reported
-# but no frames were traced.
+# Test diagnose_no_frames() in verify-overlay.sh against recorded logs: the
+# Keychain hint appears when overlays were reported but no frames were traced.
 
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1

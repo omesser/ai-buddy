@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
-// What a permission ask says, which is the one line of copy in the product
-// that stands in front of a security decision (#678). The orderings matter as
-// much as the wording: a row that leads with `other` and withholds the
-// question is the shape that teaches a reflexive Allow.
+// What a permission ask says, the one line of copy in the product that stands
+// in front of a security decision. The orderings matter as much as the wording:
+// a row that leads with `other` and withholds the question teaches a reflexive Allow.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -92,8 +89,7 @@ test("a huge argument payload is bounded and marked", () => {
 });
 
 // The kind and the paths are drawn after the question, so the budget has to
-// cover them as well: three monorepo paths used to add 380 characters to a row
-// that had already spent all 600 on the question.
+// cover them as well.
 test("the kind and the paths are inside the budget, not after it", () => {
   const says = askSays({
     ...ask,
@@ -108,7 +104,7 @@ test("the kind and the paths are inside the budget, not after it", () => {
 });
 
 // A chatty server, not a hostile one: the row is back to withholding the
-// question if a long title can spend the whole budget first (#678).
+// question if a long title can spend the whole budget first.
 test("a verbose title cannot crowd out the question", () => {
   const says = askSays({
     ...ask,
@@ -174,9 +170,8 @@ test("a missing field is not a crash", () => {
   );
 });
 
-// The bug was a row that offered a category in place of the question, so a
-// kind cannot be the whole of an ask. A path can: it is a fact about what
-// happens, not a label for it.
+// A kind cannot be the whole of an ask: it is a category, not the question. A
+// path can: it is a fact about what happens, not a label for it.
 test("a kind is not enough on its own, and a path is", () => {
   assert.equal(
     askSays({ ...ask, title: null, kind: "execute" }),

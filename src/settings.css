@@ -1,10 +1,6 @@
-/* Settings on the Chat surface's tokens. Every colour, radius and font here is
-   a var() from chat-ui.css, with no design block of its own to exempt it, so a
-   second design recolours Settings for free (tests/chat-ui-tokens.test.js).
-
-   Every selector is prefixed `.set-`. The spike's unprefixed `.frozen` and
-   `.row` reached the Chat surface's Prompt box, which is what the prefix is
-   here to make impossible rather than merely avoided. */
+/* Settings on the Chat surface's tokens: every colour, radius and font here is
+   a var() from chat-ui.css, so a second design recolours Settings for free.
+   Every selector is prefixed `.set-` so nothing here reaches the Chat surface. */
 
 .set-page {
   height: 100vh;
@@ -53,7 +49,7 @@
   color: var(--chat-ink);
 }
 
-/* The form scrolls in the log's place. Content-sized, never clipped (#601). */
+/* The form scrolls in the log's place. Content-sized, never clipped. */
 .set-form {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -145,7 +141,7 @@
   resize: vertical;
 }
 
-/* One dropdown look on every OS, which is the whole #674 conversation. */
+/* One dropdown look on every OS. */
 .set-row select {
   appearance: none;
   -webkit-appearance: none;
@@ -178,7 +174,7 @@
   outline-offset: 2px;
 }
 
-/* Frozen reads as frozen: dimmer field, dimmer label, still legible (#625). */
+/* Frozen reads as frozen: dimmer field, dimmer label, still legible. */
 .set-is-frozen > label,
 .set-is-frozen .set-label {
   color: var(--chat-ink-3);

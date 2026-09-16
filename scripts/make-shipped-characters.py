@@ -342,9 +342,8 @@ def write(name, animations):
 def main():
     nim_art = nim_animations()
 
-    # The check the style is held to: a shaded ramp, not a flat reskin — two
-    # Characters that differ only in their palette are the reskin #9 says is
-    # not good enough.
+    # The check the style is held to: a shaded ramp, not a flat reskin. Two
+    # Characters that differ only in their palette are a reskin.
     assert len(colours(nim_art) - {CLEAR}) > 16, "Nim fits in a sixteen-colour palette"
 
     assert set(nim_art) == {

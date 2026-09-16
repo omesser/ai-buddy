@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
-#
-# Test row_live() in verify-settings-macos.sh against recorded dumps.
-#
-# row_live is the one piece of that script with logic in it, and it is the
-# piece that cannot be exercised by running the script: a live run needs a
-# window, an Accessibility grant and a display, so a wrong answer there shows
-# up as a red line about the Settings window rather than as a bug in an awk
-# program. The dump is plain text, so the function is pure and testable on its
-# own - same trick as test_verify_overlay_diagnostics.sh, which sources
-# diagnose_no_frames out of verify-overlay.sh.
-#
-# The fixtures below are trimmed from real `ax-settings dump` output; the
-# column contract is role|title|value|placeholder|enabled|settable.
+# Test row_live() in verify-settings-macos.sh against recorded dumps. It is the
+# one piece of that script with logic in it, and a live run needs a window, an
+# Accessibility grant and a display. Columns: role|title|value|placeholder|enabled|settable.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -24,14 +14,8 @@ sed -n '/^row_live()/,/^}/p' scripts/verify-settings-macos.sh > "$TEMP_DIR/funct
 . "$TEMP_DIR/function.sh"
 
 # The AI tab with Model API picked: every HTTP row is editable. "Apply" is
-# disabled here because nothing has been edited yet, which is what makes it a
-# usable negative control - it sits in the same dump, matched by the same rule
-# as "Clear key", and must still read frozen.
-#
-# The toolbar is in the fixture because it is in the tree: the tab buttons come
-# before the form and carry titles of their own, so they are the thing a title
-# match could shadow a row with. "Model" is a tab here purely to make that
-# collision happen.
+# disabled because nothing was edited, a negative control matched by the same
+# rule as "Clear key". The toolbar is here so a "Model" tab can shadow the "Model" row.
 cat > "$TEMP_DIR/live.txt" << 'EOF'
 AXWindow:AXStandardWindow|Settings||||
 AXTabGroup|||||false
@@ -80,7 +64,7 @@ expect "$TEMP_DIR/live.txt" "API key" true "a labelled row is live when its fiel
 expect "$TEMP_DIR/frozen.txt" "API key" false "a labelled row is frozen when its field was demoted"
 
 # A button carries its own name in the title column, so there is no label line
-# above it to match and the answer has to come from the button's own line. #736.
+# above it to match and the answer has to come from the button's own line.
 expect "$TEMP_DIR/live.txt" "Clear key" true "a self-naming control is live when enabled"
 expect "$TEMP_DIR/frozen.txt" "Clear key" false "a self-naming control is frozen when disabled"
 expect "$TEMP_DIR/live.txt" "Apply" false "a self-naming control that is disabled still reads frozen"

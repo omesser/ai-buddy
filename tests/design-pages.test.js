@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
 // ADR-0011: every published page is Generated or Dated. These pages are
-// reachable without the index, so a class string only on the directory is
-// not enough — and a Described claim ("the spec the Shell implements") is
-// the class that decision forbids.
+// reachable without the index, so a class string only on the directory is not
+// enough, and a Described claim is the class that decision forbids.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

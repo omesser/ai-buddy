@@ -1,8 +1,6 @@
-// Run with `node --test tests/`.
-//
-// #545: opaque panel tokens the Speech bubble may share with the default Chat
-// UI live in one snippet. Deleting the import or copying the literals back
-// into either stylesheet is the failure this file exists to catch.
+// Opaque panel tokens the Speech bubble may share with the default Chat UI live
+// in one snippet. Deleting the import or copying the literals back into either
+// stylesheet is the failure this file exists to catch.
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -55,7 +53,7 @@ test("a shared snippet exists and both stylesheets import it", () => {
 
 // Independent of chat-ui.css: these are the default Chat panel values the
 // bubble already shows. Duplicating them in either stylesheet (or omitting
-// them here) is the drift #545 exists to stop.
+// them here) is the drift this stops.
 test("the snippet is the single source both surfaces read", () => {
   const snippet = read(SNIPPET_FILE);
   const chat = read("chat-ui.css");

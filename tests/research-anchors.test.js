@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
-// #620: a line citation in a research document is read against that document's
-// anchor, never against `main`. Without the anchor in the preamble the next
-// reader checks the number against their checkout, finds it moved, and files
-// rot that is not there. `docs/agents/docs.md` holds the convention.
+// A line citation in a research document is read against that document's
+// anchor, never against `main`: without the anchor in the preamble the next
+// reader checks the number against their checkout and files rot that is not there.
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";

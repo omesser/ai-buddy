@@ -1,11 +1,6 @@
-// Run with `node --test tests/`.
-//
-// The composer is the only way a user gets text into a turn, and for most of
-// V1 it was an `<input type="text">`. HTML's value sanitization for that type
-// deletes every LF and CR rather than folding them to spaces, so a pasted
-// function reached the Harness as `}function next(` — every line boundary
-// gone, and nothing on screen saying so (#686). The element is the bug, so
-// the element is what this file pins.
+// The composer is the only way a user gets text into a turn. As an `<input
+// type="text">`, HTML's value sanitization deleted every LF and CR from a paste
+// with nothing on screen saying so. The element is the bug, so the element is pinned.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -36,9 +31,8 @@ test("the composer holds a value that can carry newlines", () => {
   );
 });
 
-// An `<input>` in a form submits on Enter for free, which is why this window
-// shipped with no keydown listener at all. A textarea does not, so the send
-// key is now something the Shell has to say out loud.
+// An `<input>` in a form submits on Enter for free; a textarea does not, so the
+// send key is something this window has to say out loud.
 function keydownHandler() {
   const at = js.indexOf('line.addEventListener("keydown"');
   assert.notEqual(at, -1, "the composer field has no keydown listener, so Enter no longer sends");

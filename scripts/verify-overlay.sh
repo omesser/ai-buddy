@@ -1,24 +1,16 @@
 #!/usr/bin/env bash
-#
 # Machine-checkable verification for the overlay window and the frame loop.
-#
-# Deliberately not a cargo test: every check here needs a real desktop, a real
-# window server and a running app, so it is slow, it is macOS-only, and it
-# cannot run in CI. Run it by hand when the overlay, the platform layer or the
-# frame loop changes. `cargo test` stays fast and pure.
-#
-# What this cannot check: whether a click actually passes through to the window
-# underneath, and whether typing elsewhere survives a click on the sprite. Those
-# need a human. See the checklist in README.md.
-#
+# Not a cargo test: every check needs a real desktop, window server and running
+# app, so it is slow, macOS-only, and cannot run in CI.
+
+# A click passing through, and typing surviving a click on the sprite, still
+# need a human: README.md has the checklist.
+
 # Usage: scripts/verify-overlay.sh [--keep]
 #   --keep   leave the app running afterwards, with tracing on
-#
-# For unattended runs: export AI_BUDDY_DIRECTOR_API_KEY to avoid Keychain
-# prompts. See docs/DEVELOPMENT.md for Director configuration.
-#
-# The sprite is now capturable by default. To test the hide-from-captures
-# setting, export AI_BUDDY_CAPTURABLE=1 to exclude it from screenshots.
+
+# Unattended: export AI_BUDDY_DIRECTOR_API_KEY to avoid Keychain prompts.
+# Export AI_BUDDY_CAPTURABLE=1 to test the hide-from-captures setting.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -28,19 +20,13 @@ KEEP=0
 
 # Exact-path match, mirroring crates/verify/src/gesture.rs's stray_pid: this
 # checkout's absolute binary path names only the instance this script starts,
-# never another worktree's dogfood app or another agent's run of a binary at
-# the same "target/debug/ai-buddy" path suffix. Launching through $BIN_PATH is
-# what puts that absolute path in argv, so pgrep -f can see it; a relative
-# ./target/debug/ai-buddy would leave the stray check below matching nothing.
+# never another worktree's. Launching through $BIN_PATH puts that path in argv.
 BIN_PATH="$(pwd)/target/debug/ai-buddy"
 stray_pid() { pgrep -f "$BIN_PATH" 2> /dev/null | head -1; }
 
-# An orphaned overlay is always-on-top and has no window controls, so an
-# interrupted run would otherwise leave something on screen that is awkward to
-# get rid of. --keep opts out for the app, never for the prop window: that one
-# is scaffolding and nobody wants it left behind. Kills the pid this script
-# itself launched, never a path pattern, so another worktree's instance is
-# never at risk.
+# An orphaned overlay is always-on-top with no window controls, so an
+# interrupted run must not leave one. --keep opts out for the app, never the
+# prop window. Kills the pid this script launched, never a path pattern.
 trap 'pkill -f perch-window.swift 2> /dev/null;
       [ "$KEEP" = "1" ] || [ -z "${APP_PID:-}" ] || kill "$APP_PID" 2> /dev/null' EXIT INT TERM
 
@@ -81,15 +67,9 @@ if ! cargo build 2>&1 | tail -3; then
   exit 1
 fi
 
-# ---------------------------------------------------------------------------
-# A Perch to aim the sprite at.
-#
-# The sprite starts in the middle of the usable part of the first display and
-# falls, so a window whose top edge is below that point is something it can land
-# on. It has to exist before the app does: the fall takes under a second, and a
-# window that arrives afterwards is above the sprite, which is not a surface
-# from below.
-# ---------------------------------------------------------------------------
+# A Perch to aim the sprite at. It has to exist before the app does: the fall
+# takes under a second, and a window that arrives afterwards is above the
+# sprite, which is not a surface from below.
 swift scripts/inspect-window.swift > "$OUT/desktop.json" 2> "$OUT/desktop.err" || {
   echo "FAIL: inspector"
   cat "$OUT/desktop.err"
@@ -100,33 +80,23 @@ RECTS=$(
   python3 - "$OUT/desktop.json" << 'PY'
 import json, sys
 
-# Where the app puts the sprite, computed the way the app computes it:
-# `snapshot::starting_position` takes the middle of the *usable* frame of the
-# first display. Usable, not the whole frame, so the menu bar's height and the
-# Dock's edge and size shift this start point, and props measured from the
-# frame's centre instead would sit at a different distance from the sprite on
-# every desktop. First display, because tao's `available_monitors` and this
-# script's inspector both enumerate `CGGetActiveDisplayList`, which reports the
-# main display first.
+# Where the app puts the sprite, computed the way `snapshot::starting_position`
+# does: the middle of the *usable* frame of the first display, so the menu bar
+# and Dock shift this start point the same way. CGGetActiveDisplayList lists main first.
 u = json.load(open(sys.argv[1]))["displays"][0]["usable"]
 sprite_x = u["x"] + u["w"] / 2
 sprite_y = u["y"] + u["h"] / 2
 
-# Every offset below is a fraction of the room between the sprite and the floor
-# rather than a fixed number of points. A fixed drop is calibrated to one
-# display's height and one Dock: on a shorter screen it puts a prop's top edge
-# past the bottom, where macOS refuses to place a titled window, so the prop
-# never steps and a working frame loop reads as broken.
-#
-# What is left assumed: that the room below the sprite is deep enough for the
-# Perch to step down 80 points and stay on screen, which needs a usable height
-# of roughly 350 points. Every display macOS runs on clears that.
+# Offsets are fractions of the room between the sprite and the floor, not fixed
+# points: a fixed drop calibrated to one display puts a prop's top edge past the
+# bottom of a shorter screen, where macOS refuses to place a titled window.
+
+# Assumed: room for the Perch to step down 80 points, roughly 350 usable points.
 room = u["h"] / 2
 
 # Wide enough that a Character which wanders while it waits is still on the
-# window when the window moves. The sprite walks a couple of hundred points in
-# the few seconds before the first step, and walking off the end is a fall like
-# any other — one that would read as a ride the sprite failed to keep.
+# window when it moves: the sprite walks a couple of hundred points before the
+# first step, and walking off the end would read as a ride it failed to keep.
 width = min(1200.0, u["w"])
 left = int(sprite_x - width / 2)
 
@@ -141,14 +111,9 @@ PY
 PERCH_RECT=$(echo "$RECTS" | sed -n 1p)
 OVER_RECT=$(echo "$RECTS" | sed -n 2p)
 
-# ---------------------------------------------------------------------------
-# A window the sprite must NOT land on.
-#
-# The Dock and the menu bar are not Perches, and the sprite has to fall past
-# them. Neither can be used to check that: the real furniture all has its top
-# edge at the top of the screen, where a falling sprite never meets it. A prop
-# opened at the Dock's own window level, in the sprite's way, does meet it.
-# ---------------------------------------------------------------------------
+# A window the sprite must NOT land on. The Dock and menu bar are not Perches,
+# but real furniture has its top edge at the top of the screen, where a falling
+# sprite never meets it. A prop at the Dock's own window level does.
 DOCK_LEVEL=20
 echo "Opening a prop at window level $DOCK_LEVEL at $OVER_RECT to fall through..."
 # shellcheck disable=SC2086  # four separate arguments, deliberately
@@ -171,7 +136,7 @@ await "$OUT/perch.log" '^\{' 40 || {
 }
 
 # Nothing this script started should be running yet: a match here is a
-# stray, not ours, so it is named and failed rather than killed (#730).
+# stray, not ours, so it is named and failed rather than killed.
 STRAY_PID=$(stray_pid)
 if [ -n "$STRAY_PID" ]; then
   echo "FAIL: $BIN_PATH is already running (pid $STRAY_PID); stop it before running verify-overlay.sh"
@@ -270,18 +235,9 @@ check(landed is not None,
       "it comes to rest on a real window's top edge",
       f"window top y={steps[0]['y']:.0f}")
 
-# That check reads a position and nothing else, and a prop buried behind another
-# window has the same top edge at the same y as a visible one — so on its own it
-# passes whether or not the landing it exists to assert could have happened
-# (#90). The prop reports how many ordinary windows are in front of it, and
-# anything but the front means the run tested nothing.
-#
-# Asked over every report from the app's first frame to the moment the prop was
-# closed, rather than only the ones after a landing. A burial is exactly what
-# stops the sprite landing (#86), so gating this on the landing would leave the
-# case it exists for reported as a position mismatch — which is what sent #89
-# looking in the wrong place. A missing depth is the window server not listing
-# the prop among ordinary windows at all, which is worse than buried.
+# A buried prop has the same top edge as a visible one, so the position check
+# alone passes whether or not the landing could have happened. Asked over every
+# report from the first frame, since a burial is exactly what stops the landing.
 under_test = [s for s in steps if frames[0][0] <= s["at_ms"] <= closed_ms]
 buried = [s for s in under_test if s.get("depth") != 0]
 if buried:
@@ -322,10 +278,9 @@ check(all(f[2:] == tail[0][2:] for f in tail) and tail[-1][1] in ("Grounded", "P
 check(tail[-1][3] > steps[0]["y"],
       "lower than the window it had been perched on")
 
-# The usable floor, not the display's bottom edge. A screen reserves a strip of
-# itself for the Dock, and the sprite rests on the near edge of it rather than
-# behind it (#39). An inequality against the display bottom would pass either
-# way and so would never notice the difference; this is an equality.
+# The usable floor, not the display's bottom edge: a screen reserves a strip
+# for the Dock and the sprite rests on its near edge, not behind it. An
+# inequality against the display bottom would pass either way; this is an equality.
 usable = [d["usable"] for d in displays]
 floors = [u["y"] + u["h"] for u in usable
           if u["x"] <= tail[-1][2] <= u["x"] + u["w"]]
@@ -367,10 +322,9 @@ STATUS=$?
 
 lsappinfo list 2> /dev/null | grep -A 4 '"ai-buddy"' > "$OUT/lsappinfo.txt"
 
-# No crop of the sprite any more. The overlay refuses every screen capture,
-# and screencapture is one, so the crop this used to take would be a picture
-# of the desktop where the sprite is. The art is eyeballed on screen instead,
-# or in a run started with AI_BUDDY_CAPTURABLE=1.
+# No crop of the sprite: the overlay refuses every screen capture, so the crop
+# would show the desktop where the sprite is. Eyeball the art, or run with
+# AI_BUDDY_CAPTURABLE=1.
 echo "Capturing screenshots..."
 DISPLAY_COUNT=$(python3 -c "import json;print(len(json.load(open('$OUT/window.json'))['displays']))" 2> /dev/null || echo 1)
 for i in $(seq 1 "$DISPLAY_COUNT"); do
@@ -401,18 +355,9 @@ def bounds(r):
 
 
 print("\nChecks:")
-# One overlay per display, each covering its own: a Character straddling a seam
-# is drawn by the overlay on each side, so both halves are on screen. One window
-# could not do it — macOS gives each display its own Space and draws a window
-# spanning two of them on only one, so an overlay wider than a display is
-# invisible on every display but that one.
-#
-# Counted over distinct rectangles rather than raw entries, because the two
-# sides are enumerated differently: displays here come from
-# CGGetActiveDisplayList and the overlays from NSScreen, and a mirrored pair is
-# two of the first and one of the second. One overlay is the right answer for a
-# mirrored pair, so counting the rectangles is what asks the question the app
-# can actually answer.
+# One overlay per display: macOS gives each display its own Space and draws a
+# window spanning two on only one. Counted over distinct rectangles, because a
+# mirrored pair is two CGGetActiveDisplayList entries and one NSScreen overlay.
 screens = {bounds(d) for d in displays}
 check(len(windows) == len(screens),
       "one overlay window per display",
@@ -427,20 +372,16 @@ check(all(w["onscreen"] for w in windows), "every overlay is on screen")
 levels = {w["layer"] for w in windows}
 check(levels == {3}, "every overlay is at floating level", f"levels={sorted(levels)}")
 
-# The screen-share half of the hide rules, and the only part of it a machine can
-# check. NSWindowSharingNone is 0, and it is what keeps the Character out of
-# every screen share, screen recording and remote view without anything having
-# to detect one — macOS publishes no way to detect one.
+# The screen-share half of the hide rules, and the only part a machine can
+# check. NSWindowSharingNone is 0, and it keeps the Character out of every
+# screen share and recording without detecting one, which macOS cannot.
 sharing = {w["sharing"] for w in windows}
 check(sharing == {0}, "every overlay is excluded from screen capture",
       f"sharing={sorted(sharing)}")
 
-# The origin has to match too — a window covering the right area of the wrong
-# display is the same disappearance.
-#
-# Matched by set rather than pairwise: mirrored displays report the same
-# rectangle, and which overlay answers which of them is not a fact worth
-# asserting. What rules a union out is the equality itself.
+# The origin has to match too: the right area of the wrong display is the same
+# disappearance. Matched by set, not pairwise: mirrored displays report the same
+# rectangle, and which overlay answers which is not a fact worth asserting.
 uncovered = [d for d in displays if bounds(d) not in {bounds(w) for w in windows}]
 check(not uncovered,
       "every display has an overlay covering it whole",
@@ -475,14 +416,9 @@ PY
 OVERLAY_STATUS=$?
 [ "$OVERLAY_STATUS" -ne 0 ] && STATUS=1
 
-# ---------------------------------------------------------------------------
-# Hit-test pipeline, end to end, against the real art.
-#
-# The cursor is moved onto the resting sprite and off it again, which is the
-# only end left to move now that the sprite's position belongs to the Engine.
-# Two cases against the *same* sprite isolate the alpha lookup: its centre is
-# drawn, its top-left corner is not. The cursor is put back where it was.
-# ---------------------------------------------------------------------------
+# Hit-test pipeline, end to end, against the real art. The cursor is moved onto
+# the resting sprite and off it again. Two cases against the *same* sprite
+# isolate the alpha lookup: its centre is drawn, its top-left corner is not.
 echo ""
 echo "Hit-test pipeline:"
 
@@ -541,16 +477,9 @@ fi
 
 [ "$HIT_FAILED" = "1" ] && STATUS=1
 
-# ---------------------------------------------------------------------------
-# The other side of the grip.
-#
-# A Perch that moves slower than the sprite can hold on to is ridden, and one
-# that outruns it leaves the sprite behind to fall (#85). The run above checks
-# the riding half, on the prop that stepped down the screen. This checks the
-# other half, and it needs an app run of its own: the sprite is on the floor by
-# now, and nothing puts it back on a window — one that opens under a resting
-# sprite is above it, which is not a surface from below.
-# ---------------------------------------------------------------------------
+# The other side of the grip: a Perch that outruns the sprite leaves it behind
+# to fall. Needs an app run of its own: the sprite is on the floor by now, and
+# a window that opens under a resting sprite is above it, not a surface from below.
 echo ""
 echo "Grip:"
 # shellcheck disable=SC2086  # four separate arguments, deliberately
@@ -614,10 +543,9 @@ if not frames or len(moves) < 2:
           else "  FAIL  the prop window never flung itself")
     sys.exit(1)
 
-# The frame before the fling rather than any landing at all. Everything below is
-# about a sprite that was standing on this window when it moved, and a Character
-# wanders: one that walked off the end before the fling fell for its own reasons
-# and would read as a grip that let go.
+# The frame before the fling rather than any landing: a Character wanders, and
+# one that walked off the end before the fling fell for its own reasons, which
+# would read as a grip that let go.
 fling = moves[1]
 standing = next((f for f in reversed(frames) if f[0] < fling["at_ms"]), None)
 landed = standing if standing and standing[1] == "Perched" \

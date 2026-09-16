@@ -1,15 +1,6 @@
 // The cue machine: five interactions, each with its own visual and its own
-// sound (#277).
-//
-// Ported value for value from the reviewed proposal in docs/design/cues.html.
-// Every frequency, envelope, gain and duration below was decided there; the
-// keyframes and easing curves that go with them are in main.css.
-//
-// Which cue plays is not decided here — the Engine decides it, being the only
-// place that knows both the verbs and the `Dragged` transitions, and sends the
-// name on the frame. This draws and sounds what it is told. Every visual is one
-// element added and removed on `animationend`; every sound is one oscillator
-// with a gain envelope. Nothing is loaded, nothing persists.
+// sound. Every frequency, envelope, gain and duration below was decided in
+// docs/design/cues.html. The Engine decides which cue plays; this obeys.
 
 const MASTER = 0.5;
 
@@ -21,7 +12,7 @@ export const POKE_WINDOW_MS = 400;
 let context = null;
 // A machine with no AudioContext, or one that throws, stays silent forever
 // after the first failure: retrying every cue would be the same error sixty
-// times a second. Visuals still play. #292.
+// times a second. Visuals still play.
 let audioFailed = false;
 let audioWarned = false;
 
@@ -232,9 +223,8 @@ export function cueIo(layer, anchorOf) {
       return () => nodes.forEach((node) => node.remove());
     },
     sound(name) {
-      // A throw here used to kill the frame listener, so a mute machine also
-      // lost the visual. Swallow it: silence is the decided behaviour, not an
-      // accident. #292.
+      // Swallowed: silence is the decided behaviour for a mute machine, and a
+      // throw here would kill the frame listener and the visual with it.
       try {
         const v = voice();
         if (!v) return () => {};
@@ -248,15 +238,9 @@ export function cueIo(layer, anchorOf) {
   };
 }
 
-// The cue decisions, apart from the pixels and the oscillators. Two rules the
-// transport and the double-click force:
-//
-// - A cue rides exactly one Engine tick, like `dialogue`, so it is latched
-//   where every delivery is seen rather than read in the draw loop.
-// - A double-click is two releases: the first emits a Poke before anything can
-//   know a second is coming, so a Poke cue is always ~200 ms into playing when
-//   the Summon lands. The Summon cancels it, visual and sound both, and one
-//   double-click is seen and heard as one cue.
+// The cue decisions, apart from the pixels and the oscillators. A cue rides one
+// Engine tick, like `dialogue`, so it is latched where every delivery is seen.
+// A double-click is two releases: its Summon cancels the Poke already playing.
 export function createCueMachine(io) {
   const schedule = io.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
@@ -278,7 +262,7 @@ export function createCueMachine(io) {
     event(placement) {
       const name = placement.cue;
       // A hidden Character produces no cue of either kind: a sound with nothing
-      // on screen to explain it is worse than silence (#84).
+      // on screen to explain it is worse than silence.
       if (!name || !placement.visible) return;
 
       if (name === "summon" && poke) {
@@ -287,10 +271,9 @@ export function createCueMachine(io) {
       }
 
       const stopVisual = io.draw(name);
-      // Sound is gated and the visual is not. Do Not Disturb is already folded
-      // into this flag, along with the Settings mute — a cue that cannot be
-      // heard still has to be seen, or a muted buddy stops answering. A throw
-      // from the audio graph is the same gate: keep the visual. #292.
+      // Sound is gated and the visual is not: Do Not Disturb and the Settings
+      // mute are folded into this flag, and a cue that cannot be heard still has
+      // to be seen, or a muted buddy stops answering. A throw is the same gate.
       let cutSound = () => {};
       if (placement.sound) {
         try {

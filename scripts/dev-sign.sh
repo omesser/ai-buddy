@@ -1,24 +1,10 @@
 #!/usr/bin/env bash
-#
-# Sign a local macOS build with a stable identity, so the Keychain stops
-# asking at every launch.
-#
-# The linker ad-hoc signs a debug binary, and its cdhash changes with every
-# build. When ai-buddy first saves the Director API key, macOS writes that hash
-# into the item's access control list twice — once for the trusted application
-# and once for the partition list — so the next build matches neither, and a
-# launch that reads the key costs two dialogs. Always Allow only pins the hash
-# that is about to change. Signed with a certificate instead, the ACL names the
-# identity (`identifier ai-buddy and certificate root = H"..."`), which a
-# rebuild does not disturb.
-#
+# Sign a local macOS build with a stable identity, so the Keychain stops asking
+# at every launch: the linker's ad-hoc signature changes cdhash every build, and
+# the Keychain ACL pins that hash; a certificate's ACL names the identity instead.
 # The certificate is self-signed, created here on first run, and trusted by
-# nothing else: Gatekeeper does not accept it, and it is not the Developer ID a
-# release needs (#283). It is imported with `-A` so signing needs no password
-# every build, which also means any local process can sign as this identity —
-# acceptable for a certificate whose only authority is over this Mac's own
-# keychain ACLs, and the reason this script is for development alone.
-#
+# nothing else; Gatekeeper does not accept it. Imported with `-A`, so any local
+# process can sign as it, which is why this script is for development alone.
 # Usage: scripts/dev-sign.sh [path]
 #   Signs target/debug/ai-buddy unless given another binary or .app bundle.
 #   Cargo replaces the signature on every build, so this runs after each one:

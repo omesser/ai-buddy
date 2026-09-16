@@ -53,10 +53,9 @@ test("text truncates with ellipsis past 6 lines", () => {
   assert.equal(truncated, true, "and says so");
 });
 
-// #547: the flag is what puts the "Open chat" control in the bubble, so it has
-// to be true for a turn that ran off the bottom by wrapping as well as one that
-// arrived with too many paragraphs — and false for a line that merely fills the
-// last one.
+// The flag is what puts the "Open chat" control in the bubble, so it has to be
+// true for a turn that ran off the bottom by wrapping as well as one that
+// arrived with too many paragraphs, and false for a line that fills the last one.
 test("wrapping past the last line is truncation too", () => {
   const oneLongParagraph = "word ".repeat(200).trim();
   const { lines, truncated } = wrapText(oneLongParagraph, 100, testMeasureFn);
@@ -72,9 +71,8 @@ test("exactly six lines is not truncation", () => {
   assert.equal(lines[5], "line6", "so no ellipsis either");
 });
 
-// The bubble keeps a reply's line breaks rather than collapsing them back: a
-// list read as one run-on line is worse than a clamped list, and the clamp
-// already has somewhere to send the rest (#547).
+// The bubble keeps a reply's breaks rather than collapsing them: a list read as
+// one run-on line is worse than a clamped list, and the clamp has a hand-off.
 test("a reply's paragraphs are the bubble's lines", () => {
   const reply = "Here's what I found:\n\n- the roster loads\n- the session resumed";
   const { lines, truncated } = wrapText(reply, 260, testMeasureFn);
@@ -115,8 +113,8 @@ test("bubble placement stays above sprite by default", () => {
   assert.equal(pos.tailOffset, 0, "tail centered when bubble not clamped");
 });
 
-// ADR-0013, amended by #546: near the ceiling the bubble inverts below the
-// sprite at the same mirrored distance, when above would cover the face.
+// Near the ceiling the bubble inverts below the sprite at the same mirrored
+// distance when above would cover the face (ADR-0013).
 test("bubble inverts below sprite at ceiling when above would cover face", () => {
   const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
   const bubbleSize = { width: 200, height: 100 };
@@ -196,15 +194,12 @@ function machineHarness() {
   const calls = [];
   // main.js draws both bubbles into one element in one of two modes, so the
   // harness models that element rather than two booleans: speech strictly
-  // wins, and on one surface the two cannot coincide at all. What one surface
-  // does make possible is a hide landing after the show that replaced it,
-  // which reads here as a surface that went blank.
+  // wins. A hide landing after the show that replaced it reads as a blank surface.
   let surface = null;
   const machine = createBubbleMachine({
     showSpeech(text, truncated) {
       surface = "speech";
-      // #610: the truncation mark rides in the remembered text (session + Chat
-      // history), not displayed in the bubble UI.
+      // The truncation mark rides in the remembered text, not in the bubble.
       calls.push(`showSpeech:${text}`);
     },
     hideSpeech() {
@@ -405,6 +400,8 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
   );
 });
 
+// --- One overlay owns the bubble; the rest draw the art only. ---
+
 // --- #178: one overlay owns the bubble; the rest draw the art only. ---
 
 test("a placement this overlay does not own carries no bubble", () => {
@@ -451,9 +448,8 @@ test("a line crossing the seam hides on the old display before it shows on the n
 });
 
 // The control draws only where the Shell says a reported rectangle wins the
-// click, and it asks by name across a language boundary. A typo on either side
-// is silent: the renderer's `invoke` rejects, the flag stays false, and the
-// control simply never appears on the one platform that supports it.
+// click, asked by name across a language boundary. A typo on either side is
+// silent: `invoke` rejects, the flag stays false, and the control never appears.
 test("the capability the renderer asks for is a command the Shell registers", () => {
   const dir = dirname(fileURLToPath(import.meta.url));
   const renderer = readFileSync(join(dir, "../src/main.js"), "utf8");
@@ -467,8 +463,8 @@ test("the capability the renderer asks for is a command the Shell registers", ()
     `${asked[1]} is registered in generate_handler!`,
   );
 });
-// #610: a reply the token cap ended is still spoken. The mark rides in the
-// remembered text (session + Chat history), not displayed in the bubble.
+// A reply the token cap ended is still spoken. The mark rides in the
+// remembered text, not in the bubble.
 test("a truncated reply is spoken without the mark visible", () => {
   const { machine, calls, placement } = machineHarness();
 

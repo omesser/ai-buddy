@@ -1,8 +1,6 @@
 #!/usr/bin/env pwsh
-# Windows Settings Window smoke test (#392)
-#
-# Verifies the native Win32 settings window opens, displays controls correctly,
-# and field labels persist after tab switching (label-wipe fix).
+# Windows Settings Window smoke test: the native Win32 settings window opens,
+# displays controls, and field labels persist after tab switching.
 #
 # Usage:
 #   .\scripts\verify-settings-win.ps1

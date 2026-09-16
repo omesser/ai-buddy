@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
 // The landing surface is the only way to pick a Harness without opening
-// Settings, and its buttons are hand-written HTML. `harness::launch` is where
-// a Harness is actually named. Nothing links the two, so a seventh named row
-// lands with no button and nobody notices (#675). This test is that link.
+// Settings, and its buttons are hand-written HTML. `harness::launch` is where a
+// Harness is named; nothing else links the two, so a new row could land with no button.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

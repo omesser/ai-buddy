@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Run the automated double-click-interval unit tests for the current OS.
-#
-# Prefer these unit tests in CI over a live desktop. Each platform pointer
-# module asserts its reader against the native OS API independently; the
-# public OnceLock wrapper is also covered in platform.rs.
+# Run the double-click-interval unit tests for the current OS. Each platform
+# pointer module asserts its reader against the native OS API independently, and
+# the public OnceLock wrapper is covered in platform.rs.
 #
 # Usage: scripts/verify-double-click-interval.sh
-# Exit non-zero on any failure.
 
 set -euo pipefail
 

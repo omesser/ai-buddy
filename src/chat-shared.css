@@ -1,6 +1,6 @@
 /* Opaque type, shape and hue the Speech bubble may share with the default Chat
    panel. Chrome, layout and alpha stay in chat-ui.css so a future Chat UI
-   cannot repaint Character expression (#545, ADR-0019). */
+   cannot repaint Character expression (ADR-0019). */
 :root {
   --shared-panel: #14171e;
   --shared-ink: #e8ebf2;

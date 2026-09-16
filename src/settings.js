@@ -1,18 +1,11 @@
-// One interpreter of `form::describe()`, in two halves on purpose.
-//
-// `controls(tab, values)` is pure: the tab as a flat list of {role, id, label,
-// value, frozen} in render order — the same rows `scripts/ax-settings.swift
-// dump` reads out of AppKit. That is what lets every assertion
-// scripts/verify-settings-macos.sh makes against a live accessibility dump be
-// made here without a window (tests/settings.test.js).
-//
-// `render(root, tab, values, emit)` is the DOM half. A redraw is render()
-// again, reading the same description, so a control cannot be built frozen and
-// drawn unfrozen.
-//
-// `emit` routes events to the `settings_event` Tauri command (#706). A secure
-// field emits `set_text` rather than a verb of its own because
-// `FormRow::SecureField` writes a `TextField`.
+// One interpreter of `form::describe()`, in two halves. `controls(tab, values)`
+// is pure: the tab as a flat list of {role, id, label, value, frozen} in render
+// order, the same rows `ax-settings.swift dump` reads, so tests need no window.
+// `render(root, tab, values, emit)` is the DOM half; a redraw is render() again.
+
+// `emit` routes events to the `settings_event` Tauri command. A secure field
+// emits `set_text` rather than a verb of its own because `FormRow::SecureField`
+// writes a `TextField`.
 
 // `values` carries one scalar per row id, so a list of Instances or excluded
 // applications arrives as lines, the way the AppKit block shows them. An array
@@ -85,11 +78,9 @@ function choice(row, values) {
   return values[row.id] ?? row.options[0] ?? "";
 }
 
-// `options` empty is `describe()`'s contract, not an omission: the form leaves
-// those choices to the renderer, which is how the Character popup gets the
-// installed packages — a list the form cannot see. Nothing in the snapshot
-// carries them yet, so the value in force is the only option. The list grows
-// when `SettingsView::installed` reaches the page.
+// `options` empty is `describe()`'s contract: the form leaves those choices to
+// the renderer, which is how the Character popup gets the installed packages.
+// Until the snapshot carries them, the value in force is the only option.
 function options(row, values) {
   return row.options.length > 0 ? row.options : [choice(row, values)];
 }
@@ -109,7 +100,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // "What is this?" is a <details>: the browser owns open and closed, the closed
-// state reserves no space, and a reader announces it as a disclosure. #642.
+// state reserves no space, and a reader announces it as a disclosure.
 function disclosure(text) {
   return text
     ? el("details", { class: "set-disclosure" }, el("summary", { text: "What is this?" }), el("p", { text }))
@@ -310,10 +301,9 @@ export function tabTitles(form) {
   return form.tabs.map((tab) => tab.title);
 }
 
-// Which tab a title selects.
-//
-// A title the form does not carry selects the first tab rather than nothing:
-// a renamed tab would otherwise leave the page with a tablist and no panel.
+// Which tab a title selects. A title the form does not carry selects the first
+// tab rather than nothing: a renamed tab would otherwise leave the page with a
+// tablist and no panel.
 export function selectTab(form, title) {
   const at = form.tabs.findIndex((tab) => tab.title === title);
   return at === -1 ? 0 : at;
@@ -333,7 +323,7 @@ async function invokeSettingsEvent(payload) {
 }
 
 // The page draws no snapshot in this step: nothing feeds `form::describe()`
-// across the boundary until `invoke` arrives (#706). The shell still has to
+// across the boundary until `invoke` arrives. The shell still has to
 // behave, so the tabs select and the panel stays empty until a snapshot is set.
 if (typeof document !== "undefined") {
   const tablist = document.querySelector('[role="tablist"]');
