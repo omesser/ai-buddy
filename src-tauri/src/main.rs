@@ -609,6 +609,282 @@ fn settings_snapshot(app: tauri::AppHandle) -> Result<SettingsSnapshot, String> 
     })
 }
 
+/// A gesture from the webview Settings page.
+#[derive(serde::Deserialize, Debug)]
+#[serde(untagged)]
+enum SettingsEventPayload {
+    SetBool {
+        set_bool: String,
+        value: bool,
+    },
+    SetText {
+        set_text: String,
+        value: String,
+        #[serde(default)]
+        #[allow(dead_code)]
+        batched: bool,
+    },
+    Press {
+        press: String,
+    },
+    Pick {
+        pick: String,
+        value: String,
+        fills: Option<PickFills>,
+    },
+    Dismiss {
+        dismiss: String,
+        value: String,
+    },
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct PickFills {
+    row: String,
+}
+
+#[cfg(test)]
+mod settings_event_tests {
+    use super::*;
+
+    #[test]
+    fn set_bool_deserializes_from_js() {
+        let json = r#"{"set_bool": "director", "value": true}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("set_bool payload should deserialize");
+        match payload {
+            SettingsEventPayload::SetBool { set_bool, value } => {
+                assert_eq!(set_bool, "director");
+                assert!(value);
+            }
+            _ => panic!("expected SetBool variant"),
+        }
+    }
+
+    #[test]
+    fn set_text_deserializes_from_js() {
+        let json = r#"{"set_text": "director_base_url", "value": "https://api.x.ai"}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("set_text payload should deserialize");
+        match payload {
+            SettingsEventPayload::SetText {
+                set_text,
+                value,
+                batched,
+            } => {
+                assert_eq!(set_text, "director_base_url");
+                assert_eq!(value, "https://api.x.ai");
+                assert!(!batched);
+            }
+            _ => panic!("expected SetText variant"),
+        }
+    }
+
+    #[test]
+    fn set_text_with_batched_deserializes() {
+        let json = r#"{"set_text": "director_model", "value": "grok-4.6", "batched": true}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("set_text with batched should deserialize");
+        match payload {
+            SettingsEventPayload::SetText { batched, .. } => {
+                assert!(batched);
+            }
+            _ => panic!("expected SetText variant"),
+        }
+    }
+
+    #[test]
+    fn press_deserializes_from_js() {
+        let json = r#"{"press": "apply"}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("press payload should deserialize");
+        match payload {
+            SettingsEventPayload::Press { press } => {
+                assert_eq!(press, "apply");
+            }
+            _ => panic!("expected Press variant"),
+        }
+    }
+
+    #[test]
+    fn pick_without_fills_deserializes() {
+        let json = r#"{"pick": "character", "value": "bmo"}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("pick payload should deserialize");
+        match payload {
+            SettingsEventPayload::Pick { pick, value, fills } => {
+                assert_eq!(pick, "character");
+                assert_eq!(value, "bmo");
+                assert!(fills.is_none());
+            }
+            _ => panic!("expected Pick variant"),
+        }
+    }
+
+    #[test]
+    fn pick_with_fills_deserializes() {
+        let json = r#"{"pick": "director_base_url_pick", "value": "OpenAI (https://api.openai.com)", "fills": {"row": "director_base_url"}}"#;
+        let payload: SettingsEventPayload =
+            serde_json::from_str(json).expect("pick with fills should deserialize");
+        match payload {
+            SettingsEventPayload::Pick {
+                pick,
+                value,
+                fills: Some(fills),
+            } => {
+                assert_eq!(pick, "director_base_url_pick");
+                assert_eq!(value, "OpenAI (https://api.openai.com)");
+                assert_eq!(fills.row, "director_base_url");
+            }
+            _ => panic!("expected Pick variant with fills"),
+        }
+    }
+
+    #[test]
+    fn response_nothing_serializes() {
+        let response = SettingsEventResponse::Nothing;
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert_eq!(json, r#"{"action":"nothing"}"#);
+    }
+
+    #[test]
+    fn response_refresh_serializes() {
+        let response = SettingsEventResponse::Refresh;
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert_eq!(json, r#"{"action":"refresh"}"#);
+    }
+
+    #[test]
+    fn response_fill_serializes() {
+        let response = SettingsEventResponse::Fill {
+            id: "director_base_url".to_string(),
+            value: "https://api.openai.com".to_string(),
+        };
+        let json = serde_json::to_string(&response).expect("should serialize");
+        assert!(json.contains(r#""action":"fill""#));
+        assert!(json.contains(r#""id":"director_base_url""#));
+        assert!(json.contains(r#""value":"https://api.openai.com""#));
+    }
+}
+
+/// What the webview must do about a gesture.
+#[derive(serde::Serialize, Debug, PartialEq)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum SettingsEventResponse {
+    Nothing,
+    Refresh,
+    Fill { id: String, value: String },
+    ClearKey,
+    Reset,
+    Run { operation: String },
+}
+
+#[tauri::command]
+fn settings_event(
+    app: tauri::AppHandle,
+    payload: SettingsEventPayload,
+) -> Result<SettingsEventResponse, String> {
+    use settings::controller;
+
+    let state = app
+        .try_state::<SettingsState>()
+        .ok_or("settings: asked for before the shell was ready")?;
+    let session = settings_session(&app, &state);
+    let view = session.view();
+    let description = settings::form::describe();
+
+    let draft = settings::DirectorDraft {
+        base_url: view.director_base_url.clone(),
+        model: view.director_model.clone(),
+        key: String::new(),
+        clear_key: false,
+        description: &description,
+    };
+
+    let event = match payload {
+        SettingsEventPayload::SetBool { set_bool, value } => controller::Event::SetBool {
+            id: set_bool,
+            value,
+        },
+        SettingsEventPayload::SetText {
+            set_text, value, ..
+        } => controller::Event::SetText {
+            id: set_text,
+            value,
+        },
+        SettingsEventPayload::Press { press } => controller::Event::Press { id: press },
+        SettingsEventPayload::Pick {
+            pick,
+            value,
+            fills: None,
+        } => controller::Event::Pick { id: pick, value },
+        SettingsEventPayload::Pick {
+            pick,
+            value,
+            fills: Some(fills),
+        } => {
+            let current = view
+                .development_texts
+                .get(&fills.row)
+                .map(|s| s.as_str())
+                .or_else(|| {
+                    if fills.row == settings::form::DIRECTOR_BASE_URL_ID {
+                        Some(view.director_base_url.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+                .to_string();
+            controller::Event::Shortcut {
+                id: pick,
+                value,
+                current,
+            }
+        }
+        SettingsEventPayload::Dismiss { dismiss, value } => {
+            return Err(format!(
+                "dismiss not yet implemented: {} {}",
+                dismiss, value
+            ));
+        }
+    };
+
+    let outcome = controller::handle(&event, &draft, &view);
+
+    match outcome {
+        controller::Outcome::Nothing => Ok(SettingsEventResponse::Nothing),
+        controller::Outcome::Apply(patch) => {
+            session.apply(patch).map_err(|e| e.to_string())?;
+            Ok(SettingsEventResponse::Nothing)
+        }
+        controller::Outcome::ApplyAndRefresh(patch) => {
+            session.apply(patch).map_err(|e| e.to_string())?;
+            Ok(SettingsEventResponse::Refresh)
+        }
+        controller::Outcome::Commit(patch) => {
+            if let Some(patch) = patch {
+                session.apply(patch).map_err(|e| e.to_string())?;
+            }
+            Ok(SettingsEventResponse::Reset)
+        }
+        controller::Outcome::Reset => Ok(SettingsEventResponse::Reset),
+        controller::Outcome::ClearKey => Ok(SettingsEventResponse::ClearKey),
+        controller::Outcome::Fill { id, value, patch } => {
+            if let Some(patch) = patch {
+                session.apply(patch).map_err(|e| e.to_string())?;
+            }
+            Ok(SettingsEventResponse::Fill {
+                id: id.to_string(),
+                value: value.to_string(),
+            })
+        }
+        controller::Outcome::Run(op) => Ok(SettingsEventResponse::Run {
+            operation: format!("{:?}", op),
+        }),
+    }
+}
+
 /// Open the Settings window.
 ///
 /// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
@@ -2456,7 +2732,8 @@ fn main() {
             open_link,
             select_harness,
             show_settings,
-            settings_snapshot
+            settings_snapshot,
+            settings_event
         ])
         .setup(|app| {
             // A companion with no Character has nothing to be, so no Character
