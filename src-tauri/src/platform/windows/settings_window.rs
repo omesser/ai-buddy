@@ -3181,4 +3181,167 @@ mod tests {
             "Base URL must be frozen when Harness is driving"
         );
     }
+
+    #[test]
+    fn draw_reapplies_frozen_state_from_fresh_description() {
+        let live_not_driving = form::Live {
+            driving: false,
+            configured: false,
+            consent_intro: String::new(),
+        };
+        let description_unfrozen = form::describe_with(&live_not_driving);
+
+        let base_url_row = description_unfrozen
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find(|row| matches!(
+                row,
+                form::FormRow::TextField { id, .. } if id == form::DIRECTOR_BASE_URL_ID
+            ));
+
+        assert!(base_url_row.is_some(), "Base URL row must exist");
+
+        if let Some(form::FormRow::TextField { frozen, .. }) = base_url_row {
+            assert!(!frozen, "Base URL must not be frozen when not driving");
+        }
+
+        let live_driving = form::Live {
+            driving: true,
+            configured: true,
+            consent_intro: String::new(),
+        };
+        let description_frozen = form::describe_with(&live_driving);
+
+        let base_url_row_frozen = description_frozen
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find(|row| matches!(
+                row,
+                form::FormRow::TextField { id, .. } if id == form::DIRECTOR_BASE_URL_ID
+            ));
+
+        if let Some(form::FormRow::TextField { frozen, .. }) = base_url_row_frozen {
+            assert!(*frozen, "Base URL must be frozen when driving");
+        }
+
+        let model_row_frozen = description_frozen
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find(|row| matches!(
+                row,
+                form::FormRow::TextField { id, .. } if id == form::DIRECTOR_MODEL_ID
+            ));
+
+        if let Some(form::FormRow::TextField { frozen, .. }) = model_row_frozen {
+            assert!(*frozen, "Model must be frozen when driving");
+        }
+
+        let api_key_row_frozen = description_frozen
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find(|row| matches!(
+                row,
+                form::FormRow::SecureField { id, .. } if id == form::DIRECTOR_API_KEY_ID
+            ));
+
+        if let Some(form::FormRow::SecureField { frozen, .. }) = api_key_row_frozen {
+            assert!(*frozen, "API key must be frozen when driving");
+        }
+    }
+
+    #[test]
+    fn apply_enabled_states_syncs_edit_readonly_and_control_enable() {
+        let frozen_description = form::describe_with(&form::Live {
+            driving: true,
+            configured: true,
+            consent_intro: String::new(),
+        });
+
+        let unfrozen_description = form::describe_with(&form::Live {
+            driving: false,
+            configured: false,
+            consent_intro: String::new(),
+        });
+
+        let http_row_ids = [
+            form::DIRECTOR_BASE_URL_ID,
+            form::DIRECTOR_MODEL_ID,
+            form::DIRECTOR_API_KEY_ID,
+        ];
+
+        for id in &http_row_ids {
+            let frozen_state = row_frozen(&frozen_description, id);
+            let unfrozen_state = row_frozen(&unfrozen_description, id);
+
+            assert_eq!(
+                frozen_state,
+                Some(true),
+                "Row '{}' must be frozen in frozen description",
+                id
+            );
+            assert_eq!(
+                unfrozen_state,
+                Some(false),
+                "Row '{}' must be unfrozen in unfrozen description",
+                id
+            );
+        }
+
+        let picker_frozen = frozen_description
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find_map(|row| match row {
+                form::FormRow::Composite { controls, .. } => {
+                    controls.iter().find_map(|control| match control {
+                        form::CompositeControl::Popup {
+                            id,
+                            frozen,
+                            ..
+                        } if id == form::DIRECTOR_BASE_URL_PICK_ID => Some(*frozen),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            });
+
+        let picker_unfrozen = unfrozen_description
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find_map(|row| match row {
+                form::FormRow::Composite { controls, .. } => {
+                    controls.iter().find_map(|control| match control {
+                        form::CompositeControl::Popup {
+                            id,
+                            frozen,
+                            ..
+                        } if id == form::DIRECTOR_BASE_URL_PICK_ID => Some(*frozen),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            });
+
+        assert_eq!(
+            picker_frozen,
+            Some(true),
+            "Base URL picker must be frozen when Harness drives"
+        );
+        assert_eq!(
+            picker_unfrozen,
+            Some(false),
+            "Base URL picker must be unfrozen when not driving"
+        );
+    }
 }

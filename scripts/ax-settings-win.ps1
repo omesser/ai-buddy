@@ -59,13 +59,12 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 function Find-SettingsWindow {
-    $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
-    $condition = $automation.CreatePropertyCondition(
+    $root = [System.Windows.Automation.AutomationElement]::RootElement
+    $condition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
         "AiBuddySettings"
     )
 
-    $root = $automation.GetRootElement()
     $window = $root.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $condition
@@ -104,7 +103,6 @@ function Get-ElementState {
             $states += "offscreen"
         }
     } catch {
-        # Some elements may not support these properties
     }
 
     return $states
@@ -124,17 +122,15 @@ function Dump-Element {
 
     Write-Output "${indent}${type}|${name}|${stateStr}"
 
-    # Walk children
     try {
-        $walker = (New-Object -ComObject UIAutomationClient.CUIAutomation).ControlViewWalker
-        $child = $walker.GetFirstChildElement($element)
+        $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+        $child = $walker.GetFirstChild($element)
 
         while ($null -ne $child) {
             Dump-Element $child ($depth + 1)
-            $child = $walker.GetNextSiblingElement($child)
+            $child = $walker.GetNextSibling($child)
         }
     } catch {
-        # Some elements may not support walking
     }
 }
 
@@ -157,11 +153,7 @@ function Dump-Settings {
 function Find-ComboBoxByOptions {
     param($window, [string[]]$requiredOptions)
 
-    $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
-    $walker = $automation.ControlViewWalker
-
-    # Find all combo boxes
-    $condition = $automation.CreatePropertyCondition(
+    $condition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::ComboBox
     )
@@ -171,18 +163,14 @@ function Find-ComboBoxByOptions {
         $condition
     )
 
-    for ($i = 0; $i -lt $combos.Length; $i++) {
-        $combo = $combos.GetElement($i)
-
-        # Expand to see options
+    foreach ($combo in $combos) {
         try {
             $expandPattern = $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
             if ($null -ne $expandPattern) {
                 $expandPattern.Expand()
                 Start-Sleep -Milliseconds 200
 
-                # Get all list items
-                $itemCondition = $automation.CreatePropertyCondition(
+                $itemCondition = New-Object System.Windows.Automation.PropertyCondition(
                     [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
                     [System.Windows.Automation.ControlType]::ListItem
                 )
@@ -193,12 +181,10 @@ function Find-ComboBoxByOptions {
                 )
 
                 $foundOptions = @()
-                for ($j = 0; $j -lt $items.Length; $j++) {
-                    $item = $items.GetElement($j)
+                foreach ($item in $items) {
                     $foundOptions += $item.Current.Name
                 }
 
-                # Check if this combo has the required options
                 $hasAll = $true
                 foreach ($req in $requiredOptions) {
                     if ($req -notin $foundOptions) {
@@ -211,11 +197,9 @@ function Find-ComboBoxByOptions {
                     return $combo
                 }
 
-                # Collapse before checking next
                 $expandPattern.Collapse()
             }
         } catch {
-            # Try next combo
         }
     }
 
@@ -231,7 +215,6 @@ function Pick-Source {
         return 1
     }
 
-    # Find AI source combo box by looking for one with "Model API" option
     $combo = Find-ComboBoxByOptions $window @("Model API")
 
     if ($null -eq $combo) {
@@ -240,22 +223,19 @@ function Pick-Source {
     }
 
     try {
-        # Expand combo box
         $expandPattern = $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
         $expandPattern.Expand()
         Start-Sleep -Milliseconds 200
 
-        # Find the list item with the target title
-        $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
-        $nameCondition = $automation.CreatePropertyCondition(
+        $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::NameProperty,
             $SourceTitle
         )
-        $typeCondition = $automation.CreatePropertyCondition(
+        $typeCondition = New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
             [System.Windows.Automation.ControlType]::ListItem
         )
-        $andCondition = $automation.CreateAndCondition($nameCondition, $typeCondition)
+        $andCondition = New-Object System.Windows.Automation.AndCondition($nameCondition, $typeCondition)
 
         $item = $combo.FindFirst(
             [System.Windows.Automation.TreeScope]::Descendants,
@@ -267,7 +247,6 @@ function Pick-Source {
             return 1
         }
 
-        # Select the item
         $selectionPattern = $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
         $selectionPattern.Select()
 
@@ -288,17 +267,15 @@ function Expand-Disclosure {
         return 1
     }
 
-    # Find button with the disclosure label (usually "What is this?")
-    $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
-    $nameCondition = $automation.CreatePropertyCondition(
+    $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty,
         $Label
     )
-    $typeCondition = $automation.CreatePropertyCondition(
+    $typeCondition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Button
     )
-    $andCondition = $automation.CreateAndCondition($nameCondition, $typeCondition)
+    $andCondition = New-Object System.Windows.Automation.AndCondition($nameCondition, $typeCondition)
 
     $button = $window.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
@@ -311,7 +288,6 @@ function Expand-Disclosure {
     }
 
     try {
-        # Click the button
         $invokePattern = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $invokePattern.Invoke()
 
@@ -323,7 +299,6 @@ function Expand-Disclosure {
     }
 }
 
-# Execute command
 switch ($Command) {
     'wait' {
         exit (Wait-ForSettings $Timeout)
