@@ -57,14 +57,14 @@ ADR_PATTERN = re.compile(r'ADR-\d{4}')
 def is_comment_line(line: str, ext: str) -> bool:
     """Check if a line is a comment (handling various language syntaxes)."""
     stripped = line.lstrip()
-    
+
     if ext in ['.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h']:
         return stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*')
     elif ext in ['.py', '.sh', '.yaml', '.yml', '.toml']:
         return stripped.startswith('#')
     elif ext in ['.html']:
         return '<!--' in stripped or '-->' in stripped
-    
+
     return False
 
 
@@ -73,7 +73,7 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
     code_lines = 0
     comment_lines = 0
     blocks = []
-    
+
     current_block_lines = []
     in_multiline = False
     
@@ -108,7 +108,7 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
                 current_block_lines = []
                 in_multiline = False
             code_lines += 1
-    
+
     if current_block_lines:
         blocks.append(analyze_block(current_block_lines))
     
@@ -147,7 +147,7 @@ def scan_file(path: Path) -> FileStats:
 def scan_directory(root: Path) -> List[FileStats]:
     """Recursively scan a directory for source files."""
     patterns = ['*.rs', '*.js', '*.ts', '*.py', '*.css', '*.sh', '*.html', '*.toml', '*.yaml', '*.yml']
-    
+
     stats = []
     for pattern in patterns:
         for path in root.rglob(pattern):
@@ -168,7 +168,7 @@ def print_summary(stats: List[FileStats], label: str = "Total"):
     if not stats:
         print(f"{label}: No files found")
         return
-    
+
     total_code = sum(s.code_lines for s in stats)
     total_comments = sum(s.comment_lines for s in stats)
     total_blocks = sum(len(s.blocks) for s in stats)
@@ -177,7 +177,7 @@ def print_summary(stats: List[FileStats], label: str = "Total"):
     blocks_citing_adr = sum(s.blocks_citing_adr for s in stats)
     
     ratio = (total_comments / total_code * 100) if total_code > 0 else 0
-    
+
     print(f"\n{label}:")
     print(f"  Files: {len(stats)}")
     print(f"  Code lines: {total_code:,}")
@@ -187,7 +187,7 @@ def print_summary(stats: List[FileStats], label: str = "Total"):
     print(f"  Blocks >3 lines: {blocks_over_3:,} ({blocks_over_3/total_blocks*100:.1f}%)" if total_blocks > 0 else "  Blocks >3 lines: 0")
     print(f"  Blocks citing issue: {blocks_citing_issue:,}")
     print(f"  Blocks citing ADR: {blocks_citing_adr:,}")
-    
+
     if stats and len(stats) <= 20:
         print("\n  Per file:")
         for s in sorted(stats, key=lambda x: x.comment_lines, reverse=True):

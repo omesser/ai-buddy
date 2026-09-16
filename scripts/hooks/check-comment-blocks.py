@@ -23,10 +23,10 @@ def get_added_lines(filename):
         )
     except subprocess.CalledProcessError:
         return set()
-    
+
     added_lines = set()
     current_line = 0
-    
+
     for line in result.stdout.splitlines():
         if line.startswith('@@'):
             match = re.match(r'@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', line)
@@ -37,7 +37,7 @@ def get_added_lines(filename):
             current_line += 1
         elif not line.startswith('-'):
             current_line += 1
-    
+
     return added_lines
 
 
@@ -77,7 +77,7 @@ def find_new_long_blocks(filename):
     current_block_start = None
     current_block_lines = []
     in_multiline = False
-    
+
     for i, line in enumerate(lines, start=1):
         stripped = line.strip()
         
