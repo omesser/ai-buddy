@@ -99,6 +99,7 @@ scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
 scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
 scripts/verify-settings-macos.sh  # macOS: Settings via Accessibility, not CI
+scripts/verify-settings-linux.sh  # Linux: Settings via AT-SPI, not CI
 scripts/bench-rss-macos.sh      # macOS: resident set over a run, per process
 scripts/bench-rss-linux.sh      # Linux: RSS baseline (requires working display)
 scripts/bench-rss-windows.ps1   # Windows: RSS baseline
@@ -120,6 +121,17 @@ The script looks for `target/debug/ai-buddy`. Set `AI_BUDDY_VERIFY_BIN` to use a
 Grant Accessibility to the terminal or IDE that runs the script (System Settings > Privacy & Security > Accessibility). Without that grant the helper exits before it dumps the window.
 
 PASS means the AI tab order is `AI > AI source > Model / API > Last user turn`, the HTTP rows are live on Model API, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
+
+`verify-settings-linux.sh` drives the GTK Settings window through AT-SPI (Linux Accessibility). CI does not run it. Same smoke tests as the macOS script: section order, HTTP row freeze/unfreeze on source switch, runtime state changes without relaunch. The AT-SPI driver is `scripts/ax-settings-linux.py`, invoked from the shell script.
+
+Build and run:
+
+```sh
+cargo build -p ai-buddy
+./scripts/verify-settings-linux.sh
+```
+
+Needs `pyatspi` (`python3-pyatspi` on Debian/Ubuntu), an X11 session, and a built binary. Set `AI_BUDDY_VERIFY_BIN` to use another binary, `AI_BUDDY_VERIFY_HARNESS` to pick a Harness other than `claude`. AT-SPI combo box manipulation may not be reliable on all GTK3 configurations; the script skips freeze checks gracefully when unavailable.
 
 The bench-rss scripts measure rather than check: they sample the app and its
 webview helpers and print RSS and peak memory. Brief by default (settle ~3s,

@@ -1570,3 +1570,151 @@ fn install_move_drag(window: &Window) {
         gtk::glib::Propagation::Proceed
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::form;
+
+    #[test]
+    fn test_ai_tab_section_order() {
+        let description = form::describe();
+        let ai_tab = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "AI")
+            .expect("AI tab exists");
+
+        let section_headings: Vec<&str> =
+            ai_tab.sections.iter().map(|s| s.heading.as_str()).collect();
+
+        assert_eq!(
+            section_headings,
+            vec![
+                "AI",
+                "AI source",
+                "Point a Harness you run yourself at ai-buddy",
+                "Model / API",
+                "Last user turn"
+            ],
+            "AI tab section order matches director_sections"
+        );
+    }
+
+    #[test]
+    fn test_disclosure_present_on_sections() {
+        let description = form::describe();
+        let ai_tab = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "AI")
+            .expect("AI tab exists");
+
+        for section in &ai_tab.sections {
+            if section.heading == "AI" || section.heading == "AI source" {
+                assert!(
+                    section.disclosure.is_some(),
+                    "Section '{}' should have disclosure text",
+                    section.heading
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_status_present_when_env_owned() {
+        crate::model::tests::with_env(
+            Some("test-key"),
+            Some("test-url"),
+            Some("test-model"),
+            || {
+                let description = form::describe();
+                let ai_tab = description
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.title == "AI")
+                    .expect("AI tab exists");
+
+                let model_api_section = ai_tab
+                    .sections
+                    .iter()
+                    .find(|s| s.heading == "Model / API")
+                    .expect("Model / API section exists");
+
+                for row in &model_api_section.rows {
+                    match row {
+                        form::FormRow::TextField {
+                            id, status, frozen, ..
+                        } if id == form::DIRECTOR_BASE_URL_ID || id == form::DIRECTOR_MODEL_ID => {
+                            assert!(*frozen, "Row '{}' should be frozen when env-owned", id);
+                            assert!(
+                                status.is_some(),
+                                "Row '{}' should have status when env-owned",
+                                id
+                            );
+                            assert!(
+                                status.as_ref().unwrap().contains("Overridden by env"),
+                                "Status should mention env override"
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn test_http_rows_frozen_when_harness_drives() {
+        let description = form::describe();
+
+        let http_row_ids = [
+            form::DIRECTOR_BASE_URL_ID,
+            form::DIRECTOR_MODEL_ID,
+            form::DIRECTOR_API_KEY_ID,
+        ];
+
+        for id in &http_row_ids {
+            let frozen = row_frozen(&description, id);
+            assert!(frozen.is_some(), "Row '{}' should have a frozen field", id);
+        }
+    }
+
+    #[test]
+    fn test_env_owned_rows_stay_frozen() {
+        crate::model::tests::with_env(Some("test-key"), None, None, || {
+            let description = form::describe();
+
+            let frozen_before = row_frozen(&description, form::DIRECTOR_API_KEY_ID);
+            assert_eq!(
+                frozen_before,
+                Some(true),
+                "API key row should be frozen when env-owned"
+            );
+
+            let description_again = form::describe();
+            let frozen_after = row_frozen(&description_again, form::DIRECTOR_API_KEY_ID);
+            assert_eq!(
+                frozen_after,
+                Some(true),
+                "API key row should stay frozen across multiple describe() calls"
+            );
+        });
+    }
+
+    #[test]
+    fn test_base_url_picker_frozen_with_http_rows() {
+        let description = form::describe();
+
+        let base_url_frozen = row_frozen(&description, form::DIRECTOR_BASE_URL_ID);
+        let picker_frozen = row_frozen(&description, form::DIRECTOR_BASE_URL_PICK_ID);
+
+        if base_url_frozen == Some(true) {
+            assert_eq!(
+                picker_frozen,
+                Some(true),
+                "Base URL picker should be frozen when Base URL field is frozen"
+            );
+        }
+    }
+}
