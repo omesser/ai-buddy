@@ -198,6 +198,11 @@
       </div>
     </section>
 
+    <!-- The agent's steps while the turn runs, replaced whole on each update
+         and taken away when the turn ends. No `aria-live`: the list rewrites
+         itself on every step, so a live region would read it all out again. -->
+    <div class="plan" id="plan" hidden></div>
+
     <!-- The Harness's thinking, while the turn runs. One line, clipped rather
          than wrapped, and taken away when the turn ends (ADR-0025). -->
     <div class="thought" id="thought" hidden></div>

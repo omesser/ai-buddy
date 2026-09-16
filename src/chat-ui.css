@@ -783,6 +783,37 @@ body {
   padding: 0 18px;
 }
 
+/* The agent's steps, between the log and the composer. Capped and scrolled
+   because `.log` is the only child that flexes, so in a 560-point window an
+   uncapped plan of a dozen steps eats the transcript. Five rows, then it
+   scrolls itself. */
+.plan {
+  flex: 0 0 auto;
+  max-height: calc(1.45em * 5);
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+  padding: 0 18px 4px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* The three statuses the wire spells, as the only difference between the
+   steps. The current one is the one a reader is looking for, so it is the only
+   one at full strength. */
+.plan > [data-status="in_progress"] {
+  color: var(--chat-ink);
+  font-weight: 600;
+}
+
+.plan > [data-status="pending"] {
+  color: var(--chat-ink-3);
+}
+
+.plan > [data-status="completed"] {
+  color: var(--chat-ink-4);
+}
+
 /* One line, clipped rather than wrapped: this sits between the log and the
    composer, and a thought that grew the strip would push the conversation up
    the window every time the Harness changed its mind. */

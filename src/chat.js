@@ -4,6 +4,7 @@
 
 import { askSays } from "./chat-ask.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
+import { planSteps } from "./chat-plan.js";
 import { MISSING_ANSWER, createChatTurns } from "./chat-settle.js";
 import { createStrip } from "./chat-strip.js";
 import { stampWhen } from "./chat-stamp.js";
@@ -22,6 +23,7 @@ const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
 const thought = document.getElementById("thought");
+const plan = document.getElementById("plan");
 const empty = document.getElementById("empty");
 const composer = document.getElementById("composer");
 const line = document.getElementById("line");
@@ -138,6 +140,23 @@ const strip = createStrip((line) => {
   thought.textContent = line;
   thought.hidden = !line;
 });
+
+// The agent's steps, replaced whole on every update because that is how ACP
+// sends them (#697). The current step is scrolled to, or a plan longer than
+// the cap would leave the reader looking at step one.
+function showPlan(steps) {
+  plan.replaceChildren(
+    ...steps.map((step) => {
+      const row = el("step");
+      row.dataset.status = step.status;
+      row.dataset.priority = step.priority;
+      row.textContent = step.text;
+      return row;
+    }),
+  );
+  plan.hidden = !steps.length;
+  plan.querySelector('[data-status="in_progress"]')?.scrollIntoView({ block: "nearest" });
+}
 
 function note(text) {
   const row = el("note");
@@ -485,6 +504,8 @@ function newSession(why) {
   // out with the rows leaves that lookup dereferencing null.
   log.replaceChildren(empty);
   strip.asked();
+  // Not a child of the log, so replacing the rows above does not clear it.
+  showPlan([]);
   turns.clear();
   asks.clear();
   // A boundary is where a stamp should say the hour again rather than count
@@ -554,6 +575,14 @@ async function start() {
     "chat-thought",
     ({ payload }) => {
       strip.thinking(payload);
+    },
+    { target: chat.label },
+  );
+
+  await listen(
+    "chat-plan",
+    ({ payload }) => {
+      showPlan(planSteps(payload));
     },
     { target: chat.label },
   );
