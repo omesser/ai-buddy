@@ -240,6 +240,7 @@
                 "Model API",
                 "Harness · claude",
                 "Harness · codex",
+                "Harness · cursor-agent",
                 "Harness · grok",
                 "Harness · hermes",
                 "Harness · opencode",
@@ -272,7 +273,7 @@
             }
           ],
           "comment": "Choose which \"AI brain\" answers: Model API or an attached Harness.",
-          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, grok, hermes, opencode, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.",
+          "disclosure": "Model API uses the HTTP endpoint below (base URL, model, and key). A Harness (claude, codex, cursor-agent, grok, hermes, opencode, pi, or Custom) attaches a child process and makes it the AI brain, and the HTTP rows stop driving. Every pick takes effect now: Model API leaves the HTTP endpoint, and a Harness is attached at once, answering once its child is up.",
           "status": null
         },
         {
@@ -287,6 +288,7 @@
               "options": [
                 "claude",
                 "codex",
+                "cursor-agent",
                 "grok",
                 "hermes",
                 "opencode",
