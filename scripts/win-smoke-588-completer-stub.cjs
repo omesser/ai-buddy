@@ -1,20 +1,11 @@
 #!/usr/bin/env node
-// Completer stub for the #588 Windows watch smoke (scripts/win-smoke-588-openchat.ps1).
-//
-// The overlay speaks whatever the Director's Completer returns, and #588 only
-// draws its "Open chat" control when a turn runs past the bubble's six lines.
-// So this stub answers every wake with one long turn: a Behavior name the
-// Character declares, then a paragraph long enough to truncate. The model path
-// reads the reply's first line as the Behavior and joins the rest as the
-// spoken line (crates/core/src/director.rs::parse_proposal), so the shape here
-// is `<behavior>\n<long line>`.
-//
-// It speaks both wire shapes the Endpoint can ask for (src-tauri/src/model.rs):
-// Server-Sent Events when the request body sets `stream: true`, and a whole
-// chat-completions JSON otherwise. The Endpoint tries the stream first and
-// falls back to the whole body, so answering both keeps the first wake from
-// costing a wasted round trip.
-//
+// Completer stub for the Windows watch smoke (scripts/win-smoke-588-openchat.ps1).
+// Every wake is answered with one long turn, `<behavior>\n<long line>`, the
+// shape parse_proposal reads, so the bubble truncates and draws "Open chat".
+
+// Both wire shapes the Endpoint can ask for: SSE when the body sets `stream:
+// true`, whole chat-completions JSON otherwise, so the first wake costs no
+// wasted round trip.
 // Env:
 //   AI_BUDDY_SMOKE_PORT      port to listen on (default 18765)
 //   AI_BUDDY_SMOKE_BEHAVIOR  Behavior name on line one (default "stroll")
@@ -26,10 +17,9 @@ const PORT = Number(process.env.AI_BUDDY_SMOKE_PORT || 18765);
 const HOST = "127.0.0.1";
 const BEHAVIOR = process.env.AI_BUDDY_SMOKE_BEHAVIOR || "stroll";
 
-// One paragraph, no newlines: parse_proposal would otherwise fold newlines into
-// spaces anyway, and a single long run is the plainest thing that outruns six
-// wrapped lines at the bubble's 260px cap. Kept well past that so a different
-// font or DPI on the watch machine still truncates.
+// One paragraph, no newlines: a single long run is the plainest thing that
+// outruns six wrapped lines at the bubble's 260px cap. Kept well past that so
+// a different font or DPI on the watch machine still truncates.
 const LINE =
   process.env.AI_BUDDY_SMOKE_LINE ||
   "Right, let me talk you through the whole plan because there is quite a lot " +

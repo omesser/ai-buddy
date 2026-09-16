@@ -1,33 +1,20 @@
 #!/usr/bin/env bash
 # macOS Settings Window smoke test, the AppKit counterpart to
-# verify-settings-win.ps1.
-#
-# Checks what the AppKit renderer actually built: the AI tab's section order,
-# the labels and help lines, and - the part no unit test can reach - whether
-# the HTTP Completer rows freeze and unfreeze when the AI source popup
-# changes in a window that was not rebuilt (#629).
-#
+# verify-settings-win.ps1: the AI tab's section order, labels and help lines,
+# and whether HTTP Completer rows freeze and unfreeze on an AI source change.
 # Usage:
 #   ./scripts/verify-settings-macos.sh
 #   AI_BUDDY_VERIFY_BIN=path/to/ai-buddy ./scripts/verify-settings-macos.sh
 #   AI_BUDDY_VERIFY_HARNESS=grok ./scripts/verify-settings-macos.sh
 #   AI_BUDDY_CHARACTERS=path/to/characters ./scripts/verify-settings-macos.sh
-#
-# Expects a built debug binary; it does not cargo build. One throwaway HOME
-# so the run does not read your own settings or Keychain. Output under
-# .verify/settings-macos-<stamp>/. Picking the claude Harness downloads its
-# npx package the first time; that lands in a shared .verify/.npm-cache, not
-# the throwaway HOME, so a later run reuses it (#740) instead of refetching.
-#
-# That throwaway HOME has no keychain to find, so every dump carries
-# "Unavailable: Platform secure storage failure" where a stored key would be.
-# It is the price of the isolation, not a defect in the window: the row is
-# still editable, which is all these checks read.
-#
-# Needs an Accessibility grant for the terminal running it - see
-# scripts/ax-settings.swift. The Harness switch needs that Harness installed
-# and signed in; those freeze checks are skipped, not failed, when it never
-# answers. CI does not run this script.
+
+# Expects a built debug binary. One throwaway HOME, so the run reads neither
+# your settings nor Keychain; every dump therefore says "Unavailable: Platform
+# secure storage failure" where a stored key would be. Output under .verify/.
+
+# Needs an Accessibility grant for the terminal (see scripts/ax-settings.swift).
+# Freeze checks are skipped, not failed, when the Harness never answers. CI
+# does not run this script.
 
 set -uo pipefail
 
@@ -71,12 +58,9 @@ trap '[ -n "$app_pid" ] && kill "$app_pid" 2> /dev/null' EXIT
 
 home="$out/home"
 mkdir -p "$home"
-# The throwaway HOME isolates ai-buddy's own state, which lives under
-# Library/Application Support - but a Harness CLI keeps its onboarding in
-# a dotfile, and one that cannot find it never finishes starting and the
-# freeze pass silently degrades to "set but not running". Link the
-# dotfiles across; add a line here for a Harness that keeps its own
-# somewhere else.
+# The throwaway HOME hides a Harness CLI's onboarding dotfile, and a CLI that
+# cannot find it never finishes starting, so the freeze pass degrades to "set
+# but not running". Link the dotfiles across; add a Harness's own here.
 link=""
 for link in .claude .claude.json .codex .config; do
   [ -e "$HOME/$link" ] && ln -sfn "$HOME/$link" "$home/$link"
@@ -84,32 +68,21 @@ done
 
 npm_cache="$root/.verify/.npm-cache"
 mkdir -p "$npm_cache"
-# Outside the throwaway HOME on purpose. npm's cache is content-addressed and
-# checksum-verified per entry, so it carries no app or Settings state for the
-# isolation to protect, and a crashed run leaves one unused entry rather than a
-# broken cache. `@latest` still re-resolves against the registry every run
-# (#514); only the package bytes behind that tag are reused.
+# Outside the throwaway HOME on purpose: npm's cache is content-addressed and
+# checksum-verified, so it carries no state the isolation protects. `@latest`
+# still re-resolves against the registry every run; only the bytes are reused.
 
 log="$out/app.log"
-# HOME is overridden so settings.json and the Action Log are this run's and
-# not your own, while the Harness keeps its Keychain credentials, which is
-# where a signed-in CLI actually stores them.
-# No AI_BUDDY_HARNESS: the source switch has to happen in this window.
-#
-# AI_BUDDY_DIRECTOR_API_KEY is dropped rather than inherited. direnv exports
-# it in this repository, and a key that arrives from the environment freezes
-# the API key row on purpose (#272) - so an inherited one adds failures about
-# rows that are doing exactly what they were built to do, and the dump says
-# "Overridden by env" in a line nobody reads.
-#
-# AI_BUDDY_CHARACTERS is defaulted because package::search_paths() looks in
-# HOME and in the Tauri resource directory, and a bare binary has neither: the
-# throwaway HOME is empty and there is no bundle around the executable. No
-# Character loads, the app exits before it draws a status item, and the script
-# reports "no status item after 20s", which reads as a launch that hung rather
-# than one that had nothing to draw. Pointing at the repository's own
-# characters/ is what a bundle would have supplied. An explicit value still
-# wins, for pointing a run at a Character somewhere else.
+# HOME is overridden so settings.json and the Action Log are this run's, while
+# the Harness keeps its Keychain credentials. No AI_BUDDY_HARNESS: the source
+# switch has to happen in this window.
+
+# AI_BUDDY_DIRECTOR_API_KEY is dropped: direnv exports it here, and a key from
+# the environment freezes the API key row on purpose, which would read as failures.
+
+# AI_BUDDY_CHARACTERS is defaulted because a bare binary has neither a HOME nor
+# a bundle for package::search_paths() to look in, and with no Character the
+# app exits before it draws a status item. An explicit value still wins.
 env -u AI_BUDDY_DIRECTOR_API_KEY \
   HOME="$home" AI_BUDDY_CAPTURABLE=1 AI_BUDDY_CHARACTER=timber-wolf \
   AI_BUDDY_CHARACTERS="${AI_BUDDY_CHARACTERS:-$root/characters}" \
@@ -130,33 +103,15 @@ dump_window() {
   still "$(basename "$target" .txt)"
 }
 
-# Whether the control for a row is live. A row is addressed by the text you can
-# read on it, and this window draws two shapes of row. Most are a label and the
-# control beside it: the tree is in render order, so the control for "Base URL"
-# is the line straight after the static text that says it, and that text sits
-# in the value column, because value is where an AXStaticText keeps what it
-# displays. A button is the other shape - it carries its own text in the title
-# column and has no label line above it at all, so the answer for "Clear key"
-# has to come off the very line that matched rather than off the one after it.
-# Matching the value column alone left two assertions that could not pass
-# whatever the window did (#732).
-#
-# Only a role that can be live answers for its own title. The toolbar is in the
-# same tree as the form and its tabs are titled too, so an unqualified title
-# match would let a tab shadow a row that happens to share a word with it -
-# first line in render order wins, and the toolbar comes first.
-#
-# The role is not fixed, which is the trap. AppKit demotes a non-editable
-# NSTextField from AXTextField to plain AXStaticText, so a frozen row and its
-# label look alike and a matcher that waits for AXTextField walks straight past
-# it into the next row. Take the next line whatever its role, and read the
-# column that means "live" for that role: settability for a field, enabled for
-# a popup or a button, and nothing at all for the demoted static text, which is
-# frozen by definition. AXEnabled on a text field stays true either way.
-#
-# scripts/test_verify_settings_row_live.sh pins this against recorded dumps,
-# including a button that is genuinely disabled: a looser matcher would call
-# that one live too.
+# Whether the control for a row is live. Rows are addressed by the text you can
+# read on them. A label's control is the next line in render order; a button
+# carries its own text in the title column, so its answer comes off the line
+# that matched. Only a role that can be live answers for its own title, or a
+# toolbar tab sharing a word would shadow the row. AppKit demotes a non-editable
+# NSTextField to AXStaticText, so the next line is taken whatever its role and
+# read by the column that means "live" for it: settability for a field, enabled
+# for a popup or button, nothing for static text. Pinned by
+# scripts/test_verify_settings_row_live.sh.
 row_live() {
   awk -F'|' -v want="$2" '
     function live() {
@@ -253,7 +208,7 @@ wait_attached() {
   [ "$(count_attached)" -ge "$need" ]
 }
 
-# Exact popup titles after #593. pick matches AXTitle, not a substring.
+# Exact popup titles: pick matches AXTitle, not a substring.
 model_api="Model API"
 harness_title="Harness · $harness"
 
@@ -304,17 +259,15 @@ else
   pass '"mind" is gone from the state line'
 fi
 
-# Window is hidden, not rebuilt. A second open is the same controller (#629).
+# Window is hidden, not rebuilt. A second open is the same controller.
 info "Close and reopen"
 "$ax" open "$app_pid" || fail "could not reopen Settings via the tray"
 dump_window "$out/reopened.txt" || fail "could not dump Settings after reopen"
 
 info "Runtime switch: $harness_title"
-# A pick that does not take is the bug this script exists to catch (#634),
-# not an environment it cannot run in - `form::harness_options` is static, so
-# every option is in the popup on every machine. The skips further down are
-# the real environment ones: they fire after the pick took, for a Harness that
-# is installed but not signed in.
+# A pick that does not take is the bug this script exists to catch, not an
+# environment it cannot run in: `form::harness_options` is static, so every
+# option is in the popup on every machine. The real skips come after the pick.
 if ! "$ax" pick "$app_pid" "AI source" "$harness_title"; then
   fail "could not pick $harness_title in the source popup"
 else
@@ -327,7 +280,7 @@ else
   else
     # Set but never answering is a real state, and freezing on it would leave
     # no reachable Completer at all - so it is not a failure here, just not
-    # the state these three checks are about (#452).
+    # the state these three checks are about.
     skip "$harness never answered; the freeze checks need a signed-in Harness"
     grep -F "$harness" "$driven" | head -3
   fi

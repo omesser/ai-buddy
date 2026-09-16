@@ -1,15 +1,6 @@
 // Posts one or two real left-button clicks at a point in top-left-origin
-// points, warping the cursor there first.
-//
-// CGEventPost feeds the same HID event stream the window server tracks, so
-// `CGEventSourceButtonState` — what the app's macOS pointer reader polls —
-// sees these presses exactly as it would a physical click. That is this
-// harness's business, not the app's: ai-buddy itself never posts a synthetic
-// click (ADR-0003); this script exists only to verify it from outside.
-//
-// Two clicks land inside the OS double-click interval by construction, so
-// they read as one Summon rather than two Pokes.
-//
+// points, warping the cursor there first. CGEventPost feeds the HID stream the
+// window server tracks, so the app's pointer reader sees them as physical clicks.
 // Usage: swift scripts/click-cursor.swift x y [clicks]
 //   clicks: 1 (default, Poke) or 2 (Summon).
 
@@ -40,11 +31,9 @@ func post(_ type: CGEventType, clickState: Int64) {
         mouseCursorPosition: point,
         mouseButton: .left
     )
-    // The gap alone already lands two clicks inside the OS double-click
-    // interval, which is enough for this app's own polling reader. Setting
-    // the click count explicitly is the correct way to tell the window
-    // server (and any AX-based observer) which click in the run this is,
-    // rather than leaving it to infer solely from timing.
+    // The gap alone lands two clicks inside the OS double-click interval; the
+    // explicit click count is how the window server and any AX observer are
+    // told which click in the run this is, rather than inferring it from timing.
     event?.setIntegerValueField(.mouseEventClickState, value: clickState)
     event?.post(tap: .cghidEventTap)
 }

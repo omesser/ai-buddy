@@ -1,12 +1,6 @@
-// Run with `node --test tests/`.
-//
 // ADR-0019's seam: a colour, font family or radius written outside a
-// `.chat-ui-*` block breaks it, and breaks it quietly — the surface still
-// renders, and the next design simply cannot recolour it. Every stylesheet
-// that reads the tokens is held to it, not only the one that defines them.
-//
-// `rgb()` and `rgba()` go beyond the three the ADR names, because most of
-// modern minimal's palette is white tints and hex alone would let them back in.
+// `.chat-ui-*` block breaks it quietly, since the next design cannot recolour
+// it. `rgb()` and `rgba()` are checked too, or white tints would slip back in.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,10 +10,8 @@ const css = readFileSync(new URL("../src/chat-ui.css", import.meta.url), "utf8")
 const settings = readFileSync(new URL("../src/settings.css", import.meta.url), "utf8");
 
 // The stylesheet with every design block removed, as `{line, text}` per line.
-//
-// Depth-counted, not matched against a brace in column zero: indenting a
-// design block defeated the shell hook this replaced. Blank lines stand in for
-// what is removed, so a failure's line numbers are the file's.
+// Depth-counted, not matched against a brace in column zero, since an indented
+// design block defeated the shell hook this replaced. Blank lines keep line numbers.
 function outsideDesignBlocks(source) {
   const lines = source.split("\n");
   const kept = [];

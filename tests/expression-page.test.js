@@ -17,9 +17,8 @@ const SCRIPT = join(ROOT, "scripts", "make-expression-page.py");
 const FORMULA = /900\s*\+\s*55/;
 
 // The generator owns the line that names the page's sources, and its own
-// self-check already asserts the page carries it. Read it from there rather
-// than restating it: a third copy is a third thing to forget when a source
-// is added, which is exactly how this test went stale.
+// self-check already asserts the page carries it. Read it from there: a third
+// copy is a third thing to forget when a source is added.
 const SOURCE_LINE = readFileSync(SCRIPT, "utf8").match(
   /^SOURCE_LINE = "(.+)"$/m,
 )[1];

@@ -38,10 +38,8 @@ function sameLocalDay(a, b) {
 }
 
 // Drawn on a 420-point Chat surface, so the label is five characters until the
-// local day actually changes — then the date prefixes once, and later lines on
-// that day go back to HH:mm. Year and seconds would not fit; they live on
-// title. A first line has no previous day to differ from, so it is HH:mm too.
-// #445.
+// local day changes; then the date prefixes once and later lines go back to
+// HH:mm. Year and seconds live on title. A first line is HH:mm too.
 export function stampWhen(at, previousAt) {
   const time = localHm(at);
   const dayChanged = previousAt !== null && !sameLocalDay(previousAt, at);

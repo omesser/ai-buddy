@@ -1,6 +1,6 @@
 // What a `chat` payload does to a waiting caret. Its own module because
 // chat.js reaches window.__TAURI__ as it loads and cannot be imported outside
-// a webview; this can, so it has a test. #681.
+// a webview; this can, so it has a test.
 
 export const MISSING_ANSWER = "No answer came back.";
 
@@ -47,9 +47,8 @@ export function createChatTurns() {
           note: `The Harness reported an error: ${payload.error}`,
         };
       }
-      // #681: empty is not "no answer" when a leftover caret sits behind
-      // Speech already in the log, or when the Shell named the settle as
-      // superseded rather than silent-failure.
+      // Empty is not "no answer" when a leftover caret sits behind Speech
+      // already in the log, or when the Shell named the settle as superseded.
       if (turn.alreadyHasSpeechAhead || payload.superseded) {
         return { action: "silent", turn };
       }

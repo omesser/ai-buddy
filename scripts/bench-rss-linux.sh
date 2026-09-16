@@ -1,38 +1,18 @@
 #!/usr/bin/env bash
-#
-# Sample the resident set of a running ai-buddy, Linux only.
-#
-# RSS on Linux lives in the main process and potentially in WebKitGTK helper
-# processes if WebKitGTK runs content out-of-process. This script discovers
-# the process tree at launch and attributes all children to the app.
-#
+# Sample the resident set of a running ai-buddy, Linux only. WebKitGTK helpers,
+# if any, are children of the main process, so the process tree at launch is
+# the app.
 # Usage: scripts/bench-rss-linux.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/ai-buddy, waits `settle` seconds, then samples every
-#   interval for `seconds`, writes one TSV row per sample, prints min/median/max
-#   over the sampled window and each process's peak RSS (VmHWM), then stops the
-#   app.
-#
-#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) — enough for fast
-#   verification in a test matrix. Not a research soak.
-#
-#   --research: Long research mode (settle 300s, sample 300s) for bathtub
-#   curve analysis. The macOS script found a launch peak near twice steady
-#   state, settling by ~5 minutes. Use this for measurement studies, not for
-#   everyday verification.
-#
-#   Environment reaches the app unchanged, which is how a scenario is chosen:
-#   AI_BUDDY_INSTANCES picks the roster, AI_BUDDY_CHARACTERS the packages.
-#   Set HOME to a scratch directory to keep the real install's settings and
-#   Action Log out of it.
-#
-# RSS alone does not compare two runs on a busy machine. VmHWM (peak resident
-# set size from /proc/[pid]/status) only ever rises, so it survives noise.
-# Both are reported. Compare scenarios on VmHWM and read the RSS series for
-# shape.
-#
-# Nothing here is a benchmark on its own: an RSS figure means nothing without
-# the roster, the display count, and what the sprite was doing. Record those
-# beside the number.
+#   Launches target/debug/ai-buddy, waits `settle` seconds, samples every
+#   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
+#   and each process's peak RSS (VmHWM), then stops the app.
+#   Default is a brief smoke (settle ~3s, sample ~10s); --research soaks 300s + 300s.
+#   Environment reaches the app unchanged: AI_BUDDY_INSTANCES picks the roster,
+#   AI_BUDDY_CHARACTERS the packages. Set HOME to a scratch directory.
+
+# RSS alone does not compare two runs on a busy machine; VmHWM only ever rises.
+# Compare scenarios on VmHWM and read the RSS series for shape, and record the
+# roster, display count and what the sprite was doing beside the number.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -61,8 +41,6 @@ done
 out="${out:-$(mktemp -t ai-buddy-rss-XXXXXX).tsv}"
 log="$out.app.log"
 
-# WebKitGTK helpers on Linux (if any) are children of the main process.
-# We'll discover them after launch.
 "./$bin" > "$log" 2>&1 &
 app=$!
 trap 'kill -TERM "$app" 2>/dev/null; sleep 1; kill -KILL "$app" 2>/dev/null' EXIT INT TERM
@@ -75,7 +53,6 @@ for _ in $(seq 30); do
 done
 displays=$(sed -n 's/^overlay: \([0-9]*\) display.*/\1/p' "$log" | head -1)
 if [ -z "$displays" ]; then
-  # Check if the app failed to start (e.g., no DISPLAY)
   if grep -qi "error\|failed\|cannot" "$log" 2> /dev/null; then
     echo "app failed to start; see $log" >&2
     cat "$log" >&2
@@ -85,20 +62,16 @@ if [ -z "$displays" ]; then
   exit 1
 fi
 
-# Find all descendant processes. WebKitGTK may spawn helpers as direct children.
-# We use pgrep with parent filtering to find them.
 sleep 2 # Give helpers time to spawn
 children=$(pgrep -P "$app" 2> /dev/null || true)
 pids=$(echo "$app" | cat - <(echo "$children") | tr '\n' ' ' | xargs)
 
-# Count distinct pids for diagnostics
 pid_count=$(echo "$pids" | wc -w)
 
 echo "displays: $displays   main pid: $app   total processes: $pid_count"
 echo "pids: $pids"
 echo "settling ${settle}s, then sampling ${seconds}s every ${interval}s -> $out"
 
-# Log process tree for forensics
 ps -p "$app" -o pid,ppid,comm,args 2> /dev/null || true
 for child in $children; do
   ps -p "$child" -o pid,ppid,comm,args 2> /dev/null || true

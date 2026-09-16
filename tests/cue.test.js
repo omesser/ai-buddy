@@ -65,7 +65,7 @@ test("each cue is drawn and sounded once, on the tick that carries it", () => {
   }
 });
 
-// #277: a double-click is two releases. The first emits a Poke before anything
+// A double-click is two releases. The first emits a Poke before anything
 // can know a second is coming, so the Poke cue is always part-played when the
 // Summon lands.
 test("a Summon cancels a Poke still in flight, visual and sound both", () => {
@@ -113,8 +113,8 @@ test("only the newest Poke is the one a Summon cancels", () => {
   assert.deepEqual(calls, ["undraw:poke", "cut:poke", "draw:summon", "sound:summon"]);
 });
 
-// Do Not Disturb is quiet, not gone, and a visual cue cannot embarrass anyone
-// in a meeting. #84.
+// Do Not Disturb is quiet, not gone: a visual cue cannot embarrass anyone in a
+// meeting, and it is folded into this one flag.
 test("sound gates the audio only, and the visual still plays", () => {
   const { machine, calls, placement } = machineHarness();
 

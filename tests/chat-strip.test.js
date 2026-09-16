@@ -1,8 +1,5 @@
-// Run with `node --test tests/`.
-//
-// #610: the strip above the composer is for the Harness's thinking (ADR-0025).
-// The truncation mark rides in the remembered text (session + Chat history),
-// not here.
+// The strip above the composer is for the Harness's thinking (ADR-0025). The
+// truncation mark rides in the remembered text, not here.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

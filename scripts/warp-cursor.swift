@@ -1,16 +1,9 @@
 // Places the cursor at a point in top-left-origin points, and prints where it
-// ended up.
-//
-// The hit-test check needs the cursor and the sprite in the same place. Until
-// #26 the sprite was the end that moved, placed under the cursor by an
-// environment variable; now its position belongs to the Engine and the cursor
-// is the only end left to move.
-//
-// This needs no permission and posts no event: CGWarpMouseCursorPosition moves
-// the pointer directly, unlike the synthetic clicks and keystrokes ai-buddy
-// deliberately never posts. Warping is this harness's business, not the app's —
-// ADR-0003 is about what ai-buddy ships, and it ships no Executor.
-//
+// ended up. The hit-test check needs the cursor and the sprite in one place,
+// and the sprite's position belongs to the Engine, so the cursor is what moves.
+
+// Needs no permission and posts no event: CGWarpMouseCursorPosition moves the
+// pointer directly. Warping is this harness's business, not the app's (ADR-0003).
 // Usage: swift scripts/warp-cursor.swift x y
 
 import AppKit

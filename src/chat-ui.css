@@ -1,21 +1,12 @@
 @import url("./chat-shared.css");
 
-/* The Chat surface's visual language.
- *
- * One Chat UI ships — modern minimal — and this file is its single definition:
- * a :root block naming the tokens, one .chat-ui-* block setting them, and the
- * rules that consume them. A second design is a second .chat-ui-* block and
- * nothing else, which is why no colour, font family or radius literal is
- * written outside one; tests/chat-ui-tokens.test.js checks that. ADR-0013.
- *
- * Structure and density stay literal: they are what modern minimal happens to
- * be, not a scale another design has to inherit.
- */
+/* One Chat UI ships and this file is its single definition: :root names the
+   tokens, one .chat-ui-* block sets them, the rules consume them (ADR-0013).
+   No colour, font or radius literal outside one; chat-ui-tokens.test.js checks. */
 
 /* Named, not set. System keywords carry no literal, so this block passes the
- * hook that guards the ones below it — and a typo in the root class leaves a
- * plain, legible window that follows the desktop rather than an invisible one.
- */
+   hook that guards the ones below it, and a typo in the root class leaves a
+   plain, legible window rather than an invisible one. */
 :root {
   color-scheme: light dark;
 
@@ -44,15 +35,9 @@
   --chat-mono: ui-monospace, monospace;
 }
 
-/* Modern minimal. Soft dark panel, one accent, generous spacing.
- *
- * The ink ramp is four steps because four things are dimmed apart: what was
- * said, the explainer's prose, the Character badge, and the WHO label.
- *
- * Not the review page's Nunito and IBM Plex Mono: those came off a Google
- * Fonts link the app's CSP blocks, which would fail silently into the system
- * stack, and self-hosting two woff2 families is a download to decide on.
- */
+/* Modern minimal. The ink ramp is four steps because four things are dimmed
+   apart: what was said, the explainer's prose, the Character badge, and the
+   WHO label. No web fonts: the app's CSP blocks Google Fonts silently. */
 .chat-ui-minimal {
   color-scheme: dark;
 
@@ -80,7 +65,6 @@
   --chat-sans: system-ui, -apple-system, sans-serif;
   --chat-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Brand accent colors for Harness connect tiles */
   --claude-accent: #E8A78A;
   --codex-accent: #26C399;
   /* Simple Icons gives Cursor #000000, which is the ground here rather than
@@ -150,9 +134,8 @@ body {
 }
 
 /* Unboxed, unlike the Character beside it: the Character names this window and
-   this only says what is behind it, so it takes the quietest weight the header
-   has and elides rather than pushing the name off the line. It is the hint the
-   tab row below was kept off the title line for. */
+   this only says what is behind it, so it takes the header's quietest weight
+   and elides rather than pushing the name off the line. */
 .mind {
   display: inline-flex;
   align-items: center;
@@ -181,10 +164,9 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Under the name, not beside it: the title row has to stay a single line so a
-   Director-mode or Harness hint can sit there later. Selected is filled rather
-   than outlined, so the active pane is the colour, not a shared border with
-   the Character badge. */
+/* Under the name, not beside it: the title row stays a single line so a hint
+   can sit there later. Selected is filled rather than outlined, so the active
+   pane is the colour, not a shared border with the Character badge. */
 .tabs {
   display: flex;
   flex: 0 0 auto;
@@ -255,7 +237,7 @@ body {
 }
 
 /* The grid item is this box, not the textarea. A replaced textarea as a
-   direct child sizes its track from min-content and paints past it (issue 641). */
+   direct child sizes its track from min-content and paints past it. */
 .prompt-field {
   width: 100%;
   min-width: 0;
@@ -408,13 +390,10 @@ body {
   }
 }
 
-/* Markdown in a reply (issue 677). The nodes come from src/markdown.js, which
-   builds them rather than writing HTML, so nothing here can be reached by a
-   reply's text.
+/* Markdown in a reply. The nodes come from src/markdown.js, which builds them
+   rather than writing HTML. `pre-wrap` comes back off: a soft line break
+   inside a Markdown paragraph is a space, which pre-wrap would draw as a break. */
 
-   `pre-wrap` comes back off: the blocks carry the structure now, and a soft
-   line break inside a Markdown paragraph is a space, which pre-wrap would
-   draw as a break. */
 .said.md {
   white-space: normal;
 }
@@ -490,10 +469,9 @@ body {
   font-size: 0.9em;
 }
 
-/* A fence and a table are the two blocks that do not reflow. The window opens
-   420 points wide, so the overflow scrolls inside the row rather than pushing
-   it sideways — and `anywhere`, inherited from .said, comes off so a line of
-   code is not broken mid-token to fit. */
+/* A fence and a table are the two blocks that do not reflow, so the overflow
+   scrolls inside the row rather than pushing it sideways, and `anywhere`,
+   inherited from .said, comes off so code is not broken mid-token. */
 .said.md .md-wide {
   overflow-x: auto;
   overflow-wrap: normal;
@@ -538,12 +516,8 @@ body {
   text-align: end;
 }
 
-/* Styled as a link and not wired as one. Nothing opens it yet: the app has no
-   opener plugin, and a real href would take this webview itself to the page.
-   The target rides in `data-href` for the Tauri command that will hand it to
-   the OS, and src/markdown.js only ever writes an http, https or mailto one
-   there. The pointer cursor is honest now: a click hands the URL to the
-   browser through `open_link`. */
+/* Styled as a link and not wired as one: a real href would take this webview
+   itself to the page. `data-href` carries the target for `open_link`. */
 .said.md .md-link {
   color: var(--chat-accent);
   cursor: pointer;
@@ -620,7 +594,6 @@ body {
   color: var(--chat-ink-4);
 }
 
-/* Unified Harness landing: same structure for not-configured, off, and needs-auth. */
 .empty .landing {
   display: flex;
   flex-direction: column;
@@ -699,7 +672,6 @@ body {
   font-size: 12px;
 }
 
-/* Brand-specific accent colors per Harness */
 .empty .connect-btn[data-harness="claude"] {
   border-color: color-mix(in srgb, var(--claude-accent) 25%, var(--chat-line));
 }
@@ -806,7 +778,6 @@ body {
   outline-offset: 2px;
 }
 
-/* HTTP Completer mode empty states: no Harness buttons. */
 .empty #empty-http,
 .empty #empty-http-off {
   padding: 0 18px;
@@ -833,15 +804,9 @@ body {
   padding: 12px 16px 16px;
 }
 
-/* A textarea, because `type=text` deleted the newlines out of a paste
-   (issue 686). `min-width: 0` and `box-sizing` for the same reason
-   `.prompt-field` exists: a replaced field that cannot shrink to the space it
-   is given paints past it (issue 641).
-   `field-sizing` lets it follow its content up to `max-height` and then scroll;
-   where the engine has not got it the field simply stays at its one row, which
-   is what the input did, so the fallback is the shape shipped today. The clamp
-   is the point either way: the Chat surface is 420 by 560 points (`main.rs`),
-   and every point this field takes comes off the log above it. */
+/* A textarea, because `type=text` deleted the newlines out of a paste.
+   `min-width: 0` and `box-sizing` as for `.prompt-field`. `field-sizing` grows
+   it to `max-height`, then scrolls: every point it takes comes off the log. */
 .composer textarea {
   flex: 1;
   min-width: 0;
@@ -965,10 +930,9 @@ body {
   flex: 0 0 auto;
 }
 
-/* The two values a Character Package names, and so the two that can be any
-   length. The only cells allowed to shrink: everything else is `flex: 0 0 auto`
-   above and holds a closed vocabulary that `chat-status.js` measures against
-   the window. */
+/* The two values a Character Package names, so the two that can be any length.
+   The only cells allowed to shrink: everything else holds a closed vocabulary
+   that `chat-status.js` measures against the window. */
 .bar .ladder .elide {
   flex: 0 1 auto;
   min-width: 0;

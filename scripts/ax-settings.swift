@@ -1,26 +1,13 @@
 // Drives and reads the macOS Settings window through the Accessibility API.
-//
-// Why this exists: the Settings window is native AppKit, so the only way to
-// check it from outside was a screenshot, and a screenshot has to be looked at
-// by a person (or a model) to mean anything. Every question the verification
-// actually asks - is this row frozen, do the sections come in this order, does
-// this label say "AI brain" - is a string or a boolean the Accessibility tree
-// already holds. Reading it turns a ten-minute click-and-look session into a
-// second of text, and the assertions become greppable instead of visual.
-//
-// Why not osascript: System Events can click and type, but it cannot report a
-// control's AXEnabled, which is the whole question for a frozen row. It also
+// Every question the verification asks (is this row frozen, do the sections
+// come in this order) is a string or boolean the AX tree already holds.
+
+// Not osascript: System Events cannot report a control's AXEnabled, and it
 // addresses controls by index, so a reordered section silently checks the
-// wrong row.
-//
-// Coordinates appear nowhere here on purpose. `open` presses the status item
-// and its Settings row by name, and `tab` presses the tab by title, so a moved
-// window or a Retina display cannot make the script click the wrong thing -
-// the failure mode that made the manual runs unreliable.
-//
-// Needs an Accessibility grant for whatever runs it: the terminal or the IDE.
-// System Settings > Privacy & Security > Accessibility. Nothing else in this
-// repository asks for that grant; verify-settings-macos.sh is its only caller.
+// wrong row. Coordinates appear nowhere; controls are pressed by name.
+
+// Needs an Accessibility grant for whatever runs it (System Settings > Privacy
+// & Security > Accessibility). verify-settings-macos.sh is its only caller.
 
 import ApplicationServices
 import Foundation
@@ -62,11 +49,9 @@ func children(_ element: AXUIElement) -> [AXUIElement] {
     attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
 }
 
-/// Depth-first search for the first element a predicate accepts.
-///
-/// Depth-first rather than breadth-first because the tab group sits deeper
-/// than the window's own buttons, and the first match by either order is the
-/// same element in every tree this drives.
+/// Depth-first search for the first element a predicate accepts. Depth-first
+/// because the tab group sits deeper than the window's own buttons, and the
+/// first match by either order is the same element in every tree this drives.
 func find(
     _ element: AXUIElement,
     depth: Int = 0,
@@ -120,14 +105,9 @@ func frame(_ element: AXUIElement) -> CGRect? {
     return CGRect(origin: origin, size: size)
 }
 
-/// A real click at the element's centre, for the elements AX will describe but
-/// will not act on.
-///
-/// The status item is one: it advertises AXPress and answers it with
-/// kAXErrorCannotComplete, because the menu it opens is the window server's
-/// and not the app's. Taking the point from AXPosition rather than writing one
-/// down keeps the click honest - a menu bar that rearranges, or a display with
-/// a different scale, moves the point with it.
+/// A real click at the element's centre, for elements AX describes but will
+/// not act on: the status item answers AXPress with kAXErrorCannotComplete,
+/// its menu being the window server's. AXPosition keeps the point honest.
 func click(_ element: AXUIElement) -> Bool {
     guard let rect = frame(element) else { return false }
     let point = CGPoint(x: rect.midX, y: rect.midY)
@@ -142,10 +122,9 @@ func click(_ element: AXUIElement) -> Bool {
     return true
 }
 
-/// AXPress, falling back to AXShowMenu and then to a synthesized click.
-///
-/// A status item answers to AXPress on some macOS versions and only to
-/// AXShowMenu on others, and which one it is has never been documented.
+/// AXPress, falling back to AXShowMenu and then to a synthesized click. A
+/// status item answers to AXPress on some macOS versions and only to
+/// AXShowMenu on others, and which one has never been documented.
 func press(_ element: AXUIElement) -> Bool {
     for action in [kAXPressAction as String, "AXShowMenu", kAXPickAction as String] {
         guard actions(element).contains(action) else { continue }
@@ -197,10 +176,9 @@ case "tab":
     }
 
 case "pick":
-    // Changing a popup in place, which is the only way to reach the states
-    // that exist between two launches - a source switched while the window is
-    // open. The popup is addressed by the label above it, because the tree is
-    // in render order and a label is stabler than an index.
+    // Changing a popup in place is the only way to reach the states between
+    // two launches. The popup is addressed by the label above it, because the
+    // tree is in render order and a label is stabler than an index.
     guard args.count >= 4 else { die("usage: ax-settings pick <pid> <label> <option>") }
     guard let window = settingsWindow() else { die("Settings is not open") }
     var lastLabel = ""
@@ -226,12 +204,9 @@ case "pick":
         die("the \(args[2]) popup has no option \(args[3])")
     }
     guard press(option) else { die("could not pick \(args[3])") }
-    // The row commits on the app's own thread, and the window redraws the line
+    // The row commits on the app's own thread and the window redraws the line
     // under it from what was saved, so neither is true the instant the press
-    // returns. Waiting for the new title with the menu already gone is what
-    // makes `pick` mean "the row took it": a caller that dumped straight after
-    // the press read the popup from before the click, and the state line from
-    // before the redraw, and blamed the window for both (#634).
+    // returns. Waiting for the new title is what makes `pick` mean "the row took it".
     guard
         waitFor(
             10,
@@ -255,11 +230,9 @@ case "frame":
     print("\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))")
 
 case "dump":
-    // One line per element as role|title|value|placeholder|enabled|settable,
-    // so the
-    // shell can grep for a label and read the enabled flag beside it. Order is
-    // the tree's own order, which is the render order - that is what makes
-    // section order assertable.
+    // One line per element as role|title|value|placeholder|enabled|settable, so
+    // the shell can grep for a label and read the enabled flag beside it. Order
+    // is the tree's own, which is the render order, so section order is assertable.
     guard let window = settingsWindow() else { die("Settings is not open") }
     func walk(_ element: AXUIElement, depth: Int) {
         guard depth < 30 else { return }

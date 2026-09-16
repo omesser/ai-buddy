@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
 // ADR-0012's seam on this side of the wire: saving an Instance Prompt throws
 // the Director session away, so the trigger has to be an explicit act. A
-// keystroke listener would wipe the conversation mid-sentence, and it would do
-// it quietly — the window still works, and the user only finds out afterwards.
+// keystroke listener would wipe the conversation mid-sentence, quietly.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -40,7 +37,7 @@ test("nothing in the Chat surface saves on a keystroke", () => {
   );
 
   // The composer's send key is the one listener that may fire mid-typing: the
-  // field became a textarea (#686), which does not submit its form on Enter,
+  // field is a textarea, which does not submit its form on Enter,
   // so Enter had to be wired by hand. It sends a turn; it does not save.
   assert.deepEqual(
     typing,

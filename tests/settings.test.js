@@ -1,13 +1,6 @@
-// Run with `node --test tests/`.
-//
-// scripts/verify-settings-macos.sh asks a live accessibility dump one question:
-// for the AI source in force, which rows are the user's to edit. The dump is a
-// flat list of controls in render order, and so is `controls()`, so the same
-// questions are asked here of the two snapshots under tests/fixtures — without
-// a window, without AppKit, and without waiting for a Harness to attach.
-//
-// #452 is the bug the answers exist for: a Harness drives, and the HTTP rows
-// still take an edit that `model::resolve` then throws away.
+// scripts/verify-settings-macos.sh asks a live accessibility dump which rows
+// are the user's to edit for the AI source in force. `controls()` is the same
+// flat list in render order, so the same questions are asked of the fixtures.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -77,8 +70,7 @@ test("the HTTP rows freeze when a Harness drives", () => {
 
 // The picker carries no label of its own, so it is addressed the way the
 // script addresses it: the popup nearest above the Base URL row in render
-// order. A picker that drifted out from over that row would be live while the
-// field under it was frozen, and filling a frozen field is the #452 shape.
+// order. A picker live over a frozen field is the bug this catches.
 function endpointPicker(list) {
   const at = list.findIndex((control) => control.label === "Base URL");
   assert.notEqual(at, -1, "the AI tab has no Base URL row");
@@ -258,9 +250,8 @@ test("a Composite spreads into one control per member, its text field included",
 });
 
 // No DOM in this suite, so which elements `render()` builds can only be read
-// off its source. It is worth reading: a <select> hand-rolled out of divs, or a
-// disclosure that is a button and a hidden paragraph, passes every assertion
-// above and is unreachable by a screen reader (#642).
+// off its source. A <select> hand-rolled out of divs passes every assertion
+// above and is unreachable by a screen reader.
 const source = readFileSync(new URL("../src/settings.js", import.meta.url), "utf8");
 
 test("the controls are the platform's own elements", () => {
@@ -272,9 +263,8 @@ test("the controls are the platform's own elements", () => {
   assert.doesNotMatch(source, /role: "(button|checkbox|combobox|textbox)"/, "no element wears a role it is not");
 });
 
-// The spike's `.row` and `.frozen` reached the Chat surface's Prompt box: two
-// stylesheets on one window, and the second one won. The prefix is what makes
-// that impossible rather than merely avoided.
+// Two stylesheets on one window, and the second one wins: the prefix is what
+// makes a collision with the Chat surface impossible rather than merely avoided.
 const css = readFileSync(new URL("../src/settings.css", import.meta.url), "utf8");
 
 test("every selector in settings.css is prefixed .set-", () => {

@@ -1,45 +1,21 @@
 #!/usr/bin/env bash
-#
-# Sample the resident set of a running ai-buddy, macOS only.
-#
-# RSS lives in more than one process. The app is the Rust binary plus the
-# WebKit XPC helpers WKWebView spawns for it — one WebContent per overlay,
-# one GPU process, one Networking process — and those are children of launchd,
-# not of the app, so no process-tree walk finds them. This takes the set of
-# WebKit helpers before launch and after, and calls the difference ours.
-#
+# Sample the resident set of a running ai-buddy, macOS only. RSS lives in more
+# than one process: WKWebView's XPC helpers are children of launchd, not of the
+# app, so this diffs the set of WebKit helpers before and after launch.
 # Usage: scripts/bench-rss-macos.sh [--settle N] [--seconds N] [--interval N] [--out FILE] [--research]
-#   Launches target/debug/ai-buddy, waits `settle` seconds, then samples every
-#   interval for `seconds`, writes one TSV row per sample, prints min/median/max
-#   over the sampled window and each process's peak physical footprint, then
-#   stops the app.
-#
-#   DEFAULT: Brief smoke test (settle ~3s, sample ~10s) — enough for fast
-#   verification in a test matrix. Not a research soak.
-#
-#   --research: Long research mode (settle 300s, sample 300s) for bathtub
-#   curve analysis. A launch peaks near twice its steady state and takes about
-#   five minutes to come down: 396 MB at launch, 176 MB at 150 s, back near
-#   225 MB by 300 s and only drifting after that. Use this for measurement
-#   studies, not for everyday verification.
-#
-#   Environment reaches the app unchanged, which is how a scenario is chosen:
-#   AI_BUDDY_INSTANCES picks the roster, AI_BUDDY_CHARACTERS the packages.
-#   Set HOME to a scratch directory to keep the real install's settings and
-#   Action Log out of it.
-#
-# RSS alone does not compare two runs. It is what macOS has let the process
-# keep, so a busy machine reclaims pages from an idle buddy and the same app
-# reads 150 MB lighter for reasons that have nothing to do with the app. Peak
-# physical footprint — Activity Monitor's "Memory" column, and what `vmmap`
-# reports — only ever rises, so it is the figure that survives a noisy machine.
-# Both are printed. Compare scenarios on the footprint and read the RSS series
-# for shape.
-#
-# Nothing here is a benchmark on its own: an RSS figure means nothing without
-# the roster, the display count and what the sprite was doing. Record those
-# beside the number — docs/research/memory-rss-and-multi-monitor.md is where
-# this repository's runs live.
+#   Launches target/debug/ai-buddy, waits `settle` seconds, samples every
+#   `interval` for `seconds`, writes one TSV row per sample, prints min/median/max
+#   and each process's peak physical footprint, then stops the app.
+#   Default is a brief smoke (settle ~3s, sample ~10s). --research soaks for
+#   300s + 300s: a launch peaks near twice its steady state and takes about
+#   five minutes to come down.
+#   Environment reaches the app unchanged: AI_BUDDY_INSTANCES picks the roster,
+#   AI_BUDDY_CHARACTERS the packages. Set HOME to a scratch directory.
+
+# RSS alone does not compare two runs: a busy machine reclaims pages from an
+# idle buddy. Peak physical footprint only ever rises, so compare scenarios on
+# it and read the RSS series for shape. Record roster, display count and what
+# the sprite was doing beside the number (docs/research/memory-rss-and-multi-monitor.md).
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -91,9 +67,8 @@ helpers=$(comm -13 <(echo "$before" | sort) <(pgrep -f com.apple.WebKit | sort))
 pids=$(echo "$app $helpers" | tr '\n' ' ' | xargs)
 
 # One WebContent per display, plus the GPU and Networking processes. Any other
-# count means another WebKit application started a helper inside the same few
-# seconds and the set difference caught it: the run is contaminated, not fixable
-# after the fact, and worth rerunning on a quieter machine.
+# count means another WebKit application started a helper in the same few
+# seconds and the set difference caught it: rerun on a quieter machine.
 expected=$((displays + 2))
 found=$(echo "$helpers" | grep -c .)
 [ "$found" -eq "$expected" ] ||
@@ -123,8 +98,7 @@ awk -F'\t' 'NR > 1 {print $2}' "$out" | sort -n |
         n, t[0] / 1024, t[int(n / 2)] / 1024, t[n - 1] / 1024
     }'
 
-# Per process, because the per-display cost is one WebContent and nothing else:
-# the overlays are one webview each, and the Rust side does not fork per screen.
+# Per process, because the per-display cost is one WebContent and nothing else.
 # `vmmap` reads the peak while the process is still alive; after the kill below
 # there is nothing left to ask.
 column=3

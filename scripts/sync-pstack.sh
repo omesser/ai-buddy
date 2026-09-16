@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
-#
 # Keep the vendored pstack skills in `.agents/skills/` current.
 #
 #   scripts/sync-pstack.sh            regenerate the index and the symlinks
 #   scripts/sync-pstack.sh --fetch    re-vendor from upstream first
-#
-# `.agents/skills/` is the one skills directory for this repository, and it
-# mixes vendored skills with repo-owned ones such as `verify-ai-buddy`.
-# `UPSTREAM.json` records which names came from upstream. The sync vendors
-# whatever upstream ships, so a skill added upstream arrives without anyone
-# editing that list, and the list is rewritten from what was found. What the
-# list gates is deletion: only a name already on it can be removed, so a skill
+
+# `.agents/skills/` mixes vendored skills with repo-owned ones. `UPSTREAM.json`
+# records which names came from upstream and gates only deletion, so a skill
 # this repository owns survives an upstream that has never heard of it.
-#
-# `.claude/skills` and `.cursor/skills` are symlinks to it, so there is one
-# copy of the bytes. Both loaders glob `<dir>/skills/*/SKILL.md`, and the
-# symlink sits in the literal prefix of that pattern rather than in what the
-# wildcard matches, so it is plain path traversal into a real directory.
+
+# `.claude/skills` and `.cursor/skills` are symlinks to it. Both loaders glob
+# `<dir>/skills/*/SKILL.md`, and a symlink in the literal prefix is plain path
+# traversal into a real directory.
 
 set -euo pipefail
 
@@ -65,9 +59,8 @@ if [ "${1:-}" = "--fetch" ]; then
   done <<< "$after"
 
   # No allowlist here, unlike skills above: `.agents/agents/` is wholly
-  # upstream's, so `--delete` over the whole directory is the honest sync.
-  # Write a repo-owned agent into it and this line will eat it — give agents
-  # the same `vendored_names` treatment as skills before you do.
+  # upstream's, so `--delete` over the whole directory is the honest sync. A
+  # repo-owned agent written into it would be eaten.
   rsync -a --delete "$up/agents/" .agents/agents/
   cp "$up/LICENSE" .agents/pstack/LICENSE
 
@@ -98,9 +91,8 @@ if [ "${1:-}" = "--fetch" ]; then
 fi
 
 # The index. An agent cannot invoke a skill it cannot see, and 47 SKILL.md
-# files are too many to read on the chance one fits. One line each, taken from
-# the frontmatter `description` the skill already writes for exactly this
-# purpose.
+# files are too many to read on the chance one fits. One line each, from the
+# frontmatter `description`.
 {
   echo "# pstack skills"
   echo

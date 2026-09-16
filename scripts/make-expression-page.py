@@ -58,11 +58,9 @@ EXPORTS = (
 SPRITE_PACKAGE = "buddy-bot"
 SPRITE_ANIMATIONS = ("idle", "talk")
 
-# Where the art sits relative to the page, which is the one thing that cannot
-# be the same in both places: `docs/design/expression.html` in a clone reaches
-# the packages two directories up, and `_site/expression.html` reaches the
-# copies beside it. The shell is committed with the first and the build
-# rewrites it to the second.
+# Where the art sits relative to the page: `docs/design/expression.html` in a
+# clone reaches the packages two directories up, and `_site/expression.html`
+# reaches the copies beside it. The shell is committed with the first.
 CLONE_ART = "../../characters/"
 SITE_ART = "characters/"
 
@@ -198,11 +196,9 @@ def read_sprite(characters_root, base):
             raise Malformed(f"{SPRITE_PACKAGE}: {name!r} declares no usable fps")
         played[name] = {"fps": fps, "frames": frames}
 
-    # The page draws each frame at its own size, which is the whole point of
-    # showing it here rather than in a contact sheet. That is only the same
-    # thing the overlay draws while the pack ships `scale = 1`, so a pack that
-    # asks to be drawn larger stops the build instead of being quietly shown
-    # at the wrong size.
+    # The page draws each frame at its own size, which matches the overlay only
+    # while the pack ships `scale = 1`, so a pack that asks to be drawn larger
+    # stops the build instead of being quietly shown at the wrong size.
     scale = declared.get("scale", 1)
     if scale != 1:
         raise Malformed(

@@ -1,15 +1,6 @@
 // The Chat surface: one window per Summoned Character Instance, drawn by
-// ai-buddy rather than by whatever answers (ADR-0018). Four kinds of line —
-// the user's turns, the answer as it arrives, a line the user drew out without
-// typing, labelled with what it was reacting to, and a forwarded permission
-// request with its options as buttons — plus the Shell's own notes, about a
-// turn that produced nothing and about the boundary where the session behind
-// this window was replaced. ADR-0018's tool-call one-liner waits on the Action
-// Log getting a reader. It holds no authoritative state, like the overlay: the
-// log is this session and only this session, including lines said before this
-// window existed, and the Shell owns the session behind it. The Harness's
-// thinking is the one thing drawn here that is not a line of the log, and
-// ADR-0025 says why it is a strip above the composer instead.
+// ai-buddy rather than by whatever answers (ADR-0018). Like the overlay it
+// holds no authoritative state; the Shell owns the session behind it.
 
 import { askSays } from "./chat-ask.js";
 import { composerPlaceholder } from "./chat-placeholder.js";
@@ -24,10 +15,9 @@ const { listen } = window.__TAURI__.event;
 
 const chat = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 
-// The label is `chat-` and the Instance's id, which is how the Shell addressed
-// this window and how everything sent from it names its Instance. Read from
-// the label rather than passed in, because a webview cannot be handed
-// arguments at creation and an event emitted then would reach no listener.
+// The label is `chat-` and the Instance's id, which is how the Shell addresses
+// this window. Read from the label because a webview cannot be handed arguments
+// at creation, and an event emitted then would reach no listener.
 const instance = chat.label.replace(/^chat-/, "");
 
 const log = document.getElementById("log");
@@ -44,14 +34,12 @@ const promptSave = document.getElementById("prompt-save");
 const promptConfirm = document.getElementById("prompt-confirm");
 const promptCancel = document.getElementById("prompt-cancel");
 
-// The status bar's cells, by the name `statusCells` gives each.
 const cells = Object.fromEntries(
   ["behavior", "primitive", "animation", "state", "facing", "director", "happened"].map(
     (name) => [name, document.getElementById(`s-${name}`)],
   ),
 );
 
-// The plain-language status element.
 const plainEl = document.getElementById("s-plain");
 
 // The WHO label on the Instance's own turns, filled in once the Shell says who
@@ -59,13 +47,12 @@ const plainEl = document.getElementById("s-plain");
 let them = "";
 
 // Last stamped instant in this window, so a line after midnight can say the
-// new day once. #445.
+// new day once.
 let previousAt = null;
 
 // The last thing the Shell said about the Spatial Layer, and when the ambient
 // wake it named falls due. The Shell pushes that deadline once rather than a
-// number every second: the seconds between are arithmetic, and arithmetic in
-// here costs the frame loop nothing.
+// number every second; the arithmetic between costs the frame loop nothing.
 let status = null;
 let wakeAt = null;
 
@@ -112,7 +99,7 @@ function said(who, text, cls, at) {
   const label = el("who-label");
   label.textContent = who;
   cluster.append(label, when(at));
-  // Only what answered gets its Markdown drawn (#677). The user's own turn
+  // Only what answered gets its Markdown drawn. The user's own turn
   // stays the characters they typed: they wrote punctuation, not a document.
   const body = el(cls === "them" ? "said md" : "said");
   if (cls === "them") {
@@ -124,10 +111,9 @@ function said(who, text, cls, at) {
   return add(row);
 }
 
-// A turn's answer, opened empty with a blinking caret and appended to as the
-// answer arrives. The Shell hands over a finished Wake today, so it arrives in
-// one piece and the append runs once; when the session grows chunks
-// (the Harness client), each lands here and the caret stays until the last.
+// A turn's answer, opened empty with a blinking caret and appended to as it
+// arrives. Today the Shell hands over a finished Wake, so the append runs once;
+// with chunks, each lands here and the caret stays until the last.
 function opening_answer() {
   const row = said(them, "", "them");
   const caret = el("caret", "span");
@@ -145,16 +131,9 @@ function settled(row) {
   row.querySelector(".caret")?.remove();
 }
 
-// What the Harness is thinking, while the turn runs (ADR-0025). One line that
-// each thought replaces, and that the turn's own end takes away: it is not a
-// row, so it never joins the log, and nothing here is kept.
-//
-// The Shell sends the line to draw rather than the chunk it arrived in, and
-// sends an empty one when the turn ends, so this window never has to work out
-// whether a Harness is still thinking.
-//
-// The mark for a reply the token cap ended is not drawn here: it rides in the
-// remembered line, which the row below already shows (#610).
+// What the Harness is thinking, while the turn runs (ADR-0025). Not a row, so
+// it never joins the log. The Shell sends the line to draw, and an empty one
+// when the turn ends, so this never decides whether a Harness is still thinking.
 const strip = createStrip((line) => {
   thought.textContent = line;
   thought.hidden = !line;
@@ -166,16 +145,9 @@ function note(text) {
   return add(row);
 }
 
-// A link in a reply opens in the user's browser, not in here.
-//
-// One listener on the log rather than one per link: every reply redraws its
-// whole row as chunks arrive (`appendReply`), so a per-link handler would be
-// attached and dropped over and over, and a link added by the last chunk of a
-// turn would be the one that missed out.
-//
-// `open_link` is what reaches the OS, and the scheme it will accept is decided
-// in Rust — `data-href` here is untrusted text that has already been through
-// `src/markdown.js`'s own allowlist, and neither check trusts the other.
+// A link in a reply opens in the user's browser. One listener on the log, not
+// one per link: every reply redraws its row as chunks arrive. `open_link`
+// decides the accepted scheme in Rust; `data-href` is untrusted text.
 log.addEventListener("click", (event) => {
   const link = event.target.closest?.(".md-link[data-href]");
   if (!link) {
@@ -193,14 +165,9 @@ log.addEventListener("click", (event) => {
 // event is what retires the rest.
 const asks = new Map();
 
-// A request nothing can answer any more: answered here or in another window,
-// cancelled with its turn, or gone with the Harness. The buttons go dead
-// rather than the row, so the log still says what was asked.
-//
-// `option` is the one that won, which is not necessarily the one clicked here:
-// two surfaces can draw one request and the wire drops every answer after the
-// first, so a window that marked its own click would show a decision that was
-// never taken. Marked here, on the Shell's word, or not at all.
+// A request nothing can answer any more. The buttons go dead, not the row, so
+// the log still says what was asked. `option` is the winner on the Shell's word:
+// the wire drops every answer after the first, so a local click may have lost.
 function retire(request, option) {
   const buttons = asks.get(request);
   if (!buttons) {
@@ -215,15 +182,9 @@ function retire(request, option) {
   }
 }
 
-// A permission request the Harness asked, drawn as the options it offered.
-// Nothing is chosen here or in the Shell: a click is the only answer, and
-// a turn that times out first is cancelled by the Shell, not decided
-// (ADR-0018). The buttons stay disabled after the click, and the row reads as
-// what was decided once the Shell says which option took it.
-//
-// Ignored the second time a request arrives: the Shell hands an unsettled
-// request to a window that opens after it was asked, and this window may
-// already have drawn it.
+// A permission request, drawn as the options the Harness offered. A click is
+// the only answer; a timed-out turn is cancelled by the Shell, not decided
+// (ADR-0018). A repeat arrives when a late-opening window is handed unsettled asks.
 function asked(ask) {
   if (asks.has(ask.request)) {
     return null;
@@ -232,8 +193,8 @@ function asked(ask) {
   const label = el("who-label");
   label.textContent = `${them} · asks`;
   const body = el("said");
-  // Every word of this is untrusted and arrives as text, never as markup
-  // (#678). `chat-ask.js` decides what an ask says and how much of it.
+  // Every word of this is untrusted and arrives as text, never as markup.
+  // `chat-ask.js` decides what an ask says and how much of it.
   body.textContent = askSays(ask);
   const buttons = el("options");
   for (const option of ask.options) {
@@ -260,14 +221,9 @@ function asked(ask) {
   return add(row);
 }
 
-// Whether anything can answer, and what to say when nothing can.
-//
-// SPEC gives this window the job of explaining how to connect something
-// rather than failing, and four reasons nothing can answer need different
-// messages: never configured is a thing to attach, switched off is a thing to
-// turn back on, not signed in names the Harness and shows the login command,
-// and ready hides the empty state. The composer is disabled rather than
-// hidden, so the window reads as waiting rather than as broken.
+// Whether anything can answer, and what to say when nothing can. Four reasons
+// need different messages: never configured, switched off, not signed in, and
+// ready. The composer is disabled rather than hidden, so it reads as waiting.
 function attached(opening) {
   const ready = opening.configured && opening.enabled && !opening.login;
   const needsAuth = opening.configured && opening.enabled && opening.login;
@@ -278,30 +234,25 @@ function attached(opening) {
   send.disabled = !ready;
   line.placeholder = composerPlaceholder(opening);
 
-  // Three modes: Harness landing (default), HTTP mode (no buttons), or ready.
   const landing = document.getElementById("landing");
   const httpEmpty = document.getElementById("empty-http");
   const httpOff = document.getElementById("empty-http-off");
 
-  // Hide all empty state divs first
   landing.hidden = true;
   httpEmpty.hidden = true;
   httpOff.hidden = true;
 
   if (ready) {
-    // Connected and ready: nothing to show
     return true;
   }
 
   if (isHttpMode) {
-    // HTTP Completer mode: show HTTP-specific empty states, no Harness buttons
     if (opening.enabled) {
       httpEmpty.hidden = false;
     } else {
       httpOff.hidden = false;
     }
   } else {
-    // Harness mode or no Completer: show unified landing with buttons
     landing.hidden = false;
 
     const title = document.getElementById("landing-title");
@@ -310,7 +261,6 @@ function attached(opening) {
     const hint = document.getElementById("landing-hint");
 
     if (needsAuth) {
-      // Needs login variant
       const displayNames = {
         claude: "Claude Code",
         codex: "Codex",
@@ -328,13 +278,11 @@ function attached(opening) {
       hint.textContent = "Or run this in your terminal:";
       hint.hidden = false;
     } else if (!opening.configured) {
-      // Not configured
       title.textContent = "Connect a Harness to get started";
       lede.textContent = "Choose an agent runtime to power this chat. Each signs in on its own — no credentials stored here.";
       command.hidden = true;
       hint.hidden = true;
     } else {
-      // Switched off
       title.textContent = "Chat is switched off";
       lede.textContent = "Turn AI back on in Settings, or connect a Harness below.";
       command.hidden = true;
@@ -345,19 +293,17 @@ function attached(opening) {
   return ready;
 }
 
-// Connect button clicks: make that Harness the Completer source and say how
-// to sign it in. The click never starts the sign-in — the Harness
-// authenticates itself, in a terminal of the user's own, and ai-buddy holds no
-// credential. #654.
+// Connect button: make that Harness the Completer source and say how to sign
+// it in. The click never starts the sign-in: the Harness authenticates itself
+// in the user's own terminal, and ai-buddy holds no credential.
 for (const btn of document.querySelectorAll(".connect-btn")) {
   btn.addEventListener("click", () => {
     const harness = btn.dataset.harness;
     const label = btn.querySelector(".connect-label").textContent;
 
     // Nothing is repainted here: the pick goes through `SettingsSession::apply`,
-    // whose `ReloadChat` pushes a full opening to the `chat-opening` listener
-    // below (#473). A second read from this side would race that push and paint
-    // less of the window than it does.
+    // whose `ReloadChat` pushes a full opening to the `chat-opening` listener.
+    // A second read from this side would race that push.
     invoke("select_harness", { harness })
       .then((login) => {
         note(
@@ -371,7 +317,6 @@ for (const btn of document.querySelectorAll(".connect-btn")) {
   });
 }
 
-// "More options in Settings" button: open Settings window.
 const settingsBtn = document.getElementById("settings-btn");
 if (settingsBtn) {
   settingsBtn.addEventListener("click", () => {
@@ -411,9 +356,8 @@ document.getElementById("tab-prompt").addEventListener("click", () => showTab("p
 let savedPrompt = "";
 
 // Whether the Save button is asking for confirmation rather than offering to
-// save. Saving throws the session away, so the second click is the one that
-// does it — and never a keystroke, which would wipe the conversation
-// mid-sentence (ADR-0012).
+// save. Saving throws the session away, so the second click does it, and never
+// a keystroke, which would wipe the conversation mid-sentence (ADR-0012).
 function askingToSave(asking) {
   promptSave.hidden = asking;
   promptConfirm.hidden = !asking;
@@ -422,7 +366,7 @@ function askingToSave(asking) {
 
 function showPrompt(opening) {
   // The string as sent. Empty under Blank AI because the built-in layer was
-  // emptied, not because the tab hid it (#680).
+  // emptied, not because the tab hid it.
   document.getElementById("personality").textContent = opening.personality;
   // Said before it is hit as well as in the refusal after: the Shell owns the
   // number, so the tab reads it rather than restating it.
@@ -451,7 +395,7 @@ promptConfirm.addEventListener("click", () => {
       promptText.value = savedPrompt;
       promptSaid.textContent = "Saved.";
       // The log is cleared by `chat-session`: saving reopens the session, and
-      // that event is the one place a replacement is drawn (#476, ADR-0012).
+      // that event is the one place a replacement is drawn (ADR-0012).
     })
     .catch((why) => {
       promptSaid.textContent = String(why);
@@ -462,9 +406,8 @@ function showWho(opening) {
   them = opening.name;
   document.getElementById("name").textContent = opening.name;
   document.getElementById("character").textContent = opening.character;
-  // Refilled on every opening, not only the first: an opening is pushed when
-  // the Completer source moves, and a mode label that keeps the mode it opened
-  // with is a lie. #474.
+  // Refilled on every opening, not only the first: the Completer source can
+  // move, and a mode label that keeps the mode it opened with is a lie.
   document.getElementById("mind-text").textContent = mindLine(opening);
   for (const node of document.querySelectorAll(".i-name")) {
     node.textContent = opening.name;
@@ -477,10 +420,9 @@ function showWho(opening) {
   }
 }
 
-// A textarea does not submit its form on Enter. Enter still sends, because that
-// is the whole muscle memory of this window; Shift+Enter types the newline.
-// `isComposing` is the IME's Enter — it accepts a candidate, and sending there
-// would cut the word in half.
+// A textarea does not submit on Enter. Enter still sends, the whole muscle
+// memory of this window; Shift+Enter types the newline. `isComposing` is the
+// IME's Enter accepting a candidate, and sending there would cut the word.
 line.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
     return;
@@ -503,9 +445,8 @@ composer.addEventListener("submit", (event) => {
   invoke("chat_opening", { instance })
     .then((opening) => {
       // The header too, not only whether anything can answer: this opening is
-      // the one place a Harness that came up after the window opened is
-      // noticed, and a header still saying `not running` over a live session
-      // is the lie #474 is about.
+      // where a Harness that came up after the window opened is noticed, and a
+      // header still saying `not running` over a live session is a lie.
       showWho(opening);
       if (!attached(opening)) {
         return;
@@ -535,18 +476,9 @@ function drop(turn) {
   turn.them.remove();
 }
 
-// The session behind this window was replaced, and the Shell says why (#476).
-//
-// The rows go with it. A transcript sitting above the composer is a claim that
-// what is about to answer has read it, and after a reset that claim is false —
-// the user writes a follow-up on three turns of context and is answered by
-// something holding none. The rest of what this window was holding is just as
-// stale: turns waiting on an answer that was abandoned with the session, and
-// permission asks the old Harness will never hear back about.
-//
-// A note in their place, because a log that empties itself with nothing said
-// reads as the app losing the conversation rather than as a new one starting.
-// The Action Log is where the removed turns survive.
+// The session behind this window was replaced, and the Shell says why. The rows
+// go: a transcript above the composer claims that what answers next has read
+// it. A note in their place, or the log reads as the app losing the conversation.
 function newSession(why) {
   // Keeping `empty` is not tidiness: the empty-state panel is a child of the
   // log, and `attached()` reaches into it by id on every opening. Sweeping it
@@ -572,7 +504,7 @@ async function start() {
         said("You", payload.said ?? "", "you", payload.at);
         return;
       }
-      // #610: The strip is for thinking only (ADR-0025).
+      // A refusal is a note, not the strip: the strip is for thinking only (ADR-0025).
       if (payload.busy) {
         const refused = turns.popNewest();
         if (refused) {
@@ -582,16 +514,9 @@ async function start() {
         return;
       }
       if (payload.reacting_to) {
-        // A line the user did not type, which reaches the log as well as the
-        // Speech bubble so the conversation has one place to be read
-        // (ADR-0018). The label names what drew it out — a Summon, a Poke, or
-        // nobody at all — because the log's grammar is a question with its
-        // answer under it: an unlabelled line here reads as the answer to
-        // whatever is above it, and a line labelled as unasked-for reads as a
-        // bug when the user just double-clicked the sprite. It takes no
-        // waiting turn for the same reason: that caret is on a question this
-        // did not answer. The Shell writes the words, out of the vocabulary
-        // the status bar draws below.
+        // A line the user did not type, in the log as well as the bubble so the
+        // conversation has one place to be read (ADR-0018). Labelled with what
+        // drew it out, or it reads as the answer to whatever is above it.
         said(`${them} · ${payload.reacting_to}`, payload.said, "them", payload.at);
         return;
       }
@@ -607,20 +532,17 @@ async function start() {
       if (outcome.action === "speech") {
         arrived(turn.them, outcome.said);
       } else if (outcome.action === "error") {
-        // The Harness answered, and the answer was an error — a model the
-        // installed CLI will not serve, a signed-out agent. Static weights
-        // took the turn either way, so the row looks like the one below; the
-        // error is the only part the user can act on, and #514 is a day of
-        // wakes spent because it was never said (ADR-0008).
+        // The Harness answered with an error. Static weights took the turn
+        // either way, so the row looks like the one below; the error is the
+        // only part the user can act on (ADR-0008).
         turn.them.remove();
         note(outcome.note);
       } else if (outcome.action === "silent") {
         turn.them.remove();
       } else {
-        // A turn that produced no line: the call failed and static weights
-        // took over, which are silent by contract, or Do Not Disturb refused
-        // the dialogue. Said out loud, because a log that stops is
-        // indistinguishable from one still waiting.
+        // No line: the call failed and static weights took over, silent by
+        // contract, or Do Not Disturb refused. Said out loud, because a log
+        // that stops is indistinguishable from one still waiting.
         turn.them.remove();
         note(MISSING_ANSWER);
       }
@@ -673,7 +595,6 @@ async function start() {
 
   // Full opening, not only name and Character: a Director or Completer-source
   // change has to re-run `attached()` on a window that is already listening.
-  // #473.
   await listen(
     "chat-opening",
     ({ payload }) => {

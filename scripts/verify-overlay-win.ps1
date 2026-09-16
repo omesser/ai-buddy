@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Windows Spatial e2e (#372 / PR #373) - twin of verify-overlay-x11.sh
+# Windows Spatial e2e - twin of verify-overlay-x11.sh
 #
 # Places a Notepad perch on the secondary display, grabs the buddy on the
 # primary, drops it 80px above the title bar, and asserts Perched plus

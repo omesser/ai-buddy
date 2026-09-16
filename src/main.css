@@ -19,11 +19,8 @@ body {
 }
 
 /* The bubble is a piece of the chat surface's panel, carried out onto the
-   desktop (ADR-0013, amended by #441; ported from docs/design/bubble.html).
-   The overlay loads no chat-ui.css and takes no `.chat-ui-*` class — importing
-   it would drag the alpha-over-panel tokens into the one document that has no
-   panel — so only the shared snippet crosses, and a future Chat UI class still
-   cannot reach this document. */
+   desktop (ADR-0013). The overlay loads no chat-ui.css and takes no `.chat-ui-*`
+   class, so only the shared snippet crosses and a Chat UI class cannot reach here. */
 .bubble {
   --bubble-panel: var(--shared-panel);
   --bubble-ink: var(--shared-ink);
@@ -32,24 +29,17 @@ body {
   position: absolute;
   max-width: 260px;
 
-  /* The Character's line in the chat log is `.row.them .said`: bare ink at
-     line-height 1.55, with no fill, radius or padding to copy — there is no
-     panel out here to be bare on. So the box is the panel's own, inset at
-     `.composer input`'s step, which is what that stylesheet already uses for a
-     bordered box holding one piece of text. Deliberately not `.row.you .said`:
-     its --chat-radius-tail corner is the gesture for *you said this*, so it
-     does not travel and the corner stays uniform. */
+  /* The panel's own box, inset at `.composer input`'s step: the log's `.row.them
+     .said` is bare ink with no panel out here to be bare on. Not `.row.you
+     .said`: its tail corner is the gesture for *you said this*. */
   padding: 10px 13px;
   border-radius: var(--shared-radius);
   background: var(--bubble-panel);
   color: var(--bubble-ink);
 
-  /* The edge, and the whole answer to "a dark bubble on a dark wallpaper is a
-     hole". Fill and ring fail on opposite grounds: over a blown-out ground the
-     ring disappears and the dark fill carries the shape; over a near-black one
-     the fill vanishes and the ring carries it. No single ground hides both,
-     which a single-value edge cannot promise. The shadow closes the mid-tone
-     case, where neither is at full strength. */
+  /* The edge is the whole answer to "a dark bubble on a dark wallpaper is a
+     hole". Over a blown-out ground the ring disappears and the fill carries the
+     shape; over a near-black one the reverse. The shadow closes the mid-tone case. */
   border: 2px solid var(--shared-ink);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 
@@ -61,9 +51,8 @@ body {
   opacity: 0;
   transition: opacity 300ms ease;
   word-wrap: break-word;
-  /* Over the sprite, which is what the ceiling case needs now that the flip is
-     gone. main.js writes a z-index per Instance every tick and puts the bubble
-     on the higher of that Instance's two levels; this is the fallback for a
+  /* Over the sprite, for a bubble clamped onto the head at the ceiling. main.js
+     writes a z-index per Instance every tick; this is the fallback for a
      bubble drawn before the first tick has stacked it. */
   z-index: 1;
 }
@@ -72,31 +61,20 @@ body {
   opacity: 1;
 }
 
-/* One element, two modes: the Character is either saying something or waiting
-   to say something. Only the child the mode names is drawn, so the two can
-   never be on screen together — which as two elements anchored to the same
-   head they were, for as long as their fades overlapped.
+/* One element, two modes. Only the child the mode names is drawn, so the two
+   can never be on screen together, which as two elements with overlapping
+   fades they were. One bubble, not two objects (ADR-0013, "One bubble for both states"). */
 
-   One bubble, not two objects that happen to appear in the same place: box,
-   fill, edge and tail are the same in both modes and the ellipsis alone carries
-   the difference. That reverses #119's round thought silhouette and its trail
-   of shrinking discs, and gives up the glance they bought — the argument is in
-   ADR-0013's "One bubble for both states". */
 .bubble:not([data-mode="speech"]) .bubble-content,
 .bubble:not([data-mode="speech"]) .bubble-more,
 .bubble:not([data-mode="thinking"]) .thinking-dots {
   display: none;
 }
 
-/* #547: the way to the rest of a turn that did not fit. `data-more` is written
-   by main.js only when the wrap truncated, so a line that fits shows nothing at
-   all — the bubble is the Character speaking, and a control on every line would
-   make it chrome (ADR-0019).
+/* The way to the rest of a turn that did not fit. `data-more` is written only
+   when the wrap truncated: a control on every line would make the bubble chrome
+   (ADR-0019). A word in the accent colour, not a filled button, for the same reason. */
 
-   A word in the accent colour rather than a filled button, for the same reason:
-   the accent is already what this surface uses for "the app is saying
-   something" (the thinking ellipsis), and a raised button would be the chat
-   surface's furniture standing on the desktop. */
 .bubble:not([data-more]) .bubble-more {
   display: none;
 }
@@ -123,10 +101,8 @@ body {
 }
 
 /* The tail is the same sandwich as the box: a ring triangle with a fill
-   triangle over it. A lone --bubble-panel spike would vanish on exactly the
-   grounds the ring exists for. 10px tall, which is the gap placeBubble leaves
-   over the sprite's head, and drawn in both modes because both modes are the
-   same bubble. */
+   triangle over it, since a lone --bubble-panel spike would vanish on exactly
+   the grounds the ring exists for. 10px tall, the gap placeBubble leaves. */
 .bubble::before,
 .bubble::after {
   content: "";
@@ -160,10 +136,9 @@ body {
 .thinking-dots span {
   width: 6px;
   height: 6px;
-  /* The chat surface's own `.caret` is --chat-accent blinking in the log while
-     it waits. This ellipsis is that caret, so the two surfaces say *waiting*
-     the same way — and three small saturated marks on an opaque ground read on
-     any wallpaper. */
+  /* This ellipsis is the chat surface's `.caret`, so the two surfaces say
+     *waiting* the same way, and three small saturated marks on an opaque
+     ground read on any wallpaper. */
   background: var(--bubble-accent);
   border-radius: 50%;
   animation: thinking-bounce 1.2s infinite ease-in-out both;
@@ -178,9 +153,8 @@ body {
 }
 
 /* A dip and a lift, never `scale(0)`: a dot that leaves reads as art failing
-   to load, where a dot that dims and rises reads as waiting. Opacity and
-   transform only, so this composites without repainting — the overlay sits on
-   top of everything the user is doing. */
+   to load, where one that dims and rises reads as waiting. Opacity and
+   transform only, so this composites without repainting. */
 @keyframes thinking-bounce {
   0%, 60%, 100% {
     opacity: 0.35;
@@ -200,9 +174,8 @@ body {
   top: 0;
   left: 0;
   /* Center origin so `scaleX(-1)` mirrors the sprite about its own midline.
-     The translation is unaffected — only the flip has an origin — and the
-     sprite's width is always even (art width times an integer scale), so the
-     mirrored pixels stay on the grid. */
+     The sprite's width is always even (art width times an integer scale), so
+     the mirrored pixels stay on the grid. */
   transform-origin: center;
   /* ADR-0006: true pixel art, nearest-neighbour, integer scale factors
      only. A Character declaring render_mode = "smooth" overrides this from
@@ -212,41 +185,31 @@ body {
   /* Hidden until the Rust side says where the Character goes. The webview holds
      no authoritative state. */
   visibility: hidden;
-  /* The hide rules raise this to 1, over a duration every frame carries.
-     Opacity rather than visibility, so the transition can be animated, and so
-     the two gates stay independent: this one is whether the Character should
-     be seen, that one is whether it has been placed yet. Starts at 0 so a
-     Character launched under a fullscreen application never flashes on its
-     way to being hidden. */
+  /* The hide rules raise this to 1. Opacity rather than visibility so it can
+     animate and the two gates stay independent: seen vs placed. Starts at 0 so
+     a Character launched under a fullscreen application never flashes. */
   opacity: 0;
 }
 
 /* Cues: one per interaction, drawn over the sprite and gone in under half a
-   second (#277). Ported value for value from the reviewed proposal in
-   docs/design/cues.html — every keyframe, duration and easing curve here is a
-   decision taken there rather than a default.
+   second. Every keyframe, duration and easing here was decided in
+   docs/design/cues.html. Opacity and transform only: nothing here may cost a repaint. */
 
-   White on ink, the pair the speech bubble already uses, so a cue reads on any
-   wallpaper and introduces no colour to the overlay. Opacity and transform
-   only: the overlay sits on top of everything the user is doing, so nothing
-   here may cost a repaint. */
 :root {
   --cue-stroke: #ffffff;
   --cue-ink: #24262c;
 }
 
 /* One layer per Instance, so a dismissed buddy takes its cues with it and the
-   z-index written every tick stacks them with its sprite. Zero-sized and
-   anchored at the origin: its children carry overlay coordinates, the same
-   space the bubble is placed in. */
+   z-index written every tick stacks them with its sprite. Zero-sized at the
+   origin: its children carry overlay coordinates, the bubble's space. */
 .cue-layer {
   position: absolute;
   left: 0;
   top: 0;
-  /* Never a hit target. The Rust side hit-tests the sprite's alpha mask and
-     main.js captures the pointer on whatever it lands on, so a cue under the
-     cursor that took the press would hold a capture and then be reaped
-     mid-drag. */
+  /* Never a hit target: main.js captures the pointer on whatever it lands on,
+     so a cue under the cursor that took the press would hold a capture and
+     then be reaped mid-drag. */
   pointer-events: none;
 }
 
@@ -309,8 +272,7 @@ body {
 
 /* Menu: a filled ring segment sweeping the whole way round, a radial menu's
    silhouette. A conic gradient the script advances per frame, masked to a
-   thin donut, so it is vector-crisp at any DPI with no SVG stroke to smear
-   across pixel boundaries. */
+   thin donut, so it is crisp at any DPI with no SVG stroke to smear. */
 .cue-wedge {
   width: 58px;
   height: 58px;

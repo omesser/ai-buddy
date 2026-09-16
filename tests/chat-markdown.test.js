@@ -1,13 +1,7 @@
-// Run with `node --test tests/`.
-//
 // What a reply's Markdown draws as, and the two things that must hold however
 // the parser behaves: the caret survives every chunk, and nothing a model
-// wrote becomes markup or a live URL scheme.
-//
-// `node --test` has no `document`, so the stand-in below is the one
-// `drawReply` is handed. Its `insertBefore` refuses a reference node that is
-// not a child on purpose: a permissive one is what let an earlier branch ship
-// `DOMException: The child can not be found in the parent` past 21 tests.
+// wrote becomes markup or a live URL scheme. The stand-in `document` below
+// refuses an `insertBefore` against a non-child on purpose, as a browser does.
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -164,8 +158,6 @@ test("emphasis, code and strikethrough become elements, not punctuation", () => 
 });
 
 test("nested emphasis renders without leaving a marker behind", () => {
-  // The literal `***bold-italic***` an earlier branch drew as a stray
-  // asterisk beside a bold run.
   const body = draw("***very important***");
 
   assert.equal(sketch(body.childNodes[0]), 'p[em[strong["very important"]]]');
@@ -286,7 +278,7 @@ test("mailto is allowed and a relative target is not", () => {
 });
 
 // The constructs this renderer does not draw. Each reads as the source the
-// model wrote, which is what the whole surface did before issue 677.
+// model wrote.
 test("an image and raw HTML read as their source", () => {
   const image = draw("![alt](https://example.com/x.png)");
   assert.deepEqual(tags(image), ["P"]);
@@ -304,8 +296,7 @@ test("an HTML entity reads as its source, not as the character", () => {
 });
 
 // The four-chunk stream, with one landing mid-marker and one mid-fence.
-// Everything about the caret is asserted after every chunk, because the bug
-// this replaces only appeared on the second one.
+// Everything about the caret is asserted after every chunk.
 test("the caret survives every chunk of a streamed reply", () => {
   const body = saidBody();
   const caret = doc.createElement("span");

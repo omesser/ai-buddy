@@ -1,9 +1,6 @@
-// Run with `node --test tests/`.
-//
-// `node --check` parses each file alone and cannot see a named import that
-// the exporter dropped. The overlay is a type=module page: one missing
-// binding is a SyntaxError, start() never runs, and the Character is
-// invisible with nothing on the Shell's stderr.
+// `node --check` parses each file alone and cannot see a named import that the
+// exporter dropped. The overlay is a type=module page: one missing binding is a
+// SyntaxError, start() never runs, and the Character is invisible, silently.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

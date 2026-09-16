@@ -1,28 +1,10 @@
-// Reports the overlay's on-screen geometry as JSON.
-//
-// Why Swift and not shell: no stock command-line tool reports a window's bounds
-// or level. lsappinfo knows only about applications, and osascript needs an
-// Accessibility grant — broader than anything this project asks for — then still
-// cannot see a non-activating panel that is excluded from the switcher, nor
-// report a window level at all.
-//
-// Why Swift and not Rust, in a Rust repository: the crate's own WindowSource
-// now reads these same CoreGraphics calls, so the bindings are no longer the
-// obstacle. It cannot stand in for this, though — WindowSource is deliberately
-// blind to our own process, because the overlay covers the whole display the
-// Character is on and a Character able to see it would find a Perch under its
-// own feet and never fall again. This script exists to observe precisely that
-// window, so the two want opposite things.
-//
-// Xcode is already required to build a Tauri app on macOS, so `swift` costs
-// nothing to run. Keeping the observer outside the app's own toolchain is worth
-// something on its own: the display-union bug was caught because this asks the
-// window server rather than asking the app what it believes.
-//
-// Uses CGWindowListCopyWindowInfo, which returns window bounds, owner and layer
-// with no permission prompt — the same call docs/SPEC.md specifies for
-// WindowSource. Screen Recording is needed only for the screenshots that
-// verify-overlay.sh takes, never for this.
+// Reports the overlay's on-screen geometry as JSON, via CGWindowListCopyWindowInfo,
+// which returns window bounds, owner and layer with no permission prompt. No
+// stock command-line tool reports a window's bounds or level.
+
+// Not the crate's own WindowSource: that is deliberately blind to our own
+// process, because a Character able to see the overlay would find a Perch under
+// its own feet. This observer asks the window server, not the app.
 
 import AppKit
 import CoreGraphics
@@ -33,15 +15,9 @@ var activeCount: UInt32 = 0
 CGGetActiveDisplayList(0, nil, &activeCount)
 var ids = [CGDirectDisplayID](repeating: 0, count: Int(activeCount))
 CGGetActiveDisplayList(activeCount, &ids, &activeCount)
-// The usable part of each display as well as its frame. A screen reserves
-// strips of itself for the Dock and the menu bar, and the sprite comes to rest
-// on the near edge of those rather than behind them (#39). NSScreen is the only
-// thing that will say where they are: CoreGraphics reports the Dock as a window
-// covering the whole display.
-//
-// NSScreen measures from the bottom of the main display and CoreGraphics from
-// the top, so the insets are read from NSScreen and applied to the CoreGraphics
-// frame, which is the space every other number in this file is in.
+// The usable part of each display as well as its frame: the sprite rests on the
+// near edge of the Dock and menu bar strips, and only NSScreen says where they
+// are. NSScreen measures from the bottom and CoreGraphics from the top.
 let screens = NSScreen.screens
 for id in ids {
     let b = CGDisplayBounds(id)
@@ -72,9 +48,8 @@ for id in ids {
 
 var windows: [[String: Any]] = []
 // Everything the window server stacks above or below the ordinary application
-// level: the menu bar, the Dock, the status items, Notification Centre. None of
-// them is a Perch, and the frame loop is checked against these rectangles to
-// prove the sprite never stands on one.
+// level: the menu bar, the Dock, the status items, Notification Centre. None is
+// a Perch, and the frame loop is checked against these rectangles.
 var elevated: [[String: Any]] = []
 let opts = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
 if let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] {

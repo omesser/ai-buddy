@@ -1,5 +1,3 @@
-// Run with `node --test tests/`.
-//
 // The status bar's arithmetic: what each cell says for one push, and the
 // countdown the window runs between pushes. Plus the header's one line about
 // which mind answers, which the same module writes.
@@ -76,14 +74,10 @@ test("the countdown changes unit rather than growing", () => {
   assert.equal(untilWake(7_200_000), "2h");
 });
 
-// The bar draws on one line and never wraps. `.bar .elide` lets the two cells
-// a Character Package names shrink; everything measured below is a cell that
-// will not, so the moment this sum passes the window the cell at the end of the
-// line is clipped with no ellipsis. That is the bug this catches a second time.
-//
-// A monospace advance is 0.6em; the bar is 10.5px, in a window with a 16-point
-// gutter each side and 4 points between its twelve cells. 320 is the narrowest
-// the surface may be dragged to (`min_inner_size` in `main.rs`).
+// The bar draws on one line and never wraps; `.bar .elide` lets only the two
+// Package-named cells shrink, so once the fixed cells pass the window the last
+// cell is clipped with no ellipsis. Monospace advance 0.6em at 10.5px; 16-point
+// gutters, 4 points between twelve cells; 320 is `min_inner_size` in `main.rs`.
 const ADVANCE = 0.6 * 10.5;
 const GUTTERS = 2 * 16 + 11 * 4;
 const NARROWEST = 320;
@@ -119,7 +113,7 @@ test("the closed vocabularies fit the narrowest the window goes", () => {
   );
 });
 
-// The header's line about which mind answers (#474). Branch for branch with
+// The header's line about which mind answers. Branch for branch with
 // `settings::harness_state`, so Settings and Chat cannot disagree about it.
 const http = { enabled: true, model: "gpt-4o-mini", host: "localhost:8000", harness: null };
 
@@ -144,8 +138,7 @@ test("an attached Harness is named with the session that proves it is live", () 
   assert.equal(mindLine(opening), "hermes · session 8cecc6dc");
 });
 
-// The state the issue was filed for: set and not answering used to read
-// exactly like an attachment that came up.
+// Set and not answering must not read like an attachment that came up.
 test("a Harness that never came up says so rather than claiming the turn", () => {
   const opening = {
     ...http,

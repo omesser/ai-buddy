@@ -1,17 +1,7 @@
-// Run with `node --test tests/`.
-//
 // `detect-private-key`, `detect-aws-credentials` and `check-added-large-files`
-// read every tracked file, vendored third-party content included. That is the
-// point: bytes a bot refreshes weekly are exactly what a secret scanner is for,
-// and an oversized file is worth catching wherever it lands.
-//
-// Every other hook in `.pre-commit-config.yaml` skips the vendored tree through
-// the `*vendored` alias, so an exclude is one keystroke from these three, and
-// pre-commit offers nothing that would forbid it — `exclude` is a per-hook key,
-// available on any hook, and a repo-level `exclude` is not part of the schema.
-// Giving the three their own repo block keeps them clear of a sweeping edit to
-// the aliased block; it cannot make the narrowing impossible. This test is what
-// makes the exemption hold.
+// read every tracked file, vendored content included: bytes a bot refreshes
+// weekly are what a secret scanner is for. Every other hook skips the vendored
+// tree by alias, so an exclude is one keystroke away; this test forbids it.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

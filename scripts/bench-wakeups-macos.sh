@@ -1,32 +1,20 @@
 #!/usr/bin/env bash
-#
-# Baseline for #431: wakeups/sec, package idle residency, and CPU time for a
-# release ai-buddy binary, per #423 scenario. A reviewer reruns this directly
-# rather than trusting a number in a doc.
-#
-# Needs: sudo (powermetrics), swift (click-cursor.swift, chat scenario only).
-# Requires AI_BUDDY_TRACE_FRAMES so the frame log can prove what the sprite
-# was doing during the sample, and AI_BUDDY_DIRECTOR_API_KEY so a worktree
-# build does not block on a Keychain prompt (#283).
-#
+# Baseline: wakeups/sec, package idle residency, and CPU time for a release
+# ai-buddy binary, per scenario. A reviewer reruns this directly rather than
+# trusting a number in a doc.
+
+# Needs: sudo (powermetrics), swift (click-cursor.swift, chat scenario only),
+# AI_BUDDY_TRACE_FRAMES so the frame log proves what the sprite was doing, and
+# AI_BUDDY_DIRECTOR_API_KEY so a worktree build does not block on a Keychain prompt.
 # Usage:
 #   scripts/bench-wakeups-macos.sh --binary PATH --scenario idle|chat \
 #     [--duration SECS] [--out DIR]
-#
-# idle: launch, settle, sample. Ambient StaticDirector Behaviors (including
-#   walk) may fire during the sample window on their own; the frame log lets
-#   the parser split the sample by what was actually on screen, so one idle
-#   run can also answer the walking scenario when it gets lucky. Walking is
-#   never forced - StaticDirector picks it on its own timetable, whatever that
-#   turns out to be for a given run.
-# chat: launch, read the sprite's centre from the frame log, and double-click
-#   it there (scripts/click-cursor.swift x y 2, a real HID event that warps
-#   the cursor itself - `osascript ... System Events click at` cannot resolve
-#   this borderless overlay's Accessibility element and fails with -25208),
+
+# idle: launch, settle, sample. Ambient Behaviors may fire on their own; the
+#   frame log lets the parser split the sample by what was on screen.
+# chat: launch, double-click the sprite's centre from the frame log with
+#   scripts/click-cursor.swift (shared with crates/verify; do not fork it),
 #   confirm the Summon verb, then sample with chat open.
-#
-# scripts/click-cursor.swift is shared with #728 (crates/verify's `summon`
-# subcommand) - one click poster in the tree, not two. Do not fork it here.
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -102,10 +90,9 @@ if [ "$READY" -ne 1 ]; then
   exit 1
 fi
 
-# Let the first few ticks (window setup, initial Behavior pick) settle before
-# either driving Summon or starting the clock on "idle". The sprite spawns
-# mid-air and plays Falling until it lands - clicking during that window can
-# miss (the art has moved by the time the click lands), so wait for Grounded.
+# Let the first ticks settle before driving Summon or starting the idle clock:
+# the sprite spawns mid-air and plays Falling until it lands, and a click during
+# that window can miss the moving art, so wait for Grounded.
 for _ in $(seq 1 40); do
   grep -qE '^frame: .* (Grounded|Perched) ' "$LOG" 2> /dev/null && break
   perl -e 'select(undef,undef,undef,0.25)'
@@ -132,12 +119,9 @@ PY
   read -r SX SY SW SH <<< "$SPRITE_AT"
   CX=$((SX + SW / 2))
   CY=$((SY + SH / 2))
-  # `osascript ... click at` resolves an AX UI element under the point first,
-  # and this overlay's borderless always-on-top panel does not present one to
-  # resolve (fails -25208 even once the app's own hit-test has flipped
-  # click-through off). click-cursor.swift warps the cursor and posts real
-  # HID mouse events instead, the same path a real click takes; see its
-  # header comment. `2` clicks reads as one Summon, not two Pokes.
+  # `osascript ... click at` resolves an AX element under the point first, and
+  # this borderless panel presents none (fails -25208). click-cursor.swift warps
+  # the cursor and posts real HID events instead. `2` clicks reads as one Summon.
   swift scripts/click-cursor.swift "$CX" "$CY" 2 > "$OUT/click.log" 2>&1
   sleep 1
   if grep -qE 'verbs:.*Summon' "$LOG"; then

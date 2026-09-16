@@ -46,10 +46,8 @@ SHELL = ROOT / "docs" / "design" / "characters.html"
 PLACEHOLDER = '{"characters": [], "required": [], "defaults": {}}'
 
 # Packages that stay off the published page, and why. The gallery is a public
-# URL; a Character this project has no right to publish there does not go on
-# it. Nothing about the omission reaches the page — saying "we ship art whose
-# license we are unsure of" is its own kind of publishing, and the manifest
-# already keeps the full position for anyone reading the repository.
+# URL; a Character this project has no right to publish does not go on it, and
+# nothing about the omission reaches the page.
 WITHHELD = {}
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -233,9 +231,8 @@ def character(package, required, defaults, art_root):
         if members:
             slot["variants"] = members
 
-    # Optional Animations the Engine already falls back (climb→walk, grab→fall,
-    # #364). Absent means absent — a dashed "missing" tile would recast them
-    # as required.
+    # Optional Animations the Engine already falls back (climb→walk, grab→fall).
+    # Absent means absent — a dashed "missing" tile would recast them as required.
     for name in ("climb", "grab"):
         animation = animations.get(name)
         if animation is None or animation.get("variant_of"):

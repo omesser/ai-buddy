@@ -11,12 +11,9 @@ export function bubbleDuration(text) {
   return Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, duration));
 }
 
-// The lines the bubble draws, and whether the turn ran past them.
-//
-// The flag is the whole point of returning an object: a turn that did not fit
-// is one the user can only finish on the Chat surface, and #547 puts a control
-// in the bubble to get there. Reading it back off the trailing "…" would call
-// a line that ends in one truncated.
+// The lines the bubble draws, and whether the turn ran past them. The flag is
+// why an object comes back: a truncated turn puts a control in the bubble, and
+// reading it off the trailing "…" would call a line that ends in one truncated.
 export function wrapText(text, maxWidth, measureFn) {
   const lines = [];
   let truncated = false;
@@ -62,24 +59,13 @@ export function wrapText(text, maxWidth, measureFn) {
 export const THINKING_GRACE_MS = 250;
 export const THINKING_MIN_HOLD_MS = 600;
 
-// The bubble decisions, apart from the DOM that displays them, so node can
-// drive the machine through tick orderings a display never reproduces on
-// demand. Three rules the transport and the reader force:
-//
-// - `dialogue` rides exactly one Engine tick, and the renderer keeps only the
-//   newest placement while it waits for its next animation frame. The Engine
-//   ticks slightly faster than a display refreshes, so some ticks are only
-//   ever seen by `event`; a pulse read from the newest placement instead
-//   would vanish there, silently dropping the line and leaving the thinking
-//   indicator to die by timer. `event` runs per delivery and latches it.
-// - A response ends the thinking indicator the same frame it shows, min-hold
-//   notwithstanding: the hold exists to keep a briefly-shown indicator from
-//   flickering when a turn ends *silently*, never to sit beside an answer.
-// - Speech and the indicator are mutually exclusive, and speech wins: while
-//   a line is displayed — its whole reading window — the indicator never
-//   shows, whatever a new turn does. When the line hides, a turn still in
-//   flight starts its grace from that moment, so a reply landing right then
-//   never flashes the indicator.
+// The bubble decisions, apart from the DOM, so node can drive the machine
+// through tick orderings a display never reproduces on demand. Three rules:
+// `dialogue` rides one Engine tick and the renderer keeps only the newest
+// placement, so `event` latches the pulse per delivery. A response ends the
+// thinking indicator the same frame it shows; the min-hold is for silent
+// endings only. Speech wins over the indicator for its whole reading window,
+// and a turn still in flight starts its grace when the line hides.
 export function createBubbleMachine(io) {
   const schedule = io.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = io.cancel ?? ((id) => clearTimeout(id));
@@ -174,9 +160,9 @@ export function createBubbleMachine(io) {
   };
 }
 
-// The bubble sits above the head (ADR-0013, amended by #441). At the ceiling,
-// when the clamp would cover the Character's face, invert: put the bubble
-// under the Character at the same mirrored vertical distance.
+// The bubble sits above the head (ADR-0013). At the ceiling, when the clamp
+// would cover the Character's face, invert: put the bubble under the Character
+// at the same mirrored vertical distance.
 export function placeBubble(spriteRect, bubbleSize, displayBounds) {
   const spriteCenterX = spriteRect.x + spriteRect.width / 2;
   const gap = 10;
@@ -201,13 +187,8 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds) {
 }
 
 // A placement as this overlay may act on it: the shell names one bubble owner
-// per Instance (#178, `bubble_owner`), and stripping the bubble fields before
-// the placement is latched or drawn keeps a losing overlay from arming the
-// thinking grace off a `thinking` it was never meant to show.
-//
-// The cue goes with them, for a louder reason: every overlay is told where
-// every sprite is, so a cue every overlay played would be drawn once per
-// display the sprite touches and — worse — heard once per display.
+// per Instance, and stripping the bubble fields keeps a losing overlay from
+// arming the thinking grace. The cue goes too, or it would sound once per display.
 export function forOverlay(placement) {
   if (placement.bubble) return placement;
   return { ...placement, dialogue: null, thinking: false, cue: null };
