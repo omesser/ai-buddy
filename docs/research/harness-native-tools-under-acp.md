@@ -53,7 +53,7 @@ Executor, Sensing, Instance, Behavior, Speech.
 
 Since shipped: the 20-second turn budget cited below (claim 14 and the
 Permissions section) was `model::TIMEOUT` at `e070216`. #695 gave a Harness
-turn its own `harness::TURN_TIMEOUT` of 120 seconds (#690;
+turn its own `harness::TURN_TIMEOUT` of 120 seconds (for #690,
 `src-tauri/src/harness.rs:71` at `39fd012c`).
 
 ## The load-bearing claims, labelled

@@ -2,7 +2,7 @@
 
 Anchor: `39fd012c` on `main`, 2026-09-16. Every ai-buddy citation below is
 read against that tree. Probes ran on macOS 25.6 (Apple silicon), signed in
-to claude.ai on a **Team** plan, with these versions on `PATH` or fetched by
+to claude.ai on a Team plan, with these versions on `PATH` or fetched by
 `npx -y ...@latest` at run time:
 
 | Component | Version |
@@ -21,7 +21,8 @@ This note answers #668 alongside
 anchor `e070216` and left five items open because it ran nothing. This note
 runs the cheap ones and records what came back. Every measurement here
 agrees with that note's Facts. The one number it got wrong had changed on
-`main` between its anchor and this one, and is called out below.
+`main` between its anchor and this one. The contradictions section below
+names it.
 
 ## How claims are marked
 
@@ -37,8 +38,8 @@ causes are Assumptions.
    preset. `Task`, `Bash`, `Read`, `Write`, `Edit`, `NotebookEdit`, `LSP`,
    `Skill`, `ToolSearch`, `WebSearch`, `WebFetch`, `Monitor`, `Workflow`,
    `EnterWorktree`, plan mode, cron and scheduling tools, MCP resource
-   tools. Plus every tool of every MCP server the SDK connected. Two things
-   are absent: `AskUserQuestion`, and anything named `computer-use`.
+   tools. The list also carries every tool of every MCP server the SDK
+   connected. Two things are absent: `AskUserQuestion`, and anything named `computer-use`.
 2. **Computer use under ACP.** Fact, from Anthropic's page: "Computer use is a
    research preview on macOS that requires a Pro or Max plan. It is not
    available on Team or Enterprise plans. It requires an interactive session,
@@ -64,10 +65,10 @@ causes are Assumptions.
    tool list was byte-identical across both runs. Fact, from the Agent SDK
    docs: "`~/.claude.json` global config: Always read", and "The `cwd` option
    determines where the SDK looks for project-level inputs." Inference: the
-   only MCP loss under attach is the local and project scope, and its cause
-   is the `cwd` ai-buddy chooses (`ai_buddy_core::memory::data_dir()`,
-   passed at `harness.rs:1714`), not ACP, not the adapter, not the one MCP
-   entry ai-buddy hands over on `session/new`.
+   only MCP loss under attach is the local and project scope. Its cause is
+   the `cwd` ai-buddy chooses (`ai_buddy_core::memory::data_dir()`, passed
+   at `harness.rs:1714`). ACP, the adapter, and the one MCP entry ai-buddy
+   hands over on `session/new` play no part in it.
 5. **Permissions.** Fact, measured: the tools are in the list. A native tool
    call that does nothing under attach is therefore a permission problem or
    a turn-budget problem, not a missing tool. Fact, at anchor:
@@ -90,11 +91,11 @@ causes are Assumptions.
 7. **Other Harnesses.** See the matrix. Grok was measured by self-report.
    opencode and hermes could not be measured on this machine because both
    are configured against a local model server that was not running
-   (`http://127.0.0.1:8000/v1`); handshake and `session/new` succeeded, the
-   prompt failed on the provider. pi answered the tool-list prompt with the
+   (`http://127.0.0.1:8000/v1`). The handshake and `session/new` succeeded.
+   The prompt failed on the provider. pi answered the tool-list prompt with the
    string `pi v0.85.1` and nothing else, so its list was not obtained.
-8. **Escape hatches.** Ranked below. Two of the issue's five are dead on the
-   evidence: there is no `claude-agent-acp --cli` mode (the adapter's `cli`
+8. **Escape hatches.** Ranked below. The evidence rules out two of the issue's
+   five. There is no `claude-agent-acp --cli` mode (the adapter's `cli`
    handling is argument parsing for `--version`), and passing user MCP
    config through `session/new` is unnecessary because the SDK already
    reads `~/.claude.json` and merges.
@@ -151,19 +152,19 @@ recovers project-scope `.mcp.json`, Grok's project `.grok/config.toml`
 walk, and opencode's project config, all of which key off `cwd` per vendor
 docs. The candidate directory is a user-chosen project folder, or `$HOME`
 as a default that matches where `claude mcp add` lands when run outside a
-project. **ADR-0003** untouched. **ADR-0018** untouched; it already accepts
-that the Harness runs its own tools headless. **ADR-0023** untouched; the
-MCP entry ai-buddy hands over on `session/new` merges with whatever `cwd`
-brings in, it does not replace it. Cost: the session file and Action Log
+project. ADR-0003 is untouched. ADR-0018 is untouched, since it already
+accepts that the Harness runs its own tools headless. ADR-0023 is
+untouched, since the MCP entry ai-buddy hands over on `session/new` merges
+with whatever `cwd` brings in rather than replacing it. Cost: the session file and Action Log
 currently live beside `cwd` in the data folder (`harness.rs:1226` comment),
 so the two paths have to be separated first.
 
 ### 2. Advertise `elicitation.form`
 
-Fact: it is the one client capability that demonstrably switches a tool on
-(claim 4). Grok already lists `ask_user_question` regardless. **ADR-0018**
-gives ai-buddy the chat surface, so a multiple-choice prompt drawn by Chat
-is inside the decision. **ADR-0003** and **ADR-0023** untouched. Cost: a
+Fact: it is the one client capability that switches a tool on (claim 4).
+Grok already lists `ask_user_question` regardless. ADR-0018 gives ai-buddy
+the chat surface, so a multiple-choice prompt drawn by Chat is inside the
+decision. ADR-0003 and ADR-0023 are untouched. Cost: a
 form renderer in Chat.
 
 ### 3. Say what survives, per row, in the README
@@ -176,22 +177,23 @@ Support tables carry no tool-class column at all. No ADR consequence.
 
 Fact: `session/new` `_meta.claudeCode.options` reaches the SDK's `Options`
 (`acp-agent.d.ts:637`), and `emitRawSDKMessages` beside it is what these
-probes used. Nothing measured here needs it: the preset is already whole
-and MCP merge already happens. Its only remaining use would be
+probes used. Nothing measured here needs it. The preset is already whole
+and the MCP merge already happens. Its only remaining use would be
 `options.env`, which can carry a provider key into a Harness ai-buddy
-spawns, an ADR-0010 hazard. Keep for diagnostics (the probe), not product.
+spawns, an ADR-0010 hazard. Keep it for diagnostics such as the probe and
+out of the product.
 
 ### 5. Host an interactive session for a full-tool lane (#508)
 
 Assumption: an interactive `claude` on a Pro or Max plan would offer
 computer use, since that is the documented shape. It is the only route to
-that cell in the matrix and it costs the most. **ADR-0018** forbids it in
-terms ("We never launch, embed, or wrap the Harness's TUI"), so it needs a
-supersession. **ADR-0023** is strained: an interactive CLI takes MCP from
-its own config, so ai-buddy's endpoint would have to be registered rather
-than handed over on `session/new`. **ADR-0003** is the one it serves. Not
-filed here; #508 already carries the question, and this note adds that
-the payoff is one tool class on one Harness on one plan tier.
+that cell in the matrix and it costs the most. ADR-0018 forbids it
+outright ("We never launch, embed, or wrap the Harness's TUI"), so it needs
+a supersession. ADR-0023 is strained. An interactive CLI takes MCP from its
+own config, so ai-buddy's endpoint would have to be registered rather than
+handed over on `session/new`. ADR-0003 is the one it serves. Not filed
+here. #508 already carries the question, and this note adds that the
+payoff is one tool class on one Harness on one plan tier.
 
 ### 6. Rejected: an ai-buddy Executor
 
@@ -200,15 +202,15 @@ exhaustive.
 
 ## Recommendation, and the smallest probe that would falsify the top option
 
-Top option is #1. Its claim: changing `cwd` restores the user's local and
-project MCP servers to the attach. The cheap half is already measured and
-held. What remains is the probe that would show `cwd` is **not** enough for
-the one cell everybody wants, so the option is sized honestly.
+Option 1 ranks first. It claims that changing `cwd` restores the user's
+local and project MCP servers to the attach. The cheap half is already
+measured and held. What remains is the probe that would show `cwd` does not
+also restore computer use. Its result sizes the option.
 
 **Run this on a Mac signed in to claude.ai on a Pro or Max plan.** Record
 `enabledMcpServers: ["computer-use"]` under
 `projects["<DIR>"]` in `~/.claude.json` for the directory you will pass, the
-way `/mcp` writes it. Then, with the probe client below,
+way `/mcp` writes it. Then run the probe client below:
 
 ```sh
 PROBE_META='{"claudeCode":{"emitRawSDKMessages":[{"type":"system","subtype":"init"}]}}' \
@@ -223,16 +225,16 @@ Success signal, read off the one `_claude/sdkMessage` notification:
 | yes, `connected` | The interactive gate does not bind the SDK path. Option #1 plus the opt-in restores computer use. Reopen this note and #508 loses its reason. |
 | no | The interactive gate holds (claim 11 confirmed). Option #1 restores MCP scope only. #508 is the only remaining route to that cell. |
 
-The cheap half, which any machine on any plan can rerun, is the same
-command twice with two `cwd` values, one of them a directory where
-`claude mcp add <name> ...` was run at the default scope, and a diff of
+Any machine on any plan can rerun the cheap half. Run the same command
+twice with two `cwd` values, one of them a directory where
+`claude mcp add <name> ...` was run at the default scope, and diff
 `init.mcp_servers`.
 
-`scripts/probe-harness.sh` is not a substitute: it prints the handshake
+`scripts/probe-harness.sh` is not a substitute. It prints the handshake
 and the turn outcome, not the agent's tool list, and ACP has no method that
 returns one. The probe client used for every measurement in this note is
-below. It is the same client ai-buddy is on the points that matter: empty
-client capabilities, `mcpServers: []`, and it never answers
+below. It matches ai-buddy's client on the points that matter: empty
+client capabilities, `mcpServers: []`, and no answer to
 `session/request_permission`.
 
 ```js
@@ -318,7 +320,7 @@ process.exit(0);
   page adds Team and Enterprise as excluded, claude.ai auth as required, and
   an interactive session as required. The fourth is the one no subscription
   clears and the one that bears on ai-buddy's attach path. The decision
-  stands on its other legs; the consequence is incomplete.
+  still holds on its other grounds. The consequence is incomplete.
 - **`README.md:159`.** "Chat-only (no MCP)" on the `pi` row. See option 3.
 - **`harness-native-tools-under-acp.md`, claim 14.** The 20-second turn
   budget was true at its anchor `e070216` and is 120 seconds at this one
@@ -332,10 +334,11 @@ process.exit(0);
 
 ## Open, not resolved here
 
-- Claim 11. Needs a Pro or Max Mac.
-- Claims 15 and 17. Need a machine where opencode and hermes have a live
+- Claim 11 needs a Pro or Max Mac.
+- Claims 15 and 17 need a machine where opencode and hermes have a live
   provider, and a prompt pi will answer. The probe client works unchanged.
 - Whether the claude.ai connectors that showed `needs-auth` here would show
-  `connected` for a user who authorized them in the CLI. Not exercised.
+  `connected` for a user who authorized them in the CLI. Nothing here
+  exercised that.
 - Whether Chat answers a permission request inside 120 seconds in practice
-  for a `Bash` or `WebFetch` call under attach. Different spike.
+  for a `Bash` or `WebFetch` call under attach. That is a different spike.
