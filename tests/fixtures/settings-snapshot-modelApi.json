@@ -240,6 +240,7 @@
                 "Model API",
                 "Harness · claude",
                 "Harness · codex",
+                "Harness · cursor-agent",
                 "Harness · grok",
                 "Harness · hermes",
                 "Harness · opencode",
@@ -287,6 +288,7 @@
               "options": [
                 "claude",
                 "codex",
+                "cursor-agent",
                 "grok",
                 "hermes",
                 "opencode",

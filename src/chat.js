@@ -314,6 +314,7 @@ function attached(opening) {
       const displayNames = {
         claude: "Claude Code",
         codex: "Codex",
+        "cursor-agent": "Cursor",
         grok: "Grok",
         opencode: "OpenCode",
         hermes: "Hermes",

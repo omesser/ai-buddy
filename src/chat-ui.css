@@ -83,6 +83,10 @@
   /* Brand accent colors for Harness connect tiles */
   --claude-accent: #E8A78A;
   --codex-accent: #26C399;
+  /* Simple Icons gives Cursor #000000, which is the ground here rather than
+     an accent. Lifted to a warm light grey, which also keeps it off
+     --grok-accent, the other neutral on the row. */
+  --cursor-agent-accent: #C2BCB2;
   --grok-accent: #7A8FA3;
   --opencode-accent: #7A9EF0;
   /* Nous ships #0000F2 across the Hermes surfaces; lifted to read on the dark
@@ -716,6 +720,17 @@ body {
 }
 .empty .connect-btn[data-harness="codex"] .connect-icon {
   color: var(--codex-accent);
+}
+
+.empty .connect-btn[data-harness="cursor-agent"] {
+  border-color: color-mix(in srgb, var(--cursor-agent-accent) 25%, var(--chat-line));
+}
+.empty .connect-btn[data-harness="cursor-agent"]:hover {
+  background: color-mix(in srgb, var(--cursor-agent-accent) 10%, var(--chat-fill));
+  border-color: var(--cursor-agent-accent);
+}
+.empty .connect-btn[data-harness="cursor-agent"] .connect-icon {
+  color: var(--cursor-agent-accent);
 }
 
 .empty .connect-btn[data-harness="grok"] {

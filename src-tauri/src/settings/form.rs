@@ -478,7 +478,15 @@ pub const HARNESS_CUSTOM_VALUE: &str = "custom";
 /// The named launch rows, in ADR-0022's order. Copilot reaches the same
 /// Completer through Custom until a turn has been smoked. Antigravity cannot:
 /// it does not speak ACP, and wants an adapter first (#604).
-pub const HARNESS_PRESETS: [&str; 6] = ["claude", "codex", "grok", "hermes", "opencode", "pi"];
+pub const HARNESS_PRESETS: [&str; 7] = [
+    "claude",
+    "codex",
+    "cursor-agent",
+    "grok",
+    "hermes",
+    "opencode",
+    "pi",
+];
 
 /// The endpoints the Base URL picker names, as (group, name, base URL).
 ///
@@ -2906,6 +2914,7 @@ mod tests {
                     "Model API",
                     "Harness · claude",
                     "Harness · codex",
+                    "Harness · cursor-agent",
                     "Harness · grok",
                     "Harness · hermes",
                     "Harness · opencode",

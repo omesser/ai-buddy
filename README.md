@@ -148,11 +148,13 @@ See [DEVELOPMENT.md](./docs/DEVELOPMENT.md) for provider details, Director env v
 
 Which Harness you attach changes what ai-buddy can do with it.
 Named rows are smoked with `scripts/probe-harness.sh` (see [DEVELOPMENT.md](./docs/DEVELOPMENT.md)); the run itself lives on the issue that did it.
+A row whose Standing says the turn is unsmoked is named for its command line and its login command alone, and earns the rest when someone signs that Harness in and runs the probe.
 
 | Harness | Command | Standing |
 |---|---|---|
 | <img src="https://cdn.simpleicons.org/claude" width="14" alt="" /> `claude` | `npx -y @agentclientprotocol/claude-agent-acp@latest` | Zed's adapter over the Claude Agent SDK; no first-party ACP mode. Fresh and resumed sessions both work. |
 | `codex` | `npx -y @agentclientprotocol/codex-acp@latest` | Zed's adapter (`codex-acp`); no first-party ACP mode. Fresh and resumed sessions both work. |
+| <img src="https://cdn.simpleicons.org/cursor" width="14" alt="" /> `cursor-agent` | `cursor-agent acp` | First-party, and undocumented: `cursor-agent --help` lists `agent`, `login` and `mcp` and not `acp`, and the bare binary is the interactive TUI. The handshake is verified and the turn is not: the CLI was not signed in on the machine that probed it, and ai-buddy never runs a login (#636). Every attach opens a fresh session, because it advertises no `loadSession`. Footnote: install with `curl https://cursor.com/install -fsS \| bash`, which unpacks under `~/.local/share/cursor-agent/versions/` and symlinks `cursor-agent` into `~/.local/bin`; `cursor-agent update` moves it on. Sign in with `cursor-agent login` in your own terminal. MCP takes a `~/.cursor/mcp.json` fragment rather than an `mcp add` subcommand, which Cursor does not have, and a fresh entry stays `not loaded (needs approval)` until `cursor-agent mcp enable ai-buddy`. |
 | <img src="./docs/readme/nous.svg" width="14" alt="" /> `hermes` | `hermes acp` | First-party. Fresh sessions work; a resume that cannot restore the session reopens (#448). |
 | <img src="https://cdn.simpleicons.org/opencode" width="14" alt="" /> `opencode` | `opencode acp` | First-party. Fresh and resumed sessions both work. |
 | `pi` | `npx -y pi-acp@latest` | Zed-registry adapter (`pi-acp`); no first-party ACP. Fresh and resumed sessions both work. Chat-only (no MCP). Footnote: requires a global `pi` on `PATH` — install with `brew install pi-coding-agent` (Homebrew pins Node in the shebang). `npx`/`node`/`pi` must resolve in the app's environment (Finder-launched builds inherit launchd's `PATH`, same as every other `npx` row). An unconfigured Pi may pick up an ambient provider key from the inherited environment; configuring `~/.pi/agent/` (e.g. `omlx launch pi`) wins over that fallback. npm-global `pi` can shadow the keg; `npm uninstall -g @earendil-works/pi-coding-agent` then `brew link pi-coding-agent`. Startup banner on the first fresh-session bubble is #597, not this row. |
@@ -165,13 +167,14 @@ How they handle session differs, and changes what ai-buddy can do with them:
 |---|---|---|---|---|---|
 | `claude` | yes | yes | yes | http | none advertised when signed in |
 | `codex` | yes | yes | yes | http | two: API Key, ChatGPT |
+| `cursor-agent` | unsmoked | no | no | stdio | one: Cursor Login |
 | `hermes` | yes | yes, after the reopen | yes | stdio | two: custom runtime credentials, Configure Hermes provider |
 | `opencode` | yes | yes | yes | http | Login with opencode |
 | `pi` | yes | yes | yes | none | `pi_terminal_login` |
 | `grok` | yes | yes | yes | http | three: xai.api_key, cached_token, Grok |
 | anything else | unverified | unverified | unverified | unverified | unverified |
 
-- † What `initialize` advertised: `claude`, `codex`, `opencode` and `grok` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` advertises no HTTP MCP and gets nothing forwarded today. `opencode` and `grok` also advertise `sse`, which nothing here reads.
+- † What `initialize` advertised: `claude`, `codex`, `opencode` and `grok` set `agentCapabilities.mcpCapabilities.http` (the running app hands the loopback URL); `cursor-agent`, `hermes` and `pi` omit it and get the stdio binary that relays to the same endpoint (ADR-0023, ADR-0026). `pi` advertises no HTTP MCP and gets nothing forwarded today. `opencode` and `grok` also advertise `sse`, which nothing here reads.
 - ‡ `authMethods` is what is *available*, not what is outstanding — an empty list is no proof a login is unnecessary. Only `session/new` answering `-32000` is (ADR-0022).
 
 ### Harness ↔ MCP

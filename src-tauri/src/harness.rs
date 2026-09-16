@@ -115,9 +115,9 @@ pub struct Launch {
 /// The launch table. `None` means the HTTP Completer path, unchanged.
 ///
 /// Claude Code goes through Zed's adapter because it has no first-party ACP
-/// mode; `grok agent stdio`, `hermes acp` and `opencode acp` are
-/// first-party. Anything else is a command line of the user's own, which is
-/// how Copilot CLI attaches until it is smoked. Google has no row: Antigravity
+/// mode; `cursor-agent acp`, `grok agent stdio`, `hermes acp` and `opencode
+/// acp` are first-party. Anything else is a command line of the user's own,
+/// which is how Copilot CLI attaches until it is smoked. Google has no row: Antigravity
 /// (`agy`) does not speak ACP (#604). Pi is a named row through Zed's registry
 /// adapter, same shape as `claude`. Copilot still attaches via Custom until
 /// smoked.
@@ -148,6 +148,11 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             value,
             vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
+        // `acp` is absent from `cursor-agent --help`, which lists `agent`,
+        // `login` and `mcp` and not this one. It answers `initialize` all the
+        // same, and bare `cursor-agent` is the interactive TUI, so the
+        // subcommand is the whole of the row — the `grok` shape. #636.
+        "cursor-agent" => (value, vec!["cursor-agent", "acp"]),
         // `grok` alone is the interactive TUI; the ACP agent is the
         // subcommand. The Chat surface has offered a Grok button since
         // #563, and without this arm the escape hatch below launched that
@@ -1575,6 +1580,11 @@ fn named_login(name: &str) -> Option<&'static str> {
     Some(match name {
         "claude" => "claude /login",
         "codex" => "codex login",
+        // Not the line the handshake offers. Cursor's one auth method
+        // describes itself as "Run 'agent login' first", and `agent` is what
+        // the binary calls itself, not what the installer puts on `PATH`
+        // (`cursor-agent`), so following it verbatim is a command not found.
+        "cursor-agent" => "cursor-agent login",
         "grok" => "grok login",
         "hermes" => "hermes login",
         "opencode" => "opencode login",
@@ -2337,7 +2347,15 @@ mod tests {
     /// it is, with no key set, no config dir moved, and no `--bare`.
     #[test]
     fn child_command_sets_no_env_and_passes_no_bare() {
-        for name in ["claude", "codex", "grok", "hermes", "opencode", "pi"] {
+        for name in [
+            "claude",
+            "codex",
+            "cursor-agent",
+            "grok",
+            "hermes",
+            "opencode",
+            "pi",
+        ] {
             let launch = launch(Some(name)).unwrap();
             let command = launch.command(Path::new("/tmp"));
             assert_eq!(command.get_envs().count(), 0, "{name} sets env");
@@ -3775,7 +3793,15 @@ mod tests {
     /// handshake. A named row without one would leave that answer a shrug.
     #[test]
     fn every_named_harness_documents_a_login_for_the_users_own_terminal() {
-        for name in ["claude", "codex", "grok", "hermes", "opencode", "pi"] {
+        for name in [
+            "claude",
+            "codex",
+            "cursor-agent",
+            "grok",
+            "hermes",
+            "opencode",
+            "pi",
+        ] {
             assert!(launch(Some(name)).is_some(), "{name} is not a named row");
             let hint = login_hint(name);
             assert!(

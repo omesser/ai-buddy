@@ -1294,7 +1294,9 @@ fn select_harness(
     app: tauri::AppHandle,
     state: tauri::State<'_, SettingsState>,
 ) -> Result<String, String> {
-    if !["claude", "codex", "grok", "hermes", "opencode", "pi"].contains(&harness.as_str()) {
+    // The picker's own list, not a second copy of it: a name added to one and
+    // not the other is a row the user can pick and this command then refuses.
+    if !settings::form::HARNESS_PRESETS.contains(&harness.as_str()) {
         return Err(format!("unknown Harness preset: {harness}"));
     }
     let mut patch = settings::SettingsPatch::default();

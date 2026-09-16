@@ -277,11 +277,12 @@ fn harness_state(harness: Option<&crate::harness::HarnessInspect>) -> String {
 /// What to paste to point a Harness the user runs themselves at this app's
 /// MCP server, and what to do with it, as (snippet, instructions, raw_token).
 ///
-/// Pure, because the five registration shapes are the whole of what can be
-/// wrong here: each was checked against the installed CLI in #580, and a typo
-/// in one fails at the Harness rather than anywhere this code can see.
+/// Pure, because the seven registration shapes are the whole of what can be
+/// wrong here: each was checked against the installed CLI in #580 and #636,
+/// and a typo in one fails at the Harness rather than anywhere this code can
+/// see.
 ///
-/// The token goes in raw, without `Bearer `. Three of the five templates add
+/// The token goes in raw, without `Bearer `. Five of the seven templates add
 /// that prefix themselves, so a pre-prefixed token reads `Bearer Bearer` in
 /// the other two.
 ///
@@ -326,6 +327,30 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
              \"Authorization\" = \"Bearer {token}\" }}`."
                 .to_string(),
             String::new(), // Token already in snippet (export)
+        ),
+        // A fragment, because Cursor has no `mcp add`: `cursor-agent mcp`
+        // offers login, list, list-tools, enable and disable only. A new name
+        // lands as `not loaded (needs approval)` until `mcp enable` approves
+        // it, which is why that line is not optional (#636).
+        "cursor-agent" => (
+            format!(
+                "{{\n\
+                 \x20 \"mcpServers\": {{\n\
+                 \x20   \"ai-buddy\": {{\n\
+                 \x20     \"url\": \"{url}\",\n\
+                 \x20     \"headers\": {{\n\
+                 \x20       \"Authorization\": \"Bearer {token}\"\n\
+                 \x20     }}\n\
+                 \x20   }}\n\
+                 \x20 }}\n\
+                 }}"
+            ),
+            "A fragment for `.cursor/mcp.json` (project) or `~/.cursor/mcp.json`, \
+             not a command. Add or update the `ai-buddy` entry under `mcpServers`, \
+             then run `cursor-agent mcp enable ai-buddy` in a terminal and start a \
+             new session. `cursor-agent mcp list` reports."
+                .to_string(),
+            String::new(), // Token already in snippet
         ),
         "grok" => (
             format!(
@@ -1556,10 +1581,10 @@ pub struct Settings {
     /// wait from here; this is only where it starts (#262).
     pub director_wake_secs: String,
     /// Which Harness is the Completer, in the values `AI_BUDDY_HARNESS` takes:
-    /// empty for none, a preset name (`claude`, `codex`, `grok`, `hermes`,
-    /// `opencode`, `pi`), or `custom`, which defers to `harness_command`. The
-    /// variable outranks it, and either way `harness::retarget` reaches the
-    /// attachment now (#500).
+    /// empty for none, a preset name (`claude`, `codex`, `cursor-agent`,
+    /// `grok`, `hermes`, `opencode`, `pi`), or `custom`, which defers to
+    /// `harness_command`. The variable outranks it, and either way
+    /// `harness::retarget` reaches the attachment now (#500).
     pub harness: String,
     /// The command line `custom` runs, split on whitespace as the variable's
     /// own value is. Kept when a preset is picked, so coming back to Custom
@@ -4206,7 +4231,8 @@ mod tests {
                     );
                 }
                 _ => {
-                    // Claude, Grok, OpenCode, Pi: snippet still has Bearer+token
+                    // Claude, Cursor, Grok, OpenCode, Pi: snippet still has
+                    // Bearer+token
                     assert!(
                         snippet.contains("Bearer beef"),
                         "{harness} must carry Bearer and the token in snippet, got {snippet:?}"
