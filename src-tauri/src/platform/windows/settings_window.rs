@@ -3048,9 +3048,11 @@ mod tests {
                 .flat_map(|t| &t.sections)
                 .flat_map(|s| &s.rows)
                 .find_map(|row| match row {
-                    form::FormRow::SecureField {
-                        id, frozen, ..
-                    } if id == form::DIRECTOR_API_KEY_ID => Some(*frozen),
+                    form::FormRow::SecureField { id, frozen, .. }
+                        if id == form::DIRECTOR_API_KEY_ID =>
+                    {
+                        Some(*frozen)
+                    }
                     _ => None,
                 });
 
@@ -3067,9 +3069,11 @@ mod tests {
                 .flat_map(|t| &t.sections)
                 .flat_map(|s| &s.rows)
                 .find_map(|row| match row {
-                    form::FormRow::SecureField {
-                        id, frozen, ..
-                    } if id == form::DIRECTOR_API_KEY_ID => Some(*frozen),
+                    form::FormRow::SecureField { id, frozen, .. }
+                        if id == form::DIRECTOR_API_KEY_ID =>
+                    {
+                        Some(*frozen)
+                    }
                     _ => None,
                 });
 
@@ -3091,9 +3095,9 @@ mod tests {
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
             .find_map(|row| match row {
-                form::FormRow::TextField {
-                    id, frozen, ..
-                } if id == form::DIRECTOR_BASE_URL_ID => Some(*frozen),
+                form::FormRow::TextField { id, frozen, .. } if id == form::DIRECTOR_BASE_URL_ID => {
+                    Some(*frozen)
+                }
                 _ => None,
             });
 
@@ -3105,9 +3109,11 @@ mod tests {
             .find_map(|row| match row {
                 form::FormRow::Composite { controls, .. } => {
                     controls.iter().find_map(|control| match control {
-                        form::CompositeControl::Popup {
-                            id, frozen, ..
-                        } if id == form::DIRECTOR_BASE_URL_PICK_ID => Some(*frozen),
+                        form::CompositeControl::Popup { id, frozen, .. }
+                            if id == form::DIRECTOR_BASE_URL_PICK_ID =>
+                        {
+                            Some(*frozen)
+                        }
                         _ => None,
                     })
                 }
@@ -3138,9 +3144,9 @@ mod tests {
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
             .find_map(|row| match row {
-                form::FormRow::TextField {
-                    id, frozen, ..
-                } if id == form::DIRECTOR_BASE_URL_ID => Some(*frozen),
+                form::FormRow::TextField { id, frozen, .. } if id == form::DIRECTOR_BASE_URL_ID => {
+                    Some(*frozen)
+                }
                 _ => None,
             });
 
@@ -3163,9 +3169,9 @@ mod tests {
             .flat_map(|t| &t.sections)
             .flat_map(|s| &s.rows)
             .find_map(|row| match row {
-                form::FormRow::TextField {
-                    id, frozen, ..
-                } if id == form::DIRECTOR_BASE_URL_ID => Some(*frozen),
+                form::FormRow::TextField { id, frozen, .. } if id == form::DIRECTOR_BASE_URL_ID => {
+                    Some(*frozen)
+                }
                 _ => None,
             });
 
