@@ -288,9 +288,9 @@ export function createCueMachine(io) {
 
       const stopVisual = io.draw(name);
       // Sound is gated and the visual is not. Do Not Disturb is already folded
-      // into this flag, along with the Settings mute (#280) — a cue that cannot
-      // be heard still has to be seen, or a muted buddy stops answering.
-      // A throw from the audio graph is the same gate: keep the visual. #292.
+      // into this flag, along with the Settings mute — a cue that cannot be
+      // heard still has to be seen, or a muted buddy stops answering. A throw
+      // from the audio graph is the same gate: keep the visual. #292.
       let cutSound = () => {};
       if (placement.sound) {
         try {

@@ -1,5 +1,5 @@
-// Markdown in a reply, drawn as formatting instead of as its punctuation
-// (#677). Parsing belongs here rather than in the Shell for the reason
+// Markdown in a reply, drawn as formatting instead of as its punctuation.
+// Parsing belongs here rather than in the Shell for the reason
 // `src/main.js` and `CONTEXT.md` give about every other drawing decision: the
 // Shell names what was said, the webview draws it. Formatting is derived from
 // the text and carries no authority, so it is drawing, and the next view
@@ -11,8 +11,7 @@
 // model's output, steerable by an MCP server's content — so every piece of it
 // reaches the DOM through `createElement` and `textContent` on a node built
 // here. That makes injection structurally impossible rather than sanitized,
-// which is the property #371 is about and the one `src/chat.js` had for free
-// while replies were a single text node.
+// which is the property #371 is about.
 
 import { Lexer } from "./vendor/marked.esm.js";
 

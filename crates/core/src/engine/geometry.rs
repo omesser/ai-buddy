@@ -129,15 +129,13 @@ pub(super) fn footing(
         .position(|window| window.rect.spans_x(position.x) && window.rect.y == position.y)?;
 
     // Only a window in front of the Perch can swallow the sprite, which is why
-    // the candidates stop at the Perch's own place in the order: what is
-    // behind the Perch is behind the sprite too, so the edge it stands on is
-    // still there to be seen.
+    // the candidates stop at the Perch's own place in the order: what is behind
+    // the Perch is behind the sprite too, so the edge it stands on is still
+    // there to be seen.
     //
     // An edge you cannot see is gone, including one the sprite is already
-    // standing on. Keeping a hidden Perch left it floating in mid-air
-    // after alt-tab. A window that already contained the sprite still
-    // swallows nothing, so this falls rather than hoisting it under the
-    // menu bar. #100, and #78 still holds.
+    // standing on, so a hidden Perch falls rather than leaving the sprite
+    // floating in mid-air after alt-tab. #100.
     let held = (is_perch(perch, position.x, snapshot, clearance)
         && !snapshot.windows[..perch].iter().any(&swallowing))
     .then_some(Support {
@@ -263,28 +261,24 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
 /// the floor or in the air.
 ///
 /// The Dock is the one thing on screen drawn in front of the sprite, so under
-/// it the sprite can be neither seen nor grabbed. Its side is a wall to climb
-/// (#176). Nearer rather than the side it came from, because the Dock can
-/// appear around a resting sprite when it unhides, and a dropped sprite
-/// arrives from above: on a walk the two are the same side, one step away.
+/// it the sprite can be neither seen nor grabbed. Its side is a wall to climb.
+/// Nearer rather than the side it came from, because the Dock can appear
+/// around a resting sprite when it unhides, and a dropped sprite arrives from
+/// above: on a walk the two are the same side, one step away.
 ///
 /// The wall stands `EDGE_CLEARANCE` out from the Dock's own edge — half a
-/// sprite, the same half `at_horizontal_edge` keeps on screen — because a
-/// sprite centered on the edge is already half hidden, walking and climbing.
-/// Strictly inside that, so the sprite this puts on the line is beside the
-/// Dock and stays put: the walk stops going forward instead of being set
-/// back, which is the #141 stutter it must not repeat.
+/// sprite, the same half `at_horizontal_edge` keeps on screen — and strictly
+/// inside that, so the sprite it puts on the line is beside the Dock and
+/// stays put rather than being set back a step.
 ///
 /// Out in that margin the side is a wall only for a sprite moving into the
 /// Dock, the rule `wall_reached` already keeps for a display edge: one moving
-/// away has left, and catching it anyway is a wall in the middle of the floor.
-/// It is what made the Dock a trap for a walk heading past it — step off the
-/// top, get caught by the side just below, climb, and get put back on the top
-/// to do it again, for as long as the app ran. #361.
+/// away has left, and catching it anyway is a wall in the middle of the floor,
+/// and a trap for a walk heading past the Dock.
 ///
 /// Strictly behind the Dock there is no such reprieve, whichever way the
 /// sprite is going: a real Dock is wide and the way out from under one is a
-/// long way sideways, all of it unseen. It climbs.
+/// long way sideways, all of it unseen. It climbs. #176.
 pub(super) fn dock_side_reached(
     position: Point,
     velocity_x: f64,

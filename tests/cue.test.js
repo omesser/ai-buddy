@@ -113,8 +113,8 @@ test("only the newest Poke is the one a Summon cancels", () => {
   assert.deepEqual(calls, ["undraw:poke", "cut:poke", "draw:summon", "sound:summon"]);
 });
 
-// #84: Do Not Disturb is quiet, not gone, and a visual cue cannot embarrass
-// anyone in a meeting. #280 folded it into this one flag.
+// Do Not Disturb is quiet, not gone, and a visual cue cannot embarrass anyone
+// in a meeting. #84.
 test("sound gates the audio only, and the visual still plays", () => {
   const { machine, calls, placement } = machineHarness();
 

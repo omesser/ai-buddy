@@ -8,11 +8,11 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 /// Later wakes send `follow_up` only. The Completer holds the conversation
 /// so the Personality Prompt is not paid for again.
 ///
-/// `blank` empties the built-in layers and still runs this assembly (#657,
-/// #680). The package Personality Prompt and the app-level instructions
-/// (roster, format contract, voice rules) become empty strings. The Instance
-/// Prompt is the user's, so it stays: Blank AI is the control run for the
-/// shipped prompt, not a lock on iterating one.
+/// `blank` empties the built-in layers and still runs this assembly (#657).
+/// The package Personality Prompt and the app-level instructions (roster,
+/// format contract, voice rules) become empty strings. The Instance Prompt is
+/// the user's, so it stays: Blank AI is the control run for the shipped
+/// prompt, not a lock on iterating one.
 ///
 /// Those empty strings take the same seats as the filled ones. The Prompt tab
 /// can only tell the truth if what it shows is what was sent. A missing
@@ -21,9 +21,7 @@ use super::{Context, Happened, State, CHAT_LIMIT};
 ///
 /// With no contract the reply is prose: `parse_proposal` fails, `as_speech`
 /// speaks it, and the buddy talks without playing a Behavior for as long as
-/// the built-in instructions stay empty. That is the measurement — a fallback
-/// or a shorter contract to keep Behaviors working would put the instruction
-/// back under a new name.
+/// the built-in instructions stay empty.
 pub(crate) fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,

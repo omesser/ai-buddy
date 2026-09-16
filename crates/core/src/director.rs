@@ -138,11 +138,10 @@ pub struct Context {
 /// One wake on its way to a Completer: the Character Prompt, and who is
 /// asking for it.
 ///
-/// The prompt alone left the Shell unable to say which buddy woke, or whether
-/// the user caused it, in the one place that sees a session call — this seam is
-/// all the Harness Completer is handed (#435). The HTTP Completer ignores the
-/// identity fields; the Harness writes them to the Action Log and, for ACP,
-/// keys the session by Instance and Character (#558).
+/// This seam is all the Harness Completer is handed, so identity travels with
+/// the prompt. The HTTP Completer ignores those fields; the Harness writes
+/// them to the Action Log and, for ACP, keys the session by Instance and
+/// Character. #435.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WakeRequest {
     pub prompt: String,
@@ -290,13 +289,12 @@ pub struct ModelDirector<C> {
     /// Completer hop, later wakes send `follow_up`.
     opened: AtomicBool,
     /// Blank-AI mode: built-in layers emptied, Instance Prompt still sent
-    /// (#657, #680).
+    /// (#657).
     ///
     /// Fixed for this Director's life, the way the Endpoint bakes in the
     /// timeout and the reply cap: the mode decides the opening turn, and
-    /// `opened` has no way back to one. A toggle reaches a running buddy by
-    /// rebuilding the Director, which is what every other Completer change
-    /// already does.
+    /// `opened` has no way back to one. A toggle rebuilds the Director, which
+    /// is what every other Completer change already does.
     blank: bool,
 }
 
@@ -347,10 +345,9 @@ impl<C: Completer> ModelDirector<C> {
     /// The wake, and the Behavior name the reply proposed that this Character
     /// declares none of.
     ///
-    /// A near miss (`prowll`, `Inspectt`) is a contract miss, and it arrives
-    /// as speech exactly like a model that chose to talk — so without this it
-    /// is invisible, trace flag or not. Reported, never corrected; guessing
-    /// a correction is what #231 ruled out (#243).
+    /// A near miss (`prowll`, `Inspectt`) arrives as speech exactly like a
+    /// model that chose to talk, so without this it is invisible. Reported,
+    /// never corrected: guessing a correction is ruled out. #243.
     pub fn wake_and_near_miss(&self, context: &Context) -> Woken {
         match self.completer.complete(&self.request(context)) {
             // Parsed exactly as a whole reply is. The cap ended the turn, not
@@ -445,7 +442,7 @@ fn spoken_or_failed(reply: &str) -> Wake {
 }
 
 /// A reply that is not a declared Behavior. Empty name: the Engine plays
-/// `talk` and speaks. #119 shows this in a bubble.
+/// `talk` and speaks.
 ///
 /// Length is not judged here. A reply too long for the bubble is drawn to six
 /// wrapped lines with a way into Chat for the rest (#588), so refusing to
@@ -650,23 +647,20 @@ fn strip_harness_banners(reply: &str) -> String {
 /// nothing else, not on line one, because a Harness may put its own text
 /// ahead of the model's answer: Pi writes a version banner and a list of the
 /// user's skill files as the turn's first `agent_message_chunk`, and nothing
-/// on the ACP wire marks it as not the answer (#609, #632).
+/// on the ACP wire marks it as not the answer (#632).
 ///
 /// Scanning is safe because a candidate must be the *whole* line. A Behavior
-/// named inside a sentence never matches; only a line that is nothing but
-/// that one word does, and a word no Character declared falls through to
-/// speech exactly as it does today.
+/// named inside a sentence never matches, and a word no Character declared
+/// falls through to speech.
 ///
-/// Every other line is dialogue, as it was written and whichever side of the
-/// name it falls. Keeping beats dropping while nothing tells the two apart: a
-/// model that writes `I'll rest now.` above `nap` is answering, and dropping
-/// that line to spare a banner would lose the answer far more often than it
-/// spares one.
+/// Every other line is dialogue, whichever side of the name it falls. Keeping
+/// beats dropping while nothing tells the two apart: a model that writes
+/// `I'll rest now.` above `nap` is answering, and dropping that line to spare
+/// a banner would lose the answer far more often than it spares one.
 ///
-/// Known Harness banners — Pi's startup chrome — are filtered by their
-/// specific markers before the name is read (#632). A targeted filter, not a
-/// heuristic: a sentence that happens to mention Pi or skills is not a banner
-/// and is kept.
+/// Known Harness banners are filtered by their specific markers before the
+/// name is read. A targeted filter, not a heuristic: a sentence that happens
+/// to mention Pi or skills is not a banner and is kept.
 ///
 /// Public for `harness probe`, which reports whether a live session obeys the
 /// one-line format. The rest of the model path is crate-private.
@@ -1476,12 +1470,9 @@ mod tests {
         assert!(!ambient.reactive, "nobody asked for a proactive wake");
     }
 
-    /// #231: a model writes the Behavior name at the start of a line, so it
-    /// capitalises it — every local model measured in #175 answered `Prowl`
-    /// where the manifest declares `prowl`. Matching exactly threw those
-    /// replies away and spoke them instead, so the buddy talked and never
-    /// acted. `say` two arms below was already compared case-insensitively;
-    /// this is the same rule for the name beside it.
+    /// A model writes the Behavior name at the start of a line, so it
+    /// capitalises it: `Prowl` where the manifest declares `prowl`. Matched
+    /// case-insensitively, the same way `say` two arms below is. #231.
     #[test]
     fn a_declared_behavior_is_known_however_the_model_capitalises_it() {
         let director = directing(Scripted::says("Prowl\nMine now."), ["prowl"]);
@@ -1974,10 +1965,9 @@ mod tests {
         );
     }
 
-    /// #657 / #680: Blank AI empties the built-in layers — the package
-    /// Personality Prompt and the app-level instructions (roster, contract,
-    /// voice rules) — and still passes an Instance Prompt the user wrote.
-    /// Without one, the opening is the moment alone.
+    /// Blank AI empties the built-in layers, the package Personality Prompt
+    /// and the app-level instructions, and still passes an Instance Prompt the
+    /// user wrote. Without one, the opening is the moment alone. #657.
     #[test]
     fn blank_mode_empties_built_in_layers_and_keeps_the_instance_prompt() {
         let moment = Context {

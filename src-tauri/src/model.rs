@@ -666,9 +666,9 @@ pub struct Endpoint {
     /// field in a rejection ever turns it off (#612).
     ///
     /// About the field, never about the value, so a new `effort` does not
-    /// invalidate it — and it needs no reset path of its own: every Director
-    /// settings change that matters runs `completer_retargets`, which builds a
-    /// fresh `Endpoint` with this optimistic again (#638).
+    /// invalidate it, and it needs no reset path: every Director settings
+    /// change that matters runs `completer_retargets`, which builds a fresh
+    /// `Endpoint` optimistic again.
     takes_effort: AtomicBool,
     /// Does this host take `max_tokens`? Same shape again, and the only one
     /// here whose fallback renames rather than drops: a host that refuses it
@@ -1400,9 +1400,8 @@ enum Wire {
     Whole,
 }
 
-// One over the clippy cap: #638 added the effort value and #619 the cap
-// flag, each landing on a seven-argument function. Folding them would pair a
-// guard with the value it guards or a cap's name with its number.
+// One over the clippy cap. Folding two of these would pair a guard with the
+// value it guards, or a cap's name with its number.
 #[allow(clippy::too_many_arguments)]
 fn request_body(
     model: &str,
@@ -1459,12 +1458,10 @@ fn request_body(
         // uncapped. The old name goes out first and `Field::Cap` swaps it
         // for the host that refuses (#619).
         chat[if cap { "max_tokens" } else { NEW_CAP }] = max_tokens.into();
-        // The Responses branch above has asked for low effort since #302,
-        // for the same reason: a two-line Behavior pick is not worth a long
-        // think. Measured on chat-completions in #597 — gpt-oss-20b under
-        // the real Character Prompt returned 7 empty `length` finishes in 20
-        // runs at a 512-token cap, and 0 in 20 with this field. It is not a
-        // field every server accepts, which is what `Field::Effort` guards.
+        // The Responses branch above asks for low effort for the same reason:
+        // a two-line Behavior pick is not worth a long think, and without it a
+        // reasoning model spends the token cap before writing any content. Not
+        // a field every server accepts, which is what `Field::Effort` guards.
         if effort {
             chat["reasoning_effort"] = serde_json::Value::String(level.to_string());
         }
@@ -1480,14 +1477,14 @@ fn request_body(
 ///
 /// The effort field names the value it carried. A host that takes `low` and
 /// refuses `high` latches `takes_effort` off for the session, `low` included,
-/// and this line is the only place that records which value cost it. The
-/// alternative — remembering which values a host takes — is a cache of a
-/// server's validation rules, and being wrong about that costs a wake (#638).
+/// and this line is the only place that records which value cost it.
+/// Remembering which values a host takes would be a cache of a server's
+/// validation rules, and being wrong about that costs a wake (#638).
 ///
 /// The cap is the one field the retry renames rather than drops, so it says
 /// so: the caller's line reads "retrying without max_tokens, under
-/// max_completion_tokens", and a reader who saw only the field name would
-/// otherwise go looking for an uncapped reply that never happened (#619).
+/// max_completion_tokens", and a reader who saw only the field name would go
+/// looking for an uncapped reply that never happened.
 fn dropped_field(field: Field, effort: &str) -> String {
     match field {
         Field::Stream => field.name().to_string(),
@@ -3602,10 +3599,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// #612: the same read as the stream field, on the field #597 measured.
-    /// A body that names it is the only thing that drops it, because the
-    /// cost of reading a plain 400 as a refusal is a second POST that fails
-    /// the same way.
+    /// The same read as the stream field, on `reasoning_effort`. A body that
+    /// names the field is the only thing that drops it: reading a plain 400 as
+    /// a refusal costs a second POST that fails the same way. #612.
     #[test]
     fn a_server_that_rejects_the_effort_field_earns_one_retry_without_it() {
         assert_eq!(
@@ -4317,9 +4313,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// #243, #435: a name nobody declared arrives as speech, so the name is the
-    /// only thing that tells the two apart — and the Action Log is written at
-    /// `take`, not in the worker, so it has to survive the trip.
+    /// A name nobody declared arrives as speech, so the name is the only thing
+    /// that tells the two apart, and the Action Log is written at `take` rather
+    /// than in the worker, so it has to survive the trip. #243.
     #[test]
     fn take_carries_the_near_miss_the_worker_saw() {
         let mut slots = Slots::new();
@@ -4405,7 +4401,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// How #244's prompt phrasings differ.
+    /// How the prompt phrasings differ.
     ///
     /// The personality file itself is never touched: the sample lines are why
     /// the voices read as well as they do (#156), so only the frame around
@@ -4649,15 +4645,13 @@ pub(crate) mod tests {
         }
     }
 
-    /// #175: how often a live local model breaks the reply contract, as the
-    /// before number #144 argues from. Ignored because it needs a server and
-    /// spends real seconds; it is the harness, not a check of our own code.
+    /// How often a live local model breaks the reply contract. Ignored because
+    /// it needs a server and spends real seconds; it is the harness, not a
+    /// check of our own code.
     ///
-    /// The classifier is `ModelDirector::wake` itself rather than a copy of
-    /// it, so the measurement cannot drift from what the app actually does:
-    /// a proposal naming a declared Behavior is accepted, an empty name is
-    /// `as_speech` catching prose, and `Failed` is the turn `StaticDirector`
-    /// takes. One session throughout, because that is how the buddy runs.
+    /// The classifier is `ModelDirector::wake` itself rather than a copy, so
+    /// the measurement cannot drift from what the app does. One session
+    /// throughout, because that is how the buddy runs. #175.
     ///
     /// ```sh
     /// AI_BUDDY_DIRECTOR_BASE_URL=http://localhost:11434 \
@@ -4666,30 +4660,9 @@ pub(crate) mod tests {
     /// ```
     ///
     /// `AI_BUDDY_BENCH_WAKES` sets the sample size; it defaults to 40.
-    /// `AI_BUDDY_BENCH_FRAMING` picks #244's phrasing — `today` (the default),
+    /// `AI_BUDDY_BENCH_FRAMING` picks the phrasing — `today` (the default),
     /// `framed`, or `after` — and the run reports how much of its prose was a
     /// personality sample line quoted back.
-    ///
-    /// #244 was answered here and the wording left alone: over 1800 wakes of
-    /// `gemma-4-e2b-it-4bit` (three framings, three runs of 200 each) only 4
-    /// of 118 prose replies quoted a sample line, and the contract-break rate
-    /// wandered 0–20% *between runs of the same framing* — a wider spread
-    /// than any gap between the framings. Quoting is real and rare; #230's
-    /// two-in-four was a small sample. The breaks are invented names, so
-    /// #144's schema is still the thing that would fix them.
-    ///
-    /// A second model reached the same verdict by a different road. Over
-    /// 1200 wakes of `gpt-oss-20b-MXFP4-Q8` (three framings, two runs of 200
-    /// each) no reply quoted a sample line at all, and the widest spread
-    /// between runs of one framing — 9pp — still covers the 8pp span between
-    /// the framings' means, so again no wording can be called better. But
-    /// its breaks are not choices about wording: it is a reasoning model, and
-    /// on 40% of wakes the thinking trace spends `LOCAL_MAX_TOKENS` before
-    /// any content is written, so the reply arrives empty. No phrasing of the
-    /// personality reaches a token budget. Read it as widening the "sample
-    /// lines are not the cause" finding to two models, and as leaving
-    /// invented names measured on `gemma-4-e2b-it-4bit` alone — gpt-oss
-    /// rarely got far enough to invent one.
     #[test]
     #[ignore]
     fn measure_the_reply_contract_failure_rate() {

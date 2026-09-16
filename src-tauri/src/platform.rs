@@ -470,13 +470,13 @@ fn opener(target: &std::ffi::OsStr) -> Command {
 
 /// Open with the default application via ShellExecuteW.
 ///
-/// `cmd /C start` was the previous shape (#195). It works until the path holds
-/// `&` or `%`: Rust's `Command` quoting is not `cmd`'s, and `%VAR%` expands
-/// inside quotes. ShellExecuteW takes the path as a wide-string parameter, so
-/// neither metacharacter is syntax (#255).
+/// Not `cmd /C start`: that works until the path holds `&` or `%`, because
+/// Rust's `Command` quoting is not `cmd`'s and `%VAR%` expands inside quotes.
+/// ShellExecuteW takes the path as a wide-string parameter, so neither
+/// metacharacter is syntax (#255).
 ///
 /// Still hand-written after checking the crates: `open` shells out to
-/// `cmd /c start` on Windows, which is the shape #255 removed, and `opener`
+/// `cmd /c start` on Windows, and `opener`
 /// makes this same ShellExecuteW call while blocking on the unix arms where
 /// this code is fire-and-forget. Neither removes the `unsafe` — only whose it
 /// is — so the trade is a dependency for no change in what can go wrong.

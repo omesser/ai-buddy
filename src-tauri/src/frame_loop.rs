@@ -188,16 +188,14 @@ pub(crate) fn run_frame_loop(
         let mut was_visible = true;
 
         loop {
-            // Scheduler-aware wait: either sleep 16ms (active) or block on input
-            // events (idle). When idle, compute the next real deadline (Director
-            // ambient wake, activity sensing) without artificial caps. Active mode
-            // runs whenever the Engine needs regular ticks (motion, multi-frame
-            // animation, sleep-after accrual). #183.
+            // Active mode sleeps 16ms; idle blocks on input events until the
+            // next real deadline (Director ambient wake, activity sensing),
+            // with no artificial cap. #183.
             //
-            // Spec CLEAR: while !visible (fullscreen/hotkey-hide/etc.), ignore
-            // ALL XI2 (Motion+Button) by sleeping instead of recv on events.
-            // While visible (incl. Asleep/DND), keep XI2 for hit-testing so
-            // Poke/Grab/Throw work. SPEC #27: DND stays visible+quiet.
+            // While hidden, XI2 motion and button events are ignored by
+            // sleeping rather than receiving. While visible, Asleep and Do Not
+            // Disturb included, XI2 stays on so hit-testing keeps Poke, Grab
+            // and Throw working.
             match (schedule_mode, was_visible, &input_events) {
                 (scheduler::ScheduleMode::Idle, true, Some(events)) => {
                     // Visible idle: block on XI2 events for cursor-over-art.
@@ -1577,12 +1575,12 @@ pub(crate) fn run_frame_loop(
                 }
 
                 // A Behavior the State gate refused. Under the Director flag
-                // rather than the frame one, next to #318's near-miss line,
-                // because both report a proposal the sprite never played.
+                // rather than the frame one, beside the near-miss line, because
+                // both report a proposal the sprite never played.
                 //
-                // The line names the State the sprite was in, not the reason
-                // it was refused. The Poke cooldown also refuses, and it
-                // refuses on the sprite's feet. #374.
+                // The line names the State the sprite was in, not the reason it
+                // was refused: the Poke cooldown also refuses, and it refuses
+                // on the sprite's feet. #374.
                 if let Some(refused) = &frame.refused {
                     if model::tracing() {
                         eprintln!(
@@ -2243,10 +2241,10 @@ pub(crate) fn run_frame_loop(
 /// the wire is abandoned so the old host stops generating, and the rebuilt
 /// `ModelDirector` carries no held turns. The Harness keys its ACP sessions by
 /// Instance, so it has to be told separately or the next wake continues the old
-/// transcript through `session/load` (#698, ADR-0012); that drop is also where
-/// its turn in flight is cancelled (#704). One function because a caller that
-/// remembered only the first half would look right and leave the agent holding
-/// everything it read (#679).
+/// transcript through `session/load` (ADR-0012); that drop is also where its
+/// turn in flight is cancelled. One function because a caller that remembered
+/// only the first half would look right and leave the agent holding everything
+/// it read (#679).
 ///
 /// The Action Log line and what an open Chat surface hears stay with the
 /// caller: only it knows why the session was replaced.

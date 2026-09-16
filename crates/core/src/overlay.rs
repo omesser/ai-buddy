@@ -629,10 +629,10 @@ mod tests {
         );
     }
 
-    /// #163 with #178: several Instances are several bubbles. Ownership is a
-    /// function of one Instance's feet, so two characters standing on two
-    /// displays each own a bubble on their own display at the same time —
-    /// the case a fix aimed at "only one bubble" could wrongly suppress.
+    /// Several Instances are several bubbles. Ownership is a function of one
+    /// Instance's feet, so two characters standing on two displays each own a
+    /// bubble at the same time, the case a fix aimed at "only one bubble"
+    /// wrongly suppresses. #178.
     #[test]
     fn each_instance_owns_a_bubble_on_the_display_it_stands_on() {
         let displays = two_displays();

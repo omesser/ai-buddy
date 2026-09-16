@@ -1,5 +1,5 @@
 // The linter rung the issue never considered: no types, just the two rules that
-// cover both bugs this webview has actually shipped (#652, #738).
+// cover both bugs this webview has actually shipped (#738).
 //
 // Not a proposal to adopt eslint — section 3 of REPORT.md argues the opposite,
 // because this config costs 194 packages where `typescript` costs 1. It exists

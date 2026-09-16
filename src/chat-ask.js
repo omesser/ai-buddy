@@ -3,15 +3,14 @@
 // Its own module because chat.js reaches window.__TAURI__ as it loads and
 // cannot be imported outside a webview; this can, so it has a test. It earns
 // one: this row is the only place the product asks the user to make a security
-// decision, and it used to lead with the tool kind and withhold the question
-// (#678), which is the shape that teaches a reflexive Allow.
+// decision, and leading with the tool kind while withholding the question is
+// the shape that teaches a reflexive Allow (#678).
 //
 // Everything but the copy here is untrusted. `title`, `content`, `input` and
 // `locations` come from the Harness and an MCP server can steer all four. The
 // caller writes the result with `textContent` and this file produces no
-// markup: keep both true. It is not Markdown either — #677 renders replies,
-// and a consent row is the last surface that should honour someone else's
-// formatting.
+// markup: keep both true. It is not Markdown either: a consent row is the last
+// surface that should honour someone else's formatting.
 
 // How much of an ask the row may draw, in characters.
 //
