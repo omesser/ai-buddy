@@ -54,6 +54,7 @@ def main():
     # Target height for consistent visual sizing in README
     target_height = 96
 
+    # Buddy Bot: walk animation (motion stride for table, 8 frames)
     buddy_walk_frames = [
         chars_dir / "buddy-bot" / "frames" / f"walk-{i}.png" for i in range(8)
     ]
@@ -62,6 +63,7 @@ def main():
     )
     print(f"✓ buddy-bot-walk.gif ({os.path.getsize(out_dir / 'buddy-bot-walk.gif') / 1024:.1f} KB)")
 
+    # Buddy Bot: react animation (still used in Interact section, 5 frames)
     buddy_react_frames = [
         chars_dir / "buddy-bot" / "frames" / f"react-{i}.png" for i in range(5)
     ]
@@ -70,6 +72,7 @@ def main():
     )
     print(f"✓ buddy-bot-react.gif ({os.path.getsize(out_dir / 'buddy-bot-react.gif') / 1024:.1f} KB)")
 
+    # Black Mage: talk animation (incantation/cast, 2 frames)
     black_mage_talk_frames = [
         chars_dir / "black-mage" / "frames" / f"talk-{i}.png" for i in range(2)
     ]
@@ -78,6 +81,7 @@ def main():
     )
     print(f"✓ black-mage-talk.gif ({os.path.getsize(out_dir / 'black-mage-talk.gif') / 1024:.1f} KB)")
 
+    # BMO: sing animation (signature variant, 4 frames)
     bmo_sing_frames = [
         chars_dir / "bmo" / "frames" / f"sing-{i}.png" for i in range(4)
     ]
@@ -86,6 +90,7 @@ def main():
     )
     print(f"✓ bmo-sing.gif ({os.path.getsize(out_dir / 'bmo-sing.gif') / 1024:.1f} KB)")
 
+    # Cat: walk animation (motion, 8 frames)
     cat_walk_frames = [
         chars_dir / "cat" / "frames" / f"walk-{i}.png" for i in range(8)
     ]
@@ -94,6 +99,7 @@ def main():
     )
     print(f"✓ cat-walk.gif ({os.path.getsize(out_dir / 'cat-walk.gif') / 1024:.1f} KB)")
 
+    # Jotaro Kujo: react animation (Stand aura showcase, 8 frames)
     jotaro_react_frames = [
         chars_dir / "jotaro-kujo" / "frames" / f"react-{i}.png" for i in range(8)
     ]
@@ -102,6 +108,7 @@ def main():
     )
     print(f"✓ jotaro-kujo-react.gif ({os.path.getsize(out_dir / 'jotaro-kujo-react.gif') / 1024:.1f} KB)")
 
+    # Nim: sleep animation (matches personality, 4 frames)
     nim_sleep_frames = [
         chars_dir / "nim" / "frames" / f"sleep-{i}.png" for i in range(4)
     ]
@@ -110,6 +117,7 @@ def main():
     )
     print(f"✓ nim-sleep.gif ({os.path.getsize(out_dir / 'nim-sleep.gif') / 1024:.1f} KB)")
 
+    # Timber Wolf: walk animation (mech patrol stride, 20 frames)
     # Permission granted by MekaRamen (Yeoh Kher En) to publish (#388)
     timber_wolf_walk_frames = [
         chars_dir / "timber-wolf" / "frames" / f"walk-{i}.png" for i in range(20)
@@ -119,6 +127,7 @@ def main():
     )
     print(f"✓ timber-wolf-walk.gif ({os.path.getsize(out_dir / 'timber-wolf-walk.gif') / 1024:.1f} KB)")
 
+    # Trump: talk animation (rally wave, 3 frames)
     trump_talk_frames = [
         chars_dir / "trump" / "frames" / f"talk-{i}.png" for i in range(3)
     ]
