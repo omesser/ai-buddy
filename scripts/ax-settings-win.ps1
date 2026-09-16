@@ -34,7 +34,7 @@ For expand-disclosure command: the label of the disclosure to expand
 .\ax-settings-win.ps1 -Command dump
 
 .EXAMPLE
-.\ax-settings-win.ps1 -Command pick-source -Title "Harness · claude"
+.\ax-settings-win.ps1 -Command pick-source -Title "Harness $([char]0x00B7) claude"
 
 .EXAMPLE
 .\ax-settings-win.ps1 -Command expand-disclosure -DisclosureLabel "What is this?"
@@ -64,19 +64,19 @@ function Find-SettingsWindow {
         [System.Windows.Automation.AutomationElement]::ClassNameProperty,
         "AiBuddySettings"
     )
-    
+
     $root = $automation.GetRootElement()
     $window = $root.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $condition
     )
-    
+
     return $window
 }
 
 function Wait-ForSettings {
     param([int]$TimeoutSec)
-    
+
     $waited = 0
     while ($waited -lt $TimeoutSec) {
         $window = Find-SettingsWindow
@@ -91,7 +91,7 @@ function Wait-ForSettings {
 
 function Get-ElementState {
     param($element)
-    
+
     $states = @()
     try {
         if ($element.Current.IsEnabled) {
@@ -99,14 +99,14 @@ function Get-ElementState {
         } else {
             $states += "disabled"
         }
-        
+
         if ($element.Current.IsOffscreen) {
             $states += "offscreen"
         }
     } catch {
         # Some elements may not support these properties
     }
-    
+
     return $states
 }
 
@@ -115,20 +115,20 @@ function Dump-Element {
         $element,
         [int]$depth = 0
     )
-    
+
     $indent = "  " * $depth
     $type = $element.Current.ControlType.ProgrammaticName -replace 'ControlType.', ''
     $name = $element.Current.Name
     $states = Get-ElementState $element
     $stateStr = if ($states.Count -gt 0) { "[$($states -join ',')]" } else { "" }
-    
+
     Write-Output "${indent}${type}|${name}|${stateStr}"
-    
+
     # Walk children
     try {
         $walker = (New-Object -ComObject UIAutomationClient.CUIAutomation).ControlViewWalker
         $child = $walker.GetFirstChildElement($element)
-        
+
         while ($null -ne $child) {
             Dump-Element $child ($depth + 1)
             $child = $walker.GetNextSiblingElement($child)
@@ -144,7 +144,7 @@ function Dump-Settings {
         Write-Error "Settings window not found"
         return 1
     }
-    
+
     try {
         Dump-Element $window
         return 0
@@ -156,48 +156,48 @@ function Dump-Settings {
 
 function Find-ComboBoxByOptions {
     param($window, [string[]]$requiredOptions)
-    
+
     $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
     $walker = $automation.ControlViewWalker
-    
+
     # Find all combo boxes
     $condition = $automation.CreatePropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::ComboBox
     )
-    
+
     $combos = $window.FindAll(
         [System.Windows.Automation.TreeScope]::Descendants,
         $condition
     )
-    
+
     for ($i = 0; $i -lt $combos.Length; $i++) {
         $combo = $combos.GetElement($i)
-        
+
         # Expand to see options
         try {
             $expandPattern = $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
             if ($null -ne $expandPattern) {
                 $expandPattern.Expand()
                 Start-Sleep -Milliseconds 200
-                
+
                 # Get all list items
                 $itemCondition = $automation.CreatePropertyCondition(
                     [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
                     [System.Windows.Automation.ControlType]::ListItem
                 )
-                
+
                 $items = $combo.FindAll(
                     [System.Windows.Automation.TreeScope]::Descendants,
                     $itemCondition
                 )
-                
+
                 $foundOptions = @()
                 for ($j = 0; $j -lt $items.Length; $j++) {
                     $item = $items.GetElement($j)
                     $foundOptions += $item.Current.Name
                 }
-                
+
                 # Check if this combo has the required options
                 $hasAll = $true
                 foreach ($req in $requiredOptions) {
@@ -206,11 +206,11 @@ function Find-ComboBoxByOptions {
                         break
                     }
                 }
-                
+
                 if ($hasAll) {
                     return $combo
                 }
-                
+
                 # Collapse before checking next
                 $expandPattern.Collapse()
             }
@@ -218,33 +218,33 @@ function Find-ComboBoxByOptions {
             # Try next combo
         }
     }
-    
+
     return $null
 }
 
 function Pick-Source {
     param([string]$SourceTitle)
-    
+
     $window = Find-SettingsWindow
     if ($null -eq $window) {
         Write-Error "Settings window not found"
         return 1
     }
-    
+
     # Find AI source combo box by looking for one with "Model API" option
     $combo = Find-ComboBoxByOptions $window @("Model API")
-    
+
     if ($null -eq $combo) {
         Write-Error "AI source combo box not found"
         return 1
     }
-    
+
     try {
         # Expand combo box
         $expandPattern = $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
         $expandPattern.Expand()
         Start-Sleep -Milliseconds 200
-        
+
         # Find the list item with the target title
         $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
         $nameCondition = $automation.CreatePropertyCondition(
@@ -256,21 +256,21 @@ function Pick-Source {
             [System.Windows.Automation.ControlType]::ListItem
         )
         $andCondition = $automation.CreateAndCondition($nameCondition, $typeCondition)
-        
+
         $item = $combo.FindFirst(
             [System.Windows.Automation.TreeScope]::Descendants,
             $andCondition
         )
-        
+
         if ($null -eq $item) {
             Write-Error "Menu item not found: $SourceTitle"
             return 1
         }
-        
+
         # Select the item
         $selectionPattern = $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
         $selectionPattern.Select()
-        
+
         Start-Sleep -Milliseconds 500
         return 0
     } catch {
@@ -281,13 +281,13 @@ function Pick-Source {
 
 function Expand-Disclosure {
     param([string]$Label)
-    
+
     $window = Find-SettingsWindow
     if ($null -eq $window) {
         Write-Error "Settings window not found"
         return 1
     }
-    
+
     # Find button with the disclosure label (usually "What is this?")
     $automation = New-Object -ComObject UIAutomationClient.CUIAutomation
     $nameCondition = $automation.CreatePropertyCondition(
@@ -299,22 +299,22 @@ function Expand-Disclosure {
         [System.Windows.Automation.ControlType]::Button
     )
     $andCondition = $automation.CreateAndCondition($nameCondition, $typeCondition)
-    
+
     $button = $window.FindFirst(
         [System.Windows.Automation.TreeScope]::Descendants,
         $andCondition
     )
-    
+
     if ($null -eq $button) {
         Write-Error "Disclosure button not found: $Label"
         return 1
     }
-    
+
     try {
         # Click the button
         $invokePattern = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $invokePattern.Invoke()
-        
+
         Start-Sleep -Milliseconds 300
         return 0
     } catch {

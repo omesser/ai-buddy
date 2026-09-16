@@ -424,7 +424,7 @@ if (-not (Test-Path $axHelper)) {
   & $axHelper -Command dump > $aiDump 2>&1
   if ($LASTEXITCODE -eq 0) {
     Pass "Dumped AI tab structure to ai-tab-dump.txt"
-    
+
     # Check for expected section headings
     $content = Get-Content $aiDump -Raw
     $expectedSections = @("AI", "AI source", "Model / API", "Last user turn")
@@ -434,17 +434,17 @@ if (-not (Test-Path $axHelper)) {
         $foundSections++
       }
     }
-    
+
     if ($foundSections -eq $expectedSections.Length) {
       Pass "AI tab: all $($expectedSections.Length) expected sections found"
     } else {
       Info "AI tab: found $foundSections of $($expectedSections.Length) expected sections (UIA may not capture all STATIC labels)"
     }
-    
+
     # Check for disclosure control ("What is this?")
     if ($content -match "What is this") {
       Pass "AI tab: disclosure control found"
-      
+
       # Try expanding a disclosure
       & $axHelper -Command expand-disclosure -DisclosureLabel "What is this?" 2>&1 | Out-Null
       if ($LASTEXITCODE -eq 0) {
@@ -458,61 +458,63 @@ if (-not (Test-Path $axHelper)) {
   } else {
     Info "Could not dump AI tab via UIA - skipping AI tab structure checks"
   }
-  
+
   # Test runtime freeze/unfreeze by switching AI source
   Info "Testing runtime freeze/unfreeze via AI source switch"
-  
+
   # Dump initial state (Model API expected by default)
   $initialDump = Join-Path $Out "no-harness-dump.txt"
   & $axHelper -Command dump > $initialDump 2>&1
-  
+
   # Check that Base URL / Model / API key are enabled
   $initialContent = Get-Content $initialDump -Raw
   $baseUrlEnabled = $initialContent -match "Base URL.*enabled"
   $modelEnabled = $initialContent -match "Model.*enabled"
-  
+
   if ($baseUrlEnabled -and $modelEnabled) {
     Pass "HTTP rows enabled with Model API (no Harness)"
   } else {
     Info "HTTP rows state unclear from UIA dump (may need direct Win32 ES_READONLY check)"
   }
-  
-  # Try to pick a Harness (if available)
-  # Note: This requires the harness to be installed, which may not be the case in CI
+
+  # Popup titles are "Harness <U+00B7> {name}" (#593). .ps1 must stay ASCII (#418),
+  # so the middle dot is built at runtime rather than stored in this file.
+  $harness = if ($env:AI_BUDDY_VERIFY_HARNESS) { $env:AI_BUDDY_VERIFY_HARNESS } else { "claude" }
+  $harnessTitle = "Harness $([char]0x00B7) $harness"
   Info "Attempting to switch to Harness (if installed)"
-  & $axHelper -Command pick-source -Title "Harness · claude" 2>&1 | Out-Null
+  & $axHelper -Command pick-source -Title $harnessTitle 2>&1 | Out-Null
   if ($LASTEXITCODE -eq 0) {
     Pass "Switched AI source to Harness"
     Start-Sleep -Milliseconds 1000
-    
+
     $harnessDump = Join-Path $Out "harness-dump.txt"
     & $axHelper -Command dump > $harnessDump 2>&1
-    
+
     # Check that Base URL / Model / API key are now disabled
     $harnessContent = Get-Content $harnessDump -Raw
     $baseUrlDisabled = $harnessContent -match "Base URL.*disabled"
     $modelDisabled = $harnessContent -match "Model.*disabled"
-    
+
     if ($baseUrlDisabled -and $modelDisabled) {
       Pass "HTTP rows frozen while Harness drives"
     } else {
       Info "HTTP rows frozen state unclear from UIA dump (check ES_READONLY in unit tests)"
     }
-    
+
     # Switch back to Model API
     & $axHelper -Command pick-source -Title "Model API" 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
       Pass "Switched back to Model API"
       Start-Sleep -Milliseconds 500
-      
+
       $backDump = Join-Path $Out "back-to-model-api-dump.txt"
       & $axHelper -Command dump > $backDump 2>&1
-      
+
       # Check that rows are enabled again
       $backContent = Get-Content $backDump -Raw
       $baseUrlReEnabled = $backContent -match "Base URL.*enabled"
       $modelReEnabled = $backContent -match "Model.*enabled"
-      
+
       if ($baseUrlReEnabled -and $modelReEnabled) {
         Pass "HTTP rows unfrozen after switching back to Model API (runtime freeze/unfreeze works)"
       } else {
