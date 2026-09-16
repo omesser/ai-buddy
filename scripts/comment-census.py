@@ -76,19 +76,19 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
 
     current_block_lines = []
     in_multiline = False
-    
+
     for line in lines:
         stripped = line.strip()
-        
+
         if not stripped:
             if current_block_lines:
                 blocks.append(analyze_block(current_block_lines))
                 current_block_lines = []
                 in_multiline = False
             continue
-        
+
         is_comment = is_comment_line(line, ext)
-        
+
         if ext in ['.rs', '.js', '.ts', '.css', '.c', '.cpp', '.h']:
             if '/*' in stripped:
                 in_multiline = True
@@ -98,7 +98,7 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
                 comment_lines += 1
                 in_multiline = False
                 continue
-        
+
         if is_comment or in_multiline:
             current_block_lines.append(line)
             comment_lines += 1
@@ -111,7 +111,7 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
 
     if current_block_lines:
         blocks.append(analyze_block(current_block_lines))
-    
+
     return code_lines, comment_lines, blocks
 
 
@@ -132,10 +132,10 @@ def scan_file(path: Path) -> FileStats:
             lines = f.readlines()
     except (UnicodeDecodeError, PermissionError):
         return FileStats(str(path), 0, 0, [])
-    
+
     ext = path.suffix
     code_lines, comment_lines, blocks = extract_blocks(lines, ext)
-    
+
     return FileStats(
         path=str(path),
         code_lines=code_lines,
@@ -155,11 +155,11 @@ def scan_directory(root: Path) -> List[FileStats]:
                 continue
             if 'target' in path.parts or 'node_modules' in path.parts:
                 continue
-            
+
             file_stats = scan_file(path)
             if file_stats.code_lines > 0 or file_stats.comment_lines > 0:
                 stats.append(file_stats)
-    
+
     return stats
 
 
@@ -175,7 +175,7 @@ def print_summary(stats: List[FileStats], label: str = "Total"):
     blocks_over_3 = sum(s.blocks_over_3 for s in stats)
     blocks_citing_issue = sum(s.blocks_citing_issue for s in stats)
     blocks_citing_adr = sum(s.blocks_citing_adr for s in stats)
-    
+
     ratio = (total_comments / total_code * 100) if total_code > 0 else 0
 
     print(f"\n{label}:")
@@ -198,22 +198,22 @@ def main():
     parser = argparse.ArgumentParser(description="Count comments in source code")
     parser.add_argument("path", help="File or directory to analyze")
     parser.add_argument("--by-area", action="store_true", help="Break down by area")
-    
+
     args = parser.parse_args()
-    
+
     path = Path(args.path)
-    
+
     if not path.exists():
         print(f"Error: {path} does not exist", file=sys.stderr)
         return 1
-    
+
     if path.is_file():
         stats = [scan_file(path)]
         print_summary(stats, str(path))
     else:
         stats = scan_directory(path)
         print_summary(stats, str(path))
-        
+
         if args.by_area:
             areas = defaultdict(list)
             for s in stats:
@@ -226,10 +226,10 @@ def main():
                     areas['Shell & platform (src-tauri/src)'].append(s)
                 elif str(p).startswith('src/') or str(p).startswith('scripts/') or str(p).startswith('tests/'):
                     areas['Webview, scripts & tests'].append(s)
-            
+
             for area_name, area_stats in sorted(areas.items()):
                 print_summary(area_stats, area_name)
-    
+
     return 0
 
 
