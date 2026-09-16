@@ -2737,20 +2737,18 @@ fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
         if old_proc.is_null() {
             windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
         } else {
-            CallWindowProcW(
-                std::mem::transmute(old_proc),
-                hwnd,
-                msg,
-                wparam,
-                lparam,
-            )
+            CallWindowProcW(std::mem::transmute(old_proc), hwnd, msg, wparam, lparam)
         }
     }
 
     APP_HANDLE.set(app).ok();
 
     unsafe {
-        let old = SetWindowLongPtrW(hwnd as HWND, GWLP_WNDPROC, anchor_wndproc as isize);
+        let old = SetWindowLongPtrW(
+            hwnd as HWND,
+            GWLP_WNDPROC,
+            anchor_wndproc as *const () as isize,
+        );
         OLD_WNDPROC.store(old as *mut (), Ordering::Relaxed);
     }
 }
