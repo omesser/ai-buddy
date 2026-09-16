@@ -15,6 +15,7 @@ test("the composer field is bounded at CHAT_LIMIT", () => {
   const limit = Number(declared[1].replaceAll("_", ""));
 
   // The field, whichever element it is drawn as.
+  // The field, whichever element it is drawn as: #686 makes it a textarea.
   const field = html.match(/<(?:input|textarea)\b[^>]*\bid="line"[^>]*>/);
   assert.ok(field, "the composer has no field with id=line");
 

@@ -53,6 +53,7 @@ for _ in $(seq 30); do
 done
 displays=$(sed -n 's/^overlay: \([0-9]*\) display.*/\1/p' "$log" | head -1)
 if [ -z "$displays" ]; then
+  # Check if the app failed to start (e.g., no DISPLAY)
   if grep -qi "error\|failed\|cannot" "$log" 2> /dev/null; then
     echo "app failed to start; see $log" >&2
     cat "$log" >&2
@@ -66,12 +67,14 @@ sleep 2 # Give helpers time to spawn
 children=$(pgrep -P "$app" 2> /dev/null || true)
 pids=$(echo "$app" | cat - <(echo "$children") | tr '\n' ' ' | xargs)
 
+# Count distinct pids for diagnostics
 pid_count=$(echo "$pids" | wc -w)
 
 echo "displays: $displays   main pid: $app   total processes: $pid_count"
 echo "pids: $pids"
 echo "settling ${settle}s, then sampling ${seconds}s every ${interval}s -> $out"
 
+# Log process tree for forensics
 ps -p "$app" -o pid,ppid,comm,args 2> /dev/null || true
 for child in $children; do
   ps -p "$child" -o pid,ppid,comm,args 2> /dev/null || true

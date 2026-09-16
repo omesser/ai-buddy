@@ -490,6 +490,7 @@ while ((Get-Date) -lt $deadline -and -not $opened) {
   Start-Sleep -Milliseconds 150
 }
 
+# --- Verdict. ---
 if (-not $opened) {
   # One last look: Chat may have opened just after the final click.
   Start-Sleep -Milliseconds 500

@@ -21,6 +21,7 @@ const testMeasureFn = (text) => ({ width: text.length * 8 });
 test("bubble duration is 900ms + 55ms per character, clamped to 2-8s", () => {
   assert.equal(bubbleDuration("hi"), 2000, "min clamp");
   assert.equal(bubbleDuration("hello"), 2000, "still at min");
+  // "hello there" = 11 chars = 900 + 605 = 1505ms, clamped to 2000ms min
   assert.equal(bubbleDuration("hello there"), 2000, "short text clamped to min");
   const medium = "a".repeat(30);
   assert.equal(bubbleDuration(medium), 900 + 55 * 30, "base + per-char, no clamp");
@@ -400,6 +401,8 @@ test("a reply landing in the post-speech grace never flashes the indicator", () 
 });
 
 // --- One overlay owns the bubble; the rest draw the art only. ---
+
+// --- #178: one overlay owns the bubble; the rest draw the art only. ---
 
 test("a placement this overlay does not own carries no bubble", () => {
   const spoken = { dialogue: "Yare yare daze.", thinking: true, bubble: true, x: 1 };

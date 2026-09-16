@@ -114,6 +114,7 @@ $secLeft = $sec.Left; $secTop = $sec.Top
 $secW = $sec.Right - $sec.Left; $secH = $sec.Bottom - $sec.Top
 Info "Secondary work area: ${secLeft},${secTop} ${secW}x${secH}"
 
+# Move PowerShell console to secondary display at start
 $consoleHwnd = (Get-Process -Id $PID).MainWindowHandle
 if ($consoleHwnd -ne [IntPtr]::Zero) {
   [SettingsVerify]::SetWindowPos($consoleHwnd, [IntPtr]::Zero, $secLeft + 10, $secTop + 10, 800, 600, 0) | Out-Null
@@ -132,6 +133,7 @@ $script:AppProc = New-Object System.Diagnostics.Process
 $script:AppProc.StartInfo = $psi
 $null = $script:AppProc.Start()
 
+# Wait for ai-buddy to spawn windows, then move overlays to secondary
 Start-Sleep -Milliseconds 1000
 $overlaysMoved = 0
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
@@ -140,6 +142,7 @@ for ($attempt = 0; $attempt -lt 30; $attempt++) {
     $sb = New-Object System.Text.StringBuilder(256)
     [SettingsVerify]::GetClassName($hwnd, $sb, 256) | Out-Null
     $className = $sb.ToString()
+    # Tauri windows - move to secondary to keep primary clear
     if ([SettingsVerify]::IsWindowVisible($hwnd)) {
       $rect = New-Object SettingsVerify+RECT
       if ([SettingsVerify]::GetWindowRect($hwnd, [ref]$rect)) {
@@ -187,9 +190,11 @@ for ($i = 0; $i -lt 150; $i++) {
 }
 if ($settingsHwnd -eq [IntPtr]::Zero) { Fail "Settings window never appeared" }
 
+# Brief settle time after move
 Start-Sleep -Milliseconds 200
 Info "Settings window at ${winX},${winY} on secondary display"
 
+# Find tab control and collect all visible checkboxes/STATIC controls on Presence tab (tab 0)
 $script:Checkboxes = New-Object System.Collections.Generic.List[PSCustomObject]
 $script:StaticLabels = New-Object System.Collections.Generic.List[PSCustomObject]
 $script:TabHwnd = [IntPtr]::Zero
@@ -228,9 +233,11 @@ $script:TabHwnd = [IntPtr]::Zero
 if ($script:Checkboxes.Count -eq 0) { Fail "No visible checkboxes on Presence tab" }
 Pass "Presence tab: $($script:Checkboxes.Count) visible checkbox(es)"
 
+# Helper function to assert a screen point is over the Settings window before clicking
 function AssertClickOverSettings {
   param([IntPtr]$settingsHwnd, [int]$screenX, [int]$screenY, [string]$context)
 
+  # Check that Settings window is foreground
   $foreground = [SettingsVerify]::GetForegroundWindow()
   if ($foreground -ne $settingsHwnd) {
     Info "$context - Settings not foreground, bringing to front"
@@ -242,6 +249,7 @@ function AssertClickOverSettings {
     }
   }
 
+  # Verify the click point is over the Settings window
   $pt = New-Object SettingsVerify+POINT
   $pt.X = $screenX
   $pt.Y = $screenY
@@ -251,6 +259,7 @@ function AssertClickOverSettings {
     Fail "$context - WindowFromPoint($screenX,$screenY) returned null"
   }
 
+  # Walk up to root window
   $rootHwnd = [SettingsVerify]::GetAncestor($hwndAtPoint, [SettingsVerify]::GA_ROOT)
   if ($rootHwnd -ne $settingsHwnd) {
     $sb = New-Object System.Text.StringBuilder(256)
@@ -267,6 +276,7 @@ function AssertClickOverSettings {
 function ClickTab {
   param([IntPtr]$tabHwnd, [int]$tabIndex, [string]$tabName)
 
+  # Get tab client rect to determine click area
   $clientRect = New-Object SettingsVerify+RECT
   if (-not [SettingsVerify]::GetClientRect($tabHwnd, [ref]$clientRect)) {
     Fail "GetClientRect failed for tab control"
@@ -284,6 +294,7 @@ function ClickTab {
   $lastSeenTab = -1
 
   for ($x = 5; $x -lt $clientWidth; $x += 10) {
+    # Post mouse down/up to tab HWND at client coordinates (no global cursor)
     $lParam = [IntPtr]($x -bor ($headerY -shl 16))
     [SettingsVerify]::PostMessage($tabHwnd, [SettingsVerify]::WM_LBUTTONDOWN, [IntPtr]0, $lParam) | Out-Null
     Start-Sleep -Milliseconds 20
@@ -292,6 +303,7 @@ function ClickTab {
 
     $curTab = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETCURSEL, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
 
+    # Record range transitions
     if ($curTab -ne $lastSeenTab) {
       if ($curTab -ge 0 -and -not $tabRanges.ContainsKey($curTab)) {
         $tabRanges[$curTab] = @{ MinX = $x; MaxX = $x }
@@ -299,19 +311,23 @@ function ClickTab {
       $lastSeenTab = $curTab
     }
 
+    # Expand range for current tab
     if ($curTab -ge 0 -and $tabRanges.ContainsKey($curTab)) {
       $tabRanges[$curTab].MaxX = $x
     }
 
+    # If we've found the target tab range, we can stop early
     if ($tabRanges.ContainsKey($tabIndex) -and $x -gt ($tabRanges[$tabIndex].MinX + 20)) {
       break
     }
   }
 
+  # Check if we found the target tab
   if (-not $tabRanges.ContainsKey($tabIndex)) {
     Fail "$tabName tab (index $tabIndex) not found during sweep (found tabs: $($tabRanges.Keys -join ', '))"
   }
 
+  # Click the midpoint of the target tab range
   $range = $tabRanges[$tabIndex]
   $midX = ($range.MinX + $range.MaxX) / 2
   Info "Clicking $tabName tab at client coords ($midX,$headerY) via PostMessage to tab HWND"
@@ -322,6 +338,7 @@ function ClickTab {
   [SettingsVerify]::PostMessage($tabHwnd, [SettingsVerify]::WM_LBUTTONUP, [IntPtr]0, $lParam) | Out-Null
   Start-Sleep -Milliseconds 300
 
+  # Assert we're on the expected tab
   $curTab = [SettingsVerify]::SendMessage($tabHwnd, [SettingsVerify]::TCM_GETCURSEL, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()
   if ($curTab -ne $tabIndex) {
     Fail "$tabName tab click failed: expected tab $tabIndex, got $curTab"
@@ -330,9 +347,11 @@ function ClickTab {
   Pass "$tabName tab selected successfully"
 }
 
+# Click Director tab (index 2)
 if ($script:TabHwnd -eq [IntPtr]::Zero) { Fail "Tab control not found" }
 ClickTab $script:TabHwnd 2 "Director"
 
+# Re-enumerate to find Director tab's visible STATIC controls (field labels)
 $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObject]
 [SettingsVerify]::EnumChildWindows($settingsHwnd, {
   param($hChild, $lParam)
@@ -346,6 +365,7 @@ $script:DirectorLabels = New-Object System.Collections.Generic.List[PSCustomObje
       $txt = New-Object System.Text.StringBuilder($len + 1)
       [SettingsVerify]::GetWindowText($hChild, $txt, $txt.Capacity) | Out-Null
       $text = $txt.ToString()
+      # Look for field label patterns
       if ($text -match "URL|Model|API key|Base|timeout|tokens") {
         $script:DirectorLabels.Add([PSCustomObject]@{ Hwnd = $hChild; Text = $text; Length = $len })
       }
@@ -362,8 +382,10 @@ foreach ($lbl in $script:DirectorLabels) {
   Info "  Label: '$($lbl.Text)' (len=$($lbl.Length))"
 }
 
+# Click Development tab (index 4)
 ClickTab $script:TabHwnd 4 "Development"
 
+# Find Trace* checkboxes
 $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObject]
 [SettingsVerify]::EnumChildWindows($settingsHwnd, {
   param($hChild, $lParam)

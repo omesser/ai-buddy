@@ -209,6 +209,7 @@ wait_attached() {
 }
 
 # Exact popup titles: pick matches AXTitle, not a substring.
+# Exact popup titles after #593. pick matches AXTitle, not a substring.
 model_api="Model API"
 harness_title="Harness · $harness"
 
@@ -260,6 +261,7 @@ else
 fi
 
 # Window is hidden, not rebuilt. A second open is the same controller.
+# Window is hidden, not rebuilt. A second open is the same controller (#629).
 info "Close and reopen"
 "$ax" open "$app_pid" || fail "could not reopen Settings via the tray"
 dump_window "$out/reopened.txt" || fail "could not dump Settings after reopen"

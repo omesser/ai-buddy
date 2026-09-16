@@ -46,6 +46,7 @@ await() { # $1=file  $2=grep -E pattern  $3=attempts, a quarter-second each
   return 1
 }
 
+# Diagnoses why frames were not traced when the app started and opened overlays.
 diagnose_no_frames() { # $1=log file
   local log="$1"
   echo "  (the sprite never perched - the checks below will say so)"
