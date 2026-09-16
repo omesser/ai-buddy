@@ -322,6 +322,13 @@ async function invokeSettingsEvent(payload) {
   return await window.__TAURI_INTERNALS__.invoke("settings_event", { payload });
 }
 
+// Alt-drag gate predicate: drag begins only when modifier is held AND target is background.
+export function shouldBeginDrag(event) {
+  if (!event.altKey) return false;
+  const isControl = event.target.closest("input, select, button, summary, pre");
+  return !isControl;
+}
+
 // Snapshot + settings-refresh once Tauri is in the page; tab clicks still
 // work without it so the shell does not sit dead in a non-Tauri load.
 if (typeof document !== "undefined") {
@@ -414,6 +421,36 @@ if (typeof document !== "undefined") {
 
   if (typeof window.__TAURI__ !== "undefined") {
     const { listen } = window.__TAURI__.event;
+    // The handle comes from getCurrentWebviewWindow, which is what this global
+    // exports and what chat.js and main.js already call. Reaching for the
+    // `window` module's name instead leaves both handlers below throwing.
+    const settingsWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
+
+    // Alt-drag to move the window, gated on modifier held and target is background.
+    document.addEventListener("mousedown", (event) => {
+      if (!shouldBeginDrag(event)) return;
+      event.preventDefault();
+      settingsWindow.startDragging();
+    });
+
+    // Escape closes the window.
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        settingsWindow.close();
+      }
+    });
+
+    // Enter commits the active control (blur triggers its handler).
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && document.activeElement) {
+        const active = document.activeElement;
+        if (active.matches("input, textarea") && !active.matches('[type="checkbox"]')) {
+          event.preventDefault();
+          active.blur();
+        }
+      }
+    });
 
     // Tauri's listen() returns a Promise<UnlistenFn>. Window destruction does
     // not guarantee cleanup of window-scoped listeners, so we unlisten on unload.
