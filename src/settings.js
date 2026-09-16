@@ -322,6 +322,13 @@ async function invokeSettingsEvent(payload) {
   return await window.__TAURI_INTERNALS__.invoke("settings_event", { payload });
 }
 
+// Alt-drag gate predicate: drag begins only when modifier is held AND target is background.
+export function shouldBeginDrag(event) {
+  if (!event.altKey) return false;
+  const isControl = event.target.closest("input, select, button, summary, pre");
+  return !isControl;
+}
+
 // Snapshot + settings-refresh once Tauri is in the page; tab clicks still
 // work without it so the shell does not sit dead in a non-Tauri load.
 if (typeof document !== "undefined") {
@@ -418,9 +425,7 @@ if (typeof document !== "undefined") {
 
     // Alt-drag to move the window, gated on modifier held and target is background.
     document.addEventListener("mousedown", (event) => {
-      if (!event.altKey) return;
-      const isControl = event.target.closest("input, select, button, summary, pre");
-      if (isControl) return;
+      if (!shouldBeginDrag(event)) return;
       event.preventDefault();
       getCurrentWindow().startDragging();
     });

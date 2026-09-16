@@ -6,25 +6,35 @@
 
 import { describe, test } from "node:test";
 import { strict as assert } from "node:assert";
+import { shouldBeginDrag } from "../src/settings.js";
 
-function shouldBeginDrag(modifierHeld, targetIsControl) {
-  return modifierHeld && !targetIsControl;
+function makeEvent(altKey, matchesControl) {
+  return {
+    altKey,
+    target: {
+      closest: (selector) => (matchesControl ? {} : null),
+    },
+  };
 }
 
 describe("alt-drag gate", () => {
   test("modifier on background begins drag", () => {
-    assert.equal(shouldBeginDrag(true, false), true);
+    const event = makeEvent(true, false);
+    assert.equal(shouldBeginDrag(event), true);
   });
 
   test("background without modifier does not begin drag", () => {
-    assert.equal(shouldBeginDrag(false, false), false);
+    const event = makeEvent(false, false);
+    assert.equal(shouldBeginDrag(event), false);
   });
 
   test("modifier on control does not begin drag", () => {
-    assert.equal(shouldBeginDrag(true, true), false);
+    const event = makeEvent(true, true);
+    assert.equal(shouldBeginDrag(event), false);
   });
 
   test("control without modifier does not begin drag", () => {
-    assert.equal(shouldBeginDrag(false, true), false);
+    const event = makeEvent(false, true);
+    assert.equal(shouldBeginDrag(event), false);
   });
 });
