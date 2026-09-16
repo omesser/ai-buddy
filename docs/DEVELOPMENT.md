@@ -122,6 +122,17 @@ Grant Accessibility to the terminal or IDE that runs the script (System Settings
 
 PASS means the AI tab order is `AI > AI source > Model / API > Last user turn`, the HTTP rows are live on Model API, and those rows freeze while a signed-in Harness drives, all in one window. SKIP means the Harness never answered. That is not a failed freeze.
 
+`verify-settings-linux.sh` drives the GTK Settings window through AT-SPI (Linux Accessibility). CI does not run it. Same smoke tests as the macOS script: section order, HTTP row freeze/unfreeze on source switch, runtime state changes without relaunch.
+
+Build and run:
+
+```sh
+cargo build -p ai-buddy
+./scripts/verify-settings-linux.sh
+```
+
+Needs `pyatspi` (`python3-pyatspi` on Debian/Ubuntu), an X11 session, and a built binary. Set `AI_BUDDY_VERIFY_BIN` to use another binary, `AI_BUDDY_VERIFY_HARNESS` to pick a Harness other than `claude`. AT-SPI combo box manipulation may not be reliable on all GTK3 configurations; the script skips freeze checks gracefully when unavailable.
+
 The bench-rss scripts measure rather than check: they sample the app and its
 webview helpers and print RSS and peak memory. Brief by default (settle ~3s,
 sample ~10s) for fast smoke tests; pass `--research` (bash) or `-Research`

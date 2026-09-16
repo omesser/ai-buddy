@@ -91,7 +91,7 @@ try:
 except Exception as e:
     print(f'AT-SPI error: {e}', file=sys.stderr)
     sys.exit(1)
-" 2>/dev/null; then
+" 2> /dev/null; then
       return 0
     fi
     sleep 1
@@ -230,7 +230,7 @@ expect_http_editable "$plain" "with no Harness attached"
 
 # Count how many times the harness attached (from log)
 count_attached() {
-  grep -c "harness: $harness attached" "$log" 2>/dev/null || true
+  grep -c "harness: $harness attached" "$log" 2> /dev/null || true
 }
 
 # Switch AI source via AT-SPI (pick from combo box)
