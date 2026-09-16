@@ -96,6 +96,8 @@ Map lives in [`features/`](features/README.md). Prefer one feature per proof run
 
 Stable handles: log patterns (`frame: N Perched`, `verbs:.*Poke`, `verbs:.*Summon`, `EWMH configured`), X11 WM_CLASS `Ai-buddy`, EWMH `_NET_WM_STATE_ABOVE` + `_NET_WM_STATE_SKIP_TASKBAR`. Prefer those over click coordinates when asserting.
 
+`ai-buddy-verify` exits `0` pass, `1` fail, `2` skip (nothing provable on this host), `3` tool error, and `--json` puts one result object on stdout — the contract is `crates/verify/src/contract.rs`.
+
 ## Evidence
 
 For every Drive:
