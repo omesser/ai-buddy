@@ -27,7 +27,7 @@ runs them and records what came back. Every measurement agrees with that
 note's Facts. The one number it got wrong had changed on `main` between its
 anchor and this one. The contradictions section below names it.
 
-Round two closed four open rows, turned one Inference into a Fact, and
+Round two closed every open Harness row, turned two Inferences into Facts, and
 **corrected one Inference that was wrong**: advertising `elicitation.form`
 does not switch a tool on. It changes how a question that arrives anyway is
 drawn. Answer 6 and ranked option 2 carry the correction and the measurement
@@ -120,9 +120,10 @@ causes are Assumptions.
    command over ACP, which needs no provider at all. opencode lists **10 tools**
    when its model is overridden to `xai/grok-4.6`, a provider this machine has a
    key for. cursor-agent lists **19** and codex **22**, both against their own
-   signed-in accounts. pi still answers the tool-list prompt with the string
-   `pi v0.85.1` and nothing else, on a second attempt with a sharper prompt, so
-   its list is still not obtained.
+   signed-in accounts. pi lists **4**: `read`, `bash`, `edit`, `write`. Its
+   local model server was the thing that was down; once it was up, pi answered.
+   The `pi v0.85.1` that two earlier probes recorded is a session banner pi
+   prints before the turn, not its answer.
 8. **Escape hatches.** Ranked below. The evidence rules out two of the issue's
    five. There is no `claude-agent-acp --cli` mode (the adapter's `cli`
    handling is argument parsing for `--version`), and passing user MCP
@@ -152,7 +153,8 @@ causes are Assumptions.
 | 15b | codex carries 22 tools under attach, web and shell included | Fact | measured, self-report: `web__run`, `exec`, `exec_command`, `apply_patch`, `request_user_input`, the `collaboration.*` subagent set, `list_mcp_resources` |
 | 15c | codex and cursor-agent are named rows in `harness.rs` that this note's matrix did not cover | Fact | `harness.rs:146,153` at anchor; `HARNESS_PRESETS` has seven entries |
 | 16 | Hermes' browser tools are **listed but gated**: all ten `browser_*` names appear in `/tools` while the start-up CDP check marks them unavailable for the turn | Fact, refined in round two | measured in one run: `Available tools (27)` includes `browser_navigate` etc., and stderr carries `check_fn _browser_cdp_check returned False; dependent tools will be unavailable this turn`. A tool list is therefore not a capability list on this Harness |
-| 17 | pi's own tools are intact under `pi-acp` | Assumption, unchanged after a second attempt | `pi-acp` README; two probes with different prompts both returned only `pi v0.85.1` |
+| 17 | pi's own tools are intact under `pi-acp`: it lists `read`, `bash`, `edit`, `write`, which is its whole documented set | **Fact** | measured twice with different prompts, identical both times; `pi --help` opens "pi - AI coding assistant with read, bash, edit, write tools" |
+| 17b | A probe that returns only `pi v0.85.1` means pi's provider is down, not that pi withholds its tools | Fact | the banner precedes every turn; the same probe returned the tool list once the local model server was running |
 | 17a | `pi-acp` advertises no MCP capability at all | Fact | measured `initialize`: `mcpCapabilities: {"http":false,"sse":false}`. `README.md:159`'s "Chat-only (no MCP)" is right about the transport, whatever it implies about pi's own tools |
 
 ## The matrix
@@ -169,18 +171,19 @@ measured cell.
 | `cursor-agent` | no | **yes** (`Shell`) | **yes** (`WebSearch`, `WebFetch`) | **yes** (`ListMcpResources`, `FetchMcpResource`) | **yes** (`Read`, `Write`, `StrReplace`, `Glob`, `Grep`, `Delete`) | **no** (none listed) |
 | `codex` | no | **yes** (`exec`, `exec_command`, `write_stdin`) | **yes** (`web__run`) | **yes** (`list_mcp_resources`, `read_mcp_resource`, `mcpCapabilities: {http}`) | **yes** (`apply_patch`) | **yes** (`request_user_input` listed) |
 | `grok` | no (Grok Bot runs on a cloud computer) | **yes** (`run_terminal_command`) | **yes** (`web_search`, `web_fetch`, `open_page`) | conditional: `_x.ai/mcp/servers_updated` came back empty on a machine with none configured; project scope keys off `cwd` per vendor docs | **yes** | **yes** (`ask_user_question` listed) |
-| `pi` | no (none exists) | unknown | no (no built-in web tool per vendor) | n/a ("No MCP" per vendor; `pi-acp` drops ours) | unknown | unknown |
+| `pi` | no (none exists) | **yes** (`bash`) | **no** (no web tool in the list, matching the vendor) | **no** (`mcpCapabilities: {http: false, sse: false}`) | **yes** (`read`, `edit`, `write`) | **no** (none listed) |
 
-Inference, unchanged from #669 and now with six measured rows behind it: no
-Harness of the seven brings desktop control to an ACP session ai-buddy
-opens. ADR-0003's "not portable across Harnesses" understates it. Desktop
+Inference, unchanged from #669 and now with all seven rows measured: no
+Harness brings desktop control to an ACP session ai-buddy opens. ADR-0003's "not portable across Harnesses" understates it. Desktop
 control is available under no Harness on this path.
 
 Two things the second round changed in the reading of this table. Shell, web
 and filesystem are **not** the differentiators they looked like after round
-one, because every Harness measured has all three except pi. What actually
-varies is asking the user a question: only `grok` and `codex` list a tool for
-it, and neither needs a client capability to do so. And a listed tool is not a
+one. Shell and filesystem are universal across all seven. Web is the only one
+of the three that varies, and it splits two ways rather than being a spectrum:
+five Harnesses have both search and fetch, opencode has fetch only, pi has
+neither. What varies most is asking the user a question: only `grok` and
+`codex` list a tool for it, and neither needs a client capability to do so. And a listed tool is not a
 callable tool, which hermes' ten gated `browser_*` names prove in the one run
 where both the list and the gate were captured.
 
@@ -421,6 +424,23 @@ PROBE_META='{"claudeCode":{"emitRawSDKMessages":[{"type":"system","subtype":"ini
 `init.mcp_servers` came back carrying `probe-project-scope`, alongside the
 user-scope and connector entries. That is claim 7, measured.
 
+**Reading past pi's banner.** pi prints a session banner (`pi v0.85.1`, the
+loaded context file, then every skill path) before the turn's own text. Two
+earlier probes recorded that banner as pi's whole answer, which read as a
+Harness that would not name its tools. It was the local model server being
+down: the banner is emitted regardless, so the turn produced nothing after it.
+With the server up, the same probe returns the list on the last line. Read the
+end of `AGENT_TEXT`, not the start:
+
+```sh
+node acp-probe.mjs "$PWD" 180 '<tool-list prompt>' -- npx -y pi-acp@latest \
+  | sed -n '/^AGENT_TEXT:/,$p' | tail -1
+```
+
+`read,bash,edit,write`, twice with different prompts, and `pi --help` opens
+with the same four. **A probe that returns only a banner is evidence about the
+provider, not about the Harness.**
+
 For the `elicitation.form` probe, one line of the client changes:
 
 ```diff
@@ -434,10 +454,6 @@ run without it. They are identical, which is claim 4.
 ## Open, not resolved here
 
 - Claim 11 needs a Pro or Max Mac.
-- Claim 17 needs a prompt pi will answer. Two attempts with different wordings
-  both returned only `pi v0.85.1`. `pi-acp` exposes no `tools` slash command of
-  the kind that unblocked hermes, so the next thing to try is pi's own CLI
-  outside ACP and a comparison.
 - hermes' and opencode's lists are self-reported through a model turn, except
   hermes' `/tools`, which is the adapter's own registry and therefore stronger
   evidence. cursor-agent's and codex's are self-reported. Only the `claude` row
