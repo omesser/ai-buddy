@@ -2737,6 +2737,7 @@ fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
         if old_proc.is_null() {
             windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
         } else {
+            #[allow(clippy::missing_transmute_annotations)]
             CallWindowProcW(std::mem::transmute(old_proc), hwnd, msg, wparam, lparam)
         }
     }
@@ -3243,8 +3244,6 @@ mod tests {
     /// or WA_INACTIVE (0) in addition to WA_CLICKACTIVE (2). #767.
     #[cfg(target_os = "windows")]
     mod windows_anchor_tests {
-        use super::*;
-
         #[test]
         fn clickactive_opens_settings() {
             const WA_CLICKACTIVE: u16 = 2;
