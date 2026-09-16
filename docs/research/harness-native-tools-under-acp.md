@@ -27,6 +27,8 @@ lever by far is `cwd`, which ai-buddy already owns and currently picks badly;
 the probe below settles whether `cwd` also buys computer use back, or whether
 only a hosted interactive session can.
 
+`file:line` citations are against `e0702166`.
+
 ---
 
 ## How claims are marked
