@@ -71,3 +71,10 @@ docs/superpowers/
 .claude/*
 !.claude/skills
 !.claude/agents
+
+# A dependency install is derived from a manifest, never committed, wherever it
+# lands. The pstack tools under `.agents/skills/*/scripts/` install theirs on
+# first use, and `watch-pr` alone pulls 37M the moment an agent reads a pull
+# request's status. The app and the verify tool may grow their own.
+# Manifests and lockfiles stay tracked; only what they produce is ignored.
+node_modules/
