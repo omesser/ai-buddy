@@ -10,10 +10,9 @@
 // again, reading the same description, so a control cannot be built frozen and
 // drawn unfrozen.
 //
-// `emit` is a stub here and the `settings_event` command in #706 is what it
-// becomes, so the payloads below are provisional. A secure field emits
-// `set_text` rather than a verb of its own because `FormRow::SecureField`
-// writes a `TextField`.
+// `emit` routes events to the `settings_event` Tauri command (#706). A secure
+// field emits `set_text` rather than a verb of its own because
+// `FormRow::SecureField` writes a `TextField`.
 
 // `values` carries one scalar per row id, so a list of Instances or excluded
 // applications arrives as lines, the way the AppKit block shows them. An array
@@ -285,6 +284,26 @@ export function render(root, tab, values, emit = () => {}) {
   }
 }
 
+export async function handleEvent(payload) {
+  const response = await invokeSettingsEvent(payload);
+
+  switch (response.action) {
+    case "refresh":
+      return true;
+    case "fill":
+      return { fill: { id: response.id, value: response.value } };
+    case "clear_key":
+      return { clearKey: true };
+    case "reset":
+      return { reset: true };
+    case "run":
+      return { run: response.operation };
+    case "nothing":
+    default:
+      return false;
+  }
+}
+
 // --- The tab shell ---------------------------------------------------------
 
 export function tabTitles(form) {
@@ -298,6 +317,19 @@ export function tabTitles(form) {
 export function selectTab(form, title) {
   const at = form.tabs.findIndex((tab) => tab.title === title);
   return at === -1 ? 0 : at;
+}
+
+// Wiring to Tauri command.
+async function invokeSettingsEvent(payload) {
+  if (typeof window.__TAURI_INTERNALS__ === "undefined") {
+    return { action: "nothing" };
+  }
+  try {
+    return await window.__TAURI_INTERNALS__.invoke("settings_event", { payload });
+  } catch (error) {
+    console.error("settings_event failed:", error);
+    return { action: "nothing" };
+  }
 }
 
 // The page draws no snapshot in this step: nothing feeds `form::describe()`

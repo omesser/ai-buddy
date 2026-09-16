@@ -292,3 +292,92 @@ test("every selector in settings.css is prefixed .set-", () => {
     "an unprefixed selector reaches every other surface sharing this window",
   );
 });
+
+test("handleEvent returns false for nothing response", async () => {
+  const { handleEvent } = await import("../src/settings.js");
+
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async () => ({ action: "nothing" }),
+    },
+  };
+
+  const result = await handleEvent({ press: "director_apply" });
+  assert.equal(result, false);
+
+  delete globalThis.window;
+});
+
+test("handleEvent returns true for refresh response", async () => {
+  const { handleEvent } = await import("../src/settings.js");
+
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async () => ({ action: "refresh" }),
+    },
+  };
+
+  const result = await handleEvent({ pick: "character", value: "bmo" });
+  assert.equal(result, true);
+
+  delete globalThis.window;
+});
+
+test("handleEvent returns fill object for fill response", async () => {
+  const { handleEvent } = await import("../src/settings.js");
+
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async () => ({
+        action: "fill",
+        id: "director_base_url",
+        value: "https://api.openai.com",
+      }),
+    },
+  };
+
+  const result = await handleEvent({
+    pick: "director_base_url_pick",
+    value: "OpenAI",
+    fills: { row: "director_base_url" },
+  });
+
+  assert.deepEqual(result, {
+    fill: {
+      id: "director_base_url",
+      value: "https://api.openai.com",
+    },
+  });
+
+  delete globalThis.window;
+});
+
+test("handleEvent returns reset object for reset response", async () => {
+  const { handleEvent } = await import("../src/settings.js");
+
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async () => ({ action: "reset" }),
+    },
+  };
+
+  const result = await handleEvent({ press: "director_cancel" });
+  assert.deepEqual(result, { reset: true });
+
+  delete globalThis.window;
+});
+
+test("handleEvent returns clearKey object for clear_key response", async () => {
+  const { handleEvent } = await import("../src/settings.js");
+
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async () => ({ action: "clear_key" }),
+    },
+  };
+
+  const result = await handleEvent({ press: "director_api_key_clear" });
+  assert.deepEqual(result, { clearKey: true });
+
+  delete globalThis.window;
+});
