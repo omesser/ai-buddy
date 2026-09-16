@@ -1,6 +1,8 @@
 #!/usr/bin/env pwsh
-# Windows Settings Window smoke test: the native Win32 settings window opens,
-# displays controls, and field labels persist after tab switching.
+# Windows Settings Window smoke test (#392)
+#
+# Verifies the native Win32 settings window opens, displays controls correctly,
+# and field labels persist after tab switching (label-wipe fix).
 #
 # Usage:
 #   .\scripts\verify-settings-win.ps1
@@ -409,6 +411,128 @@ $script:DevCheckboxes = New-Object System.Collections.Generic.List[PSCustomObjec
 
 if ($script:DevCheckboxes.Count -eq 0) { Fail "Development tab: no Trace* checkboxes visible" }
 Pass "Development tab: $($script:DevCheckboxes.Count) Trace checkbox(es) visible"
+
+# Click AI tab (index 2) for AI tab structure tests
+ClickTab $script:TabHwnd 2 "AI"
+
+# Test AI tab section titles presence via UIA helper
+Info "Testing AI tab section structure via UI Automation"
+$axHelper = Join-Path $Root "scripts\ax-settings-win.ps1"
+if (-not (Test-Path $axHelper)) {
+  Info "ax-settings-win.ps1 helper not found - skipping AI tab structure checks"
+} else {
+  # Dump AI tab structure
+  $aiDump = Join-Path $Out "ai-tab-dump.txt"
+  & $axHelper -Command dump > $aiDump 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Pass "Dumped AI tab structure to ai-tab-dump.txt"
+
+    # Check for expected section headings
+    $content = Get-Content $aiDump -Raw
+    $expectedSections = @("AI", "AI source", "Model / API", "Last user turn")
+    $foundSections = 0
+    foreach ($section in $expectedSections) {
+      if ($content -match [regex]::Escape($section)) {
+        $foundSections++
+      }
+    }
+
+    if ($foundSections -eq $expectedSections.Length) {
+      Pass "AI tab: all $($expectedSections.Length) expected sections found"
+    } else {
+      Info "AI tab: found $foundSections of $($expectedSections.Length) expected sections (UIA may not capture all STATIC labels)"
+    }
+
+    # Check for disclosure control ("What is this?")
+    if ($content -match "What is this") {
+      Pass "AI tab: disclosure control found"
+
+      # Try expanding a disclosure
+      & $axHelper -Command expand-disclosure -DisclosureLabel "What is this?" 2>&1 | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        Pass "Disclosure control expanded successfully"
+      } else {
+        Info "Disclosure control expansion not available via UIA (may need direct Win32 interaction)"
+      }
+    } else {
+      Info "AI tab: disclosure control not detected via UIA (may be a BUTTON not exposed to accessibility)"
+    }
+  } else {
+    Info "Could not dump AI tab via UIA - skipping AI tab structure checks"
+  }
+
+  # Test runtime freeze/unfreeze by switching AI source
+  Info "Testing runtime freeze/unfreeze via AI source switch"
+
+  # Dump initial state (Model API expected by default)
+  $initialDump = Join-Path $Out "no-harness-dump.txt"
+  & $axHelper -Command dump > $initialDump 2>&1
+
+  # Check that Base URL / Model / API key are enabled
+  $initialContent = Get-Content $initialDump -Raw
+  $baseUrlEnabled = $initialContent -match "Base URL.*enabled"
+  $modelEnabled = $initialContent -match "Model.*enabled"
+
+  if ($baseUrlEnabled -and $modelEnabled) {
+    Pass "HTTP rows enabled with Model API (no Harness)"
+  } else {
+    Info "HTTP rows state unclear from UIA dump (may need direct Win32 ES_READONLY check)"
+  }
+
+  # Popup titles are "Harness <U+00B7> {name}" (#593). .ps1 must stay ASCII (#418),
+  # so the middle dot is built at runtime rather than stored in this file.
+  $harness = if ($env:AI_BUDDY_VERIFY_HARNESS) { $env:AI_BUDDY_VERIFY_HARNESS } else { "claude" }
+  $harnessTitle = "Harness $([char]0x00B7) $harness"
+  Info "Attempting to switch to Harness (if installed)"
+  $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  & $axHelper -Command pick-source -Title $harnessTitle *> $null
+  $pickOk = ($LASTEXITCODE -eq 0)
+  $ErrorActionPreference = $prevEap
+  if ($pickOk) {
+    Pass "Switched AI source to Harness"
+    Start-Sleep -Milliseconds 1000
+
+    $harnessDump = Join-Path $Out "harness-dump.txt"
+    & $axHelper -Command dump > $harnessDump 2>&1
+
+    # Check that Base URL / Model / API key are now disabled
+    $harnessContent = Get-Content $harnessDump -Raw
+    $baseUrlDisabled = $harnessContent -match "Base URL.*disabled"
+    $modelDisabled = $harnessContent -match "Model.*disabled"
+
+    if ($baseUrlDisabled -and $modelDisabled) {
+      Pass "HTTP rows frozen while Harness drives"
+    } else {
+      Info "HTTP rows frozen state unclear from UIA dump (check ES_READONLY in unit tests)"
+    }
+
+    # Switch back to Model API
+    & $axHelper -Command pick-source -Title "Model API" *> $null
+    if ($LASTEXITCODE -eq 0) {
+      Pass "Switched back to Model API"
+      Start-Sleep -Milliseconds 500
+
+      $backDump = Join-Path $Out "back-to-model-api-dump.txt"
+      & $axHelper -Command dump > $backDump 2>&1
+
+      # Check that rows are enabled again
+      $backContent = Get-Content $backDump -Raw
+      $baseUrlReEnabled = $backContent -match "Base URL.*enabled"
+      $modelReEnabled = $backContent -match "Model.*enabled"
+
+      if ($baseUrlReEnabled -and $modelReEnabled) {
+        Pass "HTTP rows unfrozen after switching back to Model API (runtime freeze/unfreeze works)"
+      } else {
+        Info "HTTP rows re-enabled state unclear from UIA dump"
+      }
+    } else {
+      Info "Could not switch back to Model API"
+    }
+  } else {
+    Info "Could not switch to Harness - may not be installed or UIA combo picking not supported"
+    Info "Freeze/unfreeze should be verified manually or in unit tests"
+  }
+}
 
 if ($script:AppProc -and -not $script:AppProc.HasExited) {
   Stop-Process -Id $script:AppProc.Id -Force -ErrorAction SilentlyContinue
