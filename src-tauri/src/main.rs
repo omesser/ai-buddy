@@ -890,12 +890,38 @@ fn settings_event(
 /// Called from tray menu, hotkeys, and Chat "More options in Settings" button.
 /// Settings is native Shell furniture (AppKit on macOS, GTK 3 on Linux), so
 /// this is opened on the toolkit main thread where the native objects live.
+/// When `AI_BUDDY_SETTINGS_WEBVIEW=1`, opens the webview Settings instead;
+/// native remains the default.
 #[tauri::command]
 fn show_settings(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<SettingsState>() else {
         eprintln!("settings: opened before the shell was ready");
         return;
     };
+
+    if model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+        // Same clone-then-post as `open_chat`: the closure takes the handle,
+        // `run_on_main_thread` still borrows `app`.
+        let handle = app.clone();
+        if let Err(why) =
+            app.run_on_main_thread(move || match handle.get_webview_window("settings") {
+                Some(window) => {
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+                None => {
+                    if let Err(why) = build_settings(&handle) {
+                        eprintln!("settings webview: {why}");
+                    }
+                }
+            })
+        {
+            eprintln!("settings webview: {why}");
+        }
+        return;
+    }
+
+    // Native path: existing platform-specific renderers.
     let session = settings_session(&app, &state);
 
     // On Linux, if the MainContext is already owned (menu/tray callback runs
@@ -1136,6 +1162,19 @@ fn build_chat(
         .title(title)
         .inner_size(420.0, 560.0)
         .min_inner_size(320.0, 320.0)
+        .focused(true)
+        .build()
+}
+
+/// Build the Settings webview window.
+///
+/// Mirrors `build_chat`. Opens behind `AI_BUDDY_SETTINGS_WEBVIEW=1`; native
+/// remains the default.
+fn build_settings(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, tauri::Error> {
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Settings")
+        .inner_size(600.0, 520.0)
+        .min_inner_size(480.0, 400.0)
         .focused(true)
         .build()
 }

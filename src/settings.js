@@ -322,22 +322,67 @@ async function invokeSettingsEvent(payload) {
   }
 }
 
-// The page draws no snapshot in this step: nothing feeds `form::describe()`
-// across the boundary until `invoke` arrives. The shell still has to
-// behave, so the tabs select and the panel stays empty until a snapshot is set.
+// Snapshot + settings-refresh once Tauri is in the page; tab clicks still
+// work without it so the shell does not sit dead in a non-Tauri load.
 if (typeof document !== "undefined") {
   const tablist = document.querySelector('[role="tablist"]');
   const panel = document.querySelector('[role="tabpanel"]');
 
+  let currentForm = null;
+  let currentValues = null;
+  let currentTabIndex = 0;
+
+  async function loadSnapshot() {
+    try {
+      const snapshot = await window.__TAURI__.core.invoke("settings_snapshot");
+      currentForm = snapshot.form;
+      currentValues = snapshot.view;
+      renderCurrentTab();
+    } catch (err) {
+      console.error("settings_snapshot:", err);
+    }
+  }
+
+  // handleEvent already invokes settings_event; a truthy outcome (refresh,
+  // fill, reset, clearKey, run) means the page's snapshot is stale.
+  async function emitEvent(payload) {
+    try {
+      if (await handleEvent(payload)) {
+        await loadSnapshot();
+      }
+    } catch (err) {
+      console.error("settings_event:", err);
+    }
+  }
+
+  function renderCurrentTab() {
+    if (!currentForm || !currentValues || !panel) return;
+    const tab = currentForm.tabs[currentTabIndex];
+    if (tab) {
+      render(panel, tab, currentValues, emitEvent);
+    }
+  }
+
   if (tablist && panel) {
-    for (const tab of tablist.querySelectorAll('[role="tab"]')) {
+    const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = tabs[i];
       tab.addEventListener("click", () => {
-        for (const other of tablist.querySelectorAll('[role="tab"]')) {
-          other.setAttribute("aria-selected", String(other === tab));
+        currentTabIndex = i;
+        for (let j = 0; j < tabs.length; j++) {
+          tabs[j].setAttribute("aria-selected", String(j === i));
         }
         panel.setAttribute("aria-label", tab.textContent);
-        panel.replaceChildren();
+        renderCurrentTab();
       });
     }
+  }
+
+  if (typeof window.__TAURI__ !== "undefined") {
+    const { listen } = window.__TAURI__.event;
+    listen("settings-refresh", () => {
+      loadSnapshot();
+    });
+    loadSnapshot();
   }
 }

@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use ai_buddy_core::sensing::ActivitySource;
 use ai_buddy_core::window_source::{Rect, WindowSource};
+use tauri::{Emitter, Manager};
 
 /// One button as the overlay webview witnesses it.
 ///
@@ -330,8 +331,20 @@ pub fn show_settings(session: crate::settings::SettingsSession) {
 }
 
 /// Redraw the settings window from the live roster. Main thread only.
+///
+/// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
+/// `settings-refresh` to the page, which re-invokes the snapshot. Otherwise
+/// calls the native platform refresh.
 #[cfg(target_os = "macos")]
-pub fn refresh_settings() {
+pub fn refresh_settings(app: &tauri::AppHandle) {
+    if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+        if let Some(window) = app.get_webview_window("settings") {
+            if let Err(why) = window.emit("settings-refresh", ()) {
+                eprintln!("settings webview refresh: {why}");
+            }
+            return;
+        }
+    }
     macos::refresh_settings()
 }
 
@@ -354,8 +367,20 @@ pub fn show_settings(session: crate::settings::SettingsSession) {
 }
 
 /// Redraw the GTK settings window from the live roster. Main thread only.
+///
+/// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
+/// `settings-refresh` to the page, which re-invokes the snapshot. Otherwise
+/// calls the native platform refresh.
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn refresh_settings() {
+pub fn refresh_settings(app: &tauri::AppHandle) {
+    if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+        if let Some(window) = app.get_webview_window("settings") {
+            if let Err(why) = window.emit("settings-refresh", ()) {
+                eprintln!("settings webview refresh: {why}");
+            }
+            return;
+        }
+    }
     x11::refresh_settings()
 }
 
@@ -366,8 +391,20 @@ pub fn show_settings(session: crate::settings::SettingsSession) {
 }
 
 /// Redraw the settings window from the live roster. Main thread only.
+///
+/// When `AI_BUDDY_SETTINGS_WEBVIEW=1` and the webview Settings is open, emits
+/// `settings-refresh` to the page, which re-invokes the snapshot. Otherwise
+/// calls the native platform refresh.
 #[cfg(not(unix))]
-pub fn refresh_settings() {
+pub fn refresh_settings(app: &tauri::AppHandle) {
+    if crate::model::env_switch("AI_BUDDY_SETTINGS_WEBVIEW").unwrap_or(false) {
+        if let Some(window) = app.get_webview_window("settings") {
+            if let Err(why) = window.emit("settings-refresh", ()) {
+                eprintln!("settings webview refresh: {why}");
+            }
+            return;
+        }
+    }
     windows::refresh_settings()
 }
 
