@@ -44,3 +44,22 @@ export function interpolate(previous, latest, now) {
     y: previous.y + (latest.y - previous.y) * t,
   };
 }
+
+/**
+ * Whether the sprite has reached `latest`, so a further display frame of its
+ * own would draw it where the last one did.
+ *
+ * The renderer arms its loop on this rather than looping unconditionally
+ * (#741). Read it against `interpolate` above: it is false exactly while `t`
+ * is still short of 1 and the two placements are somewhere to travel between.
+ *
+ * @param {{x: number, y: number, at: number} | null} previous
+ * @param {{x: number, y: number, at: number}} latest
+ * @param {number} now - a `performance.now()` reading
+ * @returns {boolean}
+ */
+export function arrived(previous, latest, now) {
+  if (!previous) return true;
+  if (previous.x === latest.x && previous.y === latest.y) return true;
+  return now >= latest.at + (latest.at - previous.at);
+}
