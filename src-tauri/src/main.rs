@@ -2666,9 +2666,9 @@ fn load_named(
 /// Build the anchor window that appears in the taskbar/panel on Windows and Linux.
 ///
 /// A small, invisible window that gives the running app a taskbar presence
-/// matching the macOS Dock. Clicking it opens Settings, matching the macOS
-/// expectation that the Dock icon is the settings door. The tray remains the
-/// alternate path.
+/// matching the macOS Dock. On Linux, clicking it opens Settings. On Windows,
+/// user-initiated activate (taskbar click) opens Settings via WM_ACTIVATE
+/// filtering. The tray remains the alternate path.
 ///
 /// Main thread only: builds a window and registers event handlers.
 #[cfg(not(target_os = "macos"))]
@@ -2682,15 +2682,76 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         .visible(false)
         .build()?;
 
-    let app_handle = app.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(true) = event {
-            show_settings(app_handle.clone());
+    #[cfg(not(target_os = "windows"))]
+    {
+        let app_handle = app.clone();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Focused(true) = event {
+                show_settings(app_handle.clone());
+            }
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let app_handle = app.clone();
+        if let Ok(handle) = window.window_handle() {
+            if let RawWindowHandle::Win32(win32_handle) = handle.as_ref() {
+                install_windows_anchor_wndproc(win32_handle.hwnd.get() as _, app_handle);
+            }
         }
-    });
+    }
 
     window.show()?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn install_windows_anchor_wndproc(hwnd: isize, app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicPtr, Ordering};
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC, WM_ACTIVATE,
+    };
+
+    static OLD_WNDPROC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+    static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+    unsafe extern "system" fn anchor_wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_ACTIVATE {
+            let f_active = (wparam & 0xFFFF) as u16;
+            const WA_CLICKACTIVE: u16 = 2;
+            if f_active == WA_CLICKACTIVE {
+                if let Some(app) = APP_HANDLE.get() {
+                    show_settings(app.clone());
+                }
+            }
+        }
+        let old_proc = OLD_WNDPROC.load(Ordering::Relaxed);
+        if old_proc.is_null() {
+            windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam)
+        } else {
+            #[allow(clippy::missing_transmute_annotations)]
+            CallWindowProcW(std::mem::transmute(old_proc), hwnd, msg, wparam, lparam)
+        }
+    }
+
+    APP_HANDLE.set(app).ok();
+
+    unsafe {
+        let old = SetWindowLongPtrW(
+            hwnd as HWND,
+            GWLP_WNDPROC,
+            anchor_wndproc as *const () as isize,
+        );
+        OLD_WNDPROC.store(old as *mut (), Ordering::Relaxed);
+    }
 }
 
 fn main() {
@@ -3177,6 +3238,43 @@ mod tests {
             opening.character, "nim",
             "the payload Character is the Instance's"
         );
+    }
+
+    /// Production change that would fail this: opening Settings on WA_ACTIVE (1)
+    /// or WA_INACTIVE (0) in addition to WA_CLICKACTIVE (2). #767.
+    #[cfg(target_os = "windows")]
+    mod windows_anchor_tests {
+        #[test]
+        fn clickactive_opens_settings() {
+            const WA_CLICKACTIVE: u16 = 2;
+            assert!(
+                windows_activate_opens_settings(WA_CLICKACTIVE),
+                "WA_CLICKACTIVE (2) should open Settings"
+            );
+        }
+
+        #[test]
+        fn active_does_not_open() {
+            const WA_ACTIVE: u16 = 1;
+            assert!(
+                !windows_activate_opens_settings(WA_ACTIVE),
+                "WA_ACTIVE (1) should not open Settings"
+            );
+        }
+
+        #[test]
+        fn inactive_does_not_open() {
+            const WA_INACTIVE: u16 = 0;
+            assert!(
+                !windows_activate_opens_settings(WA_INACTIVE),
+                "WA_INACTIVE (0) should not open Settings"
+            );
+        }
+
+        fn windows_activate_opens_settings(f_active: u16) -> bool {
+            const WA_CLICKACTIVE: u16 = 2;
+            f_active == WA_CLICKACTIVE
+        }
     }
 
     /// A chosen name survives retarget; the Chat header still has to name the
