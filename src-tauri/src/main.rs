@@ -2672,7 +2672,10 @@ fn load_named(
 ///
 /// Main thread only: builds a window and registers event handlers.
 #[cfg(not(target_os = "macos"))]
-fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+fn build_anchor_window(
+    app: &tauri::AppHandle,
+    #[cfg(target_os = "windows")] startup_in_progress: Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
         .title("ai-buddy")
         .inner_size(1.0, 1.0)
@@ -2684,16 +2687,12 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
 
     let app_handle = app.clone();
     #[cfg(target_os = "windows")]
-    let shown_at = Arc::new(std::sync::OnceLock::new());
-    // `on_window_event` takes `Fn`, so the lock must be cloned in — not moved —
-    // and stamped after `show()`, which is when the settle window starts.
-    #[cfg(target_os = "windows")]
-    let shown_at_for_handler = Arc::clone(&shown_at);
+    let startup_for_handler = Arc::clone(&startup_in_progress);
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
             #[cfg(target_os = "windows")]
             {
-                if windows_anchor_focus_opens_settings(shown_at_for_handler.as_ref()) {
+                if windows_anchor_focus_opens_settings(&startup_for_handler) {
                     show_settings(app_handle.clone());
                 }
             }
@@ -2703,27 +2702,19 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
     });
 
     window.show()?;
-    #[cfg(target_os = "windows")]
-    shown_at.set(Instant::now()).ok();
     Ok(())
 }
 
-/// Margin above Win32 startup-focus jitter, and still shorter than a click
-/// after the taskbar icon appears. A first-focus counter would miss extra
-/// startup focuses or swallow the first real click. #767.
-#[cfg(any(test, target_os = "windows"))]
-const WINDOWS_ANCHOR_FOCUS_SETTLE: Duration = Duration::from_millis(500);
-
 /// Whether this Windows anchor-window focus should open Settings.
 ///
-/// Unset means `show()` has not stamped the clock yet, so this is still
-/// startup. `OnceLock::get` takes `&self`, which keeps the handler `Fn`.
+/// Blocks focus events until startup is complete (after tray installation).
+/// A time-based settle window fails on dual-monitor Windows where startup
+/// activation arrives >1600ms after the anchor appears. #767.
 #[cfg(any(test, target_os = "windows"))]
-fn windows_anchor_focus_opens_settings(shown_at: &std::sync::OnceLock<Instant>) -> bool {
-    shown_at
-        .get()
-        .map(|start| start.elapsed() >= WINDOWS_ANCHOR_FOCUS_SETTLE)
-        .unwrap_or(false)
+fn windows_anchor_focus_opens_settings(
+    startup_in_progress: &std::sync::atomic::AtomicBool,
+) -> bool {
+    !startup_in_progress.load(std::sync::atomic::Ordering::Acquire)
 }
 
 fn main() {
@@ -2823,8 +2814,14 @@ fn main() {
             // On Windows and Linux, create a hidden anchor window that appears
             // in the taskbar/panel, matching the macOS Dock presence.
             // Clicking it opens Settings. Overlays stay off the taskbar.
+            #[cfg(target_os = "windows")]
+            let startup_in_progress = Arc::new(std::sync::atomic::AtomicBool::new(true));
             #[cfg(not(target_os = "macos"))]
-            build_anchor_window(app.handle())?;
+            build_anchor_window(
+                app.handle(),
+                #[cfg(target_os = "windows")]
+                Arc::clone(&startup_in_progress),
+            )?;
 
             // Read before the overlays are built rather than after the loop
             // starts: reading which part of a display is usable means asking
@@ -3062,6 +3059,11 @@ fn main() {
             };
             app.manage(TrayHandle(Mutex::new(tray)));
 
+            // Startup is complete after tray installation. Clear the flag so
+            // the anchor window focus handler opens Settings on user clicks.
+            #[cfg(target_os = "windows")]
+            startup_in_progress.store(false, std::sync::atomic::Ordering::Release);
+
             let director_run = DirectorRun {
                 config,
                 settings: director,
@@ -3217,39 +3219,25 @@ mod tests {
     /// (`Fn`, not `FnMut`). #767.
     mod windows_anchor_tests {
         use super::*;
-        use std::sync::OnceLock;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         #[test]
-        fn settle_window_blocks_early_focus() {
-            let shown_at = OnceLock::new();
-            shown_at.set(Instant::now()).ok();
+        fn startup_in_progress_blocks_focus() {
+            let startup_in_progress = AtomicBool::new(true);
 
             assert!(
-                !windows_anchor_focus_opens_settings(&shown_at),
-                "focus within settle window should not open Settings"
+                !windows_anchor_focus_opens_settings(&startup_in_progress),
+                "focus during startup should not open Settings"
             );
         }
 
         #[test]
-        fn settle_window_allows_late_focus() {
-            let shown_at = OnceLock::new();
-            shown_at
-                .set(Instant::now() - WINDOWS_ANCHOR_FOCUS_SETTLE - Duration::from_millis(1))
-                .ok();
+        fn startup_complete_allows_focus() {
+            let startup_in_progress = AtomicBool::new(false);
 
             assert!(
-                windows_anchor_focus_opens_settings(&shown_at),
-                "focus after settle window should open Settings"
-            );
-        }
-
-        #[test]
-        fn uninitialized_shown_at_blocks_focus() {
-            let shown_at = OnceLock::new();
-
-            assert!(
-                !windows_anchor_focus_opens_settings(&shown_at),
-                "focus before shown_at is set should not open Settings"
+                windows_anchor_focus_opens_settings(&startup_in_progress),
+                "focus after startup completes should open Settings"
             );
         }
     }
