@@ -363,8 +363,11 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
-        # --doc: --all-targets skips doctests.
+        # --doc: --all-targets skips doctests. bash because a Windows runner
+        # defaults to pwsh, which ignores a failing command and takes the last
+        # exit code, so the empty --doc run hid a failed --all-targets (#768).
         if: steps.gate.outputs.run_tests == 'true'
+        shell: bash
         run: |
           cargo test --workspace --all-targets
           cargo test --workspace --doc
