@@ -40,8 +40,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::settings::form::{self, FormRow, RowOperation};
 use crate::settings::move_drag::{should_begin_move, Hit};
-#[cfg(test)]
-use crate::settings::BoolField;
 use crate::settings::{DirectorDraft, SettingsPatch, SettingsSession, SettingsView, TextField};
 
 const WINDOW_WIDTH: i32 = 560;
@@ -2654,6 +2652,7 @@ pub use show as show_settings;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::BoolField;
 
     /// Layout constants must match macOS and GTK for consistent readability
     /// across platforms. These are compile-time assertions so drift is caught
