@@ -2683,9 +2683,14 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         .build()?;
 
     let app_handle = app.clone();
+    let mut first_focus_seen = false;
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
-            show_settings(app_handle.clone());
+            if first_focus_seen {
+                show_settings(app_handle.clone());
+            } else {
+                first_focus_seen = true;
+            }
         }
     });
 
