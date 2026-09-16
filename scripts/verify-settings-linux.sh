@@ -114,12 +114,12 @@ dump_window() {
 import sys
 try:
     import pyatspi
-    
+
     def dump_accessible(acc, depth=0):
         indent = "  " * depth
         role = acc.getRoleName() if hasattr(acc, 'getRoleName') else 'unknown'
         name = acc.name if hasattr(acc, 'name') else ''
-        
+
         # Get state info
         states = []
         if hasattr(acc, 'getState'):
@@ -131,11 +131,11 @@ try:
                     states.append('sensitive')
                 if not state_set.contains(pyatspi.STATE_SENSITIVE):
                     states.append('insensitive')
-        
+
         state_str = f"[{','.join(states)}]" if states else ''
-        
+
         print(f"{indent}{role}|{name}|{state_str}")
-        
+
         # Recurse children
         if hasattr(acc, 'childCount'):
             for i in range(acc.childCount):
@@ -144,7 +144,7 @@ try:
                     dump_accessible(child, depth + 1)
                 except Exception:
                     pass
-    
+
     desktop = pyatspi.Registry.getDesktop(0)
     for app_idx in range(desktop.childCount):
         app = desktop.getChildAtIndex(app_idx)
@@ -154,10 +154,10 @@ try:
                 if 'settings' in win.name.lower() or win.name == 'ai-buddy':
                     dump_accessible(win)
                     sys.exit(0)
-    
+
     print("Settings window not found", file=sys.stderr)
     sys.exit(1)
-    
+
 except Exception as e:
     print(f"AT-SPI error: {e}", file=sys.stderr)
     sys.exit(1)
@@ -240,7 +240,7 @@ pick_source() {
 import sys
 try:
     import pyatspi
-    
+
     desktop = pyatspi.Registry.getDesktop(0)
     for app_idx in range(desktop.childCount):
         app = desktop.getChildAtIndex(app_idx)
@@ -265,7 +265,7 @@ try:
                                 except Exception:
                                     pass
                         return None
-                    
+
                     combo = find_combo(win)
                     if combo:
                         # Activate and pick
@@ -274,10 +274,10 @@ try:
                             # Find menu item with title
                             # (Simplified: actual implementation would navigate menu)
                             sys.exit(0)
-                    
+
                     print("AI source combo not found", file=sys.stderr)
                     sys.exit(1)
-    
+
     sys.exit(1)
 except Exception as e:
     print(f"AT-SPI error: {e}", file=sys.stderr)
@@ -298,13 +298,13 @@ if pick_source "$harness_title"; then
   sleep 2  # Wait for attachment
   driven="$out/harness.txt"
   dump_window "$driven" || fail "could not dump after picking $harness_title"
-  
+
   if grep -Eq "$harness attached[,;]" "$log"; then
     expect_http_frozen "$driven" "while $harness drives"
   else
     skip "$harness never answered; the freeze checks need a signed-in Harness"
   fi
-  
+
   info "Runtime switch: $model_api"
   if pick_source "$model_api"; then
     sleep 1
