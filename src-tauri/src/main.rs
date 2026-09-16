@@ -3219,7 +3219,7 @@ mod tests {
     /// (`Fn`, not `FnMut`). #767.
     mod windows_anchor_tests {
         use super::*;
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::atomic::AtomicBool;
 
         #[test]
         fn startup_in_progress_blocks_focus() {
