@@ -1617,52 +1617,45 @@ mod tests {
 
     #[test]
     fn test_status_present_when_env_owned() {
-        crate::model::tests::with_env(Some("test-key"), Some("test-url"), Some("test-model"), || {
-            let description = form::describe();
-            let ai_tab = description
-                .tabs
-                .iter()
-                .find(|tab| tab.title == "AI")
-                .expect("AI tab exists");
+        crate::model::tests::with_env(
+            Some("test-key"),
+            Some("test-url"),
+            Some("test-model"),
+            || {
+                let description = form::describe();
+                let ai_tab = description
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.title == "AI")
+                    .expect("AI tab exists");
 
-            let model_api_section = ai_tab
-                .sections
-                .iter()
-                .find(|s| s.heading == "Model / API")
-                .expect("Model / API section exists");
+                let model_api_section = ai_tab
+                    .sections
+                    .iter()
+                    .find(|s| s.heading == "Model / API")
+                    .expect("Model / API section exists");
 
-            for row in &model_api_section.rows {
-                match row {
-                    form::FormRow::TextField {
-                        id,
-                        status,
-                        frozen,
-                        ..
-                    } if id == form::DIRECTOR_BASE_URL_ID
-                        || id == form::DIRECTOR_MODEL_ID =>
-                    {
-                        assert!(
-                            *frozen,
-                            "Row '{}' should be frozen when env-owned",
-                            id
-                        );
-                        assert!(
-                            status.is_some(),
-                            "Row '{}' should have status when env-owned",
-                            id
-                        );
-                        assert!(
-                            status
-                                .as_ref()
-                                .unwrap()
-                                .contains("Overridden by env"),
-                            "Status should mention env override"
-                        );
+                for row in &model_api_section.rows {
+                    match row {
+                        form::FormRow::TextField {
+                            id, status, frozen, ..
+                        } if id == form::DIRECTOR_BASE_URL_ID || id == form::DIRECTOR_MODEL_ID => {
+                            assert!(*frozen, "Row '{}' should be frozen when env-owned", id);
+                            assert!(
+                                status.is_some(),
+                                "Row '{}' should have status when env-owned",
+                                id
+                            );
+                            assert!(
+                                status.as_ref().unwrap().contains("Overridden by env"),
+                                "Status should mention env override"
+                            );
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-        });
+            },
+        );
     }
 
     #[test]
@@ -1677,11 +1670,7 @@ mod tests {
 
         for id in &http_row_ids {
             let frozen = row_frozen(&description, id);
-            assert!(
-                frozen.is_some(),
-                "Row '{}' should have a frozen field",
-                id
-            );
+            assert!(frozen.is_some(), "Row '{}' should have a frozen field", id);
         }
     }
 

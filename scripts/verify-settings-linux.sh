@@ -110,7 +110,7 @@ pass "Settings window appeared"
 # Dump accessible tree via AT-SPI
 dump_window() {
   local target="$1"
-  python3 <<'PYEOF' > "$target" 2>&1 || return 1
+  python3 << 'PYEOF' > "$target" 2>&1 || return 1
 import sys
 try:
     import pyatspi
@@ -228,19 +228,16 @@ expect_http_frozen() {
 
 expect_http_editable "$plain" "with no Harness attached"
 
-# Count how many times the harness attached (from log)
-count_attached() {
-  grep -c "harness: $harness attached" "$log" 2> /dev/null || true
-}
-
 # Switch AI source via AT-SPI (pick from combo box)
 pick_source() {
   local title="$1"
-  python3 <<PYEOF 2>&1 || return 1
+  TITLE="$title" python3 << PYEOF 2>&1 || return 1
+import os
 import sys
 try:
     import pyatspi
 
+    title = os.environ.get("TITLE", "")
     desktop = pyatspi.Registry.getDesktop(0)
     for app_idx in range(desktop.childCount):
         app = desktop.getChildAtIndex(app_idx)
@@ -295,7 +292,7 @@ info "Runtime switch: $harness_title"
 # the freeze checks if AT-SPI cannot manipulate the combo.
 
 if pick_source "$harness_title"; then
-  sleep 2  # Wait for attachment
+  sleep 2 # Wait for attachment
   driven="$out/harness.txt"
   dump_window "$driven" || fail "could not dump after picking $harness_title"
 
