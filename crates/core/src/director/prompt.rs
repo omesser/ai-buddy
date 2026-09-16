@@ -1,27 +1,12 @@
 use super::{Context, Happened, State, CHAT_LIMIT};
 
-/// The opening turn: who this is, what it may propose, and this moment.
+/// The opening turn: who this is, what it may propose, and this moment. Who
+/// this is comes in two authored layers, the package's Personality Prompt then
+/// this Instance's own (ADR-0012). Later wakes send `follow_up` only.
 ///
-/// Who this is comes in two authored layers — the package's Personality Prompt
-/// and this Instance's own prompt, in that order (ADR-0012).
-///
-/// Later wakes send `follow_up` only. The Completer holds the conversation
-/// so the Personality Prompt is not paid for again.
-///
-/// `blank` empties the built-in layers and still runs this assembly (#657).
-/// The package Personality Prompt and the app-level instructions (roster,
-/// format contract, voice rules) become empty strings. The Instance Prompt is
-/// the user's, so it stays: Blank AI is the control run for the shipped
-/// prompt, not a lock on iterating one.
-///
-/// Those empty strings take the same seats as the filled ones. The Prompt tab
-/// can only tell the truth if what it shows is what was sent. A missing
-/// Instance Prompt is left out rather than emitted blank, which is what makes
-/// an Instance with no prompt of its own assemble the moment alone.
-///
-/// With no contract the reply is prose: `parse_proposal` fails, `as_speech`
-/// speaks it, and the buddy talks without playing a Behavior for as long as
-/// the built-in instructions stay empty.
+/// `blank` empties the built-in layers and keeps the user's Instance Prompt:
+/// Blank AI is the control run for the shipped prompt. The empty strings keep
+/// their seats so the Prompt tab shows what was sent, and the reply is prose.
 pub(crate) fn character_prompt(
     context: &Context,
     behaviors: impl IntoIterator<Item = impl AsRef<str>>,
@@ -40,12 +25,9 @@ pub(crate) fn character_prompt(
         context.personality.as_str()
     };
 
-    // The two authored layers, the package's and this Instance's, in that
-    // order and both ahead of everything below — so the roster and the voice
-    // rules come last and govern the user's words as they govern the author's.
-    // A layer nobody wrote is left out rather than emitted blank, which is what
-    // makes an Instance with no prompt of its own assemble the payload it
-    // always did (ADR-0012).
+    // Package layer first, Instance second, both ahead of the roster and voice
+    // rules so those govern the user's words as they govern the author's. A
+    // layer nobody wrote is left out rather than emitted blank (ADR-0012).
     let authored = match context.instance_prompt.trim() {
         "" => personality.to_string(),
         written if personality.is_empty() => written.to_string(),
@@ -65,7 +47,7 @@ pub(crate) fn character_prompt(
             names.join(", ")
         };
         // The universal voice rules, written once for every Character rather
-        // than copied into personality files to drift (#156). A personality
+        // than copied into personality files to drift. A personality
         // supplies the material; this paragraph governs the delivery.
         format!(
             "You may propose one of these behaviors: {declared}\n\

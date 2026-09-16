@@ -20,11 +20,8 @@ pub(super) enum Surface {
 }
 
 /// The first surface at or below `position`: the nearest window top edge, or
-/// the floor when no window is in the way.
-///
-/// Window sides and bottoms are not surfaces, so a rectangle only counts when
-/// the sprite is above its top edge. That is what lets the sprite rise through
-/// a window from underneath instead of being trapped below it.
+/// the floor when no window is in the way. Sides and bottoms are not surfaces,
+/// so the sprite rises through a window from underneath instead of trapping.
 pub(super) fn support_below(
     position: Point,
     snapshot: &WorldSnapshot,
@@ -51,29 +48,12 @@ pub(super) fn support_below(
 }
 
 /// Whether the top edge of the window at `index` is somewhere the sprite can
-/// stand at `x`.
+/// stand at `x`: not covered at this x by a window in front (which is why
+/// `snapshot.windows` is ordered), over a display, and clear of the usable top.
 ///
-/// Nearest support still wins over frontmost, so this only narrows the
-/// candidates. Walking the windows in order and taking the first match would
-/// instead have the sprite fall through an edge it can plainly see, whenever
-/// the window in front of that edge is above the sprite and so no support at
-/// all.
-///
-/// Three ways an edge is not a Perch, all of them a resting place the user
-/// cannot see:
-///
-/// - Hidden behind a window drawn in front of it. That is what makes
-///   `snapshot.windows` an ordered list rather than a set: an edge covered at
-///   this x is not there to be seen, and the sprite resting on it is drawn
-///   floating in the middle of the window that hides it. An edge still visible
-///   at this x is a Perch whatever its depth.
-/// - Over no display. Physics clamps to the union of the display frames and
-///   not to the rectangle bounding them, so a window spanning two displays of
-///   different heights hangs part of its edge over nothing. A sprite resting
-///   out there is invisible and unclickable until the window moves.
-/// - Too close to the usable top. The feet are the contact point and the art
-///   hangs above them, so a title bar under the menu bar leaves only legs on
-///   screen. #100.
+/// Only narrows the candidates; nearest support still wins over frontmost.
+/// Taking the first match in z-order would drop the sprite through an edge it
+/// can plainly see whenever the window in front sits above it and is no support.
 pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot, clearance: f64) -> bool {
     let window = &snapshot.windows[index].rect;
     window.spans_x(x)
@@ -84,9 +64,8 @@ pub(super) fn is_perch(index: usize, x: f64, snapshot: &WorldSnapshot, clearance
 }
 
 /// Whether the feet can be put down at `position`: some display covers it,
-/// with the room the art needs above. The second of `is_perch`'s three
-/// questions, on its own because a ride between polls has no window sample to
-/// ask the other two of and still must not place the sprite out there. #128.
+/// with the room the art needs above. Split out of `is_perch` because a ride
+/// between polls has no window sample yet must not place the sprite out there.
 pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot, clearance: f64) -> bool {
     displays_spanning(position.x, snapshot).any(|display| {
         position.y >= display.y + room_above(clearance, display) && position.y <= display.bottom()
@@ -94,48 +73,32 @@ pub(super) fn on_a_display(position: Point, snapshot: &WorldSnapshot, clearance:
 }
 
 /// What a resting sprite is standing on: its Perch, unless a window in front
-/// of that Perch has come to contain it — `swallowing` being the caller's
-/// judgement of which windows those are, since it takes remembering the
-/// previous tick to make. See `Engine::swallowed_by`.
-///
-/// A window dragged over the sprite, or walked into where it overlaps a lower
-/// Perch, would otherwise leave it inside a rectangle rather than on anything.
-/// Its top edge is the surface instead, which is also why two overlapping
-/// windows settle on one Perch: the topmost edge wins, and it wins again next
-/// tick.
-///
-/// A sprite on the floor is exempt. The floor is under every window and the
-/// sprite is drawn in front of them all, so standing on the ground in front of
-/// a window is not the trapped-inside case DESIGN.md decision 7 is about — and
-/// every window hanging below the usable floor, as anything behind the Dock
-/// does, contains the ground the sprite stands on.
+/// has come to contain it, in which case that window's top edge is the surface
+/// instead. `swallowing` is the caller's judgement; see `Engine::swallowed_by`.
 pub(super) fn footing(
     position: Point,
     snapshot: &WorldSnapshot,
     clearance: f64,
     swallowing: impl Fn(&Window) -> bool,
 ) -> Option<Support> {
+    // The floor is exempt: it is under every window and the sprite is drawn in
+    // front of them all, so ground in front of a window is not the trapped-inside
+    // case (DESIGN.md decision 7). Anything behind the Dock contains the floor.
     if floor_under(position.x, snapshot) == Some(position.y) {
         return support_below(position, snapshot, clearance);
     }
 
     // The Perch it is on: a window whose top edge is exactly its own height.
-    // Without one the sprite is standing on nothing and falls. A Perch that
-    // moves out from under it leaves it in the air, and not on the first window
-    // that happens to contain it. #78.
+    // Without one it stands on nothing and falls; a Perch moving out from under
+    // it leaves it in the air, not on the first window that happens to contain it.
     let perch = snapshot
         .windows
         .iter()
         .position(|window| window.rect.spans_x(position.x) && window.rect.y == position.y)?;
 
-    // Only a window in front of the Perch can swallow the sprite, which is why
-    // the candidates stop at the Perch's own place in the order: what is behind
-    // the Perch is behind the sprite too, so the edge it stands on is still
-    // there to be seen.
-    //
-    // An edge you cannot see is gone, including one the sprite is already
-    // standing on, so a hidden Perch falls rather than leaving the sprite
-    // floating in mid-air after alt-tab. #100.
+    // Only a window in front of the Perch can swallow the sprite: what is behind
+    // the Perch is behind the sprite too. And an edge you cannot see is gone, so
+    // a hidden Perch falls rather than floating in mid-air after alt-tab.
     let held = (is_perch(perch, position.x, snapshot, clearance)
         && !snapshot.windows[..perch].iter().any(&swallowing))
     .then_some(Support {
@@ -184,17 +147,16 @@ fn floor_under(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
 }
 
 /// The highest the feet may go: the usable top plus the room the art needs
-/// above them. A climb lets go here; a Throw bumps it. #100.
+/// above them. A climb lets go here; a Throw bumps it.
 pub(super) fn ceiling_over(x: f64, snapshot: &WorldSnapshot, clearance: f64) -> Option<f64> {
     displays_spanning(x, snapshot)
         .map(|display| display.y + room_above(clearance, display))
         .min_by(f64::total_cmp)
 }
 
-/// The clearance actually applied on one display.
-///
-/// Art taller than the screen would otherwise leave nowhere to stand: no
-/// display may give up more than half its height to the ceiling. #395.
+/// The clearance actually applied on one display: no display gives up more
+/// than half its height to the ceiling, or art taller than the screen would
+/// leave nowhere to stand.
 fn room_above(clearance: f64, display: &Rect) -> f64 {
     clearance.min(display.height / 2.0)
 }
@@ -210,16 +172,8 @@ fn displays_spanning<'a>(
 }
 
 /// The screen edge the sprite has just arrived at while moving into it, or the
-/// nearest one when it is over no display at all. A sprite out there has no
-/// floor under it and would otherwise fall for ever, so grabbing an edge is how
-/// it gets back over a display.
-///
-/// "Over no display" is the union of the display frames, not the rectangle that
-/// bounds them. Two displays side by side with a gap between them bound a
-/// region the sprite can occupy and no screen covers, and letting go of it
-/// there leaves it with no sideways speed to carry it out — it simply falls,
-/// unseen, for as long as the app runs. A thrown sprite crosses such a gap
-/// before gravity matters, which is why only a drop finds this.
+/// nearest one when it is over no display at all: out there it has no floor and
+/// would fall for ever, so grabbing an edge is how it gets back over a display.
 pub(super) fn wall_reached(x: f64, velocity_x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
     if displays_spanning(x, snapshot).next().is_none() {
         return nearest_edge(x, snapshot);
@@ -257,34 +211,18 @@ pub(super) fn dock_in(snapshot: &WorldSnapshot) -> Option<Rect> {
         .map(|window| window.rect)
 }
 
-/// Where to stand when the Dock is in the way: clear of its nearer side, on
-/// the floor or in the air.
-///
-/// The Dock is the one thing on screen drawn in front of the sprite, so under
-/// it the sprite can be neither seen nor grabbed. Its side is a wall to climb.
-/// Nearer rather than the side it came from, because the Dock can appear
-/// around a resting sprite when it unhides, and a dropped sprite arrives from
-/// above: on a walk the two are the same side, one step away.
-///
-/// The wall stands `EDGE_CLEARANCE` out from the Dock's own edge — half a
-/// sprite, the same half `at_horizontal_edge` keeps on screen — and strictly
-/// inside that, so the sprite it puts on the line is beside the Dock and
-/// stays put rather than being set back a step.
-///
-/// Out in that margin the side is a wall only for a sprite moving into the
-/// Dock, the rule `wall_reached` already keeps for a display edge: one moving
-/// away has left, and catching it anyway is a wall in the middle of the floor,
-/// and a trap for a walk heading past the Dock.
-///
-/// Strictly behind the Dock there is no such reprieve, whichever way the
-/// sprite is going: a real Dock is wide and the way out from under one is a
-/// long way sideways, all of it unseen. It climbs. #176.
+/// Where to stand when the Dock is in the way: clear of its nearer side, on the
+/// floor or in the air. The Dock is the one thing drawn in front of the sprite,
+/// so under it the sprite can be neither seen nor grabbed; its side is a wall.
 pub(super) fn dock_side_reached(
     position: Point,
     velocity_x: f64,
     snapshot: &WorldSnapshot,
 ) -> Option<f64> {
     let dock = dock_in(snapshot)?;
+    // `EDGE_CLEARANCE` out from the Dock's edge, the same half-sprite
+    // `at_horizontal_edge` keeps on screen, so a sprite put on the line stands
+    // beside the Dock and stays put rather than being set back a step.
     let (left, right) = (
         dock.x - EDGE_CLEARANCE,
         dock.x + dock.width + EDGE_CLEARANCE,
@@ -293,13 +231,9 @@ pub(super) fn dock_side_reached(
         return None;
     }
 
-    // Behind the Dock's own display, not merely in its x-range: a display
-    // stacked below this one shares that range, and every sprite on its floor
-    // would otherwise be behind the Dock forever — climb, top out, fall,
-    // climb. The Dock's center says which display owns it, the way
-    // `window_source::centered_in` does (a Dock touches its display's edges).
-    // The display's bottom, not the Dock's: the real Dock stops short of the
-    // floor the sprite walks on.
+    // Behind the Dock's own display, not merely its x-range, or a display
+    // stacked below would keep every sprite on its floor behind the Dock. The
+    // Dock's center picks the display; its bottom, not the Dock's, is the floor.
     let center = (dock.x + dock.width / 2.0, dock.y + dock.height / 2.0);
     snapshot.displays.iter().find(|display| {
         display.spans_x(center.0)
@@ -309,6 +243,8 @@ pub(super) fn dock_side_reached(
             && position.y <= display.bottom()
     })?;
 
+    // Nearer side, not the side it came from: the Dock can unhide around a
+    // resting sprite, and a dropped sprite arrives from above.
     let nearer_left = position.x - left <= right - position.x;
 
     // Strictly inside, so a sprite level with the Dock's own edge counts as
@@ -320,6 +256,9 @@ pub(super) fn dock_side_reached(
     } else {
         velocity_x < 0.0
     };
+    // In the margin the side is a wall only for a sprite moving into the Dock,
+    // as `wall_reached` treats a display edge. Strictly behind there is no such
+    // reprieve either way: the way out from under a real Dock is long and unseen.
     if !behind && !into_dock {
         return None;
     }
@@ -327,13 +266,9 @@ pub(super) fn dock_side_reached(
     Some(if nearer_left { left } else { right })
 }
 
-/// Where a climb beside the Dock steps onto its top, once the feet reach it.
-///
-/// `EDGE_CLEARANCE` in from the side it climbed, so the whole sprite stands on
-/// the Dock rather than overhanging the corner — and so it stands somewhere
-/// `perch_at` agrees is the Dock, which is what keeps it there. Clamped to the
-/// far side for a Dock narrower than a sprite. `None` when the climb is
-/// nowhere near the Dock, which is every ordinary climb up a screen edge.
+/// Where a climb beside the Dock steps onto its top, once the feet reach it:
+/// `EDGE_CLEARANCE` in from the side climbed, so the whole sprite stands where
+/// `perch_at` agrees is the Dock. `None` for a climb nowhere near the Dock.
 pub(super) fn dock_top_at(x: f64, dock: Rect) -> Option<f64> {
     let (left, right) = (dock.x, dock.x + dock.width);
     if (left - EDGE_CLEARANCE..=left + EDGE_CLEARANCE).contains(&x) {
@@ -375,10 +310,8 @@ pub(super) fn at_horizontal_edge(x: f64, snapshot: &WorldSnapshot) -> Option<(f6
 }
 
 /// The display edge nearest `x`, for a sprite that is over none of them.
-///
 /// Nearest rather than the one it came from: the sprite has no memory of that,
-/// and the shortest way back to somewhere it can stand is the least surprising
-/// place for it to reappear.
+/// and the shortest way back to somewhere it can stand is the least surprising.
 fn nearest_edge(x: f64, snapshot: &WorldSnapshot) -> Option<f64> {
     snapshot
         .displays

@@ -1,18 +1,6 @@
-//! Tool types and shared logic for the MCP server.
-//!
-//! Defines result types and shared utilities used by the dispatch layer.
-//! Private tool handlers implement the buddy's tool surface behind dispatch,
-//! testable without an MCP transport.
-//!
-//! Four responsibilities from docs/SPEC.md:
-//! - Expression: make the buddy speak; play a named Behavior
-//! - Sensing: list visible windows with bounds and owning application
-//! - Memory: recall; remember
-//! - Identity: list Character Instances and their names
-//!
-//! No tool posts mouse or keyboard events (ADR-0003). A denylist removes
-//! password fields and user-excluded applications from every sensing result,
-//! regardless of what the Harness permits.
+//! Tool types and shared logic for the MCP server: Expression (speak, play a
+//! Behavior), Sensing (list windows), Memory (recall, remember) and Identity
+//! (list Instances). No tool posts input events (ADR-0003); a denylist filters sensing.
 
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -25,11 +13,9 @@ use crate::memory::MemoryManifest;
 pub struct SpeakResult {
     pub success: bool,
     pub message: String,
-    /// Why the Expression did not land, when `success` is false.
-    ///
-    /// The bool alone cannot tell a Harness "I said it" from "there was nobody
-    /// to say it to", and a stdio Harness runs against an empty roster every
-    /// time. Absent on success, so a satisfied call keeps its old shape. #502.
+    /// Why the Expression did not land, when `success` is false: the bool alone
+    /// cannot tell "I said it" from "there was nobody to say it to", and a stdio
+    /// Harness runs against an empty roster. Absent on success, keeping the old shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -138,9 +124,8 @@ mod helpers {
     use crate::tools::{DenyList, ExpressionHandle, InstanceInfo};
     use crate::window_source::{WindowRect, WindowSource};
 
-    /// Get denylist-filtered snapshot of windows from the window source.
-    ///
-    /// Both list_windows and describe_screen use this to ensure consistent filtering.
+    /// Denylist-filtered windows from the source, shared by `list_windows` and
+    /// `describe_screen`.
     pub fn filtered_windows_snapshot(
         source: &dyn WindowSource,
         denylist: &DenyList,
@@ -154,7 +139,6 @@ mod helpers {
     }
 
     /// Resolve the target Instance and enqueue, for `speak` and `play_behavior`.
-    ///
     /// The `Err` is the whole answer a Harness gets about why the Expression
     /// landed nowhere, so it names the reason rather than a code.
     pub fn enqueue_expression(
@@ -192,7 +176,7 @@ mod helpers {
 
         // The roster is a snapshot, so an Instance can retire between the
         // resolution above and this enqueue. Saying so is the same honesty the
-        // empty roster now gets: the proposal reached nobody either way. #502.
+        // empty roster gets: the proposal reached nobody either way.
         if !handle.enqueue(&target_id, proposal) {
             return Err(format!(
                 "Character Instance {target_id} is no longer running, so nothing changed on screen"
@@ -204,13 +188,10 @@ mod helpers {
 
     /// Target resolution result for Expression tools.
     enum TargetResolution {
-        /// Resolved to a specific instance id
         Resolved(String),
-        /// No instances in roster
         NoInstances,
         /// The caller named an id no Instance in the roster carries.
         UnknownInstance(String),
-        /// Multiple instances but no specific id provided
         AmbiguousTarget,
     }
 
@@ -524,13 +505,8 @@ mod tests {
 
     #[test]
     fn no_tool_posts_mouse_or_keyboard_events() {
-        // This test documents the constraint from ADR-0003: ai-buddy ships no
-        // Executor, and no tool in this module posts synthetic input events.
-        // The assertion is structural rather than behavioral: the module
-        // depends on nothing that could post events, and every tool returns a
-        // value rather than mutating the desktop.
-        //
-        // A future reader adding a tool that *does* post events will find this
-        // test and the ADR it names.
+        // ADR-0003: ai-buddy ships no Executor. The assertion is structural: this
+        // module depends on nothing that could post events, and every tool returns
+        // a value rather than mutating the desktop.
     }
 }
