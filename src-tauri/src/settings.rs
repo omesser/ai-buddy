@@ -353,6 +353,14 @@ fn byo_registration(harness: &str, url: &str, token: &str) -> (String, String, S
             ),
             token.to_string(), // Show token separately for interactive paste
         ),
+        // Restart, not `/reload`: OpenCode reads its configuration once at
+        // start and caches it. A server written into the config of a running
+        // session never appears — `GET /mcp` and `GET /config` both still
+        // report the old set. `/reload` was in these steps because
+        // `sst/opencode#6719` was read as a shipped command; it is an open
+        // feature request. Telling the user to run it leaves them talking to a
+        // session that still holds the previous run's port and token, with
+        // nothing to show that anything failed.
         "opencode" => (
             format!(
                 "opencode mcp add ai-buddy --url '{url}' --header \"Authorization=Bearer {token}\""
