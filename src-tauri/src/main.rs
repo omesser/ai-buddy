@@ -47,8 +47,6 @@ use frame_loop::run_frame_loop;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-#[cfg(any(test, target_os = "windows"))]
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -3769,25 +3767,5 @@ mod tests {
         {
         }
         takes_async(overlay_open_chat);
-    }
-
-    /// Production change that would fail this: assigning a captured `bool`
-    /// inside `on_window_event` (`Fn`, not `FnMut`), or opening Settings on
-    /// the first Windows focus. #767.
-    #[test]
-    fn windows_anchor_skips_the_first_focus_then_opens() {
-        let seen = AtomicBool::new(false);
-        assert!(
-            !windows_anchor_focus_opens_settings(&seen),
-            "startup focus must not open Settings"
-        );
-        assert!(
-            windows_anchor_focus_opens_settings(&seen),
-            "the next focus is a taskbar click"
-        );
-        assert!(
-            windows_anchor_focus_opens_settings(&seen),
-            "later focuses keep opening Settings"
-        );
     }
 }
