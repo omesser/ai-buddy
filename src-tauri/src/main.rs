@@ -2683,14 +2683,20 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         .build()?;
 
     let app_handle = app.clone();
+    #[cfg(target_os = "windows")]
     let mut first_focus_seen = false;
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
-            if first_focus_seen {
-                show_settings(app_handle.clone());
-            } else {
-                first_focus_seen = true;
+            #[cfg(target_os = "windows")]
+            {
+                if first_focus_seen {
+                    show_settings(app_handle.clone());
+                } else {
+                    first_focus_seen = true;
+                }
             }
+            #[cfg(not(target_os = "windows"))]
+            show_settings(app_handle.clone());
         }
     });
 
