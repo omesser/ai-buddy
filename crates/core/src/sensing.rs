@@ -1,11 +1,6 @@
-//! The Free sensing tier: what the machine will say for free.
-//!
-//! `docs/SPEC.md` gives the Director exactly this much context in v1 — the
-//! frontmost application's name, how long the user has been idle, and the time
-//! of day. ADR-0005 calls that the Free tier because none of it costs a
-//! permission prompt. Window titles, screen content, the clipboard and input
-//! contents are the Ambient and On-Demand tiers, and are absent here by
-//! construction rather than by policy.
+//! The Free sensing tier: the frontmost application's name, how long the user
+//! has been idle, and the time of day (ADR-0005), none of it costing a permission
+//! prompt. Titles, screen content and the clipboard are absent by construction.
 
 use std::time::{Duration, SystemTime};
 
@@ -25,10 +20,8 @@ pub trait ActivitySource {
     fn displays_asleep(&self) -> bool;
 }
 
-/// Wall-clock time, behind a trait so that nothing else reads it directly.
-///
-/// Time of day is local civil time. Tests must never depend on what time it
-/// happens to be when they run.
+/// Wall-clock time, behind a trait so that nothing else reads it directly and
+/// tests never depend on what time it happens to be.
 pub trait Clock {
     fn now(&self) -> SystemTime;
     /// Local civil clock: hour 0–23, minute 0–59.
@@ -48,17 +41,14 @@ impl Clock for SystemClock {
     }
 }
 
-/// Local hour and minute on this machine.
-///
-/// `std` has no civil clock. libc `localtime_r` is the OS answer. Windows is
-/// out of v1 (SPEC); that build reports UTC until a local clock exists there.
+/// Local hour and minute on this machine. `std` has no civil clock, so libc
+/// `localtime_r` is the OS answer; the non-unix build reports UTC until a local
+/// clock exists there.
 #[cfg(unix)]
 fn system_local_hm() -> (u8, u8) {
     // SAFETY: `time` and `localtime_r` write through pointers to locals that
-    // outlive the call, and both returns are checked before `tm` is read.
-    // `zeroed::<tm>()` is the one that needs an argument: every field of
-    // `libc::tm` is an integer or a raw pointer (`tm_zone`), and all-zero is a
-    // valid bit pattern for both, so the value is never uninitialized memory.
+    // outlive the call, and both returns are checked before `tm` is read. Every
+    // field of `libc::tm` is an integer or a raw pointer, so all-zero is valid.
     unsafe {
         let mut t: libc::time_t = 0;
         if libc::time(&mut t) == -1 {
@@ -86,12 +76,9 @@ fn system_local_hm() -> (u8, u8) {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Activity {
     pub frontmost_application: Option<String>,
-    /// Whether the frontmost application differs from the previous read.
-    ///
-    /// This is the change signal: a caller learns that the user switched
-    /// application from the read itself, instead of having to remember the
-    /// previous name and compare. The first read of a run counts as a change, so
-    /// a Director woken at startup has something to react to.
+    /// Whether the frontmost application differs from the previous read, so a
+    /// caller need not remember the previous name. The first read of a run counts
+    /// as a change, so a Director woken at startup has something to react to.
     pub switched: bool,
     pub idle: Duration,
     /// When this read was taken, from the `Clock`.
@@ -112,11 +99,8 @@ pub struct FreeTier {
 }
 
 impl FreeTier {
-    /// Read the source and the clock once.
-    ///
-    /// Idle duration and the time come straight from the adapters, because both
-    /// are already the whole answer. The frontmost application is the only thing
-    /// that needs a memory.
+    /// Read the source and the clock once. The frontmost application is the only
+    /// thing that needs a memory; idle and the time are already the whole answer.
     pub fn read(&mut self, source: &dyn ActivitySource, clock: &dyn Clock) -> Activity {
         let frontmost_application = source.frontmost_application();
         let switched = frontmost_application != self.previous;
@@ -135,10 +119,9 @@ impl FreeTier {
     }
 }
 
-/// Every other platform for now. Windows is stubbed deliberately: `docs/SPEC.md`
-/// puts it out of scope for v1, and the interface exists so that the Director
-/// meets a platform that reports nothing, rather than a platform that is
-/// missing.
+/// Every other platform for now. Windows is stubbed deliberately (`docs/SPEC.md`
+/// puts it out of scope for v1), so the Director meets a platform that reports
+/// nothing rather than one that is missing.
 #[cfg(not(target_os = "macos"))]
 pub struct StubActivitySource;
 

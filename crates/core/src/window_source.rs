@@ -1,30 +1,22 @@
-//! Where the windows are.
-//!
-//! The Spatial Layer needs window geometry before the user has granted
-//! anything, so this layer is deliberately built out of what the operating
-//! system hands over for free. Everything a permission prompt would buy —
-//! window titles above all — is absent by construction rather than by policy.
+//! Where the windows are. The Spatial Layer needs window geometry before the
+//! user has granted anything, so this is built from what the OS hands over for
+//! free; window titles and everything else a prompt buys are absent by construction.
 
 use std::time::Duration;
 
 /// How often the Shell should read the source while the sprite is still.
-///
 /// Windows move at human speed, and a sitting buddy does not need the list
-/// sixty times a second. A ride switches to `RIDE_POLL_INTERVAL`. #98.
+/// sixty times a second. A ride switches to `RIDE_POLL_INTERVAL`.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// How often the Shell should read the source while the sprite is riding.
-///
-/// The OS paints the window every frame; 10 Hz left a hitch the derivatives
-/// could not hide. Only a ride pays this rate, so the list stays off the
-/// battery budget the rest of the day. #98.
+/// How often the Shell should read the source while the sprite is riding. The
+/// OS paints the window every frame, and 10 Hz left a hitch the derivatives
+/// could not hide. Only a ride pays this rate, so it stays off the battery budget.
 pub const RIDE_POLL_INTERVAL: Duration = Duration::from_millis(16);
 
-/// What a platform can actually tell us about the desktop.
-///
-/// Declared, never assumed. The Wayland arm declares neither and the Spatial
-/// Layer degrades to screen-edge physics, which is a supported mode rather
-/// than an error state. DESIGN.md decision 3 says which limit is permanent.
+/// What a platform can actually tell us about the desktop. Declared, never
+/// assumed: the Wayland arm declares neither and the Spatial Layer degrades to
+/// screen-edge physics, a supported mode rather than an error (DESIGN.md decision 3).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Capabilities {
     /// Whether the platform reports the rectangles of other applications'
@@ -54,64 +46,36 @@ impl Rect {
     }
 }
 
-/// The window server's handle for one window.
-///
-/// An opaque token. Nothing above this layer interprets one, orders them or
-/// reads meaning into the number: they are only ever compared for equality,
-/// which is all the Engine needs to say two snapshots describe the same
-/// window. #85.
-///
-/// `u64` because it has to be wide enough for any platform's window handle
-/// without a lossy conversion, and pointer width is the widest one on offer: a
-/// macOS `CGWindowID` is 32-bit, a Windows `HWND` is a handle and so pointer
-/// width, and an X11 `Window` is an `XID`, an `unsigned long`. Each of those
-/// widens into this. A platform converts at its own boundary; the core never
-/// learns which one it came from.
+/// The window server's handle for one window: an opaque token, only ever
+/// compared for equality. `u64` so any platform's handle widens in losslessly:
+/// a `CGWindowID` is 32-bit, an `HWND` is pointer width, an X11 `XID` an `unsigned long`.
 pub type WindowId = u64;
 
-/// The Perch id the Dock stands behind when its true bounds are known.
-///
-/// The Dock is not an application window, so the window server never hands it
-/// a place in the id space this could collide with: every macOS `CGWindowID`
-/// is 32-bit and widens into the low half of `WindowId`. A constant id keeps
-/// the Dock the same Perch across polls, which is what lets a sprite ride a
-/// Dock that resizes (#109). It lives here beside `WindowId` rather than with
-/// the snapshot assembler that stamps it, because the Engine reads it too and
-/// nothing below it should have to depend on the layer above.
+/// The Perch id the Dock stands behind when its true bounds are known. It cannot
+/// collide: every `CGWindowID` is 32-bit. A constant id keeps the Dock the same
+/// Perch across polls, which is what lets a sprite ride a Dock that resizes.
 pub const DOCK_PERCH_ID: WindowId = WindowId::MAX;
 
 /// One visible window: which one it is, where it is, who owns it, and how high
-/// it stacks.
-///
-/// No title. Titles need Screen Recording consent, and v1 asks for nothing.
+/// it stacks. No title: titles need Screen Recording consent, and v1 asks for nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowRect {
     /// The window server's own id, carried all the way to the Engine. Geometry
-    /// alone cannot say that the window under the sprite this tick is the one
-    /// it stood on last tick, and guessing that from size and displacement is
-    /// identity by another name. #85.
+    /// alone cannot say the window under the sprite this tick is the one it stood
+    /// on last tick; guessing from size and displacement is identity by another name.
     pub id: WindowId,
     pub bounds: Rect,
     /// The owning application's name, as the window server reports it.
     pub owner: String,
-    /// The window server's level: 0 for ordinary application windows, higher
-    /// for menus, docks and other overlays, lower for the desktop picture and
-    /// its notifications. Reported rather than acted on here: the Shell reads
-    /// it when it assembles a `WorldSnapshot` and keeps only the levels a
-    /// sprite may stand on, so the Engine never sees a level at all.
+    /// The window server's level: 0 for ordinary application windows, higher for
+    /// menus and docks, lower for the desktop picture. Reported, not acted on:
+    /// the Shell keeps only the levels a sprite may stand on, so the Engine never sees one.
     pub layer: i32,
 }
 
-/// A rectangle the window server measured in physical pixels, in points.
-///
-/// The scale passed is always the scale of the display the rectangle was
-/// measured on, never the primary's: each display reports its geometry against
-/// its own factor, and two of the four bugs `docs/SPEC.md` lists were one
-/// factor used across two of them.
-///
-/// A scale of zero or less would divide every coordinate into infinity, so it
-/// counts as 1. A display describing itself as nonsense should still be
-/// somewhere the sprite can stand.
+/// A rectangle the window server measured in physical pixels, in points. The
+/// scale is always that of the display the rectangle was measured on, never the
+/// primary's. A scale of zero or less would divide into infinity, so it counts as 1.
 pub fn in_points(rect_physical: Rect, scale: f64) -> Rect {
     let scale = if scale > 0.0 { scale } else { 1.0 };
 
@@ -123,34 +87,16 @@ pub fn in_points(rect_physical: Rect, scale: f64) -> Rect {
     }
 }
 
-/// The part of a display a sprite may occupy, in logical points.
-///
-/// Screens reserve strips of themselves for furniture the sprite must not
-/// disappear behind: the Dock and the menu bar on macOS, the taskbar on
-/// Windows. That reservation cannot be read from the window list — macOS
-/// reports the Dock as a window covering the whole display, so its top edge
-/// looks like the top of the screen — but every desktop platform already
-/// computes it for its own window manager, and reports it as a work area.
-///
-/// Both rectangles arrive in physical pixels, because that is how a window
-/// server measures a screen, and the Engine works in points. `in_points` does
-/// the conversion and says which scale factor is the right one.
-///
-/// A platform that does not report a work area reports an empty one, and gets
-/// the whole frame back. That is the correct answer rather than a degraded
-/// one: a desktop reserving nothing is a desktop the sprite may cross entirely.
+/// The part of a display a sprite may occupy, in points. The work area carries
+/// the Dock, menu bar or taskbar reservation the window list cannot (macOS reports
+/// the Dock as covering the whole display). No work area means the whole frame.
 pub fn usable_frame(frame_physical: Rect, work_area_physical: Rect, scale: f64) -> Rect {
     let frame = in_points(frame_physical, scale);
     let work = in_points(work_area_physical, scale);
 
-    // Clamped into the frame edge by edge, rather than refused whole if any
-    // edge escapes. Refusing hands back the entire display, which is bug #39
-    // returning silently, and it would take almost nothing to trigger: a
-    // fractional scale factor — macOS offers several — divides these numbers
-    // into values that need not land back exactly on the frame's own edges, and
-    // being over by one unit in the last place is enough. Clamping cannot
-    // invert the rectangle and cannot put the sprite outside its display, which
-    // are the two properties physics needs.
+    // Clamped into the frame edge by edge rather than refused whole: a fractional
+    // scale factor leaves edges over by one unit in the last place, and refusing
+    // hands back the entire display, the sprite behind the Dock again.
     let left = work.x.max(frame.x);
     let top = work.y.max(frame.y);
     let right = (work.x + work.width).min(frame.x + frame.width);
@@ -174,22 +120,14 @@ pub fn usable_frame(frame_physical: Rect, work_area_physical: Rect, scale: f64) 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldGeometry {
     /// The part of each active display a sprite may occupy, in the same
-    /// coordinate space as `windows`.
-    ///
-    /// Usable area rather than the whole frame; see `usable_frame`. A platform
-    /// that reserves nothing reports whole frames, which is the same thing said
-    /// about an emptier desktop.
+    /// coordinate space as `windows`. Usable area rather than the whole frame;
+    /// see `usable_frame`.
     pub usable_frames: Vec<Rect>,
     /// Visible windows in descending z-order: frontmost first.
     pub windows: Vec<WindowRect>,
-    /// The Dock's true bounds, when the platform can see them.
-    ///
-    /// The work area only says the Dock's edge and thickness — a full-width
-    /// strip — while the Dock itself does not stretch to the sides of its
-    /// display. A platform that can read the real rectangle reports it here,
-    /// the Dock becomes a Perch (`snapshot`), and `floor_under_dock` gives the
-    /// floor beside it back to the sprite. `None` means unknown, and the
-    /// full-width strip stands in, as it always has.
+    /// The Dock's true bounds, when the platform can see them. The work area only
+    /// says the Dock's edge and thickness as a full-width strip; with the real
+    /// rectangle the Dock becomes a Perch and `floor_under_dock` returns the floor beside it.
     pub dock: Option<Rect>,
 }
 
@@ -205,15 +143,8 @@ pub(crate) fn centered_in(dock: &Rect, frame: Rect) -> bool {
 }
 
 /// Whether a rectangle claiming to be the Dock can be believed against one
-/// display.
-///
-/// The claim comes from outside the type system — a private SPI or an
-/// Accessibility read — so it is trusted only when it is shaped like a
-/// bottom Dock: a thin horizontal strip, standing in the margin the work
-/// area reserved (its center below the usable floor, inside the frame). A
-/// full-display rectangle, an empty one, a bar floating mid-screen, or any
-/// rect on a display whose work area reserved nothing all fail, and the
-/// caller keeps the full-width strip instead of building a floor from a lie.
+/// display. The claim comes from a private SPI or an Accessibility read, so it is
+/// trusted only when shaped like a bottom Dock: thin, horizontal, in the reserved margin.
 pub fn plausible_dock(dock: &Rect, frame: Rect, usable: Rect) -> bool {
     let thin = dock.height > 0.0 && dock.height <= frame.height * 0.3;
     let horizontal = dock.width > dock.height;
@@ -222,14 +153,8 @@ pub fn plausible_dock(dock: &Rect, frame: Rect, usable: Rect) -> bool {
 }
 
 /// The usable frame of the display that holds the Dock, once the Dock's true
-/// bounds are known.
-///
-/// The work area reserves a full-width strip because that is all the window
-/// manager will say. With the Dock's real rectangle in hand the reservation is
-/// the Dock itself — a Perch — and the floor drops to the display's own bottom
-/// edge, so a sprite walking off the Dock's end falls instead of standing on
-/// air. A display the Dock is not on keeps its work area unchanged, and so do
-/// the menu bar's strip and the side edges.
+/// bounds are known: the reservation is the Dock itself, a Perch, and the floor
+/// drops to the display's own bottom edge. Other displays keep their work area.
 pub fn floor_under_dock(usable: Rect, frame: Rect, dock: &Rect) -> Rect {
     if !centered_in(dock, frame) {
         return usable;
@@ -252,13 +177,9 @@ pub trait WindowSource {
     /// `snapshot`'s job, not each platform's.
     fn read(&self) -> WorldGeometry;
 
-    /// The seam the Engine reads from.
-    ///
-    /// Window rectangles are dropped unless the platform declares
-    /// `window_geometry`, so a degraded platform yields display frames and
-    /// nothing else. Without this, a platform that can see some windows some of
-    /// the time would feed the physics half a desktop, and the sprite would
-    /// perch on Perches that are not there.
+    /// The seam the Engine reads from. Window rectangles are dropped unless the
+    /// platform declares `window_geometry`, or a platform seeing some windows some
+    /// of the time would feed the physics half a desktop.
     fn snapshot(&self) -> WorldGeometry {
         let mut geometry = self.read();
         if !self.capabilities().window_geometry {
@@ -268,10 +189,9 @@ pub trait WindowSource {
     }
 }
 
-/// Every other platform for now. Windows is stubbed deliberately: `docs/SPEC.md`
-/// puts it out of scope for v1, and the interface exists so that the Spatial
-/// Layer meets a platform that declares nothing and degrades, rather than a
-/// platform that is missing.
+/// Every other platform for now. Windows is stubbed deliberately (`docs/SPEC.md`
+/// puts it out of scope for v1), so the Spatial Layer meets a platform that
+/// declares nothing and degrades, rather than one that is missing.
 #[cfg(not(target_os = "macos"))]
 pub struct StubWindowSource;
 
@@ -318,12 +238,9 @@ mod tests {
         }
     }
 
-    /// A 1x display beside a 2x one. Literal values, so this runs the same
-    /// anywhere, and they are what a window server reports for that pair.
-    ///
-    /// A window server gives each display's geometry against that display's own
-    /// scale, so the 2x display's origin arrives already doubled. Converting
-    /// both with one factor puts the overlay on a display that is not there.
+    /// A 1x display beside a 2x one, as a window server reports that pair. Each
+    /// display's geometry comes against its own scale, so the 2x origin arrives
+    /// already doubled; one factor for both puts the overlay on a display that is not there.
     #[test]
     fn each_display_converts_with_its_own_scale() {
         assert_eq!(
@@ -337,9 +254,8 @@ mod tests {
         );
     }
 
-    /// Literal values read off a running app while #39 was being written: a
-    /// 1920x1080 display at scale 1 with a 30-point menu bar and a 98-point
-    /// Dock.
+    /// A 1920x1080 display at scale 1 with a 30-point menu bar and a 98-point
+    /// Dock, as a running app reports it.
     #[test]
     fn a_reserved_strip_is_taken_off_the_frame_the_sprite_may_occupy() {
         let usable = usable_frame(
@@ -403,9 +319,8 @@ mod tests {
     }
 
     /// A work area larger than its display, or hanging off it, is a platform
-    /// contradicting itself. Clamped into the display rather than refused: the
-    /// sprite must never be handed a rectangle it can leave, and refusing would
-    /// quietly give back the whole display, which is the bug this exists to fix.
+    /// contradicting itself. Clamped rather than refused: refusing would quietly
+    /// give back the whole display, which is the bug this exists to fix.
     #[test]
     fn a_work_area_that_escapes_its_display_is_clamped_into_it() {
         let frame = rect(0.0, 0.0, 1920.0, 1080.0);
@@ -427,10 +342,9 @@ mod tests {
         );
     }
 
-    /// The reason clamping beats refusing. A fractional scale divides these
-    /// numbers into values that need not land back on the frame's own edges,
-    /// and a rectangle over by one unit in the last place must not cost the
-    /// sprite its Dock inset.
+    /// The reason clamping beats refusing: a fractional scale divides these
+    /// numbers into values that need not land back on the frame's own edges, and
+    /// one unit in the last place must not cost the sprite its Dock inset.
     #[test]
     fn a_fractional_scale_does_not_give_the_whole_display_back() {
         // 1.5x, which macOS offers: a 2880x1620 panel drawn as 1920x1080 points

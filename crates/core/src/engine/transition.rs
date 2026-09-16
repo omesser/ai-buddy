@@ -1,11 +1,6 @@
-//! The State machine, in one place.
-//!
-//! The only writer of State in the Engine: verbs move it before physics and
-//! contacts move it after, and `tick` stores nothing but what these two
-//! functions return. Geometry reports Surfaces and `integrate` reports
-//! Contacts precisely so that neither has an opinion on what the sprite
-//! becomes — a transition added anywhere else is the scattering this module
-//! exists to end.
+//! The State machine, in one place: the only writer of State in the Engine.
+//! Verbs move it before physics and Contacts after, and `tick` stores nothing
+//! but what these two functions return, so no transition lives anywhere else.
 
 use super::{State, Surface, Verb};
 
@@ -22,9 +17,9 @@ pub enum Contact {
     /// Still standing exactly where it stood.
     Standing,
     /// Ran into something the sprite cannot pass sideways: a screen edge, in
-    /// the air or on the ground, or the side of the Dock (#176).
+    /// the air or on the ground, or the side of the Dock.
     Wall,
-    /// Met the usable top while rising or climbing. #100.
+    /// Met the usable top while rising or climbing.
     Ceiling,
 }
 

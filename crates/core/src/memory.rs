@@ -1,30 +1,14 @@
 //! Memory: the one Markdown file recording what the buddies know about the user.
+//! Shared by every Character Instance and owned by the user, who can read, edit
+//! and wipe it. Headings are advisory: unparsable content is carried across untouched.
 //!
-//! Shared by every Character Instance, and owned by the user — plaintext so they
-//! can read exactly what the buddies know, edit it in any editor, and wipe it.
-//! Headings are advisory and are never parsed for correctness: content this
-//! module cannot make sense of is carried across untouched, so a bad hand-edit
-//! degrades rather than breaks.
+//! Memory is untrusted in both directions: a Harness writes it, the user can type
+//! anything into it, and it reaches Harness prompts. Nobody can make the content
+//! safe; this module keeps one fact on one line so it cannot forge structure.
 //!
-//! Memory is untrusted input in both directions. A Harness writes it and the
-//! user can type anything into it, and it reaches Harness prompts from there.
-//! This module cannot make the content safe — nobody can — but it does keep one
-//! fact on one line, so what is written cannot forge structure the reader would
-//! then believe.
-//!
-//! ## Growth policy
-//!
-//! Memory has no automatic size guard. It can grow without bound. This is
-//! deliberate: Memory is user-owned, and auto-deletion or write refusal would
-//! violate that contract. The Action Log (#443) provides visibility into what
-//! the Harness writes, so runaway growth is observable. The user can manually
-//! edit Memory in any text editor, or wipe it entirely (which keeps a backup).
-//!
-//! A soft guard (refusing writes past a size budget) was considered and rejected:
-//! it would break Harness sessions unpredictably, and the user already has the
-//! tools to manage Memory themselves. If a guard becomes necessary, it belongs in
-//! settings as an explicit user choice with clear UI feedback, not as a silent
-//! failure mode.
+//! No size guard, deliberately: Memory is user-owned, so auto-deletion or a write
+//! refusal would break that contract and break Harness sessions unpredictably.
+//! If a guard ever becomes necessary it is an explicit setting, not a silent failure.
 //!
 //! ponytail: every read goes to the file rather than to a cached copy, which is
 //! what makes an external edit visible with no watcher and no reload path.
@@ -54,13 +38,9 @@ pub fn data_dir() -> PathBuf {
         .join("ai-buddy")
 }
 
-/// The one file every Instance and every Harness shares.
-///
-/// Named here rather than by each caller because Memory being shared is what
-/// makes a second Instance already know the user: two callers computing the
-/// same path are two places for it to stop being the same path, and the
-/// difference would look like a buddy that forgot. `AI_BUDDY_MEMORY` wins when
-/// a test or the MCP probe needs a different file.
+/// The one file every Instance and every Harness shares, named here rather than
+/// by each caller so it cannot quietly become two paths, which would look like
+/// a buddy that forgot. `AI_BUDDY_MEMORY` overrides it for tests and the probe.
 pub fn shared_path() -> PathBuf {
     match std::env::var_os("AI_BUDDY_MEMORY") {
         Some(path) => PathBuf::from(path),
@@ -88,10 +68,9 @@ impl MemoryManifest {
         }
     }
 
-    /// Everything Memory holds, as the user would see it in an editor.
-    ///
-    /// Memory the user has never written is empty, not missing: a buddy that has
-    /// learned nothing yet is a normal state, not an error to report.
+    /// Everything Memory holds, as the user would see it in an editor. Memory
+    /// the user has never written is empty, not missing: a buddy that has learned
+    /// nothing yet is a normal state, not an error.
     pub fn recall(&self) -> io::Result<String> {
         match fs::read_to_string(&self.path) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
@@ -99,14 +78,9 @@ impl MemoryManifest {
         }
     }
 
-    /// Record one fact under `heading`, and report the line recorded.
-    ///
-    /// The caller cannot know that line in advance — the manifest rewrites a fact
-    /// to keep it one line — and the user is owed what actually landed in their
-    /// file rather than what the Harness asked for.
-    ///
-    /// Both arguments come from a Harness, so both are checked here — before the
-    /// lock, so a dud tool call never holds up a real write.
+    /// Record one fact under `heading`, and report the line recorded: the manifest
+    /// rewrites a fact onto one line, and the user is owed what landed in their
+    /// file. Both arguments are Harness input, checked before the lock is taken.
     pub fn remember(&self, heading: &str, fact: &str) -> io::Result<String> {
         let heading = non_empty("heading", heading)?;
         let recorded = format!("- {}", non_empty("fact", fact)?);
@@ -115,11 +89,9 @@ impl MemoryManifest {
         Ok(recorded)
     }
 
-    /// Empty Memory, keeping one backup beside it. Returns the backup's path, or
-    /// `None` when there was nothing worth backing up.
-    ///
-    /// The backup is written first and its failure aborts the wipe, because a
-    /// wipe the user did not mean is the one mistake here that cannot be undone.
+    /// Empty Memory, keeping one backup beside it; `None` when there was nothing
+    /// worth backing up. The backup is written first and its failure aborts the
+    /// wipe, because a wipe the user did not mean cannot be undone.
     pub fn wipe(&self) -> io::Result<Option<PathBuf>> {
         let _writing = self.lock();
         let memory = self.recall()?;
@@ -135,21 +107,16 @@ impl MemoryManifest {
         Ok(Some(backup))
     }
 
-    /// Exclude every other writer for as long as the guard lives.
-    ///
-    /// A poisoned lock is taken anyway: it guards a file rather than an
-    /// invariant held in memory, so one writer's panic must not wedge Memory for
-    /// the rest of the session.
+    /// Exclude every other writer for as long as the guard lives. A poisoned lock
+    /// is taken anyway: it guards a file rather than an in-memory invariant, so
+    /// one writer's panic must not wedge Memory for the rest of the session.
     fn lock(&self) -> std::sync::MutexGuard<'_, ()> {
         self.writing.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Replace Memory's contents, creating its directory on first use.
-    ///
-    /// Written beside Memory and renamed over it, which is atomic within a
-    /// filesystem: Memory is the old file or the new one, never a half-written
-    /// one. Backups exist only on wipe, so there is nothing to recover a
-    /// truncated one from.
+    /// Replace Memory's contents, creating its directory on first use. Written
+    /// beside Memory and renamed over it, so Memory is the old file or the new
+    /// one, never a half-written one; only a wipe leaves a backup to recover from.
     fn write(&self, contents: String) -> io::Result<()> {
         if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
             fs::create_dir_all(parent)?;
@@ -167,14 +134,9 @@ impl MemoryManifest {
     }
 }
 
-/// Where one write's scratch file lives.
-///
-/// Beside Memory, so the rename that publishes it stays within one filesystem,
-/// and named for the write rather than only for the process. Memory is shared
-/// by every Character Instance and they write it from one process: on a name
-/// they all share, a second writer truncates the scratch file a first writer is
-/// still filling, and the first writer's rename then publishes those partial
-/// bytes as Memory.
+/// Where one write's scratch file lives: beside Memory, so the publishing rename
+/// stays within one filesystem, and named per write rather than per process, or
+/// one writer's rename publishes the partial bytes another is still writing.
 fn scratch_path(path: &Path) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let mut name = path
@@ -189,11 +151,9 @@ fn scratch_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Give `fresh` the permissions `path` has, if `path` is there at all.
-///
-/// A scratch file or a backup is a new file and would otherwise arrive with
-/// whatever the umask says. Memory holds what the buddies know about the user,
-/// so narrowing who can read it has to survive a write and a wipe alike.
+/// Give `fresh` the permissions `path` has, if `path` is there at all. A new
+/// file arrives with whatever the umask says, and Memory holds what the buddies
+/// know about the user, so narrowing who reads it must survive a write and a wipe.
 fn keep_permissions_of(path: &Path, fresh: &Path) -> io::Result<()> {
     match fs::metadata(path) {
         Ok(existing) => fs::set_permissions(fresh, existing.permissions()),
@@ -202,10 +162,8 @@ fn keep_permissions_of(path: &Path, fresh: &Path) -> io::Result<()> {
     }
 }
 
-/// Where the backup of `path` lives.
-///
-/// Beside Memory and with Memory's own extension, so the user finds it in the
-/// same folder and it still opens as Markdown.
+/// Where the backup of `path` lives: beside Memory and with Memory's own
+/// extension, so the user finds it in the same folder and it opens as Markdown.
 ///
 /// ponytail: seconds since the epoch rather than a civil timestamp. It sorts
 /// correctly and costs no date library; swap it for an ISO stamp if one ever
@@ -231,12 +189,9 @@ fn epoch_seconds() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// The document that results from recording `fact` under `heading`.
-///
-/// Pure, so the Markdown handling is testable without touching a disk.
-///
-/// Every other line is carried across untouched: the file is the user's, and
-/// only they know what their notes mean.
+/// The document that results from recording `fact` under `heading`. Pure, so
+/// the Markdown handling is testable without a disk. Every other line is carried
+/// across untouched: the file is the user's, and only they know what it means.
 fn with_fact(document: &str, heading: &str, fact_line: &str) -> String {
     let heading_line = format!("## {}", one_line(heading));
     let mut lines: Vec<&str> = document.lines().collect();
@@ -274,20 +229,15 @@ fn is_heading(line: &str) -> bool {
     line.starts_with('#')
 }
 
-/// Whether `line` is the heading called `heading`.
-///
-/// Both sides are normalized the way a heading is written, so a section is
-/// always found under the name it was written under. Treating a hand-typed
-/// `# facts`, or a `Daily  Facts` a Harness spaced its own way, as a different
-/// section from `## Daily Facts` would quietly split the user's Memory in two.
+/// Whether `line` is the heading called `heading`. Both sides are normalized the
+/// way a heading is written, or a hand-typed `# facts` or a `Daily  Facts` a
+/// Harness spaced its own way would quietly split the user's Memory in two.
 fn names(line: &str, heading: &str) -> bool {
     is_heading(line)
         && one_line(line.trim_start_matches('#')).eq_ignore_ascii_case(&one_line(heading))
 }
 
-/// `text` collapsed onto one line, or `InvalidInput` if there is nothing in it.
-///
-/// An empty heading or fact is a dud tool call rather than something to record:
+/// `text` collapsed onto one line, or `InvalidInput` if there is nothing in it:
 /// a bare `- ` is litter in a file the user is meant to read, and a bare `## `
 /// is a section nothing can name.
 fn non_empty(label: &str, text: &str) -> io::Result<String> {
@@ -300,10 +250,8 @@ fn non_empty(label: &str, text: &str) -> io::Result<String> {
     }
 }
 
-/// Collapse `text` onto one line.
-///
-/// A newline inside a fact would forge a heading or a bullet of its own, so one
-/// fact stays one line.
+/// Collapse `text` onto one line. A newline inside a fact would forge a heading
+/// or a bullet of its own.
 fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -575,10 +523,9 @@ Some notes I typed at the top, under no heading at all.
         );
     }
 
-    /// A heading is a free-form argument a Harness supplies, so it arrives with
-    /// whatever spacing the model felt like. Writing it normalized while looking
-    /// it up raw would split the user's Memory into a fresh duplicate section on
-    /// every write.
+    /// A heading is a free-form Harness argument and arrives with whatever
+    /// spacing the model felt like. Writing it normalized while looking it up
+    /// raw would open a fresh duplicate section on every write.
     #[test]
     fn a_heading_that_needs_normalizing_still_finds_its_own_section() {
         let dir = TempDir::new("repeat-heading");
@@ -627,11 +574,9 @@ Some notes I typed at the top, under no heading at all.
         );
     }
 
-    /// Memory is shared by every Character Instance, and they write it from one
-    /// process. A scratch file named for the process rather than for the write
-    /// is one path two writers both truncate, so one writer's rename can publish
-    /// the other's half-written bytes as Memory — and only a wipe leaves a
-    /// backup, so there is nothing to recover the loss from.
+    /// Every Instance writes Memory from one process. A scratch file named for
+    /// the process rather than the write is one path two writers both truncate,
+    /// so one writer's rename can publish the other's half-written bytes.
     #[test]
     fn two_writes_never_share_one_scratch_file() {
         let path = Path::new("/memories/memory.md");
@@ -652,10 +597,9 @@ Some notes I typed at the top, under no heading at all.
         }
     }
 
-    /// Memory is a file the user is invited to keep open in an editor, and a
-    /// crash mid-write must not truncate it. Replacing the file by rename rather
-    /// than writing over it in place is what makes that impossible; a second
-    /// name for the old file is how a test can tell which one happened.
+    /// The user keeps Memory open in an editor, and a crash mid-write must not
+    /// truncate it. Replacing the file by rename is what makes that impossible;
+    /// a second name for the old file is how a test can tell which one happened.
     #[test]
     fn a_write_replaces_memory_rather_than_writing_over_it_in_place() {
         let dir = TempDir::new("atomic-write");
@@ -704,12 +648,9 @@ Some notes I typed at the top, under no heading at all.
         );
     }
 
-    /// Memory is the user's file and holds what the buddies know about them. If
-    /// they have narrowed who can read it, replacing the file must not hand that
-    /// back — a new file starts from the umask, not from what stood there.
-    ///
-    /// Unix only: the claim is about POSIX mode bits, which Windows has no
-    /// equivalent for. #247.
+    /// If the user narrowed who can read Memory, replacing the file must not
+    /// hand that back: a new file starts from the umask. Unix only, since the
+    /// claim is about POSIX mode bits, which Windows has no equivalent for.
     #[cfg(unix)]
     #[test]
     fn a_write_keeps_the_permissions_the_user_set() {
@@ -739,10 +680,9 @@ Some notes I typed at the top, under no heading at all.
         );
     }
 
-    /// The backup holds exactly what Memory held. If the user narrowed who can
-    /// read Memory, the copy left beside it has to be just as narrow — a wipe is
-    /// not the moment to hand that back.
-    /// Unix only, for the reason the test above gives.
+    /// The backup holds exactly what Memory held, and if the user narrowed who
+    /// can read Memory the copy beside it has to be just as narrow. Unix only,
+    /// for the reason the test above gives.
     #[cfg(unix)]
     #[test]
     fn a_backup_keeps_the_permissions_the_user_set() {
