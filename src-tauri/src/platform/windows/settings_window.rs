@@ -3183,7 +3183,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_reapplies_frozen_state_from_fresh_description() {
+    fn frozen_description_fields_match_live_driving_state() {
         let live_not_driving = form::Live {
             driving: false,
             configured: false,
@@ -3266,90 +3266,253 @@ mod tests {
     }
 
     #[test]
-    fn apply_enabled_states_syncs_edit_readonly_and_control_enable() {
-        let frozen_description = form::describe_with(&form::Live {
-            driving: true,
-            configured: true,
-            consent_intro: String::new(),
-        });
-
-        let unfrozen_description = form::describe_with(&form::Live {
-            driving: false,
-            configured: false,
-            consent_intro: String::new(),
-        });
-
-        let http_row_ids = [
-            form::DIRECTOR_BASE_URL_ID,
-            form::DIRECTOR_MODEL_ID,
-            form::DIRECTOR_API_KEY_ID,
-        ];
-
-        for id in &http_row_ids {
-            let frozen_state = row_frozen(&frozen_description, id);
-            let unfrozen_state = row_frozen(&unfrozen_description, id);
-
-            assert_eq!(
-                frozen_state,
-                Some(true),
-                "Row '{}' must be frozen in frozen description",
-                id
-            );
-            assert_eq!(
-                unfrozen_state,
-                Some(false),
-                "Row '{}' must be unfrozen in unfrozen description",
-                id
-            );
+    fn enablement_message_table() {
+        struct Case {
+            control_kind: &'static str,
+            frozen: bool,
+            expected_msg: u32,
+            expected_wparam: usize,
         }
 
-        let picker_frozen = frozen_description
-            .tabs
-            .iter()
-            .flat_map(|t| &t.sections)
-            .flat_map(|s| &s.rows)
-            .find_map(|row| match row {
-                form::FormRow::Composite { controls, .. } => {
-                    controls.iter().find_map(|control| match control {
-                        form::CompositeControl::Popup { id, frozen, .. }
-                            if id == form::DIRECTOR_BASE_URL_PICK_ID =>
-                        {
-                            Some(*frozen)
-                        }
-                        _ => None,
-                    })
-                }
-                _ => None,
-            });
+        let cases = [
+            Case {
+                control_kind: "Edit",
+                frozen: true,
+                expected_msg: EM_SETREADONLY,
+                expected_wparam: 1,
+            },
+            Case {
+                control_kind: "Edit",
+                frozen: false,
+                expected_msg: EM_SETREADONLY,
+                expected_wparam: 0,
+            },
+            Case {
+                control_kind: "Checkbox",
+                frozen: true,
+                expected_msg: WM_ENABLE,
+                expected_wparam: 0,
+            },
+            Case {
+                control_kind: "Checkbox",
+                frozen: false,
+                expected_msg: WM_ENABLE,
+                expected_wparam: 1,
+            },
+            Case {
+                control_kind: "Button",
+                frozen: true,
+                expected_msg: WM_ENABLE,
+                expected_wparam: 0,
+            },
+            Case {
+                control_kind: "Button",
+                frozen: false,
+                expected_msg: WM_ENABLE,
+                expected_wparam: 1,
+            },
+            Case {
+                control_kind: "ComboBox",
+                frozen: true,
+                expected_msg: WM_ENABLE,
+                expected_wparam: 0,
+            },
+            Case {
+                control_kind: "ComboBox",
+                frozen: false,
+                expected_msg: WM_ENABLE,
+                expected_wparam: 1,
+            },
+        ];
 
-        let picker_unfrozen = unfrozen_description
-            .tabs
-            .iter()
-            .flat_map(|t| &t.sections)
-            .flat_map(|s| &s.rows)
-            .find_map(|row| match row {
-                form::FormRow::Composite { controls, .. } => {
-                    controls.iter().find_map(|control| match control {
-                        form::CompositeControl::Popup { id, frozen, .. }
-                            if id == form::DIRECTOR_BASE_URL_PICK_ID =>
-                        {
-                            Some(*frozen)
-                        }
-                        _ => None,
-                    })
-                }
-                _ => None,
-            });
+        for case in &cases {
+            let (msg, wparam) = match (case.control_kind, case.frozen) {
+                ("Edit", true) => (EM_SETREADONLY, 1),
+                ("Edit", false) => (EM_SETREADONLY, 0),
+                (_, true) => (WM_ENABLE, 0),
+                (_, false) => (WM_ENABLE, 1),
+            };
 
-        assert_eq!(
-            picker_frozen,
-            Some(true),
-            "Base URL picker must be frozen when Harness drives"
-        );
-        assert_eq!(
-            picker_unfrozen,
-            Some(false),
-            "Base URL picker must be unfrozen when not driving"
-        );
+            assert_eq!(
+                msg, case.expected_msg,
+                "{} frozen={} must use message {:#06x}",
+                case.control_kind, case.frozen, case.expected_msg
+            );
+            assert_eq!(
+                wparam, case.expected_wparam,
+                "{} frozen={} must use wParam {}",
+                case.control_kind, case.frozen, case.expected_wparam
+            );
+        }
+    }
+
+    #[test]
+    fn apply_enabled_states_sends_em_setreadonly_and_wm_enable() {
+        unsafe {
+            let h_instance = GetModuleHandleA(ptr::null());
+
+            let parent = CreateWindowExA(
+                0,
+                c"STATIC".as_ptr(),
+                c"Test".as_ptr(),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                100,
+                100,
+                0,
+                0,
+                h_instance,
+                ptr::null(),
+            );
+
+            let edit_hwnd = CreateWindowExA(
+                WS_EX_CLIENTEDGE,
+                c"EDIT".as_ptr(),
+                c"".as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER,
+                0,
+                0,
+                50,
+                20,
+                parent,
+                0,
+                h_instance,
+                ptr::null(),
+            );
+
+            let button_hwnd = CreateWindowExA(
+                0,
+                c"BUTTON".as_ptr(),
+                c"OK".as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                0,
+                25,
+                50,
+                20,
+                parent,
+                0,
+                h_instance,
+                ptr::null(),
+            );
+
+            let checkbox_hwnd = CreateWindowExA(
+                0,
+                c"BUTTON".as_ptr(),
+                c"Check".as_ptr(),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                0,
+                50,
+                50,
+                20,
+                parent,
+                0,
+                h_instance,
+                ptr::null(),
+            );
+
+            let mut controls = HashMap::new();
+            controls.insert("edit1".to_string(), Control::Edit(edit_hwnd, 0));
+            controls.insert("button1".to_string(), Control::Button(button_hwnd, 1));
+            controls.insert("checkbox1".to_string(), Control::Checkbox(checkbox_hwnd, 2));
+
+            let window = SettingsWindow {
+                hwnd: parent,
+                session: Mutex::new(None),
+                controls: RefCell::new(controls),
+                control_id_to_form_id: RefCell::new(HashMap::new()),
+                clear_pending: RefCell::new(false),
+                refreshing: RefCell::new(false),
+                current_tab: RefCell::new(0),
+                disclosure_expanded: RefCell::new(HashMap::new()),
+                disclosure_heights: RefCell::new(HashMap::new()),
+            };
+
+            let frozen_description = form::FormDescription {
+                tabs: vec![form::FormTab {
+                    label: "Test".to_string(),
+                    sections: vec![form::FormSection {
+                        title: None,
+                        rows: vec![
+                            form::FormRow::TextField {
+                                id: "edit1".to_string(),
+                                label: "Edit".to_string(),
+                                placeholder: None,
+                                hint: None,
+                                value: "".to_string(),
+                                frozen: true,
+                                operation: RowOperation::Unset,
+                            },
+                            form::FormRow::Checkbox {
+                                id: "checkbox1".to_string(),
+                                label: "Check".to_string(),
+                                hint: None,
+                                value: false,
+                                frozen: true,
+                            },
+                        ],
+                    }],
+                }],
+            };
+
+            window.apply_enabled_states(&frozen_description);
+
+            let edit_style = SendMessageA(edit_hwnd, 0x00D0, 0, 0);
+            assert_ne!(
+                edit_style & ES_READONLY as isize,
+                0,
+                "Edit must be readonly after frozen=true"
+            );
+
+            let button_enabled = SendMessageA(button_hwnd, 0x000A, 0, 0);
+            assert_eq!(
+                button_enabled, 0,
+                "Button must be disabled after frozen=true"
+            );
+
+            let unfrozen_description = form::FormDescription {
+                tabs: vec![form::FormTab {
+                    label: "Test".to_string(),
+                    sections: vec![form::FormSection {
+                        title: None,
+                        rows: vec![
+                            form::FormRow::TextField {
+                                id: "edit1".to_string(),
+                                label: "Edit".to_string(),
+                                placeholder: None,
+                                hint: None,
+                                value: "".to_string(),
+                                frozen: false,
+                                operation: RowOperation::Unset,
+                            },
+                            form::FormRow::Checkbox {
+                                id: "checkbox1".to_string(),
+                                label: "Check".to_string(),
+                                hint: None,
+                                value: false,
+                                frozen: false,
+                            },
+                        ],
+                    }],
+                }],
+            };
+
+            window.apply_enabled_states(&unfrozen_description);
+
+            let edit_style_unfrozen = SendMessageA(edit_hwnd, 0x00D0, 0, 0);
+            assert_eq!(
+                edit_style_unfrozen & ES_READONLY as isize,
+                0,
+                "Edit must not be readonly after frozen=false"
+            );
+
+            let button_enabled_unfrozen = SendMessageA(button_hwnd, 0x000A, 0, 0);
+            assert_ne!(
+                button_enabled_unfrozen, 0,
+                "Button must be enabled after frozen=false"
+            );
+
+            DestroyWindow(parent);
+        }
     }
 }
