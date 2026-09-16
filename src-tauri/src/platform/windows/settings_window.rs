@@ -3131,7 +3131,7 @@ mod tests {
 
     #[test]
     fn frozen_can_change_while_window_lives() {
-        let live_not_driving = crate::settings::Live {
+        let live_not_driving = form::Live {
             driving: false,
             configured: false,
             consent_intro: String::new(),
@@ -3156,7 +3156,7 @@ mod tests {
             "Base URL must be editable with no Harness driving"
         );
 
-        let live_driving = crate::settings::Live {
+        let live_driving = form::Live {
             driving: true,
             configured: true,
             consent_intro: String::new(),
