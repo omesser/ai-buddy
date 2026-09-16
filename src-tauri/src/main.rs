@@ -2673,8 +2673,6 @@ fn load_named(
 /// Main thread only: builds a window and registers event handlers.
 #[cfg(not(target_os = "macos"))]
 fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    use std::time::{Duration, Instant};
-
     let window = WebviewWindowBuilder::new(app, "anchor", WebviewUrl::default())
         .title("ai-buddy")
         .inner_size(1.0, 1.0)
@@ -2686,12 +2684,16 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
 
     let app_handle = app.clone();
     #[cfg(target_os = "windows")]
-    let shown_at = std::sync::OnceLock::new();
+    let shown_at = Arc::new(std::sync::OnceLock::new());
+    // `on_window_event` takes `Fn`, so the lock must be cloned in — not moved —
+    // and stamped after `show()`, which is when the settle window starts.
+    #[cfg(target_os = "windows")]
+    let shown_at_for_handler = Arc::clone(&shown_at);
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Focused(true) = event {
             #[cfg(target_os = "windows")]
             {
-                if windows_anchor_focus_opens_settings(&shown_at) {
+                if windows_anchor_focus_opens_settings(shown_at_for_handler.as_ref()) {
                     show_settings(app_handle.clone());
                 }
             }
@@ -2700,21 +2702,27 @@ fn build_anchor_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error:
         }
     });
 
+    window.show()?;
     #[cfg(target_os = "windows")]
     shown_at.set(Instant::now()).ok();
-    window.show()?;
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
-fn windows_anchor_focus_opens_settings(shown_at: &std::sync::OnceLock<std::time::Instant>) -> bool {
-    use std::time::Duration;
+/// Margin above Win32 startup-focus jitter, and still shorter than a click
+/// after the taskbar icon appears. A first-focus counter would miss extra
+/// startup focuses or swallow the first real click. #767.
+#[cfg(any(test, target_os = "windows"))]
+const WINDOWS_ANCHOR_FOCUS_SETTLE: Duration = Duration::from_millis(500);
 
-    const SETTLE_MS: u64 = 500;
-
+/// Whether this Windows anchor-window focus should open Settings.
+///
+/// Unset means `show()` has not stamped the clock yet, so this is still
+/// startup. `OnceLock::get` takes `&self`, which keeps the handler `Fn`.
+#[cfg(any(test, target_os = "windows"))]
+fn windows_anchor_focus_opens_settings(shown_at: &std::sync::OnceLock<Instant>) -> bool {
     shown_at
         .get()
-        .map(|start| start.elapsed() >= Duration::from_millis(SETTLE_MS))
+        .map(|start| start.elapsed() >= WINDOWS_ANCHOR_FOCUS_SETTLE)
         .unwrap_or(false)
 }
 
@@ -3204,11 +3212,12 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "windows")]
+    /// Production change that would fail this: opening Settings inside the
+    /// settle window, or assigning a captured value inside `on_window_event`
+    /// (`Fn`, not `FnMut`). #767.
     mod windows_anchor_tests {
         use super::*;
         use std::sync::OnceLock;
-        use std::time::{Duration, Instant};
 
         #[test]
         fn settle_window_blocks_early_focus() {
@@ -3225,7 +3234,7 @@ mod tests {
         fn settle_window_allows_late_focus() {
             let shown_at = OnceLock::new();
             shown_at
-                .set(Instant::now() - Duration::from_millis(600))
+                .set(Instant::now() - WINDOWS_ANCHOR_FOCUS_SETTLE - Duration::from_millis(1))
                 .ok();
 
             assert!(
