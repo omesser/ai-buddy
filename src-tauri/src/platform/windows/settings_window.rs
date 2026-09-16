@@ -31,11 +31,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowTextA, GetWindowTextLengthA, MessageBoxA, SendMessageA, SendMessageW,
     SetWindowLongPtrA, SetWindowPos, SetWindowTextA, ShowWindow, BM_GETCHECK, BM_SETCHECK,
     BS_AUTOCHECKBOX, BS_PUSHBUTTON, CWP_SKIPINVISIBLE, CW_USEDEFAULT, EN_CHANGE, ES_AUTOVSCROLL,
-    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GW_CHILD, GW_HWNDNEXT,
-    HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER, SW_HIDE, SW_SHOW,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY, WM_SETFONT,
-    WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW,
-    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    ES_MULTILINE, ES_PASSWORD, ES_READONLY, ES_WANTRETURN, GWLP_USERDATA, GWL_STYLE, GW_CHILD,
+    GW_HWNDNEXT, HTCAPTION, HTCLIENT, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO, SWP_NOZORDER,
+    SW_HIDE, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_CTLCOLORSTATIC, WM_ENABLE, WM_NCHITTEST, WM_NOTIFY,
+    WM_SETFONT, WM_SIZE, WNDCLASSA, WS_BORDER, WS_CHILD, WS_DISABLED, WS_EX_CLIENTEDGE,
+    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::settings::form::{self, FormRow, RowOperation};
@@ -156,8 +156,17 @@ impl SettingsWindow {
                         Control::Checkbox(hwnd, _)
                         | Control::Button(hwnd, _)
                         | Control::ComboBox(hwnd, _, _) => {
-                            // For other control types, use WM_ENABLE.
-                            // WM_ENABLE: wParam = TRUE to enable, FALSE to disable.
+                            // windows-sys 0.61 does not export EnableWindow.
+                            // WM_ENABLE is a notification, so the disabled bit
+                            // is set on GWL_STYLE and WM_ENABLE still goes out
+                            // for the visual update.
+                            let style = GetWindowLongPtrA(*hwnd, GWL_STYLE);
+                            let new_style = if frozen {
+                                style | WS_DISABLED as isize
+                            } else {
+                                style & !(WS_DISABLED as isize)
+                            };
+                            SetWindowLongPtrA(*hwnd, GWL_STYLE, new_style);
                             SendMessageA(*hwnd, WM_ENABLE, if frozen { 0 } else { 1 }, 0);
                         }
                         _ => continue,
@@ -2653,7 +2662,6 @@ pub use show as show_settings;
 mod tests {
     use super::*;
     use crate::settings::BoolField;
-    use windows_sys::Win32::UI::WindowsAndMessaging::GWL_STYLE;
 
     /// Layout constants must match macOS and GTK for consistent readability
     /// across platforms. These are compile-time assertions so drift is caught
