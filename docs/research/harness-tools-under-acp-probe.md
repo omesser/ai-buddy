@@ -2,8 +2,10 @@
 
 Anchor: `39fd012c` on `main`, 2026-09-16. Every ai-buddy citation below is
 read against that tree. Probes ran on macOS 25.6 (Apple silicon), signed in
-to claude.ai on a Team plan, with these versions on `PATH` or fetched by
-`npx -y ...@latest` at run time:
+to claude.ai on a Team plan, in two rounds: 2026-09-16 for the `claude` and
+`grok` rows, and 2026-09-17 for `hermes`, `opencode`, `cursor-agent`, `codex`
+and the two claims round one left as Inference. Versions on `PATH`, or fetched
+by `npx -y ...@latest` at run time:
 
 | Component | Version |
 |---|---|
@@ -14,15 +16,23 @@ to claude.ai on a Team plan, with these versions on `PATH` or fetched by
 | `hermes` | 0.18.2 |
 | `grok` | 1.0.30 |
 | `pi-acp` over `pi` | 0.0.33 over 0.85.1 |
+| `cursor-agent` | 2026.01.23-916f423 |
+| `@agentclientprotocol/codex-acp` over `codex` | 1.12.0 over 0.154.0 |
 
 This note answers #668 alongside
 [`harness-native-tools-under-acp.md`](./harness-native-tools-under-acp.md)
 (#669), which did the desk research from adapter source and vendor docs at
 anchor `e070216` and left five items open because it ran nothing. This note
-runs the cheap ones and records what came back. Every measurement here
-agrees with that note's Facts. The one number it got wrong had changed on
-`main` between its anchor and this one. The contradictions section below
-names it.
+runs them and records what came back. Every measurement agrees with that
+note's Facts. The one number it got wrong had changed on `main` between its
+anchor and this one. The contradictions section below names it.
+
+Round two closed four open rows, turned one Inference into a Fact, and
+**corrected one Inference that was wrong**: advertising `elicitation.form`
+does not switch a tool on. It changes how a question that arrives anyway is
+drawn. Answer 6 and ranked option 2 carry the correction and the measurement
+behind it. Round two also added `codex` and `cursor-agent`, two named rows in
+`harness.rs` that round one's matrix did not cover at all.
 
 ## How claims are marked
 
@@ -55,7 +65,12 @@ causes are Assumptions.
    gates), not the adapter and not ai-buddy's client capabilities.
 3. **Web search and fetch.** Fact, measured: `WebSearch` and `WebFetch` are in
    the tool list in every Claude probe. Fact, measured: Grok's session lists
-   `web_search`, `web_fetch`, `open_page` and the `x_*` search tools.
+   `web_search`, `web_fetch`, `open_page` and the `x_*` search tools. Fact,
+   measured in round two: hermes lists `web_search` and `web_extract`;
+   cursor-agent lists `WebSearch` and `WebFetch`; codex lists `web__run`;
+   opencode lists `webfetch` and **no** web-search tool, which matches the
+   vendor's "websearch is conditional". Every Harness measured here reaches the
+   web except pi.
 4. **User's existing MCP servers.** Fact, measured: with `cwd` set to
    ai-buddy's data folder the session connected the user-scope plugin server
    (`plugin:context-mode:context-mode`, `connected`) and listed five claude.ai
@@ -87,13 +102,27 @@ causes are Assumptions.
    `this.clientCapabilities?.elicitation?.form` is set, which matches the
    tool's absence in every probe run with `clientCapabilities: {}`.
    Inference: advertising `fs` or `terminal` switches on no agent-side tool.
-   Advertising `elicitation.form` switches on exactly one.
-7. **Other Harnesses.** See the matrix. Grok was measured by self-report.
-   opencode and hermes could not be measured on this machine because both
-   are configured against a local model server that was not running
-   (`http://127.0.0.1:8000/v1`). The handshake and `session/new` succeeded.
-   The prompt failed on the provider. pi answered the tool-list prompt with the
-   string `pi v0.85.1` and nothing else, so its list was not obtained.
+   **Corrected in round two.** The first round inferred that advertising
+   `elicitation.form` switches one tool on. It does not. Fact, measured with
+   `clientCapabilities: {"elicitation":{"form":true}}`: `init.tools` is the same
+   33 names as with `{}`, and `AskUserQuestion` is in neither. Fact, from
+   `acp-agent.js` 0.78.0 at the gate: *"AskUserQuestion is surfaced to us as a
+   normal permission check (the SDK routes it through `canUseTool` whenever a
+   callback is registered, rather than the interactive dialog). Present it as an
+   ACP form elicitation."* The capability changes how a question that already
+   arrived is **rendered**, from a plain permission request into a form. It adds
+   nothing to the advertised tool list. Option 2 below is re-ranked on that.
+7. **Other Harnesses.** See the matrix. Round one measured Grok by
+   self-report and could not reach opencode or hermes, because both default to
+   a local model server that was not running (`http://127.0.0.1:8000/v1`).
+   **Round two reached both**, and added the two named rows the matrix never
+   had. Fact, measured: hermes lists **27 tools** through its own `/tools` slash
+   command over ACP, which needs no provider at all. opencode lists **10 tools**
+   when its model is overridden to `xai/grok-4.6`, a provider this machine has a
+   key for. cursor-agent lists **19** and codex **22**, both against their own
+   signed-in accounts. pi still answers the tool-list prompt with the string
+   `pi v0.85.1` and nothing else, on a second attempt with a sharper prompt, so
+   its list is still not obtained.
 8. **Escape hatches.** Ranked below. The evidence rules out two of the issue's
    five. There is no `claude-agent-acp --cli` mode (the adapter's `cli`
    handling is argument parsing for `--version`), and passing user MCP
@@ -107,10 +136,10 @@ causes are Assumptions.
 | 1 | The `claude` row runs Zed's adapter over the Agent SDK, which spawns its own bundled `claude` in stream-json print mode | Fact | `harness.rs:144`; `sdk.mjs` 0.3.270 argv; `init.claude_code_version` = 2.1.270 while `PATH` has 2.1.273 |
 | 2 | ai-buddy attaches with `cwd` = `data_dir()` and advertises no client capabilities beyond `clientInfo` | Fact | `harness.rs:1714`; `acp_wire.rs:461`; `crates/core/src/memory.rs:51` |
 | 3 | The attach keeps 33 built-in tools including `WebSearch`, `WebFetch`, `Bash`, `Task`, `Skill` | Fact | measured, `init.tools`, two `cwd` values, identical |
-| 4 | `AskUserQuestion` is absent under `clientCapabilities: {}` and returns with `elicitation.form` | Fact for the first half, Inference for the second | measured; `acp-agent.js` 0.78.0 `toolName === "AskUserQuestion" && this.clientCapabilities?.elicitation?.form` |
+| 4 | `AskUserQuestion` is absent from `init.tools` under `clientCapabilities: {}` **and stays absent under `elicitation.form`**. The capability re-renders a question that arrives as a permission check; it adds no tool | Fact, both halves | measured both capability sets, 33 names identical; `acp-agent.js` 0.78.0 line 5263 comment and the `canUseTool` gate at 5267 |
 | 5 | User-scope MCP servers and claude.ai connectors load regardless of `cwd` | Fact | measured, `init.mcp_servers` in both runs; Agent SDK docs "Always read" |
 | 6 | Local-scope MCP servers load only when `cwd` is the directory they were added in | Fact | measured, `caveman-shrink` present only with `cwd=$HOME`; MCP docs scope table |
-| 7 | Project-scope `.mcp.json` loads relative to `cwd` | Inference | MCP docs scope table; not exercised, no `.mcp.json` was on hand |
+| 7 | Project-scope `.mcp.json` loads relative to `cwd` | **Fact** | measured in round two against a fixture directory holding only a `.mcp.json`; `probe-project-scope` appeared in `init.mcp_servers` |
 | 8 | Computer use needs macOS, Pro or Max (not Team or Enterprise), claude.ai auth, and an interactive session | Fact | code.claude.com/docs/en/computer-use |
 | 9 | The computer-use opt-in is `enabledMcpServers`, recorded per project in `~/.claude.json` | Fact | code.claude.com/docs/en/mcp, "an opt-in list for built-in servers that default to off, such as `computer-use`" |
 | 10 | No `computer-use` server appears in an ACP session on this machine, with or without `ALLOW_ANT_COMPUTER_USE_MCP=1` | Fact | measured, `init.mcp_servers` |
@@ -118,9 +147,13 @@ causes are Assumptions.
 | 12 | The Harness turn budget is 120 seconds by default | Fact | `harness.rs` tests for #690 at anchor |
 | 13 | ACP has no computer-use client capability; `fs/*` and `terminal/*` are methods the agent calls on the client | Fact | agentclientprotocol.com/protocol/initialization |
 | 14 | Grok's ACP session carries web, shell, file, subagent, scheduler and media tools | Fact about the self-report, Inference about the actual list | measured `AGENT_TEXT`, 33 names |
-| 15 | opencode and hermes carry their documented toolsets under an ai-buddy attach | Assumption | vendor docs only; provider offline here |
-| 16 | Hermes' browser tools are gated at start-up on a CDP check and were unavailable in this run | Fact | measured stderr, `check_fn _browser_cdp_check returned False; dependent tools will be unavailable this turn` |
-| 17 | pi's own tools are intact under `pi-acp` | Assumption | `pi-acp` README; the probe got only a version string back |
+| 15 | opencode and hermes carry their own toolsets under an ai-buddy attach | **Fact** | measured in round two: hermes 27 tools via `/tools`, opencode 10 tools on `xai/grok-4.6` |
+| 15a | cursor-agent carries 19 tools under attach, web and shell included | Fact | measured, self-report: `Shell`, `WebSearch`, `WebFetch`, `Task`, `ListMcpResources`, `FetchMcpResource`, `GenerateImage` among them |
+| 15b | codex carries 22 tools under attach, web and shell included | Fact | measured, self-report: `web__run`, `exec`, `exec_command`, `apply_patch`, `request_user_input`, the `collaboration.*` subagent set, `list_mcp_resources` |
+| 15c | codex and cursor-agent are named rows in `harness.rs` that this note's matrix did not cover | Fact | `harness.rs:146,153` at anchor; `HARNESS_PRESETS` has seven entries |
+| 16 | Hermes' browser tools are **listed but gated**: all ten `browser_*` names appear in `/tools` while the start-up CDP check marks them unavailable for the turn | Fact, refined in round two | measured in one run: `Available tools (27)` includes `browser_navigate` etc., and stderr carries `check_fn _browser_cdp_check returned False; dependent tools will be unavailable this turn`. A tool list is therefore not a capability list on this Harness |
+| 17 | pi's own tools are intact under `pi-acp` | Assumption, unchanged after a second attempt | `pi-acp` README; two probes with different prompts both returned only `pi v0.85.1` |
+| 17a | `pi-acp` advertises no MCP capability at all | Fact | measured `initialize`: `mcpCapabilities: {"http":false,"sse":false}`. `README.md:159`'s "Chat-only (no MCP)" is right about the transport, whatever it implies about pi's own tools |
 
 ## The matrix
 
@@ -131,15 +164,25 @@ measured cell.
 | Harness | Computer use (user's desktop) | Shell | Web search / fetch | User's own MCP servers | Filesystem / edit | Ask the user a question |
 |---|---|---|---|---|---|---|
 | `claude` | **no** (two platform gates; Assumption that the interactive gate holds on Pro/Max) | **yes** | **yes** | **conditional**: user scope and claude.ai connectors yes; local and project scope only when `cwd` matches | **yes** | **no** without `elicitation.form` |
-| `opencode` | no (none exists) | unknown (provider offline here; vendor says yes) | unknown (vendor: `webfetch` yes, `websearch` conditional) | unknown (vendor says yes) | unknown (vendor says yes) | unknown |
-| `hermes` | no (browser automation instead, opt-in) | unknown (provider offline here; vendor says yes) | unknown (vendor says yes); **browser tools no** until `--setup-browser` and a CDP check pass | unknown (vendor says yes) | unknown (vendor says yes) | unknown |
+| `opencode` | no (none exists) | **yes** (`bash`) | **fetch only** (`webfetch`; no websearch tool in the list) | **yes** (`mcpCapabilities: {http, sse}`; the user's own agents and commands loaded) | **yes** (`edit`, `write`, `read`, `glob`, `grep`) | **no** (none listed) |
+| `hermes` | no (browser automation instead, opt-in) | **yes** (`terminal`, `process`, `execute_code`) | **yes** (`web_search`, `web_extract`); **browser tools listed but unavailable** — the start-up CDP check fails and gates all ten | **yes** (vendor `mcp` subcommand; not exercised) | **yes** (`read_file`, `write_file`, `patch`, `search_files`) | **no** (none listed) |
+| `cursor-agent` | no | **yes** (`Shell`) | **yes** (`WebSearch`, `WebFetch`) | **yes** (`ListMcpResources`, `FetchMcpResource`) | **yes** (`Read`, `Write`, `StrReplace`, `Glob`, `Grep`, `Delete`) | **no** (none listed) |
+| `codex` | no | **yes** (`exec`, `exec_command`, `write_stdin`) | **yes** (`web__run`) | **yes** (`list_mcp_resources`, `read_mcp_resource`, `mcpCapabilities: {http}`) | **yes** (`apply_patch`) | **yes** (`request_user_input` listed) |
 | `grok` | no (Grok Bot runs on a cloud computer) | **yes** (`run_terminal_command`) | **yes** (`web_search`, `web_fetch`, `open_page`) | conditional: `_x.ai/mcp/servers_updated` came back empty on a machine with none configured; project scope keys off `cwd` per vendor docs | **yes** | **yes** (`ask_user_question` listed) |
 | `pi` | no (none exists) | unknown | no (no built-in web tool per vendor) | n/a ("No MCP" per vendor; `pi-acp` drops ours) | unknown | unknown |
 
-Inference, unchanged from #669 and now with one measured row behind it: no
-Harness of the five brings desktop control to an ACP session ai-buddy
+Inference, unchanged from #669 and now with six measured rows behind it: no
+Harness of the seven brings desktop control to an ACP session ai-buddy
 opens. ADR-0003's "not portable across Harnesses" understates it. Desktop
 control is available under no Harness on this path.
+
+Two things the second round changed in the reading of this table. Shell, web
+and filesystem are **not** the differentiators they looked like after round
+one, because every Harness measured has all three except pi. What actually
+varies is asking the user a question: only `grok` and `codex` list a tool for
+it, and neither needs a client capability to do so. And a listed tool is not a
+callable tool, which hermes' ten gated `browser_*` names prove in the one run
+where both the list and the gate were captured.
 
 ## Ranked options
 
@@ -161,11 +204,21 @@ so the two paths have to be separated first.
 
 ### 2. Advertise `elicitation.form`
 
-Fact: it is the one client capability that switches a tool on (claim 4).
-Grok already lists `ask_user_question` regardless. ADR-0018 gives ai-buddy
-the chat surface, so a multiple-choice prompt drawn by Chat is inside the
-decision. ADR-0003 and ADR-0023 are untouched. Cost: a
-form renderer in Chat.
+**Re-ranked in round two on a corrected premise.** Round one ranked this second
+because it read as the one client capability that switches a tool on. Measured,
+it switches none: `init.tools` is byte-identical with and without it, and
+`AskUserQuestion` is in neither list (claim 4). What it actually buys is the
+rendering of a question that arrives anyway. Without it the adapter sends a
+plain `session/request_permission`; with it, an ACP form.
+
+That is still worth having, and it is still cheap, but it is a Chat polish item
+rather than a tool-recovery one. Grok and codex both list their own ask tool
+regardless of any capability. ADR-0018 gives ai-buddy the chat surface, so a
+multiple-choice prompt drawn by Chat is inside the decision. ADR-0003 and
+ADR-0023 are untouched. Cost: a form renderer in Chat.
+
+The tool-recovery win that round one attributed to this option does not exist.
+Option 1 is now the only option in this list that recovers tools.
 
 ### 3. Say what survives, per row, in the README
 
@@ -332,11 +385,65 @@ process.exit(0);
   user-scope configuration. It does not hold for computer use, and it holds
   for local-scope configuration only with a `cwd` change.
 
+## Round two: how the remaining rows were measured
+
+Same probe client, same machine, 2026-09-17. Three techniques closed the rows
+round one left open.
+
+**A provider-free tool list.** hermes advertises a `tools` slash command in
+`available_commands_update`. Sending `/tools` as the prompt returns the registry
+without a single model call, so the dead local provider stops mattering:
+
+```sh
+node acp-probe.mjs "$PWD" 90 '/tools' -- hermes acp
+```
+
+**A provider override.** opencode's configured model is `omlx/gemma-4-e2b-it-4bit`
+against the same dead server, but this machine has `XAI_API_KEY` exported.
+Overriding the model in a copy of the config reaches a live provider without
+touching the user's own file:
+
+```sh
+python3 -c "import json;d=json.load(open('$HOME/.config/opencode/opencode.json'));d['model']='xai/grok-4.6';json.dump(d,open('/tmp/oc.json','w'))"
+OPENCODE_CONFIG=/tmp/oc.json node acp-probe.mjs "$PWD" 150 '<tool-list prompt>' -- opencode acp
+```
+
+**A fixture directory for claim 7.** A directory containing nothing but a
+`.mcp.json` naming one server, passed as `cwd`:
+
+```sh
+mkdir -p /tmp/projscope && printf '{"mcpServers":{"probe-project-scope":{"command":"node","args":["-e","setInterval(()=>{},1e9)"]}}}' > /tmp/projscope/.mcp.json
+PROBE_META='{"claudeCode":{"emitRawSDKMessages":[{"type":"system","subtype":"init"}]}}' \
+  node acp-probe.mjs /tmp/projscope 90 'Reply with the single word ok.' \
+  -- npx -y @agentclientprotocol/claude-agent-acp@latest
+```
+
+`init.mcp_servers` came back carrying `probe-project-scope`, alongside the
+user-scope and connector entries. That is claim 7, measured.
+
+For the `elicitation.form` probe, one line of the client changes:
+
+```diff
+-clientCapabilities: {}
++clientCapabilities: process.env.PROBE_CAPS ? JSON.parse(process.env.PROBE_CAPS) : {}
+```
+
+then `PROBE_CAPS='{"elicitation":{"form":true}}'`. Diff `INIT tools` against a
+run without it. They are identical, which is claim 4.
+
 ## Open, not resolved here
 
 - Claim 11 needs a Pro or Max Mac.
-- Claims 15 and 17 need a machine where opencode and hermes have a live
-  provider, and a prompt pi will answer. The probe client works unchanged.
+- Claim 17 needs a prompt pi will answer. Two attempts with different wordings
+  both returned only `pi v0.85.1`. `pi-acp` exposes no `tools` slash command of
+  the kind that unblocked hermes, so the next thing to try is pi's own CLI
+  outside ACP and a comparison.
+- hermes' and opencode's lists are self-reported through a model turn, except
+  hermes' `/tools`, which is the adapter's own registry and therefore stronger
+  evidence. cursor-agent's and codex's are self-reported. Only the `claude` row
+  is read off a structured `init` message. Self-report can omit.
+- Whether hermes' `browser_*` tools become callable after `--setup-browser` and
+  a passing CDP check. The list does not change; the gate does.
 - Whether the claude.ai connectors that showed `needs-auth` here would show
   `connected` for a user who authorized them in the CLI. Nothing here
   exercised that.
