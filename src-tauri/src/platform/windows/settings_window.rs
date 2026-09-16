@@ -1861,9 +1861,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                 y += LABEL_HEIGHT + HINT_GAP;
                             }
                             // An exported variable owns the pick, so the row
-                            // shows it and takes no edit (#272). Set once at
-                            // creation, where AppKit sets `setEnabled`, because
-                            // `frozen` cannot change while the window lives.
+                            // shows it and takes no edit (#272).
                             let mut style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST;
                             if *frozen {
                                 style |= WS_DISABLED;
@@ -2084,9 +2082,7 @@ fn build_ui(parent: HWND, window: &Arc<SettingsWindow>) -> Result<(), String> {
                                         };
                                         // Disabled at creation for the same
                                         // reason `FormRow::Popup` is: an
-                                        // exported variable owns the pick, and
-                                        // `frozen` cannot change while the
-                                        // window lives (#272).
+                                        // exported variable owns the pick (#272).
                                         let mut style =
                                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST;
                                         if *frozen {
@@ -2919,6 +2915,264 @@ mod tests {
         assert_eq!(
             hit_from_win32(INSTANCES_LIST_CLASS.to_str().unwrap(), false),
             Hit::Background
+        );
+    }
+
+    #[test]
+    fn ai_tab_section_order_matches_director_sections() {
+        let description = form::describe();
+        let ai_tab = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "AI")
+            .expect("AI tab exists");
+
+        let section_headings: Vec<&str> =
+            ai_tab.sections.iter().map(|s| s.heading.as_str()).collect();
+
+        assert_eq!(
+            section_headings,
+            vec![
+                "AI",
+                "AI source",
+                "Point a Harness you run yourself at ai-buddy",
+                "Model / API",
+                "Last user turn"
+            ],
+            "AI tab section order matches director_sections"
+        );
+    }
+
+    #[test]
+    fn disclosure_present_on_ai_and_source_sections() {
+        let description = form::describe();
+        let ai_tab = description
+            .tabs
+            .iter()
+            .find(|tab| tab.title == "AI")
+            .expect("AI tab exists");
+
+        for section in &ai_tab.sections {
+            if section.heading == "AI" || section.heading == "AI source" {
+                assert!(
+                    section.disclosure.is_some(),
+                    "Section '{}' must have disclosure text",
+                    section.heading
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn status_present_when_env_owned() {
+        crate::model::tests::with_env(
+            Some("test-key"),
+            Some("test-url"),
+            Some("test-model"),
+            || {
+                let description = form::describe();
+                let ai_tab = description
+                    .tabs
+                    .iter()
+                    .find(|tab| tab.title == "AI")
+                    .expect("AI tab exists");
+
+                let model_api_section = ai_tab
+                    .sections
+                    .iter()
+                    .find(|s| s.heading == "Model / API")
+                    .expect("Model / API section exists");
+
+                for row in &model_api_section.rows {
+                    match row {
+                        form::FormRow::TextField {
+                            id, status, frozen, ..
+                        } if id == form::DIRECTOR_BASE_URL_ID || id == form::DIRECTOR_MODEL_ID => {
+                            assert!(*frozen, "Row '{}' must be frozen when env-owned", id);
+                            assert!(
+                                status.is_some(),
+                                "Row '{}' must have status when env-owned",
+                                id
+                            );
+                            assert!(
+                                status.as_ref().unwrap().contains("Overridden by env"),
+                                "Status must mention env override"
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn http_rows_have_frozen_field() {
+        let description = form::describe();
+
+        let http_row_ids = [
+            form::DIRECTOR_BASE_URL_ID,
+            form::DIRECTOR_MODEL_ID,
+            form::DIRECTOR_API_KEY_ID,
+        ];
+
+        for id in &http_row_ids {
+            let mut found = false;
+            for tab in &description.tabs {
+                for section in &tab.sections {
+                    for row in &section.rows {
+                        match row {
+                            form::FormRow::TextField { id: row_id, .. }
+                            | form::FormRow::SecureField { id: row_id, .. }
+                                if row_id == id =>
+                            {
+                                found = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            assert!(found, "Row '{}' must exist in form description", id);
+        }
+    }
+
+    #[test]
+    fn env_owned_rows_stay_frozen_across_describe_calls() {
+        crate::model::tests::with_env(Some("test-key"), None, None, || {
+            let description = form::describe();
+
+            let frozen_before = description
+                .tabs
+                .iter()
+                .flat_map(|t| &t.sections)
+                .flat_map(|s| &s.rows)
+                .find_map(|row| match row {
+                    form::FormRow::SecureField {
+                        id, frozen, ..
+                    } if id == form::DIRECTOR_API_KEY_ID => Some(*frozen),
+                    _ => None,
+                });
+
+            assert_eq!(
+                frozen_before,
+                Some(true),
+                "API key row must be frozen when env-owned"
+            );
+
+            let description_again = form::describe();
+            let frozen_after = description_again
+                .tabs
+                .iter()
+                .flat_map(|t| &t.sections)
+                .flat_map(|s| &s.rows)
+                .find_map(|row| match row {
+                    form::FormRow::SecureField {
+                        id, frozen, ..
+                    } if id == form::DIRECTOR_API_KEY_ID => Some(*frozen),
+                    _ => None,
+                });
+
+            assert_eq!(
+                frozen_after,
+                Some(true),
+                "API key row must stay frozen across multiple describe() calls"
+            );
+        });
+    }
+
+    #[test]
+    fn base_url_picker_frozen_with_base_url_field() {
+        let description = form::describe();
+
+        let base_url_frozen = description
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find_map(|row| match row {
+                form::FormRow::TextField {
+                    id, frozen, ..
+                } if id == form::DIRECTOR_BASE_URL_ID => Some(*frozen),
+                _ => None,
+            });
+
+        let picker_frozen = description
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find_map(|row| match row {
+                form::FormRow::Composite { controls, .. } => {
+                    controls.iter().find_map(|control| match control {
+                        form::CompositeControl::Popup {
+                            id, frozen, ..
+                        } if id == form::DIRECTOR_BASE_URL_PICK_ID => Some(*frozen),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            });
+
+        if base_url_frozen == Some(true) {
+            assert_eq!(
+                picker_frozen,
+                Some(true),
+                "Base URL picker must be frozen when Base URL field is frozen"
+            );
+        }
+    }
+
+    #[test]
+    fn frozen_can_change_while_window_lives() {
+        let live_not_driving = crate::settings::Live {
+            driving: false,
+            configured: false,
+            consent_intro: String::new(),
+        };
+        let description_no_harness = form::describe_with(&live_not_driving);
+
+        let base_url_unfrozen = description_no_harness
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find_map(|row| match row {
+                form::FormRow::TextField {
+                    id, frozen, ..
+                } if id == form::DIRECTOR_BASE_URL_ID => Some(*frozen),
+                _ => None,
+            });
+
+        assert_eq!(
+            base_url_unfrozen,
+            Some(false),
+            "Base URL must be editable with no Harness driving"
+        );
+
+        let live_driving = crate::settings::Live {
+            driving: true,
+            configured: true,
+            consent_intro: String::new(),
+        };
+        let description_with_harness = form::describe_with(&live_driving);
+
+        let base_url_frozen = description_with_harness
+            .tabs
+            .iter()
+            .flat_map(|t| &t.sections)
+            .flat_map(|s| &s.rows)
+            .find_map(|row| match row {
+                form::FormRow::TextField {
+                    id, frozen, ..
+                } if id == form::DIRECTOR_BASE_URL_ID => Some(*frozen),
+                _ => None,
+            });
+
+        assert_eq!(
+            base_url_frozen,
+            Some(true),
+            "Base URL must be frozen when Harness is driving"
         );
     }
 }
