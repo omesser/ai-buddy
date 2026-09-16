@@ -99,6 +99,7 @@ scripts/verify-overlay.sh       # macOS: overlay, physics, hit-testing
 scripts/verify-overlay-x11.sh   # Linux X11: EWMH states, click-through
 scripts/verify-overlay-win.ps1  # Windows: WS_EX_NOACTIVATE, Perch on dual display
 scripts/verify-settings-macos.sh  # macOS: Settings via Accessibility, not CI
+scripts/verify-settings-linux.sh  # Linux: Settings via AT-SPI, not CI
 scripts/bench-rss-macos.sh      # macOS: resident set over a run, per process
 scripts/bench-rss-linux.sh      # Linux: RSS baseline (requires working display)
 scripts/bench-rss-windows.ps1   # Windows: RSS baseline
