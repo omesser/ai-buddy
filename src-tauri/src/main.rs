@@ -123,10 +123,10 @@ const CHAT_STATUS_EVENT: &str = "chat-status";
 
 /// The event carrying a full opening to an already-open Chat surface.
 ///
-/// Name and Character after a switch (#375), and configured/enabled/login
-/// after a Director or Completer-source change, so `attached()` can re-run
-/// without a webview reload. An event rather than a second command, because
-/// the window is already listening. #473.
+/// Name and Character after a switch, and configured/enabled/login after a
+/// Director or Completer-source change, so `attached()` can re-run without a
+/// webview reload. An event rather than a second command, because the window
+/// is already listening. #473.
 const CHAT_OPENING_EVENT: &str = "chat-opening";
 
 /// The event telling one Chat surface that the session behind it was replaced,
@@ -743,7 +743,7 @@ fn instance_title(rows: &[InstanceRow], id: &str) -> String {
 
 /// Open one Instance's Chat surface from the bubble's control.
 ///
-/// The same call a Summon makes (#17), and deliberately not a Summon: the user
+/// The same call a Summon makes, and deliberately not a Summon: the user
 /// clicked a control, not the Character, so the Engine hears nothing and the
 /// buddy does not react. Nothing else opens a Chat surface on its own — a turn
 /// that does not fit the bubble still waits to be asked for.
@@ -754,8 +754,8 @@ fn instance_title(rows: &[InstanceRow], id: &str) -> String {
 /// new WebView2 controller spins a nested message loop that re-enters the
 /// overlay's in-flight IPC turn, and the Chat surface comes up a frozen white
 /// HWND. An `async` command is dispatched on the async runtime instead, off
-/// that pump — the same off-main origin a Summon has, where the frame-loop
-/// thread calls `open_chat`, which is why the Summon path was never blank.
+/// that pump, the same off-main origin the frame-loop thread's `open_chat`
+/// has.
 #[tauri::command]
 async fn overlay_open_chat(app: tauri::AppHandle, id: String) {
     let title = app
@@ -1282,9 +1282,9 @@ fn open_link(url: String) -> Result<(), String> {
 /// it in.
 ///
 /// Through `SettingsSession::apply` rather than the file, because the pick has
-/// to move the attachment now rather than at the next launch (#500) and the
+/// to move the attachment now rather than at the next launch, and the
 /// `ReloadChat` that apply sends is what carries the new state back to the
-/// window that asked (#473).
+/// window that asked.
 ///
 /// The answer is a line to read, not a process to run: ai-buddy never spawns
 /// the login. `harness::login_hint` owns that constraint and why. #654.
@@ -1304,10 +1304,9 @@ fn select_harness(
 }
 
 /// Push a full opening to an already-open Chat surface, without creating one.
-/// Always after switch: a chosen Instance name stays, but the Character line
-/// still has to move. Configured/enabled/login too: the window asked once at
-/// start, and a Director or Completer-source change has to re-run `attached()`.
-/// #375, #473.
+/// Always after a switch: a chosen Instance name stays, but the Character line
+/// still has to move. Configured/enabled/login too, because the window asked
+/// once at start and a Director change has to re-run `attached()`. #473.
 fn push_chat_opening(
     app: &tauri::AppHandle,
     roster: &Roster,

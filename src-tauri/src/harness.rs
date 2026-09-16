@@ -149,9 +149,8 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
             vec!["npx", "-y", "@agentclientprotocol/codex-acp@latest"],
         ),
         // `grok` alone is the interactive TUI; the ACP agent is the
-        // subcommand. The Chat surface has offered a Grok button since
-        // #563, and without this arm the escape hatch below launched that
-        // TUI on stdio and the attach timed out (#457).
+        // subcommand. Without this arm the escape hatch below launches that
+        // TUI on stdio and the attach times out (#457).
         "grok" => (value, vec!["grok", "agent", "stdio"]),
         "hermes" => (value, vec!["hermes", "acp"]),
         "opencode" => (value, vec!["opencode", "acp"]),
@@ -169,11 +168,11 @@ pub fn launch(value: Option<&str>) -> Option<Launch> {
 
 /// The exported variable, else the Completer source row Settings saved.
 ///
-/// The variable outranks the file the way it does on every other Director row
-/// (#272, #436). Exported-and-empty is not the same as unexported here, which
-/// is where this parts company with `model::env_override`: `AI_BUDDY_HARNESS=`
-/// has been the kill switch since #433, and falling through to the row would
-/// spawn the very Harness the export was clearing (#452).
+/// The variable outranks the file the way it does on every other Director row.
+/// Exported-and-empty is not the same as unexported here, which is where this
+/// parts company with `model::env_override`: `AI_BUDDY_HARNESS=` is the kill
+/// switch, and falling through to the row would spawn the very Harness the
+/// export was clearing (#452).
 pub fn from_settings(saved: Option<&str>) -> Option<Launch> {
     match std::env::var(VAR) {
         Ok(exported) => launch(Some(&exported)),
@@ -237,10 +236,10 @@ fn apply_isolation(command: &mut Command, isolate: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // Job Object is created and assigned at spawn time via CREATE_SUSPENDED
-        // in `acp_wire::windows_job::spawn_in_job` (#517), ensuring descendants
-        // die on shutdown (#515). Still in a new process group so Ctrl+C does
-        // not reach the child.
+        // The Job Object is created and assigned at spawn time in
+        // `acp_wire::windows_job::spawn_in_job`, so descendants die on
+        // shutdown (#515). Still a new process group, so Ctrl+C does not
+        // reach the child.
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
     }
@@ -636,22 +635,19 @@ impl Session {
         // turn that has ended.
         let _serving = Serving::new(self, &request.instance);
         let (session_id, outcome) = self.attempt(request)?;
-        // #448: a `session/load` answered with a success the Harness could not
-        // honour leaves an id nothing can be prompted on, and the only place it
-        // says so is the turn. So the first turn on a loaded session is the
-        // evidence the load was not: throw the id away, open a fresh session,
-        // and ask once more. `reopen_loaded` clears the flag it reads, so the
-        // second answer is the caller's however it turns out — a Harness that
-        // refuses everything cannot ping-pong here.
+        // A `session/load` answered with a success the Harness could not honour
+        // leaves an id nothing can be prompted on, and the only place it says
+        // so is the turn. So the first turn on a loaded session is the evidence
+        // the load was not: throw the id away, open a fresh session, and ask
+        // once more. `reopen_loaded` clears the flag it reads, so the second
+        // answer is the caller's however it turns out (#448).
         //
         // A loss is not one of these: the child is gone rather than the
         // session, and `lost` has already charged the respawn. Nor is a
         // timeout, which says nothing about the id and would spend the
         // Completer's budget twice. Nor is a turn we cancelled ourselves: it
-        // says nothing about the id either, and asking again is the one thing
-        // a save must not do — the prompt was built before the edit, so the
-        // retry would put the old Instance Prompt back on a fresh session
-        // (#704, ADR-0012).
+        // says nothing about the id either, and asking again would put the old
+        // Instance Prompt back on a fresh session after a save (ADR-0012).
         let key = SessionKey::from_request(request);
         let (session_id, outcome) = match &outcome {
             Err(TurnError::Stopped(reason)) if reason != CANCELLED && self.reopen_loaded(&key) => {
@@ -706,12 +702,11 @@ impl Session {
             }
         };
         // Kept for the readers on the other side of the Completer, which is
-        // where `Result<String, String>` narrows to "no proposal" (#514).
+        // where `Result<String, String>` narrows to "no proposal".
         //
         // A withdrawal is not among them. The turn came back `cancelled`
         // because we cancelled it, so naming that to the Chat surface would
-        // report the buddy that won the session as a fault the Harness
-        // reported (#499).
+        // report the buddy that won the session as a Harness fault (#499).
         self.update_inspect(|inspect| {
             inspect.last_error = (!withdrawn)
                 .then(|| answer.as_ref().err().cloned())
@@ -731,9 +726,9 @@ impl Session {
             .attach(Some(&SessionKey::from_request(request)))
             .map_err(|why| self.refused(request, &why))?;
         // The Instance and the wake kind come through the seam rather than
-        // from anything here: one child serves every buddy, so the process
-        // is not whose wake this is (#435). The session id is that Instance's
-        // conversation (#558).
+        // from anything here: one child serves every buddy, so the process is
+        // not whose wake this is, and the session id is that Instance's
+        // conversation (#435).
         action_log::append(
             &self.dir,
             "prompt",
@@ -1062,8 +1057,8 @@ impl Session {
 
     /// Cancel the turn in flight when it is this Instance's own, recording the
     /// withdrawal `supersede` records so the wake it ends reads as given up
-    /// rather than as a Harness fault (#499, ADR-0016). The Instance is named
-    /// as its own winner: the turn goes for that buddy's new prompt layer.
+    /// rather than as a Harness fault (ADR-0016). The Instance is named as its
+    /// own winner: the turn goes for that buddy's new prompt layer.
     ///
     /// One child serves every Instance (ADR-0008) and `wire.cancel()` names no
     /// session, so cancelling without asking who holds the turn would take
@@ -1071,7 +1066,7 @@ impl Session {
     ///
     /// Unlike `supersede` nothing waits for the handover: the caller is the
     /// frame loop committing a save, which must not sit on a turn it is
-    /// throwing away (#634), and no wake is waiting for the lock.
+    /// throwing away, and no wake is waiting for the lock.
     fn cancel_own_turn(&self, instance: &str) {
         let ours = self
             .serving_instance
@@ -1430,7 +1425,7 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
     // Both asked here rather than carried through `crates/core`: the caller has
     // the wake and not the words, whose wake took the session is a property of
     // the one Harness session, and this already holds the session that knows
-    // each (#514, #499).
+    // each (#499).
     let withdrawn_for = match (&session, wake) {
         (Some(session), Wake::Failed) => session.claim_withdrawn_wake(instance),
         _ => None,
@@ -1457,25 +1452,19 @@ pub fn note_parsed(instance: &str, wake: &Wake, reactive: bool, near_miss: Optio
 /// A Near Miss is its own outcome and not `speech`, though it arrives as
 /// speech: a Character that declares `prowl` and a model that answers `prowll`
 /// is a contract miss the log has to be able to show, which is what CONTEXT.md
-/// asks and what the trace flag was the only witness to (#243).
+/// asks.
 ///
-/// `failed` says only that no reply was usable. Why is already a line of its
-/// own — `refused`, `timeout`, or a `turn` carrying the stop reason — written
-/// where the failure was seen.
+/// `failed` says only that no reply was usable; why is already a line of its
+/// own, written where the failure was seen. `error` is the one a reader cannot
+/// join to anything: the Harness answered, and its answer was an error, so the
+/// line carries the words as well as the verdict.
 ///
-/// `error` is the fifth, and the one a reader cannot join to anything: the
-/// Harness answered, and its answer was an error. #514 read as `failed` for a
-/// day of wakes, so the line carries the words as well as the verdict.
-///
-/// `withdrawn` is the sixth and the one failure that is not one: the turn was
-/// cancelled so another Instance's wake could be answered, which the Instance
-/// named in `withdrawn_for` won. The buddy falls back to static weights either
-/// way, and a reader can now tell that from a turn that broke (#499).
-///
-/// It outranks `error` because our own cancel reaches this function as one. The
-/// turn came back `harness stopped: cancelled`, which is a Harness reporting
-/// what we asked it to do, so a line reading `error` there would name the buddy
-/// that won the session as a fault.
+/// `withdrawn` is the one failure that is not one: the turn was cancelled so
+/// another Instance's wake could be answered, which the Instance named in
+/// `withdrawn_for` won. It outranks `error` because our own cancel reaches this
+/// function as one — `harness stopped: cancelled` is a Harness reporting what
+/// we asked it to do, so a line reading `error` there would name the buddy that
+/// won the session as a fault (#499).
 ///
 /// The wake kind rides along so a reader can join this to the `prompt` or
 /// `refused` line for the same wake.
@@ -1586,18 +1575,17 @@ fn named_login(name: &str) -> Option<&'static str> {
 /// The MCP server to hand this session, in the transport the Harness takes.
 ///
 /// The app's own loopback server first, because its tools dispatch against the
-/// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023,
-/// #470). A Harness that does not advertise `mcpCapabilities.http` on
-/// `initialize` — `hermes` does not — gets `mcp_launch`'s stdio server
-/// instead, which relays to that same loopback server and so reaches the same
-/// Instances (ADR-0026). The test is that handshake bit and only that bit: a
-/// Harness may be a fluent HTTP MCP client and still not set it, and one that
-/// starts setting it takes the loopback branch above with nothing to change
-/// here. It is
-/// handed the endpoint in its environment; with no loopback server to name,
-/// the shim answers every call with a failure rather than a stubbed success.
-/// Since #497 that fallback always exists, so `None` here is only ever an exe
-/// this code cannot recognise.
+/// live `Roster` and are the only ones that reach a buddy on screen (ADR-0023).
+/// A Harness that does not advertise `mcpCapabilities.http` on `initialize` —
+/// `hermes` does not — gets `mcp_launch`'s stdio server instead, which relays
+/// to that same loopback server and so reaches the same Instances (ADR-0026).
+/// The test is that handshake bit and only that bit: a Harness may be a fluent
+/// HTTP MCP client and still not set it, and one that starts setting it takes
+/// the loopback branch above with nothing to change here. The shim is handed
+/// the endpoint in its environment; with no loopback server to name, it answers
+/// every call with a failure rather than a stubbed success. That fallback
+/// always exists (#497), so `None` here is only ever an exe this code cannot
+/// recognise.
 fn mcp_server(handshake: &Handshake) -> Option<McpChoice> {
     choose_mcp(handshake, crate::mcp_http::endpoint(), mcp_stdio())
 }
@@ -1628,7 +1616,7 @@ fn choose_mcp(
 /// The stdio MCP server to hand the session, when one can be launched.
 ///
 /// The Development row or `AI_BUDDY_MCP_BIN`, else a sidecar beside the app,
-/// else the app binary re-executed as its own server (#497).
+/// else the app binary re-executed as its own server.
 ///
 /// Read here rather than at construction, so a path typed in the window is the
 /// one the next attach hands over (#447). `AI_BUDDY_MCP_BIN` still outranks
@@ -1750,12 +1738,9 @@ fn reattach(attached: Option<&Launch>, wanted: Option<Launch>) -> Reattach {
 
 /// Re-open the attachment for the Completer source now in force. #500.
 ///
-/// The handle `attach` took at startup used to be the app's for its lifetime,
-/// so a row naming a different Harness — or a custom command line with a typo
-/// in it — waited for a relaunch (#436), and after #510 made Off a live drop
-/// there was no way back to a Harness at all. This is the whole of what moves
-/// it. A wire that dies is not: that is the Session's own business, and the
-/// respawn `charge_loss` paces needs nothing from here.
+/// This is the whole of what moves the handle `attach` took at startup. A wire
+/// that dies is not: that is the Session's own business, and the respawn
+/// `charge_loss` paces needs nothing from here.
 ///
 /// `spawning` is the Director's switch, as it is for `startup_lines`: opening
 /// a session no wake will ever reach spends a child process for nothing.
@@ -2013,9 +1998,9 @@ mod tests {
                     } else {
                         // A new session is a new id. Without the reset the fake
                         // would hand back whichever id the last prompt named,
-                        // and #448's reopen could not be told apart from the
-                        // dead session it replaced. Counted so two Instances
-                        // cannot share a minted id (#558).
+                        // and a reopen could not be told apart from the dead
+                        // session it replaced. Counted so two Instances cannot
+                        // share a minted id (#558).
                         let n = recorded(count, "new");
                         session = if n <= 1 {
                             "fresh-id".to_string()
@@ -2919,10 +2904,8 @@ mod tests {
         );
     }
 
-    /// #435: `session_id` names the conversation, not the wake. Which Instance
-    /// woke, and whether the user asked for it, still come through the
-    /// `WakeRequest`. #558 keeps one id per identity; this line is still
-    /// whose wake it was.
+    /// `session_id` names the conversation, not the wake. Which Instance woke,
+    /// and whether the user asked for it, come through the `WakeRequest`. #435.
     #[test]
     fn the_prompt_event_names_the_instance_and_the_wake_kind() {
         let (fx, session) = Fixture::new("happy");
@@ -3012,9 +2995,8 @@ mod tests {
             json!("harness: API Error: 400 does not support this model")
         );
 
-        // #499 beside #514: our own cancel reaches this as an error, and the
-        // withdrawal is what the line has to say. Both PRs added a fifth
-        // result; this is the pair that would have collided.
+        // Our own cancel reaches this as an error, and the withdrawal is what
+        // the line has to say. #499.
         let withdrawn = parsed_fields(
             "buddy-1",
             &Wake::Failed,
@@ -3301,12 +3283,10 @@ mod tests {
         session.shutdown();
     }
 
-    /// #448 meets #704: `cancelled` is a stop reason, so a turn that was
-    /// cancelled on a loaded session used to read as the evidence the load did
-    /// not restore. The withdrawn turn opened a fresh session and re-sent a
-    /// prompt nothing was waiting for — and after a save, that prompt carries
-    /// the Instance Prompt the save replaced (ADR-0012). A cancel says nothing
-    /// about the id either way.
+    /// `cancelled` is a stop reason, so a turn cancelled on a loaded session
+    /// must not read as evidence the load did not restore: reopening would
+    /// re-send a prompt nothing waits for, carrying the Instance Prompt a save
+    /// just replaced (ADR-0012). A cancel says nothing about the id. #704.
     #[test]
     fn a_cancelled_turn_is_not_reopened_as_a_failed_load() {
         let (fx, session) = Fixture::new("load-slow");

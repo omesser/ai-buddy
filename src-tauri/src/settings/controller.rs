@@ -140,8 +140,8 @@ fn shortcut(description: &FormDescription, id: &str, value: &str, current: &str)
         id: shortcut.row,
         value,
         // A batched row stages: the four Director rows only apply together, so
-        // Apply is what reaches the file (#279). An unbatched one has no Apply
-        // beside it and saves here (#638).
+        // Apply is what reaches the file. An unbatched one has no Apply beside
+        // it and saves here. #279.
         patch: if description.text_batched(shortcut.row) {
             None
         } else {
@@ -323,9 +323,9 @@ mod tests {
         });
     }
 
-    /// #279 and #638: a shortcut over a batched row fills the row and stops.
-    /// Apply is what reaches the file, so a patch here would write half the
-    /// tab behind the other half.
+    /// A shortcut over a batched row fills the row and stops. Apply is what
+    /// reaches the file, so a patch here would write half the tab behind the
+    /// other half. #279.
     #[test]
     fn a_shortcut_over_a_batched_row_stages_rather_than_saves() {
         model::tests::with_env(None, None, None, || {

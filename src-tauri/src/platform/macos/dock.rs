@@ -16,8 +16,8 @@
 //! 2. **The Accessibility API** — public and trust-gated. `DESIGN.md`
 //!    decision 9 refuses to prompt at launch, so this rung pays out only
 //!    where trust is already granted, and `AXIsProcessTrusted` is asked
-//!    before anything that could prompt. Settings is the upgrade path
-//!    (#148): flipping Accessibility on is what asks.
+//!    before anything that could prompt. Settings is the upgrade path:
+//!    flipping Accessibility on is what asks.
 //! 3. **Nothing** — the caller keeps the full-width work-area strip, which is
 //!    the behavior this module exists to improve and the one it degrades back
 //!    to, never a crash.
@@ -26,21 +26,12 @@
 //! handful of functions is fewer lines than a dependency, which is the trade
 //! the Cargo manifest already names for CoreGraphics.
 //!
-//! Every other route was measured before settling on this order, so the next
-//! hunt can start from its results instead of repeating them (macOS 26,
-//! against the AX rect as ground truth):
-//!
-//! - **Every Dock-owned window in `CGWindowListCopyWindowInfo`**: three, all
-//!   options included — the layer-20 window at exactly the display's frame
-//!   and two wallpaper backstops. No window carries the island's rectangle;
-//!   the magnification lens exists only mid-hover.
-//! - **Estimating from consent-free inputs** (`com.apple.dock` defaults,
-//!   running applications, Trash): 44–100 points short on the very desktop
-//!   the spacing constants were tuned against, before recents tiles,
-//!   minimized windows, spacers or magnification move them again. An
-//!   estimate that is wrong by an icon or two puts the fall line mid-icon.
-//! - **`AXUIElementCopyElementAtPosition`, screen capture**: the same trust
-//!   gate as rung 2, or the Screen Recording consent the SPEC refuses.
+//! Routes already ruled out, so the next hunt does not repeat them: no window
+//! in `CGWindowListCopyWindowInfo` carries the island's rectangle; estimating
+//! from consent-free inputs (`com.apple.dock` defaults, running applications,
+//! Trash) lands far enough out to put the fall line mid-icon;
+//! `AXUIElementCopyElementAtPosition` and screen capture need the same trust
+//! gate as rung 2, or the Screen Recording consent the SPEC refuses.
 //!
 //! The two live rungs frame the Dock differently: CoreDock reports the
 //! reserved strip (top at the work area's floor, down to the display's

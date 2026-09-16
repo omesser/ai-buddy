@@ -889,8 +889,8 @@ mod tests {
     }
 
     /// Break: an Expression that reaches no Instance reports success again, or
-    /// stops saying why. It used to report plain success, which is how every
-    /// stdio verification before #491 passed against nothing at all. #502.
+    /// stops saying why. Plain success there lets a stdio verification pass
+    /// against nothing at all. #502.
     #[test]
     fn an_empty_roster_fails_and_says_no_instance_is_running() {
         let temp = TempDir::new("empty-roster");

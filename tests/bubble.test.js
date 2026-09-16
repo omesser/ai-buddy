@@ -72,10 +72,9 @@ test("exactly six lines is not truncation", () => {
   assert.equal(lines[5], "line6", "so no ellipsis either");
 });
 
-// #701: until the parser stopped flattening replies, `text.split("\n")` always
-// yielded one paragraph. The bubble keeps the breaks rather than collapsing
-// them back: a list read as one run-on line is worse than a clamped list, and
-// the clamp already has somewhere to send the rest (#547).
+// The bubble keeps a reply's line breaks rather than collapsing them back: a
+// list read as one run-on line is worse than a clamped list, and the clamp
+// already has somewhere to send the rest (#547).
 test("a reply's paragraphs are the bubble's lines", () => {
   const reply = "Here's what I found:\n\n- the roster loads\n- the session resumed";
   const { lines, truncated } = wrapText(reply, 260, testMeasureFn);
@@ -116,9 +115,8 @@ test("bubble placement stays above sprite by default", () => {
   assert.equal(pos.tailOffset, 0, "tail centered when bubble not clamped");
 });
 
-// ADR-0013 amended by #441, then by #546: near the ceiling the bubble inverts
-// below the sprite at the same mirrored distance when above would cover the face.
-// This replaces the clamp-and-overlap behavior #441 shipped.
+// ADR-0013, amended by #546: near the ceiling the bubble inverts below the
+// sprite at the same mirrored distance, when above would cover the face.
 test("bubble inverts below sprite at ceiling when above would cover face", () => {
   const spriteRect = { x: 100, y: 50, width: 64, height: 64 };
   const bubbleSize = { width: 200, height: 100 };

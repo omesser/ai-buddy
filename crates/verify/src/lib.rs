@@ -1,4 +1,4 @@
-//! `ai-buddy-verify` — agent/CI verify entry (ADR-0027, #647 / #648).
+//! `ai-buddy-verify` — agent/CI verify entry (ADR-0027).
 //!
 //! Binary: `cargo run -p ai-buddy-verify -- <doctor|units|overlay|poke|summon|cleanup>`
 

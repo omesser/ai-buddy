@@ -335,9 +335,9 @@ fn dark_eyes_left_of_silhouette_mid(width: usize, height: usize, rgba: &[[u8; 4]
     (sx / n, sil_mid)
 }
 
-/// #161: every grounded pose has a foot on the canvas bottom row. The
-/// airborne Animations are `fall` and the optional `grab` (#364), which draws
-/// the sprite hanging from the cursor.
+/// Every grounded pose has a foot on the canvas bottom row. The airborne
+/// Animations are `fall` and the optional `grab`, which draws the sprite
+/// hanging from the cursor. #161.
 #[test]
 fn timber_wolf_stands_on_the_canvas_floor() {
     for (animation, frame, bytes) in frames_of("timber-wolf") {

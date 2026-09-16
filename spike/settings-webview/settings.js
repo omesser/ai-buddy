@@ -57,8 +57,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // "What is this?" is a <details>: the browser owns open/closed, the closed
-// state reserves no space, and a reader announces it as a disclosure. #642 and
-// #660 were an NSButton pretending to be one of these.
+// state reserves no space, and a reader announces it as a disclosure. #642.
 function disclosure(text) {
   return text
     ? el("details", { class: "disclosure" }, el("summary", { text: "What is this?" }), el("p", { text }))

@@ -5,15 +5,13 @@
 //! and a Harness that advertises `mcpCapabilities.http` is handed that server
 //! directly. Everything else lands here, reached three ways and always the
 //! same code: `AI_BUDDY_MCP_BIN`, an `ai-buddy-mcp` sidecar beside the app, or
-//! the app binary re-executed as `ai-buddy --mcp-stdio` (#497). All three are
-//! a process outside the running app, including the third, so all three relay
+//! the app binary re-executed as `ai-buddy --mcp-stdio`. All three are a
+//! process outside the running app, including the third, so all three relay
 //! rather than answer. A Harness that does not advertise
 //! `mcpCapabilities.http` on ACP `initialize` — `hermes` does not, though it
-//! is an HTTP MCP client in its own right — and story 66's power user
-//! pointing their own Harness at
-//! ai-buddy therefore reach the same Instances as everyone else (ADR-0026,
-//! #501), instead of the stubs that told them a line had been said while
-//! nothing appeared on screen (#470).
+//! is an HTTP MCP client in its own right — therefore reaches the same
+//! Instances as everyone else (ADR-0026), rather than stubs that report a line
+//! was said while nothing appears on screen.
 //!
 //! Every message is relayed verbatim and the app's answer is passed back
 //! untouched: this parses each line only far enough to report a failure

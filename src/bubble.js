@@ -175,7 +175,7 @@ export function createBubbleMachine(io) {
 }
 
 // The bubble sits above the head (ADR-0013, amended by #441). At the ceiling,
-// when the clamp would cover the Character's face (#546), invert: put the bubble
+// when the clamp would cover the Character's face, invert: put the bubble
 // under the Character at the same mirrored vertical distance.
 export function placeBubble(spriteRect, bubbleSize, displayBounds) {
   const spriteCenterX = spriteRect.x + spriteRect.width / 2;
@@ -205,8 +205,8 @@ export function placeBubble(spriteRect, bubbleSize, displayBounds) {
 // the placement is latched or drawn keeps a losing overlay from arming the
 // thinking grace off a `thinking` it was never meant to show.
 //
-// The cue goes with them, for a louder reason (#277): every overlay is told
-// where every sprite is, so a cue every overlay played would be drawn once per
+// The cue goes with them, for a louder reason: every overlay is told where
+// every sprite is, so a cue every overlay played would be drawn once per
 // display the sprite touches and — worse — heard once per display.
 export function forOverlay(placement) {
   if (placement.bubble) return placement;

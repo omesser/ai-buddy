@@ -1,20 +1,15 @@
 // Run with `node --test tests/`.
 //
-// #737: `chat.js` assigned `loginSaid = null` on the session-reset path, and
-// nothing had declared `loginSaid` since #563 removed it along with its only
-// reader. The webview loads as `<script type="module">`, so every file here is
-// strict mode, and in strict mode that assignment is a `ReferenceError` rather
-// than an implicit global. The reset cleared the log and then died on the line
-// before its own note, so the conversation vanished with nothing saying why.
-//
-// A type check over `src/` would catch this and more; whether to add one is
-// #692. This is the narrow version of that check, in the idiom `tests/` already
-// uses for `chat.js` — read the source, assert on it — and it costs nothing.
+// The webview loads as `<script type="module">`, so every file in `src/` is
+// strict mode, and an assignment to a name nothing declared is a
+// `ReferenceError` rather than an implicit global. One of those took the
+// session-reset path down mid-way and lost the conversation with nothing
+// saying why (#737).
 //
 // Deliberately narrow. It looks at statement-level `name = …` only: a property
 // assignment carries a dot, and a declaration carries a keyword. So it cannot
 // see a mistake made through `globalThis`, and it is not a substitute for a
-// real checker. It is one shape of bug that has bitten once.
+// real checker.
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";

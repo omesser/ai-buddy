@@ -461,9 +461,9 @@ function showWho(opening) {
   them = opening.name;
   document.getElementById("name").textContent = opening.name;
   document.getElementById("character").textContent = opening.character;
-  // Refilled on every opening, not only the first: #480 pushes one when the
-  // Completer source moves, and a mode label that keeps the mode it opened
-  // with is the lie this was written to stop (#474).
+  // Refilled on every opening, not only the first: an opening is pushed when
+  // the Completer source moves, and a mode label that keeps the mode it opened
+  // with is a lie. #474.
   document.getElementById("mind-text").textContent = mindLine(opening);
   for (const node of document.querySelectorAll(".i-name")) {
     node.textContent = opening.name;
@@ -672,7 +672,7 @@ async function start() {
 
   // Full opening, not only name and Character: a Director or Completer-source
   // change has to re-run `attached()` on a window that is already listening.
-  // #375, #473.
+  // #473.
   await listen(
     "chat-opening",
     ({ payload }) => {

@@ -391,12 +391,11 @@ async function start() {
         // under the cursor. Written here rather than left to append order,
         // which is what makes the two sides agree instead of coincide.
         //
-        // A bubble sits in front of its own sprite at every level, which is
-        // what the retired flip's replacement needs (ADR-0013, amended by
-        // #441): near the top of a display the bubble clamps onto the head,
-        // and the line has to stay readable. The sprite and its cue layer
-        // share the lower level, so a cue is still drawn over the art it
-        // marks by append order (#277).
+        // A bubble sits in front of its own sprite at every level (ADR-0013,
+        // amended by #441): near the top of a display the bubble clamps onto
+        // the head, and the line has to stay readable. The sprite and its cue
+        // layer share the lower level, so a cue is still drawn over the art it
+        // marks by append order.
         view.bubble.style.zIndex = `${index * 2 + 1}`;
         view.sprite.style.zIndex = `${index * 2}`;
         view.cueLayer.style.zIndex = `${index * 2}`;
@@ -414,7 +413,7 @@ async function start() {
           visible: payload.visible,
           fade_ms: payload.fade_ms,
           // Whether a cue may be heard as well as seen. Settings decides it and
-          // Do Not Disturb takes part; this only obeys (#277, #280).
+          // Do Not Disturb takes part; this only obeys (#280).
           sound: payload.sound,
           at: performance.now(),
         };

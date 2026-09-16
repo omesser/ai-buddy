@@ -7,14 +7,13 @@
 // made here without a window (tests/settings.test.js).
 //
 // `render(root, tab, values, emit)` is the DOM half. A redraw is render()
-// again, reading the same description, so #625 — frozen applied when a control
-// was built and never when it was drawn — has nowhere to live.
+// again, reading the same description, so a control cannot be built frozen and
+// drawn unfrozen.
 //
 // `emit` is a stub here and the `settings_event` command in #706 is what it
 // becomes, so the payloads below are provisional. A secure field emits
 // `set_text` rather than a verb of its own because `FormRow::SecureField`
-// writes a `TextField`, and a row and its setter naming different things is
-// #273. Dismissing an Instance has no operation in `describe()` at all.
+// writes a `TextField`.
 
 // `values` carries one scalar per row id, so a list of Instances or excluded
 // applications arrives as lines, the way the AppKit block shows them. An array
@@ -111,8 +110,7 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // "What is this?" is a <details>: the browser owns open and closed, the closed
-// state reserves no space, and a reader announces it as a disclosure. #642 and
-// #660 were an NSButton pretending to be one of these.
+// state reserves no space, and a reader announces it as a disclosure. #642.
 function disclosure(text) {
   return text
     ? el("details", { class: "set-disclosure" }, el("summary", { text: "What is this?" }), el("p", { text }))

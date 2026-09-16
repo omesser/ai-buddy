@@ -260,7 +260,7 @@ test("a Composite spreads into one control per member, its text field included",
 // No DOM in this suite, so which elements `render()` builds can only be read
 // off its source. It is worth reading: a <select> hand-rolled out of divs, or a
 // disclosure that is a button and a hidden paragraph, passes every assertion
-// above and is unreachable by a screen reader (#642, #660).
+// above and is unreachable by a screen reader (#642).
 const source = readFileSync(new URL("../src/settings.js", import.meta.url), "utf8");
 
 test("the controls are the platform's own elements", () => {

@@ -1011,9 +1011,7 @@ mod tests {
     /// perches it on a window and puts it to sleep after a minute whoever it
     /// is. What a Character declares is what a Director may set it doing, and
     /// there the two disagree — no Behavior of BMO's ever settles, and every
-    /// Behavior of Nim's that is not bare motion does. Two different lives from
-    /// the same Director, and not before one exists: nothing proposes a
-    /// Behavior until #11.
+    /// Behavior of Nim's that is not bare motion does.
     ///
     /// `walk` and `jump` are both a lone motion Primitive, and a Character that
     /// ends on its feet has not settled. #374.
