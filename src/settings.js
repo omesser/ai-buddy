@@ -421,20 +421,23 @@ if (typeof document !== "undefined") {
 
   if (typeof window.__TAURI__ !== "undefined") {
     const { listen } = window.__TAURI__.event;
-    const { getCurrentWindow } = window.__TAURI__.webviewWindow;
+    // The handle comes from getCurrentWebviewWindow, which is what this global
+    // exports and what chat.js and main.js already call. Reaching for the
+    // `window` module's name instead leaves both handlers below throwing.
+    const settingsWindow = window.__TAURI__.webviewWindow.getCurrentWebviewWindow();
 
     // Alt-drag to move the window, gated on modifier held and target is background.
     document.addEventListener("mousedown", (event) => {
       if (!shouldBeginDrag(event)) return;
       event.preventDefault();
-      getCurrentWindow().startDragging();
+      settingsWindow.startDragging();
     });
 
     // Escape closes the window.
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        getCurrentWindow().close();
+        settingsWindow.close();
       }
     });
 
