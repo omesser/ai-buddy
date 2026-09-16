@@ -106,3 +106,24 @@ function main() {}`,
   assert.equal(result.status, 0);
   assert.match(result.stdout, /comment.*4/i);
 });
+
+test("census ignores HTML entities as issue citations", () => {
+  const result = runCensus({
+    "test.js": `// Entity &#106; is not an issue
+// Neither is &#39; or &#34;
+function main() {}`,
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /citing issue.*0/i);
+});
+
+test("census still detects real issue citations after stripping entities", () => {
+  const result = runCensus({
+    "test.js": `// Entity &#106; mixed with issue #371
+function main() {}`,
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /citing issue.*1/i);
+});

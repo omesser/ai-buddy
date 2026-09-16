@@ -118,10 +118,11 @@ def extract_blocks(lines: List[str], ext: str) -> Tuple[int, int, List[CommentBl
 def analyze_block(lines: List[str]) -> CommentBlock:
     """Analyze a comment block for citations."""
     text = ' '.join(lines)
+    text_without_entities = re.sub(r'&#\d+;', '', text)
     return CommentBlock(
         lines=len(lines),
-        cites_issue=bool(ISSUE_PATTERN.search(text)),
-        cites_adr=bool(ADR_PATTERN.search(text))
+        cites_issue=bool(ISSUE_PATTERN.search(text_without_entities)),
+        cites_adr=bool(ADR_PATTERN.search(text_without_entities))
     )
 
 
