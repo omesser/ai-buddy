@@ -1,6 +1,8 @@
 #!/usr/bin/env pwsh
-# Windows Settings Window smoke test: the native Win32 settings window opens,
-# displays controls, and field labels persist after tab switching.
+# Windows Settings Window smoke test (#392)
+#
+# Verifies the native Win32 settings window opens, displays controls correctly,
+# and field labels persist after tab switching (label-wipe fix).
 #
 # Usage:
 #   .\scripts\verify-settings-win.ps1
@@ -482,8 +484,11 @@ if (-not (Test-Path $axHelper)) {
   $harness = if ($env:AI_BUDDY_VERIFY_HARNESS) { $env:AI_BUDDY_VERIFY_HARNESS } else { "claude" }
   $harnessTitle = "Harness $([char]0x00B7) $harness"
   Info "Attempting to switch to Harness (if installed)"
-  & $axHelper -Command pick-source -Title $harnessTitle 2>&1 | Out-Null
-  if ($LASTEXITCODE -eq 0) {
+  $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  & $axHelper -Command pick-source -Title $harnessTitle *> $null
+  $pickOk = ($LASTEXITCODE -eq 0)
+  $ErrorActionPreference = $prevEap
+  if ($pickOk) {
     Pass "Switched AI source to Harness"
     Start-Sleep -Milliseconds 1000
 
@@ -502,7 +507,7 @@ if (-not (Test-Path $axHelper)) {
     }
 
     # Switch back to Model API
-    & $axHelper -Command pick-source -Title "Model API" 2>&1 | Out-Null
+    & $axHelper -Command pick-source -Title "Model API" *> $null
     if ($LASTEXITCODE -eq 0) {
       Pass "Switched back to Model API"
       Start-Sleep -Milliseconds 500
